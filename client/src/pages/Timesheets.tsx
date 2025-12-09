@@ -22,7 +22,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { format, startOfWeek, endOfWeek, addWeeks, isWithinInterval, parseISO, eachDayOfInterval, isSameDay, addDays, subWeeks } from "date-fns";
+import { format, startOfWeek, endOfWeek, addWeeks, isWithinInterval, parseISO, eachDayOfInterval, isSameDay, addDays, subWeeks, startOfMonth, endOfMonth, addMonths, subMonths, getDay } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { TimesheetDialog } from "@/components/TimesheetDialog";
@@ -79,6 +79,9 @@ export default function Timesheets() {
   
   // Weekly view state
   const [weeklyViewDate, setWeeklyViewDate] = useState<Date>(startOfWeek(new Date(), { weekStartsOn: 1 }));
+  
+  // Calendar view state
+  const [calendarMonth, setCalendarMonth] = useState<Date>(new Date());
 
   // Column configuration state
   const [columns, setColumns] = useState<TimesheetColumnConfig[]>(() => {
@@ -301,7 +304,9 @@ export default function Timesheets() {
       const userId = ts.userId;
       const userName = getUserName(userId);
       const tsDate = format(new Date(ts.date), "yyyy-MM-dd");
-      const hours = parseFloat(ts.duration) || 0;
+      const duration = parseFloat(ts.duration) || 0;
+      const breakDuration = parseFloat(ts.breakDuration || "0") || 0;
+      const netHours = Math.max(0, duration - breakDuration);
 
       if (!userMap.has(userId)) {
         userMap.set(userId, {
@@ -314,8 +319,8 @@ export default function Timesheets() {
 
       const user = userMap.get(userId)!;
       const currentDayHours = user.dailyHours.get(tsDate) || 0;
-      user.dailyHours.set(tsDate, currentDayHours + hours);
-      user.totalHours += hours;
+      user.dailyHours.set(tsDate, currentDayHours + netHours);
+      user.totalHours += netHours;
     });
 
     return Array.from(userMap.values()).sort((a, b) => a.userName.localeCompare(b.userName));
@@ -375,96 +380,21 @@ export default function Timesheets() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Row 1: Title + View Tabs */}
+      {/* Row 1: Title + Action Buttons */}
       <div className="h-9 bg-background flex items-center justify-between px-3 border-b border-border">
-        <div className="flex items-center gap-4">
-          <h1 className="text-sm font-semibold">
-            {currentProject ? `${currentProject.name} - Timesheets` : "Timesheets"}
-          </h1>
-          <div className="flex items-center gap-1">
-            <Button
-              variant={activeView === "table" ? "secondary" : "ghost"}
-              size="sm"
-              onClick={() => setActiveView("table")}
-              className="h-6 px-2 text-xs gap-1"
-              data-testid="button-view-table"
-            >
-              <Table2 className="w-3 h-3" />
-              Table
-            </Button>
-            <Button
-              variant={activeView === "weekly" ? "secondary" : "ghost"}
-              size="sm"
-              onClick={() => setActiveView("weekly")}
-              className="h-6 px-2 text-xs gap-1"
-              data-testid="button-view-weekly"
-            >
-              <Users2 className="w-3 h-3" />
-              Weekly
-            </Button>
-            <Button
-              variant={activeView === "calendar" ? "secondary" : "ghost"}
-              size="sm"
-              onClick={() => setActiveView("calendar")}
-              className="h-6 px-2 text-xs gap-1"
-              data-testid="button-view-calendar"
-            >
-              <CalendarDays className="w-3 h-3" />
-              Calendar
-            </Button>
-          </div>
-        </div>
+        <h1 className="text-sm font-semibold">
+          {currentProject ? `${currentProject.name} - Timesheets` : "All Items - Timesheets"}
+        </h1>
         <div className="flex items-center gap-2">
-          {/* Column Settings */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-6 px-2 text-xs gap-1"
-                data-testid="button-column-settings"
-              >
-                <Settings2 className="w-3 h-3" />
-                Columns
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              {columns.map((col) => (
-                <DropdownMenuItem
-                  key={col.id}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    toggleColumnVisibility(col.id);
-                  }}
-                  className="flex items-center gap-2"
-                >
-                  <Checkbox
-                    checked={col.visible}
-                    onCheckedChange={() => toggleColumnVisibility(col.id)}
-                    className="pointer-events-none"
-                  />
-                  <span className="text-xs">{col.label}</span>
-                </DropdownMenuItem>
-              ))}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={resetColumns}
-                className="flex items-center gap-2 text-muted-foreground"
-              >
-                <RotateCcw className="w-3 h-3" />
-                <span className="text-xs">Reset to defaults</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
           <Button
             variant="outline"
             size="sm"
             onClick={handleExport}
             disabled={filteredTimesheets.length === 0}
-            className="h-6 px-2 text-xs gap-1"
+            className="h-7 px-3 text-xs gap-1.5"
             data-testid="button-export-timesheets"
           >
-            <Download className="w-3 h-3" />
+            <Download className="w-3.5 h-3.5" />
             Export
           </Button>
           {pendingTimesheets.length > 0 && (
@@ -472,10 +402,10 @@ export default function Timesheets() {
               variant="outline"
               size="sm"
               onClick={() => setIsRapidApprovalOpen(true)}
-              className="h-6 px-2 text-xs gap-1 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/30"
+              className="h-7 px-3 text-xs gap-1.5 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/30"
               data-testid="button-rapid-approval"
             >
-              <Zap className="w-3 h-3" />
+              <Zap className="w-3.5 h-3.5" />
               Approve ({pendingTimesheets.length})
             </Button>
           )}
@@ -485,10 +415,10 @@ export default function Timesheets() {
               setSelectedTimesheet(undefined);
               setIsDialogOpen(true);
             }}
-            className="h-6 px-2 text-xs gap-1 bg-[#bba7db] hover:bg-[#bba7db]/90 text-white border-[#bba7db]"
+            className="h-7 px-3 text-xs gap-1.5 bg-[#bba7db] hover:bg-[#bba7db]/90 text-white border-[#bba7db]"
             data-testid="button-add-timesheet"
           >
-            <Clock className="w-3 h-3" />
+            <Clock className="w-3.5 h-3.5" />
             Clock In
           </Button>
         </div>
@@ -762,6 +692,85 @@ export default function Timesheets() {
             </>
           )}
         </div>
+
+        {/* Right: View Tabs + Columns */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-0.5 p-0.5 bg-muted/30 rounded-md">
+            <Button
+              variant={activeView === "table" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => setActiveView("table")}
+              className="h-6 px-2 text-xs gap-1"
+              data-testid="button-view-table"
+            >
+              <Table2 className="w-3 h-3" />
+              Table
+            </Button>
+            <Button
+              variant={activeView === "weekly" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => setActiveView("weekly")}
+              className="h-6 px-2 text-xs gap-1"
+              data-testid="button-view-weekly"
+            >
+              <Users2 className="w-3 h-3" />
+              Weekly
+            </Button>
+            <Button
+              variant={activeView === "calendar" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => setActiveView("calendar")}
+              className="h-6 px-2 text-xs gap-1"
+              data-testid="button-view-calendar"
+            >
+              <CalendarDays className="w-3 h-3" />
+              Calendar
+            </Button>
+          </div>
+
+          <div className="w-px h-4 bg-border" />
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 px-2 text-xs gap-1"
+                data-testid="button-column-settings"
+              >
+                <Settings2 className="w-3 h-3" />
+                Columns
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              {columns.map((col) => (
+                <DropdownMenuItem
+                  key={col.id}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    toggleColumnVisibility(col.id);
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <Checkbox
+                    checked={col.visible}
+                    onCheckedChange={() => toggleColumnVisibility(col.id)}
+                    className="pointer-events-none"
+                  />
+                  <span className="text-xs">{col.label}</span>
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={resetColumns}
+                className="flex items-center gap-2 text-muted-foreground"
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span className="text-xs">Reset to defaults</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       {/* Content Area */}
@@ -881,15 +890,136 @@ export default function Timesheets() {
           </div>
         ) : activeView === "calendar" ? (
           /* Calendar View */
-          <div className="m-3">
-            <div className="border-2 border-border rounded-md p-6 bg-card flex flex-col items-center justify-center min-h-[400px]">
-              <CalendarDays className="w-12 h-12 text-muted-foreground/40 mb-4" />
-              <h3 className="text-sm font-medium text-muted-foreground mb-2">Calendar View Coming Soon</h3>
-              <p className="text-xs text-muted-foreground/60 text-center max-w-[300px]">
-                View timesheets in a monthly calendar format with daily summaries and quick entry.
-              </p>
-            </div>
-          </div>
+          (() => {
+            const monthStart = startOfMonth(calendarMonth);
+            const monthEnd = endOfMonth(calendarMonth);
+            const calendarStart = startOfWeek(monthStart, { weekStartsOn: 1 });
+            const calendarEnd = endOfWeek(monthEnd, { weekStartsOn: 1 });
+            const calendarDays = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
+            
+            const getTimesheetsForDay = (day: Date) => {
+              return filteredTimesheets.filter(ts => isSameDay(new Date(ts.date), day));
+            };
+            
+            const getDayTotal = (day: Date) => {
+              const dayTimesheets = getTimesheetsForDay(day);
+              return dayTimesheets.reduce((sum, ts) => {
+                const duration = parseFloat(ts.duration) || 0;
+                const breakDuration = parseFloat(ts.breakDuration || "0") || 0;
+                return sum + Math.max(0, duration - breakDuration);
+              }, 0);
+            };
+            
+            return (
+              <div className="m-3">
+                {/* Month Navigation */}
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={() => setCalendarMonth(subMonths(calendarMonth, 1))}
+                      data-testid="button-prev-month"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </Button>
+                    <span className="text-sm font-medium min-w-[140px] text-center">
+                      {format(calendarMonth, "MMMM yyyy")}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={() => setCalendarMonth(addMonths(calendarMonth, 1))}
+                      data-testid="button-next-month"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => setCalendarMonth(new Date())}
+                    >
+                      Today
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Calendar Grid */}
+                <div className="border-2 border-border rounded-md overflow-hidden bg-card">
+                  {/* Day Headers */}
+                  <div className="grid grid-cols-7 bg-muted/30 dark:bg-muted/10 border-b-2 border-border">
+                    {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => (
+                      <div key={day} className="text-[10px] font-medium text-muted-foreground text-center py-1.5 border-r border-border last:border-r-0">
+                        {day}
+                      </div>
+                    ))}
+                  </div>
+                  
+                  {/* Calendar Weeks */}
+                  <div className="grid grid-cols-7">
+                    {calendarDays.map((day, idx) => {
+                      const isCurrentMonth = day.getMonth() === calendarMonth.getMonth();
+                      const isToday = isSameDay(day, new Date());
+                      const dayTimesheets = getTimesheetsForDay(day);
+                      const dayTotal = getDayTotal(day);
+                      
+                      return (
+                        <div
+                          key={day.toISOString()}
+                          className={`min-h-[80px] border-r border-b border-border last:border-r-0 p-1 ${
+                            !isCurrentMonth ? "bg-muted/20" : ""
+                          } ${isToday ? "bg-blue-50 dark:bg-blue-900/10" : ""}`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className={`text-[10px] font-medium ${
+                              isToday ? "bg-blue-600 text-white rounded-full w-5 h-5 flex items-center justify-center" : 
+                              !isCurrentMonth ? "text-muted-foreground/40" : ""
+                            }`}>
+                              {format(day, "d")}
+                            </span>
+                            {dayTotal > 0 && (
+                              <span className="text-[9px] font-medium text-muted-foreground bg-muted/50 rounded px-1">
+                                {formatDuration(dayTotal)}
+                              </span>
+                            )}
+                          </div>
+                          <div className="space-y-0.5 max-h-[52px] overflow-auto">
+                            {dayTimesheets.slice(0, 3).map((ts) => (
+                              <div
+                                key={ts.id}
+                                onClick={() => {
+                                  setSelectedTimesheet(ts);
+                                  setIsDialogOpen(true);
+                                }}
+                                className={`text-[9px] px-1 py-0.5 rounded cursor-pointer truncate ${
+                                  ts.status === "approved" 
+                                    ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
+                                    : ts.status === "draft" || ts.status === "submitted"
+                                    ? "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400"
+                                    : "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400"
+                                }`}
+                                title={`${getUserName(ts.userId)} - ${formatDuration(Math.max(0, (parseFloat(ts.duration) || 0) - (parseFloat(ts.breakDuration || "0") || 0)))}`}
+                              >
+                                {getUserName(ts.userId).split(' ')[0]} - {formatDuration(Math.max(0, (parseFloat(ts.duration) || 0) - (parseFloat(ts.breakDuration || "0") || 0)))}
+                              </div>
+                            ))}
+                            {dayTimesheets.length > 3 && (
+                              <div className="text-[9px] text-muted-foreground pl-1">
+                                +{dayTimesheets.length - 3} more
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            );
+          })()
         ) : filteredTimesheets.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-3">
             <Clock className="w-10 h-10 text-muted-foreground/40" />

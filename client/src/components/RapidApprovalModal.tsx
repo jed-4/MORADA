@@ -1,10 +1,14 @@
 import { useState, useEffect, useMemo } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { AlertTriangle, Check, X, Clock, ChevronLeft, ChevronRight, RotateCcw } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { AlertTriangle, Check, X, Clock, ChevronLeft, ChevronRight, RotateCcw, CalendarIcon, ChevronUp, ChevronDown, Pencil } from "lucide-react";
 import { format } from "date-fns";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -31,13 +35,19 @@ export function RapidApprovalModal({
 }: RapidApprovalModalProps) {
   const { toast } = useToast();
   
-  // Track processed (approved/rejected) IDs locally to filter them out
   const [processedIds, setProcessedIds] = useState<Set<string>>(new Set());
   const [currentIndex, setCurrentIndex] = useState(0);
+  
+  // Editable fields
   const [editedHours, setEditedHours] = useState<string>("");
   const [editedBreak, setEditedBreak] = useState<string>("");
+  const [editedDate, setEditedDate] = useState<Date | undefined>();
+  const [editedProjectId, setEditedProjectId] = useState<string>("");
+  const [editedCostCodeId, setEditedCostCodeId] = useState<string>("");
+  const [editedDescription, setEditedDescription] = useState<string>("");
+  const [rejectionComment, setRejectionComment] = useState<string>("");
+  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
 
-  // Filter out already processed timesheets
   const remainingTimesheets = useMemo(() => 
     pendingTimesheets.filter(ts => !processedIds.has(ts.id)),
     [pendingTimesheets, processedIds]
@@ -45,27 +55,29 @@ export function RapidApprovalModal({
 
   const currentTimesheet = remainingTimesheets[currentIndex];
 
-  // Reset when dialog opens
   useEffect(() => {
     if (open) {
       setProcessedIds(new Set());
       setCurrentIndex(0);
+      setRejectionComment("");
     }
   }, [open]);
 
-  // Update edited values when current timesheet changes
   useEffect(() => {
     if (currentTimesheet) {
       setEditedHours(currentTimesheet.duration || "0");
       setEditedBreak(currentTimesheet.breakDuration || "0");
+      setEditedDate(new Date(currentTimesheet.date));
+      setEditedProjectId(currentTimesheet.projectId);
+      setEditedCostCodeId(currentTimesheet.costCodeId || "");
+      setEditedDescription(currentTimesheet.description || "");
+      setRejectionComment("");
+      setIsDescriptionExpanded(false);
     }
   }, [currentTimesheet?.id]);
 
-  // Ensure index stays within bounds
   useEffect(() => {
-    if (remainingTimesheets.length === 0) {
-      return;
-    }
+    if (remainingTimesheets.length === 0) return;
     if (currentIndex >= remainingTimesheets.length) {
       setCurrentIndex(Math.max(0, remainingTimesheets.length - 1));
     }
@@ -76,66 +88,82 @@ export function RapidApprovalModal({
     return user?.name || user?.email || "Unknown User";
   };
 
-  const getProjectName = (projectId: string) => {
-    const project = projects.find(p => p.id === projectId);
-    return project?.name || "Unknown Project";
-  };
-
-  const getCostCodeName = (costCodeId?: string | null) => {
-    if (!costCodeId) return null;
-    const costCode = costCodes.find(c => c.id === costCodeId);
-    return costCode ? `${costCode.code} - ${costCode.name}` : null;
-  };
-
-  // Round to 15 minutes (0.25 hours)
   const roundTo15Min = (hours: string) => {
     const h = parseFloat(hours) || 0;
     return (Math.round(h * 4) / 4).toFixed(2);
   };
 
-  // Check for missing/incomplete info - use edited hours for duration checks
+  const adjustHours = (delta: number) => {
+    const current = parseFloat(editedHours) || 0;
+    const newVal = Math.max(0, current + delta);
+    setEditedHours(newVal.toFixed(2));
+  };
+
+  const adjustBreak = (delta: number) => {
+    const current = parseFloat(editedBreak) || 0;
+    const newVal = Math.max(0, current + delta);
+    setEditedBreak(newVal.toFixed(2));
+  };
+
   const getMissingInfo = () => {
     if (!currentTimesheet) return [];
     const issues: string[] = [];
-    if (!currentTimesheet.costCodeId) issues.push("No cost code assigned");
-    if (!currentTimesheet.description) issues.push("No description");
+    if (!editedCostCodeId) issues.push("No cost code assigned");
+    if (!editedDescription.trim()) issues.push("No description");
     
-    // Use edited hours for validation
     const duration = parseFloat(editedHours) || 0;
     if (duration === 0) issues.push("Zero hours");
     if (duration > 12) issues.push("Over 12 hours");
     if (duration < 0.25 && duration !== 0) issues.push("Less than 15 minutes");
-    // Check if hours don't align to 15min
     const remainder = (duration * 4) % 1;
     if (remainder > 0.01) issues.push("Hours not rounded to 15min");
     return issues;
   };
 
-  // Update mutation
   const updateMutation = useMutation({
-    mutationFn: async (data: { id: string; duration: string; breakDuration: string }) => {
+    mutationFn: async (data: { 
+      id: string; 
+      duration: string; 
+      breakDuration: string;
+      date?: string;
+      projectId?: string;
+      costCodeId?: string | null;
+      description?: string;
+    }) => {
       const hours = parseFloat(data.duration) || 0;
+      const breakHours = parseFloat(data.breakDuration) || 0;
+      const netHours = Math.max(0, hours - breakHours);
       const rate = parseFloat(currentTimesheet?.hourlyRate || "0");
-      const total = (hours * rate).toFixed(2);
+      const total = (netHours * rate).toFixed(2);
       
       const res = await apiRequest(`/api/timesheets/${data.id}`, "PATCH", {
-        duration: data.duration,
-        breakDuration: data.breakDuration,
+        ...data,
         total,
       });
       return await res.json();
     },
   });
 
-  // Approve mutation
   const approveMutation = useMutation({
     mutationFn: async (timesheetId: string) => {
-      // First update hours if edited
-      if (currentTimesheet && (editedHours !== currentTimesheet.duration || editedBreak !== currentTimesheet.breakDuration)) {
+      const hasChanges = currentTimesheet && (
+        editedHours !== currentTimesheet.duration ||
+        editedBreak !== currentTimesheet.breakDuration ||
+        format(editedDate!, "yyyy-MM-dd") !== currentTimesheet.date ||
+        editedProjectId !== currentTimesheet.projectId ||
+        editedCostCodeId !== (currentTimesheet.costCodeId || "") ||
+        editedDescription !== (currentTimesheet.description || "")
+      );
+      
+      if (hasChanges && editedDate) {
         await updateMutation.mutateAsync({
           id: timesheetId,
           duration: editedHours,
           breakDuration: editedBreak,
+          date: format(editedDate, "yyyy-MM-dd"),
+          projectId: editedProjectId,
+          costCodeId: editedCostCodeId || null,
+          description: editedDescription,
         });
       }
       const res = await apiRequest(`/api/timesheets/${timesheetId}/approve`, "POST", {});
@@ -143,73 +171,44 @@ export function RapidApprovalModal({
     },
     onSuccess: (_, timesheetId) => {
       queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
-      
-      // Mark as processed locally
       setProcessedIds(prev => new Set([...prev, timesheetId]));
       
       const newRemaining = remainingTimesheets.length - 1;
       if (newRemaining > 0) {
-        toast({
-          title: "Approved",
-          description: `Timesheet approved. ${newRemaining} remaining.`,
-        });
+        toast({ title: "Approved", description: `Timesheet approved. ${newRemaining} remaining.` });
       } else {
-        toast({
-          title: "All done!",
-          description: "All pending timesheets have been reviewed.",
-        });
+        toast({ title: "All done!", description: "All pending timesheets have been reviewed." });
         onOpenChange(false);
         onComplete?.();
       }
     },
   });
 
-  // Reject mutation
   const rejectMutation = useMutation({
     mutationFn: async (timesheetId: string) => {
-      const res = await apiRequest(`/api/timesheets/${timesheetId}/reject`, "POST", {});
+      const res = await apiRequest(`/api/timesheets/${timesheetId}/reject`, "POST", { 
+        comment: rejectionComment || undefined 
+      });
       return await res.json();
     },
     onSuccess: (_, timesheetId) => {
       queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
-      
-      // Mark as processed locally
       setProcessedIds(prev => new Set([...prev, timesheetId]));
       
       const newRemaining = remainingTimesheets.length - 1;
       if (newRemaining > 0) {
-        toast({
-          title: "Rejected",
-          description: `Timesheet rejected. ${newRemaining} remaining.`,
-        });
+        toast({ title: "Rejected", description: `Timesheet rejected. ${newRemaining} remaining.` });
       } else {
-        toast({
-          title: "All done!",
-          description: "All pending timesheets have been reviewed.",
-        });
+        toast({ title: "All done!", description: "All pending timesheets have been reviewed." });
         onOpenChange(false);
         onComplete?.();
       }
     },
   });
 
-  const handleRoundHours = () => {
-    setEditedHours(roundTo15Min(editedHours));
-  };
+  const handlePrev = () => currentIndex > 0 && setCurrentIndex(prev => prev - 1);
+  const handleNext = () => currentIndex < remainingTimesheets.length - 1 && setCurrentIndex(prev => prev + 1);
 
-  const handlePrev = () => {
-    if (currentIndex > 0) {
-      setCurrentIndex(prev => prev - 1);
-    }
-  };
-
-  const handleNext = () => {
-    if (currentIndex < remainingTimesheets.length - 1) {
-      setCurrentIndex(prev => prev + 1);
-    }
-  };
-
-  // No remaining timesheets or dialog not open
   if (!currentTimesheet) {
     if (open && remainingTimesheets.length === 0) {
       return (
@@ -236,14 +235,15 @@ export function RapidApprovalModal({
 
   const missingInfo = getMissingInfo();
   const hasMissingInfo = missingInfo.length > 0;
-  const costCodeName = getCostCodeName(currentTimesheet.costCodeId);
   const parsedHours = parseFloat(editedHours) || 0;
+  const parsedBreak = parseFloat(editedBreak) || 0;
+  const netHours = Math.max(0, parsedHours - parsedBreak);
   const rate = parseFloat(currentTimesheet.hourlyRate || "0");
-  const calculatedTotal = (parsedHours * rate).toFixed(2);
+  const calculatedTotal = (netHours * rate).toFixed(2);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[560px]">
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between">
             <span className="flex items-center gap-2">
@@ -256,13 +256,13 @@ export function RapidApprovalModal({
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
+        <div className="space-y-3 py-2">
           {hasMissingInfo && (
-            <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md">
+            <div className="flex items-start gap-2 p-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md">
               <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
-              <div className="text-sm">
+              <div className="text-xs">
                 <p className="font-medium text-amber-700 dark:text-amber-300">Needs attention:</p>
-                <ul className="mt-1 text-amber-600 dark:text-amber-400 text-xs">
+                <ul className="mt-0.5 text-amber-600 dark:text-amber-400">
                   {missingInfo.map((issue, i) => (
                     <li key={i}>• {issue}</li>
                   ))}
@@ -271,87 +271,216 @@ export function RapidApprovalModal({
             </div>
           )}
 
-          <div className="grid gap-3">
-            <div className="flex justify-between items-center p-2 bg-muted/30 rounded-md">
-              <span className="text-xs text-muted-foreground">Date</span>
-              <span className="text-sm font-medium">{format(new Date(currentTimesheet.date), "EEE, dd MMM yyyy")}</span>
-            </div>
-
-            <div className="flex justify-between items-center p-2 bg-muted/30 rounded-md">
-              <span className="text-xs text-muted-foreground">Team Member</span>
-              <span className="text-sm font-medium">{getUserName(currentTimesheet.userId)}</span>
-            </div>
-
-            <div className="flex justify-between items-center p-2 bg-muted/30 rounded-md">
-              <span className="text-xs text-muted-foreground">Project</span>
-              <span className="text-sm font-medium">{getProjectName(currentTimesheet.projectId)}</span>
-            </div>
-
-            <div className="flex justify-between items-center p-2 bg-muted/30 rounded-md">
-              <span className="text-xs text-muted-foreground">Cost Code</span>
-              <span className={`text-sm font-medium ${!costCodeName ? "text-amber-600 dark:text-amber-400" : ""}`}>
-                {costCodeName || "Not assigned"}
-              </span>
-            </div>
-
-            <div className="flex justify-between items-center p-2 bg-muted/30 rounded-md">
-              <span className="text-xs text-muted-foreground">Time</span>
-              <span className="text-sm font-medium">
-                {currentTimesheet.startTime} - {currentTimesheet.endTime}
-              </span>
-            </div>
-
-            {currentTimesheet.description && (
-              <div className="p-2 bg-muted/30 rounded-md">
-                <span className="text-xs text-muted-foreground block mb-1">Description</span>
-                <p className="text-sm">{currentTimesheet.description}</p>
-              </div>
-            )}
+          {/* Team Member - Read Only */}
+          <div className="flex items-center justify-between p-2 bg-muted/30 rounded-md">
+            <span className="text-xs text-muted-foreground">Team Member</span>
+            <span className="text-sm font-medium">{getUserName(currentTimesheet.userId)}</span>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Hours</Label>
-              <div className="flex items-center gap-1">
+          {/* Time Row: Clock In/Out on left, Round button + Hours on right */}
+          <div className="flex items-center justify-between p-2 bg-muted/30 rounded-md">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Time:</span>
+              <span className="text-sm font-medium">
+                {currentTimesheet.startTime || "--:--"} - {currentTimesheet.endTime || "--:--"}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 px-2 text-xs gap-1"
+                onClick={() => setEditedHours(roundTo15Min(editedHours))}
+                title="Round to 15 minutes"
+                data-testid="button-round-hours"
+              >
+                <RotateCcw className="w-3 h-3" />
+                Round
+              </Button>
+              <div className="flex items-center border rounded-md">
                 <Input
                   type="number"
                   step="0.25"
                   value={editedHours}
                   onChange={(e) => setEditedHours(e.target.value)}
-                  className="h-9 text-sm"
+                  className="h-7 w-16 text-xs text-center border-0 focus-visible:ring-0"
                   data-testid="input-rapid-hours"
                 />
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-9 w-9 flex-shrink-0"
-                  onClick={handleRoundHours}
-                  title="Round to 15 minutes"
-                  data-testid="button-round-hours"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                </Button>
+                <div className="flex flex-col border-l">
+                  <button 
+                    onClick={() => adjustHours(0.25)} 
+                    className="h-3.5 px-1 hover:bg-muted"
+                    data-testid="button-hours-up"
+                  >
+                    <ChevronUp className="w-3 h-3" />
+                  </button>
+                  <button 
+                    onClick={() => adjustHours(-0.25)} 
+                    className="h-3.5 px-1 hover:bg-muted"
+                    data-testid="button-hours-down"
+                  >
+                    <ChevronDown className="w-3 h-3" />
+                  </button>
+                </div>
               </div>
+              <span className="text-xs text-muted-foreground">hrs</span>
+            </div>
+          </div>
+
+          {/* Break Row - Same styling as Time */}
+          <div className="flex items-center justify-between p-2 bg-muted/30 rounded-md">
+            <span className="text-xs text-muted-foreground">Break</span>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center border rounded-md">
+                <Input
+                  type="number"
+                  step="0.25"
+                  value={editedBreak}
+                  onChange={(e) => setEditedBreak(e.target.value)}
+                  className="h-7 w-16 text-xs text-center border-0 focus-visible:ring-0"
+                  data-testid="input-rapid-break"
+                />
+                <div className="flex flex-col border-l">
+                  <button 
+                    onClick={() => adjustBreak(0.25)} 
+                    className="h-3.5 px-1 hover:bg-muted"
+                  >
+                    <ChevronUp className="w-3 h-3" />
+                  </button>
+                  <button 
+                    onClick={() => adjustBreak(-0.25)} 
+                    className="h-3.5 px-1 hover:bg-muted"
+                  >
+                    <ChevronDown className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+              <span className="text-xs text-muted-foreground">hrs</span>
+            </div>
+          </div>
+
+          {/* Editable Fields: Date, Project, Cost Code */}
+          <div className="grid grid-cols-3 gap-2">
+            {/* Date */}
+            <div className="space-y-1">
+              <Label className="text-[10px] text-muted-foreground">Date</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full h-7 text-xs justify-start gap-1 px-2">
+                    <CalendarIcon className="w-3 h-3" />
+                    {editedDate ? format(editedDate, "dd MMM") : "Select"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={editedDate}
+                    onSelect={setEditedDate}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
 
-            <div className="space-y-1.5">
-              <Label className="text-xs">Break (hrs)</Label>
-              <Input
-                type="number"
-                step="0.25"
-                value={editedBreak}
-                onChange={(e) => setEditedBreak(e.target.value)}
-                className="h-9 text-sm"
-                data-testid="input-rapid-break"
-              />
+            {/* Project */}
+            <div className="space-y-1">
+              <Label className="text-[10px] text-muted-foreground">Project</Label>
+              <Select value={editedProjectId} onValueChange={setEditedProjectId}>
+                <SelectTrigger className="h-7 text-xs">
+                  <SelectValue placeholder="Select" />
+                </SelectTrigger>
+                <SelectContent>
+                  {projects.map((project) => (
+                    <SelectItem key={project.id} value={project.id} className="text-xs">
+                      {project.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
-            <div className="space-y-1.5">
-              <Label className="text-xs">Total</Label>
-              <div className="h-9 px-3 flex items-center bg-muted/50 rounded-md text-sm font-semibold">
-                ${calculatedTotal}
-              </div>
+            {/* Cost Code */}
+            <div className="space-y-1">
+              <Label className="text-[10px] text-muted-foreground">Cost Code</Label>
+              <Select value={editedCostCodeId} onValueChange={setEditedCostCodeId}>
+                <SelectTrigger className={`h-7 text-xs ${!editedCostCodeId ? "border-amber-300" : ""}`}>
+                  <SelectValue placeholder="Select" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="" className="text-xs text-muted-foreground">None</SelectItem>
+                  {costCodes.map((code) => (
+                    <SelectItem key={code.id} value={code.id} className="text-xs">
+                      {code.code} - {code.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
+          </div>
+
+          {/* Description - 2 line preview with expand */}
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <Label className="text-[10px] text-muted-foreground">Description</Label>
+              <Popover open={isDescriptionExpanded} onOpenChange={setIsDescriptionExpanded}>
+                <PopoverTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] gap-1">
+                    <Pencil className="w-2.5 h-2.5" />
+                    Edit
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-80" align="end">
+                  <div className="space-y-2">
+                    <Label className="text-xs">Edit Description</Label>
+                    <Textarea
+                      value={editedDescription}
+                      onChange={(e) => setEditedDescription(e.target.value)}
+                      className="min-h-[100px] text-xs"
+                      placeholder="Enter description..."
+                    />
+                    <Button 
+                      size="sm" 
+                      className="w-full h-7 text-xs"
+                      onClick={() => setIsDescriptionExpanded(false)}
+                    >
+                      Done
+                    </Button>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
+            <div 
+              className={`p-2 bg-muted/30 rounded-md text-xs min-h-[40px] ${!editedDescription ? "text-muted-foreground italic" : ""}`}
+              style={{ 
+                display: "-webkit-box", 
+                WebkitLineClamp: 2, 
+                WebkitBoxOrient: "vertical", 
+                overflow: "hidden" 
+              }}
+            >
+              {editedDescription || "No description"}
+            </div>
+          </div>
+
+          {/* Total */}
+          <div className="flex items-center justify-between p-2 bg-[#bba7db]/10 rounded-md border border-[#bba7db]/30">
+            <span className="text-xs font-medium">Net Hours / Total</span>
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium">{netHours.toFixed(2)} hrs</span>
+              <span className="text-sm font-bold text-[#bba7db]">${calculatedTotal}</span>
+            </div>
+          </div>
+
+          {/* Rejection Comment */}
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">Comment (optional - for rejection)</Label>
+            <Input
+              value={rejectionComment}
+              onChange={(e) => setRejectionComment(e.target.value)}
+              placeholder="e.g., Not enough info, wrong project..."
+              className="h-7 text-xs"
+              data-testid="input-rejection-comment"
+            />
           </div>
         </div>
 
