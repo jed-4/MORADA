@@ -1,7 +1,8 @@
 import { useState, useEffect, forwardRef, useImperativeHandle, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, Search, Filter, Edit, Trash2, ChevronRight, ChevronDown, Building, Tag, DollarSign, Box, Loader2, ChevronsUpDown, ChevronsDownUp } from "lucide-react";
+import { Plus, Search, Filter, Edit, Trash2, ChevronRight, ChevronDown, Building, Tag, DollarSign, Box, Loader2, ChevronsUpDown, ChevronsDownUp, ToggleLeft, ToggleRight } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -57,6 +58,7 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [filterSupplier, setFilterSupplier] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [enterIncGst, setEnterIncGst] = useState(false);
 
   const searchQuery = externalSearch || internalSearch;
 
@@ -737,20 +739,39 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
 
           {/* Pricing Row - Highlight Section */}
           <div className="px-2 py-2 bg-[#bba7db]/10 border border-[#bba7db]/20 rounded">
-            <div className="flex items-center gap-1 mb-2">
-              <DollarSign className="h-3 w-3 text-[#bba7db]" />
-              <span className="text-[10px] font-medium text-[#bba7db]">Pricing (ex GST)</span>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1">
+                <DollarSign className="h-3 w-3 text-[#bba7db]" />
+                <span className="text-[10px] font-medium text-[#bba7db]">Pricing</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className={`text-[9px] ${!enterIncGst ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>Ex GST</span>
+                <Switch
+                  checked={enterIncGst}
+                  onCheckedChange={setEnterIncGst}
+                  className="h-4 w-7 data-[state=checked]:bg-[#bba7db]"
+                  data-testid="switch-gst-mode"
+                />
+                <span className={`text-[9px] ${enterIncGst ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>Inc GST</span>
+              </div>
             </div>
             <div className="grid grid-cols-3 gap-2">
               <div>
-                <Label className="text-[10px] text-muted-foreground">Cost (ex)</Label>
+                <Label className="text-[10px] text-muted-foreground">Cost {enterIncGst ? '(inc)' : '(ex)'}</Label>
                 <div className="relative">
                   <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">$</span>
                   <Input
                     type="number"
                     step="0.01"
-                    value={formData.costPrice}
-                    onChange={(e) => updateField("costPrice", e.target.value)}
+                    value={enterIncGst && formData.costPrice ? (parseFloat(formData.costPrice) * 1.1).toFixed(2) : formData.costPrice}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (enterIncGst && val) {
+                        updateField("costPrice", (parseFloat(val) / 1.1).toFixed(2));
+                      } else {
+                        updateField("costPrice", val);
+                      }
+                    }}
                     placeholder="0.00"
                     className="h-7 text-[11px] pl-5"
                     data-testid="input-cost-price"
@@ -758,7 +779,7 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
                 </div>
                 {formData.costPrice && (
                   <div className="text-[9px] text-muted-foreground mt-0.5 text-right">
-                    inc: ${(parseFloat(formData.costPrice) * 1.1).toFixed(2)}
+                    {enterIncGst ? 'ex' : 'inc'}: ${enterIncGst ? formData.costPrice : (parseFloat(formData.costPrice) * 1.1).toFixed(2)}
                   </div>
                 )}
               </div>
@@ -780,14 +801,21 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
               </div>
 
               <div>
-                <Label className="text-[10px] text-muted-foreground">Sell (ex)</Label>
+                <Label className="text-[10px] text-muted-foreground">Sell {enterIncGst ? '(inc)' : '(ex)'}</Label>
                 <div className="relative">
                   <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">$</span>
                   <Input
                     type="number"
                     step="0.01"
-                    value={formData.sellPrice}
-                    onChange={(e) => updateField("sellPrice", e.target.value)}
+                    value={enterIncGst && formData.sellPrice ? (parseFloat(formData.sellPrice) * 1.1).toFixed(2) : formData.sellPrice}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (enterIncGst && val) {
+                        updateField("sellPrice", (parseFloat(val) / 1.1).toFixed(2));
+                      } else {
+                        updateField("sellPrice", val);
+                      }
+                    }}
                     placeholder="0.00"
                     className="h-7 text-[11px] pl-5"
                     data-testid="input-sell-price"
@@ -795,7 +823,7 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
                 </div>
                 {formData.sellPrice && (
                   <div className="text-[9px] text-muted-foreground mt-0.5 text-right">
-                    inc: ${(parseFloat(formData.sellPrice) * 1.1).toFixed(2)}
+                    {enterIncGst ? 'ex' : 'inc'}: ${enterIncGst ? formData.sellPrice : (parseFloat(formData.sellPrice) * 1.1).toFixed(2)}
                   </div>
                 )}
               </div>
