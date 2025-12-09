@@ -14486,6 +14486,120 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // AI Summary endpoint for dashboard widget
+  app.get("/api/ai-summary/:projectId", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      
+      const projectId = req.params.projectId;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const weekFromNow = new Date(today);
+      weekFromNow.setDate(weekFromNow.getDate() + 7);
+
+      // Gather project data
+      const [project, tasks, rfis, rfqs, estimates] = await Promise.all([
+        storage.getProject(projectId),
+        storage.getTasks(projectId),
+        storage.getRFIs(user.companyId, projectId),
+        storage.getRFQs(user.companyId, projectId),
+        storage.getEstimates(projectId),
+      ]);
+
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      // Filter tasks due today or overdue
+      const todayTasks = tasks.filter(t => {
+        if (!t.dueDate) return false;
+        const dueDate = new Date(t.dueDate);
+        return dueDate >= today && dueDate < tomorrow && t.status !== 'done';
+      });
+
+      const overdueTasks = tasks.filter(t => {
+        if (!t.dueDate) return false;
+        const dueDate = new Date(t.dueDate);
+        return dueDate < today && t.status !== 'done';
+      });
+
+      const upcomingTasks = tasks.filter(t => {
+        if (!t.dueDate) return false;
+        const dueDate = new Date(t.dueDate);
+        return dueDate >= tomorrow && dueDate < weekFromNow && t.status !== 'done';
+      });
+
+      // Open RFIs and RFQs
+      const openRFIs = rfis.filter(r => r.status === 'open' || r.status === 'pending');
+      const openRFQs = rfqs.filter(r => r.status === 'draft' || r.status === 'sent');
+
+      // Calculate budget info
+      const totalBudget = estimates.reduce((sum, e) => sum + (Number(e.totalIncGst) || 0), 0);
+
+      // Build context for AI
+      const context = {
+        projectName: project.name,
+        projectStatus: project.status,
+        todayTaskCount: todayTasks.length,
+        todayTasks: todayTasks.slice(0, 5).map(t => ({ title: t.title, priority: t.priority })),
+        overdueTaskCount: overdueTasks.length,
+        overdueTasks: overdueTasks.slice(0, 3).map(t => ({ title: t.title, daysOverdue: Math.ceil((today.getTime() - new Date(t.dueDate!).getTime()) / (1000 * 60 * 60 * 24)) })),
+        upcomingTasks: upcomingTasks.slice(0, 3).map(t => ({ title: t.title, dueDate: t.dueDate })),
+        openRFICount: openRFIs.length,
+        openRFQCount: openRFQs.length,
+        totalBudget,
+      };
+
+      // Generate AI summary
+      const OpenAI = (await import('openai')).default;
+      const openai = new OpenAI({
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+      });
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `You are a construction project assistant providing daily briefings for builders. Generate a concise, actionable summary. Return JSON with these arrays:
+- schedule: 2-4 brief items about today's tasks and upcoming deadlines
+- actionItems: 2-4 specific things that need attention (overdue tasks, pending RFIs/RFQs)
+- issues: 1-3 potential concerns or warnings (only if applicable)
+Keep each item under 15 words. Be specific and practical. Don't include empty arrays.`
+          },
+          {
+            role: "user",
+            content: `Daily briefing for project "${context.projectName}":
+- ${context.todayTaskCount} tasks due today: ${context.todayTasks.map(t => t.title).join(', ') || 'none'}
+- ${context.overdueTaskCount} overdue tasks: ${context.overdueTasks.map(t => `${t.title} (${t.daysOverdue}d)`).join(', ') || 'none'}
+- Upcoming this week: ${context.upcomingTasks.map(t => t.title).join(', ') || 'nothing scheduled'}
+- ${context.openRFICount} open RFIs, ${context.openRFQCount} pending RFQs
+- Total budget: $${context.totalBudget.toLocaleString()}`
+          }
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      const aiResponse = JSON.parse(completion.choices[0]?.message?.content || '{}');
+      
+      res.json({
+        schedule: aiResponse.schedule || [],
+        actionItems: aiResponse.actionItems || [],
+        issues: aiResponse.issues || [],
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      console.error("AI Summary error:", error);
+      res.status(500).json({ error: "Failed to generate AI summary", details: error.message });
+    }
+  });
+
   const httpServer = createServer(app);
 
   // Setup Socket.io for real-time messaging with session authentication

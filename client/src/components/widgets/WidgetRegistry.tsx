@@ -8,7 +8,8 @@ import {
   Receipt,
   FileEdit,
   Zap,
-  AlertTriangle
+  AlertTriangle,
+  Sparkles
 } from "lucide-react";
 import { WidgetDefinition } from "@/types/widgets";
 import TasksWidget from "./TasksWidget";
@@ -22,6 +23,7 @@ import VariationsSummaryWidget from "./VariationsSummaryWidget";
 import InvoicesSummaryWidget from "./InvoicesSummaryWidget";
 import QuickActionsWidget from "./QuickActionsWidget";
 import AlertsWidget from "./AlertsWidget";
+import AISummaryWidget from "./AISummaryWidget";
 
 export const widgetRegistry: Record<string, WidgetDefinition> = {
   tasks: {
@@ -120,6 +122,15 @@ export const widgetRegistry: Record<string, WidgetDefinition> = {
     description: "Overdue items, budget warnings, and action items",
     icon: AlertTriangle,
     component: AlertsWidget,
+    defaultSize: "md",
+    configurable: false,
+  },
+  aiSummary: {
+    type: "aiSummary",
+    name: "AI Daily Summary",
+    description: "AI-powered briefing of today's schedule, action items, and potential issues",
+    icon: Sparkles,
+    component: AISummaryWidget,
     defaultSize: "md",
     configurable: false,
   },
