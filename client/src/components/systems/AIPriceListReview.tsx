@@ -119,12 +119,12 @@ const AIPriceListReview = forwardRef<AIPriceListReviewHandle, Props>(({ searchQu
   });
 
   const { data: priceListItems } = useQuery<PriceListItem[]>({
-    queryKey: ['/api/price-list-items', companyId],
+    queryKey: ['/api/price-list/items', companyId],
     enabled: !!companyId,
   });
 
   const { data: categories } = useQuery<PriceListCategory[]>({
-    queryKey: ['/api/price-list-categories', companyId],
+    queryKey: ['/api/price-list/categories', companyId],
     enabled: !!companyId,
   });
 
@@ -154,7 +154,7 @@ const AIPriceListReview = forwardRef<AIPriceListReviewHandle, Props>(({ searchQu
 
   const createAndLinkMutation = useMutation({
     mutationFn: async (data: { lineItemId: string; priceListItem: any }) => {
-      const newItem = await apiRequest('/api/price-list-items', {
+      const newItem = await apiRequest('/api/price-list/items', {
         method: "POST",
         body: JSON.stringify(data.priceListItem),
       });
@@ -166,7 +166,7 @@ const AIPriceListReview = forwardRef<AIPriceListReviewHandle, Props>(({ searchQu
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/bill-line-items/unlinked'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/price-list-items'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/price-list/items'] });
       setShowCreateModal(false);
       setSelectedLineItem(null);
       setCreateForm({
