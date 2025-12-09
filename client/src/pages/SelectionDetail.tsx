@@ -449,7 +449,7 @@ export default function SelectionDetail() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header Row 1 - Back + Title + Status + Financial Summary */}
+      {/* Header Row - Back + Title + Status + Actions */}
       <div className="h-10 px-4 flex items-center justify-between border-b bg-background shrink-0">
         <div className="flex items-center gap-3">
           <button
@@ -470,71 +470,129 @@ export default function SelectionDetail() {
           </div>
         </div>
         
-        {/* Right side: Financial Summary */}
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-2">
           {hasUnsavedChanges && (
-            <span className="text-xs text-amber-600 font-medium">Unsaved changes</span>
+            <Button 
+              size="sm" 
+              onClick={handleSaveSelection}
+              disabled={updateSelectionMutation.isPending}
+              className="h-6 px-2 text-xs"
+              data-testid="button-save-selection"
+            >
+              <Save className="w-3 h-3 mr-1" />
+              Save
+            </Button>
           )}
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Allowance</div>
-              <div className="text-sm font-semibold">${(allowanceAmount / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
-            </div>
-            <div className="text-right">
-              <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Selected price</div>
-              <div className="text-sm font-semibold text-[#bba7db]">${(selectedPrice / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
-            </div>
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-6 w-6" data-testid="button-selection-menu">
+                <MoreVertical className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setActiveTab("details")}>
+                <Settings className="w-4 h-4 mr-2" />
+                Edit Details
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
-      {/* Header Row 2 - Tabs + Actions */}
-      <div className="h-9 px-4 flex items-center justify-between border-b bg-background shrink-0">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full">
-          <TabsList className="h-7 bg-transparent p-0 gap-1">
-            <TabsTrigger 
-              value="options" 
-              className="h-6 px-3 text-xs data-[state=active]:bg-[#bba7db] data-[state=active]:text-white"
-              data-testid="tab-options"
-            >
-              <Package className="w-3 h-3 mr-1" />
-              Options ({selection.options?.length || 0})
-            </TabsTrigger>
-            <TabsTrigger 
-              value="details" 
-              className="h-6 px-3 text-xs data-[state=active]:bg-[#bba7db] data-[state=active]:text-white"
-              data-testid="tab-details"
-            >
-              <Settings className="w-3 h-3 mr-1" />
-              Details
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+      {/* Main Content Area */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-4 space-y-6">
+          {/* Selection Details Card */}
+          <Card>
+            <CardContent className="pt-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                {/* Category */}
+                <div>
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Category</div>
+                  <div className="text-sm font-medium">{selection.category || "—"}</div>
+                </div>
+                
+                {/* Location */}
+                <div>
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Location</div>
+                  <div className="text-sm font-medium flex items-center gap-1">
+                    <MapPin className="w-3 h-3 text-muted-foreground" />
+                    {selection.room || "—"}
+                  </div>
+                </div>
+                
+                {/* Deadline */}
+                <div>
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Deadline</div>
+                  <div className="text-sm font-medium flex items-center gap-1">
+                    <CalendarIcon className="w-3 h-3 text-muted-foreground" />
+                    {selection.deadline ? format(new Date(selection.deadline), "dd/MM/yyyy") : "—"}
+                  </div>
+                </div>
+                
+                {/* Status */}
+                <div>
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Status</div>
+                  <Badge 
+                    variant="outline" 
+                    className={cn("text-xs capitalize", currentStatus.bgClass, currentStatus.textClass)}
+                  >
+                    <StatusIcon className="w-3 h-3 mr-1" />
+                    {currentStatus.name}
+                  </Badge>
+                </div>
+                
+                {/* Allowance */}
+                <div>
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Allowance</div>
+                  <div className="text-sm font-semibold">${(allowanceAmount / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+                </div>
+                
+                {/* Selected Price */}
+                <div>
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Selected Price</div>
+                  <div className="text-sm font-semibold text-[#bba7db]">${(selectedPrice / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+                </div>
+              </div>
+              
+              {/* Description */}
+              {selection.description && (
+                <div className="mt-4 pt-4 border-t">
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Description</div>
+                  <p className="text-sm text-muted-foreground">{selection.description}</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-        <div className="flex items-center gap-2">
-          {activeTab === "options" && (
-            <>
+          {/* Options Section */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold flex items-center gap-2">
+                <Package className="w-4 h-4" />
+                Options ({selection.options?.length || 0})
+              </h2>
               <div className="flex items-center gap-2">
                 <div className="flex items-center border rounded-md">
                   <button
-                    onClick={() => setOptionsView("table")}
-                    className={cn(
-                      "h-6 w-6 flex items-center justify-center rounded-l-md transition-colors",
-                      optionsView === "table" ? "bg-[#bba7db] text-white" : "hover-elevate"
-                    )}
-                    data-testid="button-view-table"
-                  >
-                    <LayoutList className="w-3 h-3" />
-                  </button>
-                  <button
                     onClick={() => setOptionsView("grid")}
                     className={cn(
-                      "h-6 w-6 flex items-center justify-center rounded-r-md transition-colors",
+                      "h-6 w-6 flex items-center justify-center rounded-l-md transition-colors",
                       optionsView === "grid" ? "bg-[#bba7db] text-white" : "hover-elevate"
                     )}
                     data-testid="button-view-grid"
                   >
                     <LayoutGrid className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={() => setOptionsView("table")}
+                    className={cn(
+                      "h-6 w-6 flex items-center justify-center rounded-r-md transition-colors",
+                      optionsView === "table" ? "bg-[#bba7db] text-white" : "hover-elevate"
+                    )}
+                    data-testid="button-view-table"
+                  >
+                    <LayoutList className="w-3 h-3" />
                   </button>
                 </div>
                 <div className="relative">
@@ -547,31 +605,24 @@ export default function SelectionDetail() {
                     data-testid="input-search-options"
                   />
                 </div>
+                <Button 
+                  size="sm" 
+                  className="h-6 px-2 text-xs"
+                  onClick={handleAddOption}
+                  data-testid="button-add-option"
+                >
+                  <Plus className="w-3 h-3 mr-1" />
+                  Add Option
+                </Button>
               </div>
-              <Button 
-                size="sm" 
-                className="h-6 px-2 text-xs"
-                onClick={handleAddOption}
-                data-testid="button-add-option"
-              >
-                <Plus className="w-3 h-3 mr-1" />
-                Add Option
-              </Button>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Main Content Area */}
-      <div className="flex-1 overflow-y-auto">
-        {activeTab === "options" ? (
-          <div className="p-4">
+            </div>
+            
             {filteredOptions.length === 0 ? (
-              <div className="text-center py-12">
+              <div className="text-center py-12 border rounded-lg bg-muted/20">
                 <Package className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                <h3 className="text-lg font-medium mb-2">No options found</h3>
+                <h3 className="text-lg font-medium mb-2">No options yet</h3>
                 <p className="text-muted-foreground mb-4">
-                  {searchTerm ? "Try adjusting your search terms." : "Add your first option to get started."}
+                  {searchTerm ? "Try adjusting your search terms." : "Add options for your client to choose from."}
                 </p>
                 {!searchTerm && (
                   <Button onClick={handleAddOption} data-testid="button-add-first-option">
@@ -580,13 +631,63 @@ export default function SelectionDetail() {
                   </Button>
                 )}
               </div>
-            ) : optionsView === "table" ? (
+            ) : optionsView === "grid" ? (
+              /* Grid View - Gallery Style */
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {filteredOptions.map((option) => (
+                  <Card 
+                    key={option.id} 
+                    className={cn(
+                      "hover-elevate cursor-pointer transition-all duration-200 group overflow-hidden",
+                      option.isSelectedByClient && "ring-2 ring-green-500"
+                    )}
+                    onClick={() => handleEditOption(option)}
+                    data-testid={`card-option-${option.id}`}
+                  >
+                    {/* Image placeholder */}
+                    <div className="aspect-square bg-muted flex items-center justify-center relative">
+                      <Package className="w-12 h-12 text-muted-foreground/50" />
+                      {option.isSelectedByClient && (
+                        <div className="absolute top-2 right-2">
+                          <Badge className="bg-green-500 text-white text-xs">
+                            <CheckCircle className="w-3 h-3 mr-1" />
+                            Selected
+                          </Badge>
+                        </div>
+                      )}
+                      {!option.visibleToClient && (
+                        <div className="absolute top-2 left-2">
+                          <Badge variant="secondary" className="text-xs">
+                            <EyeOff className="w-3 h-3 mr-1" />
+                            Hidden
+                          </Badge>
+                        </div>
+                      )}
+                    </div>
+                    <CardContent className="p-3">
+                      <div className="font-medium text-sm truncate">{option.name}</div>
+                      {option.brand && (
+                        <div className="text-xs text-muted-foreground truncate">{option.brand}</div>
+                      )}
+                      <div className="mt-2 flex items-center justify-between">
+                        <span className="text-xs text-muted-foreground">
+                          {option.quantity} {option.unitType}
+                        </span>
+                        <span className="text-sm font-semibold">
+                          ${((option.totalCost || 0) / 100).toFixed(2)}
+                        </span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
               /* Table View */
               <div className="border rounded-lg overflow-hidden">
                 <table className="w-full text-sm">
                   <thead className="bg-muted/50">
                     <tr className="border-b">
-                      <th className="text-left px-3 py-2 font-medium text-xs uppercase tracking-wide text-muted-foreground">Image</th>
+                      <th className="text-left px-3 py-2 font-medium text-xs uppercase tracking-wide text-muted-foreground w-16">Image</th>
                       <th className="text-left px-3 py-2 font-medium text-xs uppercase tracking-wide text-muted-foreground">Option</th>
                       <th className="text-left px-3 py-2 font-medium text-xs uppercase tracking-wide text-muted-foreground">SKU</th>
                       <th className="text-center px-3 py-2 font-medium text-xs uppercase tracking-wide text-muted-foreground">Qty</th>
@@ -694,108 +795,25 @@ export default function SelectionDetail() {
                   </tbody>
                 </table>
               </div>
-            ) : (
-              /* Grid View */
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filteredOptions.map((option) => (
-                  <Card key={option.id} className="hover-elevate transition-all duration-200 group" data-testid={`card-option-${option.id}`}>
-                    <CardHeader className="pb-3">
-                      <div className="flex items-start justify-between">
-                        <div className="space-y-1 flex-1 min-w-0">
-                          <CardTitle className="text-base leading-tight font-semibold group-hover:text-primary transition-colors">
-                            {option.name}
-                          </CardTitle>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            {option.brand && (
-                              <Badge variant="secondary" className="text-xs">
-                                {option.brand}
-                              </Badge>
-                            )}
-                            {option.category && (
-                              <Badge variant="outline" className="text-xs">
-                                {option.category}
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-7 w-7 shrink-0 opacity-60 group-hover:opacity-100"
-                              data-testid={`button-option-menu-${option.id}`}
-                            >
-                              <MoreVertical className="w-4 h-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => handleEditOption(option)}>
-                              <Edit3 className="w-4 h-4 mr-2" />
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem 
-                              onClick={() => deleteOptionMutation.mutate(option.id)}
-                              className="text-destructive"
-                            >
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </CardHeader>
-                    
-                    <CardContent className="space-y-3">
-                      {option.description && (
-                        <p className="text-sm text-muted-foreground line-clamp-2">
-                          {option.description}
-                        </p>
-                      )}
-                      
-                      <div className="flex items-center justify-between border-t pt-3">
-                        <div className="flex flex-col gap-0.5">
-                          {option.sku && (
-                            <span className="text-xs text-muted-foreground font-mono">
-                              SKU: {option.sku}
-                            </span>
-                          )}
-                          <span className="text-xs text-muted-foreground">
-                            Qty: {option.quantity} {option.unitType}
-                          </span>
-                        </div>
-                        {option.totalCost != null && (
-                          <div className="text-right">
-                            <span className="text-lg font-semibold">
-                              ${(option.totalCost / 100).toFixed(2)}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                      
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {option.isSelectedByClient && (
-                          <Badge variant="outline" className="text-xs bg-green-50 border-green-200 text-green-700">
-                            <CheckCircle className="w-3 h-3 mr-1" />
-                            Selected
-                          </Badge>
-                        )}
-                        {!option.visibleToClient && (
-                          <Badge variant="outline" className="text-xs bg-red-50 border-red-200 text-red-700">
-                            <EyeOff className="w-3 h-3 mr-1" />
-                            Hidden
-                          </Badge>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
             )}
           </div>
-        ) : (
-          /* Details Tab */
-          <div className="p-4 pb-20">
+        </div>
+      </div>
+
+      {/* Edit Details Slide-over Panel */}
+      {activeTab === "details" && (
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm" onClick={() => setActiveTab("options")}>
+          <div 
+            className="fixed right-0 top-0 h-full w-full max-w-lg bg-background border-l shadow-lg overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-4 border-b flex items-center justify-between sticky top-0 bg-background z-10">
+              <h2 className="text-lg font-semibold">Edit Selection Details</h2>
+              <Button variant="ghost" size="icon" onClick={() => setActiveTab("options")}>
+                <ArrowLeft className="w-4 h-4" />
+              </Button>
+            </div>
+            <div className="p-4">
             <Form {...selectionForm}>
               <form className="space-y-6 max-w-3xl">
                 {/* Basic Info Section - Buildern-style grid */}
@@ -1210,37 +1228,39 @@ export default function SelectionDetail() {
                 </Card>
               </form>
             </Form>
+            
+            {/* Save Button inside panel */}
+            <div className="sticky bottom-0 left-0 right-0 bg-background border-t px-4 py-3 flex items-center justify-end gap-2 mt-6">
+              <Button
+                variant="outline"
+                onClick={() => setActiveTab("options")}
+                data-testid="button-cancel"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  handleSaveSelection();
+                  setActiveTab("options");
+                }}
+                disabled={updateSelectionMutation.isPending}
+                data-testid="button-save-selection"
+              >
+                {updateSelectionMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4 mr-2" />
+                    Save Changes
+                  </>
+                )}
+              </Button>
+            </div>
+            </div>
           </div>
-        )}
-      </div>
-
-      {/* Sticky Footer - Only show on Details tab */}
-      {activeTab === "details" && (
-        <div className="sticky bottom-0 left-0 right-0 bg-background border-t px-4 py-3 flex items-center justify-end gap-2 z-10">
-          <Button
-            variant="outline"
-            onClick={goBack}
-            data-testid="button-cancel"
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSaveSelection}
-            disabled={updateSelectionMutation.isPending || !hasUnsavedChanges}
-            data-testid="button-save-selection"
-          >
-            {updateSelectionMutation.isPending ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Saving...
-              </>
-            ) : (
-              <>
-                <Save className="w-4 h-4 mr-2" />
-                Save Changes
-              </>
-            )}
-          </Button>
         </div>
       )}
 
