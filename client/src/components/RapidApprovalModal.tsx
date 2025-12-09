@@ -92,7 +92,11 @@ function TimePicker({
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-24 p-0" align="center">
-        <div className="h-48 overflow-y-auto p-1" ref={scrollRef}>
+        <div 
+          ref={scrollRef}
+          className="max-h-48 overflow-y-scroll overscroll-contain p-1"
+          style={{ scrollbarWidth: 'thin' }}
+        >
           {TIME_SLOTS.map((time) => (
             <button
               key={time}
