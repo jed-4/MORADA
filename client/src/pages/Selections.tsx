@@ -39,6 +39,7 @@ import {
   LayoutGrid,
   Pencil,
   MapPin,
+  Boxes,
 } from "lucide-react";
 import {
   DndContext,
