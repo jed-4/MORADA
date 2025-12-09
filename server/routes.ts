@@ -14197,6 +14197,224 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ============================================
+  // PRICE LIST API ROUTES
+  // ============================================
+
+  // Price List Categories
+  app.get("/api/price-list/categories", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const categories = await storage.getPriceListCategories(user.companyId);
+      res.json(categories);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to fetch price list categories", details: error.message });
+    }
+  });
+
+  app.post("/api/price-list/categories", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const category = await storage.createPriceListCategory({ ...req.body, companyId: user.companyId });
+      res.status(201).json(category);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to create price list category", details: error.message });
+    }
+  });
+
+  app.patch("/api/price-list/categories/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const category = await storage.updatePriceListCategory(req.params.id, req.body, user.companyId);
+      if (!category) {
+        return res.status(404).json({ error: "Category not found" });
+      }
+      res.json(category);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to update price list category", details: error.message });
+    }
+  });
+
+  app.delete("/api/price-list/categories/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const deleted = await storage.deletePriceListCategory(req.params.id, user.companyId);
+      if (!deleted) {
+        return res.status(404).json({ error: "Category not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to delete price list category", details: error.message });
+    }
+  });
+
+  // Price List Items
+  app.get("/api/price-list/items", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const filters: any = {};
+      if (req.query.categoryId) filters.categoryId = req.query.categoryId;
+      if (req.query.supplierId) filters.supplierId = req.query.supplierId;
+      if (req.query.isActive !== undefined) filters.isActive = req.query.isActive === "true";
+      if (req.query.search) filters.search = req.query.search;
+      
+      const items = await storage.getPriceListItems(user.companyId, filters);
+      res.json(items);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to fetch price list items", details: error.message });
+    }
+  });
+
+  app.get("/api/price-list/items/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const item = await storage.getPriceListItem(req.params.id, user.companyId);
+      if (!item) {
+        return res.status(404).json({ error: "Item not found" });
+      }
+      res.json(item);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to fetch price list item", details: error.message });
+    }
+  });
+
+  app.post("/api/price-list/items", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const item = await storage.createPriceListItem({ ...req.body, companyId: user.companyId });
+      res.status(201).json(item);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to create price list item", details: error.message });
+    }
+  });
+
+  app.patch("/api/price-list/items/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const item = await storage.updatePriceListItem(req.params.id, req.body, user.companyId);
+      if (!item) {
+        return res.status(404).json({ error: "Item not found" });
+      }
+      res.json(item);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to update price list item", details: error.message });
+    }
+  });
+
+  app.delete("/api/price-list/items/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const deleted = await storage.deletePriceListItem(req.params.id, user.companyId);
+      if (!deleted) {
+        return res.status(404).json({ error: "Item not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to delete price list item", details: error.message });
+    }
+  });
+
+  app.post("/api/price-list/items/bulk-update", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const { updates } = req.body;
+      if (!Array.isArray(updates)) {
+        return res.status(400).json({ error: "Updates must be an array" });
+      }
+      const items = await storage.bulkUpdatePriceListItems(updates, user.companyId);
+      res.json(items);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to bulk update price list items", details: error.message });
+    }
+  });
+
+  // AI Price List Review routes
+  app.get("/api/price-list/review/unlinked", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const items = await storage.getUnlinkedBillLineItems(user.companyId);
+      res.json(items);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to fetch unlinked bill line items", details: error.message });
+    }
+  });
+
+  app.get("/api/price-list/review/links", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const status = req.query.status as string | undefined;
+      const links = await storage.getBillLineItemPriceLinks(user.companyId, status);
+      res.json(links);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to fetch price list links", details: error.message });
+    }
+  });
+
+  app.post("/api/price-list/review/links", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const link = await storage.createBillLineItemPriceLink(req.body);
+      res.status(201).json(link);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to create price list link", details: error.message });
+    }
+  });
+
+  app.patch("/api/price-list/review/links/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const link = await storage.updateBillLineItemPriceLink(req.params.id, req.body);
+      if (!link) {
+        return res.status(404).json({ error: "Link not found" });
+      }
+      res.json(link);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to update price list link", details: error.message });
+    }
+  });
+
   const httpServer = createServer(app);
 
   // Setup Socket.io for real-time messaging with session authentication
