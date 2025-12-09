@@ -336,13 +336,13 @@ export function RapidApprovalModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[480px]">
         <DialogHeader className="pb-2">
-          <DialogTitle className="flex items-center justify-between text-sm">
+          <DialogTitle className="flex items-center gap-2 text-sm">
+            <span className="text-xs font-normal text-muted-foreground">
+              {currentIndex + 1}/{remainingTimesheets.length}
+            </span>
             <span className="flex items-center gap-1.5">
               <Clock className="w-4 h-4" />
               Rapid Approval
-            </span>
-            <span className="text-xs font-normal text-muted-foreground">
-              {currentIndex + 1}/{remainingTimesheets.length}
             </span>
           </DialogTitle>
         </DialogHeader>
