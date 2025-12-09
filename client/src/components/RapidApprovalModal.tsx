@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { AlertTriangle, Check, X, Clock, ChevronLeft, ChevronRight, RotateCcw, CalendarIcon, ChevronUp, ChevronDown, Pencil } from "lucide-react";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { AlertTriangle, Check, X, Clock, ChevronLeft, ChevronRight, RotateCcw, CalendarIcon, Pencil, MessageSquare } from "lucide-react";
 import { format } from "date-fns";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -22,6 +23,97 @@ interface RapidApprovalModalProps {
   users: UserType[];
   costCodes: CostCode[];
   onComplete?: () => void;
+}
+
+// Generate time slots in 15-min increments (00:00 - 23:45)
+const generateTimeSlots = (): string[] => {
+  const slots: string[] = [];
+  for (let h = 0; h < 24; h++) {
+    for (let m = 0; m < 60; m += 15) {
+      slots.push(`${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`);
+    }
+  }
+  return slots;
+};
+
+const TIME_SLOTS = generateTimeSlots();
+
+// Round time string to nearest 15 min (e.g., "11:11" -> "11:15")
+const roundTimeTo15Min = (time: string): string => {
+  if (!time || !time.includes(':')) return time;
+  const [hours, mins] = time.split(':').map(Number);
+  const roundedMins = Math.round(mins / 15) * 15;
+  const adjustedHours = roundedMins === 60 ? (hours + 1) % 24 : hours;
+  const adjustedMins = roundedMins === 60 ? 0 : roundedMins;
+  return `${adjustedHours.toString().padStart(2, '0')}:${adjustedMins.toString().padStart(2, '0')}`;
+};
+
+// Calculate hours between two time strings
+const calculateHoursBetween = (start: string, end: string): number => {
+  if (!start || !end) return 0;
+  const [sh, sm] = start.split(':').map(Number);
+  const [eh, em] = end.split(':').map(Number);
+  let startMins = sh * 60 + sm;
+  let endMins = eh * 60 + em;
+  if (endMins < startMins) endMins += 24 * 60; // Handle overnight
+  return Math.max(0, (endMins - startMins) / 60);
+};
+
+// Time Picker Popover Component
+function TimePicker({ 
+  value, 
+  onChange, 
+  label 
+}: { 
+  value: string; 
+  onChange: (time: string) => void; 
+  label: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  
+  useEffect(() => {
+    if (open && scrollRef.current && value) {
+      const index = TIME_SLOTS.findIndex(t => t === value);
+      if (index >= 0) {
+        setTimeout(() => {
+          const element = scrollRef.current?.querySelector(`[data-time="${value}"]`);
+          element?.scrollIntoView({ block: 'center' });
+        }, 50);
+      }
+    }
+  }, [open, value]);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button 
+          variant="outline" 
+          className="h-7 px-2 text-xs font-mono justify-center min-w-[60px]"
+        >
+          {value || "--:--"}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-24 p-0" align="center">
+        <ScrollArea className="h-48" ref={scrollRef}>
+          <div className="p-1">
+            {TIME_SLOTS.map((time) => (
+              <button
+                key={time}
+                data-time={time}
+                onClick={() => { onChange(time); setOpen(false); }}
+                className={`w-full px-2 py-1.5 text-xs font-mono text-center rounded hover:bg-muted ${
+                  time === value ? "bg-primary text-primary-foreground" : ""
+                }`}
+              >
+                {time}
+              </button>
+            ))}
+          </div>
+        </ScrollArea>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 export function RapidApprovalModal({
@@ -39,14 +131,17 @@ export function RapidApprovalModal({
   const [currentIndex, setCurrentIndex] = useState(0);
   
   // Editable fields
-  const [editedHours, setEditedHours] = useState<string>("");
-  const [editedBreak, setEditedBreak] = useState<string>("");
+  const [editedStartTime, setEditedStartTime] = useState<string>("");
+  const [editedEndTime, setEditedEndTime] = useState<string>("");
+  const [editedBreakStart, setEditedBreakStart] = useState<string>("");
+  const [editedBreak, setEditedBreak] = useState<string>("0");
   const [editedDate, setEditedDate] = useState<Date | undefined>();
   const [editedProjectId, setEditedProjectId] = useState<string>("");
   const [editedCostCodeId, setEditedCostCodeId] = useState<string>("");
   const [editedDescription, setEditedDescription] = useState<string>("");
   const [rejectionComment, setRejectionComment] = useState<string>("");
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+  const [isCommentExpanded, setIsCommentExpanded] = useState(false);
 
   const remainingTimesheets = useMemo(() => 
     pendingTimesheets.filter(ts => !processedIds.has(ts.id)),
@@ -60,12 +155,15 @@ export function RapidApprovalModal({
       setProcessedIds(new Set());
       setCurrentIndex(0);
       setRejectionComment("");
+      setIsCommentExpanded(false);
     }
   }, [open]);
 
   useEffect(() => {
     if (currentTimesheet) {
-      setEditedHours(currentTimesheet.duration || "0");
+      setEditedStartTime(currentTimesheet.startTime || "");
+      setEditedEndTime(currentTimesheet.endTime || "");
+      setEditedBreakStart(""); // Not stored in DB yet
       setEditedBreak(currentTimesheet.breakDuration || "0");
       setEditedDate(new Date(currentTimesheet.date));
       setEditedProjectId(currentTimesheet.projectId);
@@ -73,6 +171,7 @@ export function RapidApprovalModal({
       setEditedDescription(currentTimesheet.description || "");
       setRejectionComment("");
       setIsDescriptionExpanded(false);
+      setIsCommentExpanded(false);
     }
   }, [currentTimesheet?.id]);
 
@@ -88,41 +187,36 @@ export function RapidApprovalModal({
     return user?.name || user?.email || "Unknown User";
   };
 
-  const roundTo15Min = (hours: string) => {
-    const h = parseFloat(hours) || 0;
-    return (Math.round(h * 4) / 4).toFixed(2);
+  const handleRoundTimes = () => {
+    setEditedStartTime(roundTimeTo15Min(editedStartTime));
+    setEditedEndTime(roundTimeTo15Min(editedEndTime));
   };
 
-  const adjustHours = (delta: number) => {
-    const current = parseFloat(editedHours) || 0;
-    const newVal = Math.max(0, current + delta);
-    setEditedHours(newVal.toFixed(2));
-  };
+  // Calculate duration based on start/end times
+  const calculatedDuration = useMemo(() => {
+    return calculateHoursBetween(editedStartTime, editedEndTime);
+  }, [editedStartTime, editedEndTime]);
 
-  const adjustBreak = (delta: number) => {
-    const current = parseFloat(editedBreak) || 0;
-    const newVal = Math.max(0, current + delta);
-    setEditedBreak(newVal.toFixed(2));
-  };
+  const parsedBreak = parseFloat(editedBreak) || 0;
+  const netHours = Math.max(0, calculatedDuration - parsedBreak);
+  const rate = parseFloat(currentTimesheet?.hourlyRate || "0");
+  const calculatedTotal = (netHours * rate).toFixed(2);
 
   const getMissingInfo = () => {
     if (!currentTimesheet) return [];
     const issues: string[] = [];
-    if (!editedCostCodeId) issues.push("No cost code assigned");
+    if (!editedCostCodeId) issues.push("No cost code");
     if (!editedDescription.trim()) issues.push("No description");
-    
-    const duration = parseFloat(editedHours) || 0;
-    if (duration === 0) issues.push("Zero hours");
-    if (duration > 12) issues.push("Over 12 hours");
-    if (duration < 0.25 && duration !== 0) issues.push("Less than 15 minutes");
-    const remainder = (duration * 4) % 1;
-    if (remainder > 0.01) issues.push("Hours not rounded to 15min");
+    if (calculatedDuration === 0) issues.push("Zero hours");
+    if (calculatedDuration > 12) issues.push("Over 12 hours");
     return issues;
   };
 
   const updateMutation = useMutation({
     mutationFn: async (data: { 
       id: string; 
+      startTime?: string;
+      endTime?: string;
       duration: string; 
       breakDuration: string;
       date?: string;
@@ -132,9 +226,9 @@ export function RapidApprovalModal({
     }) => {
       const hours = parseFloat(data.duration) || 0;
       const breakHours = parseFloat(data.breakDuration) || 0;
-      const netHours = Math.max(0, hours - breakHours);
-      const rate = parseFloat(currentTimesheet?.hourlyRate || "0");
-      const total = (netHours * rate).toFixed(2);
+      const netHoursCalc = Math.max(0, hours - breakHours);
+      const rateVal = parseFloat(currentTimesheet?.hourlyRate || "0");
+      const total = (netHoursCalc * rateVal).toFixed(2);
       
       const res = await apiRequest(`/api/timesheets/${data.id}`, "PATCH", {
         ...data,
@@ -147,8 +241,9 @@ export function RapidApprovalModal({
   const approveMutation = useMutation({
     mutationFn: async (timesheetId: string) => {
       const hasChanges = currentTimesheet && (
-        editedHours !== currentTimesheet.duration ||
-        editedBreak !== currentTimesheet.breakDuration ||
+        editedStartTime !== (currentTimesheet.startTime || "") ||
+        editedEndTime !== (currentTimesheet.endTime || "") ||
+        editedBreak !== (currentTimesheet.breakDuration || "0") ||
         format(editedDate!, "yyyy-MM-dd") !== currentTimesheet.date ||
         editedProjectId !== currentTimesheet.projectId ||
         editedCostCodeId !== (currentTimesheet.costCodeId || "") ||
@@ -158,7 +253,9 @@ export function RapidApprovalModal({
       if (hasChanges && editedDate) {
         await updateMutation.mutateAsync({
           id: timesheetId,
-          duration: editedHours,
+          startTime: editedStartTime,
+          endTime: editedEndTime,
+          duration: calculatedDuration.toFixed(2),
           breakDuration: editedBreak,
           date: format(editedDate, "yyyy-MM-dd"),
           projectId: editedProjectId,
@@ -175,9 +272,9 @@ export function RapidApprovalModal({
       
       const newRemaining = remainingTimesheets.length - 1;
       if (newRemaining > 0) {
-        toast({ title: "Approved", description: `Timesheet approved. ${newRemaining} remaining.` });
+        toast({ title: "Approved", description: `${newRemaining} remaining.` });
       } else {
-        toast({ title: "All done!", description: "All pending timesheets have been reviewed." });
+        toast({ title: "All done!", description: "All pending timesheets reviewed." });
         onOpenChange(false);
         onComplete?.();
       }
@@ -197,9 +294,9 @@ export function RapidApprovalModal({
       
       const newRemaining = remainingTimesheets.length - 1;
       if (newRemaining > 0) {
-        toast({ title: "Rejected", description: `Timesheet rejected. ${newRemaining} remaining.` });
+        toast({ title: "Rejected", description: `${newRemaining} remaining.` });
       } else {
-        toast({ title: "All done!", description: "All pending timesheets have been reviewed." });
+        toast({ title: "All done!", description: "All pending timesheets reviewed." });
         onOpenChange(false);
         onComplete?.();
       }
@@ -213,18 +310,18 @@ export function RapidApprovalModal({
     if (open && remainingTimesheets.length === 0) {
       return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-          <DialogContent className="sm:max-w-[400px]">
+          <DialogContent className="sm:max-w-[380px]">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Check className="w-5 h-5 text-green-600" />
                 All Done!
               </DialogTitle>
             </DialogHeader>
-            <div className="py-4 text-center text-sm text-muted-foreground">
+            <div className="py-3 text-center text-sm text-muted-foreground">
               All pending timesheets have been processed.
             </div>
             <DialogFooter>
-              <Button onClick={() => onOpenChange(false)}>Close</Button>
+              <Button onClick={() => onOpenChange(false)} size="sm">Close</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -235,138 +332,88 @@ export function RapidApprovalModal({
 
   const missingInfo = getMissingInfo();
   const hasMissingInfo = missingInfo.length > 0;
-  const parsedHours = parseFloat(editedHours) || 0;
-  const parsedBreak = parseFloat(editedBreak) || 0;
-  const netHours = Math.max(0, parsedHours - parsedBreak);
-  const rate = parseFloat(currentTimesheet.hourlyRate || "0");
-  const calculatedTotal = (netHours * rate).toFixed(2);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[560px]">
-        <DialogHeader>
-          <DialogTitle className="flex items-center justify-between">
-            <span className="flex items-center gap-2">
-              <Clock className="w-5 h-5" />
+      <DialogContent className="sm:max-w-[480px]">
+        <DialogHeader className="pb-2">
+          <DialogTitle className="flex items-center justify-between text-sm">
+            <span className="flex items-center gap-1.5">
+              <Clock className="w-4 h-4" />
               Rapid Approval
             </span>
-            <span className="text-sm font-normal text-muted-foreground">
-              {currentIndex + 1} of {remainingTimesheets.length}
+            <span className="text-xs font-normal text-muted-foreground">
+              {currentIndex + 1}/{remainingTimesheets.length}
             </span>
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-3 py-2">
+        <div className="space-y-2">
           {hasMissingInfo && (
-            <div className="flex items-start gap-2 p-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md">
-              <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
-              <div className="text-xs">
-                <p className="font-medium text-amber-700 dark:text-amber-300">Needs attention:</p>
-                <ul className="mt-0.5 text-amber-600 dark:text-amber-400">
-                  {missingInfo.map((issue, i) => (
-                    <li key={i}>• {issue}</li>
-                  ))}
-                </ul>
-              </div>
+            <div className="flex items-center gap-2 px-2 py-1.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded text-[10px]">
+              <AlertTriangle className="w-3 h-3 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+              <span className="text-amber-700 dark:text-amber-300">{missingInfo.join(" • ")}</span>
             </div>
           )}
 
-          {/* Team Member - Read Only */}
-          <div className="flex items-center justify-between p-2 bg-muted/30 rounded-md">
-            <span className="text-xs text-muted-foreground">Team Member</span>
-            <span className="text-sm font-medium">{getUserName(currentTimesheet.userId)}</span>
+          {/* Team Member */}
+          <div className="flex items-center justify-between px-2 py-1.5 bg-muted/30 rounded">
+            <span className="text-[10px] text-muted-foreground">Team Member</span>
+            <span className="text-xs font-medium">{getUserName(currentTimesheet.userId)}</span>
           </div>
 
-          {/* Time Row: Clock In/Out on left, Round button + Hours on right */}
-          <div className="flex items-center justify-between p-2 bg-muted/30 rounded-md">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Time:</span>
-              <span className="text-sm font-medium">
-                {currentTimesheet.startTime || "--:--"} - {currentTimesheet.endTime || "--:--"}
-              </span>
+          {/* Time Row: Clock In - Clock Out with Round button */}
+          <div className="flex items-center justify-between px-2 py-1.5 bg-muted/30 rounded">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-muted-foreground">Time:</span>
+              <TimePicker value={editedStartTime} onChange={setEditedStartTime} label="Start" />
+              <span className="text-[10px] text-muted-foreground">-</span>
+              <TimePicker value={editedEndTime} onChange={setEditedEndTime} label="End" />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 px-2 text-xs gap-1"
-                onClick={() => setEditedHours(roundTo15Min(editedHours))}
-                title="Round to 15 minutes"
-                data-testid="button-round-hours"
+                className="h-6 px-2 text-[10px] gap-1"
+                onClick={handleRoundTimes}
+                title="Round times to 15 minutes"
+                data-testid="button-round-times"
               >
-                <RotateCcw className="w-3 h-3" />
+                <RotateCcw className="w-2.5 h-2.5" />
                 Round
               </Button>
-              <div className="flex items-center border rounded-md">
-                <Input
-                  type="number"
-                  step="0.25"
-                  value={editedHours}
-                  onChange={(e) => setEditedHours(e.target.value)}
-                  className="h-7 w-16 text-xs text-center border-0 focus-visible:ring-0"
-                  data-testid="input-rapid-hours"
-                />
-                <div className="flex flex-col border-l">
-                  <button 
-                    onClick={() => adjustHours(0.25)} 
-                    className="h-3.5 px-1 hover:bg-muted"
-                    data-testid="button-hours-up"
-                  >
-                    <ChevronUp className="w-3 h-3" />
-                  </button>
-                  <button 
-                    onClick={() => adjustHours(-0.25)} 
-                    className="h-3.5 px-1 hover:bg-muted"
-                    data-testid="button-hours-down"
-                  >
-                    <ChevronDown className="w-3 h-3" />
-                  </button>
-                </div>
-              </div>
-              <span className="text-xs text-muted-foreground">hrs</span>
+              <span className="text-xs font-mono font-medium min-w-[40px] text-right">
+                {calculatedDuration.toFixed(2)}h
+              </span>
             </div>
           </div>
 
-          {/* Break Row - Same styling as Time */}
-          <div className="flex items-center justify-between p-2 bg-muted/30 rounded-md">
-            <span className="text-xs text-muted-foreground">Break</span>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center border rounded-md">
-                <Input
-                  type="number"
-                  step="0.25"
-                  value={editedBreak}
-                  onChange={(e) => setEditedBreak(e.target.value)}
-                  className="h-7 w-16 text-xs text-center border-0 focus-visible:ring-0"
-                  data-testid="input-rapid-break"
-                />
-                <div className="flex flex-col border-l">
-                  <button 
-                    onClick={() => adjustBreak(0.25)} 
-                    className="h-3.5 px-1 hover:bg-muted"
-                  >
-                    <ChevronUp className="w-3 h-3" />
-                  </button>
-                  <button 
-                    onClick={() => adjustBreak(-0.25)} 
-                    className="h-3.5 px-1 hover:bg-muted"
-                  >
-                    <ChevronDown className="w-3 h-3" />
-                  </button>
-                </div>
-              </div>
-              <span className="text-xs text-muted-foreground">hrs</span>
+          {/* Break Row with start time */}
+          <div className="flex items-center justify-between px-2 py-1.5 bg-muted/30 rounded">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-muted-foreground">Break:</span>
+              <TimePicker value={editedBreakStart} onChange={setEditedBreakStart} label="Start" />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Input
+                type="number"
+                step="0.25"
+                value={editedBreak}
+                onChange={(e) => setEditedBreak(e.target.value)}
+                className="h-6 w-14 text-[10px] text-center px-1"
+                data-testid="input-rapid-break"
+              />
+              <span className="text-[10px] text-muted-foreground">hrs</span>
             </div>
           </div>
 
-          {/* Editable Fields: Date, Project, Cost Code */}
-          <div className="grid grid-cols-3 gap-2">
-            {/* Date */}
-            <div className="space-y-1">
-              <Label className="text-[10px] text-muted-foreground">Date</Label>
+          {/* Date, Project, Cost Code - Compact Grid */}
+          <div className="grid grid-cols-3 gap-1.5">
+            <div>
+              <Label className="text-[9px] text-muted-foreground">Date</Label>
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" className="w-full h-7 text-xs justify-start gap-1 px-2">
+                  <Button variant="outline" className="w-full h-8 text-[10px] justify-start gap-1 px-1.5">
                     <CalendarIcon className="w-3 h-3" />
                     {editedDate ? format(editedDate, "dd MMM") : "Select"}
                   </Button>
@@ -382,11 +429,10 @@ export function RapidApprovalModal({
               </Popover>
             </div>
 
-            {/* Project */}
-            <div className="space-y-1">
-              <Label className="text-[10px] text-muted-foreground">Project</Label>
+            <div>
+              <Label className="text-[9px] text-muted-foreground">Project</Label>
               <Select value={editedProjectId} onValueChange={setEditedProjectId}>
-                <SelectTrigger className="h-7 text-xs">
+                <SelectTrigger className="h-8 text-[10px]">
                   <SelectValue placeholder="Select" />
                 </SelectTrigger>
                 <SelectContent>
@@ -399,11 +445,10 @@ export function RapidApprovalModal({
               </Select>
             </div>
 
-            {/* Cost Code */}
-            <div className="space-y-1">
-              <Label className="text-[10px] text-muted-foreground">Cost Code</Label>
+            <div>
+              <Label className="text-[9px] text-muted-foreground">Cost Code</Label>
               <Select value={editedCostCodeId || "none"} onValueChange={(val) => setEditedCostCodeId(val === "none" ? "" : val)}>
-                <SelectTrigger className={`h-7 text-xs ${!editedCostCodeId ? "border-amber-300" : ""}`}>
+                <SelectTrigger className={`h-8 text-[10px] ${!editedCostCodeId ? "border-amber-300" : ""}`}>
                   <SelectValue placeholder="Select" />
                 </SelectTrigger>
                 <SelectContent>
@@ -418,29 +463,29 @@ export function RapidApprovalModal({
             </div>
           </div>
 
-          {/* Description - 2 line preview with expand */}
-          <div className="space-y-1">
-            <div className="flex items-center justify-between">
-              <Label className="text-[10px] text-muted-foreground">Description</Label>
+          {/* Description - 2 line preview */}
+          <div>
+            <div className="flex items-center justify-between mb-0.5">
+              <Label className="text-[9px] text-muted-foreground">Description</Label>
               <Popover open={isDescriptionExpanded} onOpenChange={setIsDescriptionExpanded}>
                 <PopoverTrigger asChild>
-                  <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] gap-1">
-                    <Pencil className="w-2.5 h-2.5" />
+                  <Button variant="ghost" size="sm" className="h-4 px-1 text-[9px] gap-0.5">
+                    <Pencil className="w-2 h-2" />
                     Edit
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-80" align="end">
-                  <div className="space-y-2">
-                    <Label className="text-xs">Edit Description</Label>
+                <PopoverContent className="w-72" align="end">
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px]">Edit Description</Label>
                     <Textarea
                       value={editedDescription}
                       onChange={(e) => setEditedDescription(e.target.value)}
-                      className="min-h-[100px] text-xs"
+                      className="min-h-[80px] text-xs"
                       placeholder="Enter description..."
                     />
                     <Button 
                       size="sm" 
-                      className="w-full h-7 text-xs"
+                      className="w-full h-6 text-[10px]"
                       onClick={() => setIsDescriptionExpanded(false)}
                     >
                       Done
@@ -450,7 +495,7 @@ export function RapidApprovalModal({
               </Popover>
             </div>
             <div 
-              className={`p-2 bg-muted/30 rounded-md text-xs min-h-[40px] ${!editedDescription ? "text-muted-foreground italic" : ""}`}
+              className={`px-2 py-1 bg-muted/30 rounded text-[10px] min-h-[32px] ${!editedDescription ? "text-muted-foreground italic" : ""}`}
               style={{ 
                 display: "-webkit-box", 
                 WebkitLineClamp: 2, 
@@ -462,72 +507,92 @@ export function RapidApprovalModal({
             </div>
           </div>
 
-          {/* Total */}
-          <div className="flex items-center justify-between p-2 bg-[#bba7db]/10 rounded-md border border-[#bba7db]/30">
-            <span className="text-xs font-medium">Net Hours / Total</span>
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-medium">{netHours.toFixed(2)} hrs</span>
-              <span className="text-sm font-bold text-[#bba7db]">${calculatedTotal}</span>
+          {/* Net Hours / Total with Comment Button */}
+          <div className="flex items-center justify-between px-2 py-1.5 bg-[#bba7db]/10 rounded border border-[#bba7db]/30">
+            <div className="flex items-center gap-1">
+              <Popover open={isCommentExpanded} onOpenChange={setIsCommentExpanded}>
+                <PopoverTrigger asChild>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className={`h-6 w-6 p-0 ${rejectionComment ? "text-amber-600" : "text-muted-foreground"}`}
+                    title="Add comment"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-64" align="start">
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px]">Comment (for rejection)</Label>
+                    <Textarea
+                      value={rejectionComment}
+                      onChange={(e) => setRejectionComment(e.target.value)}
+                      className="min-h-[60px] text-xs"
+                      placeholder="e.g., Not enough info..."
+                    />
+                    <Button 
+                      size="sm" 
+                      className="w-full h-6 text-[10px]"
+                      onClick={() => setIsCommentExpanded(false)}
+                    >
+                      Done
+                    </Button>
+                  </div>
+                </PopoverContent>
+              </Popover>
+              <span className="text-[10px] font-medium">Net Hours / Total</span>
             </div>
-          </div>
-
-          {/* Rejection Comment */}
-          <div className="space-y-1">
-            <Label className="text-[10px] text-muted-foreground">Comment (optional - for rejection)</Label>
-            <Input
-              value={rejectionComment}
-              onChange={(e) => setRejectionComment(e.target.value)}
-              placeholder="e.g., Not enough info, wrong project..."
-              className="h-7 text-xs"
-              data-testid="input-rejection-comment"
-            />
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium">{netHours.toFixed(2)} hrs</span>
+              <span className="text-xs font-bold text-[#bba7db]">${calculatedTotal}</span>
+            </div>
           </div>
         </div>
 
-        <DialogFooter className="flex items-center justify-between gap-2 sm:justify-between">
+        <DialogFooter className="flex items-center justify-between gap-2 sm:justify-between pt-2">
           <div className="flex items-center gap-1">
             <Button
               variant="outline"
               size="icon"
-              className="h-8 w-8"
+              className="h-7 w-7"
               onClick={handlePrev}
               disabled={currentIndex === 0}
               data-testid="button-rapid-prev"
             >
-              <ChevronLeft className="w-4 h-4" />
+              <ChevronLeft className="w-3.5 h-3.5" />
             </Button>
             <Button
               variant="outline"
               size="icon"
-              className="h-8 w-8"
+              className="h-7 w-7"
               onClick={handleNext}
               disabled={currentIndex === remainingTimesheets.length - 1}
               data-testid="button-rapid-next"
             >
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="w-3.5 h-3.5" />
             </Button>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <Button
               variant="outline"
               size="sm"
               onClick={() => rejectMutation.mutate(currentTimesheet.id)}
               disabled={rejectMutation.isPending}
-              className="gap-1.5 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20"
+              className="h-7 gap-1 text-xs text-red-600 dark:text-red-400 border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20"
               data-testid="button-rapid-reject"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className="w-3 h-3" />
               Reject
             </Button>
             <Button
               size="sm"
               onClick={() => approveMutation.mutate(currentTimesheet.id)}
               disabled={approveMutation.isPending || updateMutation.isPending}
-              className="gap-1.5 bg-green-600 hover:bg-green-700 text-white"
+              className="h-7 gap-1 text-xs bg-green-600 hover:bg-green-700 text-white"
               data-testid="button-rapid-approve"
             >
-              <Check className="w-3.5 h-3.5" />
+              <Check className="w-3 h-3" />
               {remainingTimesheets.length > 1 ? "Approve & Next" : "Approve"}
             </Button>
           </div>

@@ -81,7 +81,7 @@ export default function Timesheets() {
   const [weeklyViewDate, setWeeklyViewDate] = useState<Date>(startOfWeek(new Date(), { weekStartsOn: 1 }));
   
   // Calendar view state
-  const [calendarMonth, setCalendarMonth] = useState<Date>(new Date());
+  const [calendarWeek, setCalendarWeek] = useState<Date>(startOfWeek(new Date(), { weekStartsOn: 1 }));
 
   // Column configuration state
   const [columns, setColumns] = useState<TimesheetColumnConfig[]>(() => {
@@ -897,50 +897,68 @@ export default function Timesheets() {
             </div>
           </div>
         ) : activeView === "calendar" ? (
-          /* Calendar View */
+          /* Calendar Week View - Per User */
           (() => {
-            const monthStart = startOfMonth(calendarMonth);
-            const monthEnd = endOfMonth(calendarMonth);
-            const calendarStart = startOfWeek(monthStart, { weekStartsOn: 1 });
-            const calendarEnd = endOfWeek(monthEnd, { weekStartsOn: 1 });
-            const calendarDays = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
+            const calendarDays = eachDayOfInterval({
+              start: calendarWeek,
+              end: addDays(calendarWeek, 6)
+            });
             
-            const getTimesheetsForDay = (day: Date) => {
-              return filteredTimesheets.filter(ts => isSameDay(new Date(ts.date), day));
-            };
+            // Get timesheets for this calendar week
+            const weekEnd = addDays(calendarWeek, 6);
+            const calendarTimesheets = filteredTimesheets.filter(ts => {
+              const tsDate = new Date(ts.date);
+              return tsDate >= calendarWeek && tsDate <= weekEnd;
+            });
             
-            const getDayTotal = (day: Date) => {
-              const dayTimesheets = getTimesheetsForDay(day);
-              return dayTimesheets.reduce((sum, ts) => {
-                const duration = parseFloat(ts.duration) || 0;
-                const breakDuration = parseFloat(ts.breakDuration || "0") || 0;
-                return sum + Math.max(0, duration - breakDuration);
-              }, 0);
-            };
+            // Group by user for this week
+            const userCalendarMap = new Map<string, { userId: string; userName: string; dailyTimesheets: Map<string, Timesheet[]> }>();
+            
+            calendarTimesheets.forEach(ts => {
+              const userId = ts.userId;
+              const userName = getUserName(userId);
+              const tsDate = format(new Date(ts.date), "yyyy-MM-dd");
+              
+              if (!userCalendarMap.has(userId)) {
+                userCalendarMap.set(userId, {
+                  userId,
+                  userName,
+                  dailyTimesheets: new Map(),
+                });
+              }
+              
+              const user = userCalendarMap.get(userId)!;
+              if (!user.dailyTimesheets.has(tsDate)) {
+                user.dailyTimesheets.set(tsDate, []);
+              }
+              user.dailyTimesheets.get(tsDate)!.push(ts);
+            });
+            
+            const calendarUsers = Array.from(userCalendarMap.values()).sort((a, b) => a.userName.localeCompare(b.userName));
             
             return (
               <div className="m-3">
-                {/* Month Navigation */}
+                {/* Week Navigation */}
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
                     <Button
                       variant="outline"
                       size="icon"
                       className="h-7 w-7"
-                      onClick={() => setCalendarMonth(subMonths(calendarMonth, 1))}
-                      data-testid="button-prev-month"
+                      onClick={() => setCalendarWeek(subWeeks(calendarWeek, 1))}
+                      data-testid="button-prev-cal-week"
                     >
                       <ChevronLeft className="w-4 h-4" />
                     </Button>
-                    <span className="text-sm font-medium min-w-[140px] text-center">
-                      {format(calendarMonth, "MMMM yyyy")}
+                    <span className="text-sm font-medium min-w-[180px] text-center">
+                      {format(calendarWeek, "dd MMM")} - {format(addDays(calendarWeek, 6), "dd MMM yyyy")}
                     </span>
                     <Button
                       variant="outline"
                       size="icon"
                       className="h-7 w-7"
-                      onClick={() => setCalendarMonth(addMonths(calendarMonth, 1))}
-                      data-testid="button-next-month"
+                      onClick={() => setCalendarWeek(addWeeks(calendarWeek, 1))}
+                      data-testid="button-next-cal-week"
                     >
                       <ChevronRight className="w-4 h-4" />
                     </Button>
@@ -948,82 +966,94 @@ export default function Timesheets() {
                       variant="ghost"
                       size="sm"
                       className="h-7 text-xs"
-                      onClick={() => setCalendarMonth(new Date())}
+                      onClick={() => setCalendarWeek(startOfWeek(new Date(), { weekStartsOn: 1 }))}
                     >
                       Today
                     </Button>
                   </div>
                 </div>
 
-                {/* Calendar Grid */}
+                {/* Week Calendar Grid - User Rows */}
                 <div className="border-2 border-border rounded-md overflow-hidden bg-card">
                   {/* Day Headers */}
-                  <div className="grid grid-cols-7 bg-muted/30 dark:bg-muted/10 border-b-2 border-border">
-                    {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => (
-                      <div key={day} className="text-[10px] font-medium text-muted-foreground text-center py-1.5 border-r border-border last:border-r-0">
-                        {day}
-                      </div>
-                    ))}
-                  </div>
-                  
-                  {/* Calendar Weeks */}
-                  <div className="grid grid-cols-7">
-                    {calendarDays.map((day, idx) => {
-                      const isCurrentMonth = day.getMonth() === calendarMonth.getMonth();
+                  <div className="grid grid-cols-8 bg-muted/30 dark:bg-muted/10 border-b-2 border-border">
+                    <div className="text-[10px] font-medium text-muted-foreground px-2 py-2 border-r border-border">
+                      Team Member
+                    </div>
+                    {calendarDays.map((day) => {
                       const isToday = isSameDay(day, new Date());
-                      const dayTimesheets = getTimesheetsForDay(day);
-                      const dayTotal = getDayTotal(day);
-                      
                       return (
-                        <div
-                          key={day.toISOString()}
-                          className={`min-h-[80px] border-r border-b border-border last:border-r-0 p-1 ${
-                            !isCurrentMonth ? "bg-muted/20" : ""
-                          } ${isToday ? "bg-blue-50 dark:bg-blue-900/10" : ""}`}
+                        <div 
+                          key={day.toISOString()} 
+                          className={`text-[10px] font-medium text-center py-1.5 border-r border-border last:border-r-0 ${
+                            isToday ? "bg-blue-50 dark:bg-blue-900/20" : ""
+                          }`}
                         >
-                          <div className="flex items-center justify-between mb-1">
-                            <span className={`text-[10px] font-medium ${
-                              isToday ? "bg-blue-600 text-white rounded-full w-5 h-5 flex items-center justify-center" : 
-                              !isCurrentMonth ? "text-muted-foreground/40" : ""
-                            }`}>
-                              {format(day, "d")}
-                            </span>
-                            {dayTotal > 0 && (
-                              <span className="text-[9px] font-medium text-muted-foreground bg-muted/50 rounded px-1">
-                                {formatDuration(dayTotal)}
-                              </span>
-                            )}
+                          <div className={isToday ? "text-blue-600 dark:text-blue-400" : "text-muted-foreground"}>
+                            {format(day, "EEE")}
                           </div>
-                          <div className="space-y-0.5 max-h-[52px] overflow-auto">
-                            {dayTimesheets.slice(0, 3).map((ts) => (
-                              <div
-                                key={ts.id}
-                                onClick={() => {
-                                  setSelectedTimesheet(ts);
-                                  setIsDialogOpen(true);
-                                }}
-                                className={`text-[9px] px-1 py-0.5 rounded cursor-pointer truncate ${
-                                  ts.status === "approved" 
-                                    ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
-                                    : ts.status === "draft" || ts.status === "submitted"
-                                    ? "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400"
-                                    : "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400"
-                                }`}
-                                title={`${getUserName(ts.userId)} - ${formatDuration(Math.max(0, (parseFloat(ts.duration) || 0) - (parseFloat(ts.breakDuration || "0") || 0)))}`}
-                              >
-                                {getUserName(ts.userId).split(' ')[0]} - {formatDuration(Math.max(0, (parseFloat(ts.duration) || 0) - (parseFloat(ts.breakDuration || "0") || 0)))}
-                              </div>
-                            ))}
-                            {dayTimesheets.length > 3 && (
-                              <div className="text-[9px] text-muted-foreground pl-1">
-                                +{dayTimesheets.length - 3} more
-                              </div>
-                            )}
+                          <div className={`text-[9px] ${isToday ? "text-blue-600 dark:text-blue-400 font-semibold" : ""}`}>
+                            {format(day, "dd/MM")}
                           </div>
                         </div>
                       );
                     })}
                   </div>
+                  
+                  {/* User Rows */}
+                  {calendarUsers.length === 0 ? (
+                    <div className="text-center py-8 text-sm text-muted-foreground">
+                      No timesheets for this week
+                    </div>
+                  ) : (
+                    calendarUsers.map((user) => (
+                      <div key={user.userId} className="grid grid-cols-8 border-b border-border last:border-b-0">
+                        <div className="text-[11px] font-medium px-2 py-2 border-r border-border truncate flex items-start">
+                          {user.userName}
+                        </div>
+                        {calendarDays.map((day) => {
+                          const dayKey = format(day, "yyyy-MM-dd");
+                          const dayTimesheets = user.dailyTimesheets.get(dayKey) || [];
+                          const isToday = isSameDay(day, new Date());
+                          const dayTotal = dayTimesheets.reduce((sum, ts) => sum + getNetHours(ts), 0);
+                          
+                          return (
+                            <div 
+                              key={dayKey} 
+                              className={`min-h-[60px] border-r border-border last:border-r-0 p-1 ${
+                                isToday ? "bg-blue-50/50 dark:bg-blue-900/10" : ""
+                              }`}
+                            >
+                              {dayTimesheets.map((ts) => (
+                                <div
+                                  key={ts.id}
+                                  onClick={() => {
+                                    setSelectedTimesheet(ts);
+                                    setIsDialogOpen(true);
+                                  }}
+                                  className={`text-[9px] px-1 py-0.5 mb-0.5 rounded cursor-pointer truncate ${
+                                    ts.status === "approved" 
+                                      ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
+                                      : ts.status === "draft" || ts.status === "submitted"
+                                      ? "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400"
+                                      : "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400"
+                                  }`}
+                                  title={`${ts.startTime || ""}-${ts.endTime || ""}: ${formatDuration(getNetHours(ts))}`}
+                                >
+                                  {ts.startTime ? `${ts.startTime}` : ""} {formatDuration(getNetHours(ts))}
+                                </div>
+                              ))}
+                              {dayTotal > 0 && dayTimesheets.length > 0 && (
+                                <div className="text-[8px] text-muted-foreground text-right mt-0.5">
+                                  {formatDuration(dayTotal)}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             );

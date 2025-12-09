@@ -843,41 +843,118 @@ export function SidebarNav() {
               </Button>
             </div>
             
-            {/* Favorite Projects at top */}
-            {favoriteProjects.length > 0 && (
-              <div className="px-2 py-1.5 border-b border-sidebar-border">
-                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1 px-1">
-                  Projects
-                </div>
-                {favoriteProjects.map((fp) => {
-                  const project = activeProjects.find(p => p.id === fp.id);
-                  if (!project) return null;
-                  return (
-                    <button
-                      key={fp.id}
-                      onClick={() => {
-                        setCurrentProject(project);
-                        handleFavoriteNavClick(`/projects/${project.id}`);
-                      }}
-                      className={cn(
-                        "flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs transition-colors",
-                        "hover-elevate active-elevate-2",
-                        currentProject?.id === project.id
-                          ? "bg-primary/10 text-primary font-medium"
-                          : "text-muted-foreground hover:text-foreground"
-                      )}
-                    >
-                      <Home className="h-3 w-3 flex-shrink-0" />
-                      <span className="truncate">{project.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            
             <ScrollArea className="flex-1">
               <div className="p-1.5">
-                {favoriteSections.map((sectionId) => {
+                {/* User Section First */}
+                {(() => {
+                  const userFavorites = favorites
+                    .filter(f => f.section === "user")
+                    .sort((a, b) => a.order - b.order);
+                  
+                  if (userFavorites.length === 0) return null;
+                  
+                  return (
+                    <div className="mb-1.5">
+                      <button
+                        onClick={() => toggleGroup("user")}
+                        className="flex items-center gap-1 w-full px-1 py-0.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wide hover:text-foreground"
+                      >
+                        <ChevronDown 
+                          className={cn(
+                            "h-3 w-3 transition-transform",
+                            !expandedGroups["user"] && "-rotate-90"
+                          )} 
+                        />
+                        {dynamicSections["user"].label}
+                      </button>
+                      
+                      {expandedGroups["user"] && (
+                        <div className="space-y-0.5">
+                          {userFavorites.map((fav) => {
+                            const IconComponent = iconMap[fav.iconName] || FileText;
+                            let url = fav.fullUrl || fav.url;
+                            if (fav.title === "Dashboard" && currentUser?.id) {
+                              url = `/users/${currentUser.id}`;
+                            }
+                            const isActive = location === url || (url !== "/" && location.startsWith(url));
+                            
+                            return (
+                              <div key={fav.id} className="group flex items-center">
+                                <button
+                                  onClick={() => handleFavoriteNavClick(url)}
+                                  className={cn(
+                                    "flex items-center gap-2 flex-1 px-2 py-1 rounded-md text-xs transition-colors",
+                                    "hover-elevate active-elevate-2",
+                                    isActive
+                                      ? "bg-primary/10 text-primary font-medium"
+                                      : "text-muted-foreground hover:text-foreground"
+                                  )}
+                                >
+                                  <IconComponent className="h-3.5 w-3.5 flex-shrink-0" />
+                                  <span className="flex-1 text-left truncate">{fav.title}</span>
+                                </button>
+                                <button
+                                  onClick={() => toggleFavorite("user", { title: fav.title, url: fav.url, icon: IconComponent }, fav.iconName, fav.fullUrl, fav.projectId)}
+                                  className="p-1 rounded text-yellow-500 opacity-0 group-hover:opacity-100 hover:text-red-500 transition-opacity"
+                                >
+                                  <Star className="h-3 w-3 fill-current" />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+                
+                {/* Favorite Projects */}
+                {favoriteProjects.length > 0 && (
+                  <div className="mb-1.5">
+                    <button
+                      onClick={() => toggleGroup("project")}
+                      className="flex items-center gap-1 w-full px-1 py-0.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wide hover:text-foreground"
+                    >
+                      <ChevronDown 
+                        className={cn(
+                          "h-3 w-3 transition-transform",
+                          !expandedGroups["project"] && "-rotate-90"
+                        )} 
+                      />
+                      Projects
+                    </button>
+                    {expandedGroups["project"] && (
+                      <div className="space-y-0.5">
+                        {favoriteProjects.map((fp) => {
+                          const project = activeProjects.find(p => p.id === fp.id);
+                          if (!project) return null;
+                          return (
+                            <button
+                              key={fp.id}
+                              onClick={() => {
+                                setCurrentProject(project);
+                                handleFavoriteNavClick(`/projects/${project.id}`);
+                              }}
+                              className={cn(
+                                "flex items-center gap-2 w-full px-2 py-1 rounded-md text-xs transition-colors",
+                                "hover-elevate active-elevate-2",
+                                currentProject?.id === project.id
+                                  ? "bg-primary/10 text-primary font-medium"
+                                  : "text-muted-foreground hover:text-foreground"
+                              )}
+                            >
+                              <Home className="h-3 w-3 flex-shrink-0" />
+                              <span className="truncate">{project.name}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                {/* Management and Finance Sections */}
+                {["management", "finance"].map((sectionId) => {
                   const sectionFavorites = favorites
                     .filter(f => f.section === sectionId)
                     .sort((a, b) => a.order - b.order);
