@@ -59,7 +59,7 @@ const calculateHoursBetween = (start: string, end: string): number => {
   return Math.max(0, (endMins - startMins) / 60);
 };
 
-// Time Picker Popover Component
+// Time Picker Popover Component - styled like Select dropdowns
 function TimePicker({ 
   value, 
   onChange, 
@@ -87,12 +87,9 @@ function TimePicker({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button 
-          variant="outline" 
-          className="h-7 px-2 text-xs font-mono justify-center min-w-[60px]"
-        >
-          {value || "--:--"}
-        </Button>
+        <button className="flex items-center justify-between h-7 px-2 text-[11px] bg-background border border-input rounded-md hover:bg-accent hover:text-accent-foreground min-w-[55px]">
+          <span>{value || "--:--"}</span>
+        </button>
       </PopoverTrigger>
       <PopoverContent className="w-24 p-0" align="center">
         <ScrollArea className="h-48" ref={scrollRef}>
@@ -102,7 +99,7 @@ function TimePicker({
                 key={time}
                 data-time={time}
                 onClick={() => { onChange(time); setOpen(false); }}
-                className={`w-full px-2 py-1.5 text-xs font-mono text-center rounded hover:bg-muted ${
+                className={`w-full px-2 py-1.5 text-[11px] text-center rounded hover:bg-muted ${
                   time === value ? "bg-primary text-primary-foreground" : ""
                 }`}
               >
@@ -362,21 +359,22 @@ export function RapidApprovalModal({
             <span className="text-[11px] font-medium">{getUserName(currentTimesheet.userId)}</span>
           </div>
 
-          {/* Time Row: Label | Round | Pickers | Hours */}
+          {/* Time Row: Actual times on left | Round | Pickers | Hours */}
           <div className="flex items-center justify-between px-2 py-1 bg-muted/30 rounded">
-            <span className="text-[11px] text-muted-foreground">Time:</span>
+            <div className="flex items-center gap-1">
+              <span className="text-[11px] text-muted-foreground">Time:</span>
+              <span className="text-[11px] font-medium">{editedStartTime || "--:--"} - {editedEndTime || "--:--"}</span>
+            </div>
             <div className="flex items-center gap-1.5">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-6 px-2 text-[10px] gap-1"
+              <button
                 onClick={handleRoundTimes}
                 title="Round times to 15 minutes"
                 data-testid="button-round-times"
+                className="flex items-center gap-1 h-7 px-2 text-[11px] bg-background border border-input rounded-md hover:bg-accent hover:text-accent-foreground"
               >
                 <RotateCcw className="w-2.5 h-2.5" />
                 Round
-              </Button>
+              </button>
               <TimePicker value={editedStartTime} onChange={setEditedStartTime} label="Start" />
               <span className="text-[11px] text-muted-foreground">-</span>
               <TimePicker value={editedEndTime} onChange={setEditedEndTime} label="End" />
@@ -391,12 +389,12 @@ export function RapidApprovalModal({
             <span className="text-[11px] text-muted-foreground">Break:</span>
             <div className="flex items-center gap-1.5">
               <TimePicker value={editedBreakStart} onChange={setEditedBreakStart} label="Start" />
-              <Input
+              <input
                 type="number"
                 step="0.25"
                 value={editedBreak}
                 onChange={(e) => setEditedBreak(e.target.value)}
-                className="h-6 w-14 text-[11px] text-center px-1"
+                className="h-7 w-14 px-2 text-[11px] text-center bg-background border border-input rounded-md focus:outline-none focus:ring-1 focus:ring-ring"
                 data-testid="input-rapid-break"
               />
               <span className="text-[11px] text-muted-foreground">hrs</span>
