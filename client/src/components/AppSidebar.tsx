@@ -104,7 +104,6 @@ const systemItems = [
   { title: "Suppliers", url: "/suppliers", icon: Truck },
   { title: "Trades", url: "/trades", icon: HardHat },
   { title: "Cost Codes", url: "/cost-codes", icon: Tag },
-  { title: "Timesheets", url: "/timesheets", icon: Timer },
   { title: "Archived Projects", url: "/archived-projects", icon: Archive },
   { title: "Emails", url: "/emails", icon: Mail },
   { title: "CRM", url: "/crm", icon: UserPlus },

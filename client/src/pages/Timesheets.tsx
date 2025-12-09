@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams } from "wouter";
-import { Plus, Clock, Filter, Search, Calendar as CalendarIcon, User, Check, X, Send, CalendarRange, Download, ChevronDown } from "lucide-react";
+import { Plus, Clock, Filter, Search, Calendar as CalendarIcon, User, Check, X, CalendarRange, Download, ChevronDown, Settings2, RotateCcw, Table2, Users2, CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import * as XLSX from "xlsx";
 import { Input } from "@/components/ui/input";
@@ -22,13 +22,40 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { format, startOfWeek, endOfWeek, addWeeks, isWithinInterval, parseISO } from "date-fns";
+import { format, startOfWeek, endOfWeek, addWeeks, isWithinInterval, parseISO, eachDayOfInterval, isSameDay, addDays, subWeeks } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { TimesheetDialog } from "@/components/TimesheetDialog";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Timesheet, Project, User as UserType, CostCode } from "@shared/schema";
+import { DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+
+// Column configuration type
+interface TimesheetColumnConfig {
+  id: string;
+  label: string;
+  visible: boolean;
+  width: number;
+  minWidth: number;
+}
+
+const DEFAULT_COLUMNS: TimesheetColumnConfig[] = [
+  { id: 'date', label: 'Date', visible: true, width: 70, minWidth: 60 },
+  { id: 'user', label: 'User', visible: true, width: 100, minWidth: 80 },
+  { id: 'project', label: 'Project', visible: true, width: 120, minWidth: 80 },
+  { id: 'costCode', label: 'Cost Code', visible: true, width: 100, minWidth: 70 },
+  { id: 'time', label: 'Time', visible: true, width: 85, minWidth: 70 },
+  { id: 'break', label: 'Break', visible: true, width: 45, minWidth: 40 },
+  { id: 'hours', label: 'Hours', visible: true, width: 50, minWidth: 45 },
+  { id: 'rate', label: 'Rate', visible: true, width: 50, minWidth: 45 },
+  { id: 'total', label: 'Total', visible: true, width: 60, minWidth: 50 },
+  { id: 'status', label: 'Status', visible: true, width: 70, minWidth: 60 },
+  { id: 'description', label: 'Description', visible: true, width: 180, minWidth: 100 },
+  { id: 'actions', label: 'Actions', visible: true, width: 80, minWidth: 60 },
+];
+
+const COLUMNS_STORAGE_KEY = 'timesheets-columns-config';
 
 export default function Timesheets() {
   const { toast } = useToast();
@@ -44,6 +71,53 @@ export default function Timesheets() {
   const [dateRangeType, setDateRangeType] = useState<string>("all");
   const [customStartDate, setCustomStartDate] = useState<Date | undefined>();
   const [customEndDate, setCustomEndDate] = useState<Date | undefined>();
+  
+  // View state: table, weekly, calendar
+  const [activeView, setActiveView] = useState<"table" | "weekly" | "calendar">("table");
+  
+  // Weekly view state
+  const [weeklyViewDate, setWeeklyViewDate] = useState<Date>(startOfWeek(new Date(), { weekStartsOn: 1 }));
+
+  // Column configuration state
+  const [columns, setColumns] = useState<TimesheetColumnConfig[]>(() => {
+    try {
+      const saved = localStorage.getItem(COLUMNS_STORAGE_KEY);
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.error('Failed to load column config:', e);
+    }
+    return DEFAULT_COLUMNS;
+  });
+
+  // Save columns to localStorage when changed
+  useEffect(() => {
+    try {
+      localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(columns));
+    } catch (e) {
+      console.error('Failed to save column config:', e);
+    }
+  }, [columns]);
+
+  // Toggle column visibility
+  const toggleColumnVisibility = (columnId: string) => {
+    setColumns(prev => prev.map(col => 
+      col.id === columnId ? { ...col, visible: !col.visible } : col
+    ));
+  };
+
+  // Reset columns to default
+  const resetColumns = () => {
+    setColumns(DEFAULT_COLUMNS);
+    toast({
+      title: "Columns reset",
+      description: "Column settings have been reset to defaults.",
+    });
+  };
+
+  // Get visible columns
+  const visibleColumns = columns.filter(col => col.visible);
 
   // Fetch timesheets - project-specific or all
   const { data: timesheets = [], isLoading: loadingTimesheets } = useQuery<Timesheet[]>({
@@ -66,25 +140,12 @@ export default function Timesheets() {
     queryKey: ["/api/users"],
   });
 
-  // Status workflow mutations
-  const submitMutation = useMutation({
-    mutationFn: async (timesheetId: string) => {
-      const res = await apiRequest(`/api/timesheets/${timesheetId}/submit`, "POST", {});
-      return await res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
-      if (projectId) {
-        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "timesheets"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "labour-hours-budget"] });
-      }
-      toast({
-        title: "Timesheet submitted",
-        description: "The timesheet has been submitted for approval.",
-      });
-    },
+  // Fetch cost codes for display
+  const { data: costCodes = [] } = useQuery<CostCode[]>({
+    queryKey: ["/api/cost-codes"],
   });
 
+  // Status workflow mutations
   const approveMutation = useMutation({
     mutationFn: async (timesheetId: string) => {
       const res = await apiRequest(`/api/timesheets/${timesheetId}/approve`, "POST", {});
@@ -164,8 +225,10 @@ export default function Timesheets() {
     const matchesUser = selectedUsers.length > 0 
       ? selectedUsers.includes(timesheet.userId) 
       : true;
+    // Treat "submitted" same as "draft" in UI since we simplified the flow
+    const effectiveStatus = timesheet.status === "submitted" ? "draft" : timesheet.status;
     const matchesStatus = selectedStatuses.length > 0 
-      ? selectedStatuses.includes(timesheet.status) 
+      ? selectedStatuses.includes(effectiveStatus) 
       : true;
     const matchesPhase = selectedPhases.length > 0 
       ? selectedPhases.includes(getProjectPhase(timesheet.projectId)) 
@@ -194,6 +257,13 @@ export default function Timesheets() {
     return user ? `${user.firstName} ${user.lastName}`.trim() || user.username : "Unknown User";
   };
 
+  // Get cost code name
+  const getCostCodeName = (costCodeId: string | null) => {
+    if (!costCodeId) return "-";
+    const costCode = costCodes.find((c) => c.id === costCodeId);
+    return costCode ? costCode.name : "-";
+  };
+
   // Format duration (decimal hours to HH:MM)
   const formatDuration = (hours: number | null) => {
     if (!hours) return "0:00";
@@ -204,6 +274,49 @@ export default function Timesheets() {
 
   // Get current project if in project context
   const currentProject = projectId ? projects.find(p => p.id === projectId) : null;
+
+  // Weekly view calculations
+  const weekDays = eachDayOfInterval({
+    start: weeklyViewDate,
+    end: addDays(weeklyViewDate, 6)
+  });
+
+  // Get weekly summary data grouped by user
+  const getWeeklySummary = () => {
+    const weekEnd = addDays(weeklyViewDate, 6);
+    const weekTimesheets = timesheets.filter(ts => {
+      const tsDate = new Date(ts.date);
+      return tsDate >= weeklyViewDate && tsDate <= weekEnd;
+    });
+
+    // Group by user
+    const userMap = new Map<string, { userId: string; userName: string; dailyHours: Map<string, number>; totalHours: number }>();
+    
+    weekTimesheets.forEach(ts => {
+      const userId = ts.userId;
+      const userName = getUserName(userId);
+      const tsDate = format(new Date(ts.date), "yyyy-MM-dd");
+      const hours = parseFloat(ts.duration) || 0;
+
+      if (!userMap.has(userId)) {
+        userMap.set(userId, {
+          userId,
+          userName,
+          dailyHours: new Map(),
+          totalHours: 0
+        });
+      }
+
+      const user = userMap.get(userId)!;
+      const currentDayHours = user.dailyHours.get(tsDate) || 0;
+      user.dailyHours.set(tsDate, currentDayHours + hours);
+      user.totalHours += hours;
+    });
+
+    return Array.from(userMap.values()).sort((a, b) => a.userName.localeCompare(b.userName));
+  };
+
+  const weeklySummary = getWeeklySummary();
 
   // Export timesheets to Excel
   const handleExport = () => {
@@ -257,12 +370,87 @@ export default function Timesheets() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Row 1: Title */}
+      {/* Row 1: Title + View Tabs */}
       <div className="h-9 bg-background flex items-center justify-between px-3 border-b border-border">
-        <h1 className="text-sm font-semibold">
-          {currentProject ? `${currentProject.name} - Timesheets` : "Timesheets"}
-        </h1>
+        <div className="flex items-center gap-4">
+          <h1 className="text-sm font-semibold">
+            {currentProject ? `${currentProject.name} - Timesheets` : "Timesheets"}
+          </h1>
+          <div className="flex items-center gap-1">
+            <Button
+              variant={activeView === "table" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => setActiveView("table")}
+              className="h-6 px-2 text-xs gap-1"
+              data-testid="button-view-table"
+            >
+              <Table2 className="w-3 h-3" />
+              Table
+            </Button>
+            <Button
+              variant={activeView === "weekly" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => setActiveView("weekly")}
+              className="h-6 px-2 text-xs gap-1"
+              data-testid="button-view-weekly"
+            >
+              <Users2 className="w-3 h-3" />
+              Weekly
+            </Button>
+            <Button
+              variant={activeView === "calendar" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => setActiveView("calendar")}
+              className="h-6 px-2 text-xs gap-1"
+              data-testid="button-view-calendar"
+            >
+              <CalendarDays className="w-3 h-3" />
+              Calendar
+            </Button>
+          </div>
+        </div>
         <div className="flex items-center gap-2">
+          {/* Column Settings */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 px-2 text-xs gap-1"
+                data-testid="button-column-settings"
+              >
+                <Settings2 className="w-3 h-3" />
+                Columns
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              {columns.map((col) => (
+                <DropdownMenuItem
+                  key={col.id}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    toggleColumnVisibility(col.id);
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <Checkbox
+                    checked={col.visible}
+                    onCheckedChange={() => toggleColumnVisibility(col.id)}
+                    className="pointer-events-none"
+                  />
+                  <span className="text-xs">{col.label}</span>
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={resetColumns}
+                className="flex items-center gap-2 text-muted-foreground"
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span className="text-xs">Reset to defaults</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button
             variant="outline"
             size="sm"
@@ -410,7 +598,6 @@ export default function Timesheets() {
             <DropdownMenuContent>
               {[
                 { key: "draft", name: "Draft" },
-                { key: "submitted", name: "Submitted" },
                 { key: "approved", name: "Approved" },
                 { key: "rejected", name: "Rejected" },
               ].map((status) => (
@@ -560,11 +747,131 @@ export default function Timesheets() {
         </div>
       </div>
 
-      {/* Timesheets Table */}
+      {/* Content Area */}
       <div className="flex-1 overflow-auto">
         {loadingTimesheets ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-sm text-muted-foreground">Loading timesheets...</div>
+          </div>
+        ) : activeView === "weekly" ? (
+          /* Weekly Team Hours View */
+          <div className="m-3">
+            {/* Week Navigation */}
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => setWeeklyViewDate(subWeeks(weeklyViewDate, 1))}
+                  data-testid="button-prev-week"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                <span className="text-sm font-medium min-w-[180px] text-center">
+                  {format(weeklyViewDate, "dd MMM")} - {format(addDays(weeklyViewDate, 6), "dd MMM yyyy")}
+                </span>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => setWeeklyViewDate(addWeeks(weeklyViewDate, 1))}
+                  data-testid="button-next-week"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => setWeeklyViewDate(startOfWeek(new Date(), { weekStartsOn: 1 }))}
+                >
+                  Today
+                </Button>
+              </div>
+            </div>
+
+            {/* Weekly Matrix */}
+            <div className="border-2 border-border rounded-md overflow-hidden bg-card">
+              <Table>
+                <TableHeader>
+                  <TableRow className="h-7 bg-muted/30 dark:bg-muted/10 border-b-2 border-border">
+                    <TableHead className="text-[10px] font-medium text-muted-foreground w-[140px] px-2">Team Member</TableHead>
+                    {weekDays.map((day) => (
+                      <TableHead key={day.toISOString()} className="text-[10px] font-medium text-muted-foreground text-center w-[70px] px-1">
+                        <div>{format(day, "EEE")}</div>
+                        <div className="text-[9px]">{format(day, "dd/MM")}</div>
+                      </TableHead>
+                    ))}
+                    <TableHead className="text-[10px] font-medium text-muted-foreground text-center w-[70px] px-2 bg-muted/50">Total</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {weeklySummary.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={9} className="h-20 text-center text-sm text-muted-foreground">
+                        No timesheets for this week
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    weeklySummary.map((user) => (
+                      <TableRow key={user.userId} className="h-7 border-b border-border">
+                        <TableCell className="text-[11px] font-medium px-2 py-1 truncate max-w-[140px]">
+                          {user.userName}
+                        </TableCell>
+                        {weekDays.map((day) => {
+                          const dayKey = format(day, "yyyy-MM-dd");
+                          const hours = user.dailyHours.get(dayKey) || 0;
+                          return (
+                            <TableCell key={dayKey} className="text-[11px] text-center tabular-nums px-1 py-1">
+                              {hours > 0 ? (
+                                <span className={hours >= 8 ? "font-medium text-green-600 dark:text-green-400" : ""}>
+                                  {formatDuration(hours)}
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground/40">-</span>
+                              )}
+                            </TableCell>
+                          );
+                        })}
+                        <TableCell className="text-[11px] font-semibold text-center tabular-nums px-2 py-1 bg-muted/30">
+                          {formatDuration(user.totalHours)}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                  {/* Totals Row */}
+                  {weeklySummary.length > 0 && (
+                    <TableRow className="h-7 bg-muted/20 border-t-2 border-border">
+                      <TableCell className="text-[10px] font-semibold px-2 py-1">TOTAL</TableCell>
+                      {weekDays.map((day) => {
+                        const dayKey = format(day, "yyyy-MM-dd");
+                        const dayTotal = weeklySummary.reduce((sum, user) => sum + (user.dailyHours.get(dayKey) || 0), 0);
+                        return (
+                          <TableCell key={dayKey} className="text-[10px] font-semibold text-center tabular-nums px-1 py-1">
+                            {dayTotal > 0 ? formatDuration(dayTotal) : "-"}
+                          </TableCell>
+                        );
+                      })}
+                      <TableCell className="text-[10px] font-bold text-center tabular-nums px-2 py-1 bg-muted/50">
+                        {formatDuration(weeklySummary.reduce((sum, user) => sum + user.totalHours, 0))}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        ) : activeView === "calendar" ? (
+          /* Calendar View */
+          <div className="m-3">
+            <div className="border-2 border-border rounded-md p-6 bg-card flex flex-col items-center justify-center min-h-[400px]">
+              <CalendarDays className="w-12 h-12 text-muted-foreground/40 mb-4" />
+              <h3 className="text-sm font-medium text-muted-foreground mb-2">Calendar View Coming Soon</h3>
+              <p className="text-xs text-muted-foreground/60 text-center max-w-[300px]">
+                View timesheets in a monthly calendar format with daily summaries and quick entry.
+              </p>
+            </div>
           </div>
         ) : filteredTimesheets.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-3">
@@ -587,25 +894,50 @@ export default function Timesheets() {
           <div className="m-3 border-2 border-border rounded-md overflow-hidden bg-card">
             <Table>
               <TableHeader>
-                <TableRow className="h-9 bg-muted/30 dark:bg-muted/10 hover:bg-muted/30 dark:hover:bg-muted/10 border-b-2 border-border">
-                  <TableHead className="text-[11px] font-medium text-muted-foreground w-[85px] px-3">Date</TableHead>
-                  <TableHead className="text-[11px] font-medium text-muted-foreground w-[130px] px-3">User</TableHead>
-                  <TableHead className="text-[11px] font-medium text-muted-foreground w-[160px] px-3">Project</TableHead>
-                  <TableHead className="text-[11px] font-medium text-muted-foreground w-[100px] px-3">Time</TableHead>
-                  <TableHead className="text-[11px] font-medium text-muted-foreground w-[60px] px-3">Break</TableHead>
-                  <TableHead className="text-[11px] font-medium text-muted-foreground w-[70px] px-3">Hours</TableHead>
-                  <TableHead className="text-[11px] font-medium text-muted-foreground w-[70px] px-3">Rate</TableHead>
-                  <TableHead className="text-[11px] font-medium text-muted-foreground w-[80px] px-3 text-right">Total</TableHead>
-                  <TableHead className="text-[11px] font-medium text-muted-foreground w-[85px] px-3">Status</TableHead>
-                  <TableHead className="text-[11px] font-medium text-muted-foreground px-3">Description</TableHead>
-                  <TableHead className="text-[11px] font-medium text-muted-foreground w-[100px] px-3">Actions</TableHead>
+                <TableRow className="h-7 bg-muted/30 dark:bg-muted/10 hover:bg-muted/30 dark:hover:bg-muted/10 border-b-2 border-border">
+                  {columns.find(c => c.id === 'date')?.visible && (
+                    <TableHead className="text-[10px] font-medium text-muted-foreground w-[70px] px-2">Date</TableHead>
+                  )}
+                  {columns.find(c => c.id === 'user')?.visible && (
+                    <TableHead className="text-[10px] font-medium text-muted-foreground w-[100px] px-2">User</TableHead>
+                  )}
+                  {columns.find(c => c.id === 'project')?.visible && (
+                    <TableHead className="text-[10px] font-medium text-muted-foreground w-[120px] px-2">Project</TableHead>
+                  )}
+                  {columns.find(c => c.id === 'costCode')?.visible && (
+                    <TableHead className="text-[10px] font-medium text-muted-foreground w-[100px] px-2">Cost Code</TableHead>
+                  )}
+                  {columns.find(c => c.id === 'time')?.visible && (
+                    <TableHead className="text-[10px] font-medium text-muted-foreground w-[85px] px-2">Time</TableHead>
+                  )}
+                  {columns.find(c => c.id === 'break')?.visible && (
+                    <TableHead className="text-[10px] font-medium text-muted-foreground w-[45px] px-2">Break</TableHead>
+                  )}
+                  {columns.find(c => c.id === 'hours')?.visible && (
+                    <TableHead className="text-[10px] font-medium text-muted-foreground w-[50px] px-2">Hours</TableHead>
+                  )}
+                  {columns.find(c => c.id === 'rate')?.visible && (
+                    <TableHead className="text-[10px] font-medium text-muted-foreground w-[50px] px-2">Rate</TableHead>
+                  )}
+                  {columns.find(c => c.id === 'total')?.visible && (
+                    <TableHead className="text-[10px] font-medium text-muted-foreground w-[60px] px-2 text-right">Total</TableHead>
+                  )}
+                  {columns.find(c => c.id === 'status')?.visible && (
+                    <TableHead className="text-[10px] font-medium text-muted-foreground w-[70px] px-2">Status</TableHead>
+                  )}
+                  {columns.find(c => c.id === 'description')?.visible && (
+                    <TableHead className="text-[10px] font-medium text-muted-foreground px-2">Description</TableHead>
+                  )}
+                  {columns.find(c => c.id === 'actions')?.visible && (
+                    <TableHead className="text-[10px] font-medium text-muted-foreground w-[80px] px-2">Actions</TableHead>
+                  )}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredTimesheets.map((timesheet, index) => (
                   <TableRow 
                     key={timesheet.id}
-                    className={`h-10 cursor-pointer hover:bg-muted/20 dark:hover:bg-muted/10 transition-colors ${
+                    className={`h-7 cursor-pointer hover:bg-muted/20 dark:hover:bg-muted/10 transition-colors ${
                       index !== filteredTimesheets.length - 1 ? "border-b border-border" : ""
                     }`}
                     onClick={() => {
@@ -614,93 +946,108 @@ export default function Timesheets() {
                     }}
                     data-testid={`row-timesheet-${timesheet.id}`}
                   >
-                    <TableCell className="text-xs font-medium px-3">
-                      {format(new Date(timesheet.date), "dd MMM")}
-                    </TableCell>
-                    <TableCell className="text-xs truncate max-w-[130px] px-3">
-                      {getUserName(timesheet.userId)}
-                    </TableCell>
-                    <TableCell className="text-xs truncate max-w-[160px] text-muted-foreground px-3">
-                      {getProjectName(timesheet.projectId)}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground tabular-nums px-3">
-                      {timesheet.startTime && timesheet.endTime
-                        ? `${timesheet.startTime} - ${timesheet.endTime}`
-                        : "-"}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground tabular-nums px-3">
-                      {timesheet.breakDuration ? formatDuration(parseFloat(timesheet.breakDuration)) : "-"}
-                    </TableCell>
-                    <TableCell className="text-xs font-medium tabular-nums px-3">
-                      {formatDuration(parseFloat(timesheet.duration))}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground tabular-nums px-3">
-                      ${timesheet.hourlyRate ? parseFloat(timesheet.hourlyRate).toFixed(0) : "0"}
-                    </TableCell>
-                    <TableCell className="text-xs font-semibold text-right tabular-nums px-3">
-                      ${timesheet.total ? parseFloat(timesheet.total).toFixed(2) : "0.00"}
-                    </TableCell>
-                    <TableCell className="px-3">
-                      {timesheet.status === "approved" ? (
-                        <Badge variant="outline" className="text-[10px] font-medium bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800">
-                          Approved
-                        </Badge>
-                      ) : timesheet.status === "submitted" ? (
-                        <Badge variant="outline" className="text-[10px] font-medium bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800">
-                          Pending
-                        </Badge>
-                      ) : timesheet.status === "rejected" ? (
-                        <Badge variant="outline" className="text-[10px] font-medium bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800">
-                          Rejected
-                        </Badge>
-                      ) : (
-                        <Badge variant="secondary" className="text-[10px] font-medium">
-                          Draft
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground truncate max-w-[200px] px-3">
-                      {timesheet.description || "-"}
-                    </TableCell>
-                    <TableCell className="px-3" onClick={(e) => e.stopPropagation()}>
-                      {timesheet.status === "draft" && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => submitMutation.mutate(timesheet.id)}
-                          data-testid={`button-submit-${timesheet.id}`}
-                          className="h-6 px-2 text-[10px] font-medium bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/30 hover:bg-[#bba7db]/20 gap-1"
-                        >
-                          <Send className="w-3 h-3" />
-                          Submit
-                        </Button>
-                      )}
-                      {timesheet.status === "submitted" && (
-                        <div className="flex items-center gap-1">
-                          <Button
-                            size="icon"
-                            variant="outline"
-                            onClick={() => approveMutation.mutate(timesheet.id)}
-                            data-testid={`button-approve-${timesheet.id}`}
-                            className="h-6 w-6 bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 border-green-200 dark:border-green-800 hover:bg-green-100 dark:hover:bg-green-900/40"
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="outline"
-                            onClick={() => rejectMutation.mutate(timesheet.id)}
-                            data-testid={`button-reject-${timesheet.id}`}
-                            className="h-6 w-6 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/40"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </Button>
-                        </div>
-                      )}
-                      {(timesheet.status === "approved" || timesheet.status === "rejected") && (
-                        <span className="text-[10px] text-muted-foreground/50">-</span>
-                      )}
-                    </TableCell>
+                    {columns.find(c => c.id === 'date')?.visible && (
+                      <TableCell className="text-[11px] font-medium px-2 py-1">
+                        {format(new Date(timesheet.date), "dd MMM")}
+                      </TableCell>
+                    )}
+                    {columns.find(c => c.id === 'user')?.visible && (
+                      <TableCell className="text-[11px] truncate max-w-[100px] px-2 py-1">
+                        {getUserName(timesheet.userId)}
+                      </TableCell>
+                    )}
+                    {columns.find(c => c.id === 'project')?.visible && (
+                      <TableCell className="text-[11px] truncate max-w-[120px] text-muted-foreground px-2 py-1">
+                        {getProjectName(timesheet.projectId)}
+                      </TableCell>
+                    )}
+                    {columns.find(c => c.id === 'costCode')?.visible && (
+                      <TableCell className="text-[11px] truncate max-w-[100px] text-muted-foreground px-2 py-1">
+                        {getCostCodeName(timesheet.costCodeId)}
+                      </TableCell>
+                    )}
+                    {columns.find(c => c.id === 'time')?.visible && (
+                      <TableCell className="text-[11px] text-muted-foreground tabular-nums px-2 py-1">
+                        {timesheet.startTime && timesheet.endTime
+                          ? `${timesheet.startTime}-${timesheet.endTime}`
+                          : "-"}
+                      </TableCell>
+                    )}
+                    {columns.find(c => c.id === 'break')?.visible && (
+                      <TableCell className="text-[11px] text-muted-foreground tabular-nums px-2 py-1">
+                        {timesheet.breakDuration ? formatDuration(parseFloat(timesheet.breakDuration)) : "-"}
+                      </TableCell>
+                    )}
+                    {columns.find(c => c.id === 'hours')?.visible && (
+                      <TableCell className="text-[11px] font-medium tabular-nums px-2 py-1">
+                        {formatDuration(parseFloat(timesheet.duration))}
+                      </TableCell>
+                    )}
+                    {columns.find(c => c.id === 'rate')?.visible && (
+                      <TableCell className="text-[11px] text-muted-foreground tabular-nums px-2 py-1">
+                        ${timesheet.hourlyRate ? parseFloat(timesheet.hourlyRate).toFixed(0) : "0"}
+                      </TableCell>
+                    )}
+                    {columns.find(c => c.id === 'total')?.visible && (
+                      <TableCell className="text-[11px] font-semibold text-right tabular-nums px-2 py-1">
+                        ${timesheet.total ? parseFloat(timesheet.total).toFixed(2) : "0.00"}
+                      </TableCell>
+                    )}
+                    {columns.find(c => c.id === 'status')?.visible && (
+                      <TableCell className="px-2 py-1">
+                        {timesheet.status === "approved" ? (
+                          <Badge variant="outline" className="text-[10px] font-medium bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800">
+                            Approved
+                          </Badge>
+                        ) : (timesheet.status === "submitted" || timesheet.status === "draft") ? (
+                          <Badge variant="outline" className="text-[10px] font-medium bg-slate-50 dark:bg-slate-900/20 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800">
+                            Draft
+                          </Badge>
+                        ) : timesheet.status === "rejected" ? (
+                          <Badge variant="outline" className="text-[10px] font-medium bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800">
+                            Rejected
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary" className="text-[10px] font-medium">
+                            Draft
+                          </Badge>
+                        )}
+                      </TableCell>
+                    )}
+                    {columns.find(c => c.id === 'description')?.visible && (
+                      <TableCell className="text-[11px] text-muted-foreground truncate max-w-[180px] px-2 py-1">
+                        {timesheet.description || "-"}
+                      </TableCell>
+                    )}
+                    {columns.find(c => c.id === 'actions')?.visible && (
+                      <TableCell className="px-2 py-1" onClick={(e) => e.stopPropagation()}>
+                        {(timesheet.status === "draft" || timesheet.status === "submitted") && (
+                          <div className="flex items-center gap-1">
+                            <Button
+                              size="icon"
+                              variant="outline"
+                              onClick={() => approveMutation.mutate(timesheet.id)}
+                              data-testid={`button-approve-${timesheet.id}`}
+                              className="h-6 w-6 bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 border-green-200 dark:border-green-800 hover:bg-green-100 dark:hover:bg-green-900/40"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="outline"
+                              onClick={() => rejectMutation.mutate(timesheet.id)}
+                              data-testid={`button-reject-${timesheet.id}`}
+                              className="h-6 w-6 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/40"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        )}
+                        {(timesheet.status === "approved" || timesheet.status === "rejected") && (
+                          <span className="text-[10px] text-muted-foreground/50">-</span>
+                        )}
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>

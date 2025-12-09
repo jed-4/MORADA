@@ -52,6 +52,7 @@ Preferred communication style: Simple, everyday language.
 - **Calendar System**: Dual personal and business calendars with month/week/day views, drag-and-drop, and Notion-style flexible filtering with saved views.
 - **Roles & Permissions**: Company-isolated user roles with granular control over 25 Buildern permissions.
 - **Business Page Reorganization**: Unified navigation with a 2-row header and tab system.
+- **Timesheets System**: Global access via All Items section, compact table design (h-7 rows, text-[11px], py-1 padding), configurable columns with localStorage persistence, tabbed views (Table/Weekly/Calendar). Weekly view shows user×days matrix with aggregated hours and totals. Planned features: rapidfire approval modal, subcontractor-to-PO workflow.
 - **User Workspace**: Personal workspace with tabs for Overview, Tasks, and future Schedule/Time/Notes. The Overview tab features a fully customizable widget-based dashboard with:
   - Personal widgets: My Tasks, My Calendar (task-based), Cross-Project Deadlines, Personal Metrics, Quick Actions (clock in/out, log time), My Memos
   - Drag-and-drop widget reordering via @dnd-kit

@@ -132,6 +132,7 @@ const sections: Record<SectionId, { label: string; icon: React.ComponentType<{ c
       { title: "Notes", url: "/notes", icon: FileText },
       { title: "Minutes", url: "/minutes", icon: ClipboardList },
       { title: "Tasks", url: "/tasks", icon: CheckSquare },
+      { title: "Timesheets", url: "/timesheets", icon: Timer },
       { title: "Estimates", url: "/estimates", icon: FileBarChart },
       { title: "RFQs", url: "/rfqs", icon: FileSearch },
       { title: "RFIs", url: "/rfis", icon: HelpCircle },
