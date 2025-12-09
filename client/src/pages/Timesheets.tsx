@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams } from "wouter";
-import { Plus, Clock, Filter, Search, Calendar as CalendarIcon, User, Check, X, CalendarRange, Download, ChevronDown, Settings2, RotateCcw, Table2, Users2, CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Clock, Filter, Search, Calendar as CalendarIcon, User, Check, X, CalendarRange, Download, ChevronDown, Settings2, RotateCcw, Table2, Users2, CalendarDays, ChevronLeft, ChevronRight, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import * as XLSX from "xlsx";
 import { Input } from "@/components/ui/input";
@@ -26,6 +26,7 @@ import { format, startOfWeek, endOfWeek, addWeeks, isWithinInterval, parseISO, e
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { TimesheetDialog } from "@/components/TimesheetDialog";
+import { RapidApprovalModal } from "@/components/RapidApprovalModal";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Timesheet, Project, User as UserType, CostCode } from "@shared/schema";
@@ -67,6 +68,7 @@ export default function Timesheets() {
   const [selectedPhases, setSelectedPhases] = useState<string[]>([]);
   const [showInvoicedOnly, setShowInvoicedOnly] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isRapidApprovalOpen, setIsRapidApprovalOpen] = useState(false);
   const [selectedTimesheet, setSelectedTimesheet] = useState<Timesheet | undefined>();
   const [dateRangeType, setDateRangeType] = useState<string>("all");
   const [customStartDate, setCustomStartDate] = useState<Date | undefined>();
@@ -275,6 +277,9 @@ export default function Timesheets() {
   // Get current project if in project context
   const currentProject = projectId ? projects.find(p => p.id === projectId) : null;
 
+  // Get pending (draft + submitted) timesheets for rapid approval
+  const pendingTimesheets = timesheets.filter(ts => ts.status === "draft" || ts.status === "submitted");
+
   // Weekly view calculations
   const weekDays = eachDayOfInterval({
     start: weeklyViewDate,
@@ -462,6 +467,18 @@ export default function Timesheets() {
             <Download className="w-3 h-3" />
             Export
           </Button>
+          {pendingTimesheets.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsRapidApprovalOpen(true)}
+              className="h-6 px-2 text-xs gap-1 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/30"
+              data-testid="button-rapid-approval"
+            >
+              <Zap className="w-3 h-3" />
+              Approve ({pendingTimesheets.length})
+            </Button>
+          )}
           <Button
             size="sm"
             onClick={() => {
@@ -1061,6 +1078,15 @@ export default function Timesheets() {
         onOpenChange={setIsDialogOpen}
         timesheet={selectedTimesheet}
         defaultProjectId={projectId}
+      />
+
+      <RapidApprovalModal
+        open={isRapidApprovalOpen}
+        onOpenChange={setIsRapidApprovalOpen}
+        pendingTimesheets={pendingTimesheets}
+        projects={projects}
+        users={users}
+        costCodes={costCodes}
       />
     </div>
   );
