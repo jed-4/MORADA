@@ -169,6 +169,13 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
     return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(num);
   };
 
+  const formatCurrencyIncGst = (amount: string | number | null | undefined) => {
+    if (!amount) return "-";
+    const num = typeof amount === "string" ? parseFloat(amount) : amount;
+    const incGst = num * 1.1; // Australian GST is 10%
+    return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(incGst);
+  };
+
   const getMarkup = (cost: string | null, sell: string | null) => {
     if (!cost || !sell) return "-";
     const costNum = parseFloat(cost);
@@ -353,8 +360,10 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                         <TableHead className="text-[10px] w-[80px]">Code</TableHead>
                         <TableHead className="text-[10px] w-[100px]">Supplier</TableHead>
                         <TableHead className="text-[10px] w-[60px]">Unit</TableHead>
-                        <TableHead className="text-[10px] w-[90px] text-right">Cost</TableHead>
-                        <TableHead className="text-[10px] w-[90px] text-right">Sell</TableHead>
+                        <TableHead className="text-[10px] w-[80px] text-right">Cost (ex)</TableHead>
+                        <TableHead className="text-[10px] w-[80px] text-right">Cost (inc)</TableHead>
+                        <TableHead className="text-[10px] w-[80px] text-right">Sell (ex)</TableHead>
+                        <TableHead className="text-[10px] w-[80px] text-right">Sell (inc)</TableHead>
                         <TableHead className="text-[10px] w-[60px] text-right">Markup</TableHead>
                         <TableHead className="text-[10px] w-[60px]">Status</TableHead>
                         <TableHead className="text-[10px] w-[60px]"></TableHead>
@@ -383,8 +392,14 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
                             <TableCell className="text-[11px] text-right py-1 font-mono">
                               {formatCurrency(item.costPrice)}
                             </TableCell>
+                            <TableCell className="text-[11px] text-right py-1 font-mono text-muted-foreground">
+                              {formatCurrencyIncGst(item.costPrice)}
+                            </TableCell>
                             <TableCell className="text-[11px] text-right py-1 font-mono">
                               {formatCurrency(item.sellPrice)}
+                            </TableCell>
+                            <TableCell className="text-[11px] text-right py-1 font-mono text-muted-foreground">
+                              {formatCurrencyIncGst(item.sellPrice)}
                             </TableCell>
                             <TableCell className="text-[11px] text-right py-1">
                               {getMarkup(item.costPrice, item.sellPrice)}
