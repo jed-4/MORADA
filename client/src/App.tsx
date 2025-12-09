@@ -75,6 +75,8 @@ import PersonalCalendar from "@/pages/PersonalCalendar";
 import UserProfile from "@/pages/UserProfile";
 import BusinessTasks from "@/pages/BusinessTasks";
 import Systems from "@/pages/Systems";
+import PriceListPage from "@/pages/PriceListPage";
+import AIPriceReviewPage from "@/pages/AIPriceReviewPage";
 import TeamManagement from "@/pages/TeamManagement";
 import UserProfileView from "@/pages/UserProfileView";
 import UserWorkspace from "@/pages/UserWorkspace";
@@ -268,6 +270,8 @@ function Router() {
       <Route path="/roles-permissions" component={RolesPermissions} />
       <Route path="/suppliers" component={Suppliers} />
       <Route path="/trades" component={Trades} />
+      <Route path="/price-list" component={PriceListPage} />
+      <Route path="/ai-price-review" component={AIPriceReviewPage} />
       <Route path="/cost-codes" component={CostCodes} />
       <Route path="/contacts" component={Contacts} />
       <Route path="/archived-projects" component={ArchivedProjects} />

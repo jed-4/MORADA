@@ -37,6 +37,8 @@ import {
   Mail,
   UserPlus,
   Settings,
+  Library,
+  Sparkles,
   ChevronRight,
   Building2,
   ChevronsLeft,
@@ -143,10 +145,12 @@ const sections: Record<SectionId, { label: string; icon: React.ComponentType<{ c
     ],
   },
   system: {
-    label: "System",
-    icon: Settings,
+    label: "Resources",
+    icon: Library,
     items: [
       { title: "Templates", url: "/templates", icon: LayoutTemplate },
+      { title: "Price List", url: "/price-list", icon: DollarSign },
+      { title: "AI Price Review", url: "/ai-price-review", icon: Sparkles },
       { title: "Suppliers", url: "/suppliers", icon: Truck },
       { title: "Trades", url: "/trades", icon: HardHat },
       { title: "Archived Projects", url: "/archived-projects", icon: Archive },
@@ -365,6 +369,8 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   Settings,
   Calendar,
   Bell,
+  Library,
+  Sparkles,
 };
 
 function useIsMobile() {
