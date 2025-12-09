@@ -78,10 +78,12 @@ import Systems from "@/pages/Systems";
 import PriceListPage from "@/pages/PriceListPage";
 import AIPriceReviewPage from "@/pages/AIPriceReviewPage";
 import CreateRFQ from "@/pages/CreateRFQ";
+import CreateRFI from "@/pages/CreateRFI";
 import TeamManagement from "@/pages/TeamManagement";
 import UserProfileView from "@/pages/UserProfileView";
 import UserWorkspace from "@/pages/UserWorkspace";
 import NotFound from "@/pages/not-found";
+import PrivacyPolicy from "@/pages/PrivacyPolicy";
 import LandingPage from "@/pages/landing";
 import OnboardingPage from "@/pages/onboarding";
 import AcceptInvitation from "@/pages/AcceptInvitation";
@@ -108,7 +110,8 @@ function Router() {
   
   return (
     <Switch>
-      {/* Public portal routes (work for authenticated users too) */}
+      {/* Public routes */}
+      <Route path="/privacy" component={PrivacyPolicy} />
       <Route path="/portal/rfq/:token" component={RFQPortal} />
       
       <Route path="/" component={Dashboard} />
@@ -179,6 +182,7 @@ function Router() {
       <Route path="/projects/:projectId/rfqs/new" component={CreateRFQ} />
       <Route path="/projects/:projectId/rfqs/:id" component={RFQDetail} />
       <Route path="/projects/:projectId/rfis" component={RFIs} />
+      <Route path="/projects/:projectId/rfis/new" component={CreateRFI} />
       <Route path="/projects/:projectId/rfis/:id" component={RFIDetail} />
       <Route path="/projects/:projectId/proposals" component={Proposals} />
       <Route path="/projects/:projectId/proposals/new" component={ProposalDetail} />
@@ -217,6 +221,7 @@ function Router() {
       <Route path="/rfqs/new" component={CreateRFQ} />
       <Route path="/rfqs/:id" component={RFQDetail} />
       <Route path="/rfis" component={RFIs} />
+      <Route path="/rfis/new" component={CreateRFI} />
       <Route path="/rfis/:id" component={RFIDetail} />
       <Route path="/proposals" component={Proposals} />
       <Route path="/proposals/new" component={ProposalDetail} />

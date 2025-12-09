@@ -241,7 +241,7 @@ export default function RFIs() {
         </div>
         <button
           className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
-          onClick={() => setIsCreateDialogOpen(true)}
+          onClick={() => setLocation("/rfis/new")}
           data-testid="button-create-rfi"
         >
           <Plus className="w-3 h-3" />
@@ -284,11 +284,31 @@ export default function RFIs() {
             Loading RFIs...
           </Card>
         ) : filteredRFIs.length === 0 ? (
-          <Card className="p-8 text-center text-muted-foreground">
-            {searchQuery || statusFilter !== "all"
-              ? "No RFIs match your search"
-              : "No RFIs yet. Create one to get started."}
-          </Card>
+          searchQuery || statusFilter !== "all" ? (
+            <Card className="p-8 text-center text-muted-foreground">
+              No RFIs match your search
+            </Card>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-16 px-4">
+              <div className="w-20 h-20 rounded-full bg-[#bba7db]/10 flex items-center justify-center mb-6">
+                <HelpCircle className="w-10 h-10 text-[#bba7db]" />
+              </div>
+              <h3 className="text-xl font-semibold mb-2">No Requests for Information yet</h3>
+              <p className="text-muted-foreground text-center max-w-md mb-8">
+                Create RFIs to request clarification from architects, engineers, clients, or other stakeholders on your projects.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Button
+                  onClick={() => setLocation("/rfis/new")}
+                  className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white gap-2"
+                  data-testid="button-create-rfi-empty"
+                >
+                  <Plus className="w-4 h-4" />
+                  Create New RFI
+                </Button>
+              </div>
+            </div>
+          )
         ) : (
           <Card className="overflow-hidden">
             <Table>
