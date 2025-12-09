@@ -3658,7 +3658,8 @@ export const rfqs = pgTable("rfqs", {
   title: text("title").notNull(), // e.g., "Concrete Pour - Slab"
   description: text("description"), // Brief description
   scope: text("scope"), // Wunderbuild-style rich-text scope of work (6-line auto-grow)
-  dueDate: timestamp("due_date"),
+  dueDate: timestamp("due_date"), // When responses are due
+  deadline: timestamp("deadline"), // Hard deadline for the work itself
   
   // Multi-supplier support (send to multiple suppliers at once)
   supplierIds: text("supplier_ids").array().notNull().default(sql`'{}'`), // Array of supplier IDs
@@ -3674,9 +3675,21 @@ export const rfqs = pgTable("rfqs", {
   // PDF generation
   pdfUrl: text("pdf_url"), // Generated PDF URL
   
+  // Terms and conditions
+  termsTemplateId: varchar("terms_template_id"), // Reference to RFQ template for terms
+  customTerms: text("custom_terms"), // Custom terms and conditions text
+  
+  // Internal notes (not shown to suppliers)
+  internalNotes: text("internal_notes"),
+  
   // External tracking (for quotes requested outside the system)
   isExternal: boolean("is_external").notNull().default(false),
   externalNotes: text("external_notes"), // Notes about where RFQ was sent externally
+  
+  // Scheduled follow-up emails
+  followUpEnabled: boolean("follow_up_enabled").notNull().default(false),
+  followUpDaysBefore: integer("follow_up_days_before"), // Days before due date to send reminder
+  followUpSentAt: timestamp("follow_up_sent_at"), // When the follow-up was sent
   
   createdBy: varchar("created_by").notNull(),
   createdByName: text("created_by_name").notNull(),
@@ -3693,13 +3706,26 @@ export const insertRfqSchema = createInsertSchema(rfqs).omit({
   createdByName: true,
   rfqNumber: true,
   status: true,
+  sentAt: true,
+  pdfUrl: true,
+  followUpSentAt: true,
 }).extend({
   title: z.string().min(1, "Title is required"),
-  description: z.string().optional(),
-  scope: z.string().min(10, "Scope must be at least 10 characters"),
-  supplierIds: z.array(z.string()).min(1, "At least one supplier is required"),
-  supplierNames: z.array(z.string()).min(1),
+  description: z.string().optional().nullable(),
+  scope: z.string().optional().nullable(),
+  dueDate: z.string().optional().nullable(),
+  deadline: z.string().optional().nullable(),
+  supplierIds: z.array(z.string()).optional(),
+  supplierNames: z.array(z.string()).optional(),
   attachmentUrls: z.array(z.string()).optional(),
+  attachmentFileNames: z.array(z.string()).optional(),
+  termsTemplateId: z.string().optional().nullable(),
+  customTerms: z.string().optional().nullable(),
+  internalNotes: z.string().optional().nullable(),
+  isExternal: z.boolean().optional(),
+  externalNotes: z.string().optional().nullable(),
+  followUpEnabled: z.boolean().optional(),
+  followUpDaysBefore: z.number().optional().nullable(),
 });
 
 export type InsertRfq = z.infer<typeof insertRfqSchema>;

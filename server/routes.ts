@@ -6228,6 +6228,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/rfq-items/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const updateSchema = insertRfqItemSchema.partial();
+      const validationResult = updateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const item = await storage.updateRFQItem(req.params.id, validationResult.data);
+      if (!item) {
+        return res.status(404).json({ error: "RFQ item not found" });
+      }
+      res.json(item);
+    } catch (error: any) {
+      console.error("Error updating RFQ item:", error);
+      res.status(500).json({ error: "Failed to update RFQ item" });
+    }
+  });
+
   app.delete("/api/rfq-items/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const deleted = await storage.deleteRFQItem(req.params.id);

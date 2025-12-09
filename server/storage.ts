@@ -463,6 +463,7 @@ export interface IStorage {
   // RFQ Items CRUD
   getRFQItems(rfqId: string): Promise<RfqItem[]>;
   createRFQItem(item: InsertRfqItem): Promise<RfqItem>;
+  updateRFQItem(id: string, item: Partial<InsertRfqItem>): Promise<RfqItem | undefined>;
   deleteRFQItem(id: string): Promise<boolean>;
 
   // RFQ Quotes CRUD
@@ -9682,6 +9683,19 @@ export class DbStorage implements IStorage {
       return newItems[0];
     } catch (error) {
       console.error("Database error in createRFQItem:", error);
+      throw error;
+    }
+  }
+
+  async updateRFQItem(id: string, item: Partial<InsertRfqItem>): Promise<RfqItem | undefined> {
+    try {
+      const updatedItems = await db.update(schema.rfqItems)
+        .set({ ...item, updatedAt: new Date() })
+        .where(eq(schema.rfqItems.id, id))
+        .returning();
+      return updatedItems[0];
+    } catch (error) {
+      console.error("Database error in updateRFQItem:", error);
       throw error;
     }
   }

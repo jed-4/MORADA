@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -18,8 +19,25 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, CalendarIcon, Building2, Trash2, Plus } from "lucide-react";
-import { type Project, type Supplier } from "@shared/schema";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  ArrowLeft,
+  CalendarIcon,
+  Building2,
+  Trash2,
+  Plus,
+  Clock,
+  ExternalLink,
+  X,
+} from "lucide-react";
+import { type Project, type Supplier, type RfqTemplate } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { format } from "date-fns";
 
@@ -30,11 +48,20 @@ export default function CreateRFQ() {
   const [form, setForm] = useState({
     title: "",
     description: "",
+    scope: "",
     projectId: "",
     supplierIds: [] as string[],
-    scope: "",
+    supplierNames: [] as string[],
     dueDate: null as Date | null,
-    items: [] as { description: string; quantity: string; unit: string }[],
+    deadline: null as Date | null,
+    termsTemplateId: "",
+    customTerms: "",
+    internalNotes: "",
+    isExternal: false,
+    externalNotes: "",
+    followUpEnabled: false,
+    followUpDaysBefore: 3,
+    items: [] as { description: string; quantity: string; unit: string; notes: string }[],
   });
 
   const { data: projects = [] } = useQuery<Project[]>({
@@ -45,19 +72,28 @@ export default function CreateRFQ() {
     queryKey: ["/api/suppliers"],
   });
 
+  const { data: rfqTemplates = [] } = useQuery<RfqTemplate[]>({
+    queryKey: ["/api/rfq-templates"],
+  });
+
   const createRfqMutation = useMutation({
     mutationFn: async (data: typeof form) => {
-      const selectedSuppliers = suppliers.filter(s => data.supplierIds.includes(s.id));
-      const supplierNames = selectedSuppliers.map(s => s.name);
-      
       const rfq = await apiRequest("/api/rfqs", "POST", {
         projectId: data.projectId,
         title: data.title,
         description: data.description,
         scope: data.scope,
         dueDate: data.dueDate?.toISOString(),
+        deadline: data.deadline?.toISOString(),
         supplierIds: data.supplierIds,
-        supplierNames,
+        supplierNames: data.supplierNames,
+        termsTemplateId: data.termsTemplateId || null,
+        customTerms: data.customTerms,
+        internalNotes: data.internalNotes,
+        isExternal: data.isExternal,
+        externalNotes: data.externalNotes,
+        followUpEnabled: data.followUpEnabled,
+        followUpDaysBefore: data.followUpDaysBefore,
         attachmentUrls: [],
       });
 
@@ -68,7 +104,7 @@ export default function CreateRFQ() {
             description: item.description,
             quantity: parseFloat(item.quantity) || 0,
             unit: item.unit,
-            notes: "",
+            notes: item.notes,
             displayOrder: index,
           })
         ));
@@ -102,19 +138,39 @@ export default function CreateRFQ() {
     createRfqMutation.mutate(form);
   };
 
-  const toggleSupplier = (supplierId: string) => {
-    setForm(prev => ({
-      ...prev,
-      supplierIds: prev.supplierIds.includes(supplierId)
-        ? prev.supplierIds.filter(id => id !== supplierId)
-        : [...prev.supplierIds, supplierId],
-    }));
+  const toggleSupplier = (supplierId: string, supplierName: string) => {
+    const isSelected = form.supplierIds.includes(supplierId);
+    if (isSelected) {
+      setForm(prev => ({
+        ...prev,
+        supplierIds: prev.supplierIds.filter(id => id !== supplierId),
+        supplierNames: prev.supplierNames.filter(n => n !== supplierName),
+      }));
+    } else {
+      setForm(prev => ({
+        ...prev,
+        supplierIds: [...prev.supplierIds, supplierId],
+        supplierNames: [...prev.supplierNames, supplierName],
+      }));
+    }
+  };
+
+  const handleTermsTemplateChange = (templateId: string) => {
+    if (templateId === "custom") {
+      setForm(prev => ({ ...prev, termsTemplateId: "" }));
+      return;
+    }
+    setForm(prev => ({ ...prev, termsTemplateId: templateId }));
+    const template = rfqTemplates.find(t => t.id === templateId);
+    if (template?.termsAndConditions) {
+      setForm(prev => ({ ...prev, customTerms: template.termsAndConditions || "" }));
+    }
   };
 
   const addItem = () => {
     setForm(prev => ({
       ...prev,
-      items: [...prev.items, { description: "", quantity: "", unit: "each" }],
+      items: [...prev.items, { description: "", quantity: "", unit: "each", notes: "" }],
     }));
   };
 
@@ -135,25 +191,23 @@ export default function CreateRFQ() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0 border-b">
-        <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="icon"
+      <div className="h-10 px-3 flex items-center justify-between border-b bg-background shrink-0">
+        <div className="flex items-center gap-3">
+          <button
             onClick={() => setLocation("/rfqs")}
+            className="h-6 w-6 rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
             data-testid="button-back"
           >
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <h2 className="text-sm font-semibold" data-testid="text-page-title">
-            Create Request for Quote
-          </h2>
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+          <h2 className="text-sm font-semibold">New Request for Quote</h2>
         </div>
         <div className="flex items-center gap-2">
           <Button
-            variant="outline"
             size="sm"
+            variant="outline"
             onClick={() => setLocation("/rfqs")}
+            className="h-7 text-xs"
             data-testid="button-cancel"
           >
             Cancel
@@ -162,7 +216,7 @@ export default function CreateRFQ() {
             size="sm"
             onClick={handleSubmit}
             disabled={createRfqMutation.isPending}
-            className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+            className="h-7 text-xs bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
             data-testid="button-create-rfq"
           >
             {createRfqMutation.isPending ? "Creating..." : "Create RFQ"}
@@ -170,18 +224,16 @@ export default function CreateRFQ() {
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-auto p-4">
-        <div className="max-w-2xl mx-auto space-y-6">
-          {/* Basic Info Card */}
-          <Card className="p-4 space-y-4">
-            <h3 className="text-sm font-medium">Basic Information</h3>
-            
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5 sm:col-span-2">
-                <Label htmlFor="rfq-title" className="text-xs">Title *</Label>
+      {/* Content - Two Column Layout */}
+      <div className="flex-1 overflow-hidden flex">
+        {/* Main Content (Left) */}
+        <div className="flex-1 overflow-auto p-4 space-y-4">
+          {/* Title & Project Row */}
+          <Card className="p-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Title *</Label>
                 <Input
-                  id="rfq-title"
                   value={form.title}
                   onChange={(e) => setForm(prev => ({ ...prev, title: e.target.value }))}
                   placeholder="e.g., Timber Supply for Kitchen Renovation"
@@ -189,11 +241,10 @@ export default function CreateRFQ() {
                   data-testid="input-rfq-title"
                 />
               </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs">Project *</Label>
-                <Select 
-                  value={form.projectId} 
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Project *</Label>
+                <Select
+                  value={form.projectId}
                   onValueChange={(v) => setForm(prev => ({ ...prev, projectId: v }))}
                 >
                   <SelectTrigger className="h-8 text-sm" data-testid="select-rfq-project">
@@ -211,18 +262,74 @@ export default function CreateRFQ() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+          </Card>
 
-              <div className="space-y-1.5">
-                <Label className="text-xs">Response Due Date</Label>
+          {/* Supplier & Date Row */}
+          <Card className="p-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Suppliers */}
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Suppliers *</Label>
                 <Popover>
                   <PopoverTrigger asChild>
-                    <Button 
-                      variant="outline" 
-                      className="w-full h-8 text-sm justify-start font-normal" 
-                      data-testid="button-rfq-due-date"
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {form.dueDate ? format(form.dueDate, "PPP") : "Pick a date"}
+                    <Button variant="outline" className="w-full h-8 justify-start text-sm font-normal">
+                      <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
+                      {form.supplierIds.length > 0
+                        ? `${form.supplierIds.length} selected`
+                        : "Select suppliers"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-64 p-2" align="start">
+                    <div className="space-y-1 max-h-[200px] overflow-y-auto">
+                      {suppliers.length === 0 ? (
+                        <p className="text-xs text-muted-foreground text-center py-4">
+                          No suppliers found. Add suppliers first.
+                        </p>
+                      ) : (
+                        suppliers.map((supplier) => (
+                          <label
+                            key={supplier.id}
+                            className="flex items-center gap-2 p-2 rounded hover-elevate cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={form.supplierIds.includes(supplier.id)}
+                              onChange={() => toggleSupplier(supplier.id, supplier.name)}
+                              className="rounded"
+                            />
+                            <span className="text-sm">{supplier.name}</span>
+                          </label>
+                        ))
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                {form.supplierNames.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {form.supplierNames.map((name, i) => (
+                      <Badge key={i} variant="secondary" className="text-xs">
+                        {name}
+                        <button
+                          onClick={() => toggleSupplier(form.supplierIds[i], name)}
+                          className="ml-1 hover:text-destructive"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Due Date */}
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Response Due</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="w-full h-8 justify-start text-sm font-normal">
+                      <CalendarIcon className="w-4 h-4 mr-2 text-muted-foreground" />
+                      {form.dueDate ? format(form.dueDate, "MMM d, yyyy") : "Set due date"}
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0" align="start">
@@ -235,140 +342,239 @@ export default function CreateRFQ() {
                   </PopoverContent>
                 </Popover>
               </div>
-            </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="rfq-description" className="text-xs">Description</Label>
-              <Textarea
-                id="rfq-description"
-                value={form.description}
-                onChange={(e) => setForm(prev => ({ ...prev, description: e.target.value }))}
-                placeholder="Brief description of what you're requesting"
-                className="text-sm min-h-[60px]"
-                data-testid="input-rfq-description"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="rfq-scope" className="text-xs">Scope of Work</Label>
-              <Textarea
-                id="rfq-scope"
-                value={form.scope}
-                onChange={(e) => setForm(prev => ({ ...prev, scope: e.target.value }))}
-                placeholder="Detailed scope including specifications, quantities, delivery requirements..."
-                className="text-sm min-h-[100px]"
-                data-testid="input-rfq-scope"
-              />
-            </div>
-          </Card>
-
-          {/* Suppliers Card */}
-          <Card className="p-4 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium">Suppliers *</h3>
-              {form.supplierIds.length > 0 && (
-                <span className="text-xs text-muted-foreground">
-                  {form.supplierIds.length} selected
-                </span>
-              )}
-            </div>
-            
-            <div className="border rounded-md p-2 max-h-[200px] overflow-y-auto space-y-1">
-              {suppliers.length === 0 ? (
-                <p className="text-xs text-muted-foreground text-center py-4">
-                  No suppliers found. Add suppliers in the Suppliers page first.
-                </p>
-              ) : (
-                suppliers.map((supplier) => (
-                  <label
-                    key={supplier.id}
-                    className="flex items-center gap-2 p-2 rounded hover-elevate cursor-pointer"
-                    data-testid={`checkbox-supplier-${supplier.id}`}
-                  >
-                    <Checkbox
-                      checked={form.supplierIds.includes(supplier.id)}
-                      onCheckedChange={() => toggleSupplier(supplier.id)}
+              {/* Deadline */}
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Work Deadline</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="w-full h-8 justify-start text-sm font-normal">
+                      <Clock className="w-4 h-4 mr-2 text-muted-foreground" />
+                      {form.deadline ? format(form.deadline, "MMM d, yyyy") : "Set deadline"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={form.deadline || undefined}
+                      onSelect={(date) => setForm(prev => ({ ...prev, deadline: date || null }))}
+                      initialFocus
                     />
-                    <Building2 className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm">{supplier.name}</span>
-                    {supplier.email && (
-                      <span className="text-xs text-muted-foreground ml-auto">{supplier.email}</span>
-                    )}
-                  </label>
-                ))
-              )}
+                  </PopoverContent>
+                </Popover>
+              </div>
             </div>
           </Card>
 
-          {/* Line Items Card */}
-          <Card className="p-4 space-y-4">
+          {/* Description */}
+          <Card className="p-4 space-y-2">
+            <Label className="text-xs text-muted-foreground">Description</Label>
+            <Textarea
+              value={form.description}
+              onChange={(e) => setForm(prev => ({ ...prev, description: e.target.value }))}
+              placeholder="Brief description of the request..."
+              className="min-h-[60px] text-sm"
+              data-testid="input-description"
+            />
+          </Card>
+
+          {/* Scope of Work */}
+          <Card className="p-4 space-y-2">
+            <Label className="text-xs text-muted-foreground">Scope of Work</Label>
+            <Textarea
+              value={form.scope}
+              onChange={(e) => setForm(prev => ({ ...prev, scope: e.target.value }))}
+              placeholder="Detailed scope including specifications, quantities, delivery requirements..."
+              className="min-h-[120px] text-sm"
+              data-testid="input-scope"
+            />
+          </Card>
+
+          {/* Line Items */}
+          <Card className="p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium">Line Items</h3>
-              <Button 
-                type="button" 
-                variant="outline" 
-                size="sm" 
+              <Label className="text-xs text-muted-foreground">Line Items ({form.items.length})</Label>
+              <Button
+                size="sm"
+                variant="outline"
                 onClick={addItem}
-                className="h-7 text-xs"
-                data-testid="button-add-rfq-item"
+                className="h-6 text-xs"
+                data-testid="button-add-item"
               >
-                <Plus className="h-3 w-3 mr-1" />
+                <Plus className="w-3 h-3 mr-1" />
                 Add Item
               </Button>
             </div>
-
             {form.items.length === 0 ? (
-              <p className="text-xs text-muted-foreground text-center py-4">
-                No line items added. You can add specific items you need pricing for, or leave empty for general quotes.
-              </p>
+              <div className="text-center py-8 text-muted-foreground text-sm">
+                No line items yet. Add items to specify what you need quoted.
+              </div>
             ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow className="h-8">
+                    <TableHead className="text-xs">Description</TableHead>
+                    <TableHead className="text-xs w-24">Quantity</TableHead>
+                    <TableHead className="text-xs w-24">Unit</TableHead>
+                    <TableHead className="text-xs w-10"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {form.items.map((item, index) => (
+                    <TableRow key={index} className="h-10">
+                      <TableCell>
+                        <Input
+                          value={item.description}
+                          onChange={(e) => updateItem(index, "description", e.target.value)}
+                          placeholder="Description"
+                          className="h-7 text-xs"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          type="number"
+                          value={item.quantity}
+                          onChange={(e) => updateItem(index, "quantity", e.target.value)}
+                          placeholder="0"
+                          className="h-7 text-xs"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Select value={item.unit} onValueChange={(v) => updateItem(index, "unit", v)}>
+                          <SelectTrigger className="h-7 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="each">each</SelectItem>
+                            <SelectItem value="m">m</SelectItem>
+                            <SelectItem value="m2">m²</SelectItem>
+                            <SelectItem value="m3">m³</SelectItem>
+                            <SelectItem value="lm">lm</SelectItem>
+                            <SelectItem value="kg">kg</SelectItem>
+                            <SelectItem value="hr">hr</SelectItem>
+                            <SelectItem value="lot">lot</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-6 w-6"
+                          onClick={() => removeItem(index)}
+                        >
+                          <Trash2 className="w-3 h-3 text-destructive" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </Card>
+
+          {/* Terms */}
+          <Card className="p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-muted-foreground">Terms & Conditions</Label>
+              <Select value={form.termsTemplateId || "custom"} onValueChange={handleTermsTemplateChange}>
+                <SelectTrigger className="w-[180px] h-7 text-xs">
+                  <SelectValue placeholder="Select template" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="custom">Custom</SelectItem>
+                  {rfqTemplates.filter(t => t.termsAndConditions).map((template) => (
+                    <SelectItem key={template.id} value={template.id}>
+                      {template.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Textarea
+              value={form.customTerms}
+              onChange={(e) => setForm(prev => ({ ...prev, customTerms: e.target.value }))}
+              placeholder="Terms and conditions to include in the RFQ..."
+              className="min-h-[80px] text-sm"
+              data-testid="input-terms"
+            />
+          </Card>
+        </div>
+
+        {/* Sidebar (Right) */}
+        <div className="w-80 border-l overflow-auto p-4 space-y-4 bg-muted/10">
+          {/* External/Track Only Toggle */}
+          <Card className="p-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-xs font-medium">Track Only Mode</Label>
+                <p className="text-[10px] text-muted-foreground">
+                  Track RFQ sent outside BuildPro
+                </p>
+              </div>
+              <Switch
+                checked={form.isExternal}
+                onCheckedChange={(checked) => setForm(prev => ({ ...prev, isExternal: checked }))}
+              />
+            </div>
+            {form.isExternal && (
+              <Textarea
+                value={form.externalNotes}
+                onChange={(e) => setForm(prev => ({ ...prev, externalNotes: e.target.value }))}
+                placeholder="Where was this RFQ sent? (email, phone, etc.)"
+                className="text-xs min-h-[60px]"
+              />
+            )}
+          </Card>
+
+          {/* Follow-up Reminders */}
+          <Card className="p-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-xs font-medium">Auto Follow-up</Label>
+                <p className="text-[10px] text-muted-foreground">
+                  Send reminder before due date
+                </p>
+              </div>
+              <Switch
+                checked={form.followUpEnabled}
+                onCheckedChange={(checked) => setForm(prev => ({ ...prev, followUpEnabled: checked }))}
+              />
+            </div>
+            {form.followUpEnabled && (
               <div className="space-y-2">
-                {form.items.map((item, index) => (
-                  <div key={index} className="flex gap-2 items-start p-2 bg-muted/30 rounded">
-                    <Input
-                      value={item.description}
-                      onChange={(e) => updateItem(index, "description", e.target.value)}
-                      placeholder="Description"
-                      className="flex-1 h-8 text-sm"
-                      data-testid={`input-item-description-${index}`}
-                    />
-                    <Input
-                      type="number"
-                      value={item.quantity}
-                      onChange={(e) => updateItem(index, "quantity", e.target.value)}
-                      placeholder="Qty"
-                      className="w-20 h-8 text-sm"
-                      data-testid={`input-item-quantity-${index}`}
-                    />
-                    <Select value={item.unit} onValueChange={(v) => updateItem(index, "unit", v)}>
-                      <SelectTrigger className="w-24 h-8 text-sm">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="each">each</SelectItem>
-                        <SelectItem value="m">m</SelectItem>
-                        <SelectItem value="m2">m²</SelectItem>
-                        <SelectItem value="m3">m³</SelectItem>
-                        <SelectItem value="lm">lm</SelectItem>
-                        <SelectItem value="kg">kg</SelectItem>
-                        <SelectItem value="hr">hr</SelectItem>
-                        <SelectItem value="lot">lot</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={() => removeItem(index)}
-                      data-testid={`button-remove-item-${index}`}
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </div>
-                ))}
+                <Label className="text-xs text-muted-foreground">Days before due date</Label>
+                <Select
+                  value={form.followUpDaysBefore.toString()}
+                  onValueChange={(v) => setForm(prev => ({ ...prev, followUpDaysBefore: parseInt(v) }))}
+                >
+                  <SelectTrigger className="h-7 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">1 day before</SelectItem>
+                    <SelectItem value="3">3 days before</SelectItem>
+                    <SelectItem value="5">5 days before</SelectItem>
+                    <SelectItem value="7">7 days before</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             )}
+          </Card>
+
+          {/* Internal Notes */}
+          <Card className="p-3 space-y-2">
+            <Label className="text-xs font-medium">Internal Notes</Label>
+            <p className="text-[10px] text-muted-foreground">
+              Only visible to your team
+            </p>
+            <Textarea
+              value={form.internalNotes}
+              onChange={(e) => setForm(prev => ({ ...prev, internalNotes: e.target.value }))}
+              placeholder="Notes for your team..."
+              className="text-xs min-h-[100px]"
+              data-testid="input-internal-notes"
+            />
           </Card>
         </div>
       </div>
