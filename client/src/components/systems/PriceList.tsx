@@ -58,7 +58,6 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [filterSupplier, setFilterSupplier] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
-  const [enterIncGst, setEnterIncGst] = useState(false);
 
   const searchQuery = externalSearch || internalSearch;
 
@@ -484,6 +483,7 @@ interface PriceListItemModalProps {
 function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }: PriceListItemModalProps) {
   const { toast } = useToast();
   const isEditing = !!item;
+  const [enterIncGst, setEnterIncGst] = useState(false);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -531,6 +531,7 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
 
   useEffect(() => {
     if (open) {
+      setEnterIncGst(false);
       if (item) {
         setFormData({
           name: item.name || "",
