@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { AlertTriangle, Check, X, Clock, ChevronLeft, ChevronRight, RotateCcw, CalendarIcon, Pencil, MessageSquare } from "lucide-react";
+import { AlertTriangle, Check, X, Clock, ChevronLeft, ChevronRight, RotateCcw, Pencil, MessageSquare } from "lucide-react";
 import { format } from "date-fns";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -357,19 +357,14 @@ export function RapidApprovalModal({
           )}
 
           {/* Team Member */}
-          <div className="flex items-center justify-between px-2 py-1.5 bg-muted/30 rounded">
-            <span className="text-[10px] text-muted-foreground">Team Member</span>
-            <span className="text-xs font-medium">{getUserName(currentTimesheet.userId)}</span>
+          <div className="flex items-center justify-between px-2 py-1 bg-muted/30 rounded">
+            <span className="text-[11px] text-muted-foreground">Team Member</span>
+            <span className="text-[11px] font-medium">{getUserName(currentTimesheet.userId)}</span>
           </div>
 
-          {/* Time Row: Clock In - Clock Out with Round button */}
-          <div className="flex items-center justify-between px-2 py-1.5 bg-muted/30 rounded">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] text-muted-foreground">Time:</span>
-              <TimePicker value={editedStartTime} onChange={setEditedStartTime} label="Start" />
-              <span className="text-[10px] text-muted-foreground">-</span>
-              <TimePicker value={editedEndTime} onChange={setEditedEndTime} label="End" />
-            </div>
+          {/* Time Row: Label | Round | Pickers | Hours */}
+          <div className="flex items-center justify-between px-2 py-1 bg-muted/30 rounded">
+            <span className="text-[11px] text-muted-foreground">Time:</span>
             <div className="flex items-center gap-1.5">
               <Button
                 variant="outline"
@@ -382,16 +377,19 @@ export function RapidApprovalModal({
                 <RotateCcw className="w-2.5 h-2.5" />
                 Round
               </Button>
-              <span className="text-xs font-mono font-medium min-w-[40px] text-right">
+              <TimePicker value={editedStartTime} onChange={setEditedStartTime} label="Start" />
+              <span className="text-[11px] text-muted-foreground">-</span>
+              <TimePicker value={editedEndTime} onChange={setEditedEndTime} label="End" />
+              <span className="text-[11px] font-mono font-medium min-w-[40px] text-right">
                 {calculatedDuration.toFixed(2)}h
               </span>
             </div>
           </div>
 
           {/* Break Row with start time */}
-          <div className="flex items-center justify-between px-2 py-1.5 bg-muted/30 rounded">
+          <div className="flex items-center justify-between px-2 py-1 bg-muted/30 rounded">
             <div className="flex items-center gap-1.5">
-              <span className="text-[10px] text-muted-foreground">Break:</span>
+              <span className="text-[11px] text-muted-foreground">Break:</span>
               <TimePicker value={editedBreakStart} onChange={setEditedBreakStart} label="Start" />
             </div>
             <div className="flex items-center gap-1.5">
@@ -400,21 +398,20 @@ export function RapidApprovalModal({
                 step="0.25"
                 value={editedBreak}
                 onChange={(e) => setEditedBreak(e.target.value)}
-                className="h-6 w-14 text-[10px] text-center px-1"
+                className="h-6 w-14 text-[11px] text-center px-1"
                 data-testid="input-rapid-break"
               />
-              <span className="text-[10px] text-muted-foreground">hrs</span>
+              <span className="text-[11px] text-muted-foreground">hrs</span>
             </div>
           </div>
 
           {/* Date, Project, Cost Code - Compact Grid */}
           <div className="grid grid-cols-3 gap-1.5">
             <div>
-              <Label className="text-[9px] text-muted-foreground">Date</Label>
+              <Label className="text-[10px] text-muted-foreground">Date</Label>
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" className="w-full h-8 text-[10px] justify-start gap-1 px-1.5">
-                    <CalendarIcon className="w-3 h-3" />
+                  <Button variant="outline" className="w-full h-7 text-[11px] justify-center px-1.5">
                     {editedDate ? format(editedDate, "dd MMM") : "Select"}
                   </Button>
                 </PopoverTrigger>
@@ -430,14 +427,14 @@ export function RapidApprovalModal({
             </div>
 
             <div>
-              <Label className="text-[9px] text-muted-foreground">Project</Label>
+              <Label className="text-[10px] text-muted-foreground">Project</Label>
               <Select value={editedProjectId} onValueChange={setEditedProjectId}>
-                <SelectTrigger className="h-8 text-[10px]">
+                <SelectTrigger className="h-7 text-[11px]">
                   <SelectValue placeholder="Select" />
                 </SelectTrigger>
                 <SelectContent>
                   {projects.map((project) => (
-                    <SelectItem key={project.id} value={project.id} className="text-xs">
+                    <SelectItem key={project.id} value={project.id} className="text-[11px]">
                       {project.name}
                     </SelectItem>
                   ))}
@@ -446,15 +443,15 @@ export function RapidApprovalModal({
             </div>
 
             <div>
-              <Label className="text-[9px] text-muted-foreground">Cost Code</Label>
+              <Label className="text-[10px] text-muted-foreground">Cost Code</Label>
               <Select value={editedCostCodeId || "none"} onValueChange={(val) => setEditedCostCodeId(val === "none" ? "" : val)}>
-                <SelectTrigger className={`h-8 text-[10px] ${!editedCostCodeId ? "border-amber-300" : ""}`}>
+                <SelectTrigger className={`h-7 text-[11px] ${!editedCostCodeId ? "border-amber-300" : ""}`}>
                   <SelectValue placeholder="Select" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none" className="text-xs text-muted-foreground">None</SelectItem>
+                  <SelectItem value="none" className="text-[11px] text-muted-foreground">None</SelectItem>
                   {costCodes.map((code) => (
-                    <SelectItem key={code.id} value={code.id} className="text-xs">
+                    <SelectItem key={code.id} value={code.id} className="text-[11px]">
                       {code.code} - {code.name}
                     </SelectItem>
                   ))}
@@ -466,26 +463,26 @@ export function RapidApprovalModal({
           {/* Description - 2 line preview */}
           <div>
             <div className="flex items-center justify-between mb-0.5">
-              <Label className="text-[9px] text-muted-foreground">Description</Label>
+              <Label className="text-[10px] text-muted-foreground">Description</Label>
               <Popover open={isDescriptionExpanded} onOpenChange={setIsDescriptionExpanded}>
                 <PopoverTrigger asChild>
-                  <Button variant="ghost" size="sm" className="h-4 px-1 text-[9px] gap-0.5">
+                  <Button variant="ghost" size="sm" className="h-4 px-1 text-[10px] gap-0.5">
                     <Pencil className="w-2 h-2" />
                     Edit
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-72" align="end">
                   <div className="space-y-1.5">
-                    <Label className="text-[10px]">Edit Description</Label>
+                    <Label className="text-[11px]">Edit Description</Label>
                     <Textarea
                       value={editedDescription}
                       onChange={(e) => setEditedDescription(e.target.value)}
-                      className="min-h-[80px] text-xs"
+                      className="min-h-[80px] text-[11px]"
                       placeholder="Enter description..."
                     />
                     <Button 
                       size="sm" 
-                      className="w-full h-6 text-[10px]"
+                      className="w-full h-6 text-[11px]"
                       onClick={() => setIsDescriptionExpanded(false)}
                     >
                       Done
@@ -495,7 +492,7 @@ export function RapidApprovalModal({
               </Popover>
             </div>
             <div 
-              className={`px-2 py-1 bg-muted/30 rounded text-[10px] min-h-[32px] ${!editedDescription ? "text-muted-foreground italic" : ""}`}
+              className={`px-2 py-1 bg-muted/30 rounded text-[11px] min-h-[28px] ${!editedDescription ? "text-muted-foreground italic" : ""}`}
               style={{ 
                 display: "-webkit-box", 
                 WebkitLineClamp: 2, 
@@ -507,44 +504,44 @@ export function RapidApprovalModal({
             </div>
           </div>
 
-          {/* Net Hours / Total with Comment Button */}
-          <div className="flex items-center justify-between px-2 py-1.5 bg-[#bba7db]/10 rounded border border-[#bba7db]/30">
-            <div className="flex items-center gap-1">
-              <Popover open={isCommentExpanded} onOpenChange={setIsCommentExpanded}>
-                <PopoverTrigger asChild>
+          {/* Net Hours / Total - Comment Button OUTSIDE the bubble */}
+          <div className="flex items-center gap-2">
+            <Popover open={isCommentExpanded} onOpenChange={setIsCommentExpanded}>
+              <PopoverTrigger asChild>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className={`h-6 w-6 p-0 ${rejectionComment ? "text-amber-600" : "text-muted-foreground"}`}
+                  title="Add comment"
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-64" align="start">
+                <div className="space-y-1.5">
+                  <Label className="text-[11px]">Comment (for rejection)</Label>
+                  <Textarea
+                    value={rejectionComment}
+                    onChange={(e) => setRejectionComment(e.target.value)}
+                    className="min-h-[60px] text-[11px]"
+                    placeholder="e.g., Not enough info..."
+                  />
                   <Button 
-                    variant="ghost" 
                     size="sm" 
-                    className={`h-6 w-6 p-0 ${rejectionComment ? "text-amber-600" : "text-muted-foreground"}`}
-                    title="Add comment"
+                    className="w-full h-6 text-[11px]"
+                    onClick={() => setIsCommentExpanded(false)}
                   >
-                    <MessageSquare className="w-3.5 h-3.5" />
+                    Done
                   </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-64" align="start">
-                  <div className="space-y-1.5">
-                    <Label className="text-[10px]">Comment (for rejection)</Label>
-                    <Textarea
-                      value={rejectionComment}
-                      onChange={(e) => setRejectionComment(e.target.value)}
-                      className="min-h-[60px] text-xs"
-                      placeholder="e.g., Not enough info..."
-                    />
-                    <Button 
-                      size="sm" 
-                      className="w-full h-6 text-[10px]"
-                      onClick={() => setIsCommentExpanded(false)}
-                    >
-                      Done
-                    </Button>
-                  </div>
-                </PopoverContent>
-              </Popover>
-              <span className="text-[10px] font-medium">Net Hours / Total</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium">{netHours.toFixed(2)} hrs</span>
-              <span className="text-xs font-bold text-[#bba7db]">${calculatedTotal}</span>
+                </div>
+              </PopoverContent>
+            </Popover>
+            <div className="flex-1 flex items-center justify-between px-2 py-1 bg-[#bba7db]/10 rounded border border-[#bba7db]/30">
+              <span className="text-[11px] font-medium">Net Hours / Total</span>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-medium">{netHours.toFixed(2)} hrs</span>
+                <span className="text-[11px] font-bold text-[#bba7db]">${calculatedTotal}</span>
+              </div>
             </div>
           </div>
         </div>
