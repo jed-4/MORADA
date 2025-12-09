@@ -394,41 +394,36 @@ export default function Timesheets() {
           {currentProject ? `${currentProject.name} - Timesheets` : "All Items - Timesheets"}
         </h1>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
+          <button
             onClick={handleExport}
             disabled={filteredTimesheets.length === 0}
-            className="h-7 px-3 text-xs gap-1.5"
+            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5 disabled:opacity-50 disabled:pointer-events-none"
             data-testid="button-export-timesheets"
           >
-            <Download className="w-3.5 h-3.5" />
+            <Download className="w-3 h-3" />
             Export
-          </Button>
+          </button>
           {pendingTimesheets.length > 0 && (
-            <Button
-              variant="outline"
-              size="sm"
+            <button
               onClick={() => setIsRapidApprovalOpen(true)}
-              className="h-7 px-3 text-xs gap-1.5 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/30"
+              className="h-6 w-auto px-2 text-xs border rounded-md bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/30 active-elevate-2 flex items-center gap-0.5"
               data-testid="button-rapid-approval"
             >
-              <Zap className="w-3.5 h-3.5" />
+              <Zap className="w-3 h-3" />
               Approve ({pendingTimesheets.length})
-            </Button>
+            </button>
           )}
-          <Button
-            size="sm"
+          <button
             onClick={() => {
               setSelectedTimesheet(undefined);
               setIsDialogOpen(true);
             }}
-            className="h-7 px-3 text-xs gap-1.5 bg-[#bba7db] hover:bg-[#bba7db]/90 text-white border-[#bba7db]"
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
             data-testid="button-add-timesheet"
           >
-            <Clock className="w-3.5 h-3.5" />
+            <Clock className="w-3 h-3" />
             Clock In
-          </Button>
+          </button>
         </div>
       </div>
 
@@ -454,10 +449,8 @@ export default function Timesheets() {
           {!projectId && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button 
-                  variant="outline"
-                  size="sm"
-                  className={`h-7 px-3 text-xs gap-1.5 ${
+                <button 
+                  className={`h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5 ${
                     selectedProjects.length > 0 
                       ? "bg-[#bba7db]/10 text-[#8b7ab8] border-[#bba7db]/40" 
                       : ""
@@ -471,7 +464,7 @@ export default function Timesheets() {
                     </Badge>
                   )}
                   <ChevronDown className="w-3 h-3 opacity-50" />
-                </Button>
+                </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent>
                 {projects.map((project) => (
@@ -496,10 +489,8 @@ export default function Timesheets() {
           {/* User Filter */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button 
-                variant="outline"
-                size="sm"
-                className={`h-7 px-3 text-xs gap-1.5 ${
+              <button 
+                className={`h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5 ${
                   selectedUsers.length > 0 
                     ? "bg-[#bba7db]/10 text-[#8b7ab8] border-[#bba7db]/40" 
                     : ""
@@ -513,7 +504,7 @@ export default function Timesheets() {
                   </Badge>
                 )}
                 <ChevronDown className="w-3 h-3 opacity-50" />
-              </Button>
+              </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
               {users.map((user) => (
@@ -537,10 +528,8 @@ export default function Timesheets() {
           {/* Status Filter */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button 
-                variant="outline"
-                size="sm"
-                className={`h-7 px-3 text-xs gap-1.5 ${
+              <button 
+                className={`h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5 ${
                   selectedStatuses.length > 0 
                     ? "bg-[#bba7db]/10 text-[#8b7ab8] border-[#bba7db]/40" 
                     : ""
@@ -554,7 +543,7 @@ export default function Timesheets() {
                   </Badge>
                 )}
                 <ChevronDown className="w-3 h-3 opacity-50" />
-              </Button>
+              </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
               {[
@@ -582,10 +571,8 @@ export default function Timesheets() {
           {/* Phase Filter */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button 
-                variant="outline"
-                size="sm"
-                className={`h-7 px-3 text-xs gap-1.5 ${
+              <button 
+                className={`h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5 ${
                   selectedPhases.length > 0 
                     ? "bg-[#bba7db]/10 text-[#8b7ab8] border-[#bba7db]/40" 
                     : ""
@@ -599,7 +586,7 @@ export default function Timesheets() {
                   </Badge>
                 )}
                 <ChevronDown className="w-3 h-3 opacity-50" />
-              </Button>
+              </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
               {[
@@ -629,17 +616,15 @@ export default function Timesheets() {
           {/* Date Range Filter */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button 
-                variant="outline"
-                size="sm"
-                className={`h-7 px-3 text-xs gap-1.5 ${
+              <button 
+                className={`h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5 ${
                   dateRangeType !== "all" 
                     ? "bg-[#bba7db]/10 text-[#8b7ab8] border-[#bba7db]/40" 
                     : ""
                 }`}
                 data-testid="button-filter-date"
               >
-                <CalendarRange className="w-3.5 h-3.5" />
+                <CalendarRange className="w-3 h-3" />
                 <span>
                   {dateRangeType === "all" ? "All Time" : 
                    dateRangeType === "this-week" ? "This Week" :
@@ -647,7 +632,7 @@ export default function Timesheets() {
                    "Custom"}
                 </span>
                 <ChevronDown className="w-3 h-3 opacity-50" />
-              </Button>
+              </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
               <DropdownMenuItem onClick={() => {
@@ -674,8 +659,8 @@ export default function Timesheets() {
             <>
               <Popover>
                 <PopoverTrigger asChild>
-                  <button className="h-7 px-3 text-xs bg-background border rounded-md hover-elevate flex items-center gap-1.5" data-testid="button-start-date">
-                    <CalendarIcon className="w-3.5 h-3.5" />
+                  <button className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5" data-testid="button-start-date">
+                    <CalendarIcon className="w-3 h-3" />
                     <span>{customStartDate ? format(customStartDate, "dd MMM") : "Start"}</span>
                   </button>
                 </PopoverTrigger>
@@ -693,8 +678,8 @@ export default function Timesheets() {
 
               <Popover>
                 <PopoverTrigger asChild>
-                  <button className="h-7 px-3 text-xs bg-background border rounded-md hover-elevate flex items-center gap-1.5" data-testid="button-end-date">
-                    <CalendarIcon className="w-3.5 h-3.5" />
+                  <button className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5" data-testid="button-end-date">
+                    <CalendarIcon className="w-3 h-3" />
                     <span>{customEndDate ? format(customEndDate, "dd MMM") : "End"}</span>
                   </button>
                 </PopoverTrigger>
@@ -713,52 +698,44 @@ export default function Timesheets() {
 
         {/* Right: View Tabs + Columns */}
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-0.5 p-0.5 bg-muted/30 rounded-md">
-            <Button
-              variant={activeView === "table" ? "secondary" : "ghost"}
-              size="sm"
+          <div className="flex items-center gap-0.5">
+            <button
               onClick={() => setActiveView("table")}
-              className="h-6 px-2 text-xs gap-1"
+              className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'table' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2 flex items-center gap-0.5`}
               data-testid="button-view-table"
             >
               <Table2 className="w-3 h-3" />
               Table
-            </Button>
-            <Button
-              variant={activeView === "weekly" ? "secondary" : "ghost"}
-              size="sm"
+            </button>
+            <button
               onClick={() => setActiveView("weekly")}
-              className="h-6 px-2 text-xs gap-1"
+              className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'weekly' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2 flex items-center gap-0.5`}
               data-testid="button-view-weekly"
             >
               <Users2 className="w-3 h-3" />
               Weekly
-            </Button>
-            <Button
-              variant={activeView === "calendar" ? "secondary" : "ghost"}
-              size="sm"
+            </button>
+            <button
               onClick={() => setActiveView("calendar")}
-              className="h-6 px-2 text-xs gap-1"
+              className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'calendar' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2 flex items-center gap-0.5`}
               data-testid="button-view-calendar"
             >
               <CalendarDays className="w-3 h-3" />
               Calendar
-            </Button>
+            </button>
           </div>
 
           <div className="w-px h-4 bg-border" />
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-6 px-2 text-xs gap-1"
+              <button
+                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
                 data-testid="button-column-settings"
               >
                 <Settings2 className="w-3 h-3" />
                 Columns
-              </Button>
+              </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
               {columns.map((col) => (
