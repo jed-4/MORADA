@@ -1,4 +1,4 @@
-import { useState, forwardRef, useImperativeHandle } from "react";
+import { useState, useEffect, forwardRef, useImperativeHandle, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Plus, Search, Filter, Edit, Trash2, ChevronRight, ChevronDown, Building, Tag, DollarSign, Box, Loader2, ChevronsUpDown, ChevronsDownUp } from "lucide-react";
@@ -178,7 +178,18 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
     return `${markup.toFixed(1)}%`;
   };
 
-  const groups = groupedItems();
+  const groups = useMemo(() => groupedItems(), [groupBy, items, categories, suppliers]);
+
+  // Recalibrate expandedGroups when groups change
+  useEffect(() => {
+    if (groupBy === "none") return;
+    const currentGroupIds = new Set(groups.map(g => g.id));
+    // Remove any expanded groups that no longer exist
+    setExpandedGroups(prev => {
+      const filtered = new Set([...prev].filter(id => currentGroupIds.has(id)));
+      return filtered.size !== prev.size ? filtered : prev;
+    });
+  }, [groups, groupBy]);
 
   const allExpanded = groups.length > 0 && groups.every(g => expandedGroups.has(g.id));
   
@@ -186,7 +197,8 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
     if (allExpanded) {
       collapseAll();
     } else {
-      expandAll();
+      // Expand all current groups
+      setExpandedGroups(new Set(groups.map(g => g.id)));
     }
   };
 
@@ -209,76 +221,67 @@ export const PriceList = forwardRef<PriceListHandle, PriceListProps>(({ searchQu
             </button>
           )}
 
-          <button
-            onClick={() => setFilterCategory(filterCategory === "all" ? "" : "all")}
-            className={`h-6 px-2 text-xs border rounded-md flex items-center gap-1 ${
-              filterCategory !== "all" 
-                ? "bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/30" 
-                : "hover-elevate"
-            } active-elevate-2`}
-            data-testid="button-filter-category"
-          >
-            <Tag className="h-3 w-3" />
-            <Select value={filterCategory} onValueChange={setFilterCategory}>
-              <SelectTrigger className="h-5 border-0 bg-transparent p-0 text-xs min-w-[70px]" data-testid="select-filter-category">
-                <SelectValue placeholder="Category" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Categories</SelectItem>
-                {categories.map((cat) => (
-                  <SelectItem key={cat.id} value={cat.id}>
-                    {cat.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </button>
+          <Select value={filterCategory} onValueChange={setFilterCategory}>
+            <SelectTrigger 
+              className={`h-6 px-2 text-xs rounded-md ${
+                filterCategory !== "all" 
+                  ? "bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/30" 
+                  : ""
+              }`}
+              data-testid="select-filter-category"
+            >
+              <Tag className="h-3 w-3 mr-1" />
+              <SelectValue placeholder="Category" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Categories</SelectItem>
+              {categories.map((cat) => (
+                <SelectItem key={cat.id} value={cat.id}>
+                  {cat.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-          <button
-            onClick={() => setFilterSupplier(filterSupplier === "all" ? "" : "all")}
-            className={`h-6 px-2 text-xs border rounded-md flex items-center gap-1 ${
-              filterSupplier !== "all" 
-                ? "bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/30" 
-                : "hover-elevate"
-            } active-elevate-2`}
-            data-testid="button-filter-supplier"
-          >
-            <Building className="h-3 w-3" />
-            <Select value={filterSupplier} onValueChange={setFilterSupplier}>
-              <SelectTrigger className="h-5 border-0 bg-transparent p-0 text-xs min-w-[70px]" data-testid="select-filter-supplier">
-                <SelectValue placeholder="Supplier" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Suppliers</SelectItem>
-                {suppliers.map((sup) => (
-                  <SelectItem key={sup.id} value={sup.id}>
-                    {sup.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </button>
+          <Select value={filterSupplier} onValueChange={setFilterSupplier}>
+            <SelectTrigger 
+              className={`h-6 px-2 text-xs rounded-md ${
+                filterSupplier !== "all" 
+                  ? "bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/30" 
+                  : ""
+              }`}
+              data-testid="select-filter-supplier"
+            >
+              <Building className="h-3 w-3 mr-1" />
+              <SelectValue placeholder="Supplier" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Suppliers</SelectItem>
+              {suppliers.map((sup) => (
+                <SelectItem key={sup.id} value={sup.id}>
+                  {sup.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-          <button
-            onClick={() => setFilterStatus(filterStatus === "all" ? "" : "all")}
-            className={`h-6 px-2 text-xs border rounded-md flex items-center gap-1 ${
-              filterStatus !== "all" 
-                ? "bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/30" 
-                : "hover-elevate"
-            } active-elevate-2`}
-            data-testid="button-filter-status"
-          >
-            <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="h-5 border-0 bg-transparent p-0 text-xs min-w-[60px]" data-testid="select-filter-status">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="inactive">Inactive</SelectItem>
-              </SelectContent>
-            </Select>
-          </button>
+          <Select value={filterStatus} onValueChange={setFilterStatus}>
+            <SelectTrigger 
+              className={`h-6 px-2 text-xs rounded-md ${
+                filterStatus !== "all" 
+                  ? "bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/30" 
+                  : ""
+              }`}
+              data-testid="select-filter-status"
+            >
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="inactive">Inactive</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="flex items-center gap-2">
@@ -509,49 +512,53 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
     });
   };
 
-  useState(() => {
-    if (item) {
-      setFormData({
-        name: item.name || "",
-        nickname: item.nickname || "",
-        code: item.code || "",
-        description: item.description || "",
-        categoryId: item.categoryId || "",
-        unitType: item.unitType || "each",
-        costPrice: item.costPrice || "",
-        sellPrice: item.sellPrice || "",
-        markupPercent: item.markupPercent || "",
-        supplierId: item.supplierId || "",
-        supplierCode: item.supplierCode || "",
-        leadTimeDays: item.leadTimeDays?.toString() || "",
-        brand: item.brand || "",
-        imageUrl: item.imageUrl || "",
-        tags: (item.tags as string[] || []).join(", "),
-        notes: item.notes || "",
-        isActive: item.isActive ?? true,
-      });
-    } else {
-      setFormData({
-        name: "",
-        nickname: "",
-        code: "",
-        description: "",
-        categoryId: "",
-        unitType: "each",
-        costPrice: "",
-        sellPrice: "",
-        markupPercent: "",
-        supplierId: "",
-        supplierCode: "",
-        leadTimeDays: "",
-        brand: "",
-        imageUrl: "",
-        tags: "",
-        notes: "",
-        isActive: true,
-      });
+  useEffect(() => {
+    if (open) {
+      if (item) {
+        setFormData({
+          name: item.name || "",
+          nickname: item.nickname || "",
+          code: item.code || "",
+          description: item.description || "",
+          categoryId: item.categoryId || "",
+          unitType: item.unitType || "each",
+          costPrice: item.costPrice || "",
+          sellPrice: item.sellPrice || "",
+          markupPercent: item.markupPercent || "",
+          supplierId: item.supplierId || "",
+          supplierCode: item.supplierCode || "",
+          leadTimeDays: item.leadTimeDays?.toString() || "",
+          brand: item.brand || "",
+          imageUrl: item.imageUrl || "",
+          tags: (item.tags as string[] || []).join(", "),
+          notes: item.notes || "",
+          isActive: item.isActive ?? true,
+        });
+        setShowMore(false);
+      } else {
+        setFormData({
+          name: "",
+          nickname: "",
+          code: "",
+          description: "",
+          categoryId: "",
+          unitType: "each",
+          costPrice: "",
+          sellPrice: "",
+          markupPercent: "",
+          supplierId: "",
+          supplierCode: "",
+          leadTimeDays: "",
+          brand: "",
+          imageUrl: "",
+          tags: "",
+          notes: "",
+          isActive: true,
+        });
+        setShowMore(false);
+      }
     }
-  });
+  }, [open, item]);
 
   const createMutation = useMutation({
     mutationFn: (data: any) => apiRequest("/api/price-list/items", { method: "POST", body: JSON.stringify(data) }),
@@ -612,61 +619,58 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
     }
   };
 
+  const [showMore, setShowMore] = useState(false);
+  
+  const calculatedMarkup = formData.costPrice && formData.sellPrice
+    ? (((parseFloat(formData.sellPrice) - parseFloat(formData.costPrice)) / parseFloat(formData.costPrice)) * 100).toFixed(1)
+    : null;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto" data-testid="modal-price-list-item">
-        <DialogHeader>
-          <DialogTitle className="text-sm font-semibold">
-            {isEditing ? "Edit Price List Item" : "Add Price List Item"}
+      <DialogContent className="sm:max-w-[480px]" data-testid="modal-price-list-item">
+        <DialogHeader className="pb-2">
+          <DialogTitle className="flex items-center gap-2 text-sm">
+            <Box className="w-4 h-4" />
+            {isEditing ? "Edit Item" : "Add Item"}
           </DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Name *</Label>
-              <Input
-                value={formData.name}
-                onChange={(e) => updateField("name", e.target.value)}
-                placeholder="Item name"
-                className="h-8 text-xs"
-                data-testid="input-name"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Nickname</Label>
-              <Input
-                value={formData.nickname}
-                onChange={(e) => updateField("nickname", e.target.value)}
-                placeholder="Team terminology"
-                className="h-8 text-xs"
-                data-testid="input-nickname"
-              />
-            </div>
+        <form onSubmit={handleSubmit} className="space-y-2">
+          {/* Name Row - Most Important */}
+          <div className="flex items-center justify-between px-2 py-1.5 bg-muted/30 rounded">
+            <span className="text-[11px] text-muted-foreground w-16">Name *</span>
+            <Input
+              value={formData.name}
+              onChange={(e) => updateField("name", e.target.value)}
+              placeholder="Item name"
+              className="h-7 text-[11px] flex-1 ml-2"
+              data-testid="input-name"
+            />
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Code</Label>
-              <Input
-                value={formData.code}
-                onChange={(e) => updateField("code", e.target.value)}
-                placeholder="SKU / Item code"
-                className="h-8 text-xs"
-                data-testid="input-code"
-              />
-            </div>
+          {/* Nickname Row */}
+          <div className="flex items-center justify-between px-2 py-1.5 bg-muted/30 rounded">
+            <span className="text-[11px] text-muted-foreground w-16">Nickname</span>
+            <Input
+              value={formData.nickname}
+              onChange={(e) => updateField("nickname", e.target.value)}
+              placeholder="Team terminology"
+              className="h-7 text-[11px] flex-1 ml-2"
+              data-testid="input-nickname"
+            />
+          </div>
 
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Category</Label>
+          {/* Category, Code, Unit - Compact Grid */}
+          <div className="grid grid-cols-3 gap-1.5">
+            <div>
+              <Label className="text-[10px] text-muted-foreground">Category</Label>
               <Select value={formData.categoryId} onValueChange={(v) => updateField("categoryId", v)}>
-                <SelectTrigger className="h-8 text-xs" data-testid="select-category">
-                  <SelectValue placeholder="Select category" />
+                <SelectTrigger className="h-7 text-[11px]" data-testid="select-category">
+                  <SelectValue placeholder="Select" />
                 </SelectTrigger>
                 <SelectContent>
                   {categories.map((cat) => (
-                    <SelectItem key={cat.id} value={cat.id}>
+                    <SelectItem key={cat.id} value={cat.id} className="text-[11px]">
                       {cat.name}
                     </SelectItem>
                   ))}
@@ -674,71 +678,73 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
               </Select>
             </div>
 
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Unit Type</Label>
+            <div>
+              <Label className="text-[10px] text-muted-foreground">Code</Label>
+              <Input
+                value={formData.code}
+                onChange={(e) => updateField("code", e.target.value)}
+                placeholder="SKU"
+                className="h-7 text-[11px]"
+                data-testid="input-code"
+              />
+            </div>
+
+            <div>
+              <Label className="text-[10px] text-muted-foreground">Unit</Label>
               <Select value={formData.unitType} onValueChange={(v) => updateField("unitType", v)}>
-                <SelectTrigger className="h-8 text-xs" data-testid="select-unit-type">
+                <SelectTrigger className="h-7 text-[11px]" data-testid="select-unit-type">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="each">Each</SelectItem>
-                  <SelectItem value="m">Metre (m)</SelectItem>
-                  <SelectItem value="m2">Square Metre (m2)</SelectItem>
-                  <SelectItem value="m3">Cubic Metre (m3)</SelectItem>
-                  <SelectItem value="lm">Linear Metre (lm)</SelectItem>
-                  <SelectItem value="kg">Kilogram (kg)</SelectItem>
-                  <SelectItem value="t">Tonne (t)</SelectItem>
-                  <SelectItem value="l">Litre (L)</SelectItem>
-                  <SelectItem value="hr">Hour (hr)</SelectItem>
-                  <SelectItem value="day">Day</SelectItem>
-                  <SelectItem value="pack">Pack</SelectItem>
-                  <SelectItem value="box">Box</SelectItem>
-                  <SelectItem value="roll">Roll</SelectItem>
-                  <SelectItem value="sheet">Sheet</SelectItem>
-                  <SelectItem value="bag">Bag</SelectItem>
-                  <SelectItem value="pallet">Pallet</SelectItem>
-                  <SelectItem value="item">Item</SelectItem>
-                  <SelectItem value="lot">Lot</SelectItem>
-                  <SelectItem value="allowance">Allowance</SelectItem>
+                  <SelectItem value="each" className="text-[11px]">Each</SelectItem>
+                  <SelectItem value="m" className="text-[11px]">m</SelectItem>
+                  <SelectItem value="m2" className="text-[11px]">m2</SelectItem>
+                  <SelectItem value="m3" className="text-[11px]">m3</SelectItem>
+                  <SelectItem value="lm" className="text-[11px]">lm</SelectItem>
+                  <SelectItem value="kg" className="text-[11px]">kg</SelectItem>
+                  <SelectItem value="t" className="text-[11px]">t</SelectItem>
+                  <SelectItem value="l" className="text-[11px]">L</SelectItem>
+                  <SelectItem value="hr" className="text-[11px]">hr</SelectItem>
+                  <SelectItem value="day" className="text-[11px]">day</SelectItem>
+                  <SelectItem value="pack" className="text-[11px]">pack</SelectItem>
+                  <SelectItem value="box" className="text-[11px]">box</SelectItem>
+                  <SelectItem value="roll" className="text-[11px]">roll</SelectItem>
+                  <SelectItem value="sheet" className="text-[11px]">sheet</SelectItem>
+                  <SelectItem value="bag" className="text-[11px]">bag</SelectItem>
+                  <SelectItem value="pallet" className="text-[11px]">pallet</SelectItem>
+                  <SelectItem value="item" className="text-[11px]">item</SelectItem>
+                  <SelectItem value="lot" className="text-[11px]">lot</SelectItem>
+                  <SelectItem value="allowance" className="text-[11px]">allowance</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold">Description</Label>
-            <Textarea
-              value={formData.description}
-              onChange={(e) => updateField("description", e.target.value)}
-              placeholder="Item description"
-              className="text-xs min-h-[60px]"
-              data-testid="input-description"
-            />
-          </div>
-
-          <div className="border-t pt-4">
-            <h4 className="text-xs font-semibold mb-3 flex items-center gap-1">
-              <DollarSign className="h-3 w-3" /> Pricing
-            </h4>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Cost Price</Label>
+          {/* Pricing Row - Highlight Section */}
+          <div className="px-2 py-2 bg-[#bba7db]/10 border border-[#bba7db]/20 rounded">
+            <div className="flex items-center gap-1 mb-2">
+              <DollarSign className="h-3 w-3 text-[#bba7db]" />
+              <span className="text-[10px] font-medium text-[#bba7db]">Pricing</span>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <Label className="text-[10px] text-muted-foreground">Cost</Label>
                 <div className="relative">
-                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">$</span>
                   <Input
                     type="number"
                     step="0.01"
                     value={formData.costPrice}
                     onChange={(e) => updateField("costPrice", e.target.value)}
                     placeholder="0.00"
-                    className="h-8 text-xs pl-5"
+                    className="h-7 text-[11px] pl-5"
                     data-testid="input-cost-price"
                   />
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Markup %</Label>
+              <div>
+                <Label className="text-[10px] text-muted-foreground">Markup</Label>
                 <div className="relative">
                   <Input
                     type="number"
@@ -746,143 +752,185 @@ function PriceListItemModal({ open, onOpenChange, item, categories, suppliers }:
                     value={formData.markupPercent}
                     onChange={(e) => updateField("markupPercent", e.target.value)}
                     placeholder="0"
-                    className="h-8 text-xs pr-5"
+                    className="h-7 text-[11px] pr-5"
                     data-testid="input-markup"
                   />
-                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">%</span>
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Sell Price</Label>
+              <div>
+                <Label className="text-[10px] text-muted-foreground">Sell</Label>
                 <div className="relative">
-                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">$</span>
                   <Input
                     type="number"
                     step="0.01"
                     value={formData.sellPrice}
                     onChange={(e) => updateField("sellPrice", e.target.value)}
                     placeholder="0.00"
-                    className="h-8 text-xs pl-5"
+                    className="h-7 text-[11px] pl-5"
                     data-testid="input-sell-price"
                   />
                 </div>
               </div>
             </div>
+            {calculatedMarkup && (
+              <div className="mt-1.5 text-[10px] text-muted-foreground text-right">
+                Calculated markup: <span className="font-medium text-foreground">{calculatedMarkup}%</span>
+              </div>
+            )}
           </div>
 
-          <div className="border-t pt-4">
-            <h4 className="text-xs font-semibold mb-3 flex items-center gap-1">
-              <Building className="h-3 w-3" /> Supplier
-            </h4>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Supplier</Label>
-                <Select value={formData.supplierId} onValueChange={(v) => updateField("supplierId", v)}>
-                  <SelectTrigger className="h-8 text-xs" data-testid="select-supplier">
-                    <SelectValue placeholder="Select supplier" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {suppliers.map((sup) => (
-                      <SelectItem key={sup.id} value={sup.id}>
-                        {sup.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+          {/* Supplier Row */}
+          <div className="grid grid-cols-3 gap-1.5">
+            <div>
+              <Label className="text-[10px] text-muted-foreground">Supplier</Label>
+              <Select value={formData.supplierId} onValueChange={(v) => updateField("supplierId", v)}>
+                <SelectTrigger className="h-7 text-[11px]" data-testid="select-supplier">
+                  <SelectValue placeholder="Select" />
+                </SelectTrigger>
+                <SelectContent>
+                  {suppliers.map((sup) => (
+                    <SelectItem key={sup.id} value={sup.id} className="text-[11px]">
+                      {sup.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Supplier Code</Label>
-                <Input
-                  value={formData.supplierCode}
-                  onChange={(e) => updateField("supplierCode", e.target.value)}
-                  placeholder="Supplier's code"
-                  className="h-8 text-xs"
-                  data-testid="input-supplier-code"
-                />
-              </div>
+            <div>
+              <Label className="text-[10px] text-muted-foreground">Supplier Code</Label>
+              <Input
+                value={formData.supplierCode}
+                onChange={(e) => updateField("supplierCode", e.target.value)}
+                placeholder="Code"
+                className="h-7 text-[11px]"
+                data-testid="input-supplier-code"
+              />
+            </div>
 
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Lead Time (days)</Label>
+            <div>
+              <Label className="text-[10px] text-muted-foreground">Lead Time</Label>
+              <div className="relative">
                 <Input
                   type="number"
                   value={formData.leadTimeDays}
                   onChange={(e) => updateField("leadTimeDays", e.target.value)}
                   placeholder="0"
-                  className="h-8 text-xs"
+                  className="h-7 text-[11px] pr-8"
                   data-testid="input-lead-time"
                 />
+                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">days</span>
               </div>
             </div>
           </div>
 
-          <div className="border-t pt-4">
-            <h4 className="text-xs font-semibold mb-3">Additional Details</h4>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Brand</Label>
-                <Input
-                  value={formData.brand}
-                  onChange={(e) => updateField("brand", e.target.value)}
-                  placeholder="Brand name"
-                  className="h-8 text-xs"
-                  data-testid="input-brand"
-                />
+          {/* Description - 2 line preview like rapid approval */}
+          <div>
+            <Label className="text-[10px] text-muted-foreground mb-0.5 block">Description</Label>
+            <Textarea
+              value={formData.description}
+              onChange={(e) => updateField("description", e.target.value)}
+              placeholder="Item description"
+              className="text-[11px] min-h-[40px] resize-none"
+              rows={2}
+              data-testid="input-description"
+            />
+          </div>
+
+          {/* Show More Toggle */}
+          <button
+            type="button"
+            onClick={() => setShowMore(!showMore)}
+            className="w-full flex items-center justify-center gap-1 py-1 text-[10px] text-muted-foreground hover:text-foreground"
+            data-testid="button-show-more"
+          >
+            {showMore ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            {showMore ? "Show less" : "More options"}
+          </button>
+
+          {/* Collapsible Additional Details */}
+          {showMore && (
+            <div className="space-y-2 pt-1 border-t">
+              <div className="grid grid-cols-2 gap-1.5">
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">Brand</Label>
+                  <Input
+                    value={formData.brand}
+                    onChange={(e) => updateField("brand", e.target.value)}
+                    placeholder="Brand name"
+                    className="h-7 text-[11px]"
+                    data-testid="input-brand"
+                  />
+                </div>
+
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">Tags</Label>
+                  <Input
+                    value={formData.tags}
+                    onChange={(e) => updateField("tags", e.target.value)}
+                    placeholder="tag1, tag2"
+                    className="h-7 text-[11px]"
+                    data-testid="input-tags"
+                  />
+                </div>
               </div>
 
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Tags</Label>
-                <Input
-                  value={formData.tags}
-                  onChange={(e) => updateField("tags", e.target.value)}
-                  placeholder="tag1, tag2, tag3"
-                  className="h-8 text-xs"
-                  data-testid="input-tags"
+              <div>
+                <Label className="text-[10px] text-muted-foreground">Notes</Label>
+                <Textarea
+                  value={formData.notes}
+                  onChange={(e) => updateField("notes", e.target.value)}
+                  placeholder="Internal notes"
+                  className="text-[11px] min-h-[40px] resize-none"
+                  rows={2}
+                  data-testid="input-notes"
                 />
               </div>
             </div>
+          )}
 
-            <div className="mt-4 space-y-1.5">
-              <Label className="text-xs font-semibold">Notes</Label>
-              <Textarea
-                value={formData.notes}
-                onChange={(e) => updateField("notes", e.target.value)}
-                placeholder="Internal notes"
-                className="text-xs min-h-[60px]"
-                data-testid="input-notes"
-              />
-            </div>
-
-            <div className="mt-4 flex items-center gap-2">
+          {/* Footer with Active toggle and buttons */}
+          <div className="flex items-center justify-between pt-2 border-t">
+            <label className="flex items-center gap-1.5 text-[11px] cursor-pointer">
               <input
                 type="checkbox"
-                id="isActive"
                 checked={formData.isActive}
                 onChange={(e) => updateField("isActive", e.target.checked)}
-                className="h-4 w-4"
+                className="h-3.5 w-3.5 rounded"
                 data-testid="checkbox-active"
               />
-              <Label htmlFor="isActive" className="text-xs font-semibold cursor-pointer">
-                Active
-              </Label>
+              <span className={formData.isActive ? "text-green-600" : "text-muted-foreground"}>
+                {formData.isActive ? "Active" : "Inactive"}
+              </span>
+            </label>
+            
+            <div className="flex items-center gap-1.5">
+              <Button 
+                type="button" 
+                variant="outline" 
+                size="sm"
+                className="h-7 text-[11px]"
+                onClick={() => onOpenChange(false)} 
+                data-testid="button-cancel"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                className="h-7 text-[11px]"
+                disabled={createMutation.isPending || updateMutation.isPending}
+                data-testid="button-save"
+              >
+                {(createMutation.isPending || updateMutation.isPending) && (
+                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                )}
+                {isEditing ? "Update" : "Create"}
+              </Button>
             </div>
-          </div>
-
-          <div className="flex justify-end gap-2 pt-4 border-t">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} data-testid="button-cancel">
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              disabled={createMutation.isPending || updateMutation.isPending}
-              data-testid="button-save"
-            >
-              {(createMutation.isPending || updateMutation.isPending) && (
-                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-              )}
-              {isEditing ? "Update" : "Create"}
-            </Button>
           </div>
         </form>
       </DialogContent>
