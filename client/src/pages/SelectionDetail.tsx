@@ -50,6 +50,12 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs";
 import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import {
   ArrowLeft,
   Plus,
   Search,
@@ -70,6 +76,14 @@ import {
   EyeOff,
   LockOpen,
   Lock,
+  LayoutList,
+  LayoutGrid,
+  ExternalLink,
+  Users,
+  Truck,
+  HardHat,
+  MessageSquare,
+  Send,
 } from "lucide-react";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
@@ -85,6 +99,7 @@ export default function SelectionDetail() {
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState("options");
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [optionsView, setOptionsView] = useState<"table" | "grid">("table");
   const { toast } = useToast();
   const { statusOptions, getStatusInfo, getStatusLabel } = useSelectionStatusOptions();
 
@@ -427,31 +442,49 @@ export default function SelectionDetail() {
   const currentStatus = getStatusInfo(selection.status);
   const StatusIcon = currentStatus.icon;
 
+  // Calculate selected price from options (ensure we have valid numbers)
+  const selectedOption = selection.options?.find(opt => opt.isSelectedByClient);
+  const selectedPrice = Number(selectedOption?.totalCost) || 0;
+  const allowanceAmount = Number(selection.allowance) || 0;
+
   return (
     <div className="flex flex-col h-full">
-      {/* Header Row 1 - Breadcrumb + Title */}
-      <div className="h-9 px-4 flex items-center justify-between border-b bg-background shrink-0">
-        <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6"
+      {/* Header Row 1 - Back + Title + Status + Financial Summary */}
+      <div className="h-10 px-4 flex items-center justify-between border-b bg-background shrink-0">
+        <div className="flex items-center gap-3">
+          <button
             onClick={goBack}
+            className="h-6 w-6 rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
             data-testid="button-back"
           >
             <ArrowLeft className="w-4 h-4" />
-          </Button>
-          <span className="text-sm text-muted-foreground">Selections /</span>
-          <h1 className="text-sm font-medium truncate max-w-[300px]">{selection.name}</h1>
-          <Badge variant="outline" className={cn("text-xs capitalize", currentStatus.bgClass, currentStatus.textClass)}>
-            <StatusIcon className="w-3 h-3 mr-1" />
-            {currentStatus.name}
-          </Badge>
+          </button>
+          <div className="flex items-center gap-2">
+            <h1 className="text-sm font-semibold">{selection.name}</h1>
+            <Badge 
+              variant="outline" 
+              className={cn("text-xs capitalize px-2 py-0.5", currentStatus.bgClass, currentStatus.textClass)}
+            >
+              {currentStatus.name}
+            </Badge>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
+        
+        {/* Right side: Financial Summary */}
+        <div className="flex items-center gap-6">
           {hasUnsavedChanges && (
-            <span className="text-xs text-muted-foreground">Unsaved changes</span>
+            <span className="text-xs text-amber-600 font-medium">Unsaved changes</span>
           )}
+          <div className="flex items-center gap-4">
+            <div className="text-right">
+              <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Allowance</div>
+              <div className="text-sm font-semibold">${(allowanceAmount / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+            </div>
+            <div className="text-right">
+              <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Selected price</div>
+              <div className="text-sm font-semibold text-[#bba7db]">${(selectedPrice / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}</div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -481,15 +514,39 @@ export default function SelectionDetail() {
         <div className="flex items-center gap-2">
           {activeTab === "options" && (
             <>
-              <div className="relative">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-                <Input
-                  placeholder="Search options..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="h-6 pl-7 w-[180px] text-xs"
-                  data-testid="input-search-options"
-                />
+              <div className="flex items-center gap-2">
+                <div className="flex items-center border rounded-md">
+                  <button
+                    onClick={() => setOptionsView("table")}
+                    className={cn(
+                      "h-6 w-6 flex items-center justify-center rounded-l-md transition-colors",
+                      optionsView === "table" ? "bg-[#bba7db] text-white" : "hover-elevate"
+                    )}
+                    data-testid="button-view-table"
+                  >
+                    <LayoutList className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={() => setOptionsView("grid")}
+                    className={cn(
+                      "h-6 w-6 flex items-center justify-center rounded-r-md transition-colors",
+                      optionsView === "grid" ? "bg-[#bba7db] text-white" : "hover-elevate"
+                    )}
+                    data-testid="button-view-grid"
+                  >
+                    <LayoutGrid className="w-3 h-3" />
+                  </button>
+                </div>
+                <div className="relative">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+                  <Input
+                    placeholder="Search options..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="h-6 pl-7 w-[180px] text-xs"
+                    data-testid="input-search-options"
+                  />
+                </div>
               </div>
               <Button 
                 size="sm" 
@@ -523,7 +580,122 @@ export default function SelectionDetail() {
                   </Button>
                 )}
               </div>
+            ) : optionsView === "table" ? (
+              /* Table View */
+              <div className="border rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50">
+                    <tr className="border-b">
+                      <th className="text-left px-3 py-2 font-medium text-xs uppercase tracking-wide text-muted-foreground">Image</th>
+                      <th className="text-left px-3 py-2 font-medium text-xs uppercase tracking-wide text-muted-foreground">Option</th>
+                      <th className="text-left px-3 py-2 font-medium text-xs uppercase tracking-wide text-muted-foreground">SKU</th>
+                      <th className="text-center px-3 py-2 font-medium text-xs uppercase tracking-wide text-muted-foreground">Qty</th>
+                      <th className="text-right px-3 py-2 font-medium text-xs uppercase tracking-wide text-muted-foreground">Unit Price</th>
+                      <th className="text-right px-3 py-2 font-medium text-xs uppercase tracking-wide text-muted-foreground">Amount</th>
+                      <th className="text-center px-3 py-2 font-medium text-xs uppercase tracking-wide text-muted-foreground">Status</th>
+                      <th className="w-10"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredOptions.map((option, idx) => (
+                      <tr 
+                        key={option.id}
+                        className={cn(
+                          "border-b hover-elevate cursor-pointer",
+                          idx % 2 === 0 ? "bg-background" : "bg-muted/20"
+                        )}
+                        onClick={() => handleEditOption(option)}
+                        data-testid={`row-option-${option.id}`}
+                      >
+                        <td className="px-3 py-2">
+                          <div className="w-10 h-10 bg-muted rounded flex items-center justify-center">
+                            <Package className="w-5 h-5 text-muted-foreground" />
+                          </div>
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex flex-col gap-0.5">
+                            <span className="font-medium text-sm">{option.name}</span>
+                            {option.brand && (
+                              <span className="text-xs text-muted-foreground">{option.brand}</span>
+                            )}
+                            {option.productUrl && (
+                              <a 
+                                href={option.productUrl} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-xs text-primary hover:underline flex items-center gap-1"
+                              >
+                                <ExternalLink className="w-3 h-3" />
+                                View product
+                              </a>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2">
+                          <span className="font-mono text-xs text-muted-foreground">{option.sku || "-"}</span>
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <span className="text-sm">{option.quantity} {option.unitType}</span>
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <span className="text-sm">${((option.unitCost || 0) / 100).toFixed(2)}</span>
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <span className="text-sm font-semibold">${((option.totalCost || 0) / 100).toFixed(2)}</span>
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          {option.isSelectedByClient ? (
+                            <Badge variant="outline" className="text-xs bg-green-50 border-green-200 text-green-700">
+                              <CheckCircle className="w-3 h-3 mr-1" />
+                              Selected
+                            </Badge>
+                          ) : !option.visibleToClient ? (
+                            <Badge variant="outline" className="text-xs bg-red-50 border-red-200 text-red-700">
+                              <EyeOff className="w-3 h-3 mr-1" />
+                              Hidden
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-xs">
+                              <Eye className="w-3 h-3 mr-1" />
+                              Visible
+                            </Badge>
+                          )}
+                        </td>
+                        <td className="px-3 py-2">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-6 w-6"
+                                data-testid={`button-option-menu-${option.id}`}
+                              >
+                                <MoreVertical className="w-4 h-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleEditOption(option); }}>
+                                <Edit3 className="w-4 h-4 mr-2" />
+                                Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                onClick={(e) => { e.stopPropagation(); deleteOptionMutation.mutate(option.id); }}
+                                className="text-destructive"
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             ) : (
+              /* Grid View */
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filteredOptions.map((option) => (
                   <Card key={option.id} className="hover-elevate transition-all duration-200 group" data-testid={`card-option-${option.id}`}>
@@ -625,11 +797,219 @@ export default function SelectionDetail() {
           /* Details Tab */
           <div className="p-4 pb-20">
             <Form {...selectionForm}>
-              <form className="space-y-6 max-w-2xl">
+              <form className="space-y-6 max-w-3xl">
+                {/* Basic Info Section - Buildern-style grid */}
+                <Card>
+                  <CardContent className="pt-6 space-y-5">
+                    {/* Name - Full width */}
+                    <FormField
+                      control={selectionForm.control}
+                      name="name"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs text-muted-foreground uppercase tracking-wide">Name</FormLabel>
+                          <FormControl>
+                            <Input 
+                              placeholder="e.g., Kitchen Splashback Tiles"
+                              {...field}
+                              data-testid="input-selection-name"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {/* Grid: Link to | Deadline */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <FormItem>
+                        <FormLabel className="text-xs text-muted-foreground uppercase tracking-wide">Link to</FormLabel>
+                        <Select disabled>
+                          <SelectTrigger data-testid="select-link-to">
+                            <SelectValue placeholder="Select task or schedule item" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">No linked item</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">Link to a task or schedule item</p>
+                      </FormItem>
+
+                      <FormField
+                        control={selectionForm.control}
+                        name="deadline"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-xs text-muted-foreground uppercase tracking-wide">Deadline</FormLabel>
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <FormControl>
+                                  <Button
+                                    variant="outline"
+                                    className={cn(
+                                      "w-full pl-3 text-left font-normal",
+                                      !field.value && "text-muted-foreground"
+                                    )}
+                                    data-testid="button-deadline"
+                                  >
+                                    {field.value ? (
+                                      format(new Date(field.value), "dd/MM/yyyy")
+                                    ) : (
+                                      <span>Select date</span>
+                                    )}
+                                    <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                  </Button>
+                                </FormControl>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-auto p-0" align="start">
+                                <Calendar
+                                  mode="single"
+                                  selected={field.value ? new Date(field.value) : undefined}
+                                  onSelect={field.onChange}
+                                  initialFocus
+                                />
+                              </PopoverContent>
+                            </Popover>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    {/* Grid: Category | Location */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <FormField
+                        control={selectionForm.control}
+                        name="category"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-xs text-muted-foreground uppercase tracking-wide">Category</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value || ""}>
+                              <FormControl>
+                                <SelectTrigger data-testid="select-category">
+                                  <SelectValue placeholder="Select category" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {selectionCategories?.options?.map((opt) => (
+                                  <SelectItem key={opt.key} value={opt.name}>
+                                    {opt.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={selectionForm.control}
+                        name="room"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-xs text-muted-foreground uppercase tracking-wide">Location</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value || ""}>
+                              <FormControl>
+                                <SelectTrigger data-testid="select-room">
+                                  <SelectValue placeholder="Select location" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {locationCategories?.options?.map((opt) => (
+                                  <SelectItem key={opt.key} value={opt.name}>
+                                    {opt.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    {/* Description */}
+                    <FormField
+                      control={selectionForm.control}
+                      name="description"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs text-muted-foreground uppercase tracking-wide">Description</FormLabel>
+                          <FormControl>
+                            <Textarea 
+                              placeholder="Add notes about this selection..."
+                              rows={3}
+                              {...field}
+                              value={field.value || ""}
+                              data-testid="input-selection-description"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </CardContent>
+                </Card>
+
+                {/* Pricing Section */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-semibold">Pricing</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <FormField
+                      control={selectionForm.control}
+                      name="allowance"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs text-muted-foreground uppercase tracking-wide">Allowance</FormLabel>
+                          <FormControl>
+                            <div className="relative max-w-xs">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+                              <Input 
+                                type="number"
+                                placeholder="0.00"
+                                step="0.01"
+                                min="0"
+                                className="pl-7"
+                                value={field.value ? (field.value / 100).toFixed(2) : ""}
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  field.onChange(value ? Math.round(parseFloat(value) * 100) : undefined);
+                                }}
+                                data-testid="input-allowance"
+                              />
+                            </div>
+                          </FormControl>
+                          <FormDescription className="text-xs">
+                            Budget allocated for this selection
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <div className="flex flex-row items-center justify-between rounded-lg border p-3">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-sm font-medium">Pricing affects contract price</FormLabel>
+                        <FormDescription className="text-xs">
+                          Changes to this selection will update the contract value
+                        </FormDescription>
+                      </div>
+                      <Switch
+                        checked={true}
+                        disabled
+                        data-testid="switch-affects-contract"
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+
                 {/* Status Section */}
                 <Card>
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-base">Status</CardTitle>
+                    <CardTitle className="text-sm font-semibold">Status</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <FormField
@@ -672,224 +1052,160 @@ export default function SelectionDetail() {
                   </CardContent>
                 </Card>
 
-                {/* Basic Info */}
+                {/* Permissions Accordion */}
                 <Card>
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-base">Basic Information</CardTitle>
+                    <CardTitle className="text-sm font-semibold">Permissions</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    <FormField
-                      control={selectionForm.control}
-                      name="name"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Name</FormLabel>
-                          <FormControl>
-                            <Input 
-                              placeholder="e.g., Kitchen Splashback Tiles"
-                              {...field}
-                              data-testid="input-selection-name"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={selectionForm.control}
-                      name="description"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Description</FormLabel>
-                          <FormControl>
-                            <Textarea 
-                              placeholder="Describe what this selection is for..."
-                              rows={3}
-                              {...field}
-                              value={field.value || ""}
-                              data-testid="input-selection-description"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <FormField
-                        control={selectionForm.control}
-                        name="category"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Category</FormLabel>
-                            <Select onValueChange={field.onChange} value={field.value || ""}>
-                              <FormControl>
-                                <SelectTrigger data-testid="select-category">
-                                  <SelectValue placeholder="Select category" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {selectionCategories?.options?.map((opt) => (
-                                  <SelectItem key={opt.key} value={opt.name}>
-                                    {opt.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={selectionForm.control}
-                        name="room"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Location/Room</FormLabel>
-                            <Select onValueChange={field.onChange} value={field.value || ""}>
-                              <FormControl>
-                                <SelectTrigger data-testid="select-room">
-                                  <SelectValue placeholder="Select room" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {locationCategories?.options?.map((opt) => (
-                                  <SelectItem key={opt.key} value={opt.name}>
-                                    {opt.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <FormField
-                        control={selectionForm.control}
-                        name="allowance"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Budget Allowance</FormLabel>
-                            <FormControl>
-                              <div className="relative">
-                                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
-                                <Input 
-                                  type="number"
-                                  placeholder="0.00"
-                                  step="0.01"
-                                  min="0"
-                                  className="pl-10"
-                                  value={field.value ? (field.value / 100).toFixed(2) : ""}
-                                  onChange={(e) => {
-                                    const value = e.target.value;
-                                    field.onChange(value ? Math.round(parseFloat(value) * 100) : undefined);
-                                  }}
-                                  data-testid="input-allowance"
-                                />
-                              </div>
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={selectionForm.control}
-                        name="deadline"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Decision Deadline</FormLabel>
-                            <Popover>
-                              <PopoverTrigger asChild>
+                  <CardContent>
+                    <Accordion type="multiple" defaultValue={["client"]} className="w-full">
+                      {/* Client Permissions */}
+                      <AccordionItem value="client" className="border-b">
+                        <AccordionTrigger className="py-3 hover:no-underline" data-testid="accordion-client">
+                          <div className="flex items-center gap-2">
+                            <Users className="w-4 h-4 text-[#bba7db]" />
+                            <span className="text-sm font-medium">Client</span>
+                          </div>
+                        </AccordionTrigger>
+                        <AccordionContent className="pt-2 pb-4 space-y-3">
+                          <FormField
+                            control={selectionForm.control}
+                            name="clientCanChange"
+                            render={({ field }) => (
+                              <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+                                <div className="space-y-0.5">
+                                  <FormLabel className="text-sm">Allow Changes</FormLabel>
+                                  <FormDescription className="text-xs">
+                                    Client can change their selection after choosing
+                                  </FormDescription>
+                                </div>
                                 <FormControl>
-                                  <Button
-                                    variant="outline"
-                                    className={cn(
-                                      "w-full pl-3 text-left font-normal",
-                                      !field.value && "text-muted-foreground"
-                                    )}
-                                    data-testid="button-deadline"
-                                  >
-                                    {field.value ? (
-                                      format(new Date(field.value), "PPP")
-                                    ) : (
-                                      <span>Pick a date</span>
-                                    )}
-                                    <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                                  </Button>
+                                  <Switch
+                                    checked={field.value}
+                                    onCheckedChange={field.onChange}
+                                    data-testid="switch-client-can-change"
+                                  />
                                 </FormControl>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-auto p-0" align="start">
-                                <Calendar
-                                  mode="single"
-                                  selected={field.value ? new Date(field.value) : undefined}
-                                  onSelect={field.onChange}
-                                  initialFocus
-                                />
-                              </PopoverContent>
-                            </Popover>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
+                              </FormItem>
+                            )}
+                          />
+
+                          <FormField
+                            control={selectionForm.control}
+                            name="clientCanSeePrice"
+                            render={({ field }) => (
+                              <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+                                <div className="space-y-0.5">
+                                  <FormLabel className="text-sm">Show Pricing</FormLabel>
+                                  <FormDescription className="text-xs">
+                                    Client can see pricing information for options
+                                  </FormDescription>
+                                </div>
+                                <FormControl>
+                                  <Switch
+                                    checked={field.value}
+                                    onCheckedChange={field.onChange}
+                                    data-testid="switch-client-can-see-price"
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                        </AccordionContent>
+                      </AccordionItem>
+
+                      {/* Vendors Permissions */}
+                      <AccordionItem value="vendors" className="border-b">
+                        <AccordionTrigger className="py-3 hover:no-underline" data-testid="accordion-vendors">
+                          <div className="flex items-center gap-2">
+                            <Truck className="w-4 h-4 text-[#bba7db]" />
+                            <span className="text-sm font-medium">Vendors</span>
+                          </div>
+                        </AccordionTrigger>
+                        <AccordionContent className="pt-2 pb-4 space-y-3">
+                          <div className="flex flex-row items-center justify-between rounded-lg border p-3">
+                            <div className="space-y-0.5">
+                              <FormLabel className="text-sm">Can View Selection</FormLabel>
+                              <FormDescription className="text-xs">
+                                Vendors can see this selection and its options
+                              </FormDescription>
+                            </div>
+                            <Switch checked={true} disabled data-testid="switch-vendor-view" />
+                          </div>
+                          <div className="flex flex-row items-center justify-between rounded-lg border p-3">
+                            <div className="space-y-0.5">
+                              <FormLabel className="text-sm">Can Submit Options</FormLabel>
+                              <FormDescription className="text-xs">
+                                Vendors can submit new options for consideration
+                              </FormDescription>
+                            </div>
+                            <Switch checked={false} disabled data-testid="switch-vendor-submit" />
+                          </div>
+                        </AccordionContent>
+                      </AccordionItem>
+
+                      {/* Installer Permissions */}
+                      <AccordionItem value="installer" className="border-0">
+                        <AccordionTrigger className="py-3 hover:no-underline" data-testid="accordion-installer">
+                          <div className="flex items-center gap-2">
+                            <HardHat className="w-4 h-4 text-[#bba7db]" />
+                            <span className="text-sm font-medium">Installer</span>
+                          </div>
+                        </AccordionTrigger>
+                        <AccordionContent className="pt-2 pb-4 space-y-3">
+                          <div className="flex flex-row items-center justify-between rounded-lg border p-3">
+                            <div className="space-y-0.5">
+                              <FormLabel className="text-sm">Can View Final Selection</FormLabel>
+                              <FormDescription className="text-xs">
+                                Installer can see the approved selection details
+                              </FormDescription>
+                            </div>
+                            <Switch checked={true} disabled data-testid="switch-installer-view" />
+                          </div>
+                          <div className="flex flex-row items-center justify-between rounded-lg border p-3">
+                            <div className="space-y-0.5">
+                              <FormLabel className="text-sm">Notify on Approval</FormLabel>
+                              <FormDescription className="text-xs">
+                                Send notification when selection is approved
+                              </FormDescription>
+                            </div>
+                            <Switch checked={true} disabled data-testid="switch-installer-notify" />
+                          </div>
+                        </AccordionContent>
+                      </AccordionItem>
+                    </Accordion>
                   </CardContent>
                 </Card>
 
-                {/* Client Permissions */}
+                {/* Comments Section */}
                 <Card>
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-base">Client Permissions</CardTitle>
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                      <MessageSquare className="w-4 h-4" />
+                      Comments
+                    </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    <FormField
-                      control={selectionForm.control}
-                      name="clientCanChange"
-                      render={({ field }) => (
-                        <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
-                          <div className="space-y-0.5">
-                            <FormLabel className="text-base">Allow Changes</FormLabel>
-                            <FormDescription>
-                              Client can change their selection after choosing
-                            </FormDescription>
-                          </div>
-                          <FormControl>
-                            <Switch
-                              checked={field.value}
-                              onCheckedChange={field.onChange}
-                              data-testid="switch-client-can-change"
-                            />
-                          </FormControl>
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={selectionForm.control}
-                      name="clientCanSeePrice"
-                      render={({ field }) => (
-                        <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
-                          <div className="space-y-0.5">
-                            <FormLabel className="text-base">Show Pricing</FormLabel>
-                            <FormDescription>
-                              Client can see pricing information for options
-                            </FormDescription>
-                          </div>
-                          <FormControl>
-                            <Switch
-                              checked={field.value}
-                              onCheckedChange={field.onChange}
-                              data-testid="switch-client-can-see-price"
-                            />
-                          </FormControl>
-                        </FormItem>
-                      )}
-                    />
+                  <CardContent>
+                    <div className="space-y-4">
+                      {/* Empty state */}
+                      <div className="text-center py-6 text-muted-foreground">
+                        <MessageSquare className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                        <p className="text-sm">No comments yet</p>
+                        <p className="text-xs">Be the first to add a comment</p>
+                      </div>
+                      
+                      {/* Comment input */}
+                      <div className="flex items-start gap-2 pt-2 border-t">
+                        <Textarea
+                          placeholder="Add a comment..."
+                          className="flex-1 min-h-[60px] text-sm"
+                          data-testid="input-comment"
+                        />
+                        <Button size="icon" className="h-8 w-8" disabled data-testid="button-send-comment">
+                          <Send className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
                   </CardContent>
                 </Card>
               </form>
