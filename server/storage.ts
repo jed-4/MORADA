@@ -6273,6 +6273,7 @@ export class DbStorage implements IStorage {
         { companyId, name: "Foreman", description: "Site-based team lead", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 3 },
         { companyId, name: "Carpenter", description: "Carpentry specialist", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 4 },
         { companyId, name: "Apprentice", description: "Learning team member", userCategory: "team" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 5 },
+        { companyId, name: "Subcontractor", description: "External subcontractor with limited access", userCategory: "supplier" as UserCategory, isBuiltIn: true, isActive: true, displayOrder: 6 },
       ];
 
       let generalManagerRoleId = '';

@@ -402,12 +402,12 @@ export function RapidApprovalModal({
             {/* Cost Code */}
             <div className="space-y-1">
               <Label className="text-[10px] text-muted-foreground">Cost Code</Label>
-              <Select value={editedCostCodeId} onValueChange={setEditedCostCodeId}>
+              <Select value={editedCostCodeId || "none"} onValueChange={(val) => setEditedCostCodeId(val === "none" ? "" : val)}>
                 <SelectTrigger className={`h-7 text-xs ${!editedCostCodeId ? "border-amber-300" : ""}`}>
                   <SelectValue placeholder="Select" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="" className="text-xs text-muted-foreground">None</SelectItem>
+                  <SelectItem value="none" className="text-xs text-muted-foreground">None</SelectItem>
                   {costCodes.map((code) => (
                     <SelectItem key={code.id} value={code.id} className="text-xs">
                       {code.code} - {code.name}

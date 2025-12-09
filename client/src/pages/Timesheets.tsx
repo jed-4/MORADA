@@ -277,6 +277,13 @@ export default function Timesheets() {
     return `${h}:${m.toString().padStart(2, '0')}`;
   };
 
+  // Calculate net hours (duration - break) for a timesheet
+  const getNetHours = (timesheet: Timesheet): number => {
+    const duration = parseFloat(timesheet.duration) || 0;
+    const breakDuration = parseFloat(timesheet.breakDuration || "0") || 0;
+    return Math.max(0, duration - breakDuration);
+  };
+
   // Get current project if in project context
   const currentProject = projectId ? projects.find(p => p.id === projectId) : null;
 
@@ -338,6 +345,7 @@ export default function Timesheets() {
       "End Time": timesheet.endTime || "-",
       "Break (hrs)": timesheet.breakDuration ? parseFloat(timesheet.breakDuration).toFixed(2) : "0.00",
       "Duration (hrs)": parseFloat(timesheet.duration).toFixed(2),
+      "Net Hours": getNetHours(timesheet).toFixed(2),
       "Hourly Rate": `$${parseFloat(timesheet.hourlyRate || "0").toFixed(2)}`,
       Total: `$${parseFloat(timesheet.total || "0").toFixed(2)}`,
       Status: timesheet.status.charAt(0).toUpperCase() + timesheet.status.slice(1),
@@ -1127,7 +1135,7 @@ export default function Timesheets() {
                     )}
                     {columns.find(c => c.id === 'hours')?.visible && (
                       <TableCell className="text-[11px] font-medium tabular-nums px-2 py-1">
-                        {formatDuration(parseFloat(timesheet.duration))}
+                        {formatDuration(getNetHours(timesheet))}
                       </TableCell>
                     )}
                     {columns.find(c => c.id === 'rate')?.visible && (
