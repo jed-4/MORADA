@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useSearch } from "wouter";
-import { Folder, ListTodo, Workflow, FolderPlus, FilePlus, Plus, CalendarIcon, Power, PowerOff, Search, FileText, Bell } from "lucide-react";
+import { Folder, ListTodo, Workflow, FolderPlus, FilePlus, Plus, CalendarIcon, Power, PowerOff, Search, FileText, Bell, DollarSign } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import { TaskLibrary, type TaskLibraryHandle } from "@/components/systems/TaskLi
 import { WorkflowBuilder, type WorkflowBuilderHandle } from "@/components/systems/WorkflowBuilder";
 import { NoteTemplatesLibrary, type NoteTemplatesLibraryHandle } from "@/components/systems/NoteTemplatesLibrary";
 import { BusinessReminders, type BusinessRemindersHandle } from "@/components/systems/BusinessReminders";
+import { PriceList, type PriceListHandle } from "@/components/systems/PriceList";
 
 export default function Systems() {
   // Get tab from URL query parameter
@@ -21,7 +22,7 @@ export default function Systems() {
 
   // Update active tab when URL changes
   useEffect(() => {
-    if (tabFromUrl && ["folders", "tasks", "workflows", "notes", "reminders"].includes(tabFromUrl)) {
+    if (tabFromUrl && ["folders", "tasks", "workflows", "notes", "reminders", "pricelist"].includes(tabFromUrl)) {
       setActiveTab(tabFromUrl);
     }
   }, [tabFromUrl]);
@@ -32,6 +33,7 @@ export default function Systems() {
   const workflowBuilderRef = useRef<WorkflowBuilderHandle>(null);
   const noteTemplatesRef = useRef<NoteTemplatesLibraryHandle>(null);
   const businessRemindersRef = useRef<BusinessRemindersHandle>(null);
+  const priceListRef = useRef<PriceListHandle>(null);
 
   return (
     <div className="flex flex-col h-full" data-testid="systems-page">
@@ -108,6 +110,20 @@ export default function Systems() {
               <span>Reminders</span>
             </div>
           </button>
+          <button
+            onClick={() => setActiveTab("pricelist")}
+            className={`px-3 h-7 rounded-md text-xs font-medium transition-colors ${
+              activeTab === "pricelist"
+                ? "bg-[#bba7db]/10 text-[#bba7db]"
+                : "text-muted-foreground hover-elevate"
+            }`}
+            data-testid="tab-pricelist"
+          >
+            <div className="flex items-center gap-1.5">
+              <DollarSign className="h-3 w-3" />
+              <span>Price List</span>
+            </div>
+          </button>
         </div>
       </div>
 
@@ -121,6 +137,7 @@ export default function Systems() {
         workflowBuilderRef={workflowBuilderRef}
         noteTemplatesRef={noteTemplatesRef}
         businessRemindersRef={businessRemindersRef}
+        priceListRef={priceListRef}
       />
 
       {/* Content Area */}
@@ -150,6 +167,11 @@ export default function Systems() {
             <BusinessReminders ref={businessRemindersRef} searchQuery={searchQuery} />
           </div>
         )}
+        {activeTab === "pricelist" && (
+          <div className="h-full">
+            <PriceList ref={priceListRef} searchQuery={searchQuery} />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -164,7 +186,8 @@ function SystemsControlBar({
   taskLibraryRef,
   workflowBuilderRef,
   noteTemplatesRef,
-  businessRemindersRef
+  businessRemindersRef,
+  priceListRef
 }: { 
   activeTab: string;
   searchQuery: string;
@@ -174,6 +197,7 @@ function SystemsControlBar({
   workflowBuilderRef: React.RefObject<WorkflowBuilderHandle>;
   noteTemplatesRef: React.RefObject<NoteTemplatesLibraryHandle>;
   businessRemindersRef: React.RefObject<BusinessRemindersHandle>;
+  priceListRef: React.RefObject<PriceListHandle>;
 }) {
   return (
     <div className="h-9 bg-background dark:bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
@@ -206,8 +230,28 @@ function SystemsControlBar({
         {activeTab === "reminders" && (
           <RemindersControls businessRemindersRef={businessRemindersRef} />
         )}
+        {activeTab === "pricelist" && (
+          <PriceListControls priceListRef={priceListRef} />
+        )}
       </div>
     </div>
+  );
+}
+
+// Price List tab controls
+function PriceListControls({ priceListRef }: { priceListRef: React.RefObject<PriceListHandle> }) {
+  return (
+    <>
+      <Button
+        size="sm"
+        className="h-6 px-2 text-xs bg-[#bba7db] text-white hover:bg-[#bba7db]/90 gap-1"
+        onClick={() => priceListRef.current?.openAddModal()}
+        data-testid="button-add-price-item"
+      >
+        <Plus className="w-3 h-3" />
+        <span>Add Item</span>
+      </Button>
+    </>
   );
 }
 
