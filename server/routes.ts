@@ -2155,6 +2155,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get estimate items by project ID (for RFQ import)
+  app.get("/api/projects/:projectId/estimate-items", async (req, res) => {
+    try {
+      const estimates = await storage.getEstimates(req.params.projectId);
+      if (estimates.length === 0) {
+        return res.json([]);
+      }
+      // Get items from all estimates for this project
+      const allItems: any[] = [];
+      for (const estimate of estimates) {
+        const items = await storage.getEstimateItems(estimate.id);
+        allItems.push(...items);
+      }
+      res.json(allItems);
+    } catch (error) {
+      console.error("Failed to fetch estimate items by project:", error);
+      res.status(500).json({ error: "Failed to fetch estimate items" });
+    }
+  });
+
   // Estimate Items API Routes
   app.get("/api/estimates/:id/items", async (req, res) => {
     try {

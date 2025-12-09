@@ -61,11 +61,12 @@ import { RFQDocument } from "@/components/rfq/pdf/RFQDocument";
 import { SendRFQDialog } from "@/components/rfq/SendRFQDialog";
 import { UploadQuoteDialog } from "@/components/rfq/UploadQuoteDialog";
 import { QuoteComparisonView } from "@/components/rfq/QuoteComparisonView";
-import type { Rfq, RfqItem, RfqQuote, Supplier, RfqTemplate } from "@shared/schema";
+import type { Rfq, RfqItem, RfqQuote, Supplier, RfqTemplate, CostCode, EstimateItem } from "@shared/schema";
 import { format } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { CostCodeSelect } from "@/components/CostCodeSelect";
 
 export default function RFQDetail() {
   const { id } = useParams<{ id: string }>();
@@ -104,8 +105,12 @@ export default function RFQDetail() {
     description: "",
     quantity: "",
     unit: "each",
+    unitPrice: "",
+    costCodeId: "",
     notes: "",
   });
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [selectedEstimateItems, setSelectedEstimateItems] = useState<string[]>([]);
 
   const { data: rfq, isLoading: rfqLoading } = useQuery<Rfq>({
     queryKey: ["/api/rfqs", id],
@@ -132,6 +137,15 @@ export default function RFQDetail() {
 
   const { data: companySettings } = useQuery({
     queryKey: ["/api/company-settings"],
+  });
+
+  const { data: costCodes = [] } = useQuery<CostCode[]>({
+    queryKey: ["/api/cost-codes"],
+  });
+
+  const { data: estimateItems = [] } = useQuery<EstimateItem[]>({
+    queryKey: ["/api/projects", rfq?.projectId, "estimate-items"],
+    enabled: !!rfq?.projectId,
   });
 
   useEffect(() => {
@@ -180,6 +194,8 @@ export default function RFQDetail() {
         description: data.description,
         quantity: parseFloat(data.quantity) || 0,
         unit: data.unit,
+        unitPrice: data.unitPrice ? Math.round(parseFloat(data.unitPrice) * 100) : null,
+        costCodeId: data.costCodeId || null,
         notes: data.notes,
         displayOrder: items.length,
       });
@@ -187,8 +203,34 @@ export default function RFQDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/rfq-items", id] });
       setShowAddItemDialog(false);
-      setNewItem({ description: "", quantity: "", unit: "each", notes: "" });
+      setNewItem({ description: "", quantity: "", unit: "each", unitPrice: "", costCodeId: "", notes: "" });
       toast({ title: "Item added" });
+    },
+  });
+
+  const importItemsMutation = useMutation({
+    mutationFn: async (estimateItemIds: string[]) => {
+      const selectedItems = estimateItems.filter(ei => estimateItemIds.includes(ei.id));
+      const promises = selectedItems.map((ei, index) => 
+        apiRequest("/api/rfq-items", "POST", {
+          rfqId: id,
+          estimateItemId: ei.id,
+          costCodeId: ei.costCodeId || null,
+          description: ei.description || ei.itemDescription || "",
+          quantity: ei.quantity || 0,
+          unit: ei.unit || "each",
+          unitPrice: ei.unitPrice || null,
+          notes: "",
+          displayOrder: items.length + index,
+        })
+      );
+      return Promise.all(promises);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/rfq-items", id] });
+      setShowImportDialog(false);
+      setSelectedEstimateItems([]);
+      toast({ title: `${selectedEstimateItems.length} items imported` });
     },
   });
 
@@ -565,51 +607,98 @@ export default function RFQDetail() {
           <Card className="p-4 space-y-3">
             <div className="flex items-center justify-between">
               <Label className="text-xs text-muted-foreground">Line Items ({items.length})</Label>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setShowAddItemDialog(true)}
-                className="h-6 text-xs"
-                data-testid="button-add-item"
-              >
-                <Plus className="w-3 h-3 mr-1" />
-                Add Item
-              </Button>
+              <div className="flex items-center gap-2">
+                {estimateItems.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowImportDialog(true)}
+                    className="h-6 text-xs"
+                    data-testid="button-import-items"
+                  >
+                    <FileText className="w-3 h-3 mr-1" />
+                    Import from Estimate
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setShowAddItemDialog(true)}
+                  className="h-6 text-xs"
+                  data-testid="button-add-item"
+                >
+                  <Plus className="w-3 h-3 mr-1" />
+                  Add Item
+                </Button>
+              </div>
             </div>
             {items.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground text-sm">
-                No line items yet. Add items to specify what you need quoted.
+                No line items yet. Add items or import from the estimate.
               </div>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow className="h-8">
+                    <TableHead className="text-xs">Cost Code</TableHead>
                     <TableHead className="text-xs">Description</TableHead>
-                    <TableHead className="text-xs w-24">Quantity</TableHead>
-                    <TableHead className="text-xs w-20">Unit</TableHead>
+                    <TableHead className="text-xs w-20 text-right">Qty</TableHead>
+                    <TableHead className="text-xs w-16">Unit</TableHead>
+                    <TableHead className="text-xs w-24 text-right">Unit Price</TableHead>
+                    <TableHead className="text-xs w-24 text-right">Total</TableHead>
                     <TableHead className="text-xs w-10"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {items.map((item) => (
-                    <TableRow key={item.id} className="h-10">
-                      <TableCell className="text-sm">{item.description}</TableCell>
-                      <TableCell className="text-sm">
-                        {item.quantity ? parseFloat(item.quantity.toString()).toFixed(2) : "-"}
+                  {items.map((item) => {
+                    const costCode = costCodes.find(cc => cc.id === item.costCodeId);
+                    const qty = item.quantity ? parseFloat(item.quantity.toString()) : 0;
+                    const price = item.unitPrice ? item.unitPrice / 100 : 0;
+                    const total = qty * price;
+                    return (
+                      <TableRow key={item.id} className="h-10">
+                        <TableCell className="text-sm text-muted-foreground">
+                          {costCode ? `${costCode.code}` : "-"}
+                        </TableCell>
+                        <TableCell className="text-sm">{item.description}</TableCell>
+                        <TableCell className="text-sm text-right">
+                          {qty > 0 ? qty.toFixed(2) : "-"}
+                        </TableCell>
+                        <TableCell className="text-sm">{item.unit || "-"}</TableCell>
+                        <TableCell className="text-sm text-right">
+                          {price > 0 ? `$${price.toFixed(2)}` : "-"}
+                        </TableCell>
+                        <TableCell className="text-sm text-right font-medium">
+                          {total > 0 ? `$${total.toFixed(2)}` : "-"}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-6 w-6"
+                            onClick={() => deleteItemMutation.mutate(item.id)}
+                          >
+                            <Trash2 className="w-3 h-3 text-destructive" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {items.length > 0 && items.some(i => i.unitPrice) && (
+                    <TableRow className="bg-muted/30">
+                      <TableCell colSpan={5} className="text-sm font-medium text-right">
+                        Total (ex GST):
                       </TableCell>
-                      <TableCell className="text-sm">{item.unit || "-"}</TableCell>
-                      <TableCell>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-6 w-6"
-                          onClick={() => deleteItemMutation.mutate(item.id)}
-                        >
-                          <Trash2 className="w-3 h-3 text-destructive" />
-                        </Button>
+                      <TableCell className="text-sm font-bold text-right">
+                        ${items.reduce((sum, item) => {
+                          const qty = item.quantity ? parseFloat(item.quantity.toString()) : 0;
+                          const price = item.unitPrice ? item.unitPrice / 100 : 0;
+                          return sum + (qty * price);
+                        }, 0).toFixed(2)}
                       </TableCell>
+                      <TableCell></TableCell>
                     </TableRow>
-                  ))}
+                  )}
                 </TableBody>
               </Table>
             )}
@@ -839,6 +928,16 @@ export default function RFQDetail() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
+              <Label className="text-xs">Cost Code</Label>
+              <CostCodeSelect
+                value={newItem.costCodeId}
+                onValueChange={(v) => setNewItem(prev => ({ ...prev, costCodeId: v }))}
+                placeholder="Select cost code..."
+                allowNone
+                data-testid="select-new-item-cost-code"
+              />
+            </div>
+            <div className="space-y-2">
               <Label className="text-xs">Description</Label>
               <Input
                 value={newItem.description}
@@ -847,7 +946,7 @@ export default function RFQDetail() {
                 data-testid="input-new-item-description"
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label className="text-xs">Quantity</Label>
                 <Input
@@ -875,6 +974,16 @@ export default function RFQDetail() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-2">
+                <Label className="text-xs">Unit Price ($)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={newItem.unitPrice}
+                  onChange={(e) => setNewItem(prev => ({ ...prev, unitPrice: e.target.value }))}
+                  placeholder="0.00"
+                />
+              </div>
             </div>
             <div className="space-y-2">
               <Label className="text-xs">Notes</Label>
@@ -894,6 +1003,94 @@ export default function RFQDetail() {
               className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
             >
               {createItemMutation.isPending ? "Adding..." : "Add Item"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import from Estimate Dialog */}
+      <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
+        <DialogContent className="max-w-2xl max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle>Import Line Items from Estimate</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-muted-foreground mb-4">
+              Select estimate items to import as RFQ line items. Cost codes and pricing will be copied.
+            </p>
+            <div className="border rounded-lg max-h-[400px] overflow-y-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="h-8 sticky top-0 bg-background">
+                    <TableHead className="w-10">
+                      <input
+                        type="checkbox"
+                        checked={selectedEstimateItems.length === estimateItems.length && estimateItems.length > 0}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedEstimateItems(estimateItems.map(i => i.id));
+                          } else {
+                            setSelectedEstimateItems([]);
+                          }
+                        }}
+                        className="rounded"
+                      />
+                    </TableHead>
+                    <TableHead className="text-xs">Description</TableHead>
+                    <TableHead className="text-xs w-24 text-right">Qty</TableHead>
+                    <TableHead className="text-xs w-20">Unit</TableHead>
+                    <TableHead className="text-xs w-28 text-right">Unit Price</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {estimateItems.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                        No estimate items available for this project
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    estimateItems.map((item) => (
+                      <TableRow key={item.id} className="h-10">
+                        <TableCell>
+                          <input
+                            type="checkbox"
+                            checked={selectedEstimateItems.includes(item.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedEstimateItems(prev => [...prev, item.id]);
+                              } else {
+                                setSelectedEstimateItems(prev => prev.filter(id => id !== item.id));
+                              }
+                            }}
+                            className="rounded"
+                          />
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {item.description || item.itemDescription || "Untitled item"}
+                        </TableCell>
+                        <TableCell className="text-sm text-right">
+                          {item.quantity || "-"}
+                        </TableCell>
+                        <TableCell className="text-sm">{item.unit || "-"}</TableCell>
+                        <TableCell className="text-sm text-right">
+                          {item.unitPrice ? `$${(item.unitPrice / 100).toFixed(2)}` : "-"}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowImportDialog(false)}>Cancel</Button>
+            <Button
+              onClick={() => importItemsMutation.mutate(selectedEstimateItems)}
+              disabled={selectedEstimateItems.length === 0 || importItemsMutation.isPending}
+              className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+            >
+              {importItemsMutation.isPending ? "Importing..." : `Import ${selectedEstimateItems.length} Items`}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -3736,10 +3736,12 @@ export const rfqItems = pgTable("rfq_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   rfqId: varchar("rfq_id").notNull().references(() => rfqs.id, { onDelete: "cascade" }),
   estimateItemId: varchar("estimate_item_id").references(() => estimateItems.id, { onDelete: "set null" }),
+  costCodeId: varchar("cost_code_id").references(() => costCodes.id, { onDelete: "set null" }),
   
   description: text("description").notNull(),
   quantity: numeric("quantity", { precision: 10, scale: 2 }),
   unit: text("unit"),
+  unitPrice: integer("unit_price"), // In cents
   notes: text("notes"),
   
   displayOrder: integer("display_order").notNull().default(0),
@@ -3905,6 +3907,9 @@ export const rfis = pgTable("rfis", {
   
   // PDF generation
   pdfUrl: text("pdf_url"),
+  
+  // Internal notes (not shared with external parties)
+  internalNotes: text("internal_notes"),
   
   // Creator
   createdById: varchar("created_by_id").notNull().references(() => users.id),
