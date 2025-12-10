@@ -1,0 +1,125 @@
+2025-12-10 21:10:58.33
+fc3e9c9a
+User
+contractCost: null,
+2025-12-10 21:10:58.33
+fc3e9c9a
+User
+proposedEndDate: null,
+2025-12-10 21:10:58.33
+fc3e9c9a
+User
+googleDriveFolderId: null,
+2025-12-10 21:10:58.33
+fc3e9c9a
+User
+ownerId: '44689844',
+2025-12-10 21:10:58.34
+fc3e9c9a
+User
+10:10:58 AM [express] POST /api/schedules 201 in 121ms :: {"id":"475102a9-b1ec-4c5b-9f38-b7c6ca0297a3…
+2025-12-10 21:10:58.35
+fc3e9c9a
+User
+10:10:58 AM [express] GET /api/projects/10a8adce-65fb-40c9-8d04-0de7693963e7 200 in 108ms :: {"id":"1…
+2025-12-10 21:10:58.37
+fc3e9c9a
+User
+10:10:58 AM [express] GET /api/user-view-preferences/gantt 200 in 126ms :: {"id":"fdb856d3-b33f-447b-…
+2025-12-10 21:10:58.47
+fc3e9c9a
+User
+10:10:58 AM [express] GET /api/field-categories/cat-schedule-item-status/options 304 in 106ms :: [{"i…
+
+2025-12-10 21:10:58.66
+fc3e9c9a
+User
+10:10:58 AM [express] GET /api/projects/10a8adce-65fb-40c9-8d04-0de7693963e7/schedule 200 in 115ms ::…
+2025-12-10 21:11:00.04
+fc3e9c9a
+User
+10:11:00 AM [express] POST /api/user-view-preferences 200 in 152ms :: {"id":"fdb856d3-b33f-447b-b6fe-…
+2025-12-10 21:11:00.42
+fc3e9c9a
+User
+[ReminderProcessor] Starting reminder processing...
+2025-12-10 21:11:00.45
+fc3e9c9a
+User
+[ReminderProcessor] Found 0 due reminders
+2025-12-10 21:11:17.90
+fc3e9c9a
+User
+10:11:17 AM [express] GET /api/notifications/unread-count 304 in 341ms :: {"count":0}
+2025-12-10 21:11:19.00
+fc3e9c9a
+User
+10:11:19 AM [express] GET /api/channels/unread/counts 304 in 288ms :: {"6f7d4813-1cd4-4e65-807a-6ee8d…
+2025-12-10 21:11:38.91
+fc3e9c9a
+User
+10:11:38 AM [express] GET /api/variation-items 304 in 344ms
+2025-12-10 21:11:38.91
+fc3e9c9a
+User
+10:11:38 AM [express] GET /api/estimate-items 304 in 346ms
+2025-12-10 21:11:38.93
+fc3e9c9a
+User
+10:11:38 AM [express] GET /api/milestones 304 in 363ms
+2025-12-10 21:11:43.21
+fc3e9c9a
+User
+10:11:43 AM [express] POST /api/user-view-preferences 200 in 157ms :: {"id":"99853948-518a-4c84-8e88-…
+2025-12-10 21:11:48.25
+fc3e9c9a
+User
+10:11:48 AM [express] GET /api/notifications/unread-count 304 in 138ms :: {"count":0}
+2025-12-10 21:11:49.62
+fc3e9c9a
+User
+10:11:49 AM [express] GET /api/channels/unread/counts 304 in 302ms :: {"6f7d4813-1cd4-4e65-807a-6ee8d…
+2025-12-10 21:11:49.80
+fc3e9c9a
+User
+}
+2025-12-10 21:11:49.80
+fc3e9c9a
+User
+[PATCH /api/projects/:id] Request body: {
+2025-12-10 21:11:49.80
+fc3e9c9a
+User
+[PATCH /api/projects/:id] Project ID: e4a2263e-4e4f-4f59-8f5f-d60cddebc830
+2025-12-10 21:11:49.80
+fc3e9c9a
+User
+"projectSubStatus": "scheduling"
+2025-12-10 21:11:49.80
+fc3e9c9a
+User
+}
+2025-12-10 21:11:49.80
+fc3e9c9a
+User
+"projectSubStatus": "scheduling"
+2025-12-10 21:11:49.80
+fc3e9c9a
+User
+[PATCH /api/projects/:id] Validated data: {
+2025-12-10 21:11:49.82
+fc3e9c9a
+User
+[PATCH /api/projects/:id] Project updated successfully
+2025-12-10 21:11:49.85
+fc3e9c9a
+User
+10:11:49 AM [express] PATCH /api/projects/e4a2263e-4e4f-4f59-8f5f-d60cddebc830 200 in 136ms :: {"id":…
+2025-12-10 21:11:51.76
+fc3e9c9a
+User
+10:11:51 AM [express] GET /api/variation-items 304 in 156ms
+2025-12-10 21:11:51.88
+fc3e9c9a
+User
+10:11:51 AM [express] GET /api/estimate-items 304 in 273ms
