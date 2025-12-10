@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Settings, ChevronDown, Search, PlusCircle, Check, LayoutGrid, Trash2, Lock, Users, Globe, Eye } from "lucide-react";
+import { Plus, Settings, ChevronDown, Search, PlusCircle, Check, LayoutGrid, Trash2, Lock, Users, Globe, Eye, Pencil } from "lucide-react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -120,8 +120,16 @@ export default function CustomizableProjectOverview() {
   const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
 
+  // Rename Modal state
+  const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
+  const [viewToRename, setViewToRename] = useState<DashboardView | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+
   // Delete confirmation state
   const [viewToDelete, setViewToDelete] = useState<DashboardView | null>(null);
+  
+  // Track if default view creation was attempted
+  const defaultViewCreatedRef = useRef(false);
 
   // Fetch dashboard views from database
   const { data: dashboardViews = [], isLoading: isLoadingViews, isError: isViewsError } = useQuery<DashboardView[]>({
@@ -159,10 +167,7 @@ export default function CustomizableProjectOverview() {
   // Create view mutation
   const createViewMutation = useMutation({
     mutationFn: async (data: { name: string; visibility: VisibilityOption; widgets: Widget[]; roleIds?: string[]; userIds?: string[] }) => {
-      return apiRequest("/api/dashboard-views", {
-        method: "POST",
-        body: JSON.stringify(data),
-      });
+      return apiRequest("/api/dashboard-views", "POST", data);
     },
     onSuccess: (newView: DashboardView) => {
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-views"] });
@@ -185,10 +190,7 @@ export default function CustomizableProjectOverview() {
   // Update view mutation
   const updateViewMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<DashboardView> }) => {
-      return apiRequest(`/api/dashboard-views/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify(data),
-      });
+      return apiRequest(`/api/dashboard-views/${id}`, "PATCH", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-views"] });
@@ -198,9 +200,7 @@ export default function CustomizableProjectOverview() {
   // Delete view mutation
   const deleteViewMutation = useMutation({
     mutationFn: async (id: string) => {
-      return apiRequest(`/api/dashboard-views/${id}`, {
-        method: "DELETE",
-      });
+      return apiRequest(`/api/dashboard-views/${id}`, "DELETE");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-views"] });
@@ -220,10 +220,7 @@ export default function CustomizableProjectOverview() {
   // Save preference mutation
   const savePreferenceMutation = useMutation({
     mutationFn: async (data: { activeViewId: string | null }) => {
-      return apiRequest("/api/dashboard-preference", {
-        method: "POST",
-        body: JSON.stringify(data),
-      });
+      return apiRequest("/api/dashboard-preference", "POST", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-preference"] });
@@ -317,15 +314,15 @@ export default function CustomizableProjectOverview() {
     }
   }, [dashboardViews, dashboardPreference, activeViewId]);
 
-  // One-time migration from localStorage (import existing layouts)
+  // One-time creation of default view when none exist
   useEffect(() => {
-    if (!user?.id || dashboardViews.length > 0 || isLoadingViews) return;
+    if (!user?.id || isLoadingViews || defaultViewCreatedRef.current) return;
+    if (dashboardViews.length > 0) return;
+
+    // Prevent multiple creation attempts
+    defaultViewCreatedRef.current = true;
 
     // Check if there are any localStorage layouts to migrate
-    const migrationKey = `dashboard-migrated-${user.id}`;
-    if (localStorage.getItem(migrationKey)) return;
-
-    // Look for any project-based widgets in localStorage
     const projectKeys = Object.keys(localStorage).filter(k => k.startsWith('widgets-'));
     if (projectKeys.length > 0) {
       const firstKey = projectKeys[0];
@@ -333,27 +330,24 @@ export default function CustomizableProjectOverview() {
       if (savedWidgetsStr) {
         try {
           const savedWidgets = JSON.parse(savedWidgetsStr) as Widget[];
-          // Create a personal view with the imported layout
           createViewMutation.mutate({
             name: "Imported Layout",
             visibility: "private",
             widgets: savedWidgets,
           });
-          localStorage.setItem(migrationKey, "true");
+          return;
         } catch (e) {
           console.error("Failed to migrate localStorage widgets:", e);
         }
       }
     }
 
-    // If no localStorage layouts exist and no database views, create default view
-    if (projectKeys.length === 0) {
-      createViewMutation.mutate({
-        name: "Overview",
-        visibility: "private",
-        widgets: defaultWidgets,
-      });
-    }
+    // Create default view
+    createViewMutation.mutate({
+      name: "Overview",
+      visibility: "private",
+      widgets: defaultWidgets,
+    });
   }, [user?.id, dashboardViews.length, isLoadingViews]);
 
   // Save widgets to the active view (uses debounced save)
@@ -425,6 +419,36 @@ export default function CustomizableProjectOverview() {
   // Confirm delete view
   const confirmDeleteView = (view: DashboardView) => {
     setViewToDelete(view);
+  };
+
+  // Open rename modal
+  const openRenameModal = (view: DashboardView) => {
+    setViewToRename(view);
+    setRenameValue(view.name);
+    setIsRenameModalOpen(true);
+  };
+
+  // Handle rename
+  const handleRenameView = () => {
+    if (!viewToRename || !renameValue.trim()) {
+      toast({ title: "Name required", description: "Please enter a name for the view", variant: "destructive" });
+      return;
+    }
+
+    updateViewMutation.mutate({
+      id: viewToRename.id,
+      data: { name: renameValue.trim() },
+    }, {
+      onSuccess: () => {
+        toast({ title: "View renamed", description: `View renamed to "${renameValue.trim()}"` });
+        setIsRenameModalOpen(false);
+        setViewToRename(null);
+        setRenameValue("");
+      },
+      onError: () => {
+        toast({ title: "Error", description: "Failed to rename view", variant: "destructive" });
+      },
+    });
   };
 
   const addWidget = (type: string) => {
@@ -678,17 +702,33 @@ export default function CustomizableProjectOverview() {
                           <Check className="w-3 h-3 text-[#bba7db] flex-shrink-0" />
                         )}
                       </button>
-                      {isOwner && dashboardViews.length > 1 && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            confirmDeleteView(view);
-                          }}
-                          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-destructive/10 rounded text-muted-foreground hover:text-destructive transition-opacity"
-                          data-testid={`button-delete-view-${view.id}`}
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
+                      {isOwner && (
+                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openRenameModal(view);
+                            }}
+                            className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground"
+                            data-testid={`button-rename-view-${view.id}`}
+                            title="Rename view"
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                          {dashboardViews.length > 1 && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                confirmDeleteView(view);
+                              }}
+                              className="p-1 hover:bg-destructive/10 rounded text-muted-foreground hover:text-destructive"
+                              data-testid={`button-delete-view-${view.id}`}
+                              title="Delete view"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
                       )}
                     </DropdownMenuItem>
                   );
@@ -965,6 +1005,47 @@ export default function CustomizableProjectOverview() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Rename View Dialog */}
+      <Dialog open={isRenameModalOpen} onOpenChange={setIsRenameModalOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Rename View</DialogTitle>
+            <DialogDescription>
+              Enter a new name for this dashboard view.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>View Name</Label>
+              <Input
+                placeholder="e.g., My Dashboard"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleRenameView();
+                  }
+                }}
+                data-testid="input-rename-view"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setIsRenameModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleRenameView}
+              disabled={updateViewMutation.isPending || !renameValue.trim()}
+              className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+            >
+              {updateViewMutation.isPending ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
