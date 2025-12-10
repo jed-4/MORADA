@@ -283,47 +283,49 @@ export function ImportContactsDialog({ open, onOpenChange }: ImportContactsDialo
         )}
 
         {step === "map" && (
-          <div className="space-y-4 flex-1 overflow-hidden flex flex-col">
-            <div className="p-4 bg-muted/50 rounded-md">
-              <p className="text-sm font-medium mb-3">Map your file columns to contact fields</p>
-              <div className="grid grid-cols-2 gap-3">
-                {FIELD_OPTIONS.map(({ key, label, required }) => (
-                  <div key={key}>
-                    <Label htmlFor={`map-${key}`} className="text-xs mb-1">
-                      {label}{required && "*"}
-                    </Label>
-                    <Select
-                      value={columnMapping[key] || "none"}
-                      onValueChange={(value) => handleColumnMappingChange(key, value)}
-                    >
-                      <SelectTrigger id={`map-${key}`} data-testid={`select-column-${key}`}>
-                        <SelectValue placeholder="Select column" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">-- Not mapped --</SelectItem>
-                        {headers.map(header => (
-                          <SelectItem key={header} value={header}>{header}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                ))}
+          <div className="flex-1 min-h-0 flex flex-col gap-4">
+            <ScrollArea className="flex-1 min-h-0">
+              <div className="p-4 bg-muted/50 rounded-md">
+                <p className="text-sm font-medium mb-3">Map your file columns to contact fields</p>
+                <div className="grid grid-cols-2 gap-3">
+                  {FIELD_OPTIONS.map(({ key, label, required }) => (
+                    <div key={key}>
+                      <Label htmlFor={`map-${key}`} className="text-xs mb-1">
+                        {label}{required && "*"}
+                      </Label>
+                      <Select
+                        value={columnMapping[key] || "none"}
+                        onValueChange={(value) => handleColumnMappingChange(key, value)}
+                      >
+                        <SelectTrigger id={`map-${key}`} data-testid={`select-column-${key}`}>
+                          <SelectValue placeholder="Select column" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">-- Not mapped --</SelectItem>
+                          {headers.map(header => (
+                            <SelectItem key={header} value={header}>{header}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+            </ScrollArea>
 
-            <div className="text-sm text-muted-foreground">
+            <div className="text-sm text-muted-foreground shrink-0">
               {fileData.length} rows detected in file
             </div>
           </div>
         )}
 
         {step === "preview" && (
-          <div className="space-y-4 flex-1 overflow-hidden flex flex-col">
-            <div className="text-sm">
+          <div className="flex-1 min-h-0 flex flex-col gap-4">
+            <div className="text-sm shrink-0">
               <span className="font-medium">{parsedContacts.length}</span> contacts ready to import
             </div>
 
-            <ScrollArea className="flex-1 border rounded-md">
+            <ScrollArea className="flex-1 min-h-0 border rounded-md">
               <table className="w-full text-sm">
                 <thead className="bg-muted sticky top-0">
                   <tr>
