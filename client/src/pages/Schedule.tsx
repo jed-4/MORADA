@@ -68,6 +68,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CasvaScheduleList } from "@/components/schedule/CasvaScheduleList";
 import { ContactSelect } from "@/components/ContactSelect";
 import Gantt from "./Gantt";
+import { ImportScheduleDialog } from "@/components/schedule/ImportScheduleDialog";
 
 interface ScheduleParams {
   projectId: string;
@@ -95,6 +96,7 @@ export default function Schedule() {
   const [notesExpanded, setNotesExpanded] = useState(true);
   const [showSaveTemplateDialog, setShowSaveTemplateDialog] = useState(false);
   const [showLoadTemplateDialog, setShowLoadTemplateDialog] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
   const [templateFormData, setTemplateFormData] = useState({
     name: "",
     description: "",
@@ -670,6 +672,15 @@ export default function Schedule() {
             >
               <Upload className="w-3 h-3 inline mr-0.5" />
               Load Template
+            </button>
+            <button
+              className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
+              onClick={() => setShowImportDialog(true)}
+              disabled={schedule?.status === "locked"}
+              data-testid="button-import-schedule"
+            >
+              <Upload className="w-3 h-3 inline mr-0.5" />
+              Import
             </button>
             <button
               className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
@@ -1545,6 +1556,14 @@ export default function Schedule() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ImportScheduleDialog
+        open={showImportDialog}
+        onOpenChange={setShowImportDialog}
+        mode="project"
+        projectId={projectId}
+        scheduleId={schedule?.id}
+      />
     </ScheduleViewProvider>
   );
 }

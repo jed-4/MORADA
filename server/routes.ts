@@ -12027,6 +12027,97 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Bulk create schedule items from import
+  app.post("/api/schedule-items/bulk-create", requireAuth, async (req, res) => {
+    try {
+      const { scheduleId, items } = req.body;
+      
+      if (!scheduleId) {
+        return res.status(400).json({ error: "scheduleId is required" });
+      }
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: "items array is required and must not be empty" });
+      }
+
+      const schedule = await storage.getScheduleById(scheduleId);
+      if (!schedule) {
+        return res.status(404).json({ error: "Schedule not found" });
+      }
+
+      // Get existing items count for sort order offset
+      const existingItems = await storage.getScheduleItemsByScheduleId(scheduleId);
+      const sortOrderOffset = existingItems.length;
+
+      const createdItems = [];
+      const today = new Date();
+      
+      let cumulativeDays = 0;
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const duration = typeof item.duration === 'number' && item.duration >= 1 ? item.duration : 1;
+        
+        const startDate = new Date(today);
+        startDate.setDate(startDate.getDate() + cumulativeDays);
+        
+        const endDate = new Date(startDate);
+        endDate.setDate(endDate.getDate() + duration - 1);
+        
+        cumulativeDays += duration;
+
+        const scheduleItem = await storage.createScheduleItem({
+          scheduleId,
+          name: item.name,
+          description: item.description || null,
+          startDate: startDate.toISOString().split('T')[0],
+          endDate: endDate.toISOString().split('T')[0],
+          type: item.type || "task",
+          status: "not_started",
+          priority: "medium",
+          category: item.category || null,
+          sortOrder: sortOrderOffset + i,
+        });
+        
+        createdItems.push(scheduleItem);
+      }
+
+      // Log activity
+      try {
+        if (req.user) {
+          const userName = req.user.firstName && req.user.lastName 
+            ? `${req.user.firstName} ${req.user.lastName}`
+            : req.user.username || req.user.email || "User";
+          
+          await storage.createActivity({
+            projectId: schedule.projectId,
+            userId: req.user.id,
+            userName: userName,
+            activityType: "schedule",
+            action: "imported",
+            description: `imported ${createdItems.length} schedule items`,
+            entityId: null,
+            entityName: null,
+            metadata: { 
+              changes: createdItems.slice(0, 5).map(item => ({ 
+                name: item.name, 
+                change: "imported" 
+              }))
+            }
+          });
+        }
+      } catch (activityError) {
+        console.error("Failed to log bulk create activity:", activityError);
+      }
+
+      res.status(201).json(createdItems);
+    } catch (error: any) {
+      console.error("Failed to bulk create schedule items:", error);
+      res.status(500).json({ 
+        error: "Failed to import schedule items",
+        details: error.message 
+      });
+    }
+  });
+
   app.delete("/api/schedule-items/:id", requireAuth, async (req, res) => {
     try {
       // Get item info before deletion for activity logging

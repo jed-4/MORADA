@@ -42,7 +42,7 @@ Preferred communication style: Simple, everyday language.
 - **Task Management**: Kanban, List, and Calendar views with drag-and-drop, including task templates with user-specific or role-based assignments.
 - **Checklist System**: Templates with group functionality and dashboard widget integration. Dashboard widget features responsive multi-column layout (1/2/3 columns based on width), compact headers, and color-coded status indicators (amber for priority+actionable, green for actionable items).
 - **Cost Code Management**: Merge functionality with company isolation.
-- **Import System**: Flexible CSV/Excel import with column mapping and intelligent cost code matching.
+- **Import System**: Flexible CSV/Excel import with column mapping and intelligent cost code matching. Schedule import functionality allows importing Excel/CSV files directly into project schedules using the same column mapping and preview system as schedule templates via `/api/schedule-items/bulk-create`.
 - **Hierarchical Groups for Estimates**: Unlimited-depth nesting for estimate groups with CRUD operations.
 - **Allowances System**: Tracks Prime Cost (PC) and Provisional Sum (PS) items, integrating with financial modules.
 - **Proposals System**: PDF proposal builder with live preview, section-based editing, and template support.
