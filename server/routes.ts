@@ -6358,6 +6358,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/contacts/merge", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { sourceId, targetId } = req.body;
+      const companyId = req.user!.companyId!;
+
+      if (!sourceId || !targetId) {
+        return res.status(400).json({ error: "sourceId and targetId are required" });
+      }
+
+      if (sourceId === targetId) {
+        return res.status(400).json({ error: "Cannot merge a contact into itself" });
+      }
+
+      // Verify both contacts exist and belong to this company
+      const sourceContact = await storage.getContact(sourceId);
+      const targetContact = await storage.getContact(targetId);
+
+      if (!sourceContact || sourceContact.companyId !== companyId) {
+        return res.status(404).json({ error: "Source contact not found" });
+      }
+      if (!targetContact || targetContact.companyId !== companyId) {
+        return res.status(404).json({ error: "Target contact not found" });
+      }
+
+      if (targetContact.isArchived) {
+        return res.status(400).json({ error: "Cannot merge into an archived contact" });
+      }
+
+      const result = await storage.mergeContacts(sourceId, targetId, companyId);
+      
+      if (!result.success) {
+        return res.status(500).json({ error: "Failed to merge contacts" });
+      }
+
+      res.json({ 
+        success: true, 
+        message: `Merged "${sourceContact.name}" into "${targetContact.name}"`,
+        transferredCounts: result.transferredCounts 
+      });
+    } catch (error) {
+      console.error("Error merging contacts:", error);
+      res.status(500).json({ error: "Failed to merge contacts" });
+    }
+  });
+
   // RFQ (Request for Quote) API Routes
   app.get("/api/rfqs", requireAuth, requireTeamMember, async (req, res) => {
     try {

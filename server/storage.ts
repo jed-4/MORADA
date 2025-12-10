@@ -453,6 +453,7 @@ export interface IStorage {
   updateContact(id: string, contact: Partial<InsertContact>): Promise<Contact | undefined>;
   archiveContact(id: string): Promise<Contact | undefined>;
   restoreContact(id: string): Promise<Contact | undefined>;
+  mergeContacts(sourceId: string, targetId: string, companyId: string): Promise<{ success: boolean; transferredCounts: Record<string, number> }>;
 
   // RFQ (Request for Quote) CRUD
   getRFQs(companyId: string, projectId?: string): Promise<Rfq[]>;
@@ -9628,6 +9629,130 @@ export class DbStorage implements IStorage {
     } catch (error) {
       console.error("Database error in restoreContact:", error);
       throw error;
+    }
+  }
+
+  async mergeContacts(sourceId: string, targetId: string, companyId: string): Promise<{ success: boolean; transferredCounts: Record<string, number> }> {
+    try {
+      const transferredCounts: Record<string, number> = {};
+
+      // Get target contact name for cached fields
+      const targetContact = await db.select().from(schema.contacts).where(eq(schema.contacts.id, targetId)).limit(1);
+      const targetName = targetContact[0]?.name || targetContact[0]?.company || '';
+
+      // Update projects.clientId
+      const projectsResult = await db
+        .update(schema.projects)
+        .set({ clientId: targetId })
+        .where(and(
+          eq(schema.projects.clientId, sourceId),
+          eq(schema.projects.companyId, companyId)
+        ))
+        .returning();
+      transferredCounts.projects = projectsResult.length;
+
+      // Update tasks.assignedToId (tasks don't have companyId, but linked via projectId)
+      const tasksResult = await db
+        .update(schema.tasks)
+        .set({ assignedToId: targetId })
+        .where(eq(schema.tasks.assignedToId, sourceId))
+        .returning();
+      transferredCounts.tasks = tasksResult.length;
+
+      // Update scheduleItems.assignedToId (correct column name)
+      const scheduleItemsResult = await db
+        .update(schema.scheduleItems)
+        .set({ 
+          assignedToId: targetId,
+          assignedToName: targetName
+        })
+        .where(eq(schema.scheduleItems.assignedToId, sourceId))
+        .returning();
+      transferredCounts.scheduleItems = scheduleItemsResult.length;
+
+      // Update purchaseOrders.supplierId
+      const purchaseOrdersResult = await db
+        .update(schema.purchaseOrders)
+        .set({ 
+          supplierId: targetId,
+          supplierName: targetName
+        })
+        .where(and(
+          eq(schema.purchaseOrders.supplierId, sourceId),
+          eq(schema.purchaseOrders.companyId, companyId)
+        ))
+        .returning();
+      transferredCounts.purchaseOrders = purchaseOrdersResult.length;
+
+      // Update rfis.directedToContactId
+      const rfisResult = await db
+        .update(schema.rfis)
+        .set({ directedToContactId: targetId })
+        .where(eq(schema.rfis.directedToContactId, sourceId))
+        .returning();
+      transferredCounts.rfis = rfisResult.length;
+
+      // Update rfqLineItems.supplierId (contacts as suppliers)
+      const rfqLineItemsResult = await db
+        .update(schema.rfqLineItems)
+        .set({ supplierId: targetId })
+        .where(eq(schema.rfqLineItems.supplierId, sourceId))
+        .returning();
+      transferredCounts.rfqLineItems = rfqLineItemsResult.length;
+
+      // Update bills.supplierId (contacts as suppliers)
+      const billsResult = await db
+        .update(schema.bills)
+        .set({ supplierId: targetId })
+        .where(eq(schema.bills.supplierId, sourceId))
+        .returning();
+      transferredCounts.bills = billsResult.length;
+
+      // Update RFQs supplierIds array - replace sourceId with targetId
+      const rfqsWithSource = await db
+        .select()
+        .from(schema.rfqs)
+        .where(and(
+          eq(schema.rfqs.companyId, companyId),
+          sql`${sourceId} = ANY(${schema.rfqs.supplierIds})`
+        ));
+      
+      let rfqsUpdated = 0;
+      for (const rfq of rfqsWithSource) {
+        const newSupplierIds = (rfq.supplierIds || []).map(id => id === sourceId ? targetId : id);
+        const newSupplierNames = [...(rfq.supplierNames || [])];
+        const sourceIndex = (rfq.supplierIds || []).indexOf(sourceId);
+        if (sourceIndex >= 0 && newSupplierNames[sourceIndex]) {
+          newSupplierNames[sourceIndex] = targetName;
+        }
+        // Remove duplicates if target was already in the list
+        const uniqueIds: string[] = [];
+        const uniqueNames: string[] = [];
+        newSupplierIds.forEach((id, idx) => {
+          if (!uniqueIds.includes(id)) {
+            uniqueIds.push(id);
+            uniqueNames.push(newSupplierNames[idx] || '');
+          }
+        });
+        
+        await db
+          .update(schema.rfqs)
+          .set({ 
+            supplierIds: uniqueIds,
+            supplierNames: uniqueNames
+          })
+          .where(eq(schema.rfqs.id, rfq.id));
+        rfqsUpdated++;
+      }
+      transferredCounts.rfqs = rfqsUpdated;
+
+      // Archive the source contact instead of deleting
+      await this.archiveContact(sourceId, companyId);
+
+      return { success: true, transferredCounts };
+    } catch (error) {
+      console.error("Database error in mergeContacts:", error);
+      return { success: false, transferredCounts: {} };
     }
   }
 

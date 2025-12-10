@@ -29,6 +29,7 @@ import {
   X,
   Upload,
   Zap,
+  Merge,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { type Contact } from "@shared/schema";
@@ -38,6 +39,7 @@ import AddContactDialog from "@/components/AddContactDialog";
 import EditContactDialog from "@/components/EditContactDialog";
 import { ImportContactsDialog } from "@/components/contacts/ImportContactsDialog";
 import QuickReviewPanel from "@/components/contacts/QuickReviewPanel";
+import { MergeContactDialog } from "@/components/contacts/MergeContactDialog";
 
 export default function Contacts() {
   const { toast } = useToast();
@@ -49,6 +51,8 @@ export default function Contacts() {
   const [contactToEdit, setContactToEdit] = useState<Contact | null>(null);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [isQuickReviewOpen, setIsQuickReviewOpen] = useState(false);
+  const [isMergeDialogOpen, setIsMergeDialogOpen] = useState(false);
+  const [mergeSourceId, setMergeSourceId] = useState<string | undefined>();
 
   const { data: contacts = [], isLoading } = useQuery<Contact[]>({
     queryKey: ["/api/contacts"],
@@ -387,6 +391,18 @@ export default function Contacts() {
                           <Pencil className="h-4 w-4 mr-2" />
                           Edit
                         </DropdownMenuItem>
+                        {!contact.isArchived && (
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setMergeSourceId(contact.id);
+                              setIsMergeDialogOpen(true);
+                            }}
+                            data-testid={`menu-merge-${contact.id}`}
+                          >
+                            <Merge className="h-4 w-4 mr-2" />
+                            Merge Into...
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuSeparator />
                         {contact.isArchived ? (
                           <DropdownMenuItem
@@ -439,6 +455,13 @@ export default function Contacts() {
         onClose={() => setIsQuickReviewOpen(false)}
         contacts={contacts}
         contactTypeFilter={selectedTab === "all" ? null : selectedTab as "team" | "supplier" | "client"}
+      />
+
+      <MergeContactDialog
+        open={isMergeDialogOpen}
+        onOpenChange={setIsMergeDialogOpen}
+        contacts={contacts}
+        preselectedSourceId={mergeSourceId}
       />
     </div>
   );
