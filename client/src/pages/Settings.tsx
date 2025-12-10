@@ -1653,6 +1653,12 @@ function ActivitySection() {
       icon: StickyNote
     },
     { 
+      key: "schedule", 
+      label: "Schedule", 
+      description: "Schedule item changes and updates",
+      icon: Calendar
+    },
+    { 
       key: "other", 
       label: "Other", 
       description: "Miscellaneous activity items",

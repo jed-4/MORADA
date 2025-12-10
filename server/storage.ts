@@ -713,6 +713,7 @@ export interface IStorage {
 
   // Schedule CRUD
   getSchedule(projectId: string): Promise<Schedule | undefined>;
+  getScheduleById(id: string): Promise<Schedule | undefined>;
   createSchedule(schedule: InsertSchedule): Promise<Schedule>;
   updateSchedule(id: string, schedule: Partial<InsertSchedule>): Promise<Schedule | undefined>;
   deleteSchedule(id: string): Promise<boolean>;
@@ -11192,8 +11193,13 @@ export class DbStorage implements IStorage {
 
   async createActivity(activity: schema.InsertActivity): Promise<schema.Activity> {
     try {
+      // Ensure metadata has a consistent structure with changes array
+      const activityWithMetadata = {
+        ...activity,
+        metadata: activity.metadata ?? { changes: [] }
+      };
       const result = await db.insert(schema.activities)
-        .values(activity)
+        .values(activityWithMetadata)
         .returning();
       return result[0];
     } catch (error) {
@@ -12483,6 +12489,19 @@ export class DbStorage implements IStorage {
       return result[0];
     } catch (error) {
       console.error("Database error in getSchedule:", error);
+      throw error;
+    }
+  }
+
+  async getScheduleById(id: string): Promise<Schedule | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.schedules)
+        .where(eq(schema.schedules.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getScheduleById:", error);
       throw error;
     }
   }

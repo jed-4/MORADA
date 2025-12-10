@@ -13,6 +13,7 @@ import {
   GitBranch,
   FileCheck,
   Clock,
+  Calendar,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -79,6 +80,8 @@ export default function ActivityWidget({ widget, onUpdate, isConfiguring, onClos
         return <GitBranch className="h-4 w-4" />;
       case "invoice":
         return <DollarSign className="h-4 w-4" />;
+      case "schedule":
+        return <Calendar className="h-4 w-4" />;
       default:
         return <Clock className="h-4 w-4" />;
     }
@@ -96,6 +99,8 @@ export default function ActivityWidget({ widget, onUpdate, isConfiguring, onClos
         return "text-purple-600 bg-purple-50 dark:text-purple-400 dark:bg-purple-950";
       case "invoice":
         return "text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950";
+      case "schedule":
+        return "text-cyan-600 bg-cyan-50 dark:text-cyan-400 dark:bg-cyan-950";
       default:
         return "text-gray-600 bg-gray-50 dark:text-gray-400 dark:bg-gray-950";
     }
@@ -197,37 +202,54 @@ export default function ActivityWidget({ widget, onUpdate, isConfiguring, onClos
       </div>
 
       <div className="space-y-3 flex-1 overflow-auto">
-        {filteredActivities.map((activity) => (
-          <div
-            key={activity.id}
-            className="flex gap-3"
-            data-testid={`activity-item-${activity.id}`}
-          >
+        {filteredActivities.map((activity) => {
+          const metadata = activity.metadata as { changes?: Array<{ name: string; change: string }> } | null;
+          const hasSubItems = metadata?.changes && metadata.changes.length > 0;
+          
+          return (
             <div
-              className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${getActivityColor(
-                activity.activityType
-              )}`}
+              key={activity.id}
+              className="flex gap-3"
+              data-testid={`activity-item-${activity.id}`}
             >
-              {getActivityIcon(activity.activityType)}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm">
-                <span className="font-medium">{activity.userName || "Someone"}</span>{" "}
-                <span className="text-muted-foreground">{activity.description}</span>
-              </p>
-              {activity.entityName && (
-                <p className="text-sm text-muted-foreground truncate">
-                  {activity.entityName}
+              <div
+                className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${getActivityColor(
+                  activity.activityType
+                )}`}
+              >
+                {getActivityIcon(activity.activityType)}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm">
+                  <span className="font-medium">{activity.userName || "Someone"}</span>{" "}
+                  <span className="text-muted-foreground">{activity.description}</span>
                 </p>
-              )}
-              <p className="text-xs text-muted-foreground mt-1">
-                {formatDistanceToNow(new Date(activity.createdAt), {
-                  addSuffix: true,
-                })}
-              </p>
+                {hasSubItems ? (
+                  <ul className="mt-1 space-y-0.5 text-sm text-muted-foreground">
+                    {metadata!.changes!.map((item, idx) => (
+                      <li key={idx} className="flex items-start gap-1">
+                        <span className="text-muted-foreground/60">-</span>
+                        <span>
+                          <span className="font-medium text-foreground/80">{item.name}</span>
+                          {item.change && <span className="text-muted-foreground"> {item.change}</span>}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : activity.entityName ? (
+                  <p className="text-sm text-muted-foreground truncate">
+                    {activity.entityName}
+                  </p>
+                ) : null}
+                <p className="text-xs text-muted-foreground mt-1">
+                  {formatDistanceToNow(new Date(activity.createdAt), {
+                    addSuffix: true,
+                  })}
+                </p>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

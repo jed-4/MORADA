@@ -11756,7 +11756,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/schedule-items", async (req, res) => {
+  app.post("/api/schedule-items", requireAuth, async (req, res) => {
     try {
       const validationResult = insertScheduleItemSchema.safeParse(req.body);
       if (!validationResult.success) {
@@ -11767,6 +11767,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const item = await storage.createScheduleItem(validationResult.data);
+      
+      // Log activity for schedule item creation
+      try {
+        const schedule = await storage.getScheduleById(item.scheduleId);
+        if (schedule && req.user) {
+          const userName = req.user.firstName && req.user.lastName 
+            ? `${req.user.firstName} ${req.user.lastName}`
+            : req.user.username || req.user.email || "User";
+          
+          await storage.createActivity({
+            projectId: schedule.projectId,
+            userId: req.user.id,
+            userName: userName,
+            activityType: "schedule",
+            action: "created",
+            description: `added schedule item`,
+            entityId: item.id,
+            entityName: null,
+            metadata: { changes: [{ name: item.name, change: "added" }] }
+          });
+        }
+      } catch (activityError) {
+        console.error("Failed to log schedule item creation activity:", activityError);
+      }
+      
       res.status(201).json(item);
     } catch (error: any) {
       res.status(500).json({ 
@@ -11776,7 +11801,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/schedule-items/:id", async (req, res) => {
+  app.patch("/api/schedule-items/:id", requireAuth, async (req, res) => {
     try {
       const validationResult = updateScheduleItemSchema.safeParse(req.body);
       if (!validationResult.success) {
@@ -11786,10 +11811,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
+      // Get original item to track changes
+      const originalItem = await storage.getScheduleItem(req.params.id);
+      
       const item = await storage.updateScheduleItem(req.params.id, validationResult.data);
       if (!item) {
         return res.status(404).json({ error: "Schedule item not found" });
       }
+      
+      // Log activity for schedule item update
+      try {
+        const schedule = await storage.getScheduleById(item.scheduleId);
+        if (schedule && req.user) {
+          const userName = req.user.firstName && req.user.lastName 
+            ? `${req.user.firstName} ${req.user.lastName}`
+            : req.user.username || req.user.email || "User";
+          
+          // Determine what changed
+          const changes: string[] = [];
+          const updateData = validationResult.data;
+          if (updateData.name && updateData.name !== originalItem?.name) changes.push("renamed");
+          if (updateData.startDate || updateData.endDate) changes.push("dates updated");
+          if (updateData.status && updateData.status !== originalItem?.status) changes.push(`status changed to ${updateData.status}`);
+          if (updateData.assigneeId !== undefined && updateData.assigneeId !== originalItem?.assigneeId) changes.push("assigned");
+          if (updateData.progress !== undefined && updateData.progress !== originalItem?.progress) changes.push(`progress updated to ${updateData.progress}%`);
+          
+          const changeDescription = changes.length > 0 ? changes.join(", ") : "updated";
+          
+          await storage.createActivity({
+            projectId: schedule.projectId,
+            userId: req.user.id,
+            userName: userName,
+            activityType: "schedule",
+            action: "updated",
+            description: `updated schedule item`,
+            entityId: item.id,
+            entityName: null,
+            metadata: { changes: [{ name: item.name, change: changeDescription }] }
+          });
+        }
+      } catch (activityError) {
+        console.error("Failed to log schedule item update activity:", activityError);
+      }
+      
       res.json(item);
     } catch (error: any) {
       res.status(500).json({ 
@@ -11799,14 +11863,73 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/schedule-items/bulk", async (req, res) => {
+  app.post("/api/schedule-items/bulk", requireAuth, async (req, res) => {
     try {
       const { items } = req.body;
       if (!Array.isArray(items)) {
         return res.status(400).json({ error: "Expected items array" });
       }
       
+      // Get original items to track changes
+      const originalItemsMap = new Map<string, any>();
+      for (const item of items) {
+        if (item.id) {
+          const originalItem = await storage.getScheduleItem(item.id);
+          if (originalItem) {
+            originalItemsMap.set(item.id, originalItem);
+          }
+        }
+      }
+      
       const updatedItems = await storage.bulkUpdateScheduleItems(items);
+      
+      // Log batch activity for schedule item updates
+      try {
+        if (updatedItems.length > 0 && req.user) {
+          const firstItem = updatedItems[0];
+          const schedule = await storage.getScheduleById(firstItem.scheduleId);
+          
+          if (schedule) {
+            const userName = req.user.firstName && req.user.lastName 
+              ? `${req.user.firstName} ${req.user.lastName}`
+              : req.user.username || req.user.email || "User";
+            
+            // Build changes list for grouped display
+            const changes: Array<{ name: string; change: string }> = [];
+            
+            for (const item of updatedItems) {
+              const original = originalItemsMap.get(item.id);
+              const changeDetails: string[] = [];
+              
+              if (original) {
+                if (item.name !== original.name) changeDetails.push("renamed");
+                if (item.startDate !== original.startDate || item.endDate !== original.endDate) changeDetails.push("dates updated");
+                if (item.status !== original.status) changeDetails.push(`status changed to ${item.status}`);
+                if (item.assigneeId !== original.assigneeId) changeDetails.push("assigned");
+                if (item.progress !== original.progress) changeDetails.push(`progress updated to ${item.progress}%`);
+              }
+              
+              const changeText = changeDetails.length > 0 ? changeDetails.join(", ") : "updated";
+              changes.push({ name: item.name, change: changeText });
+            }
+            
+            await storage.createActivity({
+              projectId: schedule.projectId,
+              userId: req.user.id,
+              userName: userName,
+              activityType: "schedule",
+              action: "batch_updated",
+              description: `updated ${updatedItems.length} schedule items`,
+              entityId: null,
+              entityName: null,
+              metadata: { changes }
+            });
+          }
+        }
+      } catch (activityError) {
+        console.error("Failed to log bulk schedule item update activity:", activityError);
+      }
+      
       res.json(updatedItems);
     } catch (error: any) {
       res.status(500).json({ 
@@ -11816,12 +11939,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/schedule-items/:id", async (req, res) => {
+  app.delete("/api/schedule-items/:id", requireAuth, async (req, res) => {
     try {
+      // Get item info before deletion for activity logging
+      const item = await storage.getScheduleItem(req.params.id);
+      
       const success = await storage.deleteScheduleItem(req.params.id);
       if (!success) {
         return res.status(404).json({ error: "Schedule item not found" });
       }
+      
+      // Log activity for schedule item deletion
+      try {
+        if (item && req.user) {
+          const schedule = await storage.getScheduleById(item.scheduleId);
+          if (schedule) {
+            const userName = req.user.firstName && req.user.lastName 
+              ? `${req.user.firstName} ${req.user.lastName}`
+              : req.user.username || req.user.email || "User";
+            
+            await storage.createActivity({
+              projectId: schedule.projectId,
+              userId: req.user.id,
+              userName: userName,
+              activityType: "schedule",
+              action: "deleted",
+              description: `removed schedule item`,
+              entityId: req.params.id,
+              entityName: null,
+              metadata: { changes: [{ name: item.name, change: "removed" }] }
+            });
+          }
+        }
+      } catch (activityError) {
+        console.error("Failed to log schedule item deletion activity:", activityError);
+      }
+      
       res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ 
