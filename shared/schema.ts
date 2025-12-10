@@ -4808,3 +4808,75 @@ export const insertBillLineItemPriceLinkSchema = createInsertSchema(billLineItem
 
 export type InsertBillLineItemPriceLink = z.infer<typeof insertBillLineItemPriceLinkSchema>;
 export type BillLineItemPriceLink = typeof billLineItemPriceLinks.$inferSelect;
+
+// Dashboard View visibility enum
+export const dashboardViewVisibilityEnum = pgEnum("dashboard_view_visibility", [
+  "private",      // Only creator can see
+  "by_role",      // Specific roles can see
+  "by_user",      // Specific users can see
+  "everyone",     // Company-wide visibility
+]);
+
+// Dashboard Views - shared across all projects for a company
+export const dashboardViews = pgTable("dashboard_views", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  creatorId: varchar("creator_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  visibility: dashboardViewVisibilityEnum("visibility").notNull().default("private"),
+  widgets: jsonb("widgets").notNull().default([]), // Array of Widget objects
+  backgroundId: text("background_id").default("default"),
+  isDefault: boolean("is_default").notNull().default(false), // Default view for the company
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("dashboard_views_company_idx").on(table.companyId),
+  creatorIdx: index("dashboard_views_creator_idx").on(table.creatorId),
+}));
+
+// Dashboard View Permissions - for role/user sharing
+export const dashboardViewPermissions = pgTable("dashboard_view_permissions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  viewId: varchar("view_id").notNull().references(() => dashboardViews.id, { onDelete: "cascade" }),
+  roleId: varchar("role_id").references(() => userRoles.id, { onDelete: "cascade" }), // For by_role visibility
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }), // For by_user visibility
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  viewIdx: index("dashboard_view_permissions_view_idx").on(table.viewId),
+  roleIdx: index("dashboard_view_permissions_role_idx").on(table.roleId),
+  userIdx: index("dashboard_view_permissions_user_idx").on(table.userId),
+}));
+
+// User's active dashboard view preference (which view they're currently using)
+export const userDashboardPreferences = pgTable("user_dashboard_preferences", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  activeViewId: varchar("active_view_id").references(() => dashboardViews.id, { onDelete: "set null" }),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueUserCompany: uniqueIndex("user_dashboard_prefs_user_company_unique").on(table.userId, table.companyId),
+}));
+
+export const insertDashboardViewSchema = createInsertSchema(dashboardViews).omit({
+  id: true,
+  companyId: true,
+  creatorId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  visibility: z.enum(["private", "by_role", "by_user", "everyone"]).default("private"),
+  widgets: z.array(z.any()).default([]),
+});
+
+export const insertDashboardViewPermissionSchema = createInsertSchema(dashboardViewPermissions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertDashboardView = z.infer<typeof insertDashboardViewSchema>;
+export type DashboardView = typeof dashboardViews.$inferSelect;
+export type InsertDashboardViewPermission = z.infer<typeof insertDashboardViewPermissionSchema>;
+export type DashboardViewPermission = typeof dashboardViewPermissions.$inferSelect;
+export type UserDashboardPreference = typeof userDashboardPreferences.$inferSelect;

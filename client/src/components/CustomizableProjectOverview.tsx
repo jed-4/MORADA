@@ -1,16 +1,29 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Settings, ChevronDown, Search, PlusCircle, Check, LayoutGrid, Trash2 } from "lucide-react";
+import { Plus, Settings, ChevronDown, Search, PlusCircle, Check, LayoutGrid, Trash2, Lock, Users, Globe, Eye } from "lucide-react";
 import { useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
+  DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,16 +33,20 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Widget } from "@/types/widgets";
 import { widgetRegistry, getWidgetDefinition } from "./widgets/WidgetRegistry";
 import WidgetContainer from "./widgets/WidgetContainer";
 import { useProject } from "@/contexts/ProjectContext";
-import type { FieldCategoryWithOptions } from "@shared/schema";
+import { useAuth } from "@/hooks/use-auth";
+import type { FieldCategoryWithOptions, DashboardView, UserRole } from "@shared/schema";
 import {
   DndContext,
   closestCenter,
@@ -45,6 +62,7 @@ import {
   sortableKeyboardCoordinates,
   rectSortingStrategy,
 } from "@dnd-kit/sortable";
+import { useToast } from "@/hooks/use-toast";
 
 // Background options
 const backgroundOptions = [
@@ -69,71 +87,208 @@ const presetWidgets: Record<string, Widget[]> = {
     { id: "preset-3", type: "schedule", title: "Schedule", size: "md", config: { maxItems: 4 } },
     { id: "preset-4", type: "alerts", title: "Alerts", size: "md", config: {} },
   ],
-  financial: [
-    { id: "preset-1", type: "metrics", title: "Financial Overview", size: "lg", config: {} },
-    { id: "preset-2", type: "bills", title: "Bills Summary", size: "md", config: {} },
-    { id: "preset-3", type: "variations", title: "Variations", size: "md", config: {} },
-    { id: "preset-4", type: "invoices", title: "Client Invoices", size: "md", config: {} },
-  ],
-  schedule: [
-    { id: "preset-1", type: "schedule", title: "Schedule", size: "lg", config: { maxItems: 8 } },
-    { id: "preset-2", type: "tasks", title: "Tasks", size: "md", config: { maxTasks: 6 } },
-    { id: "preset-3", type: "checklist", title: "Checklists", size: "md", config: {} },
-    { id: "preset-4", type: "quickActions", title: "Quick Actions", size: "md", config: {} },
-  ],
 };
 
-// Dashboard view type
-interface DashboardView {
-  id: string;
-  name: string;
-  widgets: Widget[];
-  isDefault?: boolean;
-}
-
-// Default view setup
-const defaultView: DashboardView = {
-  id: "overview",
-  name: "Overview",
-  widgets: presetWidgets.overview,
-  isDefault: true,
-};
-
-// Default template setup (same as overview preset)
+// Default widgets for new views
 const defaultWidgets: Widget[] = presetWidgets.overview;
+
+type VisibilityOption = "private" | "by_role" | "by_user" | "everyone";
+
+const visibilityOptions: { value: VisibilityOption; label: string; description: string; icon: typeof Lock }[] = [
+  { value: "private", label: "Private", description: "Only you can see this view", icon: Lock },
+  { value: "everyone", label: "Everyone", description: "All team members can see this view", icon: Globe },
+  { value: "by_role", label: "By Role", description: "Specific roles can see this view", icon: Users },
+  { value: "by_user", label: "By User", description: "Specific users can see this view", icon: Eye },
+];
 
 export default function CustomizableProjectOverview() {
   const { currentProject } = useProject();
+  const { user } = useAuth();
+  const { toast } = useToast();
   const [widgets, setWidgets] = useState<Widget[]>([]);
   const [isAddingWidget, setIsAddingWidget] = useState(false);
   const [configuringWidget, setConfiguringWidget] = useState<string | null>(null);
-  const [savedViews, setSavedViews] = useState<DashboardView[]>([defaultView]);
-  const [activeViewId, setActiveViewId] = useState("overview");
+  const [activeViewId, setActiveViewId] = useState<string | null>(null);
   const [backgroundId, setBackgroundId] = useState("default");
   const [searchQuery, setSearchQuery] = useState("");
-  const [isCreatingView, setIsCreatingView] = useState(false);
   const [, navigate] = useLocation();
-  
+
+  // New View Modal state
+  const [isNewViewModalOpen, setIsNewViewModalOpen] = useState(false);
+  const [newViewName, setNewViewName] = useState("");
+  const [newViewVisibility, setNewViewVisibility] = useState<VisibilityOption>("private");
+  const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+
+  // Delete confirmation state
+  const [viewToDelete, setViewToDelete] = useState<DashboardView | null>(null);
+
+  // Fetch dashboard views from database
+  const { data: dashboardViews = [], isLoading: isLoadingViews, isError: isViewsError } = useQuery<DashboardView[]>({
+    queryKey: ["/api/dashboard-views"],
+    enabled: !!user?.companyId,
+    retry: 2,
+  });
+
+  // Fetch user's active view preference
+  const { data: dashboardPreference } = useQuery<{ activeViewId: string | null } | null>({
+    queryKey: ["/api/dashboard-preference"],
+    enabled: !!user?.companyId,
+    retry: 1,
+  });
+
+  // Fetch roles for visibility selection
+  const { data: roles = [], isLoading: isLoadingRoles } = useQuery<UserRole[]>({
+    queryKey: ["/api/user-roles"],
+    enabled: !!user?.companyId,
+    retry: 1,
+  });
+
+  // Fetch users for visibility selection
+  const { data: companyUsers = [], isLoading: isLoadingUsers } = useQuery<any[]>({
+    queryKey: ["/api/users"],
+    enabled: !!user?.companyId,
+    retry: 1,
+  });
+
   // Fetch field categories for phase colors
   const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
     queryKey: ["/api/field-categories"],
   });
-  
+
+  // Create view mutation
+  const createViewMutation = useMutation({
+    mutationFn: async (data: { name: string; visibility: VisibilityOption; widgets: Widget[]; roleIds?: string[]; userIds?: string[] }) => {
+      return apiRequest("/api/dashboard-views", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: (newView: DashboardView) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-views"] });
+      setActiveViewId(newView.id);
+      setWidgets((newView.widgets as Widget[]) || defaultWidgets);
+      setIsNewViewModalOpen(false);
+      setNewViewName("");
+      setNewViewVisibility("private");
+      setSelectedRoleIds([]);
+      setSelectedUserIds([]);
+      toast({ title: "View created", description: `"${newView.name}" has been created successfully.` });
+      // Save preference
+      savePreferenceMutation.mutate({ activeViewId: newView.id });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to create view", variant: "destructive" });
+    },
+  });
+
+  // Update view mutation
+  const updateViewMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<DashboardView> }) => {
+      return apiRequest(`/api/dashboard-views/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-views"] });
+    },
+  });
+
+  // Delete view mutation
+  const deleteViewMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest(`/api/dashboard-views/${id}`, {
+        method: "DELETE",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-views"] });
+      setViewToDelete(null);
+      // Switch to first available view
+      const remainingViews = dashboardViews.filter(v => v.id !== viewToDelete?.id);
+      if (remainingViews.length > 0) {
+        switchToView(remainingViews[0]);
+      }
+      toast({ title: "View deleted", description: "The view has been removed." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to delete view", variant: "destructive" });
+    },
+  });
+
+  // Save preference mutation
+  const savePreferenceMutation = useMutation({
+    mutationFn: async (data: { activeViewId: string | null }) => {
+      return apiRequest("/api/dashboard-preference", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-preference"] });
+    },
+  });
+
+  // Track active view ID with ref for debounced callbacks
+  const activeViewIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    activeViewIdRef.current = activeViewId;
+  }, [activeViewId]);
+
+  // Debounced widget save to prevent rapid-fire mutations
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const pendingWidgetsRef = useRef<Widget[] | null>(null);
+
+  const debouncedSaveWidgets = useCallback((widgetsToSave: Widget[]) => {
+    const currentViewId = activeViewIdRef.current;
+    if (!currentViewId) return;
+    
+    // Store the latest widgets to save
+    pendingWidgetsRef.current = widgetsToSave;
+    
+    // Clear any pending save
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    
+    // Schedule the save after a short delay
+    saveTimeoutRef.current = setTimeout(() => {
+      const viewIdToSave = activeViewIdRef.current;
+      if (pendingWidgetsRef.current && viewIdToSave) {
+        updateViewMutation.mutate({
+          id: viewIdToSave,
+          data: { widgets: pendingWidgetsRef.current as any },
+        });
+        pendingWidgetsRef.current = null;
+      }
+    }, 300);
+  }, [updateViewMutation]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, []);
+
   // Get project status category and find the current phase color
   const projectStatusCategory = fieldCategories.find(cat => cat.key === "project.status");
   const allPhaseOptions = projectStatusCategory?.options || [];
-  
+
   // Get current phase option with color
   const currentPhaseOption = useMemo(() => {
     if (!currentProject?.currentSystemPhase) return null;
-    return allPhaseOptions.find(opt => 
-      opt.systemPhase === currentProject.currentSystemPhase || 
+    return allPhaseOptions.find(opt =>
+      opt.systemPhase === currentProject.currentSystemPhase ||
       opt.key === currentProject.currentSystemPhase
     );
   }, [currentProject?.currentSystemPhase, allPhaseOptions]);
-  
+
   // Get the active view
-  const activeView = savedViews.find(v => v.id === activeViewId) || savedViews[0];
+  const activeView = dashboardViews.find(v => v.id === activeViewId) || dashboardViews[0];
 
   // Setup drag and drop sensors
   const sensors = useSensors(
@@ -146,188 +301,130 @@ export default function CustomizableProjectOverview() {
   // Get current background class
   const currentBackground = backgroundOptions.find(b => b.id === backgroundId)?.value || backgroundOptions[0].value;
 
-  // Save widgets to localStorage
-  const saveWidgets = (widgetsToSave: Widget[]) => {
-    if (!currentProject) return;
-    
-    try {
-      localStorage.setItem(`widgets-${currentProject.id}`, JSON.stringify(widgetsToSave));
-    } catch (error) {
-      console.error('Failed to save widgets:', error);
+  // Initialize active view from preference or first view
+  useEffect(() => {
+    if (dashboardViews.length > 0 && !activeViewId) {
+      const preferredViewId = dashboardPreference?.activeViewId;
+      const targetView = preferredViewId
+        ? dashboardViews.find(v => v.id === preferredViewId)
+        : dashboardViews[0];
+
+      if (targetView) {
+        setActiveViewId(targetView.id);
+        setWidgets((targetView.widgets as Widget[]) || defaultWidgets);
+        setBackgroundId(targetView.backgroundId || "default");
+      }
     }
-  };
+  }, [dashboardViews, dashboardPreference, activeViewId]);
+
+  // One-time migration from localStorage (import existing layouts)
+  useEffect(() => {
+    if (!user?.id || dashboardViews.length > 0 || isLoadingViews) return;
+
+    // Check if there are any localStorage layouts to migrate
+    const migrationKey = `dashboard-migrated-${user.id}`;
+    if (localStorage.getItem(migrationKey)) return;
+
+    // Look for any project-based widgets in localStorage
+    const projectKeys = Object.keys(localStorage).filter(k => k.startsWith('widgets-'));
+    if (projectKeys.length > 0) {
+      const firstKey = projectKeys[0];
+      const savedWidgetsStr = localStorage.getItem(firstKey);
+      if (savedWidgetsStr) {
+        try {
+          const savedWidgets = JSON.parse(savedWidgetsStr) as Widget[];
+          // Create a personal view with the imported layout
+          createViewMutation.mutate({
+            name: "Imported Layout",
+            visibility: "private",
+            widgets: savedWidgets,
+          });
+          localStorage.setItem(migrationKey, "true");
+        } catch (e) {
+          console.error("Failed to migrate localStorage widgets:", e);
+        }
+      }
+    }
+
+    // If no localStorage layouts exist and no database views, create default view
+    if (projectKeys.length === 0) {
+      createViewMutation.mutate({
+        name: "Overview",
+        visibility: "private",
+        widgets: defaultWidgets,
+      });
+    }
+  }, [user?.id, dashboardViews.length, isLoadingViews]);
+
+  // Save widgets to the active view (uses debounced save)
+  const saveWidgets = useCallback((widgetsToSave: Widget[]) => {
+    debouncedSaveWidgets(widgetsToSave);
+  }, [debouncedSaveWidgets]);
 
   // Save background preference
   const saveBackground = (bgId: string) => {
-    if (!currentProject) return;
     setBackgroundId(bgId);
-    try {
-      localStorage.setItem(`dashboard-bg-${currentProject.id}`, bgId);
-    } catch (error) {
-      console.error('Failed to save background:', error);
+    if (activeViewId) {
+      updateViewMutation.mutate({
+        id: activeViewId,
+        data: { backgroundId: bgId },
+      });
     }
   };
 
-  // Migrate old pixel-based dimensions to column-based (one-time migration)
-  const migrateWidgetDimensions = (widgets: Widget[]): Widget[] => {
-    return widgets.map(widget => {
-      if (widget.dimensions && widget.dimensions.width && !widget.dimensions.columns) {
-        return {
-          ...widget,
-          dimensions: widget.dimensions.height 
-            ? { height: widget.dimensions.height } 
-            : undefined
-        };
-      }
-      return widget;
-    });
+  // Switch to a different view
+  const switchToView = (view: DashboardView) => {
+    setActiveViewId(view.id);
+    setWidgets((view.widgets as Widget[]) || defaultWidgets);
+    setBackgroundId(view.backgroundId || "default");
+    savePreferenceMutation.mutate({ activeViewId: view.id });
   };
 
-  // Load widgets, views, and background from localStorage on component mount and project change
-  useEffect(() => {
-    if (!currentProject) {
-      setWidgets([]);
+  // Open new view modal
+  const openNewViewModal = () => {
+    setNewViewName("");
+    setNewViewVisibility("private");
+    setSelectedRoleIds([]);
+    setSelectedUserIds([]);
+    setIsNewViewModalOpen(true);
+  };
+
+  // Create new view
+  const handleCreateView = () => {
+    if (!newViewName.trim()) {
+      toast({ title: "Name required", description: "Please enter a name for the view", variant: "destructive" });
       return;
     }
-    
-    // Load background
-    const savedBg = localStorage.getItem(`dashboard-bg-${currentProject.id}`);
-    if (savedBg && backgroundOptions.find(b => b.id === savedBg)) {
-      setBackgroundId(savedBg);
-    } else {
-      setBackgroundId("default");
-    }
-    
-    // Load saved views
-    const savedViewsStr = localStorage.getItem(`dashboard-views-${currentProject.id}`);
-    if (savedViewsStr) {
-      try {
-        const parsedViews = JSON.parse(savedViewsStr) as DashboardView[];
-        if (parsedViews.length > 0) {
-          setSavedViews(parsedViews);
-        }
-      } catch (error) {
-        console.error('Failed to parse saved views:', error);
-      }
-    }
-    
-    // Load active view ID
-    const savedActiveViewId = localStorage.getItem(`dashboard-active-view-${currentProject.id}`);
-    if (savedActiveViewId) {
-      setActiveViewId(savedActiveViewId);
-    } else {
-      setActiveViewId("overview");
-    }
-    
-    // Load widgets for active view
-    const savedWidgets = localStorage.getItem(`widgets-${currentProject.id}`);
-    console.log(`Looking for saved widgets for project ${currentProject.id}:`, savedWidgets ? 'found' : 'not found');
-    
-    if (savedWidgets) {
-      try {
-        const parsedWidgets = JSON.parse(savedWidgets) as Widget[];
-        console.log(`Loading ${parsedWidgets.length} widgets for project ${currentProject.id}`);
-        const migratedWidgets = migrateWidgetDimensions(parsedWidgets);
-        setWidgets(migratedWidgets);
-        
-        if (JSON.stringify(parsedWidgets) !== JSON.stringify(migratedWidgets)) {
-          saveWidgets(migratedWidgets);
-        }
-      } catch (error) {
-        console.error('Failed to parse saved widgets:', error);
-        setWidgets(defaultWidgets);
-        try {
-          localStorage.setItem(`widgets-${currentProject.id}`, JSON.stringify(defaultWidgets));
-        } catch (saveError) {
-          console.error('Failed to save default widgets:', saveError);
-        }
-      }
-    } else {
-      console.log(`No saved widgets found, using defaults for project ${currentProject.id}`);
-      setWidgets(defaultWidgets);
-      try {
-        localStorage.setItem(`widgets-${currentProject.id}`, JSON.stringify(defaultWidgets));
-      } catch (saveError) {
-        console.error('Failed to save default widgets:', saveError);
-      }
-    }
-  }, [currentProject]);
 
-  // Show loading state if no project is selected
-  if (!currentProject) {
-    return (
-      <div className="flex flex-col h-full" data-testid="customizable-project-overview">
-        <div className="flex-1 flex items-center justify-center text-muted-foreground">
-          <div className="text-center">
-            <h2 className="text-xl font-medium mb-2">No Project Selected</h2>
-            <p>Please select a project from the dropdown to view its dashboard.</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Save views to localStorage
-  const saveViews = (views: DashboardView[]) => {
-    if (!currentProject) return;
-    try {
-      localStorage.setItem(`dashboard-views-${currentProject.id}`, JSON.stringify(views));
-    } catch (error) {
-      console.error('Failed to save views:', error);
-    }
-  };
-  
-  // Switch to a different view
-  const switchToView = (viewId: string) => {
-    const view = savedViews.find(v => v.id === viewId);
-    if (view) {
-      setActiveViewId(viewId);
-      setWidgets(view.widgets);
-      saveWidgets(view.widgets);
-      if (currentProject) {
-        localStorage.setItem(`dashboard-active-view-${currentProject.id}`, viewId);
-      }
-    }
-  };
-  
-  // Create a new view with current widgets (with debounce to prevent double-click)
-  const createNewView = () => {
-    if (isCreatingView) return;
-    setIsCreatingView(true);
-    
-    const newViewId = `view-${Date.now()}`;
-    const newView: DashboardView = {
-      id: newViewId,
-      name: `View ${savedViews.length + 1}`,
+    // Build clean payload - only include roleIds/userIds when visibility matches
+    const payload: {
+      name: string;
+      visibility: VisibilityOption;
+      widgets: Widget[];
+      roleIds?: string[];
+      userIds?: string[];
+    } = {
+      name: newViewName.trim(),
+      visibility: newViewVisibility,
       widgets: [...widgets],
     };
-    const updatedViews = [...savedViews, newView];
-    setSavedViews(updatedViews);
-    saveViews(updatedViews);
-    setActiveViewId(newViewId);
-    if (currentProject) {
-      localStorage.setItem(`dashboard-active-view-${currentProject.id}`, newViewId);
+
+    // Only include roleIds for by_role visibility with actual selections
+    if (newViewVisibility === "by_role" && selectedRoleIds.length > 0) {
+      payload.roleIds = selectedRoleIds;
     }
     
-    setTimeout(() => setIsCreatingView(false), 500);
+    // Only include userIds for by_user visibility with actual selections
+    if (newViewVisibility === "by_user" && selectedUserIds.length > 0) {
+      payload.userIds = selectedUserIds;
+    }
+
+    createViewMutation.mutate(payload);
   };
-  
-  // Delete a view (cannot delete default Overview view)
-  const deleteView = (viewId: string) => {
-    if (savedViews.length <= 1) return;
-    if (viewId === "overview") return;
-    const updatedViews = savedViews.filter(v => v.id !== viewId);
-    setSavedViews(updatedViews);
-    saveViews(updatedViews);
-    
-    if (activeViewId === viewId) {
-      const newActiveView = updatedViews[0];
-      setActiveViewId(newActiveView.id);
-      setWidgets(newActiveView.widgets);
-      if (currentProject) {
-        localStorage.setItem(`dashboard-active-view-${currentProject.id}`, newActiveView.id);
-      }
-    }
+
+  // Confirm delete view
+  const confirmDeleteView = (view: DashboardView) => {
+    setViewToDelete(view);
   };
 
   const addWidget = (type: string) => {
@@ -371,22 +468,20 @@ export default function CustomizableProjectOverview() {
       return;
     }
 
-    setWidgets((widgets) => {
-      const oldIndex = widgets.findIndex((widget) => widget.id === active.id);
-      const newIndex = widgets.findIndex((widget) => widget.id === over.id);
+    const oldIndex = widgets.findIndex((widget) => widget.id === active.id);
+    const newIndex = widgets.findIndex((widget) => widget.id === over.id);
 
-      if (oldIndex === -1 || newIndex === -1) {
-        return widgets;
-      }
+    if (oldIndex === -1 || newIndex === -1) {
+      return;
+    }
 
-      const reorderedWidgets = arrayMove(widgets, oldIndex, newIndex);
-      saveWidgets(reorderedWidgets);
-      return reorderedWidgets;
-    });
+    const reorderedWidgets = arrayMove(widgets, oldIndex, newIndex);
+    setWidgets(reorderedWidgets);
+    saveWidgets(reorderedWidgets);
   };
 
   // Filter widgets for search
-  const filteredWidgetTypes = Object.values(widgetRegistry).filter(def => 
+  const filteredWidgetTypes = Object.values(widgetRegistry).filter(def =>
     def.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     def.description.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -396,7 +491,7 @@ export default function CustomizableProjectOverview() {
     if (!definition) return null;
 
     const WidgetComponent = definition.component;
-    
+
     return (
       <WidgetContainer
         key={widget.id}
@@ -417,11 +512,70 @@ export default function CustomizableProjectOverview() {
     );
   };
 
+  // Show loading state while fetching views
+  if (isLoadingViews) {
+    return (
+      <div className="flex flex-col h-full" data-testid="customizable-project-overview">
+        <div className="flex-1 flex items-center justify-center text-muted-foreground">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#bba7db] mx-auto mb-4"></div>
+            <p>Loading dashboard...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state if views failed to load
+  if (isViewsError) {
+    return (
+      <div className="flex flex-col h-full" data-testid="customizable-project-overview">
+        <div className="flex-1 flex items-center justify-center text-muted-foreground">
+          <div className="text-center">
+            <h2 className="text-xl font-medium mb-2">Unable to Load Dashboard</h2>
+            <p className="mb-4">There was a problem loading your dashboard views.</p>
+            <Button 
+              onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/dashboard-views"] })}
+              className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+            >
+              Try Again
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show loading state if no project is selected
+  if (!currentProject) {
+    return (
+      <div className="flex flex-col h-full" data-testid="customizable-project-overview">
+        <div className="flex-1 flex items-center justify-center text-muted-foreground">
+          <div className="text-center">
+            <h2 className="text-xl font-medium mb-2">No Project Selected</h2>
+            <p>Please select a project from the dropdown to view its dashboard.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Get phase display name and color
-  const phaseDisplayName = currentPhaseOption?.name || 
-    currentProject.currentSystemPhase?.replace(/_/g, ' ') || 
+  const phaseDisplayName = currentPhaseOption?.name ||
+    currentProject.currentSystemPhase?.replace(/_/g, ' ') ||
     'Lead';
   const phaseColor = currentPhaseOption?.color || '#6b7280';
+
+  // Get visibility icon for a view
+  const getVisibilityIcon = (visibility: string) => {
+    switch (visibility) {
+      case "private": return Lock;
+      case "everyone": return Globe;
+      case "by_role": return Users;
+      case "by_user": return Eye;
+      default: return Lock;
+    }
+  };
 
   return (
     <div className="flex flex-col h-full" data-testid="customizable-project-overview">
@@ -434,11 +588,11 @@ export default function CustomizableProjectOverview() {
             <span className="text-muted-foreground">·</span>
             <span>Dashboard</span>
           </h2>
-          <Badge 
-            variant="secondary" 
+          <Badge
+            variant="secondary"
             className={`text-xs ${
-              currentProject.status === 'active' 
-                ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' 
+              currentProject.status === 'active'
+                ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
                 : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'
             }`}
           >
@@ -448,9 +602,9 @@ export default function CustomizableProjectOverview() {
 
         {/* Right: Phase chip + Add Widget + Settings gear */}
         <div className="flex items-center gap-1.5">
-          <Badge 
+          <Badge
             className="text-xs capitalize"
-            style={{ 
+            style={{
               backgroundColor: `${phaseColor}20`,
               color: phaseColor,
               borderColor: `${phaseColor}40`
@@ -467,8 +621,8 @@ export default function CustomizableProjectOverview() {
             <Plus className="w-3 h-3" />
             <span>Add Widget</span>
           </button>
-          <Button 
-            variant="ghost" 
+          <Button
+            variant="ghost"
             size="icon"
             className="h-6 w-6"
             onClick={() => navigate('/project-settings')}
@@ -485,46 +639,61 @@ export default function CustomizableProjectOverview() {
         <div className="flex items-center gap-1">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button 
+              <button
                 className="h-6 w-auto px-2.5 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1.5"
                 data-testid="button-view-switcher"
               >
-                <span>{activeView?.name || 'Overview'}</span>
+                {activeView && (() => {
+                  const VisIcon = getVisibilityIcon(activeView.visibility);
+                  return <VisIcon className="w-3 h-3" />;
+                })()}
+                <span>{activeView?.name || 'Select View'}</span>
                 <ChevronDown className="w-3 h-3" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-56">
               <DropdownMenuLabel className="text-xs">Dashboard Views</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {savedViews.map((view) => (
-                <DropdownMenuItem 
-                  key={view.id}
-                  className="text-xs flex items-center justify-between gap-2 group"
-                  onSelect={(e) => e.preventDefault()}
-                >
-                  <button
-                    className="flex-1 text-left flex items-center gap-2"
-                    onClick={() => switchToView(view.id)}
-                  >
-                    <span className="flex-1 truncate">{view.name}</span>
-                    {view.id === activeViewId && (
-                      <Check className="w-3 h-3 text-[#bba7db] flex-shrink-0" />
-                    )}
-                  </button>
-                  {savedViews.length > 1 && view.id !== "overview" && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteView(view.id);
-                      }}
-                      className="opacity-0 group-hover:opacity-100 p-1 hover:bg-destructive/10 rounded text-muted-foreground hover:text-destructive transition-opacity"
-                      data-testid={`button-delete-view-${view.id}`}
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  )}
+              {dashboardViews.length === 0 ? (
+                <DropdownMenuItem disabled className="text-xs text-muted-foreground">
+                  No views yet. Create one!
                 </DropdownMenuItem>
-              ))}
+              ) : (
+                dashboardViews.map((view) => {
+                  const VisIcon = getVisibilityIcon(view.visibility);
+                  const isOwner = view.creatorId === user?.id;
+                  return (
+                    <DropdownMenuItem
+                      key={view.id}
+                      className="text-xs flex items-center justify-between gap-2 group"
+                      onSelect={(e) => e.preventDefault()}
+                    >
+                      <button
+                        className="flex-1 text-left flex items-center gap-2"
+                        onClick={() => switchToView(view)}
+                      >
+                        <VisIcon className="w-3 h-3 text-muted-foreground" />
+                        <span className="flex-1 truncate">{view.name}</span>
+                        {view.id === activeViewId && (
+                          <Check className="w-3 h-3 text-[#bba7db] flex-shrink-0" />
+                        )}
+                      </button>
+                      {isOwner && dashboardViews.length > 1 && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            confirmDeleteView(view);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-destructive/10 rounded text-muted-foreground hover:text-destructive transition-opacity"
+                          data-testid={`button-delete-view-${view.id}`}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      )}
+                    </DropdownMenuItem>
+                  );
+                })
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -532,35 +701,30 @@ export default function CustomizableProjectOverview() {
         {/* Right: New View button */}
         <div className="flex items-center gap-1.5">
           <button
-            className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 ${
-              isCreatingView 
-                ? 'opacity-50 cursor-not-allowed' 
-                : 'hover-elevate active-elevate-2'
-            }`}
-            onClick={createNewView}
-            disabled={isCreatingView}
+            className="h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 hover-elevate active-elevate-2"
+            onClick={openNewViewModal}
             data-testid="button-new-view"
           >
             <PlusCircle className="w-3 h-3" />
-            <span>{isCreatingView ? 'Creating...' : 'New View'}</span>
+            <span>New View</span>
           </button>
         </div>
       </div>
 
       {/* Widgets Area with Background */}
       <div className={`flex-1 overflow-auto ${currentBackground} p-4`}>
-        <DndContext 
+        <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
           onDragEnd={handleDragEnd}
         >
-          <SortableContext 
+          <SortableContext
             items={widgets.map(w => w.id)}
             strategy={rectSortingStrategy}
           >
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
               {widgets.map((widget) => renderWidget(widget))}
-              
+
               {widgets.length === 0 && (
                 <div className="col-span-full">
                   <Card className="border-dashed border-2 border-primary/20 bg-card/80 backdrop-blur-sm">
@@ -571,8 +735,8 @@ export default function CustomizableProjectOverview() {
                           <h3 className="text-lg font-semibold tracking-tight">Customize Your Dashboard</h3>
                           <p className="text-base">Add widgets to create your personalized project overview</p>
                         </div>
-                        <Button 
-                          onClick={() => setIsAddingWidget(true)} 
+                        <Button
+                          onClick={() => setIsAddingWidget(true)}
                           className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
                         >
                           <Plus className="h-4 w-4 mr-2" />
@@ -593,11 +757,11 @@ export default function CustomizableProjectOverview() {
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden">
           <DialogHeader>
             <DialogTitle className="text-xl">Widgets Center</DialogTitle>
-            <p className="text-muted-foreground">
+            <DialogDescription>
               Choose widgets to add to your project dashboard
-            </p>
+            </DialogDescription>
           </DialogHeader>
-          
+
           {/* Search */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -612,7 +776,7 @@ export default function CustomizableProjectOverview() {
 
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-4 overflow-y-auto pr-2 max-h-[50vh]">
             {filteredWidgetTypes.map((definition) => (
-              <Card 
+              <Card
                 key={definition.type}
                 className="cursor-pointer hover-elevate group"
                 onClick={() => addWidget(definition.type)}
@@ -627,14 +791,14 @@ export default function CustomizableProjectOverview() {
                         <div className="h-full w-3/4 bg-[#bba7db] rounded-full"></div>
                       </div>
                     </div>
-                    
+
                     {/* Widget Preview Content */}
                     <div className="space-y-2">
                       <div className="h-3 bg-muted rounded w-full"></div>
                       <div className="h-3 bg-muted rounded w-3/4"></div>
                       <div className="h-3 bg-muted rounded w-1/2"></div>
                     </div>
-                    
+
                     {/* Widget Info */}
                     <div className="pt-2 border-t">
                       <h3 className="font-medium text-sm">{definition.name}</h3>
@@ -649,6 +813,158 @@ export default function CustomizableProjectOverview() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* New View Modal */}
+      <Dialog open={isNewViewModalOpen} onOpenChange={setIsNewViewModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create New View</DialogTitle>
+            <DialogDescription>
+              Name your view and choose who can see it
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="view-name">View Name</Label>
+              <Input
+                id="view-name"
+                placeholder="e.g., Financial Overview"
+                value={newViewName}
+                onChange={(e) => setNewViewName(e.target.value)}
+                data-testid="input-view-name"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Visibility</Label>
+              <Select 
+                value={newViewVisibility} 
+                onValueChange={(v) => {
+                  const visibility = v as VisibilityOption;
+                  setNewViewVisibility(visibility);
+                  // Clear role/user selections when switching visibility type
+                  if (visibility !== "by_role") setSelectedRoleIds([]);
+                  if (visibility !== "by_user") setSelectedUserIds([]);
+                }}
+              >
+                <SelectTrigger data-testid="select-visibility">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {visibilityOptions.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      <div className="flex items-center gap-2">
+                        <opt.icon className="w-4 h-4" />
+                        <div>
+                          <div className="font-medium">{opt.label}</div>
+                          <div className="text-xs text-muted-foreground">{opt.description}</div>
+                        </div>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {newViewVisibility === "by_role" && (
+              <div className="space-y-2">
+                <Label>Select Roles</Label>
+                <div className="border rounded-md p-2 max-h-32 overflow-y-auto space-y-1">
+                  {isLoadingRoles ? (
+                    <p className="text-xs text-muted-foreground py-2 text-center">Loading roles...</p>
+                  ) : roles.length === 0 ? (
+                    <p className="text-xs text-muted-foreground py-2 text-center">No roles available</p>
+                  ) : (
+                    roles.map((role) => (
+                      <label key={role.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 p-1 rounded">
+                        <input
+                          type="checkbox"
+                          checked={selectedRoleIds.includes(role.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedRoleIds([...selectedRoleIds, role.id]);
+                            } else {
+                              setSelectedRoleIds(selectedRoleIds.filter(id => id !== role.id));
+                            }
+                          }}
+                          className="rounded"
+                        />
+                        {role.name}
+                      </label>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
+            {newViewVisibility === "by_user" && (
+              <div className="space-y-2">
+                <Label>Select Users</Label>
+                <div className="border rounded-md p-2 max-h-32 overflow-y-auto space-y-1">
+                  {isLoadingUsers ? (
+                    <p className="text-xs text-muted-foreground py-2 text-center">Loading users...</p>
+                  ) : companyUsers.filter(u => u.id !== user?.id).length === 0 ? (
+                    <p className="text-xs text-muted-foreground py-2 text-center">No other users available</p>
+                  ) : (
+                    companyUsers.filter(u => u.id !== user?.id).map((u) => (
+                      <label key={u.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 p-1 rounded">
+                        <input
+                          type="checkbox"
+                          checked={selectedUserIds.includes(u.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedUserIds([...selectedUserIds, u.id]);
+                            } else {
+                              setSelectedUserIds(selectedUserIds.filter(id => id !== u.id));
+                            }
+                          }}
+                          className="rounded"
+                        />
+                        {u.firstName} {u.lastName} {u.email && `(${u.email})`}
+                      </label>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setIsNewViewModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateView}
+              disabled={createViewMutation.isPending}
+              className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+            >
+              {createViewMutation.isPending ? "Creating..." : "Create View"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!viewToDelete} onOpenChange={() => setViewToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete View</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{viewToDelete?.name}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => viewToDelete && deleteViewMutation.mutate(viewToDelete.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteViewMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

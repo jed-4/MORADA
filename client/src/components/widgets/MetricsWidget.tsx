@@ -366,30 +366,12 @@ export default function MetricsWidget({ widget, onUpdate, isConfiguring, onClose
     }
   };
 
-  // Group metrics by display style for better layout
-  const compactMetrics = metricConfigs.filter(c => c.displayStyle === "compact");
-  const ultraCompactMetrics = metricConfigs.filter(c => c.displayStyle === "ultra-compact");
-  const otherMetrics = metricConfigs.filter(c => c.displayStyle !== "compact" && c.displayStyle !== "ultra-compact");
-
+  // Render metrics in configured order (preserving user's ordering)
   return (
     <>
       <div className="space-y-2">
-        {/* Non-compact metrics */}
-        {otherMetrics.map((config, index) => renderMetric(config, index))}
-        
-        {/* Compact metrics grouped together */}
-        {compactMetrics.length > 0 && (
-          <div className="p-1.5 border rounded-md">
-            {compactMetrics.map((config, index) => renderMetric(config, otherMetrics.length + index))}
-          </div>
-        )}
-        
-        {/* Ultra-compact metrics grouped together */}
-        {ultraCompactMetrics.length > 0 && (
-          <div className="p-1 border rounded-md divide-y divide-border/50">
-            {ultraCompactMetrics.map((config, index) => renderMetric(config, otherMetrics.length + compactMetrics.length + index))}
-          </div>
-        )}
+        {/* Render all metrics in the order they were configured */}
+        {metricConfigs.map((config, index) => renderMetric(config, index))}
         
         {metricConfigs.length === 0 && (
           <div className="text-center py-4 text-sm text-muted-foreground">

@@ -110,6 +110,7 @@ import type { UserViewPreferences, InsertUserViewPreferences } from "@shared/sch
 import type { SupplierLabel, InsertSupplierLabel, SupplierLabelAssignment, InsertSupplierLabelAssignment } from "@shared/schema";
 import type { SupplierInsurance, InsertSupplierInsurance, SupplierContact, InsertSupplierContact } from "@shared/schema";
 import type { PriceListCategory, InsertPriceListCategory, PriceListItem, InsertPriceListItem, BillLineItemPriceLink, InsertBillLineItemPriceLink } from "@shared/schema";
+import type { DashboardView, InsertDashboardView, DashboardViewPermission, InsertDashboardViewPermission, UserDashboardPreference } from "@shared/schema";
 
 // modify the interface with any CRUD methods
 // you might need
@@ -942,6 +943,21 @@ export interface IStorage {
   createBillLineItemPriceLink(link: InsertBillLineItemPriceLink): Promise<BillLineItemPriceLink>;
   updateBillLineItemPriceLink(id: string, link: Partial<InsertBillLineItemPriceLink>): Promise<BillLineItemPriceLink | undefined>;
   getUnlinkedBillLineItems(companyId: string): Promise<Array<import("@shared/schema").BillLineItem & { bill: import("@shared/schema").Bill; supplier: import("@shared/schema").Supplier }>>;
+
+  // Dashboard Views CRUD
+  getDashboardViews(companyId: string, userId: string): Promise<DashboardView[]>;
+  getDashboardView(id: string, companyId: string): Promise<DashboardView | undefined>;
+  createDashboardView(view: InsertDashboardView & { companyId: string; creatorId: string }): Promise<DashboardView>;
+  updateDashboardView(id: string, view: Partial<InsertDashboardView>, companyId: string): Promise<DashboardView | undefined>;
+  deleteDashboardView(id: string, companyId: string): Promise<boolean>;
+
+  // Dashboard View Permissions CRUD
+  getDashboardViewPermissions(viewId: string): Promise<DashboardViewPermission[]>;
+  setDashboardViewPermissions(viewId: string, permissions: { roleIds?: string[]; userIds?: string[] }): Promise<void>;
+
+  // User Dashboard Preferences
+  getUserDashboardPreference(userId: string, companyId: string): Promise<UserDashboardPreference | undefined>;
+  setUserDashboardPreference(userId: string, companyId: string, activeViewId: string | null): Promise<UserDashboardPreference>;
 }
 
 export class MemStorage implements IStorage {
@@ -4938,6 +4954,35 @@ export class MemStorage implements IStorage {
     return [];
   }
   async createDriveFileActivityLog(log: import("@shared/schema").InsertDriveFileActivityLog): Promise<import("@shared/schema").DriveFileActivityLog> {
+    throw new Error("Not implemented in MemStorage");
+  }
+
+  // Dashboard Views - stub implementations
+  async getDashboardViews(companyId: string, userId: string): Promise<DashboardView[]> {
+    return [];
+  }
+  async getDashboardView(id: string, companyId: string): Promise<DashboardView | undefined> {
+    return undefined;
+  }
+  async createDashboardView(view: InsertDashboardView & { companyId: string; creatorId: string }): Promise<DashboardView> {
+    throw new Error("Not implemented in MemStorage");
+  }
+  async updateDashboardView(id: string, view: Partial<InsertDashboardView>, companyId: string): Promise<DashboardView | undefined> {
+    return undefined;
+  }
+  async deleteDashboardView(id: string, companyId: string): Promise<boolean> {
+    return false;
+  }
+  async getDashboardViewPermissions(viewId: string): Promise<DashboardViewPermission[]> {
+    return [];
+  }
+  async setDashboardViewPermissions(viewId: string, permissions: { roleIds?: string[]; userIds?: string[] }): Promise<void> {
+    // Not implemented
+  }
+  async getUserDashboardPreference(userId: string, companyId: string): Promise<UserDashboardPreference | undefined> {
+    return undefined;
+  }
+  async setUserDashboardPreference(userId: string, companyId: string, activeViewId: string | null): Promise<UserDashboardPreference> {
     throw new Error("Not implemented in MemStorage");
   }
 }
@@ -15844,6 +15889,208 @@ export class DbStorage implements IStorage {
       }));
     } catch (error) {
       console.error("Database error in getUnlinkedBillLineItems:", error);
+      throw error;
+    }
+  }
+
+  // Dashboard Views CRUD
+  async getDashboardViews(companyId: string, userId: string): Promise<DashboardView[]> {
+    try {
+      // Get user's role for permission checking
+      const user = await this.getUser(userId);
+      const userRoleId = user?.roleId;
+
+      // Get all views the user can access:
+      // 1. Views they created (private)
+      // 2. Views shared with everyone
+      // 3. Views shared with their role
+      // 4. Views shared with them specifically
+      const views = await db.select()
+        .from(schema.dashboardViews)
+        .leftJoin(schema.dashboardViewPermissions, eq(schema.dashboardViews.id, schema.dashboardViewPermissions.viewId))
+        .where(
+          and(
+            eq(schema.dashboardViews.companyId, companyId),
+            or(
+              eq(schema.dashboardViews.creatorId, userId),
+              eq(schema.dashboardViews.visibility, "everyone"),
+              and(
+                eq(schema.dashboardViews.visibility, "by_role"),
+                userRoleId ? eq(schema.dashboardViewPermissions.roleId, userRoleId) : sql`false`
+              ),
+              and(
+                eq(schema.dashboardViews.visibility, "by_user"),
+                eq(schema.dashboardViewPermissions.userId, userId)
+              )
+            )
+          )
+        )
+        .orderBy(asc(schema.dashboardViews.sortOrder), asc(schema.dashboardViews.name));
+
+      // De-duplicate views (join can create duplicates)
+      const uniqueViews = new Map<string, DashboardView>();
+      for (const row of views) {
+        if (!uniqueViews.has(row.dashboard_views.id)) {
+          uniqueViews.set(row.dashboard_views.id, row.dashboard_views);
+        }
+      }
+      return Array.from(uniqueViews.values());
+    } catch (error) {
+      console.error("Database error in getDashboardViews:", error);
+      throw error;
+    }
+  }
+
+  async getDashboardView(id: string, companyId: string): Promise<DashboardView | undefined> {
+    try {
+      const [view] = await db.select()
+        .from(schema.dashboardViews)
+        .where(and(
+          eq(schema.dashboardViews.id, id),
+          eq(schema.dashboardViews.companyId, companyId)
+        ))
+        .limit(1);
+      return view;
+    } catch (error) {
+      console.error("Database error in getDashboardView:", error);
+      throw error;
+    }
+  }
+
+  async createDashboardView(view: InsertDashboardView & { companyId: string; creatorId: string }): Promise<DashboardView> {
+    try {
+      const [result] = await db.insert(schema.dashboardViews).values({
+        ...view,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }).returning();
+      return result;
+    } catch (error) {
+      console.error("Database error in createDashboardView:", error);
+      throw error;
+    }
+  }
+
+  async updateDashboardView(id: string, view: Partial<InsertDashboardView>, companyId: string): Promise<DashboardView | undefined> {
+    try {
+      const [result] = await db.update(schema.dashboardViews)
+        .set({
+          ...view,
+          updatedAt: new Date(),
+        })
+        .where(and(
+          eq(schema.dashboardViews.id, id),
+          eq(schema.dashboardViews.companyId, companyId)
+        ))
+        .returning();
+      return result;
+    } catch (error) {
+      console.error("Database error in updateDashboardView:", error);
+      throw error;
+    }
+  }
+
+  async deleteDashboardView(id: string, companyId: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.dashboardViews)
+        .where(and(
+          eq(schema.dashboardViews.id, id),
+          eq(schema.dashboardViews.companyId, companyId)
+        ))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteDashboardView:", error);
+      throw error;
+    }
+  }
+
+  // Dashboard View Permissions CRUD
+  async getDashboardViewPermissions(viewId: string): Promise<DashboardViewPermission[]> {
+    try {
+      return await db.select()
+        .from(schema.dashboardViewPermissions)
+        .where(eq(schema.dashboardViewPermissions.viewId, viewId));
+    } catch (error) {
+      console.error("Database error in getDashboardViewPermissions:", error);
+      throw error;
+    }
+  }
+
+  async setDashboardViewPermissions(viewId: string, permissions: { roleIds?: string[]; userIds?: string[] }): Promise<void> {
+    try {
+      // Delete existing permissions
+      await db.delete(schema.dashboardViewPermissions)
+        .where(eq(schema.dashboardViewPermissions.viewId, viewId));
+
+      // Insert new role permissions
+      if (permissions.roleIds && permissions.roleIds.length > 0) {
+        await db.insert(schema.dashboardViewPermissions).values(
+          permissions.roleIds.map(roleId => ({
+            viewId,
+            roleId,
+            createdAt: new Date(),
+          }))
+        );
+      }
+
+      // Insert new user permissions
+      if (permissions.userIds && permissions.userIds.length > 0) {
+        await db.insert(schema.dashboardViewPermissions).values(
+          permissions.userIds.map(userId => ({
+            viewId,
+            userId,
+            createdAt: new Date(),
+          }))
+        );
+      }
+    } catch (error) {
+      console.error("Database error in setDashboardViewPermissions:", error);
+      throw error;
+    }
+  }
+
+  // User Dashboard Preferences
+  async getUserDashboardPreference(userId: string, companyId: string): Promise<UserDashboardPreference | undefined> {
+    try {
+      const [pref] = await db.select()
+        .from(schema.userDashboardPreferences)
+        .where(and(
+          eq(schema.userDashboardPreferences.userId, userId),
+          eq(schema.userDashboardPreferences.companyId, companyId)
+        ))
+        .limit(1);
+      return pref;
+    } catch (error) {
+      console.error("Database error in getUserDashboardPreference:", error);
+      throw error;
+    }
+  }
+
+  async setUserDashboardPreference(userId: string, companyId: string, activeViewId: string | null): Promise<UserDashboardPreference> {
+    try {
+      const existing = await this.getUserDashboardPreference(userId, companyId);
+      
+      if (existing) {
+        const [updated] = await db.update(schema.userDashboardPreferences)
+          .set({
+            activeViewId,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.userDashboardPreferences.id, existing.id))
+          .returning();
+        return updated;
+      } else {
+        const [created] = await db.insert(schema.userDashboardPreferences).values({
+          userId,
+          companyId,
+          activeViewId,
+          updatedAt: new Date(),
+        }).returning();
+        return created;
+      }
+    } catch (error) {
+      console.error("Database error in setUserDashboardPreference:", error);
       throw error;
     }
   }

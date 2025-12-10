@@ -116,7 +116,8 @@ import {
   insertReminderNotificationSchema,
   insertRfqTemplateSchema,
   insertRfiTemplateSchema,
-  insertTemplateCategorySchema
+  insertTemplateCategorySchema,
+  insertDashboardViewSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -4947,6 +4948,177 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(preferences);
     } catch (error) {
       res.status(500).json({ error: "Failed to save view preferences" });
+    }
+  });
+
+  // Dashboard Views Routes
+  app.get("/api/dashboard-views", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      const views = await storage.getDashboardViews(companyId, user.id);
+      res.json(views);
+    } catch (error) {
+      console.error("Error fetching dashboard views:", error);
+      res.status(500).json({ error: "Failed to fetch dashboard views" });
+    }
+  });
+
+  app.get("/api/dashboard-views/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      const view = await storage.getDashboardView(req.params.id, companyId);
+      if (!view) {
+        return res.status(404).json({ error: "Dashboard view not found" });
+      }
+      res.json(view);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch dashboard view" });
+    }
+  });
+
+  app.post("/api/dashboard-views", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      const validationResult = insertDashboardViewSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const view = await storage.createDashboardView({
+        ...validationResult.data,
+        companyId,
+        creatorId: user.id,
+      });
+
+      // If permissions were provided, set them
+      if (req.body.roleIds || req.body.userIds) {
+        await storage.setDashboardViewPermissions(view.id, {
+          roleIds: req.body.roleIds,
+          userIds: req.body.userIds,
+        });
+      }
+
+      res.status(201).json(view);
+    } catch (error) {
+      console.error("Error creating dashboard view:", error);
+      res.status(500).json({ error: "Failed to create dashboard view" });
+    }
+  });
+
+  app.patch("/api/dashboard-views/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      // Check if user has permission to update (is creator or admin)
+      const existingView = await storage.getDashboardView(req.params.id, companyId);
+      if (!existingView) {
+        return res.status(404).json({ error: "Dashboard view not found" });
+      }
+      
+      // Only allow creator to update their own views
+      if (existingView.creatorId !== user.id) {
+        return res.status(403).json({ error: "You can only edit your own views" });
+      }
+
+      const view = await storage.updateDashboardView(req.params.id, req.body, companyId);
+
+      // If permissions were provided, update them
+      if (req.body.roleIds !== undefined || req.body.userIds !== undefined) {
+        await storage.setDashboardViewPermissions(req.params.id, {
+          roleIds: req.body.roleIds,
+          userIds: req.body.userIds,
+        });
+      }
+
+      res.json(view);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update dashboard view" });
+    }
+  });
+
+  app.delete("/api/dashboard-views/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      // Check if user has permission to delete (is creator)
+      const existingView = await storage.getDashboardView(req.params.id, companyId);
+      if (!existingView) {
+        return res.status(404).json({ error: "Dashboard view not found" });
+      }
+      
+      if (existingView.creatorId !== user.id) {
+        return res.status(403).json({ error: "You can only delete your own views" });
+      }
+
+      await storage.deleteDashboardView(req.params.id, companyId);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete dashboard view" });
+    }
+  });
+
+  // User Dashboard Preference (active view)
+  app.get("/api/dashboard-preference", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      const preference = await storage.getUserDashboardPreference(user.id, companyId);
+      res.json(preference || null);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch dashboard preference" });
+    }
+  });
+
+  app.post("/api/dashboard-preference", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      const { activeViewId } = req.body;
+      const preference = await storage.setUserDashboardPreference(user.id, companyId, activeViewId);
+      res.json(preference);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to save dashboard preference" });
     }
   });
 

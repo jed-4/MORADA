@@ -260,7 +260,7 @@ export default function WidgetContainer({
           >
             <GripVertical className="h-3 w-3 text-muted-foreground" />
           </div>
-          <CardTitle className="text-xs font-medium truncate">{widget.title}</CardTitle>
+          <CardTitle className="text-xs font-semibold truncate">{widget.title}</CardTitle>
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
