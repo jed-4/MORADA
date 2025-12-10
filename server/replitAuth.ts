@@ -165,7 +165,16 @@ export async function setupAuth(app: Express) {
     const hostname = req.hostname;
     const protocol = req.protocol;
     const callbackUrl = `${protocol}://${hostname}/api/callback`;
-    console.log(`[OAuth Login] hostname: ${hostname}, protocol: ${protocol}, callback: ${callbackUrl}, cookie sameSite: ${isProduction ? 'lax' : 'none'}`);
+    
+    // Store redirect URL in session for after auth
+    // SECURITY: Only allow safe relative paths starting with / to prevent open redirect attacks
+    const redirectTo = req.query.redirect as string;
+    if (redirectTo && redirectTo.startsWith('/') && !redirectTo.startsWith('//')) {
+      // Validate it's a safe relative path (no protocol, no double slash)
+      (req.session as any).authRedirect = redirectTo;
+    }
+    
+    console.log(`[OAuth Login] hostname: ${hostname}, protocol: ${protocol}, callback: ${callbackUrl}, redirect: ${redirectTo || '/'}`);
     
     ensureStrategy(hostname);
     passport.authenticate(`replitauth:${hostname}`, {
@@ -191,11 +200,16 @@ export async function setupAuth(app: Express) {
       (req.session as any).companyId = user?.companyId;
       (req.session as any).roleId = user?.roleId;
       
+      // Get stored redirect URL (for mobile app support)
+      const redirectTo = (req.session as any).authRedirect || '/';
+      delete (req.session as any).authRedirect;
+      
       console.log('✅ [OAuth Callback] LOGIN SUCCESS');
       console.log('   → Session ID:', req.sessionID);
       console.log('   → User ID:', user?.id);
       console.log('   → Company ID:', user?.companyId);
       console.log('   → Role ID:', user?.roleId);
+      console.log('   → Redirect:', redirectTo);
       console.log('   → SESSION SET:', {
         userId: (req.session as any).userId,
         companyId: (req.session as any).companyId,
@@ -208,8 +222,8 @@ export async function setupAuth(app: Express) {
           console.error('[OAuth Callback] Session save failed:', saveErr);
           return res.redirect('/api/login');
         }
-        console.log('✅ [OAuth Callback] Session saved, redirecting to /');
-        res.redirect('/');
+        console.log(`✅ [OAuth Callback] Session saved, redirecting to ${redirectTo}`);
+        res.redirect(redirectTo);
       });
     });
   });

@@ -73,11 +73,38 @@ app.use((req, res, next) => {
     throw err;
   });
 
+  // Serve mobile manifest with no-cache headers for PWA updates
+  app.get("/mobile-manifest.json", (_req, res) => {
+    const manifestPath = path.resolve(import.meta.dirname, "..", "client", "public", "mobile-manifest.json");
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.sendFile(manifestPath);
+  });
+
   // Serve mobile app preview from built files
   const mobileDistPath = path.resolve(import.meta.dirname, "..", "dist", "mobile");
   if (fs.existsSync(mobileDistPath)) {
-    app.use("/mobile", express.static(mobileDistPath));
+    // Serve index.html with no-cache for PWA updates
+    app.get("/mobile", (_req, res) => {
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+      res.sendFile(path.join(mobileDistPath, "index.html"));
+    });
+    app.use("/mobile", express.static(mobileDistPath, {
+      maxAge: '1d',
+      setHeaders: (res, filePath) => {
+        // Don't cache HTML files
+        if (filePath.endsWith('.html')) {
+          res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+        }
+      }
+    }));
     app.get("/mobile/*", (_req, res) => {
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
       res.sendFile(path.join(mobileDistPath, "index.html"));
     });
     log("Mobile app preview available at /mobile");
