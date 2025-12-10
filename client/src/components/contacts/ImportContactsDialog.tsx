@@ -74,28 +74,20 @@ export function ImportContactsDialog({ open, onOpenChange }: ImportContactsDialo
 
   const importMutation = useMutation({
     mutationFn: async (contacts: ParsedContact[]) => {
-      const results = { success: 0, errors: [] as string[] };
+      // Use bulk endpoint for much faster imports
+      const contactsData = contacts.map(contact => ({
+        name: contact.name,
+        email: contact.email || null,
+        phone: contact.phone || null,
+        mobile: contact.mobile || null,
+        company: contact.company || null,
+        role: contact.role || null,
+        address: contact.address || null,
+        notes: contact.notes || null,
+      }));
       
-      for (let i = 0; i < contacts.length; i++) {
-        const contact = contacts[i];
-        try {
-          await apiRequest("/api/contacts", "POST", {
-            name: contact.name,
-            email: contact.email || null,
-            phone: contact.phone || null,
-            mobile: contact.mobile || null,
-            company: contact.company || null,
-            role: contact.role || null,
-            address: contact.address || null,
-            notes: contact.notes || null,
-          });
-          results.success++;
-        } catch (error: any) {
-          results.errors.push(`Row ${i + 1} (${contact.name}): ${error.message || "Failed to import"}`);
-        }
-      }
-      
-      return results;
+      const response = await apiRequest("/api/contacts/bulk", "POST", { contacts: contactsData });
+      return response as { success: number; errors: string[] };
     },
     onSuccess: (results) => {
       setImportResults(results);

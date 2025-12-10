@@ -6311,6 +6311,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Bulk import contacts - single request instead of multiple individual calls
+  app.post("/api/contacts/bulk", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const { contacts } = req.body;
+      
+      if (!Array.isArray(contacts)) {
+        return res.status(400).json({ error: "contacts must be an array" });
+      }
+
+      const results = { success: 0, errors: [] as string[] };
+      
+      for (let i = 0; i < contacts.length; i++) {
+        const contactData = contacts[i];
+        try {
+          const validationResult = insertContactSchema.safeParse(contactData);
+          if (!validationResult.success) {
+            results.errors.push(`Row ${i + 1} (${contactData.name || 'Unknown'}): ${fromZodError(validationResult.error).toString()}`);
+            continue;
+          }
+          await storage.createContact({ ...validationResult.data, companyId });
+          results.success++;
+        } catch (error: any) {
+          results.errors.push(`Row ${i + 1} (${contactData.name || 'Unknown'}): ${error.message || 'Failed to import'}`);
+        }
+      }
+      
+      res.json(results);
+    } catch (error) {
+      console.error("Bulk import error:", error);
+      res.status(500).json({ error: "Failed to import contacts" });
+    }
+  });
+
   app.patch("/api/contacts/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
