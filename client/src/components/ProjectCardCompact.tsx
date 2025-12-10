@@ -13,6 +13,7 @@ interface ProjectCardCompactProps {
   onClick?: () => void;
   isDragging?: boolean;
   editMode?: boolean;
+  groupBy?: "phase" | "status";
   visibleFields?: {
     client?: boolean;
     budget?: boolean;
@@ -59,6 +60,7 @@ export default function ProjectCardCompact({
   onClick, 
   isDragging = false,
   editMode = false,
+  groupBy = "phase",
   visibleFields = {}
 }: ProjectCardCompactProps) {
   const [isHovered, setIsHovered] = useState(false);
@@ -118,8 +120,8 @@ export default function ProjectCardCompact({
                 {project.name}
               </h3>
               
-              {/* Status chip - lilac #bba7db */}
-              {statusOption && (
+              {/* Status chip - only shown when grouped by phase (since status column already shows the status when grouped by status) */}
+              {groupBy === "phase" && statusOption && (
                 <Badge 
                   className="text-[10px] px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
                   style={{

@@ -1702,8 +1702,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log("[PATCH /api/projects/:id] Validated data:", JSON.stringify(validationResult.data, null, 2));
 
+      // If projectSubStatus is being updated (present in payload), also update currentSystemPhase
+      // This handles: setting a new status, clearing status (null), or changing to same status
+      let updateData = { ...validationResult.data };
+      if ('projectSubStatus' in req.body) {
+        try {
+          const newSubStatus = validationResult.data.projectSubStatus;
+          if (newSubStatus) {
+            // Look up the systemPhase for the new status
+            const statusCategory = await storage.getFieldCategoryWithOptions("project.status");
+            if (statusCategory?.options) {
+              const statusOption = statusCategory.options.find(
+                opt => opt.key === newSubStatus
+              );
+              if (statusOption?.systemPhase) {
+                updateData.currentSystemPhase = statusOption.systemPhase;
+                console.log(`[PATCH /api/projects/:id] Auto-updating currentSystemPhase to: ${statusOption.systemPhase}`);
+              }
+            }
+          } else {
+            // Status is being cleared - keep current phase (don't clear it)
+            console.log(`[PATCH /api/projects/:id] projectSubStatus cleared, keeping current phase`);
+          }
+        } catch (phaseError) {
+          console.error("[PATCH /api/projects/:id] Error looking up systemPhase:", phaseError);
+        }
+      }
+
       // Check for duplicate project name within the company (case-insensitive) when renaming
-      if (validationResult.data.name) {
+      if (updateData.name) {
         const user = req.user as any;
         if (!user?.companyId) {
           return res.status(401).json({ error: "Unauthorized - no company context" });
@@ -1717,7 +1744,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(403).json({ error: "Access denied" });
         }
         
-        const normalizedName = validationResult.data.name.trim().toLowerCase();
+        const normalizedName = updateData.name!.trim().toLowerCase();
         const { rows: existingProjects } = await pool.query(
           `SELECT id FROM projects WHERE company_id = $1 AND LOWER(TRIM(name)) = $2 AND id != $3 LIMIT 1`,
           [currentProject.companyId, normalizedName, req.params.id]
@@ -1731,7 +1758,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      const project = await storage.updateProject(req.params.id, validationResult.data);
+      const project = await storage.updateProject(req.params.id, updateData);
       if (!project) {
         console.error("[PATCH /api/projects/:id] Project not found:", req.params.id);
         return res.status(404).json({ error: "Project not found" });
@@ -1758,6 +1785,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete project" });
+    }
+  });
+
+  // Fix project phases - updates currentSystemPhase based on projectSubStatus
+  // Uses direct SQL to bypass duplicate name validation since we're only updating phase
+  app.post("/api/projects/fix-phases", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      // Get all status options with their systemPhase mappings
+      const statusCategory = await storage.getFieldCategoryWithOptions("project.status");
+      if (!statusCategory?.options) {
+        return res.status(500).json({ error: "Could not load status options" });
+      }
+
+      // Create a map of status key -> systemPhase
+      const statusToPhaseMap = new Map<string, string>();
+      for (const opt of statusCategory.options) {
+        if (opt.key && opt.systemPhase) {
+          statusToPhaseMap.set(opt.key, opt.systemPhase);
+        }
+      }
+
+      // Get all projects for this company
+      const projects = await storage.getProjects(user.companyId);
+      let updatedCount = 0;
+      const errors: string[] = [];
+
+      // Process in batches using direct SQL to bypass duplicate name validation
+      for (const project of projects) {
+        if (project.projectSubStatus) {
+          const expectedPhase = statusToPhaseMap.get(project.projectSubStatus);
+          if (expectedPhase && project.currentSystemPhase !== expectedPhase) {
+            try {
+              // Direct SQL update bypasses storage.updateProject validation
+              await pool.query(
+                `UPDATE projects SET current_system_phase = $1 WHERE id = $2`,
+                [expectedPhase, project.id]
+              );
+              updatedCount++;
+              console.log(`[fix-phases] Updated project "${project.name}" from ${project.currentSystemPhase} to ${expectedPhase}`);
+            } catch (updateError: any) {
+              errors.push(`Failed to update project "${project.name}": ${updateError.message}`);
+              console.error(`[fix-phases] Error updating project "${project.name}":`, updateError);
+            }
+          }
+        }
+      }
+
+      res.json({ 
+        message: `Fixed ${updatedCount} projects`,
+        totalProjects: projects.length,
+        updatedProjects: updatedCount,
+        errors: errors.length > 0 ? errors : undefined
+      });
+    } catch (error: any) {
+      console.error("Error fixing project phases:", error);
+      res.status(500).json({ error: "Failed to fix project phases", details: error.message });
     }
   });
 

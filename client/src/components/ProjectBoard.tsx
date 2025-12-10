@@ -88,6 +88,7 @@ export interface ViewPreferences {
   groupBy: GroupBy;
   columnWidth: ColumnWidth;
   visibleFields: VisibleFields;
+  hideEmptyColumns?: boolean;
 }
 
 const DEFAULT_PREFERENCES: ViewPreferences = {
@@ -101,6 +102,7 @@ const DEFAULT_PREFERENCES: ViewPreferences = {
     progress: true,
     foreman: true,
   },
+  hideEmptyColumns: false,
 };
 
 const STORAGE_KEY = "projectBoardPreferences";
@@ -187,6 +189,7 @@ function DraggableProjectCard({
   onClick,
   visibleFields,
   editMode = false,
+  groupBy = "phase",
   phases = [],
   currentPhase,
   onPhaseTransition,
@@ -195,6 +198,7 @@ function DraggableProjectCard({
   onClick?: () => void;
   visibleFields: VisibleFields;
   editMode?: boolean;
+  groupBy?: "phase" | "status";
   phases?: Array<{ key: string; name: string; color: string; systemPhase?: string }>;
   currentPhase?: string | null;
   onPhaseTransition?: (project: Project, toPhase: string) => void;
@@ -245,6 +249,7 @@ function DraggableProjectCard({
             onClick={isDragging ? undefined : onClick}
             isDragging={false}
             editMode={editMode}
+            groupBy={groupBy}
             visibleFields={visibleFields}
           />
         </div>
@@ -309,6 +314,7 @@ function DroppableColumn({
   onProjectClick,
   visibleFields,
   editMode = false,
+  groupBy = "phase",
   phases = [],
   onPhaseTransition,
 }: { 
@@ -317,6 +323,7 @@ function DroppableColumn({
   onProjectClick?: (project: Project) => void;
   visibleFields: VisibleFields;
   editMode?: boolean;
+  groupBy?: "phase" | "status";
   phases?: Array<{ key: string; name: string; color: string; systemPhase?: string }>;
   onPhaseTransition?: (project: Project, toPhase: string) => void;
 }) {
@@ -390,6 +397,7 @@ function DroppableColumn({
                 onClick={() => onProjectClick?.(project)}
                 visibleFields={visibleFields}
                 editMode={editMode}
+                groupBy={groupBy}
                 phases={phases}
                 currentPhase={column.systemPhase}
                 onPhaseTransition={onPhaseTransition}
@@ -1006,6 +1014,12 @@ export function ProjectBoard({
               const columnProjects = projects.filter(column.filterFn);
               const isEmpty = columnProjects.length === 0;
               
+              // Hide empty columns when hideEmptyColumns is true and not in edit mode
+              // In edit mode, always show all columns so user can drop projects
+              if (isEmpty && preferences.hideEmptyColumns && !editMode) {
+                return null;
+              }
+              
               return (
                 <div key={column.id} className={`${getColumnWidthClass(isEmpty)} flex-shrink-0`}>
                   <DroppableColumn
@@ -1014,6 +1028,7 @@ export function ProjectBoard({
                     onProjectClick={(project) => navigate(`/projects/${project.id}`)}
                     visibleFields={preferences.visibleFields}
                     editMode={editMode}
+                    groupBy={preferences.groupBy}
                     phases={parentStatuses.map(s => ({
                       key: s.key,
                       name: s.name,
@@ -1037,6 +1052,7 @@ export function ProjectBoard({
                 onClick={() => {}} 
                 isDragging={true}
                 editMode={true}
+                groupBy={preferences.groupBy}
                 visibleFields={preferences.visibleFields}
               />
             </div>

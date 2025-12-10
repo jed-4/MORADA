@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { Plus, LayoutGrid, List, Eye, Layers, Edit3, Columns3 } from "lucide-react";
+import { Plus, LayoutGrid, List, Eye, Layers, Edit3, Columns3, EyeOff } from "lucide-react";
 import { type Project } from "@shared/schema";
 import { ProjectBoard, type ViewPreferences, type GroupBy, type ColumnWidth } from "@/components/ProjectBoard";
 import { ProjectList } from "@/components/ProjectList";
@@ -25,6 +25,7 @@ const DEFAULT_PREFERENCES: ViewPreferences = {
     progress: true,
     foreman: true,
   },
+  hideEmptyColumns: false,
 };
 
 export default function BusinessProjects() {
@@ -227,6 +228,18 @@ export default function BusinessProjects() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {/* Hide Empty Columns Toggle */}
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => updatePreference('hideEmptyColumns', !preferences.hideEmptyColumns)}
+            className={`h-6 w-6 ${preferences.hideEmptyColumns ? 'bg-[#bba7db]/10 text-[#bba7db]' : ''}`}
+            data-testid="button-hide-empty"
+            title={preferences.hideEmptyColumns ? 'Showing only columns with projects' : 'Showing all columns'}
+          >
+            <EyeOff className="h-3 w-3" />
+          </Button>
 
           {/* Edit Mode Toggle - Highlights when active */}
           <Button
