@@ -9816,6 +9816,14 @@ export class DbStorage implements IStorage {
         .returning();
       transferredCounts.priceListItems = priceListItemsResult.length;
 
+      // Transfer contactInsurances from source to target
+      const contactInsurancesResult = await db
+        .update(schema.contactInsurances)
+        .set({ contactId: targetId })
+        .where(eq(schema.contactInsurances.contactId, sourceId))
+        .returning();
+      transferredCounts.contactInsurances = contactInsurancesResult.length;
+
       // Update RFQs supplierIds array - replace sourceId with targetId
       const rfqsWithSource = await db
         .select()
