@@ -50,6 +50,7 @@ export default function Header() {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [isDark, setIsDark] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [isProjectSearchOpen, setIsProjectSearchOpen] = useState(false);
   const [selectedPhaseIndex, setSelectedPhaseIndex] = useState<number>(() => {
     try {
       const saved = localStorage.getItem(SELECTED_PHASE_KEY);
@@ -260,44 +261,62 @@ export default function Header() {
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-72 p-0">
-            {/* Phase selector row: [<] Phase [>] */}
-            <div className="flex items-center justify-center gap-1 px-2 py-1.5 border-b">
+            {/* Phase selector row with search toggle */}
+            <div className="flex items-center justify-between px-2 py-1.5 border-b">
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handlePrevPhase}
+                  className="h-5 w-5 flex-shrink-0"
+                  data-testid="button-header-prev-phase"
+                >
+                  <ChevronLeft className="h-3 w-3" />
+                </Button>
+                <span className="text-[10px] text-muted-foreground font-medium min-w-[70px] text-center">
+                  {selectedPhase.label}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleNextPhase}
+                  className="h-5 w-5 flex-shrink-0"
+                  data-testid="button-header-next-phase"
+                >
+                  <ChevronRight className="h-3 w-3" />
+                </Button>
+              </div>
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={handlePrevPhase}
-                className="h-5 w-5 flex-shrink-0"
-                data-testid="button-header-prev-phase"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  setIsProjectSearchOpen(!isProjectSearchOpen);
+                  if (!isProjectSearchOpen) {
+                    setSearchQuery("");
+                  }
+                }}
+                className={`h-5 w-5 flex-shrink-0 ${isProjectSearchOpen ? "text-primary" : ""}`}
+                data-testid="button-header-project-search-toggle"
               >
-                <ChevronLeft className="h-3 w-3" />
-              </Button>
-              <span className="text-[10px] text-muted-foreground font-medium min-w-[70px] text-center">
-                {selectedPhase.label}
-              </span>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleNextPhase}
-                className="h-5 w-5 flex-shrink-0"
-                data-testid="button-header-next-phase"
-              >
-                <ChevronRight className="h-3 w-3" />
+                <Search className="h-3 w-3" />
               </Button>
             </div>
 
-            {/* Search input */}
-            <div className="p-2 border-b">
-              <div className="relative">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            {/* Collapsible search input */}
+            {isProjectSearchOpen && (
+              <div className="p-2 border-b">
                 <Input
                   placeholder="Search all projects..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-7 h-7 text-xs"
+                  className="h-7 text-xs"
+                  autoFocus
                   data-testid="input-header-project-search"
                 />
               </div>
-            </div>
+            )}
 
             {/* Project list */}
             <ScrollArea className="max-h-[220px]">
@@ -381,20 +400,6 @@ export default function Header() {
       <div className="flex-1" />
 
       <div className="flex items-center gap-1">
-        {/* Global Search Button */}
-        <Button 
-          variant="ghost" 
-          size="icon" 
-          onClick={() => {
-            // TODO: Open global search modal
-          }}
-          data-testid="button-global-search"
-          className="h-7 w-7"
-          title="Search (⌘K)"
-        >
-          <Search className="h-3.5 w-3.5" />
-        </Button>
-
         {/* Contacts Button */}
         <Button 
           variant="ghost" 
