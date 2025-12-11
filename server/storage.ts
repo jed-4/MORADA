@@ -109,6 +109,7 @@ import type { UserColumnPreferences, InsertUserColumnPreferences } from "@shared
 import type { UserViewPreferences, InsertUserViewPreferences } from "@shared/schema";
 import type { SupplierLabel, InsertSupplierLabel, SupplierLabelAssignment, InsertSupplierLabelAssignment } from "@shared/schema";
 import type { SupplierInsurance, InsertSupplierInsurance, SupplierContact, InsertSupplierContact } from "@shared/schema";
+import type { ContactInsurance, InsertContactInsurance } from "@shared/schema";
 import type { PriceListCategory, InsertPriceListCategory, PriceListItem, InsertPriceListItem, BillLineItemPriceLink, InsertBillLineItemPriceLink } from "@shared/schema";
 import type { DashboardView, InsertDashboardView, DashboardViewPermission, InsertDashboardViewPermission, UserDashboardPreference } from "@shared/schema";
 
@@ -439,6 +440,13 @@ export interface IStorage {
   updateSupplierInsurance(id: string, insurance: Partial<InsertSupplierInsurance>): Promise<SupplierInsurance>;
   deleteSupplierInsurance(id: string): Promise<void>;
   getExpiringInsurances(companyId: string, daysAhead: number): Promise<(SupplierInsurance & { supplier: Supplier })[]>;
+
+  // Contact Insurances CRUD (for contacts with contactType='supplier')
+  getContactInsurances(contactId: string): Promise<ContactInsurance[]>;
+  createContactInsurance(insurance: InsertContactInsurance): Promise<ContactInsurance>;
+  updateContactInsurance(id: string, insurance: Partial<InsertContactInsurance>): Promise<ContactInsurance>;
+  deleteContactInsurance(id: string): Promise<void>;
+  getExpiringContactInsurances(companyId: string, daysAhead: number): Promise<(ContactInsurance & { contact: Contact })[]>;
 
   // Supplier Contacts CRUD
   getSupplierContacts(supplierId: string): Promise<SupplierContact[]>;
@@ -9458,6 +9466,87 @@ export class DbStorage implements IStorage {
       }));
     } catch (error) {
       console.error("Database error in getExpiringInsurances:", error);
+      throw error;
+    }
+  }
+
+  // Contact Insurances CRUD (for contacts with contactType='supplier')
+  async getContactInsurances(contactId: string): Promise<ContactInsurance[]> {
+    try {
+      return await db.select()
+        .from(schema.contactInsurances)
+        .where(eq(schema.contactInsurances.contactId, contactId))
+        .orderBy(schema.contactInsurances.insuranceType);
+    } catch (error) {
+      console.error("Database error in getContactInsurances:", error);
+      throw error;
+    }
+  }
+
+  async createContactInsurance(insurance: InsertContactInsurance): Promise<ContactInsurance> {
+    try {
+      const newInsurances = await db.insert(schema.contactInsurances)
+        .values(insurance)
+        .returning();
+      return newInsurances[0];
+    } catch (error) {
+      console.error("Database error in createContactInsurance:", error);
+      throw error;
+    }
+  }
+
+  async updateContactInsurance(id: string, insurance: Partial<InsertContactInsurance>): Promise<ContactInsurance> {
+    try {
+      const updatedInsurances = await db.update(schema.contactInsurances)
+        .set({ ...insurance, updatedAt: new Date() })
+        .where(eq(schema.contactInsurances.id, id))
+        .returning();
+      
+      if (!updatedInsurances[0]) {
+        throw new Error("Contact insurance not found");
+      }
+      
+      return updatedInsurances[0];
+    } catch (error) {
+      console.error("Database error in updateContactInsurance:", error);
+      throw error;
+    }
+  }
+
+  async deleteContactInsurance(id: string): Promise<void> {
+    try {
+      await db.delete(schema.contactInsurances)
+        .where(eq(schema.contactInsurances.id, id));
+    } catch (error) {
+      console.error("Database error in deleteContactInsurance:", error);
+      throw error;
+    }
+  }
+
+  async getExpiringContactInsurances(companyId: string, daysAhead: number): Promise<(ContactInsurance & { contact: Contact })[]> {
+    try {
+      const futureDate = new Date();
+      futureDate.setDate(futureDate.getDate() + daysAhead);
+      
+      const results = await db.select({
+        insurance: schema.contactInsurances,
+        contact: schema.contacts,
+      })
+        .from(schema.contactInsurances)
+        .innerJoin(schema.contacts, eq(schema.contactInsurances.contactId, schema.contacts.id))
+        .where(and(
+          eq(schema.contacts.companyId, companyId),
+          eq(schema.contacts.contactType, 'supplier'),
+          lte(schema.contactInsurances.expiryDate, futureDate),
+          gte(schema.contactInsurances.expiryDate, new Date())
+        ));
+      
+      return results.map(r => ({
+        ...r.insurance,
+        contact: r.contact,
+      }));
+    } catch (error) {
+      console.error("Database error in getExpiringContactInsurances:", error);
       throw error;
     }
   }
