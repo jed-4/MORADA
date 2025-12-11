@@ -56,7 +56,7 @@ const quickReviewSchema = z.object({
   phone: z.string().optional(),
   mobile: z.string().optional(),
   company: z.string().optional(),
-  contactType: z.enum(["team", "supplier", "client"]),
+  contactType: z.enum(["team", "trade", "supplier", "client"]),
   defaultCostCodeId: z.string().optional(),
   paymentTerms: z.string().optional(),
   role: z.string().optional(),
@@ -69,7 +69,7 @@ type QuickReviewPanelProps = {
   open: boolean;
   onClose: () => void;
   contacts: Contact[];
-  contactTypeFilter?: "team" | "supplier" | "client" | null;
+  contactTypeFilter?: "team" | "trade" | "supplier" | "client" | null;
 };
 
 function findSimilarContacts(current: Contact, allContacts: Contact[]): Contact[] {

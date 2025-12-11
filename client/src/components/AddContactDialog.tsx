@@ -42,7 +42,7 @@ const AVATAR_COLORS = [
 type AddContactDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  defaultContactType?: "supplier" | "client";
+  defaultContactType?: "trade" | "supplier" | "client";
 };
 
 export default function AddContactDialog({
@@ -51,7 +51,7 @@ export default function AddContactDialog({
   defaultContactType,
 }: AddContactDialogProps) {
   const { toast } = useToast();
-  const [selectedType, setSelectedType] = useState<"supplier" | "client">("supplier");
+  const [selectedType, setSelectedType] = useState<"trade" | "supplier" | "client">("trade");
 
   const { data: costCodes = [] } = useQuery<CostCode[]>({
     queryKey: ["/api/cost-codes"],
@@ -68,7 +68,7 @@ export default function AddContactDialog({
       mobile: "",
       company: "",
       position: "",
-      contactType: defaultContactType || "supplier",
+      contactType: defaultContactType || "trade",
       spouseName: "",
       spousePhone: "",
       spouseEmail: "",
@@ -100,7 +100,7 @@ export default function AddContactDialog({
   useEffect(() => {
     const subscription = form.watch((value, { name }) => {
       if (name === "contactType") {
-        setSelectedType(value.contactType as "supplier" | "client");
+        setSelectedType(value.contactType as "trade" | "supplier" | "client");
       }
     });
     return () => subscription.unsubscribe();
@@ -168,6 +168,7 @@ export default function AddContactDialog({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
+                      <SelectItem value="trade">Trade</SelectItem>
                       <SelectItem value="supplier">Supplier</SelectItem>
                       <SelectItem value="client">Client</SelectItem>
                     </SelectContent>
@@ -179,8 +180,8 @@ export default function AddContactDialog({
 
             <Separator />
 
-            {/* Supplier Layout: Company First, Then Primary Contact */}
-            {selectedType === "supplier" ? (
+            {/* Trade/Supplier Layout: Company First, Then Primary Contact */}
+            {(selectedType === "trade" || selectedType === "supplier") ? (
               <>
                 {/* Company Name */}
                 <FormField
@@ -423,7 +424,7 @@ export default function AddContactDialog({
             )}
 
             {/* Business Fields (Suppliers) */}
-            {selectedType === "supplier" && (
+            {(selectedType === "trade" || selectedType === "supplier") && (
               <div className="space-y-4 border-t pt-4">
                 <h3 className="text-sm font-medium">Business Information</h3>
                 <div className="grid grid-cols-2 gap-4">

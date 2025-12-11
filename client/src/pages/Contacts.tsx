@@ -48,7 +48,7 @@ export default function Contacts() {
   const [selectedTab, setSelectedTab] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [selectedContactType, setSelectedContactType] = useState<"team" | "supplier" | "client" | undefined>();
+  const [selectedContactType, setSelectedContactType] = useState<"trade" | "supplier" | "client" | undefined>();
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [contactToEdit, setContactToEdit] = useState<Contact | null>(null);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
@@ -140,6 +140,7 @@ export default function Contacts() {
     return {
       all: contacts.length,
       team: contacts.filter((c) => c.contactType === "team").length,
+      trade: contacts.filter((c) => c.contactType === "trade").length,
       supplier: contacts.filter((c) => c.contactType === "supplier").length,
       client: contacts.filter((c) => c.contactType === "client").length,
     };
@@ -169,7 +170,7 @@ export default function Contacts() {
     return "??";
   };
 
-  const handleAddContact = (type?: "team" | "supplier" | "client") => {
+  const handleAddContact = (type?: "trade" | "supplier" | "client") => {
     setSelectedContactType(type);
     setIsAddDialogOpen(true);
   };
@@ -190,6 +191,7 @@ export default function Contacts() {
   const tabs = [
     { value: "all", label: "All", count: tabCounts.all },
     { value: "team", label: "Team", count: tabCounts.team },
+    { value: "trade", label: "Trades", count: tabCounts.trade },
     { value: "supplier", label: "Suppliers", count: tabCounts.supplier },
     { value: "client", label: "Clients", count: tabCounts.client },
   ];
@@ -383,6 +385,8 @@ export default function Contacts() {
                       className={`text-xs capitalize ${
                         contact.contactType === "team" 
                           ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+                          : contact.contactType === "trade"
+                          ? "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200"
                           : contact.contactType === "supplier"
                           ? "bg-[#bba7db]/20 text-[#bba7db]"
                           : "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
@@ -552,7 +556,7 @@ export default function Contacts() {
         open={isQuickReviewOpen}
         onClose={() => setIsQuickReviewOpen(false)}
         contacts={contacts}
-        contactTypeFilter={selectedTab === "all" ? null : selectedTab as "team" | "supplier" | "client"}
+        contactTypeFilter={selectedTab === "all" ? null : selectedTab as "team" | "trade" | "supplier" | "client"}
       />
 
       <MergeContactDialog
