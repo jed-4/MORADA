@@ -79,6 +79,17 @@ export default function RFQs() {
     return projects.find((p) => p.id === projectId);
   };
 
+  // Get current project for title display
+  const currentProject = projectIdFromUrl ? getProject(projectIdFromUrl) : null;
+  const pageTitle = currentProject 
+    ? `${currentProject.name} - Requests for Quote`
+    : "Requests for Quote";
+
+  // Project-aware navigation helper
+  const getNavigationPath = (path: string) => {
+    return projectIdFromUrl ? `/projects/${projectIdFromUrl}${path}` : path;
+  };
+
   const filteredRFQs = useMemo(() => {
     return rfqs.filter((rfq) => {
       const matchesSearch =
@@ -118,7 +129,7 @@ export default function RFQs() {
   };
 
   const handleRowClick = (rfqId: string) => {
-    setLocation(`/rfqs/${rfqId}`);
+    setLocation(getNavigationPath(`/rfqs/${rfqId}`));
   };
 
   return (
@@ -127,7 +138,7 @@ export default function RFQs() {
       <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold" data-testid="text-page-title">
-            Requests for Quote
+            {pageTitle}
           </h2>
           <Badge variant="secondary" className="text-xs" data-testid="text-rfq-count">
             {filteredRFQs.length} RFQs
@@ -135,7 +146,7 @@ export default function RFQs() {
         </div>
         <button
           className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
-          onClick={() => setLocation("/rfqs/new")}
+          onClick={() => setLocation(getNavigationPath("/rfqs/new"))}
           data-testid="button-create-rfq"
         >
           <Plus className="w-3 h-3" />
@@ -194,7 +205,7 @@ export default function RFQs() {
               </p>
               <div className="flex flex-col sm:flex-row gap-3">
                 <Button
-                  onClick={() => setLocation("/rfqs/new")}
+                  onClick={() => setLocation(getNavigationPath("/rfqs/new"))}
                   className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white gap-2"
                   data-testid="button-create-rfq-empty"
                 >
@@ -221,7 +232,7 @@ export default function RFQs() {
                 <TableRow className="hover:bg-transparent">
                   <TableHead>RFQ Number</TableHead>
                   <TableHead>Title</TableHead>
-                  <TableHead>Project</TableHead>
+                  {!projectIdFromUrl && <TableHead>Project</TableHead>}
                   <TableHead>Suppliers</TableHead>
                   <TableHead>Due Date</TableHead>
                   <TableHead>Status</TableHead>
@@ -253,18 +264,20 @@ export default function RFQs() {
                           </div>
                         )}
                       </TableCell>
-                      <TableCell>
-                        {project && (
-                          <div className="flex items-center gap-2">
-                            <ProjectIcon
-                              color={project.color}
-                              size="sm"
-                              className="shrink-0"
-                            />
-                            <span className="truncate">{project.name}</span>
-                          </div>
-                        )}
-                      </TableCell>
+                      {!projectIdFromUrl && (
+                        <TableCell>
+                          {project && (
+                            <div className="flex items-center gap-2">
+                              <ProjectIcon
+                                color={project.color}
+                                size="sm"
+                                className="shrink-0"
+                              />
+                              <span className="truncate">{project.name}</span>
+                            </div>
+                          )}
+                        </TableCell>
+                      )}
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
                           {rfq.supplierNames.slice(0, 2).map((name, idx) => (

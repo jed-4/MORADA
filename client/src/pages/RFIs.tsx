@@ -130,6 +130,17 @@ export default function RFIs() {
     return projects.find((p) => p.id === projectId);
   };
 
+  // Get current project for title display
+  const currentProject = projectIdFromUrl ? getProject(projectIdFromUrl) : null;
+  const pageTitle = currentProject 
+    ? `${currentProject.name} - Requests for Information`
+    : "Requests for Information";
+
+  // Project-aware navigation helper
+  const getNavigationPath = (path: string) => {
+    return projectIdFromUrl ? `/projects/${projectIdFromUrl}${path}` : path;
+  };
+
   const filteredRFIs = useMemo(() => {
     return rfis.filter((rfi) => {
       const matchesSearch =
@@ -233,7 +244,7 @@ export default function RFIs() {
       <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold" data-testid="text-page-title">
-            Requests for Information
+            {pageTitle}
           </h2>
           <Badge variant="secondary" className="text-xs" data-testid="text-rfi-count">
             {filteredRFIs.length} RFIs
@@ -241,7 +252,7 @@ export default function RFIs() {
         </div>
         <button
           className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
-          onClick={() => setLocation("/rfis/new")}
+          onClick={() => setLocation(getNavigationPath("/rfis/new"))}
           data-testid="button-create-rfi"
         >
           <Plus className="w-3 h-3" />
@@ -299,7 +310,7 @@ export default function RFIs() {
               </p>
               <div className="flex flex-col sm:flex-row gap-3">
                 <Button
-                  onClick={() => setLocation("/rfis/new")}
+                  onClick={() => setLocation(getNavigationPath("/rfis/new"))}
                   className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white gap-2"
                   data-testid="button-create-rfi-empty"
                 >
@@ -316,7 +327,7 @@ export default function RFIs() {
                 <TableRow className="hover:bg-transparent">
                   <TableHead>RFI Number</TableHead>
                   <TableHead>Subject</TableHead>
-                  <TableHead>Project</TableHead>
+                  {!projectIdFromUrl && <TableHead>Project</TableHead>}
                   <TableHead>Directed To</TableHead>
                   <TableHead>Due Date</TableHead>
                   <TableHead>Priority</TableHead>
@@ -352,18 +363,20 @@ export default function RFIs() {
                           </div>
                         )}
                       </TableCell>
-                      <TableCell>
-                        {project && (
-                          <div className="flex items-center gap-2">
-                            <ProjectIcon
-                              color={project.color}
-                              size="sm"
-                              className="shrink-0"
-                            />
-                            <span className="truncate">{project.name}</span>
-                          </div>
-                        )}
-                      </TableCell>
+                      {!projectIdFromUrl && (
+                        <TableCell>
+                          {project && (
+                            <div className="flex items-center gap-2">
+                              <ProjectIcon
+                                color={project.color}
+                                size="sm"
+                                className="shrink-0"
+                              />
+                              <span className="truncate">{project.name}</span>
+                            </div>
+                          )}
+                        </TableCell>
+                      )}
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <Users className="h-3.5 w-3.5 text-muted-foreground" />

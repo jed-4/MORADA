@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import { type ClientInvoice, type Project } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { format } from "date-fns";
 
 const STATUS_OPTIONS = [
@@ -52,6 +53,7 @@ export default function ClientInvoices() {
   const [, setLocation] = useLocation();
   const params = useParams<{ projectId?: string }>();
   const projectIdFromUrl = params.projectId || "";
+  const pageTitle = usePageTitle({ pageName: "Client Invoices" });
 
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -232,7 +234,7 @@ export default function ClientInvoices() {
       <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold" data-testid="text-page-title">
-            Client Invoices
+            {pageTitle}
           </h2>
           <Badge variant="secondary" className="text-xs" data-testid="text-invoice-count">
             {filteredInvoices.length} invoices

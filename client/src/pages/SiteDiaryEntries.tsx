@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { 
   BookOpen, 
   Plus, 
@@ -63,6 +64,7 @@ export default function SiteDiaryEntries() {
   const { user } = useAuth();
   const params = useParams();
   const projectIdFromUrl = params.projectId;
+  const pageTitle = usePageTitle({ pageName: "Site Diary" });
   
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
@@ -140,7 +142,7 @@ export default function SiteDiaryEntries() {
       <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold" data-testid="text-page-title">
-            Site Diary
+            {pageTitle}
           </h2>
           <Badge variant="secondary" className="text-xs" data-testid="text-entry-count">
             {filteredEntries.length} entries

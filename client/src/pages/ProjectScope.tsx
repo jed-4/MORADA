@@ -3,6 +3,7 @@ import { useParams } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import {
@@ -1153,6 +1154,7 @@ export default function ProjectScope() {
   const { projectId } = useParams<{ projectId: string }>();
   const { user } = useAuth();
   const { toast } = useToast();
+  const pageTitle = usePageTitle({ pageName: "Scope" });
   
   const [stageExpanded, setStageExpanded] = useState<StageState>({});
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
@@ -1717,7 +1719,7 @@ export default function ProjectScope() {
       <div className="h-9 flex items-center px-3 border-b border-border/50 bg-background">
         <div className="flex items-center gap-2">
           <ListTree className="h-4 w-4 text-muted-foreground" />
-          <h1 className="text-sm font-semibold">Scope</h1>
+          <h1 className="text-sm font-semibold" data-testid="text-page-title">{pageTitle}</h1>
         </div>
       </div>
 

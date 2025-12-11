@@ -44,12 +44,14 @@ import { useDefectPriorityOptions } from "@/hooks/useDefectPriorityOptions";
 import { useDefectTypeOptions } from "@/hooks/useDefectTypeOptions";
 import { useDefectTradeOptions } from "@/hooks/useDefectTradeOptions";
 import { useToast } from "@/hooks/use-toast";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { format } from "date-fns";
 
 export default function Defects() {
   const { projectId } = useParams<{ projectId: string }>();
   const { toast } = useToast();
+  const pageTitle = usePageTitle({ pageName: "Defects" });
   const [currentView, setCurrentView] = useState<"list" | "kanban">("list");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -139,7 +141,7 @@ export default function Defects() {
       <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold" data-testid="text-page-title">
-            Defects
+            {pageTitle}
           </h2>
           <Badge variant="secondary" className="text-xs" data-testid="text-defect-count">
             {filteredDefects.length} defects

@@ -4,6 +4,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { format } from "date-fns";
 import {
   type ChecklistInstance,
@@ -109,6 +110,7 @@ export default function ProjectChecklists() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const { user } = useAuth();
+  const pageTitle = usePageTitle({ pageName: "Checklists" });
   
   const [activeTab, setActiveTab] = useState<TabType>("all");
   const [searchTerm, setSearchTerm] = useState("");
@@ -482,7 +484,7 @@ export default function ProjectChecklists() {
       {/* Row 1: Title & Actions */}
       <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
         <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold" data-testid="text-page-title">Checklists</h2>
+          <h2 className="text-sm font-semibold" data-testid="text-page-title">{pageTitle}</h2>
           <Badge variant="secondary" className="text-xs" data-testid="text-checklist-count">
             {allGroups.length} groups
           </Badge>

@@ -30,8 +30,27 @@ export default function ProjectTeam() {
   const [searchQuery, setSearchQuery] = useState("");
   const { toast } = useToast();
 
+  // Fetch project for title display
+  const { data: project } = useQuery({
+    queryKey: [`/api/projects/${projectId}`],
+    queryFn: async () => {
+      const response = await fetch(`/api/projects/${projectId}`, { credentials: 'include' });
+      if (!response.ok) throw new Error("Failed to fetch project");
+      return response.json();
+    },
+    enabled: !!projectId,
+  });
+
+  const pageTitle = project?.name ? `${project.name} - Team` : "Project Team";
+
   const { data: teamMembers = [], isLoading } = useQuery({
     queryKey: [`/api/projects/${projectId}/team`],
+    queryFn: async () => {
+      const response = await fetch(`/api/projects/${projectId}/team`, { credentials: 'include' });
+      if (!response.ok) throw new Error("Failed to fetch team members");
+      return response.json();
+    },
+    enabled: !!projectId,
   });
 
   const teamUsers = teamMembers.filter((user: any) => user.userCategory === "team");
@@ -155,7 +174,7 @@ export default function ProjectTeam() {
       {/* Row 1 - Title Bar */}
       <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-2">
-          <h1 className="text-sm font-semibold text-foreground">Project Team</h1>
+          <h1 className="text-sm font-semibold text-foreground" data-testid="text-page-title">{pageTitle}</h1>
         </div>
         <Button
           onClick={() => setIsAssignDialogOpen(true)}
