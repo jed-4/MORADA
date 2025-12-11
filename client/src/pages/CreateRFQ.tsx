@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useLocation } from "wouter";
+import { useState, useEffect } from "react";
+import { useLocation, useParams } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -43,6 +43,8 @@ import { format } from "date-fns";
 
 export default function CreateRFQ() {
   const [, setLocation] = useLocation();
+  const params = useParams<{ projectId?: string }>();
+  const projectIdFromUrl = params.projectId || "";
   const { toast } = useToast();
 
   const [form, setForm] = useState({
@@ -63,6 +65,18 @@ export default function CreateRFQ() {
     followUpDaysBefore: 3,
     items: [] as { description: string; quantity: string; unit: string; notes: string }[],
   });
+
+  // Auto-populate project from URL when creating from project context
+  useEffect(() => {
+    if (projectIdFromUrl) {
+      setForm(prev => {
+        if (prev.projectId !== projectIdFromUrl) {
+          return { ...prev, projectId: projectIdFromUrl };
+        }
+        return prev;
+      });
+    }
+  }, [projectIdFromUrl]);
 
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ["/api/projects"],

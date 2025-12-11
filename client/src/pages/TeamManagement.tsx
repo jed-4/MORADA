@@ -229,9 +229,9 @@ export default function TeamManagement() {
 
   return (
     <div className="flex flex-col h-full" data-testid="team-management-page">
-      {/* Row 1 - Title Bar */}
-      <div className="h-9 bg-background flex items-center px-3 border-b border-border/50 flex-shrink-0">
-        <div className="flex items-center gap-2">
+      {/* Row 1 - Title, Search & Section Tabs */}
+      <div className="h-9 bg-background flex items-center justify-between px-3 border-b border-border flex-shrink-0">
+        <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold" data-testid="text-page-title">{pageTitle}</h2>
           <Badge variant="secondary" className="text-xs">
             {activeSection === "members" ? filteredUsers.length : filteredSuppliers.length}{" "}
@@ -239,39 +239,47 @@ export default function TeamManagement() {
               ? (filteredUsers.length === 1 ? "member" : "members")
               : (filteredSuppliers.length === 1 ? "supplier" : "suppliers")}
           </Badge>
-        </div>
-      </div>
+          
+          <div className="relative w-40">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+            <Input
+              placeholder={activeSection === "members" ? "Search members..." : "Search suppliers..."}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-7 pr-2 py-0 h-6 text-xs border"
+              data-testid="input-search"
+            />
+          </div>
 
-      {/* Row 2 - Section Tabs & Actions */}
-      <div className="h-9 bg-background flex items-center justify-between px-3 flex-shrink-0">
-        <div className="flex items-center gap-0.5">
-          <button
-            onClick={() => setActiveSection('members')}
-            className={`h-6 px-2 text-xs border rounded-md ${
-              activeSection === 'members' 
-                ? 'bg-[#bba7db] text-white border-[#bba7db]/20' 
-                : 'hover-elevate'
-            } active-elevate-2 flex items-center gap-1`}
-            data-testid="button-section-members"
-          >
-            <Users className="w-3 h-3" />
-            <span>Team Members</span>
-            <Badge variant="secondary" className="h-4 text-[10px] px-1">{filteredUsers.length}</Badge>
-          </button>
+          <div className="flex items-center gap-0.5">
+            <button
+              onClick={() => setActiveSection('members')}
+              className={`h-6 px-2 text-xs border rounded-md ${
+                activeSection === 'members' 
+                  ? 'bg-[#bba7db] text-white border-[#bba7db]/20' 
+                  : 'hover-elevate'
+              } active-elevate-2 flex items-center gap-1`}
+              data-testid="button-section-members"
+            >
+              <Users className="w-3 h-3" />
+              <span>Team Members</span>
+              <Badge variant="secondary" className="h-4 text-[10px] px-1">{filteredUsers.length}</Badge>
+            </button>
 
-          <button
-            onClick={() => setActiveSection('suppliers')}
-            className={`h-6 px-2 text-xs border rounded-md ${
-              activeSection === 'suppliers' 
-                ? 'bg-[#bba7db] text-white border-[#bba7db]/20' 
-                : 'hover-elevate'
-            } active-elevate-2 flex items-center gap-1`}
-            data-testid="button-section-suppliers"
-          >
-            <Building2 className="w-3 h-3" />
-            <span>Suppliers</span>
-            <Badge variant="secondary" className="h-4 text-[10px] px-1">{filteredSuppliers.length}</Badge>
-          </button>
+            <button
+              onClick={() => setActiveSection('suppliers')}
+              className={`h-6 px-2 text-xs border rounded-md ${
+                activeSection === 'suppliers' 
+                  ? 'bg-[#bba7db] text-white border-[#bba7db]/20' 
+                  : 'hover-elevate'
+              } active-elevate-2 flex items-center gap-1`}
+              data-testid="button-section-suppliers"
+            >
+              <Building2 className="w-3 h-3" />
+              <span>Suppliers</span>
+              <Badge variant="secondary" className="h-4 text-[10px] px-1">{filteredSuppliers.length}</Badge>
+            </button>
+          </div>
         </div>
 
         <div className="flex items-center gap-1.5">
@@ -294,20 +302,6 @@ export default function TeamManagement() {
               <span>Add Supplier</span>
             </button>
           )}
-        </div>
-      </div>
-
-      {/* Row 3 - Search & Filters */}
-      <div className="h-9 bg-background flex items-center px-2 gap-1.5 border-b border-border flex-shrink-0">
-        <div className="relative w-48">
-          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-          <Input
-            placeholder={activeSection === "members" ? "Search members..." : "Search suppliers..."}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-7 pr-2 py-0 h-6 text-xs border"
-            data-testid="input-search"
-          />
         </div>
       </div>
 

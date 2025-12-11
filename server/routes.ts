@@ -6326,7 +6326,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (let i = 0; i < contacts.length; i++) {
         const contactData = contacts[i];
         try {
-          const validationResult = insertContactSchema.safeParse(contactData);
+          // Sanitize data: convert null values to empty strings or defaults
+          const sanitizedData = {
+            ...contactData,
+            // Convert null strings to empty string for optional text fields
+            email: contactData.email ?? "",
+            phone: contactData.phone ?? "",
+            mobile: contactData.mobile ?? "",
+            company: contactData.company ?? "",
+            position: contactData.position ?? "",
+            address: contactData.address ?? "",
+            suburb: contactData.suburb ?? "",
+            state: contactData.state ?? "",
+            postcode: contactData.postcode ?? "",
+            country: contactData.country ?? "",
+            notes: contactData.notes ?? "",
+            abn: contactData.abn ?? "",
+            // Default contactType to 'supplier' if not provided
+            contactType: contactData.contactType || "supplier",
+          };
+          
+          const validationResult = insertContactSchema.safeParse(sanitizedData);
           if (!validationResult.success) {
             results.errors.push(`Row ${i + 1} (${contactData.name || 'Unknown'}): ${fromZodError(validationResult.error).toString()}`);
             continue;
