@@ -42,7 +42,7 @@ const AVATAR_COLORS = [
 type AddContactDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  defaultContactType?: "team" | "supplier" | "client";
+  defaultContactType?: "supplier" | "client";
 };
 
 export default function AddContactDialog({
@@ -51,7 +51,7 @@ export default function AddContactDialog({
   defaultContactType,
 }: AddContactDialogProps) {
   const { toast } = useToast();
-  const [selectedType, setSelectedType] = useState<"team" | "supplier" | "client">("supplier");
+  const [selectedType, setSelectedType] = useState<"supplier" | "client">("supplier");
 
   const { data: costCodes = [] } = useQuery<CostCode[]>({
     queryKey: ["/api/cost-codes"],
@@ -100,7 +100,7 @@ export default function AddContactDialog({
   useEffect(() => {
     const subscription = form.watch((value, { name }) => {
       if (name === "contactType") {
-        setSelectedType(value.contactType as "team" | "supplier" | "client");
+        setSelectedType(value.contactType as "supplier" | "client");
       }
     });
     return () => subscription.unsubscribe();
