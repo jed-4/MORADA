@@ -75,15 +75,18 @@ export function ImportContactsDialog({ open, onOpenChange }: ImportContactsDialo
   const importMutation = useMutation({
     mutationFn: async (contacts: ParsedContact[]) => {
       // Use bulk endpoint for much faster imports
+      // IMPORTANT: contactType is required, default to "supplier" for imported contacts
+      // email must be empty string "" not null for validation to pass
       const contactsData = contacts.map(contact => ({
         name: contact.name,
-        email: contact.email || null,
+        email: contact.email || "",
         phone: contact.phone || null,
         mobile: contact.mobile || null,
         company: contact.company || null,
         role: contact.role || null,
         address: contact.address || null,
         notes: contact.notes || null,
+        contactType: "supplier" as const,
       }));
       
       const response = await apiRequest("/api/contacts/bulk", "POST", { contacts: contactsData });
