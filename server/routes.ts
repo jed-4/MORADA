@@ -6368,8 +6368,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/contacts", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
+      console.log("[Contact Create] Request body:", JSON.stringify(req.body, null, 2));
       const validationResult = insertContactSchema.safeParse(req.body);
       if (!validationResult.success) {
+        console.log("[Contact Create] Validation errors:", fromZodError(validationResult.error).toString());
         return res.status(400).json({ 
           error: "Validation failed", 
           details: fromZodError(validationResult.error).toString() 
