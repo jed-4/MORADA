@@ -1365,6 +1365,38 @@ export const insertContactSchema = createInsertSchema(contacts).omit({
 export type InsertContact = z.infer<typeof insertContactSchema>;
 export type Contact = typeof contacts.$inferSelect;
 
+// Contact Insurances (for contacts with contactType='supplier')
+export const contactInsurances = pgTable("contact_insurances", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  contactId: varchar("contact_id").notNull().references(() => contacts.id, { onDelete: "cascade" }),
+  insuranceType: insuranceTypeEnum("insurance_type").notNull(),
+  expiryDate: timestamp("expiry_date"),
+  policyNumber: text("policy_number"),
+  insurerName: text("insurer_name"),
+  documentUrl: text("document_url"), // Google Drive link or file reference
+  notes: text("notes"),
+  
+  // Reminder tracking
+  reminder30DaySent: boolean("reminder_30_day_sent").notNull().default(false),
+  reminder7DaySent: boolean("reminder_7_day_sent").notNull().default(false),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  contactIdx: index("contact_insurances_contact_idx").on(table.contactId),
+}));
+
+export const insertContactInsuranceSchema = createInsertSchema(contactInsurances).omit({
+  id: true,
+  reminder30DaySent: true,
+  reminder7DaySent: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertContactInsurance = z.infer<typeof insertContactInsuranceSchema>;
+export type ContactInsurance = typeof contactInsurances.$inferSelect;
+
 // Bills
 export const bills = pgTable("bills", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
