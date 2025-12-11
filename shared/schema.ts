@@ -1271,7 +1271,7 @@ export type InsertSupplierContact = z.infer<typeof insertSupplierContactSchema>;
 export type SupplierContact = typeof supplierContacts.$inferSelect;
 
 // Contact type enum
-export const contactTypeEnum = pgEnum("contact_type", ["team", "supplier", "client"]);
+export const contactTypeEnum = pgEnum("contact_type", ["team", "trade", "supplier", "client"]);
 
 // Primary contact enum (for clients with spouse)
 export const primaryContactEnum = pgEnum("primary_contact", ["self", "spouse"]);
@@ -1348,7 +1348,7 @@ export const insertContactSchema = createInsertSchema(contacts).omit({
   createdAt: true,
   updatedAt: true,
 }).extend({
-  contactType: z.enum(["team", "supplier", "client"]),
+  contactType: z.enum(["team", "trade", "supplier", "client"]),
   email: z.string().email().optional().or(z.literal("")),
   spouseEmail: z.string().email().optional().or(z.literal("")),
   hourlyRate: z.string().optional().or(z.literal("")).transform(val => val === "" ? null : val),
