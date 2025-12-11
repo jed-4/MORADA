@@ -9867,9 +9867,10 @@ export class DbStorage implements IStorage {
       }
       transferredCounts.rfqs = rfqsUpdated;
 
-      // Delete the source contact (no archive view exists yet)
-      console.log(`[mergeContacts] Deleting source contact ${sourceId}...`);
-      await db.delete(schema.contacts)
+      // Archive the source contact (preserves history for auditing)
+      console.log(`[mergeContacts] Archiving source contact ${sourceId}...`);
+      await db.update(schema.contacts)
+        .set({ isArchived: true, updatedAt: new Date() })
         .where(and(
           eq(schema.contacts.id, sourceId),
           eq(schema.contacts.companyId, companyId)

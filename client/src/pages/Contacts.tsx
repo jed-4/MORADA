@@ -30,6 +30,8 @@ import {
   Upload,
   Zap,
   Merge,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { type Contact } from "@shared/schema";
@@ -53,6 +55,7 @@ export default function Contacts() {
   const [isQuickReviewOpen, setIsQuickReviewOpen] = useState(false);
   const [isMergeDialogOpen, setIsMergeDialogOpen] = useState(false);
   const [mergeSourceId, setMergeSourceId] = useState<string | undefined>();
+  const [showArchivedContacts, setShowArchivedContacts] = useState(false);
 
   const { data: contacts = [], isLoading } = useQuery<Contact[]>({
     queryKey: ["/api/contacts"],
@@ -94,8 +97,8 @@ export default function Contacts() {
     },
   });
 
-  const filteredContacts = useMemo(() => {
-    return contacts.filter((contact) => {
+  const { activeContacts, archivedContacts } = useMemo(() => {
+    const matchesFilters = (contact: Contact) => {
       if (selectedTab !== "all" && contact.contactType !== selectedTab) {
         return false;
       }
@@ -113,8 +116,25 @@ export default function Contacts() {
       }
 
       return true;
+    };
+
+    const active: Contact[] = [];
+    const archived: Contact[] = [];
+    
+    contacts.forEach((contact) => {
+      if (matchesFilters(contact)) {
+        if (contact.isArchived) {
+          archived.push(contact);
+        } else {
+          active.push(contact);
+        }
+      }
     });
+
+    return { activeContacts: active, archivedContacts: archived };
   }, [contacts, selectedTab, searchTerm]);
+
+  const filteredContacts = activeContacts;
 
   const tabCounts = useMemo(() => {
     return {
@@ -428,6 +448,84 @@ export default function Contacts() {
               ))}
             </TableBody>
           </Table>
+        )}
+
+        {/* Archived Contacts Section - Hidden by default */}
+        {archivedContacts.length > 0 && (
+          <div className="mt-6 border-t pt-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowArchivedContacts(!showArchivedContacts)}
+              className="text-muted-foreground"
+              data-testid="button-toggle-archived"
+            >
+              {showArchivedContacts ? (
+                <ChevronDown className="h-4 w-4 mr-2" />
+              ) : (
+                <ChevronRight className="h-4 w-4 mr-2" />
+              )}
+              <Archive className="h-4 w-4 mr-2" />
+              Archived Contacts ({archivedContacts.length})
+            </Button>
+            
+            {showArchivedContacts && (
+              <div className="mt-3">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[300px]">Name</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Phone</TableHead>
+                      <TableHead className="w-[50px]"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {archivedContacts.map((contact) => (
+                      <TableRow key={contact.id} className="opacity-60">
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <Avatar className="h-8 w-8">
+                              <AvatarFallback className="text-xs bg-muted">
+                                {getInitials(contact)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <div className="font-medium text-sm">
+                                {contact.name || `${contact.firstName || ''} ${contact.lastName || ''}`.trim() || 'Unnamed'}
+                              </div>
+                              {contact.company && contact.name !== contact.company && (
+                                <div className="text-xs text-muted-foreground">{contact.company}</div>
+                              )}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="text-xs capitalize">
+                            {contact.contactType}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm">{contact.email || '-'}</TableCell>
+                        <TableCell className="text-sm">{contact.phone || '-'}</TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleRestore(contact.id)}
+                            title="Restore contact"
+                            data-testid={`button-restore-${contact.id}`}
+                          >
+                            <ArchiveRestore className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
         )}
       </div>
 
