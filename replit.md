@@ -66,7 +66,8 @@ Preferred communication style: Simple, everyday language.
 - **Suppliers Migration (In Progress)**: Legacy `suppliers` table being unified into `contacts` with `contactType='supplier'`. 
   - **Completed**: `bills.supplierId`, `rfqQuotes.supplierId`, `priceListItems.supplierId` now reference `contacts.id` instead of `suppliers.id`.
   - **Deprecated**: `suppliers`, `supplierLabels`, `supplierLabelAssignments`, `supplierInsurances`, `supplierContacts` tables marked deprecated but functional for backward compatibility.
-  - **Contact Merge**: `mergeContacts()` handles bills, RFQs, favoriteSuppliers, scheduleItems, and purchaseOrders correctly.
+  - **Contact Merge**: `mergeContacts()` handles bills, RFQs, favoriteSuppliers, scheduleItems, purchaseOrders, rfqQuotes, and priceListItems correctly.
+  - **Known Limitation**: Legacy supplier sub-tables (insurances, contacts, labels) still reference `suppliers.id`. Insurance expiry reminders via ReminderProcessor still use the legacy suppliers table.
   - **Future Work**: Create `contactInsurances` table to replace `supplierInsurances` for contacts-based insurance tracking.
 
 ### Mobile App (Capacitor-based)

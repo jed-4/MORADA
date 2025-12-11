@@ -9708,6 +9708,25 @@ export class DbStorage implements IStorage {
         .returning();
       transferredCounts.bills = billsResult.length;
 
+      // Update rfqQuotes.supplierId (contacts as suppliers)
+      const rfqQuotesResult = await db
+        .update(schema.rfqQuotes)
+        .set({ supplierId: targetId })
+        .where(eq(schema.rfqQuotes.supplierId, sourceId))
+        .returning();
+      transferredCounts.rfqQuotes = rfqQuotesResult.length;
+
+      // Update priceListItems.supplierId (contacts as suppliers)
+      const priceListItemsResult = await db
+        .update(schema.priceListItems)
+        .set({ supplierId: targetId })
+        .where(and(
+          eq(schema.priceListItems.supplierId, sourceId),
+          eq(schema.priceListItems.companyId, companyId)
+        ))
+        .returning();
+      transferredCounts.priceListItems = priceListItemsResult.length;
+
       // Update RFQs supplierIds array - replace sourceId with targetId
       const rfqsWithSource = await db
         .select()
