@@ -51,7 +51,7 @@ export default function AddContactDialog({
   defaultContactType,
 }: AddContactDialogProps) {
   const { toast } = useToast();
-  const [selectedType, setSelectedType] = useState<"team" | "supplier" | "client">("team");
+  const [selectedType, setSelectedType] = useState<"team" | "supplier" | "client">("supplier");
 
   const { data: costCodes = [] } = useQuery<CostCode[]>({
     queryKey: ["/api/cost-codes"],
@@ -68,7 +68,7 @@ export default function AddContactDialog({
       mobile: "",
       company: "",
       position: "",
-      contactType: defaultContactType || "team",
+      contactType: defaultContactType || "supplier",
       spouseName: "",
       spousePhone: "",
       spouseEmail: "",
@@ -146,13 +146,14 @@ export default function AddContactDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>Add Contact</DialogTitle>
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col flex-1 overflow-hidden">
+            <div className="flex-1 overflow-y-auto space-y-6 pr-2">
             {/* Contact Type */}
             <FormField
               control={form.control}
@@ -167,7 +168,6 @@ export default function AddContactDialog({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="team">Team</SelectItem>
                       <SelectItem value="supplier">Supplier</SelectItem>
                       <SelectItem value="client">Client</SelectItem>
                     </SelectContent>
@@ -638,9 +638,10 @@ export default function AddContactDialog({
                 </FormItem>
               )}
             />
+            </div>
 
-            {/* Actions */}
-            <div className="flex justify-end gap-2">
+            {/* Sticky Actions Footer */}
+            <div className="flex justify-end gap-2 pt-4 mt-4 border-t bg-background sticky bottom-0">
               <Button
                 type="button"
                 variant="outline"
