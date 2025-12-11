@@ -22,6 +22,7 @@ import { UserCalendarDialog } from "./UserCalendarDialog";
 import { MessagesDropdown } from "./MessagesDropdown";
 import { NotificationBell } from "./NotificationBell";
 import { ProjectIcon } from "./ProjectIcon";
+import { GlobalSearch } from "./GlobalSearch";
 import { useProject } from "@/contexts/ProjectContext";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -48,6 +49,7 @@ export default function Header() {
   const [location, navigate] = useLocation();
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
   const [isDark, setIsDark] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [isProjectSearchOpen, setIsProjectSearchOpen] = useState(false);
@@ -180,6 +182,18 @@ export default function Header() {
   // Initialize dark mode state on mount
   useEffect(() => {
     setIsDark(document.documentElement.classList.contains('dark'));
+  }, []);
+
+  // Keyboard shortcut for global search (Cmd+K / Ctrl+K)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setIsGlobalSearchOpen(true);
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
 
   // Helper to get user initials
@@ -399,9 +413,7 @@ export default function Header() {
       {/* Global Search Bar - Centered */}
       <div className="flex-1 flex justify-center px-4">
         <button 
-          onClick={() => {
-            // TODO: Open global search modal
-          }}
+          onClick={() => setIsGlobalSearchOpen(true)}
           className="flex items-center gap-2 h-7 px-3 w-full max-w-md rounded-md bg-muted/60 hover-elevate active-elevate-2 text-muted-foreground text-xs"
           data-testid="button-global-search"
         >
@@ -524,6 +536,12 @@ export default function Header() {
       <UserCalendarDialog 
         open={isCalendarOpen} 
         onOpenChange={setIsCalendarOpen} 
+      />
+
+      {/* Global Search Dialog */}
+      <GlobalSearch 
+        open={isGlobalSearchOpen} 
+        onOpenChange={setIsGlobalSearchOpen} 
       />
     </header>
   );

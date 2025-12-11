@@ -9692,13 +9692,13 @@ export class DbStorage implements IStorage {
         .returning();
       transferredCounts.rfis = rfisResult.length;
 
-      // Update rfqLineItems.supplierId (contacts as suppliers)
-      const rfqLineItemsResult = await db
-        .update(schema.rfqLineItems)
+      // Update favoriteSuppliers.supplierId (contacts as suppliers)
+      const favoriteSuppliersResult = await db
+        .update(schema.favoriteSuppliers)
         .set({ supplierId: targetId })
-        .where(eq(schema.rfqLineItems.supplierId, sourceId))
+        .where(eq(schema.favoriteSuppliers.supplierId, sourceId))
         .returning();
-      transferredCounts.rfqLineItems = rfqLineItemsResult.length;
+      transferredCounts.favoriteSuppliers = favoriteSuppliersResult.length;
 
       // Update bills.supplierId (contacts as suppliers)
       const billsResult = await db

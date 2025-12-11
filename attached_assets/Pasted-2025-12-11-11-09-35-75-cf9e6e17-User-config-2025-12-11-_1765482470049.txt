@@ -1,0 +1,121 @@
+2025-12-11 11:09:35.75
+cf9e6e17
+User
+config: {
+2025-12-11 11:09:35.75
+cf9e6e17
+User
+at async createAPIRequestAsync (/home/runner/workspace/node_modules/googleapis-common/build/src/apirequest.js:308:25)
+2025-12-11 11:09:35.75
+cf9e6e17
+User
+duplex: 'half',
+2025-12-11 11:09:35.75
+cf9e6e17
+User
+port: '',
+2025-12-11 11:09:35.75
+cf9e6e17
+User
+retry: 3,
+2025-12-11 11:09:35.75
+cf9e6e17
+User
+'fields' => 'id, name, mimeType, createdTime, modifiedTime, parents, webViewLink' },
+2025-12-11 11:09:35.75
+cf9e6e17
+User
+userAgentDirectives: [ [Object] ],
+2025-12-11 11:09:35.75
+cf9e6e17
+User
+parents: [Array]
+2025-12-11 11:09:35.75
+cf9e6e17
+User
+at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+2025-12-11 11:09:35.75
+cf9e6e17
+User
+},
+2025-12-11 11:09:35.75
+cf9e6e17
+User
+origin: 'https://www.googleapis.com',
+2025-12-11 11:09:35.75
+cf9e6e17
+User
+hash: ''
+2025-12-11 11:09:35.75
+cf9e6e17
+User
+responseType: 'unknown',
+2025-12-11 11:09:35.75
+cf9e6e17
+User
+'content-type': 'application/json'
+2025-12-11 11:09:35.75
+cf9e6e17
+User
+apiVersion: '',
+2025-12-11 11:09:35.75
+cf9e6e17
+User
+at async file:///home/runner/workspace/dist/index.js:16618:33 {
+2025-12-11 11:09:35.75
+cf9e6e17
+User
+hostname: 'www.googleapis.com',
+2025-12-11 11:09:35.75
+cf9e6e17
+User
+searchParams: URLSearchParams {
+
+2025-12-11 11:09:35.75
+cf9e6e17
+User
+data: { error: [Object] },
+2025-12-11 11:09:35.75
+cf9e6e17
+User
+Error creating project Drive folder: GaxiosError: Google Drive API has not been used in project 777692109817 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=777692109817 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.
+2025-12-11 11:09:35.75
+cf9e6e17
+User
+username: '',
+2025-12-11 11:09:35.75
+cf9e6e17
+User
+pathname: '/drive/v3/files',
+2025-12-11 22:12:59.24
+e9b5c97a
+User
+at Array.map ()
+2025-12-11 22:12:59.24
+e9b5c97a
+User
+at file:///home/runner/workspace/node_modules/drizzle-orm/utils.js:86:42
+2025-12-11 22:12:59.24
+e9b5c97a
+User
+at PgUpdateBuilder.set (file:///home/runner/workspace/node_modules/drizzle-orm/pg-core/query-builders/update.js:30:7)
+2025-12-11 22:12:59.24
+e9b5c97a
+User
+at DbStorage.mergeContacts (file:///home/runner/workspace/dist/index.js:8419:55)
+2025-12-11 22:12:59.24
+e9b5c97a
+User
+at mapUpdateSet (file:///home/runner/workspace/node_modules/drizzle-orm/utils.js:82:82)
+2025-12-11 22:12:59.24
+e9b5c97a
+User
+at async file:///home/runner/workspace/dist/index.js:20497:22
+2025-12-11 22:12:59.24
+e9b5c97a
+User
+Database error in mergeContacts: TypeError: Cannot read properties of undefined (reading 'Symbol(drizzle:Columns)')
+2025-12-11 22:12:59.24
+e9b5c97a
+User
+at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
