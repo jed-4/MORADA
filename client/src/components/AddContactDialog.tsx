@@ -116,6 +116,10 @@ export default function AddContactDialog({
       if (cleanData.spousePhone === "") cleanData.spousePhone = undefined;
       if (cleanData.spouseEmail === "") cleanData.spouseEmail = undefined;
       
+      // Convert null to empty string for hourlyRate and hourlyPrice (schema expects strings)
+      if (cleanData.hourlyRate === null) cleanData.hourlyRate = "";
+      if (cleanData.hourlyPrice === null) cleanData.hourlyPrice = "";
+      
       // Auto-generate full name from firstName and lastName, or fall back to company name
       const personName = `${cleanData.firstName || ""} ${cleanData.lastName || ""}`.trim();
       const fullName = personName || cleanData.company || cleanData.name || "Unnamed Contact";
