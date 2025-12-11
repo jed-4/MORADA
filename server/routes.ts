@@ -42,6 +42,7 @@ import {
   insertSupplierInsuranceSchema,
   insertSupplierContactSchema,
   insertContactSchema,
+  insertContactInsuranceSchema,
   insertBillSchema,
   insertBillLineItemSchema,
   insertBillApprovalSchema,
@@ -6206,6 +6207,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(insurances);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch expiring insurances" });
+    }
+  });
+
+  // Contact Insurances API Routes (for contacts with contactType='supplier')
+  app.get("/api/contacts/:id/insurances", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const insurances = await storage.getContactInsurances(req.params.id);
+      res.json(insurances);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch contact insurances" });
+    }
+  });
+
+  app.post("/api/contacts/:id/insurances", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertContactInsuranceSchema.safeParse({
+        ...req.body,
+        contactId: req.params.id,
+      });
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const insurance = await storage.createContactInsurance(validationResult.data);
+      res.status(201).json(insurance);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create contact insurance" });
+    }
+  });
+
+  app.patch("/api/contact-insurances/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertContactInsuranceSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const insurance = await storage.updateContactInsurance(req.params.id, validationResult.data);
+      res.json(insurance);
+    } catch (error) {
+      if (error instanceof Error && error.message === "Contact insurance not found") {
+        return res.status(404).json({ error: "Contact insurance not found" });
+      }
+      res.status(500).json({ error: "Failed to update contact insurance" });
+    }
+  });
+
+  app.delete("/api/contact-insurances/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      await storage.deleteContactInsurance(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete contact insurance" });
+    }
+  });
+
+  // Expiring contact insurances (for dashboard/notifications)
+  app.get("/api/expiring-contact-insurances", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const daysAhead = parseInt(req.query.days as string) || 30;
+      const insurances = await storage.getExpiringContactInsurances(companyId, daysAhead);
+      res.json(insurances);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch expiring contact insurances" });
     }
   });
 
