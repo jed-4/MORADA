@@ -260,10 +260,10 @@ export default function Header() {
               <Kanban className="h-3.5 w-3.5" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-72 p-0">
+          <DropdownMenuContent align="start" className="w-56 p-0">
             {/* Phase selector row with search toggle */}
-            <div className="flex items-center justify-between px-2 py-1.5 border-b">
-              <div className="flex items-center gap-1">
+            <div className="flex items-center px-2 py-1.5 border-b">
+              <div className="flex-1 flex items-center justify-center gap-1">
                 <Button
                   variant="ghost"
                   size="icon"
@@ -396,8 +396,20 @@ export default function Header() {
         </DropdownMenu>
       </div>
       
-      {/* Spacer */}
-      <div className="flex-1" />
+      {/* Global Search Bar - Centered */}
+      <div className="flex-1 flex justify-center px-4">
+        <button 
+          onClick={() => {
+            // TODO: Open global search modal
+          }}
+          className="flex items-center gap-2 h-7 px-3 w-full max-w-md rounded-md bg-muted/60 hover-elevate active-elevate-2 text-muted-foreground text-xs"
+          data-testid="button-global-search"
+        >
+          <Search className="h-3.5 w-3.5" />
+          <span>Search...</span>
+          <kbd className="ml-auto text-[10px] bg-muted px-1.5 py-0.5 rounded">⌘K</kbd>
+        </button>
+      </div>
 
       <div className="flex items-center gap-1">
         {/* Contacts Button */}
