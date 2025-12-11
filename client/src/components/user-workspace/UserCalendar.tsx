@@ -137,9 +137,16 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
   const { data: googleCalendarEvents = [] } = useQuery({
     queryKey: ["/api/google-calendar/events", displayedUserId],
     queryFn: async () => {
-      const response = await fetch("/api/google-calendar/events");
-      if (!response.ok) return [];
-      return response.json();
+      try {
+        const events = await apiRequest("/api/google-calendar/events", "GET");
+        return events || [];
+      } catch (error: any) {
+        if (error.status === 401 || error.status === 400) {
+          return [];
+        }
+        console.error("Error fetching Google Calendar events:", error);
+        return [];
+      }
     },
     enabled: isOwnPage, // Only fetch for own calendar
   });

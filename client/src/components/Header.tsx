@@ -377,22 +377,24 @@ export default function Header() {
         </DropdownMenu>
       </div>
       
-      {/* Global Search Bar - Centered */}
-      <div className="flex-1 flex justify-center px-4">
-        <button 
+      {/* Spacer */}
+      <div className="flex-1" />
+
+      <div className="flex items-center gap-1">
+        {/* Global Search Button */}
+        <Button 
+          variant="ghost" 
+          size="icon" 
           onClick={() => {
             // TODO: Open global search modal
           }}
-          className="flex items-center gap-2 h-7 px-3 w-full max-w-md rounded-md bg-muted/60 hover-elevate active-elevate-2 text-muted-foreground text-xs"
           data-testid="button-global-search"
+          className="h-7 w-7"
+          title="Search (⌘K)"
         >
           <Search className="h-3.5 w-3.5" />
-          <span>Search...</span>
-          <kbd className="ml-auto text-[10px] bg-muted px-1.5 py-0.5 rounded">⌘K</kbd>
-        </button>
-      </div>
+        </Button>
 
-      <div className="flex items-center gap-1">
         {/* Contacts Button */}
         <Button 
           variant="ghost" 
