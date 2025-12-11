@@ -110,6 +110,7 @@ import type { UserViewPreferences, InsertUserViewPreferences } from "@shared/sch
 import type { SupplierLabel, InsertSupplierLabel, SupplierLabelAssignment, InsertSupplierLabelAssignment } from "@shared/schema";
 import type { SupplierInsurance, InsertSupplierInsurance, SupplierContact, InsertSupplierContact } from "@shared/schema";
 import type { ContactInsurance, InsertContactInsurance } from "@shared/schema";
+import { contactInsurances as contactInsurancesTable } from "@shared/schema";
 import type { PriceListCategory, InsertPriceListCategory, PriceListItem, InsertPriceListItem, BillLineItemPriceLink, InsertBillLineItemPriceLink } from "@shared/schema";
 import type { DashboardView, InsertDashboardView, DashboardViewPermission, InsertDashboardViewPermission, UserDashboardPreference } from "@shared/schema";
 
@@ -9724,10 +9725,12 @@ export class DbStorage implements IStorage {
   async mergeContacts(sourceId: string, targetId: string, companyId: string): Promise<{ success: boolean; transferredCounts: Record<string, number> }> {
     try {
       const transferredCounts: Record<string, number> = {};
+      console.log(`[mergeContacts] Starting merge: source=${sourceId}, target=${targetId}, company=${companyId}`);
 
       // Get target contact name for cached fields
       const targetContact = await db.select().from(schema.contacts).where(eq(schema.contacts.id, targetId)).limit(1);
       const targetName = targetContact[0]?.name || targetContact[0]?.company || '';
+      console.log(`[mergeContacts] Target contact name: ${targetName}`);
 
       // Update projects.clientId
       const projectsResult = await db
@@ -9816,13 +9819,15 @@ export class DbStorage implements IStorage {
         .returning();
       transferredCounts.priceListItems = priceListItemsResult.length;
 
-      // Transfer contactInsurances from source to target
+      // Transfer contactInsurances from source to target (using explicit import to avoid bundler issues)
+      console.log(`[mergeContacts] Transferring contact insurances...`);
       const contactInsurancesResult = await db
-        .update(schema.contactInsurances)
+        .update(contactInsurancesTable)
         .set({ contactId: targetId })
-        .where(eq(schema.contactInsurances.contactId, sourceId))
+        .where(eq(contactInsurancesTable.contactId, sourceId))
         .returning();
       transferredCounts.contactInsurances = contactInsurancesResult.length;
+      console.log(`[mergeContacts] Transferred ${contactInsurancesResult.length} contact insurances`);
 
       // Update RFQs supplierIds array - replace sourceId with targetId
       const rfqsWithSource = await db
@@ -9862,8 +9867,14 @@ export class DbStorage implements IStorage {
       }
       transferredCounts.rfqs = rfqsUpdated;
 
-      // Archive the source contact instead of deleting
-      await this.archiveContact(sourceId, companyId);
+      // Delete the source contact (no archive view exists yet)
+      console.log(`[mergeContacts] Deleting source contact ${sourceId}...`);
+      await db.delete(schema.contacts)
+        .where(and(
+          eq(schema.contacts.id, sourceId),
+          eq(schema.contacts.companyId, companyId)
+        ));
+      console.log(`[mergeContacts] Merge completed successfully`);
 
       return { success: true, transferredCounts };
     } catch (error) {
