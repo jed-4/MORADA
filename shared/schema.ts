@@ -1120,7 +1120,9 @@ export const insuranceTypeEnum = pgEnum("insurance_type", [
   "other"
 ]);
 
-// Suppliers (for bills) - includes both hardware suppliers and trades/subcontractors
+// DEPRECATED: Legacy suppliers table - being replaced by contacts with contactType='supplier'
+// Bills, RFQs, and PriceListItems now reference contacts.id instead of suppliers.id
+// This table is kept for backward compatibility with supplierInsurances, supplierContacts, supplierLabelAssignments
 export const suppliers = pgTable("suppliers", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   companyId: varchar("company_id").notNull().references(() => companies.id), // Multi-tenant isolation
@@ -1162,7 +1164,8 @@ export const insertSupplierSchema = createInsertSchema(suppliers).omit({
 export type InsertSupplier = z.infer<typeof insertSupplierSchema>;
 export type Supplier = typeof suppliers.$inferSelect;
 
-// Supplier Labels (company-level custom label definitions)
+// DEPRECATED: Supplier Labels - tied to legacy suppliers table
+// Future: Migrate to contact labels stored in contacts.labels JSON array
 export const supplierLabels = pgTable("supplier_labels", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   companyId: varchar("company_id").notNull().references(() => companies.id),
@@ -1186,7 +1189,7 @@ export const insertSupplierLabelSchema = createInsertSchema(supplierLabels).omit
 export type InsertSupplierLabel = z.infer<typeof insertSupplierLabelSchema>;
 export type SupplierLabel = typeof supplierLabels.$inferSelect;
 
-// Supplier Label Assignments (many-to-many junction table)
+// DEPRECATED: Supplier Label Assignments - tied to legacy suppliers table
 export const supplierLabelAssignments = pgTable("supplier_label_assignments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   supplierId: varchar("supplier_id").notNull().references(() => suppliers.id, { onDelete: "cascade" }),
@@ -1204,7 +1207,8 @@ export const insertSupplierLabelAssignmentSchema = createInsertSchema(supplierLa
 export type InsertSupplierLabelAssignment = z.infer<typeof insertSupplierLabelAssignmentSchema>;
 export type SupplierLabelAssignment = typeof supplierLabelAssignments.$inferSelect;
 
-// Supplier Insurances (multiple insurance records per supplier)
+// DEPRECATED: Supplier Insurances - tied to legacy suppliers table
+// Future: Create contactInsurances table that references contacts.id
 export const supplierInsurances = pgTable("supplier_insurances", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   supplierId: varchar("supplier_id").notNull().references(() => suppliers.id, { onDelete: "cascade" }),
@@ -1236,7 +1240,8 @@ export const insertSupplierInsuranceSchema = createInsertSchema(supplierInsuranc
 export type InsertSupplierInsurance = z.infer<typeof insertSupplierInsuranceSchema>;
 export type SupplierInsurance = typeof supplierInsurances.$inferSelect;
 
-// Supplier Contacts (multiple contacts per supplier company)
+// DEPRECATED: Supplier Contacts - tied to legacy suppliers table
+// Future: Use contacts.firstName/lastName for main contact, and create contactTeamMembers for additional people
 export const supplierContacts = pgTable("supplier_contacts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   supplierId: varchar("supplier_id").notNull().references(() => suppliers.id, { onDelete: "cascade" }),

@@ -63,6 +63,11 @@ Preferred communication style: Simple, everyday language.
 - **Notes & Memos**: Dedicated business/project notes and personal quick-capture memos.
 - **Onboarding Flow**: Two-step process for user profile completion and company creation.
 - **Activity Feed Settings**: Company Settings > Activity section allows toggling visibility of activity types (task, estimate, bill, variation, invoice, proposal, project, site_diary, other). Stored in `companySettings.activityTypesVisible` JSON field. ActivityWidget respects these settings and filters activities accordingly.
+- **Suppliers Migration (In Progress)**: Legacy `suppliers` table being unified into `contacts` with `contactType='supplier'`. 
+  - **Completed**: `bills.supplierId`, `rfqQuotes.supplierId`, `priceListItems.supplierId` now reference `contacts.id` instead of `suppliers.id`.
+  - **Deprecated**: `suppliers`, `supplierLabels`, `supplierLabelAssignments`, `supplierInsurances`, `supplierContacts` tables marked deprecated but functional for backward compatibility.
+  - **Contact Merge**: `mergeContacts()` handles bills, RFQs, favoriteSuppliers, scheduleItems, and purchaseOrders correctly.
+  - **Future Work**: Create `contactInsurances` table to replace `supplierInsurances` for contacts-based insurance tracking.
 
 ### Mobile App (Capacitor-based)
 - **Framework**: React with Capacitor for native mobile features.
