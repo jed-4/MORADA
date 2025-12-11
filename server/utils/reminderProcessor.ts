@@ -239,13 +239,6 @@ export async function processInsuranceExpiryReminders() {
     
     for (const company of companies) {
       try {
-        const expiringIn30Days = await storage.getExpiringInsurances(company.id, 30);
-        const expiringIn7Days = await storage.getExpiringInsurances(company.id, 7);
-        
-        const expiring30NotYet7 = expiringIn30Days.filter(
-          ins => !expiringIn7Days.some(i7 => i7.id === ins.id)
-        );
-        
         const companySettings = await storage.getCompanySettings(company.id);
         const reminderRoleId = (companySettings as any)?.insuranceReminderRoleId;
         
@@ -269,6 +262,14 @@ export async function processInsuranceExpiryReminders() {
             assigneeUserId = allUsers[0].id;
           }
         }
+
+        // Process legacy supplier insurances
+        const expiringIn30Days = await storage.getExpiringInsurances(company.id, 30);
+        const expiringIn7Days = await storage.getExpiringInsurances(company.id, 7);
+        
+        const expiring30NotYet7 = expiringIn30Days.filter(
+          ins => !expiringIn7Days.some(i7 => i7.id === ins.id)
+        );
         
         for (const insurance of expiring30NotYet7) {
           const existingTask = await storage.findTaskByReference(
@@ -323,6 +324,68 @@ export async function processInsuranceExpiryReminders() {
             });
             
             console.log(`[ReminderProcessor] Created 7-day URGENT expiry task for ${supplierName} - ${insurance.insuranceType}`);
+          }
+        }
+
+        // Process contact-based supplier insurances (new system)
+        const contactExpiringIn30Days = await storage.getExpiringContactInsurances(company.id, 30);
+        const contactExpiringIn7Days = await storage.getExpiringContactInsurances(company.id, 7);
+        
+        const contactExpiring30NotYet7 = contactExpiringIn30Days.filter(
+          ins => !contactExpiringIn7Days.some(i7 => i7.id === ins.id)
+        );
+        
+        for (const insurance of contactExpiring30NotYet7) {
+          const existingTask = await storage.findTaskByReference(
+            company.id,
+            'contact_insurance_expiry_30',
+            insurance.id
+          );
+          
+          if (!existingTask) {
+            const contactName = insurance.contact.name || 'Unknown Supplier';
+            const expiryDate = format(new Date(insurance.expiryDate!), 'dd/MM/yyyy');
+            
+            await storage.createTask({
+              companyId: company.id,
+              title: `Insurance Expiry Warning: ${contactName} - ${insurance.insuranceType}`,
+              description: `${insurance.insuranceType} insurance for ${contactName} expires on ${expiryDate}. Please ensure the supplier provides updated insurance documentation.`,
+              status: 'To Do',
+              priority: 'Medium',
+              dueDate: new Date(insurance.expiryDate!),
+              assigneeId: assigneeUserId,
+              referenceType: 'contact_insurance_expiry_30',
+              referenceId: insurance.id,
+            });
+            
+            console.log(`[ReminderProcessor] Created 30-day expiry task for contact ${contactName} - ${insurance.insuranceType}`);
+          }
+        }
+        
+        for (const insurance of contactExpiringIn7Days) {
+          const existingTask = await storage.findTaskByReference(
+            company.id,
+            'contact_insurance_expiry_7',
+            insurance.id
+          );
+          
+          if (!existingTask) {
+            const contactName = insurance.contact.name || 'Unknown Supplier';
+            const expiryDate = format(new Date(insurance.expiryDate!), 'dd/MM/yyyy');
+            
+            await storage.createTask({
+              companyId: company.id,
+              title: `URGENT: Insurance Expiring Soon - ${contactName} - ${insurance.insuranceType}`,
+              description: `${insurance.insuranceType} insurance for ${contactName} expires on ${expiryDate}. Immediate action required to obtain updated documentation.`,
+              status: 'To Do',
+              priority: 'High',
+              dueDate: new Date(insurance.expiryDate!),
+              assigneeId: assigneeUserId,
+              referenceType: 'contact_insurance_expiry_7',
+              referenceId: insurance.id,
+            });
+            
+            console.log(`[ReminderProcessor] Created 7-day URGENT expiry task for contact ${contactName} - ${insurance.insuranceType}`);
           }
         }
       } catch (companyError) {
