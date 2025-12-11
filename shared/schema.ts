@@ -1365,7 +1365,7 @@ export const bills = pgTable("bills", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   billNumber: text("bill_number").notNull().unique(), // Auto-generated unique number
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-  supplierId: varchar("supplier_id").notNull().references(() => suppliers.id),
+  supplierId: varchar("supplier_id").references(() => contacts.id), // Changed from suppliers to contacts
   billType: billTypeEnum("bill_type").notNull().default("bill"),
   status: billStatusEnum("status").notNull().default("draft"),
   billDate: timestamp("bill_date").notNull(),
@@ -3763,7 +3763,7 @@ export const rfqQuotes = pgTable("rfq_quotes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   rfqId: varchar("rfq_id").notNull().references(() => rfqs.id, { onDelete: "cascade" }),
   
-  supplierId: varchar("supplier_id").references(() => suppliers.id),
+  supplierId: varchar("supplier_id").references(() => contacts.id), // Changed from suppliers to contacts
   supplierName: text("supplier_name"),
   supplierEmail: text("supplier_email"), // For portal submissions
   
@@ -4733,8 +4733,8 @@ export const priceListItems = pgTable("price_list_items", {
   markupPercent: numeric("markup_percent", { precision: 10, scale: 2 }), // Markup percentage
   gstInclusive: boolean("gst_inclusive").notNull().default(false), // Whether prices include GST
   
-  // Supplier info
-  supplierId: varchar("supplier_id").references(() => suppliers.id, { onDelete: "set null" }),
+  // Supplier info (from contacts with contactType = 'supplier')
+  supplierId: varchar("supplier_id").references(() => contacts.id, { onDelete: "set null" }),
   supplierCode: text("supplier_code"), // Supplier's product reference number
   leadTimeDays: integer("lead_time_days"), // Typical delivery timeframe in days
   
