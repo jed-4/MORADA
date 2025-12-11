@@ -944,7 +944,7 @@ export interface IStorage {
   getBillLineItemPriceLinks(companyId: string, status?: string): Promise<(BillLineItemPriceLink & { billLineItem?: import("@shared/schema").BillLineItem; bill?: import("@shared/schema").Bill })[]>;
   createBillLineItemPriceLink(link: InsertBillLineItemPriceLink): Promise<BillLineItemPriceLink>;
   updateBillLineItemPriceLink(id: string, link: Partial<InsertBillLineItemPriceLink>): Promise<BillLineItemPriceLink | undefined>;
-  getUnlinkedBillLineItems(companyId: string): Promise<Array<import("@shared/schema").BillLineItem & { bill: import("@shared/schema").Bill; supplier: import("@shared/schema").Supplier }>>;
+  getUnlinkedBillLineItems(companyId: string): Promise<Array<import("@shared/schema").BillLineItem & { bill: import("@shared/schema").Bill; supplier: import("@shared/schema").Contact | null }>>;
 
   // Dashboard Views CRUD
   getDashboardViews(companyId: string, userId: string): Promise<DashboardView[]>;
@@ -10349,11 +10349,11 @@ export class DbStorage implements IStorage {
         )
         .orderBy(desc(schema.bills.billDate), schema.billLineItems.order);
       
-      const supplierIds = [...new Set(items.map(item => item.bill.supplierId))];
+      const supplierIds = [...new Set(items.map(item => item.bill.supplierId).filter(Boolean))] as string[];
       const suppliersData = supplierIds.length > 0 
         ? await db.select()
-            .from(schema.suppliers)
-            .where(inArray(schema.suppliers.id, supplierIds))
+            .from(schema.contacts)
+            .where(inArray(schema.contacts.id, supplierIds))
         : [];
       
       const supplierMap = new Map(suppliersData.map(s => [s.id, s]));
@@ -10362,7 +10362,7 @@ export class DbStorage implements IStorage {
         ...item,
         bill: {
           ...item.bill,
-          supplier: supplierMap.get(item.bill.supplierId),
+          supplier: item.bill.supplierId ? supplierMap.get(item.bill.supplierId) : null,
         },
       }));
     } catch (error) {
@@ -16003,36 +16003,6 @@ export class DbStorage implements IStorage {
       return result[0];
     } catch (error) {
       console.error("Database error in updateBillLineItemPriceLink:", error);
-      throw error;
-    }
-  }
-
-  async getUnlinkedBillLineItems(companyId: string): Promise<Array<schema.BillLineItem & { bill: schema.Bill; supplier: schema.Supplier }>> {
-    try {
-      // Get all bill line items that don't have a link yet
-      const results = await db.select({
-        billLineItem: schema.billLineItems,
-        bill: schema.bills,
-        supplier: schema.suppliers,
-      })
-        .from(schema.billLineItems)
-        .innerJoin(schema.bills, eq(schema.billLineItems.billId, schema.bills.id))
-        .innerJoin(schema.suppliers, eq(schema.bills.supplierId, schema.suppliers.id))
-        .innerJoin(schema.projects, eq(schema.bills.projectId, schema.projects.id))
-        .leftJoin(schema.billLineItemPriceLinks, eq(schema.billLineItems.id, schema.billLineItemPriceLinks.billLineItemId))
-        .where(and(
-          eq(schema.projects.companyId, companyId),
-          isNull(schema.billLineItemPriceLinks.id)
-        ))
-        .orderBy(desc(schema.bills.billDate), asc(schema.suppliers.name));
-
-      return results.map(row => ({
-        ...row.billLineItem,
-        bill: row.bill,
-        supplier: row.supplier,
-      }));
-    } catch (error) {
-      console.error("Database error in getUnlinkedBillLineItems:", error);
       throw error;
     }
   }
