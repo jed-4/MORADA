@@ -6426,13 +6426,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Verify both contacts exist and belong to this company
-      const sourceContact = await storage.getContact(sourceId);
-      const targetContact = await storage.getContact(targetId);
+      const sourceContact = await storage.getContact(sourceId, companyId);
+      const targetContact = await storage.getContact(targetId, companyId);
 
-      if (!sourceContact || sourceContact.companyId !== companyId) {
+      if (!sourceContact) {
         return res.status(404).json({ error: "Source contact not found" });
       }
-      if (!targetContact || targetContact.companyId !== companyId) {
+      if (!targetContact) {
         return res.status(404).json({ error: "Target contact not found" });
       }
 

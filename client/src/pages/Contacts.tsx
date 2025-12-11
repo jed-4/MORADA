@@ -297,8 +297,8 @@ export default function Contacts() {
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead className="w-10"></TableHead>
-                <TableHead className="text-xs font-medium">Name</TableHead>
-                <TableHead className="text-xs font-medium">Company</TableHead>
+                <TableHead className="text-xs font-medium">Business Name</TableHead>
+                <TableHead className="text-xs font-medium">Key Person</TableHead>
                 <TableHead className="text-xs font-medium">Role</TableHead>
                 <TableHead className="text-xs font-medium">Phone</TableHead>
                 <TableHead className="text-xs font-medium">Email</TableHead>
@@ -324,15 +324,15 @@ export default function Contacts() {
                     </Avatar>
                   </TableCell>
                   <TableCell className="text-sm font-medium py-2">
-                    {contact.firstName || contact.lastName 
-                      ? [contact.firstName, contact.lastName].filter(Boolean).join(" ") 
-                      : contact.name || "-"}
+                    {contact.name || contact.company || "-"}
                     {contact.isArchived && (
                       <Badge variant="outline" className="ml-2 text-xs">Archived</Badge>
                     )}
                   </TableCell>
                   <TableCell className="text-sm py-2">
-                    {contact.company || <span className="text-muted-foreground">-</span>}
+                    {contact.firstName || contact.lastName 
+                      ? [contact.firstName, contact.lastName].filter(Boolean).join(" ") 
+                      : <span className="text-muted-foreground">-</span>}
                   </TableCell>
                   <TableCell className="text-sm py-2">
                     {contact.contactType === "team" 

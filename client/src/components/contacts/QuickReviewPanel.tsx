@@ -2,11 +2,22 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { X, ChevronLeft, ChevronRight, Trash2, Check, Building2, User, Briefcase, Keyboard, SkipForward } from "lucide-react";
+import { ChevronLeft, ChevronRight, Trash2, Check, Building2, User, Briefcase, SkipForward, ArrowRightLeft, Users, Keyboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   Form,
   FormControl,
@@ -32,18 +43,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { insertContactSchema, type InsertContact, type Contact, type CostCode } from "@shared/schema";
+import { type Contact, type CostCode } from "@shared/schema";
 import { z } from "zod";
 
 const quickReviewSchema = z.object({
-  name: z.string().min(1, "Name is required"),
+  name: z.string().min(1, "Business name is required"),
   firstName: z.string().optional(),
   lastName: z.string().optional(),
   email: z.string().optional(),
@@ -66,6 +72,31 @@ type QuickReviewPanelProps = {
   contactTypeFilter?: "team" | "supplier" | "client" | null;
 };
 
+function findSimilarContacts(current: Contact, allContacts: Contact[]): Contact[] {
+  if (!current) return [];
+  const name = (current.name || current.company || "").toLowerCase().trim();
+  if (!name || name.length < 3) return [];
+  
+  return allContacts.filter(c => {
+    if (c.id === current.id || c.isArchived) return false;
+    const otherName = (c.name || c.company || "").toLowerCase().trim();
+    if (!otherName || otherName.length < 3) return false;
+    
+    // Check for substring match or similar words
+    if (name.includes(otherName) || otherName.includes(name)) return true;
+    
+    // Check first word match (for company names)
+    const nameWords = name.split(/\s+/);
+    const otherWords = otherName.split(/\s+/);
+    if (nameWords[0] && otherWords[0] && nameWords[0].length > 2 && 
+        (nameWords[0] === otherWords[0] || nameWords[0].includes(otherWords[0]) || otherWords[0].includes(nameWords[0]))) {
+      return true;
+    }
+    
+    return false;
+  }).slice(0, 5);
+}
+
 export default function QuickReviewPanel({
   open,
   onClose,
@@ -75,6 +106,7 @@ export default function QuickReviewPanel({
   const { toast } = useToast();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [mergeTargetId, setMergeTargetId] = useState<string | null>(null);
 
   const eligibleContacts = useMemo(() => {
     return contacts.filter(c => 
@@ -92,6 +124,10 @@ export default function QuickReviewPanel({
   const reviewedCount = eligibleContacts.filter(c => c.reviewStatus === "reviewed").length;
   const progressPercent = totalEligible > 0 ? (reviewedCount / totalEligible) * 100 : 100;
   const unreviewedCount = unreviewedContacts.length;
+
+  const similarContacts = useMemo(() => {
+    return currentContact ? findSimilarContacts(currentContact, contacts) : [];
+  }, [currentContact, contacts]);
 
   const { data: costCodes = [] } = useQuery<CostCode[]>({
     queryKey: ["/api/cost-codes"],
@@ -267,6 +303,31 @@ export default function QuickReviewPanel({
     },
   });
 
+  const mergeMutation = useMutation({
+    mutationFn: async (targetId: string) => {
+      if (!currentContact) return;
+      return await apiRequest("/api/contacts/merge", "POST", {
+        sourceId: currentContact.id,
+        targetId,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
+      toast({ title: "Contacts merged successfully" });
+      setMergeTargetId(null);
+      // Reset to first contact after merge since current contact was archived
+      setCurrentIndex(0);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to merge contacts",
+        description: error.message,
+        variant: "destructive",
+      });
+      setMergeTargetId(null);
+    },
+  });
+
   const moveToPrevious = useCallback(() => {
     if (currentIndex > 0) {
       setCurrentIndex(prev => prev - 1);
@@ -295,61 +356,13 @@ export default function QuickReviewPanel({
     skipMutation.mutate();
   }, [skipMutation]);
 
-  useEffect(() => {
-    if (!open) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (deleteDialogOpen) return;
-      
-      const target = e.target as HTMLElement;
-      const isFormElement = 
-        target.tagName === "INPUT" || 
-        target.tagName === "TEXTAREA" || 
-        target.tagName === "SELECT" ||
-        target.isContentEditable ||
-        target.closest('[role="listbox"]') ||
-        target.closest('[role="combobox"]');
-      
-      if (isFormElement) {
-        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-          e.preventDefault();
-          form.handleSubmit(onSubmit)();
-        } else if (e.key === "s" && (e.metaKey || e.ctrlKey)) {
-          e.preventDefault();
-          handleSkip();
-        } else if (e.key === "Escape") {
-          e.preventDefault();
-          (target as HTMLElement).blur();
-        }
-        return;
-      }
-      
-      if (e.key === "ArrowLeft" && !e.metaKey && !e.ctrlKey) {
-        e.preventDefault();
-        moveToPrevious();
-      } else if (e.key === "ArrowRight" && !e.metaKey && !e.ctrlKey) {
-        e.preventDefault();
-        moveToNextManual();
-      } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        form.handleSubmit(onSubmit)();
-      } else if (e.key === "Delete" || (e.key === "Backspace" && e.metaKey)) {
-        e.preventDefault();
-        setDeleteDialogOpen(true);
-      } else if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      } else if (e.key === "s" && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        handleSkip();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [open, deleteDialogOpen, moveToPrevious, moveToNextManual, form, onClose, handleSkip]);
-
-  if (!open) return null;
+  const handleSetAsBusinessName = () => {
+    const currentName = form.getValues("name");
+    if (currentName) {
+      form.setValue("company", currentName);
+      toast({ title: "Copied to Business Name field" });
+    }
+  };
 
   const contactType = form.watch("contactType");
   const isSupplier = contactType === "supplier";
@@ -367,385 +380,443 @@ export default function QuickReviewPanel({
     return "Client";
   };
 
-  if (unreviewedCount === 0) {
+  if (unreviewedCount === 0 && open) {
     return (
-      <div className="fixed inset-0 z-50 bg-background flex items-center justify-center" data-testid="quick-review-empty">
-        <div className="text-center space-y-4">
-          <Check className="h-16 w-16 text-green-500 mx-auto" />
-          <h2 className="text-2xl font-semibold">All Done!</h2>
-          <p className="text-muted-foreground">All contacts have been reviewed.</p>
-          <Button onClick={onClose} data-testid="button-close-review">
-            Close
-          </Button>
-        </div>
-      </div>
+      <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+        <DialogContent className="max-w-md" data-testid="quick-review-empty">
+          <div className="text-center py-8 space-y-4">
+            <Check className="h-16 w-16 text-green-500 mx-auto" />
+            <h2 className="text-xl font-semibold">All Done!</h2>
+            <p className="text-muted-foreground">All contacts have been reviewed.</p>
+            <Button onClick={onClose} data-testid="button-close-review">
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     );
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-background flex flex-col" data-testid="quick-review-panel">
-      <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
-        <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={onClose}
-            data-testid="button-close-review"
-          >
-            <X className="h-4 w-4" />
-          </Button>
-          <div>
-            <h1 className="text-sm font-semibold">Quick Review</h1>
+    <>
+      <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" data-testid="quick-review-panel">
+          <DialogHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <DialogTitle className="text-sm font-semibold">Quick Review</DialogTitle>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-muted-foreground">
+                    {reviewedCount}/{totalEligible}
+                  </span>
+                  <Progress value={progressPercent} className="h-1.5 w-20" />
+                </div>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-6 w-6">
+                      <Keyboard className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-xs">
+                    <div className="space-y-0.5 text-[10px]">
+                      <p><kbd className="px-1 bg-muted rounded">←</kbd> <kbd className="px-1 bg-muted rounded">→</kbd> Navigate</p>
+                      <p><kbd className="px-1 bg-muted rounded">Esc</kbd> Close</p>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            </div>
             <p className="text-[11px] text-muted-foreground">
               {currentIndex + 1} of {unreviewedCount} remaining
             </p>
-          </div>
-        </div>
+          </DialogHeader>
 
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 w-40">
-            <span className="text-[11px] text-muted-foreground whitespace-nowrap">
-              {reviewedCount}/{totalEligible}
-            </span>
-            <Progress value={progressPercent} className="h-1.5" />
-          </div>
-          
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-7 w-7">
-                <Keyboard className="h-3.5 w-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="max-w-xs">
-              <div className="space-y-0.5 text-[10px]">
-                <p><kbd className="px-1 bg-muted rounded">←</kbd> <kbd className="px-1 bg-muted rounded">→</kbd> Navigate</p>
-                <p><kbd className="px-1 bg-muted rounded">⌘</kbd>+<kbd className="px-1 bg-muted rounded">Enter</kbd> Save & Next</p>
-                <p><kbd className="px-1 bg-muted rounded">⌘</kbd>+<kbd className="px-1 bg-muted rounded">S</kbd> Skip</p>
-                <p><kbd className="px-1 bg-muted rounded">Delete</kbd> Remove contact</p>
-                <p><kbd className="px-1 bg-muted rounded">Esc</kbd> Close</p>
-              </div>
-            </TooltipContent>
-          </Tooltip>
-        </div>
-      </div>
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" className="gap-1 text-[11px] h-6">
+                {getContactIcon()}
+                {getContactTypeLabel()}
+              </Badge>
+              {currentContact?.labels && (currentContact.labels as string[]).length > 0 && (
+                <div className="flex gap-1">
+                  {(currentContact.labels as string[]).slice(0, 3).map(label => (
+                    <Badge key={label} variant="outline" className="text-[10px] h-5 bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/20">
+                      {label}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
 
-      <div className="flex-1 overflow-auto">
-        <div className="max-w-2xl mx-auto p-4">
-          <div className="flex items-center gap-2 mb-4">
-            <Badge variant="secondary" className="gap-1 text-[11px] h-6">
-              {getContactIcon()}
-              {getContactTypeLabel()}
-            </Badge>
-            {currentContact?.labels && (currentContact.labels as string[]).length > 0 && (
-              <div className="flex gap-1">
-                {(currentContact.labels as string[]).slice(0, 3).map(label => (
-                  <Badge key={label} variant="outline" className="text-[10px] h-5 bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/20">
-                    {label}
-                  </Badge>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
-              {isSupplier ? (
-                <>
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
+                {/* Business Name with Set as Business Name button */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <FormLabel className="text-[11px]">Business Name *</FormLabel>
+                    {form.watch("name") && !form.watch("company") && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-5 px-2 text-[10px] text-[#bba7db]"
+                        onClick={handleSetAsBusinessName}
+                        data-testid="button-set-business-name"
+                      >
+                        <ArrowRightLeft className="h-3 w-3 mr-1" />
+                        Copy to Company
+                      </Button>
+                    )}
+                  </div>
                   <FormField
                     control={form.control}
-                    name="company"
+                    name="name"
                     render={({ field }) => (
-                      <FormItem className="space-y-1">
-                        <FormLabel className="text-[11px]">Company Name *</FormLabel>
+                      <FormItem className="space-y-0">
                         <FormControl>
                           <Input 
                             {...field} 
                             value={field.value || ""} 
                             className="h-7 text-[11px]"
                             autoFocus
-                            data-testid="input-company"
+                            data-testid="input-name"
                           />
                         </FormControl>
                         <FormMessage className="text-[10px]" />
                       </FormItem>
                     )}
                   />
+                </div>
 
-                  <div className="grid grid-cols-2 gap-2">
+                {isSupplier && (
+                  <>
                     <FormField
                       control={form.control}
-                      name="firstName"
+                      name="company"
                       render={({ field }) => (
                         <FormItem className="space-y-1">
-                          <FormLabel className="text-[11px]">Contact First Name</FormLabel>
+                          <FormLabel className="text-[11px]">Company / Trading Name</FormLabel>
                           <FormControl>
-                            <Input {...field} value={field.value || ""} className="h-7 text-[11px]" data-testid="input-first-name" />
+                            <Input 
+                              {...field} 
+                              value={field.value || ""} 
+                              className="h-7 text-[11px]"
+                              data-testid="input-company"
+                            />
                           </FormControl>
                           <FormMessage className="text-[10px]" />
                         </FormItem>
                       )}
                     />
-                    <FormField
-                      control={form.control}
-                      name="lastName"
-                      render={({ field }) => (
-                        <FormItem className="space-y-1">
-                          <FormLabel className="text-[11px]">Contact Last Name</FormLabel>
-                          <FormControl>
-                            <Input {...field} value={field.value || ""} className="h-7 text-[11px]" data-testid="input-last-name" />
-                          </FormControl>
-                          <FormMessage className="text-[10px]" />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
 
-                  <div className="grid grid-cols-2 gap-2">
-                    <FormField
-                      control={form.control}
-                      name="phone"
-                      render={({ field }) => (
-                        <FormItem className="space-y-1">
-                          <FormLabel className="text-[11px]">Phone</FormLabel>
-                          <FormControl>
-                            <Input {...field} value={field.value || ""} className="h-7 text-[11px]" data-testid="input-phone" />
-                          </FormControl>
-                          <FormMessage className="text-[10px]" />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="email"
-                      render={({ field }) => (
-                        <FormItem className="space-y-1">
-                          <FormLabel className="text-[11px]">Email</FormLabel>
-                          <FormControl>
-                            <Input type="email" {...field} value={field.value || ""} className="h-7 text-[11px]" data-testid="input-email" />
-                          </FormControl>
-                          <FormMessage className="text-[10px]" />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  <div className="border-t pt-3 space-y-2">
-                    <h3 className="text-[11px] font-medium text-muted-foreground">Essential Defaults</h3>
-                    
                     <div className="grid grid-cols-2 gap-2">
                       <FormField
                         control={form.control}
-                        name="defaultCostCodeId"
+                        name="firstName"
                         render={({ field }) => (
                           <FormItem className="space-y-1">
-                            <FormLabel className="text-[11px]">Default Cost Code</FormLabel>
-                            <Select onValueChange={field.onChange} value={field.value || "__none__"}>
-                              <FormControl>
-                                <SelectTrigger className="h-7 text-[11px]" data-testid="select-cost-code">
-                                  <SelectValue placeholder="Select cost code" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                <SelectItem value="__none__">None</SelectItem>
-                                {costCodes.map(cc => (
-                                  <SelectItem key={cc.id} value={cc.id}>
-                                    {cc.code} - {cc.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                            <FormLabel className="text-[11px]">Key Person First Name</FormLabel>
+                            <FormControl>
+                              <Input {...field} value={field.value || ""} className="h-7 text-[11px]" data-testid="input-first-name" />
+                            </FormControl>
                             <FormMessage className="text-[10px]" />
                           </FormItem>
                         )}
                       />
-
                       <FormField
                         control={form.control}
-                        name="paymentTerms"
+                        name="lastName"
                         render={({ field }) => (
                           <FormItem className="space-y-1">
-                            <FormLabel className="text-[11px]">Payment Terms</FormLabel>
-                            <Select onValueChange={field.onChange} value={field.value || "__none__"}>
-                              <FormControl>
-                                <SelectTrigger className="h-7 text-[11px]" data-testid="select-payment-terms">
-                                  <SelectValue placeholder="Select terms" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                <SelectItem value="__none__">Not Set</SelectItem>
-                                <SelectItem value="COD">COD (Cash on Delivery)</SelectItem>
-                                <SelectItem value="Net 7">Net 7</SelectItem>
-                                <SelectItem value="Net 14">Net 14</SelectItem>
-                                <SelectItem value="Net 30">Net 30</SelectItem>
-                                <SelectItem value="Net 60">Net 60</SelectItem>
-                                <SelectItem value="EOM">EOM (End of Month)</SelectItem>
-                              </SelectContent>
-                            </Select>
+                            <FormLabel className="text-[11px]">Key Person Last Name</FormLabel>
+                            <FormControl>
+                              <Input {...field} value={field.value || ""} className="h-7 text-[11px]" data-testid="input-last-name" />
+                            </FormControl>
                             <FormMessage className="text-[10px]" />
                           </FormItem>
                         )}
                       />
                     </div>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="grid grid-cols-2 gap-2">
-                    <FormField
-                      control={form.control}
-                      name="firstName"
-                      render={({ field }) => (
-                        <FormItem className="space-y-1">
-                          <FormLabel className="text-[11px]">First Name *</FormLabel>
-                          <FormControl>
-                            <Input 
-                              {...field} 
-                              value={field.value || ""} 
-                              className="h-7 text-[11px]"
-                              autoFocus
-                              data-testid="input-first-name"
-                            />
-                          </FormControl>
-                          <FormMessage className="text-[10px]" />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="lastName"
-                      render={({ field }) => (
-                        <FormItem className="space-y-1">
-                          <FormLabel className="text-[11px]">Last Name</FormLabel>
-                          <FormControl>
-                            <Input 
-                              {...field} 
-                              value={field.value || ""} 
-                              className="h-7 text-[11px]"
-                              data-testid="input-last-name"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
 
-                  <div className="grid grid-cols-2 gap-2">
-                    <FormField
-                      control={form.control}
-                      name="phone"
-                      render={({ field }) => (
-                        <FormItem className="space-y-1">
-                          <FormLabel className="text-[11px]">Phone</FormLabel>
-                          <FormControl>
-                            <Input {...field} value={field.value || ""} className="h-7 text-[11px]" data-testid="input-phone" />
-                          </FormControl>
-                          <FormMessage className="text-[10px]" />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="email"
-                      render={({ field }) => (
-                        <FormItem className="space-y-1">
-                          <FormLabel className="text-[11px]">Email</FormLabel>
-                          <FormControl>
-                            <Input type="email" {...field} value={field.value || ""} className="h-7 text-[11px]" data-testid="input-email" />
-                          </FormControl>
-                          <FormMessage className="text-[10px]" />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <FormField
+                        control={form.control}
+                        name="phone"
+                        render={({ field }) => (
+                          <FormItem className="space-y-1">
+                            <FormLabel className="text-[11px]">Phone</FormLabel>
+                            <FormControl>
+                              <Input {...field} value={field.value || ""} className="h-7 text-[11px]" data-testid="input-phone" />
+                            </FormControl>
+                            <FormMessage className="text-[10px]" />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="email"
+                        render={({ field }) => (
+                          <FormItem className="space-y-1">
+                            <FormLabel className="text-[11px]">Email</FormLabel>
+                            <FormControl>
+                              <Input type="email" {...field} value={field.value || ""} className="h-7 text-[11px]" data-testid="input-email" />
+                            </FormControl>
+                            <FormMessage className="text-[10px]" />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
 
-                  {isTeam && (
-                    <FormField
-                      control={form.control}
-                      name="role"
-                      render={({ field }) => (
-                        <FormItem className="space-y-1">
-                          <FormLabel className="text-[11px]">Role / Position</FormLabel>
-                          <FormControl>
-                            <Input {...field} value={field.value || ""} className="h-7 text-[11px]" data-testid="input-role" />
-                          </FormControl>
-                          <FormMessage className="text-[10px]" />
-                        </FormItem>
-                      )}
-                    />
-                  )}
-                </>
-              )}
-            </form>
-          </Form>
-        </div>
-      </div>
+                    <div className="border-t pt-3 space-y-2">
+                      <h3 className="text-[11px] font-medium text-muted-foreground">Defaults</h3>
+                      
+                      <div className="grid grid-cols-2 gap-2">
+                        <FormField
+                          control={form.control}
+                          name="defaultCostCodeId"
+                          render={({ field }) => (
+                            <FormItem className="space-y-1">
+                              <FormLabel className="text-[11px]">Default Cost Code</FormLabel>
+                              <Select onValueChange={field.onChange} value={field.value || "__none__"}>
+                                <FormControl>
+                                  <SelectTrigger className="h-7 text-[11px]" data-testid="select-cost-code">
+                                    <SelectValue placeholder="Select cost code" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="__none__">None</SelectItem>
+                                  {costCodes.map(cc => (
+                                    <SelectItem key={cc.id} value={cc.id}>
+                                      {cc.code} - {cc.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage className="text-[10px]" />
+                            </FormItem>
+                          )}
+                        />
 
-      <div className="flex items-center justify-between px-4 py-2 border-t bg-muted/30">
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={moveToPrevious}
-            disabled={unreviewedCount <= 1}
-            data-testid="button-previous"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={moveToNextManual}
-            disabled={unreviewedCount <= 1}
-            data-testid="button-next"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-          <span className="text-[11px] text-muted-foreground ml-1">
-            {currentIndex + 1} / {unreviewedCount}
-          </span>
-        </div>
+                        <FormField
+                          control={form.control}
+                          name="paymentTerms"
+                          render={({ field }) => (
+                            <FormItem className="space-y-1">
+                              <FormLabel className="text-[11px]">Payment Terms</FormLabel>
+                              <Select onValueChange={field.onChange} value={field.value || "__none__"}>
+                                <FormControl>
+                                  <SelectTrigger className="h-7 text-[11px]" data-testid="select-payment-terms">
+                                    <SelectValue placeholder="Select terms" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="__none__">Not Set</SelectItem>
+                                  <SelectItem value="COD">COD</SelectItem>
+                                  <SelectItem value="Net 7">Net 7</SelectItem>
+                                  <SelectItem value="Net 14">Net 14</SelectItem>
+                                  <SelectItem value="Net 30">Net 30</SelectItem>
+                                  <SelectItem value="Net 60">Net 60</SelectItem>
+                                  <SelectItem value="EOM">EOM</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <FormMessage className="text-[10px]" />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
 
-        <div className="flex items-center gap-1.5">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 text-[11px] text-destructive hover:text-destructive hover:bg-destructive/10"
-            onClick={() => setDeleteDialogOpen(true)}
-            data-testid="button-delete"
-          >
-            <Trash2 className="h-3.5 w-3.5 mr-1" />
-            Delete
-          </Button>
-          
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 text-[11px]"
-            onClick={handleSkip}
-            disabled={skipMutation.isPending}
-            data-testid="button-skip"
-          >
-            <SkipForward className="h-3.5 w-3.5 mr-1" />
-            Skip
-          </Button>
-          
-          <Button
-            size="sm"
-            className="h-7 text-[11px] bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
-            onClick={form.handleSubmit(onSubmit)}
-            disabled={updateMutation.isPending}
-            data-testid="button-save-next"
-          >
-            <Check className="h-3.5 w-3.5 mr-1" />
-            Save & Next
-          </Button>
-        </div>
-      </div>
+                {!isSupplier && (
+                  <>
+                    <div className="grid grid-cols-2 gap-2">
+                      <FormField
+                        control={form.control}
+                        name="firstName"
+                        render={({ field }) => (
+                          <FormItem className="space-y-1">
+                            <FormLabel className="text-[11px]">First Name *</FormLabel>
+                            <FormControl>
+                              <Input {...field} value={field.value || ""} className="h-7 text-[11px]" data-testid="input-first-name" />
+                            </FormControl>
+                            <FormMessage className="text-[10px]" />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="lastName"
+                        render={({ field }) => (
+                          <FormItem className="space-y-1">
+                            <FormLabel className="text-[11px]">Last Name</FormLabel>
+                            <FormControl>
+                              <Input {...field} value={field.value || ""} className="h-7 text-[11px]" data-testid="input-last-name" />
+                            </FormControl>
+                            <FormMessage className="text-[10px]" />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
 
+                    <div className="grid grid-cols-2 gap-2">
+                      <FormField
+                        control={form.control}
+                        name="phone"
+                        render={({ field }) => (
+                          <FormItem className="space-y-1">
+                            <FormLabel className="text-[11px]">Phone</FormLabel>
+                            <FormControl>
+                              <Input {...field} value={field.value || ""} className="h-7 text-[11px]" data-testid="input-phone" />
+                            </FormControl>
+                            <FormMessage className="text-[10px]" />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="email"
+                        render={({ field }) => (
+                          <FormItem className="space-y-1">
+                            <FormLabel className="text-[11px]">Email</FormLabel>
+                            <FormControl>
+                              <Input type="email" {...field} value={field.value || ""} className="h-7 text-[11px]" data-testid="input-email" />
+                            </FormControl>
+                            <FormMessage className="text-[10px]" />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    {isTeam && (
+                      <FormField
+                        control={form.control}
+                        name="role"
+                        render={({ field }) => (
+                          <FormItem className="space-y-1">
+                            <FormLabel className="text-[11px]">Role / Position</FormLabel>
+                            <FormControl>
+                              <Input {...field} value={field.value || ""} className="h-7 text-[11px]" data-testid="input-role" />
+                            </FormControl>
+                            <FormMessage className="text-[10px]" />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+                  </>
+                )}
+              </form>
+            </Form>
+
+            {/* Similar Contacts Section */}
+            {similarContacts.length > 0 && (
+              <div className="border-t pt-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Users className="h-3.5 w-3.5 text-amber-500" />
+                  <h3 className="text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                    Possible Duplicates ({similarContacts.length})
+                  </h3>
+                </div>
+                <div className="space-y-1.5">
+                  {similarContacts.map(similar => (
+                    <div 
+                      key={similar.id} 
+                      className="flex items-center justify-between p-2 bg-muted/50 rounded-md"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[11px] font-medium truncate">
+                          {similar.name || similar.company || "Unnamed"}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground truncate">
+                          {similar.email || similar.phone || "No contact info"}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-6 px-2 text-[10px] ml-2"
+                        onClick={() => setMergeTargetId(similar.id)}
+                        disabled={mergeMutation.isPending}
+                        data-testid={`button-merge-${similar.id}`}
+                      >
+                        Merge Into
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Footer with navigation and actions */}
+          <div className="flex items-center justify-between pt-3 border-t">
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={moveToPrevious}
+                disabled={unreviewedCount <= 1}
+                data-testid="button-previous"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={moveToNextManual}
+                disabled={unreviewedCount <= 1}
+                data-testid="button-next"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+              <span className="text-[11px] text-muted-foreground ml-1">
+                {currentIndex + 1} / {unreviewedCount}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-[11px] text-destructive hover:text-destructive hover:bg-destructive/10"
+                onClick={() => setDeleteDialogOpen(true)}
+                data-testid="button-delete"
+              >
+                <Trash2 className="h-3.5 w-3.5 mr-1" />
+                Delete
+              </Button>
+              
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-[11px]"
+                onClick={handleSkip}
+                disabled={skipMutation.isPending}
+                data-testid="button-skip"
+              >
+                <SkipForward className="h-3.5 w-3.5 mr-1" />
+                Skip
+              </Button>
+              
+              <Button
+                size="sm"
+                className="h-7 text-[11px] bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+                onClick={form.handleSubmit(onSubmit)}
+                disabled={updateMutation.isPending}
+                data-testid="button-save-next"
+              >
+                <Check className="h-3.5 w-3.5 mr-1" />
+                Save & Next
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent data-testid="dialog-confirm-delete">
           <AlertDialogHeader>
@@ -766,6 +837,29 @@ export default function QuickReviewPanel({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+
+      {/* Merge Confirmation */}
+      <AlertDialog open={!!mergeTargetId} onOpenChange={() => setMergeTargetId(null)}>
+        <AlertDialogContent data-testid="dialog-confirm-merge">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Merge Contacts?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will merge "{currentContact?.name || currentContact?.company}" into the selected contact. 
+              All linked records will be transferred and the current contact will be archived.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-merge">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => mergeTargetId && mergeMutation.mutate(mergeTargetId)}
+              className="bg-[#bba7db] hover:bg-[#bba7db]/90"
+              data-testid="button-confirm-merge"
+            >
+              Merge
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
