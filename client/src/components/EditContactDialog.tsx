@@ -26,6 +26,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { insertContactSchema, type InsertContact, type Contact, type CostCode } from "@shared/schema";
+import { ContactInsuranceSection } from "@/components/contacts/ContactInsuranceSection";
 
 type EditContactDialogProps = {
   open: boolean;
@@ -532,6 +533,13 @@ export default function EditContactDialog({
                       <FormMessage />
                     </FormItem>
                   )}
+                />
+
+                <Separator className="my-4" />
+                
+                <ContactInsuranceSection 
+                  contactId={contact.id} 
+                  contactName={contact.name || "Supplier"} 
                 />
               </>
             )}

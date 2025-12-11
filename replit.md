@@ -63,12 +63,13 @@ Preferred communication style: Simple, everyday language.
 - **Notes & Memos**: Dedicated business/project notes and personal quick-capture memos.
 - **Onboarding Flow**: Two-step process for user profile completion and company creation.
 - **Activity Feed Settings**: Company Settings > Activity section allows toggling visibility of activity types (task, estimate, bill, variation, invoice, proposal, project, site_diary, other). Stored in `companySettings.activityTypesVisible` JSON field. ActivityWidget respects these settings and filters activities accordingly.
-- **Suppliers Migration (In Progress)**: Legacy `suppliers` table being unified into `contacts` with `contactType='supplier'`. 
+- **Suppliers Migration (Complete)**: Legacy `suppliers` table unified into `contacts` with `contactType='supplier'`. 
   - **Completed**: `bills.supplierId`, `rfqQuotes.supplierId`, `priceListItems.supplierId` now reference `contacts.id` instead of `suppliers.id`.
   - **Deprecated**: `suppliers`, `supplierLabels`, `supplierLabelAssignments`, `supplierInsurances`, `supplierContacts` tables marked deprecated but functional for backward compatibility.
   - **Contact Merge**: `mergeContacts()` handles bills, RFQs, favoriteSuppliers, scheduleItems, purchaseOrders, rfqQuotes, and priceListItems correctly.
-  - **Known Limitation**: Legacy supplier sub-tables (insurances, contacts, labels) still reference `suppliers.id`. Insurance expiry reminders via ReminderProcessor still use the legacy suppliers table.
-  - **Future Work**: Create `contactInsurances` table to replace `supplierInsurances` for contacts-based insurance tracking.
+  - **Contact Insurances**: New `contactInsurances` table for tracking insurance documents for contact-based suppliers. API at `/api/contacts/:id/insurances`. ReminderProcessor checks both legacy supplierInsurances and new contactInsurances for expiry alerts.
+  - **Insurance UI**: EditContactDialog includes ContactInsuranceSection for supplier-type contacts with full CRUD and expiry status badges.
+  - **Legacy Limitation**: Old supplier sub-tables (supplierInsurances, supplierContacts, supplierLabels) still reference `suppliers.id` for existing data.
 
 ### Mobile App (Capacitor-based)
 - **Framework**: React with Capacitor for native mobile features.
