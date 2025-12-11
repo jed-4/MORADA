@@ -116,8 +116,9 @@ export default function AddContactDialog({
       if (cleanData.spousePhone === "") cleanData.spousePhone = undefined;
       if (cleanData.spouseEmail === "") cleanData.spouseEmail = undefined;
       
-      // Auto-generate full name from firstName and lastName
-      const fullName = `${cleanData.firstName || ""} ${cleanData.lastName || ""}`.trim() || cleanData.name;
+      // Auto-generate full name from firstName and lastName, or fall back to company name
+      const personName = `${cleanData.firstName || ""} ${cleanData.lastName || ""}`.trim();
+      const fullName = personName || cleanData.company || cleanData.name || "Unnamed Contact";
       const payload = { ...cleanData, name: fullName };
       const response = await apiRequest("/api/contacts", "POST", payload);
       return response.json();
