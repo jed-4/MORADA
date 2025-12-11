@@ -127,7 +127,15 @@ export default function PersonalCalendar() {
     enabled: !!user,
   });
 
-  // Fetch Google Calendar events (only for current user)
+  // Fetch Google Calendar connection status
+  const { data: googleCalendarStatus } = useQuery<{ connected: boolean; email?: string }>({
+    queryKey: ["/api/google-calendar/status"],
+    enabled: !!user,
+  });
+
+  const isGoogleCalendarConnected = googleCalendarStatus?.connected === true;
+
+  // Fetch Google Calendar events (only for current user and only if connected)
   const { data: googleCalendarEvents = [], error: googleCalendarError } = useQuery({
     queryKey: ["/api/google-calendar/events"],
     queryFn: async () => {
@@ -142,7 +150,7 @@ export default function PersonalCalendar() {
       }
     },
     retry: false,
-    enabled: displayedUserId === user?.id,
+    enabled: displayedUserId === user?.id && isGoogleCalendarConnected,
   });
 
   // Fetch task status options
@@ -788,21 +796,37 @@ export default function PersonalCalendar() {
                       { value: 'task', label: 'Tasks' },
                       { value: 'schedule-item', label: 'Schedule Items' },
                       { value: 'google-calendar', label: 'Google Calendar' },
-                    ].map((type) => (
-                      <label key={type.value} className="flex items-center gap-2 cursor-pointer">
-                        <Checkbox
-                          checked={filters.eventTypes?.includes(type.value) || false}
-                          onCheckedChange={() => {
-                            const current = filters.eventTypes || [];
-                            const updated = current.includes(type.value)
-                              ? current.filter(t => t !== type.value)
-                              : [...current, type.value];
-                            setFilters({...filters, eventTypes: updated.length > 0 ? updated : undefined});
-                          }}
-                        />
-                        <span className="text-xs">{type.label}</span>
-                      </label>
-                    ))}
+                    ].map((type) => {
+                      const isGoogleOption = type.value === 'google-calendar';
+                      const isCurrentlySelected = filters.eventTypes?.includes(type.value) || false;
+                      const isNotConnected = isGoogleOption && !isGoogleCalendarConnected;
+                      const cannotAddNew = isNotConnected && !isCurrentlySelected;
+                      
+                      return (
+                        <label 
+                          key={type.value} 
+                          className={`flex items-center gap-2 ${cannotAddNew ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                          title={isNotConnected ? 'Connect Google Calendar in Profile settings' : undefined}
+                        >
+                          <Checkbox
+                            checked={isCurrentlySelected}
+                            disabled={cannotAddNew}
+                            onCheckedChange={() => {
+                              if (cannotAddNew) return;
+                              const current = filters.eventTypes || [];
+                              const updated = current.includes(type.value)
+                                ? current.filter(t => t !== type.value)
+                                : [...current, type.value];
+                              setFilters({...filters, eventTypes: updated.length > 0 ? updated : undefined});
+                            }}
+                          />
+                          <span className="text-xs">{type.label}</span>
+                          {isNotConnected && (
+                            <span className="text-[10px] text-muted-foreground">(not connected)</span>
+                          )}
+                        </label>
+                      );
+                    })}
                   </div>
                 </div>
               </PopoverContent>
