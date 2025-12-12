@@ -127,8 +127,7 @@ export default function AddContactDialog({
       const personName = `${cleanData.firstName || ""} ${cleanData.lastName || ""}`.trim();
       const fullName = personName || cleanData.company || cleanData.name || "Unnamed Contact";
       const payload = { ...cleanData, name: fullName };
-      const response = await apiRequest("/api/contacts", "POST", payload);
-      return response.json();
+      return await apiRequest("/api/contacts", "POST", payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
