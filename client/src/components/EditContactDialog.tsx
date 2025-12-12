@@ -214,7 +214,7 @@ export default function EditContactDialog({
 
   const updateMutation = useMutation({
     mutationFn: async (data: InsertContact) => {
-      // Clean up empty strings and special values - convert to undefined/null
+      // Clean up empty strings and special values - convert to proper format for schema
       const cleanData = { ...data };
       if (cleanData.firstName === "") cleanData.firstName = undefined;
       if (cleanData.lastName === "") cleanData.lastName = undefined;
@@ -222,8 +222,9 @@ export default function EditContactDialog({
       if (cleanData.spousePhone === "") cleanData.spousePhone = undefined;
       if (cleanData.spouseEmail === "") cleanData.spouseEmail = undefined;
       if (cleanData.defaultCostCodeId === "__none__") cleanData.defaultCostCodeId = null;
-      if (cleanData.hourlyRate === "") cleanData.hourlyRate = undefined;
-      if (cleanData.hourlyPrice === "") cleanData.hourlyPrice = undefined;
+      // Schema expects string or "" - convert null to empty string
+      if (cleanData.hourlyRate === null || cleanData.hourlyRate === undefined) cleanData.hourlyRate = "";
+      if (cleanData.hourlyPrice === null || cleanData.hourlyPrice === undefined) cleanData.hourlyPrice = "";
       
       return await apiRequest(`/api/contacts/${contact.id}`, "PATCH", cleanData);
     },
