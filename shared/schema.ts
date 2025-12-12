@@ -2873,8 +2873,18 @@ export const scopeStages = pgTable("scope_stages", {
   displayOrder: integer("display_order").notNull().default(0), // Sort order
   parentId: varchar("parent_id"), // For nested stages (optional)
   
+  // Inline stage-specific checklist (simple yes/no items)
+  checklist: json("checklist").default([]), // Array of {id, text, completed} items
+  
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Scope stage checklist item schema
+const scopeStageChecklistItemSchema = z.object({
+  id: z.string(),
+  text: z.string(),
+  completed: z.boolean(),
 });
 
 export const insertScopeStageSchema = createInsertSchema(scopeStages).omit({
@@ -2884,6 +2894,7 @@ export const insertScopeStageSchema = createInsertSchema(scopeStages).omit({
   updatedAt: true,
 }).extend({
   name: z.string().min(1, "Stage name is required"),
+  checklist: z.array(scopeStageChecklistItemSchema).optional(),
 });
 
 export type InsertScopeStage = z.infer<typeof insertScopeStageSchema>;

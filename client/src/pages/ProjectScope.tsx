@@ -804,6 +804,8 @@ interface DroppableStageProps {
   onViewPO?: (poId: string) => void; // Handler to view PO details
   linkedScheduleItems?: LinkedScheduleItemForStage[]; // Linked Schedule Items
   onViewScheduleItem?: (itemId: string) => void; // Handler to view schedule item details
+  // Stage checklist
+  onUpdateStageChecklist?: (stageId: string, checklist: Array<{id: string, text: string, completed: boolean}>) => void;
 }
 
 function DroppableStage({ 
@@ -836,6 +838,7 @@ function DroppableStage({
   onViewPO, // Handler to view PO details
   linkedScheduleItems = [], // Linked Schedule Items
   onViewScheduleItem, // Handler to view schedule item details
+  onUpdateStageChecklist, // Stage checklist handler
 }: DroppableStageProps) {
   const {
     attributes,
@@ -853,6 +856,11 @@ function DroppableStage({
   
   const { toast } = useToast();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [newChecklistItem, setNewChecklistItem] = useState('');
+  const [showChecklistInput, setShowChecklistInput] = useState(false);
+  
+  // Parse checklist from stage data
+  const checklist = (stageData.checklist || []) as Array<{id: string, text: string, completed: boolean}>;
   
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -901,6 +909,31 @@ function DroppableStage({
   };
 
   const hasChildren = children.length > 0;
+
+  // Checklist handlers
+  const handleAddChecklistItem = () => {
+    if (!newChecklistItem.trim()) return;
+    const newItem = {
+      id: crypto.randomUUID(),
+      text: newChecklistItem.trim(),
+      completed: false,
+    };
+    onUpdateStageChecklist?.(stageData.id, [...checklist, newItem]);
+    setNewChecklistItem('');
+    setShowChecklistInput(false);
+  };
+
+  const handleToggleChecklistItem = (itemId: string) => {
+    const updated = checklist.map(item => 
+      item.id === itemId ? { ...item, completed: !item.completed } : item
+    );
+    onUpdateStageChecklist?.(stageData.id, updated);
+  };
+
+  const handleDeleteChecklistItem = (itemId: string) => {
+    const updated = checklist.filter(item => item.id !== itemId);
+    onUpdateStageChecklist?.(stageData.id, updated);
+  };
 
   // Calculate total value for this stage
   const stageTotal = items.reduce((sum, item) => {
@@ -1170,6 +1203,86 @@ function DroppableStage({
                   ))}
                 </div>
               )}
+              
+              {/* Stage Checklist */}
+              <div className="mt-2">
+                {checklist.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide px-2">
+                      Checklist
+                    </div>
+                    {checklist.map((item) => (
+                      <div
+                        key={item.id}
+                        className="h-8 flex items-center gap-2 px-3 rounded-lg group"
+                        data-testid={`checklist-item-${item.id}`}
+                      >
+                        <Checkbox
+                          checked={item.completed}
+                          onCheckedChange={() => handleToggleChecklistItem(item.id)}
+                          className="h-4 w-4"
+                          data-testid={`checkbox-${item.id}`}
+                        />
+                        <span className={`flex-1 text-sm ${item.completed ? 'line-through text-muted-foreground' : ''}`}>
+                          {item.text}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => handleDeleteChecklistItem(item.id)}
+                          data-testid={`delete-checklist-item-${item.id}`}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                {/* Add checklist item */}
+                {showChecklistInput ? (
+                  <div className="flex items-center gap-2 px-3 mt-1">
+                    <Input
+                      value={newChecklistItem}
+                      onChange={(e) => setNewChecklistItem(e.target.value)}
+                      placeholder="Checklist item..."
+                      className="h-8 text-sm flex-1"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddChecklistItem();
+                        } else if (e.key === 'Escape') {
+                          setShowChecklistInput(false);
+                          setNewChecklistItem('');
+                        }
+                      }}
+                      autoFocus
+                      data-testid={`input-checklist-item-${stageData.id}`}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={handleAddChecklistItem}
+                      data-testid={`button-add-checklist-item-${stageData.id}`}
+                    >
+                      <CheckSquare className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs text-muted-foreground w-full justify-start mt-1"
+                    onClick={() => setShowChecklistInput(true)}
+                    data-testid={`button-show-checklist-input-${stageData.id}`}
+                  >
+                    <Plus className="h-3 w-3 mr-1" />
+                    Add checklist item
+                  </Button>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -1208,6 +1321,11 @@ function DroppableStage({
                 collapsedItems={collapsedItems} // Scope 2.0
                 onToggleItemCollapse={onToggleItemCollapse} // Scope 2.0
                 getTypeLabel={getTypeLabel} // Scope 2.0
+                linkedPOs={[]} // Child stages don't have access to full PO map yet
+                onViewPO={onViewPO}
+                linkedScheduleItems={[]} // Child stages don't have access to full schedule item map yet
+                onViewScheduleItem={onViewScheduleItem}
+                onUpdateStageChecklist={onUpdateStageChecklist}
               />
             );
           })}
@@ -1523,6 +1641,30 @@ export default function ProjectScope() {
     },
     onSuccess: () => {
       toast({ title: "Stage updated" });
+    },
+  });
+
+  // Update stage checklist mutation with optimistic updates
+  const updateStageChecklistMutation = useMutation({
+    mutationFn: async ({ id, checklist }: { id: string; checklist: Array<{id: string, text: string, completed: boolean}> }) => {
+      return apiRequest(`/api/scope-stages/${id}`, 'PATCH', { checklist });
+    },
+    onMutate: async ({ id, checklist }) => {
+      await queryClient.cancelQueries({ queryKey: [`/api/projects/${projectId}/scope-stages`] });
+      const previousStages = queryClient.getQueryData<ScopeStage[]>([`/api/projects/${projectId}/scope-stages`]);
+      queryClient.setQueryData<ScopeStage[]>([`/api/projects/${projectId}/scope-stages`], (old) => {
+        if (!old) return old;
+        return old.map(stage => stage.id === id ? { ...stage, checklist } : stage);
+      });
+      return { previousStages };
+    },
+    onError: (err, variables, context) => {
+      if (context?.previousStages) {
+        queryClient.setQueryData([`/api/projects/${projectId}/scope-stages`], context.previousStages);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope-stages`] });
     },
   });
 
@@ -1922,6 +2064,11 @@ export default function ProjectScope() {
   // Handle view schedule item - navigate to the schedule page
   const handleViewScheduleItem = (itemId: string) => {
     window.location.href = `/projects/${projectId}/schedule`;
+  };
+
+  // Handle update stage checklist
+  const handleUpdateStageChecklist = (stageId: string, checklist: Array<{id: string, text: string, completed: boolean}>) => {
+    updateStageChecklistMutation.mutate({ id: stageId, checklist });
   };
 
   const handleToggleSelect = (id: string) => {
@@ -2553,6 +2700,7 @@ export default function ProjectScope() {
                         onViewPO={handleViewPO}
                         linkedScheduleItems={scheduleItemsByStage[stage.id] || []}
                         onViewScheduleItem={handleViewScheduleItem}
+                        onUpdateStageChecklist={handleUpdateStageChecklist}
                       />
                     ))}
 
