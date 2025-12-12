@@ -2935,6 +2935,9 @@ export const scopeItems = pgTable("scope_items", {
   // Gear checklist
   gearList: jsonb("gear_list").default([]), // Array of gear items: [{name: string, checked: boolean, photoUrl: string}]
   
+  // Checklist items (for itemType="checklist")
+  checklistItems: jsonb("checklist_items").default([]), // Array of checklist items: [{id: string, text: string, completed: boolean}]
+  
   // Metadata
   isTemplate: boolean("is_template").notNull().default(false), // Is this a template item
   templateCategory: text("template_category"), // "Standard 4-Bed", "Slab Pour", etc.
@@ -2945,6 +2948,13 @@ export const scopeItems = pgTable("scope_items", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+// Checklist item schema for scope items with itemType="checklist"
+export const scopeChecklistItemSchema = z.object({
+  id: z.string(),
+  text: z.string(),
+  completed: z.boolean(),
+});
+
 export const insertScopeItemSchema = createInsertSchema(scopeItems).omit({
   id: true,
   companyId: true,
@@ -2952,7 +2962,7 @@ export const insertScopeItemSchema = createInsertSchema(scopeItems).omit({
   updatedAt: true,
 }).extend({
   contentType: z.enum(["text", "bullet", "table", "image"]).default("text"),
-  itemType: z.enum(["e-note", "scope", "note", "tool", "material", "proposal"]).default("scope"),
+  itemType: z.enum(["e-note", "scope", "note", "tool", "material", "proposal", "checklist"]).default("scope"),
   stage: z.string().min(1, "Stage is required"),
   title: z.string().min(1, "Title is required"),
   gearList: z.array(z.object({
@@ -2960,6 +2970,7 @@ export const insertScopeItemSchema = createInsertSchema(scopeItems).omit({
     checked: z.boolean().default(false),
     photoUrl: z.string().optional(),
   })).default([]),
+  checklistItems: z.array(scopeChecklistItemSchema).default([]),
 });
 
 export type InsertScopeItem = z.infer<typeof insertScopeItemSchema>;
