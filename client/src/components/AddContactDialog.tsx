@@ -120,6 +120,9 @@ export default function AddContactDialog({
       if (cleanData.hourlyRate === null) cleanData.hourlyRate = "";
       if (cleanData.hourlyPrice === null) cleanData.hourlyPrice = "";
       
+      // Convert "__none__" to undefined for defaultCostCodeId (no cost code selected)
+      if (cleanData.defaultCostCodeId === "__none__") cleanData.defaultCostCodeId = undefined;
+      
       // Auto-generate full name from firstName and lastName, or fall back to company name
       const personName = `${cleanData.firstName || ""} ${cleanData.lastName || ""}`.trim();
       const fullName = personName || cleanData.company || cleanData.name || "Unnamed Contact";
