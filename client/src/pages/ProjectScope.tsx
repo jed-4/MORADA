@@ -1054,13 +1054,13 @@ function DroppableStage({
         className={`mb-3 ${level > 0 ? 'ml-8' : ''}`}
       >
         <div 
-          className={`rounded-xl bg-card dark:bg-muted/30 border border-border dark:border-border/60 shadow-sm transition-all duration-200 overflow-hidden ${
+          className={`rounded-xl bg-muted/50 dark:bg-muted/30 border border-border shadow-sm transition-all duration-200 overflow-hidden ${
             isOver && isDraggingStage ? 'ring-2 ring-[#bba7db]/50 bg-[#bba7db]/10' : ''
           }`}
         >
           {/* Stage Header - h-9, collapsible */}
           <div 
-            className="h-9 px-3 flex items-center justify-between border-b border-border/50 bg-background/50 group cursor-pointer hover-elevate"
+            className="h-9 px-3 flex items-center justify-between border-b border-border/50 bg-muted/80 dark:bg-muted/50 group cursor-pointer hover-elevate"
             onClick={onToggleExpand}
             data-testid={`stage-header-${stageData.id}`}
           >
