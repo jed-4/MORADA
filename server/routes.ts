@@ -6618,6 +6618,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Bulk action on contacts (archive, restore, change type, delete)
+  app.post("/api/contacts/bulk-action", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const { ids, action, contactType } = req.body;
+      
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ error: "ids must be a non-empty array" });
+      }
+      
+      if (!action || !["archive", "restore", "changeType", "delete"].includes(action)) {
+        return res.status(400).json({ error: "action must be one of: archive, restore, changeType, delete" });
+      }
+      
+      if (action === "changeType" && !["trade", "supplier", "client"].includes(contactType)) {
+        return res.status(400).json({ error: "contactType must be one of: trade, supplier, client" });
+      }
+      
+      const results = { success: 0, errors: [] as string[] };
+      
+      for (const id of ids) {
+        try {
+          if (action === "archive") {
+            await storage.archiveContact(id, companyId);
+          } else if (action === "restore") {
+            await storage.restoreContact(id, companyId);
+          } else if (action === "changeType") {
+            await storage.updateContact(id, { contactType }, companyId);
+          } else if (action === "delete") {
+            await storage.deleteContact(id, companyId);
+          }
+          results.success++;
+        } catch (error: any) {
+          results.errors.push(`Contact ${id}: ${error.message || 'Failed'}`);
+        }
+      }
+      
+      res.json(results);
+    } catch (error) {
+      console.error("Bulk action error:", error);
+      res.status(500).json({ error: "Failed to perform bulk action" });
+    }
+  });
+
   // RFQ (Request for Quote) API Routes
   app.get("/api/rfqs", requireAuth, requireTeamMember, async (req, res) => {
     try {

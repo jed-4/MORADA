@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
   TableBody,
@@ -19,6 +20,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Plus,
   Search,
   MoreHorizontal,
@@ -32,6 +40,7 @@ import {
   Merge,
   ChevronDown,
   ChevronRight,
+  Trash2,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { type Contact } from "@shared/schema";
@@ -56,6 +65,7 @@ export default function Contacts() {
   const [isMergeDialogOpen, setIsMergeDialogOpen] = useState(false);
   const [mergeSourceId, setMergeSourceId] = useState<string | undefined>();
   const [showArchivedContacts, setShowArchivedContacts] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const { data: contacts = [], isLoading } = useQuery<Contact[]>({
     queryKey: ["/api/contacts"],
@@ -92,6 +102,31 @@ export default function Contacts() {
     onError: () => {
       toast({
         title: "Failed to restore contact",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const bulkActionMutation = useMutation({
+    mutationFn: (data: { ids: string[]; action: string; contactType?: string }) =>
+      apiRequest("/api/contacts/bulk-action", "POST", data),
+    onSuccess: (result: { success: number; errors: string[] }, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
+      setSelectedIds(new Set());
+      const actionLabels: Record<string, string> = {
+        archive: "archived",
+        restore: "restored",
+        changeType: "updated",
+        delete: "deleted",
+      };
+      toast({
+        title: `${result.success} contact${result.success !== 1 ? "s" : ""} ${actionLabels[variables.action] || "updated"}`,
+        description: result.errors.length > 0 ? `${result.errors.length} failed` : undefined,
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Bulk action failed",
         variant: "destructive",
       });
     },
@@ -181,6 +216,32 @@ export default function Contacts() {
 
   const handleRestore = (contactId: string) => {
     restoreMutation.mutate(contactId);
+  };
+
+  const toggleSelection = (id: string) => {
+    const newSet = new Set(selectedIds);
+    if (newSet.has(id)) {
+      newSet.delete(id);
+    } else {
+      newSet.add(id);
+    }
+    setSelectedIds(newSet);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredContacts.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredContacts.map(c => c.id)));
+    }
+  };
+
+  const handleBulkArchive = () => {
+    bulkActionMutation.mutate({ ids: Array.from(selectedIds), action: "archive" });
+  };
+
+  const handleBulkChangeType = (type: string) => {
+    bulkActionMutation.mutate({ ids: Array.from(selectedIds), action: "changeType", contactType: type });
   };
 
   const handleEdit = (contact: Contact) => {
@@ -300,6 +361,48 @@ export default function Contacts() {
         </div>
       </div>
 
+      {/* Bulk Action Bar - appears when contacts are selected */}
+      {selectedIds.size > 0 && (
+        <div className="h-10 bg-muted/50 border-b flex items-center px-3 gap-3 flex-shrink-0">
+          <span className="text-xs font-medium">
+            {selectedIds.size} selected
+          </span>
+          <div className="h-4 w-px bg-border" />
+          <Select onValueChange={handleBulkChangeType}>
+            <SelectTrigger className="h-7 w-auto min-w-[120px] text-xs" data-testid="select-bulk-change-type">
+              <SelectValue placeholder="Change Type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="supplier">Set as Supplier</SelectItem>
+              <SelectItem value="trade">Set as Trade</SelectItem>
+              <SelectItem value="client">Set as Client</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs"
+            onClick={handleBulkArchive}
+            disabled={bulkActionMutation.isPending}
+            data-testid="button-bulk-archive"
+          >
+            <Archive className="h-3 w-3 mr-1" />
+            Archive
+          </Button>
+          <div className="flex-1" />
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 text-xs"
+            onClick={() => setSelectedIds(new Set())}
+            data-testid="button-clear-selection"
+          >
+            <X className="h-3 w-3 mr-1" />
+            Clear Selection
+          </Button>
+        </div>
+      )}
+
       {/* Content Area */}
       <div className="flex-1 overflow-auto">
         {isLoading ? (
@@ -318,6 +421,13 @@ export default function Contacts() {
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
+                <TableHead className="w-8">
+                  <Checkbox
+                    checked={selectedIds.size > 0 && selectedIds.size === filteredContacts.length}
+                    onCheckedChange={toggleSelectAll}
+                    data-testid="checkbox-select-all"
+                  />
+                </TableHead>
                 <TableHead className="w-10"></TableHead>
                 <TableHead className="text-xs font-medium">Business Name</TableHead>
                 <TableHead className="text-xs font-medium">Key Person</TableHead>
@@ -332,10 +442,17 @@ export default function Contacts() {
               {filteredContacts.map((contact) => (
                 <TableRow 
                   key={contact.id} 
-                  className="hover-elevate cursor-pointer"
+                  className={`hover-elevate cursor-pointer ${selectedIds.has(contact.id) ? "bg-muted/50" : ""}`}
                   data-testid={`row-contact-${contact.id}`}
                   onDoubleClick={() => handleEdit(contact)}
                 >
+                  <TableCell className="py-2" onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={selectedIds.has(contact.id)}
+                      onCheckedChange={() => toggleSelection(contact.id)}
+                      data-testid={`checkbox-contact-${contact.id}`}
+                    />
+                  </TableCell>
                   <TableCell className="py-2">
                     <Avatar 
                       className="h-7 w-7" 
