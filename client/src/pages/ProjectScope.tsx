@@ -563,7 +563,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
               </div>
             </HoverCardTrigger>
             {item.description && (
-              <HoverCardContent className="w-80 p-3" align="start" side="bottom">
+              <HoverCardContent className="w-80 p-3 bg-popover border border-border shadow-lg" align="start" side="bottom">
                 <div className="space-y-2">
                   <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Description</div>
                   <div 
@@ -1054,7 +1054,7 @@ function DroppableStage({
         className={`mb-3 ${level > 0 ? 'ml-8' : ''}`}
       >
         <div 
-          className={`rounded-xl bg-muted/20 border border-border/50 transition-all duration-200 overflow-hidden ${
+          className={`rounded-xl bg-card dark:bg-muted/30 border border-border dark:border-border/60 shadow-sm transition-all duration-200 overflow-hidden ${
             isOver && isDraggingStage ? 'ring-2 ring-[#bba7db]/50 bg-[#bba7db]/10' : ''
           }`}
         >

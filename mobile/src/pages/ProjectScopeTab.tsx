@@ -237,7 +237,7 @@ export function ProjectScopeTab() {
                             <h4 className="font-medium text-sm">{item.title}</h4>
                             {item.description && (
                               <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                                {item.description}
+                                {item.description.replace(/<[^>]*>/g, '')}
                               </p>
                             )}
                             <div className="flex gap-2 mt-2">
@@ -356,9 +356,10 @@ export function ProjectScopeTab() {
             </span>
             
             {selectedItem.description && (
-              <p className="text-sm text-muted-foreground mb-4">
-                {selectedItem.description}
-              </p>
+              <div 
+                className="text-sm text-muted-foreground mb-4 prose prose-sm max-w-none"
+                dangerouslySetInnerHTML={{ __html: selectedItem.description }}
+              />
             )}
 
             <div className="space-y-3 text-sm">
