@@ -214,13 +214,16 @@ export default function EditContactDialog({
 
   const updateMutation = useMutation({
     mutationFn: async (data: InsertContact) => {
-      // Clean up empty strings - convert to undefined to prevent backend from treating them as defined
+      // Clean up empty strings and special values - convert to undefined/null
       const cleanData = { ...data };
       if (cleanData.firstName === "") cleanData.firstName = undefined;
       if (cleanData.lastName === "") cleanData.lastName = undefined;
       if (cleanData.spouseName === "") cleanData.spouseName = undefined;
       if (cleanData.spousePhone === "") cleanData.spousePhone = undefined;
       if (cleanData.spouseEmail === "") cleanData.spouseEmail = undefined;
+      if (cleanData.defaultCostCodeId === "__none__") cleanData.defaultCostCodeId = null;
+      if (cleanData.hourlyRate === "") cleanData.hourlyRate = undefined;
+      if (cleanData.hourlyPrice === "") cleanData.hourlyPrice = undefined;
       
       return await apiRequest(`/api/contacts/${contact.id}`, "PATCH", cleanData);
     },
@@ -251,12 +254,13 @@ export default function EditContactDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-edit-contact">
-        <DialogHeader>
+      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden" data-testid="dialog-edit-contact">
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle>Edit Contact</DialogTitle>
         </DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col flex-1 min-h-0">
+            <div className="flex-1 overflow-y-auto space-y-4 pr-2">
             {/* Contact Type */}
             <FormField
               control={form.control}
@@ -947,8 +951,10 @@ export default function EditContactDialog({
               )}
             />
 
-            {/* Actions */}
-            <div className="flex justify-end gap-2 pt-4">
+            </div>
+
+            {/* Sticky Actions Footer */}
+            <div className="flex justify-end gap-2 pt-4 mt-4 border-t bg-background flex-shrink-0">
               <Button
                 type="button"
                 variant="outline"
