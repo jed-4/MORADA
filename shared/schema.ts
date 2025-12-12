@@ -2615,6 +2615,10 @@ export type Schedule = typeof schedules.$inferSelect;
 export const scheduleItems = pgTable("schedule_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   scheduleId: varchar("schedule_id").notNull().references(() => schedules.id, { onDelete: "cascade" }),
+  
+  // Scope stage link (optional - for displaying schedule items in scope view)
+  scopeStageId: varchar("scope_stage_id").references(() => scopeStages.id, { onDelete: "set null" }),
+  
   name: text("name").notNull(),
   description: text("description"),
   type: text("type").notNull().default("task"), // "task" | "milestone" | "inspection" | "delivery" | "meeting"

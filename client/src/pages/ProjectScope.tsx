@@ -50,6 +50,7 @@ import {
   FileText,
   Pen,
   Save,
+  CalendarDays,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
@@ -760,6 +761,19 @@ interface LinkedPOForStage {
   createdAt: string;
 }
 
+// Linked Schedule Item interface for stage display
+interface LinkedScheduleItemForStage {
+  id: string;
+  name: string;
+  description: string | null;
+  type: string;
+  status: string;
+  startDate: string;
+  endDate: string;
+  scopeStageId: string | null;
+  assignedToName: string | null;
+}
+
 interface DroppableStageProps {
   stageData: ScopeStage;
   items: ScopeItem[];
@@ -788,6 +802,8 @@ interface DroppableStageProps {
   getTypeLabel?: (type: string | null | undefined) => string; // Scope 2.0
   linkedPOs?: LinkedPOForStage[]; // Linked Purchase Orders
   onViewPO?: (poId: string) => void; // Handler to view PO details
+  linkedScheduleItems?: LinkedScheduleItemForStage[]; // Linked Schedule Items
+  onViewScheduleItem?: (itemId: string) => void; // Handler to view schedule item details
 }
 
 function DroppableStage({ 
@@ -818,6 +834,8 @@ function DroppableStage({
   getTypeLabel, // Scope 2.0
   linkedPOs = [], // Linked Purchase Orders
   onViewPO, // Handler to view PO details
+  linkedScheduleItems = [], // Linked Schedule Items
+  onViewScheduleItem, // Handler to view schedule item details
 }: DroppableStageProps) {
   const {
     attributes,
@@ -1111,6 +1129,47 @@ function DroppableStage({
                   ))}
                 </div>
               )}
+              
+              {/* Linked Schedule Items */}
+              {linkedScheduleItems.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide px-2">
+                    Linked Schedule Items
+                  </div>
+                  {linkedScheduleItems.map((item) => (
+                    <div
+                      key={item.id}
+                      className="h-10 flex items-center gap-3 px-3 rounded-lg border border-border/50 bg-background/80 hover-elevate cursor-pointer group"
+                      onClick={() => onViewScheduleItem?.(item.id)}
+                      data-testid={`linked-schedule-item-${item.id}`}
+                    >
+                      <CalendarDays className="h-4 w-4 text-[#bba7db]" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium truncate">{item.name}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                            item.status === 'completed' 
+                              ? 'bg-green-100 text-green-800' 
+                              : item.status === 'in_progress' 
+                                ? 'bg-blue-100 text-blue-800' 
+                                : item.status === 'on_hold'
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : 'bg-gray-100 text-gray-600'
+                          }`}>
+                            {item.status.replace('_', ' ')}
+                          </span>
+                        </div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          {item.startDate && new Date(item.startDate).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
+                          {item.endDate && ` - ${new Date(item.endDate).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}`}
+                          {item.assignedToName && <span className="ml-2">({item.assignedToName})</span>}
+                        </div>
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1365,6 +1424,46 @@ export default function ProjectScope() {
     });
     return grouped;
   }, [projectPOs]);
+
+  // Fetch schedule items for the project (to display linked schedule items in scope)
+  interface LinkedScheduleItem {
+    id: string;
+    name: string;
+    description: string | null;
+    type: string;
+    status: string;
+    startDate: string;
+    endDate: string;
+    scopeStageId: string | null;
+    assignedToName: string | null;
+  }
+  
+  const { data: projectScheduleItems = [] } = useQuery<LinkedScheduleItem[]>({
+    queryKey: ['/api/schedule-items', { projectId }],
+    queryFn: async () => {
+      const response = await fetch(`/api/schedule-items?projectId=${projectId}`, {
+        credentials: 'include',
+      });
+      if (!response.ok) return [];
+      const data = await response.json();
+      return data.items || data || [];
+    },
+    enabled: !!projectId,
+  });
+
+  // Group schedule items by stage
+  const scheduleItemsByStage = useMemo(() => {
+    const grouped: Record<string, LinkedScheduleItem[]> = {};
+    projectScheduleItems.forEach((item) => {
+      if (item.scopeStageId) {
+        if (!grouped[item.scopeStageId]) {
+          grouped[item.scopeStageId] = [];
+        }
+        grouped[item.scopeStageId].push(item);
+      }
+    });
+    return grouped;
+  }, [projectScheduleItems]);
 
   // Initialize default stages if empty
   const initializeStagesMutation = useMutation({
@@ -1818,6 +1917,11 @@ export default function ProjectScope() {
   // Handle view PO - navigate to the PO page
   const handleViewPO = (poId: string) => {
     window.location.href = `/projects/${projectId}/purchase-orders/${poId}`;
+  };
+
+  // Handle view schedule item - navigate to the schedule page
+  const handleViewScheduleItem = (itemId: string) => {
+    window.location.href = `/projects/${projectId}/schedule`;
   };
 
   const handleToggleSelect = (id: string) => {
@@ -2447,6 +2551,8 @@ export default function ProjectScope() {
                         getTypeLabel={getTypeLabel} // Scope 2.0
                         linkedPOs={posByStage[stage.id] || []}
                         onViewPO={handleViewPO}
+                        linkedScheduleItems={scheduleItemsByStage[stage.id] || []}
+                        onViewScheduleItem={handleViewScheduleItem}
                       />
                     ))}
 
