@@ -549,7 +549,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
           value={item.quantity || ''}
           onChange={(e) => onUpdate(item.id, { quantity: parseFloat(e.target.value) || null })}
           className="h-7 text-sm text-right bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-[#bba7db]/30 rounded px-2"
-          placeholder="0"
+          placeholder="-"
           data-testid={`input-quantity-${item.id}`}
         />
 
@@ -559,12 +559,12 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
           value={item.rate || ''}
           onChange={(e) => onUpdate(item.id, { rate: parseFloat(e.target.value) || null })}
           className="h-7 text-sm text-right bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-[#bba7db]/30 rounded px-2"
-          placeholder="$0"
+          placeholder="-"
           data-testid={`input-rate-${item.id}`}
         />
 
         {/* Total - 120px */}
-        <div className="text-sm font-semibold text-right">
+        <div className="text-sm font-semibold text-right text-muted-foreground">
           {itemTotal > 0 ? `$${itemTotal.toLocaleString()}` : '-'}
         </div>
 
