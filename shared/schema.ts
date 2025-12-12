@@ -2938,6 +2938,11 @@ export const scopeItems = pgTable("scope_items", {
   // Checklist items (for itemType="checklist")
   checklistItems: jsonb("checklist_items").default([]), // Array of checklist items: [{id: string, text: string, completed: boolean}]
   
+  // Completion tracking
+  isCompleted: boolean("is_completed").notNull().default(false), // Whether the scope item is marked complete
+  completedAt: timestamp("completed_at"), // When the item was completed
+  completedBy: varchar("completed_by").references(() => users.id), // Who completed it
+  
   // Metadata
   isTemplate: boolean("is_template").notNull().default(false), // Is this a template item
   templateCategory: text("template_category"), // "Standard 4-Bed", "Slab Pour", etc.
