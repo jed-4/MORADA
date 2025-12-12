@@ -196,6 +196,7 @@ export default function QuickReviewPanel({
       if (data.company !== (currentContact.company || "")) patchData.company = data.company || null;
       if (data.role !== (currentContact.role || "")) patchData.role = data.role || null;
       if (data.notes !== (currentContact.notes || "")) patchData.notes = data.notes || null;
+      if (data.contactType !== currentContact.contactType) patchData.contactType = data.contactType;
       
       const formCostCode = data.defaultCostCodeId === "__none__" ? null : data.defaultCostCodeId;
       if (formCostCode !== (currentContact.defaultCostCodeId || null)) {
@@ -400,8 +401,8 @@ export default function QuickReviewPanel({
   return (
     <>
       <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" data-testid="quick-review-panel">
-          <DialogHeader className="pb-2">
+        <DialogContent className="max-w-lg h-[80vh] flex flex-col" data-testid="quick-review-panel">
+          <DialogHeader className="pb-2 flex-shrink-0">
             <div className="flex items-center justify-between">
               <DialogTitle className="text-sm font-semibold">Quick Review</DialogTitle>
               <div className="flex items-center gap-3">
@@ -431,12 +432,28 @@ export default function QuickReviewPanel({
             </p>
           </DialogHeader>
 
-          <div className="space-y-4">
+          <div className="flex-1 overflow-y-auto space-y-4">
             <div className="flex items-center gap-2">
-              <Badge variant="secondary" className="gap-1 text-[11px] h-6">
-                {getContactIcon()}
-                {getContactTypeLabel()}
-              </Badge>
+              <FormField
+                control={form.control}
+                name="contactType"
+                render={({ field }) => (
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <SelectTrigger className="h-7 w-auto min-w-[100px] text-[11px] gap-1" data-testid="select-contact-type">
+                      {field.value === "supplier" && <Building2 className="h-3 w-3" />}
+                      {field.value === "trade" && <Briefcase className="h-3 w-3" />}
+                      {field.value === "client" && <User className="h-3 w-3" />}
+                      {field.value === "team" && <User className="h-3 w-3" />}
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="supplier">Supplier</SelectItem>
+                      <SelectItem value="trade">Trade</SelectItem>
+                      <SelectItem value="client">Client</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
               {currentContact?.labels && (currentContact.labels as string[]).length > 0 && (
                 <div className="flex gap-1">
                   {(currentContact.labels as string[]).slice(0, 3).map(label => (
@@ -750,7 +767,7 @@ export default function QuickReviewPanel({
           </div>
 
           {/* Footer with navigation and actions */}
-          <div className="flex items-center justify-between pt-3 border-t">
+          <div className="flex-shrink-0 flex items-center justify-between pt-3 border-t bg-background sticky bottom-0">
             <div className="flex items-center gap-1">
               <Button
                 variant="ghost"
