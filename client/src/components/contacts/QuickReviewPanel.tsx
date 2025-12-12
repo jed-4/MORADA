@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Trash2, Check, Building2, User, Briefcase, SkipForward, ArrowRightLeft, Users, Keyboard } from "lucide-react";
+import { ChevronLeft, ChevronRight, Trash2, Check, Building2, User, Briefcase, SkipForward, Users, Keyboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -357,14 +357,6 @@ export default function QuickReviewPanel({
     skipMutation.mutate();
   }, [skipMutation]);
 
-  const handleSetAsBusinessName = () => {
-    const currentName = form.getValues("name");
-    if (currentName) {
-      form.setValue("company", currentName);
-      toast({ title: "Copied to Business Name field" });
-    }
-  };
-
   const contactType = form.watch("contactType");
   const isSupplier = contactType === "supplier";
   const isTeam = contactType === "team";
@@ -467,65 +459,29 @@ export default function QuickReviewPanel({
 
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
-                {/* Business Name with Set as Business Name button */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <FormLabel className="text-[11px]">Business Name *</FormLabel>
-                    {form.watch("name") && !form.watch("company") && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-5 px-2 text-[10px] text-[#bba7db]"
-                        onClick={handleSetAsBusinessName}
-                        data-testid="button-set-business-name"
-                      >
-                        <ArrowRightLeft className="h-3 w-3 mr-1" />
-                        Copy to Company
-                      </Button>
-                    )}
-                  </div>
-                  <FormField
-                    control={form.control}
-                    name="name"
-                    render={({ field }) => (
-                      <FormItem className="space-y-0">
-                        <FormControl>
-                          <Input 
-                            {...field} 
-                            value={field.value || ""} 
-                            className="h-7 text-[11px]"
-                            autoFocus
-                            data-testid="input-name"
-                          />
-                        </FormControl>
-                        <FormMessage className="text-[10px]" />
-                      </FormItem>
-                    )}
-                  />
-                </div>
+                {/* Business Name */}
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem className="space-y-1">
+                      <FormLabel className="text-[11px]">Business Name *</FormLabel>
+                      <FormControl>
+                        <Input 
+                          {...field} 
+                          value={field.value || ""} 
+                          className="h-7 text-[11px]"
+                          autoFocus
+                          data-testid="input-name"
+                        />
+                      </FormControl>
+                      <FormMessage className="text-[10px]" />
+                    </FormItem>
+                  )}
+                />
 
                 {isSupplier && (
                   <>
-                    <FormField
-                      control={form.control}
-                      name="company"
-                      render={({ field }) => (
-                        <FormItem className="space-y-1">
-                          <FormLabel className="text-[11px]">Company / Trading Name</FormLabel>
-                          <FormControl>
-                            <Input 
-                              {...field} 
-                              value={field.value || ""} 
-                              className="h-7 text-[11px]"
-                              data-testid="input-company"
-                            />
-                          </FormControl>
-                          <FormMessage className="text-[10px]" />
-                        </FormItem>
-                      )}
-                    />
-
                     <div className="grid grid-cols-2 gap-2">
                       <FormField
                         control={form.control}
