@@ -366,13 +366,16 @@ export default function Contacts() {
                       : contact.position || <span className="text-muted-foreground">-</span>}
                   </TableCell>
                   <TableCell className="text-sm py-2">
-                    {contact.phone ? (
-                      <a href={`tel:${contact.phone}`} className="text-[#bba7db] hover:underline">
-                        {contact.phone}
-                      </a>
-                    ) : (
-                      <span className="text-muted-foreground">-</span>
-                    )}
+                    {(() => {
+                      const displayPhone = contact.mobile || contact.phone;
+                      return displayPhone ? (
+                        <a href={`tel:${displayPhone}`} className="text-[#bba7db] hover:underline">
+                          {displayPhone}
+                        </a>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell className="text-sm py-2">
                     {contact.email ? (
@@ -521,7 +524,7 @@ export default function Contacts() {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-sm">{contact.email || '-'}</TableCell>
-                        <TableCell className="text-sm">{contact.phone || '-'}</TableCell>
+                        <TableCell className="text-sm">{contact.mobile || contact.phone || '-'}</TableCell>
                         <TableCell>
                           <Button
                             variant="ghost"
