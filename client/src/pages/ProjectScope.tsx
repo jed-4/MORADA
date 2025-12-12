@@ -1205,6 +1205,11 @@ export default function ProjectScope() {
   const [isAddStageDialogOpen, setIsAddStageDialogOpen] = useState(false);
   const [newStageName, setNewStageName] = useState("");
   const [addStageAfterId, setAddStageAfterId] = useState<string | null>(null);
+  
+  // Import from Estimate state
+  const [isImportFromEstimateOpen, setIsImportFromEstimateOpen] = useState(false);
+  const [selectedEstimateForImport, setSelectedEstimateForImport] = useState<string | null>(null);
+  const [selectedGroupsToImport, setSelectedGroupsToImport] = useState<Set<string>>(new Set());
 
   // Tiptap editor for Add Item dialog
   const addItemEditor = useEditor({
@@ -1232,6 +1237,28 @@ export default function ProjectScope() {
   const { data: estimates = [] } = useQuery<Estimate[]>({
     queryKey: ['/api/estimates'],
     select: (data) => data.filter(est => est.projectId === projectId),
+  });
+
+  // Fetch estimate groups for the selected estimate (for fuzzy match import)
+  interface EstimateGroup {
+    id: string;
+    name: string;
+    description?: string;
+    order: number;
+    parentGroupId?: string | null;
+  }
+  
+  const { data: estimateGroups = [] } = useQuery<EstimateGroup[]>({
+    queryKey: ['/api/estimates', selectedEstimateForImport, 'groups'],
+    queryFn: async () => {
+      if (!selectedEstimateForImport) return [];
+      const response = await fetch(`/api/estimates/${selectedEstimateForImport}/groups`, {
+        credentials: 'include',
+      });
+      if (!response.ok) return [];
+      return response.json();
+    },
+    enabled: !!selectedEstimateForImport && isImportFromEstimateOpen,
   });
 
   // Fetch scope stages
@@ -1812,6 +1839,83 @@ export default function ProjectScope() {
     setAddStageAfterId(null);
   };
 
+  // Fuzzy matching helper - checks if a stage already exists with similar name
+  const fuzzyMatchStage = (groupName: string): { matched: boolean; existingStage?: string } => {
+    const normalizedGroupName = groupName.toLowerCase().trim();
+    for (const stage of scopeStages) {
+      const normalizedStageName = stage.name.toLowerCase().trim();
+      // Exact match
+      if (normalizedStageName === normalizedGroupName) {
+        return { matched: true, existingStage: stage.name };
+      }
+      // Contains match (either direction)
+      if (normalizedStageName.includes(normalizedGroupName) || normalizedGroupName.includes(normalizedStageName)) {
+        return { matched: true, existingStage: stage.name };
+      }
+      // Word similarity (at least 2 words matching)
+      const groupWords = normalizedGroupName.split(/\s+/);
+      const stageWords = normalizedStageName.split(/\s+/);
+      const matchingWords = groupWords.filter(gw => stageWords.some(sw => sw === gw || sw.includes(gw) || gw.includes(sw)));
+      if (matchingWords.length >= Math.min(2, groupWords.length)) {
+        return { matched: true, existingStage: stage.name };
+      }
+    }
+    return { matched: false };
+  };
+
+  // Import stages from estimate groups
+  const handleImportFromEstimate = async () => {
+    if (!selectedEstimateForImport || selectedGroupsToImport.size === 0) return;
+    
+    const groupsToImport = estimateGroups
+      .filter(g => selectedGroupsToImport.has(g.id))
+      .sort((a, b) => a.order - b.order);
+    
+    const maxDisplayOrder = scopeStages.length > 0 
+      ? Math.max(...scopeStages.map(s => s.displayOrder)) + 1 
+      : 0;
+    
+    let importCount = 0;
+    for (let i = 0; i < groupsToImport.length; i++) {
+      const group = groupsToImport[i];
+      try {
+        await apiRequest(`/api/projects/${projectId}/scope-stages`, 'POST', {
+          projectId,
+          name: group.name,
+          displayOrder: maxDisplayOrder + i,
+        });
+        importCount++;
+      } catch (err) {
+        console.error('Failed to import stage:', group.name, err);
+      }
+    }
+    
+    queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope-stages`] });
+    toast({ title: `Imported ${importCount} stage${importCount !== 1 ? 's' : ''} from estimate` });
+    
+    // Reset state
+    setIsImportFromEstimateOpen(false);
+    setSelectedEstimateForImport(null);
+    setSelectedGroupsToImport(new Set());
+  };
+
+  // Toggle group selection for import
+  const toggleGroupForImport = (groupId: string) => {
+    const newSet = new Set(selectedGroupsToImport);
+    if (newSet.has(groupId)) {
+      newSet.delete(groupId);
+    } else {
+      newSet.add(groupId);
+    }
+    setSelectedGroupsToImport(newSet);
+  };
+
+  // Auto-select new groups (ones that don't have a fuzzy match)
+  const selectAllNewGroups = () => {
+    const newGroups = estimateGroups.filter(g => !fuzzyMatchStage(g.name).matched);
+    setSelectedGroupsToImport(new Set(newGroups.map(g => g.id)));
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -1977,6 +2081,25 @@ export default function ProjectScope() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+
+          {/* Import from Estimate */}
+          {estimates.length > 0 && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button 
+                  onClick={() => setIsImportFromEstimateOpen(true)}
+                  className="h-6 px-2 text-[10px] font-medium rounded-md border border-border/50 hover-elevate active-elevate-2 flex items-center gap-1" 
+                  data-testid="button-import-from-estimate"
+                >
+                  <FileText className="h-3 w-3" />
+                  <span>Import Stages</span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Import stages from estimate groups</p>
+              </TooltipContent>
+            </Tooltip>
+          )}
 
           {/* Push to Estimate */}
           {selectedItems.size > 0 && estimates.length > 0 && (
@@ -2400,6 +2523,129 @@ export default function ProjectScope() {
               data-testid="button-create-stage"
             >
               {createStageMutation.isPending ? "Creating..." : "Add Stage"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import from Estimate Dialog */}
+      <Dialog open={isImportFromEstimateOpen} onOpenChange={(open) => {
+        setIsImportFromEstimateOpen(open);
+        if (!open) {
+          setSelectedEstimateForImport(null);
+          setSelectedGroupsToImport(new Set());
+        }
+      }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Import Stages from Estimate</DialogTitle>
+            <DialogDescription>
+              Select estimate groups to create as scope stages. Groups that match existing stages are highlighted.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Estimate Selection */}
+            <div>
+              <Label>Select Estimate</Label>
+              <Select 
+                value={selectedEstimateForImport || ''} 
+                onValueChange={(val) => {
+                  setSelectedEstimateForImport(val);
+                  setSelectedGroupsToImport(new Set());
+                }}
+              >
+                <SelectTrigger data-testid="select-estimate-for-import">
+                  <SelectValue placeholder="Choose an estimate" />
+                </SelectTrigger>
+                <SelectContent>
+                  {estimates.map((est) => (
+                    <SelectItem key={est.id} value={est.id}>
+                      {est.name || 'Untitled Estimate'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Groups List with Fuzzy Match Indicators */}
+            {selectedEstimateForImport && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>Estimate Groups ({estimateGroups.length})</Label>
+                  <Button 
+                    size="sm" 
+                    variant="ghost" 
+                    className="h-6 text-xs"
+                    onClick={selectAllNewGroups}
+                  >
+                    Select New Only
+                  </Button>
+                </div>
+                <div className="border rounded-md max-h-[300px] overflow-y-auto">
+                  {estimateGroups.length === 0 ? (
+                    <div className="p-4 text-sm text-muted-foreground text-center">
+                      No groups found in this estimate
+                    </div>
+                  ) : (
+                    estimateGroups
+                      .filter(g => !g.parentGroupId) // Only top-level groups
+                      .sort((a, b) => a.order - b.order)
+                      .map((group) => {
+                        const match = fuzzyMatchStage(group.name);
+                        const isSelected = selectedGroupsToImport.has(group.id);
+                        
+                        return (
+                          <div 
+                            key={group.id}
+                            className={`flex items-center gap-3 p-3 border-b last:border-b-0 cursor-pointer hover:bg-muted/50 ${
+                              isSelected ? 'bg-[#bba7db]/10' : ''
+                            }`}
+                            onClick={() => toggleGroupForImport(group.id)}
+                            data-testid={`import-group-${group.id}`}
+                          >
+                            <Checkbox 
+                              checked={isSelected}
+                              onCheckedChange={() => toggleGroupForImport(group.id)}
+                              className="h-4 w-4"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium text-sm truncate">{group.name}</div>
+                              {group.description && (
+                                <div className="text-xs text-muted-foreground truncate">{group.description}</div>
+                              )}
+                            </div>
+                            {match.matched ? (
+                              <Badge variant="outline" className="shrink-0 bg-amber-100 text-amber-800 border-amber-200 text-[10px]">
+                                Matches: {match.existingStage}
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="shrink-0 bg-green-100 text-green-800 border-green-200 text-[10px]">
+                                New
+                              </Badge>
+                            )}
+                          </div>
+                        );
+                      })
+                  )}
+                </div>
+                {selectedGroupsToImport.size > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {selectedGroupsToImport.size} group{selectedGroupsToImport.size !== 1 ? 's' : ''} selected for import
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsImportFromEstimateOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleImportFromEstimate}
+              disabled={selectedGroupsToImport.size === 0}
+              data-testid="button-confirm-import-stages"
+            >
+              Import {selectedGroupsToImport.size} Stage{selectedGroupsToImport.size !== 1 ? 's' : ''}
             </Button>
           </DialogFooter>
         </DialogContent>
