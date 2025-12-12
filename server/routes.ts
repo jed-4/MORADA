@@ -6440,11 +6440,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/contacts/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
+      console.log("[PATCH /api/contacts] Request body:", JSON.stringify(req.body, null, 2));
       const validationResult = insertContactSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
+        const errorDetails = fromZodError(validationResult.error).toString();
+        console.error("[PATCH /api/contacts] Validation failed:", errorDetails);
         return res.status(400).json({ 
           error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+          details: errorDetails 
         });
       }
 
