@@ -51,6 +51,9 @@ import {
   Pen,
   Save,
   CalendarDays,
+  Circle,
+  CheckCircle2,
+  X,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
@@ -499,18 +502,41 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
   const hasChildren = children.length > 0;
   const itemTotal = (item.quantity || 0) * (item.rate || 0);
 
+  const isCompleted = item.isCompleted || false;
+  
+  const handleToggleComplete = () => {
+    onUpdate(item.id, { 
+      isCompleted: !isCompleted,
+      completedAt: !isCompleted ? new Date().toISOString() : null,
+    });
+  };
+  
   return (
     <div ref={setNodeRef} style={style} className={`${level > 0 ? 'ml-8' : ''}`}>
       {/* Grid Row - h-10, ultra-compact */}
       <div 
         className={`h-10 grid items-center gap-2 px-2 border-b border-border/50 transition-all hover-elevate group ${
           isSelected ? 'bg-[#bba7db]/5 border-[#bba7db]/30' : ''
-        }`}
+        } ${isCompleted ? 'opacity-60' : ''}`}
         style={{ 
-          gridTemplateColumns: '40px 24px minmax(200px, 1fr) 100px minmax(150px, 2fr) 80px 100px 120px 24px',
+          gridTemplateColumns: '24px 40px 24px minmax(200px, 1fr) 100px minmax(150px, 2fr) 80px 100px 120px 24px',
         }}
         data-testid={`scope-item-row-${item.id}`}
       >
+        {/* Completion Toggle - 24px */}
+        <button
+          onClick={handleToggleComplete}
+          className="flex items-center justify-center hover:scale-110 transition-transform"
+          title={isCompleted ? "Mark as incomplete" : "Mark as complete"}
+          data-testid={`button-toggle-complete-${item.id}`}
+        >
+          {isCompleted ? (
+            <CheckCircle2 className="h-4 w-4 text-green-600" />
+          ) : (
+            <Circle className="h-4 w-4 text-muted-foreground/50 hover:text-muted-foreground" />
+          )}
+        </button>
+        
         {/* Checkbox - 40px */}
         <div className="flex items-center justify-center">
           <Checkbox
@@ -530,7 +556,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
         <input
           value={item.title}
           onChange={(e) => onUpdate(item.id, { title: e.target.value })}
-          className="h-7 text-sm font-medium bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-[#bba7db]/30 rounded px-2"
+          className={`h-7 text-sm font-medium bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-[#bba7db]/30 rounded px-2 ${isCompleted ? 'line-through text-muted-foreground' : ''}`}
           placeholder="Item name"
           data-testid={`input-scope-title-${item.id}`}
         />
@@ -1461,6 +1487,8 @@ export default function ProjectScope() {
   const [newItemTitle, setNewItemTitle] = useState("");
   const [newItemDescription, setNewItemDescription] = useState("");
   const [newItemType, setNewItemType] = useState<ScopeItemType>("scope"); // Scope 2.0: item type
+  const [newDialogChecklistItems, setNewDialogChecklistItems] = useState<ChecklistItem[]>([]); // Checklist items for add dialog
+  const [newDialogChecklistText, setNewDialogChecklistText] = useState(""); // Current checklist item input
   
   // Scope 2.0: Type filtering
   const [activeTypeFilters, setActiveTypeFilters] = useState<Set<ScopeItemType>>(new Set(SCOPE_TYPES));
@@ -2088,20 +2116,36 @@ export default function ProjectScope() {
   };
 
   const handleCreateItem = () => {
-    if (!newItemTitle.trim() || !addItemStage || !addItemEditor) return;
+    if (!newItemTitle.trim() || !addItemStage) return;
     
-    // Get HTML from Tiptap editor (maintains compatibility with existing editing/display)
-    const descriptionHtml = addItemEditor.getHTML();
+    // For checklist type, use checklistItems; for others, use rich text description
+    if (newItemType === 'checklist') {
+      createItemMutation.mutate({
+        title: newItemTitle.trim(),
+        description: '', // No description for checklists
+        stage: addItemStage,
+        itemType: newItemType,
+        checklistItems: newDialogChecklistItems,
+      });
+      // Clear checklist state
+      setNewDialogChecklistItems([]);
+      setNewDialogChecklistText("");
+    } else {
+      if (!addItemEditor) return;
+      // Get HTML from Tiptap editor (maintains compatibility with existing editing/display)
+      const descriptionHtml = addItemEditor.getHTML();
+      
+      createItemMutation.mutate({
+        title: newItemTitle.trim(),
+        description: descriptionHtml,
+        stage: addItemStage,
+        itemType: newItemType,
+      });
+      
+      // Clear editor
+      addItemEditor.commands.clearContent();
+    }
     
-    createItemMutation.mutate({
-      title: newItemTitle.trim(),
-      description: descriptionHtml,
-      stage: addItemStage,
-      itemType: newItemType, // Scope 2.0: Include item type
-    });
-    
-    // Clear editor and reset type after creation
-    addItemEditor.commands.clearContent();
     setNewItemType("scope");
   };
 
@@ -2744,6 +2788,9 @@ export default function ProjectScope() {
           setNewItemTitle("");
           addItemEditor?.commands.clearContent();
           setAddItemStage(null);
+          setNewItemType("scope");
+          setNewDialogChecklistItems([]);
+          setNewDialogChecklistText("");
         }
       }}>
         <DialogContent className="max-w-2xl">
@@ -2781,73 +2828,149 @@ export default function ProjectScope() {
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <Label>Description (Rich Text)</Label>
-              {addItemEditor && (
-                <div className="border rounded-md overflow-hidden" data-testid="tiptap-editor">
-                  <div className="border-b bg-muted/30 p-2 flex items-center gap-1 flex-wrap">
+            {/* Show checklist builder for checklist type, rich text editor for others */}
+            {newItemType === 'checklist' ? (
+              <div>
+                <Label>Checklist Items</Label>
+                <div className="border rounded-md p-3 space-y-2 min-h-[200px]" data-testid="checklist-builder">
+                  {/* Existing checklist items */}
+                  {newDialogChecklistItems.map((ci, idx) => (
+                    <div key={ci.id} className="flex items-center gap-2 group">
+                      <div className="w-5 h-5 rounded border border-border flex items-center justify-center text-muted-foreground text-xs">
+                        {idx + 1}
+                      </div>
+                      <span className="flex-1 text-sm">{ci.text}</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 opacity-0 group-hover:opacity-100"
+                        onClick={() => setNewDialogChecklistItems(items => items.filter(i => i.id !== ci.id))}
+                        data-testid={`button-remove-checklist-item-${idx}`}
+                      >
+                        <Trash2 className="h-3 w-3 text-destructive" />
+                      </Button>
+                    </div>
+                  ))}
+                  
+                  {/* Add new checklist item */}
+                  <div className="flex items-center gap-2 mt-2">
+                    <Plus className="h-4 w-4 text-muted-foreground" />
+                    <Input
+                      value={newDialogChecklistText}
+                      onChange={(e) => setNewDialogChecklistText(e.target.value)}
+                      placeholder="Add checklist item..."
+                      className="flex-1 h-8"
+                      data-testid="input-new-checklist-item"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && newDialogChecklistText.trim()) {
+                          e.preventDefault();
+                          const newItem: ChecklistItem = {
+                            id: crypto.randomUUID(),
+                            text: newDialogChecklistText.trim(),
+                            completed: false,
+                          };
+                          setNewDialogChecklistItems(items => [...items, newItem]);
+                          setNewDialogChecklistText("");
+                        }
+                      }}
+                    />
                     <Button
                       type="button"
-                      variant={addItemEditor.isActive('bold') ? 'default' : 'ghost'}
+                      variant="outline"
                       size="sm"
-                      onClick={() => addItemEditor.chain().focus().toggleBold().run()}
-                      className="h-8 w-8 p-0"
-                      data-testid="toolbar-add-bold"
+                      className="h-8"
+                      disabled={!newDialogChecklistText.trim()}
+                      onClick={() => {
+                        if (newDialogChecklistText.trim()) {
+                          const newItem: ChecklistItem = {
+                            id: crypto.randomUUID(),
+                            text: newDialogChecklistText.trim(),
+                            completed: false,
+                          };
+                          setNewDialogChecklistItems(items => [...items, newItem]);
+                          setNewDialogChecklistText("");
+                        }
+                      }}
+                      data-testid="button-add-checklist-item"
                     >
-                      <strong className="text-xs">B</strong>
-                    </Button>
-                    <Button
-                      type="button"
-                      variant={addItemEditor.isActive('italic') ? 'default' : 'ghost'}
-                      size="sm"
-                      onClick={() => addItemEditor.chain().focus().toggleItalic().run()}
-                      className="h-8 w-8 p-0"
-                      data-testid="toolbar-add-italic"
-                    >
-                      <em className="text-xs">I</em>
-                    </Button>
-                    <Button
-                      type="button"
-                      variant={addItemEditor.isActive('underline') ? 'default' : 'ghost'}
-                      size="sm"
-                      onClick={() => addItemEditor.chain().focus().toggleUnderline().run()}
-                      className="h-8 w-8 p-0"
-                      data-testid="toolbar-add-underline"
-                    >
-                      <span className="text-xs underline">U</span>
-                    </Button>
-                    <div className="w-px h-5 bg-border mx-1" />
-                    <Button
-                      type="button"
-                      variant={addItemEditor.isActive('bulletList') ? 'default' : 'ghost'}
-                      size="sm"
-                      onClick={() => addItemEditor.chain().focus().toggleBulletList().run()}
-                      className="h-8 w-8 p-0"
-                      data-testid="toolbar-add-bullet"
-                    >
-                      <span className="text-xs">•</span>
-                    </Button>
-                    <Button
-                      type="button"
-                      variant={addItemEditor.isActive('orderedList') ? 'default' : 'ghost'}
-                      size="sm"
-                      onClick={() => addItemEditor.chain().focus().toggleOrderedList().run()}
-                      className="h-8 w-8 p-0"
-                      data-testid="toolbar-add-ordered"
-                    >
-                      <span className="text-xs">1.</span>
+                      Add
                     </Button>
                   </div>
-                  <EditorContent 
-                    editor={addItemEditor}
-                    className="prose prose-sm max-w-none p-3 min-h-[200px]"
-                  />
                 </div>
-              )}
-              <p className="text-xs text-muted-foreground mt-1">
-                Use the toolbar to format text with bold, italic, underline, and lists
-              </p>
-            </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Press Enter or click Add to add checklist items
+                </p>
+              </div>
+            ) : (
+              <div>
+                <Label>Description (Rich Text)</Label>
+                {addItemEditor && (
+                  <div className="border rounded-md overflow-hidden" data-testid="tiptap-editor">
+                    <div className="border-b bg-muted/30 p-2 flex items-center gap-1 flex-wrap">
+                      <Button
+                        type="button"
+                        variant={addItemEditor.isActive('bold') ? 'default' : 'ghost'}
+                        size="sm"
+                        onClick={() => addItemEditor.chain().focus().toggleBold().run()}
+                        className="h-8 w-8 p-0"
+                        data-testid="toolbar-add-bold"
+                      >
+                        <strong className="text-xs">B</strong>
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={addItemEditor.isActive('italic') ? 'default' : 'ghost'}
+                        size="sm"
+                        onClick={() => addItemEditor.chain().focus().toggleItalic().run()}
+                        className="h-8 w-8 p-0"
+                        data-testid="toolbar-add-italic"
+                      >
+                        <em className="text-xs">I</em>
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={addItemEditor.isActive('underline') ? 'default' : 'ghost'}
+                        size="sm"
+                        onClick={() => addItemEditor.chain().focus().toggleUnderline().run()}
+                        className="h-8 w-8 p-0"
+                        data-testid="toolbar-add-underline"
+                      >
+                        <span className="text-xs underline">U</span>
+                      </Button>
+                      <div className="w-px h-5 bg-border mx-1" />
+                      <Button
+                        type="button"
+                        variant={addItemEditor.isActive('bulletList') ? 'default' : 'ghost'}
+                        size="sm"
+                        onClick={() => addItemEditor.chain().focus().toggleBulletList().run()}
+                        className="h-8 w-8 p-0"
+                        data-testid="toolbar-add-bullet"
+                      >
+                        <span className="text-xs">•</span>
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={addItemEditor.isActive('orderedList') ? 'default' : 'ghost'}
+                        size="sm"
+                        onClick={() => addItemEditor.chain().focus().toggleOrderedList().run()}
+                        className="h-8 w-8 p-0"
+                        data-testid="toolbar-add-ordered"
+                      >
+                        <span className="text-xs">1.</span>
+                      </Button>
+                    </div>
+                    <EditorContent 
+                      editor={addItemEditor}
+                      className="prose prose-sm max-w-none p-3 min-h-[200px]"
+                    />
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground mt-1">
+                  Use the toolbar to format text with bold, italic, underline, and lists
+                </p>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button
