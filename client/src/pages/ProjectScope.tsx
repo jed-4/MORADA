@@ -52,6 +52,7 @@ import {
   Save,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import type { ScopeItem, ScopeStage, ScopeTemplate, Estimate } from "@shared/schema";
 import {
   AlertDialog,
@@ -519,17 +520,36 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
 
         {/* Description - minmax(150px, 2fr) */}
         <div className="flex items-center gap-1">
-          <div 
-            className="text-xs text-muted-foreground truncate cursor-pointer hover:text-foreground flex-1"
-            onClick={() => setIsEditingDescription(true)}
-            title={item.description ? item.description.replace(/<[^>]*>/g, '') : 'Add description...'}
-          >
-            {item.description ? (
-              <span className="line-clamp-1">{item.description.replace(/<[^>]*>/g, '')}</span>
-            ) : (
-              <span className="italic">-</span>
+          <HoverCard openDelay={200} closeDelay={100}>
+            <HoverCardTrigger asChild>
+              <div 
+                className="text-xs text-muted-foreground truncate cursor-pointer hover:text-foreground flex-1"
+                onClick={() => setIsEditingDescription(true)}
+              >
+                {item.description ? (
+                  <span className="line-clamp-1">{item.description.replace(/<[^>]*>/g, '')}</span>
+                ) : (
+                  <span className="italic">-</span>
+                )}
+              </div>
+            </HoverCardTrigger>
+            {item.description && (
+              <HoverCardContent className="w-80 p-3" align="start" side="bottom">
+                <div className="space-y-2">
+                  <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Description</div>
+                  <div 
+                    className="prose prose-sm max-w-none text-sm"
+                    dangerouslySetInnerHTML={{ __html: item.description }}
+                  />
+                  <div className="pt-2 border-t">
+                    <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={() => setIsEditingDescription(true)}>
+                      <Pen className="h-3 w-3 mr-1" /> Edit
+                    </Button>
+                  </div>
+                </div>
+              </HoverCardContent>
             )}
-          </div>
+          </HoverCard>
           {gearList.length > 0 && (
             <button
               onClick={() => setShowGearList(true)}
