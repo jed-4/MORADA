@@ -9743,13 +9743,8 @@ export class DbStorage implements IStorage {
         .returning();
       transferredCounts.projects = projectsResult.length;
 
-      // Update tasks.assignedToId (tasks don't have companyId, but linked via projectId)
-      const tasksResult = await db
-        .update(schema.tasks)
-        .set({ assignedToId: targetId })
-        .where(eq(schema.tasks.assignedToId, sourceId))
-        .returning();
-      transferredCounts.tasks = tasksResult.length;
+      // Note: Tasks (notes table) use assigneeId which references users, not contacts
+      // So we don't transfer tasks during contact merge
 
       // Update scheduleItems.assignedToId (correct column name)
       const scheduleItemsResult = await db
