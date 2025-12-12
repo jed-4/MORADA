@@ -414,7 +414,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
   };
 
   const editor = useEditor({
-    extensions: [StarterKit],
+    extensions: [StarterKit, Underline],
     content: item.description || '',
     onUpdate: ({ editor }) => {
       const html = editor.getHTML();
@@ -636,9 +636,69 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
                 Add or edit the description for {item.title}
               </DialogDescription>
             </DialogHeader>
-            <div className="border rounded-md p-3 bg-background min-h-[200px]">
-              <EditorContent editor={editor} className="prose prose-sm max-w-none" />
+            <div className="border rounded-md overflow-hidden">
+              {/* Toolbar */}
+              <div className="border-b bg-muted/30 p-2 flex items-center gap-1 flex-wrap">
+                <Button
+                  type="button"
+                  variant={editor.isActive('bold') ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => editor.chain().focus().toggleBold().run()}
+                  className="h-8 w-8 p-0"
+                  data-testid={`toolbar-bold-${item.id}`}
+                >
+                  <strong className="text-xs">B</strong>
+                </Button>
+                <Button
+                  type="button"
+                  variant={editor.isActive('italic') ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => editor.chain().focus().toggleItalic().run()}
+                  className="h-8 w-8 p-0"
+                  data-testid={`toolbar-italic-${item.id}`}
+                >
+                  <em className="text-xs">I</em>
+                </Button>
+                <Button
+                  type="button"
+                  variant={editor.isActive('underline') ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => editor.chain().focus().toggleUnderline().run()}
+                  className="h-8 w-8 p-0"
+                  data-testid={`toolbar-underline-${item.id}`}
+                >
+                  <span className="text-xs underline">U</span>
+                </Button>
+                <div className="w-px h-5 bg-border mx-1" />
+                <Button
+                  type="button"
+                  variant={editor.isActive('bulletList') ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => editor.chain().focus().toggleBulletList().run()}
+                  className="h-8 w-8 p-0"
+                  data-testid={`toolbar-bullet-${item.id}`}
+                >
+                  <span className="text-xs">•</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant={editor.isActive('orderedList') ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => editor.chain().focus().toggleOrderedList().run()}
+                  className="h-8 w-8 p-0"
+                  data-testid={`toolbar-ordered-${item.id}`}
+                >
+                  <span className="text-xs">1.</span>
+                </Button>
+              </div>
+              {/* Editor */}
+              <div className="p-3 min-h-[200px]">
+                <EditorContent editor={editor} className="prose prose-sm max-w-none" />
+              </div>
             </div>
+            <p className="text-xs text-muted-foreground">
+              Use the toolbar to format text with bold, italic, underline, and lists
+            </p>
             <DialogFooter>
               <Button onClick={() => setIsEditingDescription(false)}>
                 Done
@@ -2790,6 +2850,7 @@ export default function ProjectScope() {
                       size="sm"
                       onClick={() => addItemEditor.chain().focus().toggleBold().run()}
                       className="h-8 w-8 p-0"
+                      data-testid="toolbar-add-bold"
                     >
                       <strong className="text-xs">B</strong>
                     </Button>
@@ -2799,15 +2860,28 @@ export default function ProjectScope() {
                       size="sm"
                       onClick={() => addItemEditor.chain().focus().toggleItalic().run()}
                       className="h-8 w-8 p-0"
+                      data-testid="toolbar-add-italic"
                     >
                       <em className="text-xs">I</em>
                     </Button>
+                    <Button
+                      type="button"
+                      variant={addItemEditor.isActive('underline') ? 'default' : 'ghost'}
+                      size="sm"
+                      onClick={() => addItemEditor.chain().focus().toggleUnderline().run()}
+                      className="h-8 w-8 p-0"
+                      data-testid="toolbar-add-underline"
+                    >
+                      <span className="text-xs underline">U</span>
+                    </Button>
+                    <div className="w-px h-5 bg-border mx-1" />
                     <Button
                       type="button"
                       variant={addItemEditor.isActive('bulletList') ? 'default' : 'ghost'}
                       size="sm"
                       onClick={() => addItemEditor.chain().focus().toggleBulletList().run()}
                       className="h-8 w-8 p-0"
+                      data-testid="toolbar-add-bullet"
                     >
                       <span className="text-xs">•</span>
                     </Button>
@@ -2817,6 +2891,7 @@ export default function ProjectScope() {
                       size="sm"
                       onClick={() => addItemEditor.chain().focus().toggleOrderedList().run()}
                       className="h-8 w-8 p-0"
+                      data-testid="toolbar-add-ordered"
                     >
                       <span className="text-xs">1.</span>
                     </Button>
@@ -2828,7 +2903,7 @@ export default function ProjectScope() {
                 </div>
               )}
               <p className="text-xs text-muted-foreground mt-1">
-                Use the toolbar to format text with bold, italic, and lists
+                Use the toolbar to format text with bold, italic, underline, and lists
               </p>
             </div>
           </div>
