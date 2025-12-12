@@ -112,7 +112,7 @@ export default function EditContactDialog({
         notes: contact.notes || "",
         labels: (contact.labels as string[]) || [],
         projectIds: (contact.projectIds as string[]) || [],
-        avatarColor: contact.avatarColor || "#bba7db",
+        avatarColor: contact.avatarColor || "#64748b",
         portalEnabled: contact.portalEnabled || false,
         isArchived: contact.isArchived || false,
       });
@@ -308,7 +308,7 @@ export default function EditContactDialog({
                     <div className="relative">
                       <Avatar 
                         className="h-9 w-9 border border-border cursor-pointer"
-                        style={{ backgroundColor: avatarPreview ? undefined : (form.watch("avatarColor") || "#bba7db") }}
+                        style={{ backgroundColor: avatarPreview ? undefined : (form.watch("avatarColor") || "#64748b") }}
                         onClick={() => fileInputRef.current?.click()}
                       >
                         {avatarPreview ? (
@@ -457,13 +457,13 @@ export default function EditContactDialog({
                             <Input
                               type="color"
                               className="w-12 h-9 p-1 border rounded cursor-pointer"
-                              value={field.value || "#bba7db"}
+                              value={field.value || "#64748b"}
                               onChange={field.onChange}
                               data-testid="input-contact-color"
                             />
                             <Input
                               type="text"
-                              placeholder="#bba7db"
+                              placeholder="#64748b"
                               className="flex-1"
                               value={field.value || ""}
                               onChange={field.onChange}
@@ -517,7 +517,7 @@ export default function EditContactDialog({
                     <div className="relative">
                       <Avatar 
                         className="h-9 w-9 border border-border cursor-pointer"
-                        style={{ backgroundColor: avatarPreview ? undefined : (form.watch("avatarColor") || "#bba7db") }}
+                        style={{ backgroundColor: avatarPreview ? undefined : (form.watch("avatarColor") || "#64748b") }}
                         onClick={() => fileInputRef.current?.click()}
                       >
                         {avatarPreview ? (
@@ -682,13 +682,13 @@ export default function EditContactDialog({
                           <Input
                             type="color"
                             className="w-12 h-9 p-1 border rounded cursor-pointer"
-                            value={field.value || "#bba7db"}
+                            value={field.value || "#64748b"}
                             onChange={field.onChange}
                             data-testid="input-contact-color"
                           />
                           <Input
                             type="text"
-                            placeholder="#bba7db"
+                            placeholder="#64748b"
                             className="flex-1"
                             value={field.value || ""}
                             onChange={field.onChange}

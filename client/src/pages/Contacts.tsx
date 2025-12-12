@@ -339,7 +339,7 @@ export default function Contacts() {
                   <TableCell className="py-2">
                     <Avatar 
                       className="h-7 w-7" 
-                      style={{ backgroundColor: contact.avatarUrl ? undefined : (contact.avatarColor || "#bba7db") }}
+                      style={{ backgroundColor: contact.avatarUrl ? undefined : (contact.avatarColor || "#64748b") }}
                     >
                       {contact.avatarUrl && (
                         <AvatarImage src={contact.avatarUrl} alt={contact.name || "Avatar"} />
@@ -496,7 +496,7 @@ export default function Contacts() {
                           <div className="flex items-center gap-3">
                             <Avatar 
                               className="h-8 w-8"
-                              style={{ backgroundColor: contact.avatarUrl ? undefined : (contact.avatarColor || "#bba7db") }}
+                              style={{ backgroundColor: contact.avatarUrl ? undefined : (contact.avatarColor || "#64748b") }}
                             >
                               {contact.avatarUrl && (
                                 <AvatarImage src={contact.avatarUrl} alt={contact.name || "Avatar"} />

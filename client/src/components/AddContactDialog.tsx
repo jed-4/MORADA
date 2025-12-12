@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Form,
   FormControl,
@@ -26,18 +27,15 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { insertContactSchema, type InsertContact, type CostCode } from "@shared/schema";
 
-const AVATAR_COLORS = [
-  "#6366f1", // Indigo
-  "#8b5cf6", // Purple
-  "#ec4899", // Pink
-  "#f43f5e", // Rose
-  "#f97316", // Orange
-  "#eab308", // Yellow
-  "#84cc16", // Lime
-  "#10b981", // Emerald
-  "#06b6d4", // Cyan
-  "#3b82f6", // Blue
-];
+const DEFAULT_GREY = "#64748b";
+
+// Helper to get initials from form values
+function getFormInitials(firstName?: string, lastName?: string, company?: string): string {
+  if (firstName || lastName) {
+    return `${(firstName || "").charAt(0)}${(lastName || "").charAt(0)}`.toUpperCase();
+  }
+  return (company || "").substring(0, 2).toUpperCase() || "??";
+}
 
 type AddContactDialogProps = {
   open: boolean;
@@ -84,7 +82,7 @@ export default function AddContactDialog({
       notes: "",
       labels: [],
       projectIds: [],
-      avatarColor: AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)],
+      avatarColor: DEFAULT_GREY,
       portalEnabled: false,
       isArchived: false,
     },
@@ -189,20 +187,35 @@ export default function AddContactDialog({
             {/* Trade/Supplier Layout: Company First, Then Primary Contact */}
             {(selectedType === "trade" || selectedType === "supplier") ? (
               <>
-                {/* Company Name */}
-                <FormField
-                  control={form.control}
-                  name="company"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Company Name *</FormLabel>
-                      <FormControl>
-                        <Input {...field} data-testid="input-company" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                {/* Company Name with Avatar */}
+                <div className="flex items-end gap-3">
+                  <FormField
+                    control={form.control}
+                    name="company"
+                    render={({ field }) => (
+                      <FormItem className="flex-1">
+                        <FormLabel>Company Name *</FormLabel>
+                        <FormControl>
+                          <Input {...field} data-testid="input-company" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  
+                  {/* Compact Avatar Preview */}
+                  <Avatar 
+                    className="h-9 w-9 border border-border"
+                    style={{ backgroundColor: form.watch("avatarColor") || DEFAULT_GREY }}
+                  >
+                    <AvatarFallback 
+                      className="text-white text-xs font-medium" 
+                      style={{ backgroundColor: "transparent" }}
+                    >
+                      {getFormInitials(form.watch("firstName"), form.watch("lastName"), form.watch("company"))}
+                    </AvatarFallback>
+                  </Avatar>
+                </div>
 
                 {/* Primary Contact Section */}
                 <div className="space-y-4 border-t pt-4">
@@ -292,38 +305,89 @@ export default function AddContactDialog({
                       )}
                     />
                   </div>
+
+                  {/* Contact Color */}
+                  <FormField
+                    control={form.control}
+                    name="avatarColor"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Contact Color</FormLabel>
+                        <FormControl>
+                          <div className="flex items-center gap-3">
+                            <Input
+                              type="color"
+                              className="w-12 h-9 p-1 border rounded cursor-pointer"
+                              value={field.value || DEFAULT_GREY}
+                              onChange={field.onChange}
+                              data-testid="input-contact-color"
+                            />
+                            <Input
+                              type="text"
+                              placeholder="#64748b"
+                              className="flex-1"
+                              value={field.value || ""}
+                              onChange={field.onChange}
+                              data-testid="input-contact-color-hex"
+                            />
+                          </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                 </div>
               </>
             ) : (
               /* Team/Client Layout: Name Fields First */
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="firstName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>First Name</FormLabel>
-                      <FormControl>
-                        <Input {...field} value={field.value || ""} data-testid="input-first-name" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+              <>
+                {/* Name Row with Avatar */}
+                <div className="flex items-end gap-3">
+                  <div className="grid grid-cols-2 gap-4 flex-1">
+                    <FormField
+                      control={form.control}
+                      name="firstName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>First Name</FormLabel>
+                          <FormControl>
+                            <Input {...field} value={field.value || ""} data-testid="input-first-name" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
-                <FormField
-                  control={form.control}
-                  name="lastName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Last Name</FormLabel>
-                      <FormControl>
-                        <Input {...field} value={field.value || ""} data-testid="input-last-name" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                    <FormField
+                      control={form.control}
+                      name="lastName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Last Name</FormLabel>
+                          <FormControl>
+                            <Input {...field} value={field.value || ""} data-testid="input-last-name" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  
+                  {/* Compact Avatar Preview */}
+                  <Avatar 
+                    className="h-9 w-9 border border-border"
+                    style={{ backgroundColor: form.watch("avatarColor") || DEFAULT_GREY }}
+                  >
+                    <AvatarFallback 
+                      className="text-white text-xs font-medium" 
+                      style={{ backgroundColor: "transparent" }}
+                    >
+                      {getFormInitials(form.watch("firstName"), form.watch("lastName"), form.watch("company"))}
+                    </AvatarFallback>
+                  </Avatar>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
 
                 <FormField
                   control={form.control}
@@ -426,7 +490,39 @@ export default function AddContactDialog({
                     )}
                   />
                 )}
-              </div>
+                </div>
+
+                {/* Contact Color */}
+                <FormField
+                  control={form.control}
+                  name="avatarColor"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Contact Color</FormLabel>
+                      <FormControl>
+                        <div className="flex items-center gap-3">
+                          <Input
+                            type="color"
+                            className="w-12 h-9 p-1 border rounded cursor-pointer"
+                            value={field.value || DEFAULT_GREY}
+                            onChange={field.onChange}
+                            data-testid="input-contact-color"
+                          />
+                          <Input
+                            type="text"
+                            placeholder="#64748b"
+                            className="flex-1"
+                            value={field.value || ""}
+                            onChange={field.onChange}
+                            data-testid="input-contact-color-hex"
+                          />
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </>
             )}
 
             {/* Business Fields (Suppliers) */}
