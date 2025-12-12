@@ -160,7 +160,7 @@ export default function QuickReviewPanel({
         lastName: currentContact.lastName || "",
         email: currentContact.email || "",
         phone: currentContact.phone || "",
-        mobile: currentContact.mobile || "",
+        mobile: currentContact.mobile || currentContact.phone || "",
         company: currentContact.company || "",
         contactType: currentContact.contactType,
         defaultCostCodeId: currentContact.defaultCostCodeId || "__none__",
@@ -541,7 +541,7 @@ export default function QuickReviewPanel({
                     <div className="grid grid-cols-2 gap-2">
                       <FormField
                         control={form.control}
-                        name="phone"
+                        name="mobile"
                         render={({ field }) => (
                           <FormItem className="space-y-1">
                             <FormLabel className="text-[11px]">Phone</FormLabel>
@@ -662,7 +662,7 @@ export default function QuickReviewPanel({
                     <div className="grid grid-cols-2 gap-2">
                       <FormField
                         control={form.control}
-                        name="phone"
+                        name="mobile"
                         render={({ field }) => (
                           <FormItem className="space-y-1">
                             <FormLabel className="text-[11px]">Phone</FormLabel>
