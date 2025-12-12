@@ -4039,6 +4039,9 @@ export const purchaseOrders = pgTable("purchase_orders", {
   companyId: varchar("company_id").notNull().references(() => companies.id),
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   
+  // Scope stage link (optional - for displaying POs in scope view)
+  scopeStageId: varchar("scope_stage_id").references(() => scopeStages.id, { onDelete: "set null" }),
+  
   // PO identification
   poNumber: text("po_number").notNull(), // Auto-generated: PO-2025-001 or SPO-2025-001
   poType: purchaseOrderTypeEnum("po_type").notNull().default("main"),

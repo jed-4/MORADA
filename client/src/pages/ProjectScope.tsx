@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -748,6 +748,18 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
   );
 }
 
+// Linked PO interface for stage display
+interface LinkedPOForStage {
+  id: string;
+  poNumber: string;
+  title: string | null;
+  supplierName: string | null;
+  status: string;
+  total: number;
+  scopeStageId: string | null;
+  createdAt: string;
+}
+
 interface DroppableStageProps {
   stageData: ScopeStage;
   items: ScopeItem[];
@@ -774,6 +786,8 @@ interface DroppableStageProps {
   collapsedItems?: Set<string>; // Scope 2.0
   onToggleItemCollapse?: (itemId: string) => void; // Scope 2.0
   getTypeLabel?: (type: string | null | undefined) => string; // Scope 2.0
+  linkedPOs?: LinkedPOForStage[]; // Linked Purchase Orders
+  onViewPO?: (poId: string) => void; // Handler to view PO details
 }
 
 function DroppableStage({ 
@@ -802,6 +816,8 @@ function DroppableStage({
   collapsedItems = new Set(), // Scope 2.0
   onToggleItemCollapse, // Scope 2.0
   getTypeLabel, // Scope 2.0
+  linkedPOs = [], // Linked Purchase Orders
+  onViewPO, // Handler to view PO details
 }: DroppableStageProps) {
   const {
     attributes,
@@ -1051,6 +1067,50 @@ function DroppableStage({
                   ))}
                 </SortableContext>
               )}
+              
+              {/* Linked Purchase Orders */}
+              {linkedPOs.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide px-2">
+                    Linked Purchase Orders
+                  </div>
+                  {linkedPOs.map((po) => (
+                    <div
+                      key={po.id}
+                      className="h-10 flex items-center gap-3 px-3 rounded-lg border border-border/50 bg-background/80 hover-elevate cursor-pointer group"
+                      onClick={() => onViewPO?.(po.id)}
+                      data-testid={`linked-po-${po.id}`}
+                    >
+                      <Package className="h-4 w-4 text-[#bba7db]" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">{po.poNumber}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                            po.status === 'completed' || po.status === 'billed' 
+                              ? 'bg-green-100 text-green-800' 
+                              : po.status === 'draft' 
+                                ? 'bg-gray-100 text-gray-600' 
+                                : 'bg-amber-100 text-amber-800'
+                          }`}>
+                            {po.status.replace('_', ' ')}
+                          </span>
+                        </div>
+                        {(po.title || po.supplierName) && (
+                          <div className="text-xs text-muted-foreground truncate">
+                            {po.title && <span>{po.title}</span>}
+                            {po.title && po.supplierName && <span> - </span>}
+                            {po.supplierName && <span>{po.supplierName}</span>}
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-sm font-medium">
+                        ${(po.total / 100).toLocaleString('en-AU', { minimumFractionDigits: 2 })}
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1266,6 +1326,45 @@ export default function ProjectScope() {
     queryKey: [`/api/projects/${projectId}/scope-stages`],
     enabled: !!projectId,
   });
+
+  // Fetch purchase orders for the project (to display linked POs in scope)
+  interface LinkedPurchaseOrder {
+    id: string;
+    poNumber: string;
+    title: string | null;
+    supplierName: string | null;
+    status: string;
+    total: number;
+    scopeStageId: string | null;
+    createdAt: string;
+  }
+  
+  const { data: projectPOs = [] } = useQuery<LinkedPurchaseOrder[]>({
+    queryKey: ['/api/purchase-orders', { projectId }],
+    queryFn: async () => {
+      const response = await fetch(`/api/purchase-orders?projectId=${projectId}`, {
+        credentials: 'include',
+      });
+      if (!response.ok) return [];
+      const data = await response.json();
+      return data.purchaseOrders || [];
+    },
+    enabled: !!projectId,
+  });
+
+  // Group POs by stage
+  const posByStage = useMemo(() => {
+    const grouped: Record<string, LinkedPurchaseOrder[]> = {};
+    projectPOs.forEach((po) => {
+      if (po.scopeStageId) {
+        if (!grouped[po.scopeStageId]) {
+          grouped[po.scopeStageId] = [];
+        }
+        grouped[po.scopeStageId].push(po);
+      }
+    });
+    return grouped;
+  }, [projectPOs]);
 
   // Initialize default stages if empty
   const initializeStagesMutation = useMutation({
@@ -1714,6 +1813,11 @@ export default function ProjectScope() {
 
   const handleDeleteItem = (id: string) => {
     deleteItemMutation.mutate(id);
+  };
+
+  // Handle view PO - navigate to the PO page
+  const handleViewPO = (poId: string) => {
+    window.location.href = `/projects/${projectId}/purchase-orders/${poId}`;
   };
 
   const handleToggleSelect = (id: string) => {
@@ -2341,6 +2445,8 @@ export default function ProjectScope() {
                         collapsedItems={collapsedItems} // Scope 2.0
                         onToggleItemCollapse={toggleItemCollapse} // Scope 2.0
                         getTypeLabel={getTypeLabel} // Scope 2.0
+                        linkedPOs={posByStage[stage.id] || []}
+                        onViewPO={handleViewPO}
                       />
                     ))}
 
