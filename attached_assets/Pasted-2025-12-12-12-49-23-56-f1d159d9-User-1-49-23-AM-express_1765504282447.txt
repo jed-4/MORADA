@@ -1,0 +1,141 @@
+2025-12-12 12:49:23.56
+f1d159d9
+User
+1:49:23 AM [express] GET /api/field-categories 304 in 330ms :: [{"id":"be8c1c43-17bc-43e4-8cb8-21b98…
+
+2025-12-12 12:49:23.57
+f1d159d9
+User
+1:49:23 AM [express] GET /api/dashboard-views 304 in 364ms :: [{"id":"d3f3325f-e511-48ea-b9e7-8823c2…
+2025-12-12 12:49:23.59
+f1d159d9
+User
+1:49:23 AM [express] GET /api/projects 304 in 385ms :: [{"id":"e4a2263e-4e4f-4f59-8f5f-d60cddebc830"…
+2025-12-12 12:49:23.60
+f1d159d9
+User
+1:49:23 AM [express] GET /api/companies/a23a0e7b-8f73-4b63-957d-5f74ae191294 304 in 373ms :: {"id":"…
+2025-12-12 12:49:23.61
+f1d159d9
+User
+1:49:23 AM [express] GET /api/dashboard-preference 304 in 375ms :: {"id":"5149092b-9d20-4f5f-b913-9c…
+2025-12-12 12:49:23.61
+f1d159d9
+User
+1:49:23 AM [express] GET /api/notifications/unread-count 304 in 379ms :: {"count":0}
+2025-12-12 12:49:23.68
+f1d159d9
+User
+1:49:23 AM [express] GET /api/users 200 in 465ms :: [{"id":"44689844","email":"jed@lighthouseproject…
+2025-12-12 12:49:23.73
+f1d159d9
+User
+1:49:23 AM [express] GET /api/channels/unread/counts 304 in 518ms :: {"6f7d4813-1cd4-4e65-807a-6ee8d…
+2025-12-12 12:49:23.76
+f1d159d9
+User
+1:49:23 AM [express] GET /api/user-roles 304 in 534ms :: [{"id":"d6fb935e-88e3-46b0-86cd-96ce7335f7f…
+2025-12-12 12:49:23.97
+f1d159d9
+User
+1:49:23 AM [express] GET /api/variation-items 200 in 114ms
+2025-12-12 12:49:23.97
+f1d159d9
+User
+1:49:23 AM [express] GET /api/milestones 200 in 111ms
+2025-12-12 12:49:23.98
+f1d159d9
+User
+1:49:23 AM [express] GET /api/notes 304 in 117ms :: [{"id":"e2ba9bb9-554d-46f3-9621-7a00fe24d26b","c…
+2025-12-12 12:49:23.98
+f1d159d9
+User
+1:49:23 AM [express] GET /api/estimate-items 200 in 104ms
+2025-12-12 12:49:23.99
+f1d159d9
+User
+1:49:23 AM [express] GET /api/checklist-templates 304 in 132ms :: [{"id":"05834314-1c56-4157-8383-40…
+2025-12-12 12:49:24.00
+f1d159d9
+User
+1:49:24 AM [express] GET /api/estimates 304 in 143ms :: [{"id":"16a80ac3-a1a9-491b-8555-40838884f482…
+2025-12-12 12:49:24.00
+f1d159d9
+User
+1:49:24 AM [express] GET /api/tasks 304 in 140ms :: []
+2025-12-12 12:49:24.00
+f1d159d9
+User
+1:49:24 AM [express] GET /api/bills 304 in 135ms :: []
+2025-12-12 12:49:24.00
+f1d159d9
+User
+1:49:24 AM [express] GET /api/variations 304 in 136ms :: []
+2025-12-12 12:49:24.00
+f1d159d9
+User
+1:49:24 AM [express] GET /api/client-invoices 304 in 134ms :: []
+2025-12-12 12:49:24.02
+f1d159d9
+User
+1:49:24 AM [express] GET /api/activities 304 in 139ms :: [{"id":"6f3f6cf2-aa50-458e-868e-efc0638d022…
+2025-12-12 12:49:24.03
+f1d159d9
+User
+1:49:24 AM [express] GET /api/company-settings 304 in 164ms :: {}
+2025-12-12 12:49:24.34
+f1d159d9
+User
+1:49:24 AM [express] GET /api/tasks 304 in 109ms :: []
+2025-12-12 12:49:25.13
+f1d159d9
+User
+1:49:25 AM [express] GET /api/ai-summary/e4a2263e-4e4f-4f59-8f5f-d60cddebc830 200 in 1269ms :: {"sch…
+2025-12-12 12:49:28.74
+f1d159d9
+User
+table: undefined,
+2025-12-12 12:49:28.74
+f1d159d9
+User
+schema: undefined,
+2025-12-12 12:49:28.74
+f1d159d9
+User
+hint: undefined,
+2025-12-12 12:49:28.74
+f1d159d9
+User
+column: undefined,
+2025-12-12 12:49:28.74
+f1d159d9
+User
+dataType: undefined,
+2025-12-12 12:49:28.74
+f1d159d9
+User
+at async NeonPreparedQuery.execute (file:///home/runner/workspace/node_modules/drizzle-orm/neon-serverless/session.js:76:20)
+2025-12-12 12:49:28.74
+f1d159d9
+User
+constraint: undefined,
+2025-12-12 12:49:28.74
+f1d159d9
+User
+at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+2025-12-12 12:49:28.74
+f1d159d9
+User
+at async DbStorage.getContacts (file:///home/runner/workspace/dist/index.js:8495:18)
+2025-12-12 12:49:28.74
+f1d159d9
+User
+severity: 'ERROR',
+2025-12-12 12:49:28.74
+f1d159d9
+User
+internalPosition: undefined,
+2025-12-12 12:49:28.74
+f1d159d9
+User
+internalQuery: undefined,
