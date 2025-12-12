@@ -383,6 +383,7 @@ export interface IStorage {
   getFieldCategory(id: string): Promise<FieldCategory | undefined>;
   getFieldCategoryByKey(key: string): Promise<FieldCategory | undefined>;
   getFieldCategoryWithOptions(key: string): Promise<FieldCategoryWithOptions | undefined>;
+  seedMissingBuiltInCategories(): Promise<{ addedCategories: string[]; addedOptions: string[] }>;
   createFieldCategory(category: InsertFieldCategory): Promise<FieldCategory>;
   updateFieldCategory(id: string, category: Partial<InsertFieldCategory>): Promise<FieldCategory | undefined>;
   deleteFieldCategory(id: string): Promise<boolean>;
@@ -4317,6 +4318,11 @@ export class MemStorage implements IStorage {
     };
   }
 
+  async seedMissingBuiltInCategories(): Promise<{ addedCategories: string[]; addedOptions: string[] }> {
+    // MemStorage doesn't need this - it's only for database migrations
+    return { addedCategories: [], addedOptions: [] };
+  }
+
   async createFieldCategory(insertCategory: InsertFieldCategory): Promise<FieldCategory> {
     const id = randomUUID();
     const now = new Date();
@@ -5698,6 +5704,92 @@ export class DbStorage implements IStorage {
     }));
 
     await db.insert(schema.fieldOptions).values(fieldOptionsWithTimestamps);
+  }
+
+  // Seed missing built-in field categories (for production databases that predate new categories)
+  async seedMissingBuiltInCategories(): Promise<{ addedCategories: string[]; addedOptions: string[] }> {
+    const now = new Date();
+    const addedCategories: string[] = [];
+    const addedOptions: string[] = [];
+    
+    // Define all built-in categories that should exist
+    const builtInCategories = [
+      { id: 'cat-task-status', key: 'task.status', label: 'Task Statuses', entity: 'task', description: 'Status options for tasks', sortOrder: 1 },
+      { id: 'cat-task-priority', key: 'task.priority', label: 'Task Priorities', entity: 'task', description: 'Priority levels for tasks', sortOrder: 2 },
+      { id: 'cat-trade-types', key: 'task.trade', label: 'Trade Categories', entity: 'task', description: 'Construction trade categories', sortOrder: 3 },
+      { id: 'cat-selection-categories', key: 'selection.category', label: 'Selection Categories', entity: 'selection', description: 'Categories for selections', sortOrder: 4 },
+      { id: 'cat-location-rooms', key: 'selection.room', label: 'Locations/Rooms', entity: 'selection', description: 'Room/location options for selections', sortOrder: 5 },
+      { id: 'cat-checklist-type', key: 'checklist.type', label: 'Checklist Types', entity: 'checklist', description: 'Type categories for checklist templates', sortOrder: 6 },
+    ];
+    
+    // Check which categories are missing
+    const existingCategories = await db.select({ key: schema.fieldCategories.key }).from(schema.fieldCategories);
+    const existingKeys = new Set(existingCategories.map(c => c.key));
+    
+    for (const category of builtInCategories) {
+      if (!existingKeys.has(category.key)) {
+        await db.insert(schema.fieldCategories).values({
+          ...category,
+          isBuiltIn: true,
+          isActive: true,
+          createdAt: now,
+          updatedAt: now,
+        });
+        addedCategories.push(category.key);
+        
+        // Seed default options for this category
+        const newOptions = await this.seedOptionsForCategory(category.key, category.id, now);
+        addedOptions.push(...newOptions);
+      }
+    }
+    
+    return { addedCategories, addedOptions };
+  }
+  
+  private async seedOptionsForCategory(categoryKey: string, categoryId: string, now: Date): Promise<string[]> {
+    const addedOptions: string[] = [];
+    let optionsToInsert: { id: string; categoryId: string; key: string; name: string; color: string; isDefault: boolean; sortOrder: number }[] = [];
+    
+    switch (categoryKey) {
+      case 'checklist.type':
+        optionsToInsert = [
+          { id: 'opt-checklist-type-task', categoryId, key: 'Task', name: 'Task', color: '#3B82F6', isDefault: true, sortOrder: 0 },
+          { id: 'opt-checklist-type-job', categoryId, key: 'Job', name: 'Job', color: '#10B981', isDefault: false, sortOrder: 1 },
+          { id: 'opt-checklist-type-estimation', categoryId, key: 'Estimation', name: 'Estimation', color: '#8B5CF6', isDefault: false, sortOrder: 2 },
+          { id: 'opt-checklist-type-lead', categoryId, key: 'Lead', name: 'Lead', color: '#F59E0B', isDefault: false, sortOrder: 3 },
+        ];
+        break;
+      case 'task.status':
+        optionsToInsert = [
+          { id: 'opt-status-todo', categoryId, key: 'todo', name: 'Not Started', color: '#6B7280', isDefault: true, sortOrder: 0 },
+          { id: 'opt-status-progress', categoryId, key: 'in-progress', name: 'In Progress', color: '#F59E0B', isDefault: false, sortOrder: 1 },
+          { id: 'opt-status-done', categoryId, key: 'done', name: 'Complete', color: '#10B981', isDefault: false, sortOrder: 2 },
+          { id: 'opt-status-hold', categoryId, key: 'on-hold', name: 'On Hold', color: '#EF4444', isDefault: false, sortOrder: 3 },
+        ];
+        break;
+      case 'task.priority':
+        optionsToInsert = [
+          { id: 'opt-priority-low', categoryId, key: 'low', name: 'Low', color: '#10B981', isDefault: false, sortOrder: 0 },
+          { id: 'opt-priority-medium', categoryId, key: 'medium', name: 'Medium', color: '#F59E0B', isDefault: true, sortOrder: 1 },
+          { id: 'opt-priority-high', categoryId, key: 'high', name: 'High', color: '#EF4444', isDefault: false, sortOrder: 2 },
+        ];
+        break;
+      // Add other categories as needed
+    }
+    
+    if (optionsToInsert.length > 0) {
+      const optionsWithTimestamps = optionsToInsert.map(option => ({
+        ...option,
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      }));
+      
+      await db.insert(schema.fieldOptions).values(optionsWithTimestamps);
+      addedOptions.push(...optionsToInsert.map(o => o.name));
+    }
+    
+    return addedOptions;
   }
 
   private async seedDefaultCustomFields(): Promise<void> {

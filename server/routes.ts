@@ -939,6 +939,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Field Categories API Routes (Buildern-style)
+  // Seed missing built-in field categories (for production databases that predate new categories)
+  app.post("/api/field-categories/seed-missing", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const result = await storage.seedMissingBuiltInCategories();
+      res.json({
+        message: "Seeding complete",
+        addedCategories: result.addedCategories,
+        addedOptions: result.addedOptions,
+      });
+    } catch (error) {
+      console.error("Error seeding missing categories:", error);
+      res.status(500).json({ error: "Failed to seed missing categories" });
+    }
+  });
+
   app.get("/api/field-categories", async (req, res) => {
     try {
       const categories = await storage.getFieldCategories();
