@@ -435,12 +435,13 @@ export default function QuickReviewPanel({
                       {field.value === "supplier" && <Building2 className="h-3 w-3" />}
                       {field.value === "trade" && <Briefcase className="h-3 w-3" />}
                       {field.value === "client" && <User className="h-3 w-3" />}
-                      {field.value === "team" && <User className="h-3 w-3" />}
+                      {field.value === "team" && <Users className="h-3 w-3" />}
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="supplier">Supplier</SelectItem>
+                      <SelectItem value="team">Team</SelectItem>
                       <SelectItem value="trade">Trade</SelectItem>
+                      <SelectItem value="supplier">Supplier</SelectItem>
                       <SelectItem value="client">Client</SelectItem>
                     </SelectContent>
                   </Select>
