@@ -525,7 +525,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
             title={item.description ? item.description.replace(/<[^>]*>/g, '') : 'Add description...'}
           >
             {item.description ? (
-              <span dangerouslySetInnerHTML={{ __html: item.description }} className="line-clamp-1" />
+              <span className="line-clamp-1">{item.description.replace(/<[^>]*>/g, '')}</span>
             ) : (
               <span className="italic">-</span>
             )}
@@ -1147,7 +1147,7 @@ const pdfStyles = StyleSheet.create({
 });
 
 // Scope item types
-const SCOPE_TYPES = ['e-note', 'scope', 'note', 'tool', 'material'] as const;
+const SCOPE_TYPES = ['e-note', 'scope', 'note', 'tool', 'material', 'proposal'] as const;
 type ScopeItemType = typeof SCOPE_TYPES[number];
 
 export default function ProjectScope() {
@@ -1246,14 +1246,38 @@ export default function ProjectScope() {
     },
   });
 
-  // Update stage mutation
+  // Update stage mutation with optimistic updates to prevent flickering
   const updateStageMutation = useMutation({
     mutationFn: async ({ id, name }: { id: string; name: string }) => {
       return apiRequest(`/api/scope-stages/${id}`, 'PATCH', { name });
     },
-    onSuccess: () => {
+    onMutate: async ({ id, name }) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: [`/api/projects/${projectId}/scope-stages`] });
+      
+      // Snapshot the previous value
+      const previousStages = queryClient.getQueryData<ScopeStage[]>([`/api/projects/${projectId}/scope-stages`]);
+      
+      // Optimistically update the cache
+      queryClient.setQueryData<ScopeStage[]>([`/api/projects/${projectId}/scope-stages`], (old) => {
+        if (!old) return old;
+        return old.map(stage => stage.id === id ? { ...stage, name } : stage);
+      });
+      
+      return { previousStages };
+    },
+    onError: (err, variables, context) => {
+      // Rollback on error
+      if (context?.previousStages) {
+        queryClient.setQueryData([`/api/projects/${projectId}/scope-stages`], context.previousStages);
+      }
+      toast({ title: "Failed to update stage", variant: "destructive" });
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope-stages`] });
-      toast({ title: "Stage updated successfully" });
+    },
+    onSuccess: () => {
+      toast({ title: "Stage updated" });
     },
   });
 
@@ -1268,22 +1292,76 @@ export default function ProjectScope() {
     },
   });
 
-  // Reorder stages mutation
+  // Reorder stages mutation with optimistic updates
   const reorderStagesMutation = useMutation({
-    mutationFn: async (updates: { id: string; displayOrder: number }[]) => {
+    mutationFn: async (updates: { id: string; displayOrder: number; parentId?: string | null }[]) => {
       return apiRequest('/api/scope-stages/reorder', 'POST', { updates });
     },
-    onSuccess: () => {
+    onMutate: async (updates) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: [`/api/projects/${projectId}/scope-stages`] });
+      
+      // Snapshot the previous value
+      const previousStages = queryClient.getQueryData<ScopeStage[]>([`/api/projects/${projectId}/scope-stages`]);
+      
+      // Optimistically update the cache
+      queryClient.setQueryData<ScopeStage[]>([`/api/projects/${projectId}/scope-stages`], (old) => {
+        if (!old) return old;
+        return old.map(stage => {
+          const update = updates.find(u => u.id === stage.id);
+          if (update) {
+            return { 
+              ...stage, 
+              displayOrder: update.displayOrder,
+              parentId: update.parentId !== undefined ? update.parentId : stage.parentId
+            };
+          }
+          return stage;
+        });
+      });
+      
+      return { previousStages };
+    },
+    onError: (err, variables, context) => {
+      // Rollback on error
+      if (context?.previousStages) {
+        queryClient.setQueryData([`/api/projects/${projectId}/scope-stages`], context.previousStages);
+      }
+      toast({ title: "Failed to reorder stages", variant: "destructive" });
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope-stages`] });
     },
   });
 
-  // Update mutation
+  // Update mutation with optimistic updates for better UX
   const updateItemMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<ScopeItem> }) => {
       return apiRequest(`/api/scope/${id}`, 'PATCH', data);
     },
-    onSuccess: () => {
+    onMutate: async ({ id, data }) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: [`/api/projects/${projectId}/scope`] });
+      
+      // Snapshot the previous value
+      const previousItems = queryClient.getQueryData<ScopeItem[]>([`/api/projects/${projectId}/scope`]);
+      
+      // Optimistically update the cache
+      queryClient.setQueryData<ScopeItem[]>([`/api/projects/${projectId}/scope`], (old) => {
+        if (!old) return old;
+        return old.map(item => item.id === id ? { ...item, ...data } : item);
+      });
+      
+      return { previousItems };
+    },
+    onError: (err, variables, context) => {
+      // Rollback on error
+      if (context?.previousItems) {
+        queryClient.setQueryData([`/api/projects/${projectId}/scope`], context.previousItems);
+      }
+      toast({ title: "Failed to update item", variant: "destructive" });
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope`] });
     },
   });
@@ -1368,15 +1446,23 @@ export default function ProjectScope() {
     },
   });
 
-  // DnD sensors for items
+  // DnD sensors for items with activation constraint for better UX
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 3, // 3px movement before drag starts - matches estimate drag behavior
+      },
+    }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  // Separate DnD sensors for stages
+  // Separate DnD sensors for stages with same activation constraint
   const stageSensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 3, // 3px movement before drag starts - matches estimate drag behavior
+      },
+    }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
@@ -1670,6 +1756,7 @@ export default function ProjectScope() {
       'note': 'NOTE',
       'tool': 'TOOL',
       'material': 'MATERIAL',
+      'proposal': 'PROPOSAL',
     };
     return typeMap[type || 'scope'] || 'SCOPE';
   };
@@ -2185,6 +2272,7 @@ export default function ProjectScope() {
                   <SelectItem value="note">Note</SelectItem>
                   <SelectItem value="tool">Tool</SelectItem>
                   <SelectItem value="material">Material</SelectItem>
+                  <SelectItem value="proposal">Proposal</SelectItem>
                 </SelectContent>
               </Select>
             </div>

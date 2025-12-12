@@ -2903,7 +2903,7 @@ export const scopeItems = pgTable("scope_items", {
   title: text("title").notNull(),
   description: text("description"), // Rich text content from Tiptap
   contentType: text("content_type").notNull().default("text"), // "text" | "bullet" | "table" | "image"
-  itemType: text("item_type").notNull().default("scope"), // "e-note" | "scope" | "note" | "tool" | "material"
+  itemType: text("item_type").notNull().default("scope"), // "e-note" | "scope" | "note" | "tool" | "material" | "proposal"
   
   // Integration flags
   costCodeId: varchar("cost_code_id").references(() => costCodes.id),
@@ -2937,7 +2937,7 @@ export const insertScopeItemSchema = createInsertSchema(scopeItems).omit({
   updatedAt: true,
 }).extend({
   contentType: z.enum(["text", "bullet", "table", "image"]).default("text"),
-  itemType: z.enum(["e-note", "scope", "note", "tool", "material"]).default("scope"),
+  itemType: z.enum(["e-note", "scope", "note", "tool", "material", "proposal"]).default("scope"),
   stage: z.string().min(1, "Stage is required"),
   title: z.string().min(1, "Title is required"),
   gearList: z.array(z.object({
