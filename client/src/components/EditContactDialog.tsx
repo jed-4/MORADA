@@ -36,20 +36,6 @@ type EditContactDialogProps = {
   contact: Contact;
 };
 
-const AVATAR_COLORS = [
-  "#3b82f6", // blue
-  "#8b5cf6", // purple
-  "#ec4899", // pink
-  "#ef4444", // red
-  "#f97316", // orange
-  "#eab308", // yellow
-  "#22c55e", // green
-  "#14b8a6", // teal
-  "#06b6d4", // cyan
-  "#6366f1", // indigo
-  "#bba7db", // lilac (default)
-  "#64748b", // slate
-];
 
 export default function EditContactDialog({
   open,
@@ -298,114 +284,77 @@ export default function EditContactDialog({
 
             <Separator />
 
-            {/* Avatar & Color Section */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-medium">Avatar & Color</h3>
-              <div className="flex items-start gap-6">
-                {/* Avatar Preview & Upload */}
-                <div className="flex flex-col items-center gap-2">
-                  <div className="relative">
-                    <Avatar 
-                      className="h-16 w-16 border-2 border-border"
-                      style={{ backgroundColor: avatarPreview ? undefined : (form.watch("avatarColor") || "#bba7db") }}
-                    >
-                      {avatarPreview ? (
-                        <AvatarImage src={avatarPreview} alt="Avatar" />
-                      ) : (
-                        <AvatarFallback 
-                          className="text-white text-lg font-medium" 
-                          style={{ backgroundColor: "transparent" }}
-                        >
-                          {getInitials()}
-                        </AvatarFallback>
-                      )}
-                    </Avatar>
-                    {avatarPreview && (
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="destructive"
-                        className="absolute -top-1 -right-1 h-5 w-5"
-                        onClick={handleRemoveAvatar}
-                        data-testid="button-remove-avatar"
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
-                    )}
-                  </div>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleAvatarUpload}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isUploadingAvatar}
-                    data-testid="button-upload-avatar"
-                  >
-                    <Upload className="h-3 w-3 mr-1" />
-                    {isUploadingAvatar ? "Uploading..." : "Upload Photo"}
-                  </Button>
-                </div>
-
-                {/* Color Selector */}
-                <div className="flex-1">
+            {/* Trade/Supplier Layout: Company First, Then Primary Contact */}
+            {isBusinessType ? (
+              <>
+                {/* Company Name with Avatar */}
+                <div className="flex items-end gap-3">
                   <FormField
                     control={form.control}
-                    name="avatarColor"
+                    name="company"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-xs text-muted-foreground">Avatar Color (used when no photo)</FormLabel>
+                      <FormItem className="flex-1">
+                        <FormLabel>Company Name *</FormLabel>
                         <FormControl>
-                          <div className="flex flex-wrap gap-2">
-                            {AVATAR_COLORS.map((color) => (
-                              <button
-                                key={color}
-                                type="button"
-                                className={`h-7 w-7 rounded-full border-2 transition-all ${
-                                  field.value === color 
-                                    ? "border-foreground scale-110" 
-                                    : "border-transparent hover:scale-105"
-                                }`}
-                                style={{ backgroundColor: color }}
-                                onClick={() => field.onChange(color)}
-                                data-testid={`color-${color.replace("#", "")}`}
-                              />
-                            ))}
-                          </div>
+                          <Input {...field} value={field.value || ""} data-testid="input-company" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
+                  
+                  {/* Compact Avatar with Upload */}
+                  <div className="flex items-center gap-2">
+                    <div className="relative">
+                      <Avatar 
+                        className="h-9 w-9 border border-border cursor-pointer"
+                        style={{ backgroundColor: avatarPreview ? undefined : (form.watch("avatarColor") || "#bba7db") }}
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        {avatarPreview ? (
+                          <AvatarImage src={avatarPreview} alt="Avatar" />
+                        ) : (
+                          <AvatarFallback 
+                            className="text-white text-xs font-medium" 
+                            style={{ backgroundColor: "transparent" }}
+                          >
+                            {getInitials()}
+                          </AvatarFallback>
+                        )}
+                      </Avatar>
+                      {avatarPreview && (
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="destructive"
+                          className="absolute -top-1 -right-1 h-4 w-4"
+                          onClick={(e) => { e.stopPropagation(); handleRemoveAvatar(); }}
+                          data-testid="button-remove-avatar"
+                        >
+                          <X className="h-2.5 w-2.5" />
+                        </Button>
+                      )}
+                    </div>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleAvatarUpload}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isUploadingAvatar}
+                      data-testid="button-upload-avatar"
+                      title="Upload photo"
+                    >
+                      <Upload className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            </div>
-
-            <Separator />
-
-            {/* Trade/Supplier Layout: Company First, Then Primary Contact */}
-            {isBusinessType ? (
-              <>
-                {/* Company Name */}
-                <FormField
-                  control={form.control}
-                  name="company"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Company Name *</FormLabel>
-                      <FormControl>
-                        <Input {...field} value={field.value || ""} data-testid="input-company" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
 
                 {/* Primary Contact Section */}
                 <div className="space-y-4 border-t pt-4">
@@ -495,39 +444,128 @@ export default function EditContactDialog({
                       )}
                     />
                   </div>
+
+                  {/* Contact Color */}
+                  <FormField
+                    control={form.control}
+                    name="avatarColor"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Contact Color</FormLabel>
+                        <FormControl>
+                          <div className="flex items-center gap-3">
+                            <Input
+                              type="color"
+                              className="w-12 h-9 p-1 border rounded cursor-pointer"
+                              value={field.value || "#bba7db"}
+                              onChange={field.onChange}
+                              data-testid="input-contact-color"
+                            />
+                            <Input
+                              type="text"
+                              placeholder="#bba7db"
+                              className="flex-1"
+                              value={field.value || ""}
+                              onChange={field.onChange}
+                              data-testid="input-contact-color-hex"
+                            />
+                          </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                 </div>
               </>
             ) : (
               /* Team/Client Layout: Name Fields First */
               <>
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="firstName"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>First Name</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value || ""} data-testid="input-first-name" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                {/* Name Row with Avatar */}
+                <div className="flex items-end gap-3">
+                  <div className="grid grid-cols-2 gap-4 flex-1">
+                    <FormField
+                      control={form.control}
+                      name="firstName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>First Name</FormLabel>
+                          <FormControl>
+                            <Input {...field} value={field.value || ""} data-testid="input-first-name" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
-                  <FormField
-                    control={form.control}
-                    name="lastName"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Last Name</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value || ""} data-testid="input-last-name" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                    <FormField
+                      control={form.control}
+                      name="lastName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Last Name</FormLabel>
+                          <FormControl>
+                            <Input {...field} value={field.value || ""} data-testid="input-last-name" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  
+                  {/* Compact Avatar with Upload */}
+                  <div className="flex items-center gap-2">
+                    <div className="relative">
+                      <Avatar 
+                        className="h-9 w-9 border border-border cursor-pointer"
+                        style={{ backgroundColor: avatarPreview ? undefined : (form.watch("avatarColor") || "#bba7db") }}
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        {avatarPreview ? (
+                          <AvatarImage src={avatarPreview} alt="Avatar" />
+                        ) : (
+                          <AvatarFallback 
+                            className="text-white text-xs font-medium" 
+                            style={{ backgroundColor: "transparent" }}
+                          >
+                            {getInitials()}
+                          </AvatarFallback>
+                        )}
+                      </Avatar>
+                      {avatarPreview && (
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="destructive"
+                          className="absolute -top-1 -right-1 h-4 w-4"
+                          onClick={(e) => { e.stopPropagation(); handleRemoveAvatar(); }}
+                          data-testid="button-remove-avatar"
+                        >
+                          <X className="h-2.5 w-2.5" />
+                        </Button>
+                      )}
+                    </div>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleAvatarUpload}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isUploadingAvatar}
+                      data-testid="button-upload-avatar"
+                      title="Upload photo"
+                    >
+                      <Upload className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
 
                   <FormField
                     control={form.control}
@@ -631,6 +669,37 @@ export default function EditContactDialog({
                     />
                   )}
                 </div>
+
+                {/* Contact Color */}
+                <FormField
+                  control={form.control}
+                  name="avatarColor"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Contact Color</FormLabel>
+                      <FormControl>
+                        <div className="flex items-center gap-3">
+                          <Input
+                            type="color"
+                            className="w-12 h-9 p-1 border rounded cursor-pointer"
+                            value={field.value || "#bba7db"}
+                            onChange={field.onChange}
+                            data-testid="input-contact-color"
+                          />
+                          <Input
+                            type="text"
+                            placeholder="#bba7db"
+                            className="flex-1"
+                            value={field.value || ""}
+                            onChange={field.onChange}
+                            data-testid="input-contact-color-hex"
+                          />
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
               </>
             )}
 
