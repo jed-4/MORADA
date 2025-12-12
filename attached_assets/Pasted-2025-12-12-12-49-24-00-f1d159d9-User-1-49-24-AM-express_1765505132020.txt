@@ -1,0 +1,149 @@
+2025-12-12 12:49:24.00
+f1d159d9
+User
+1:49:24 AM [express] GET /api/client-invoices 304 in 134ms :: []
+2025-12-12 12:49:24.02
+f1d159d9
+User
+1:49:24 AM [express] GET /api/activities 304 in 139ms :: [{"id":"6f3f6cf2-aa50-458e-868e-efc0638d022…
+2025-12-12 12:49:24.03
+f1d159d9
+User
+1:49:24 AM [express] GET /api/company-settings 304 in 164ms :: {}
+2025-12-12 12:49:24.34
+f1d159d9
+User
+1:49:24 AM [express] GET /api/tasks 304 in 109ms :: []
+2025-12-12 12:49:25.13
+f1d159d9
+User
+1:49:25 AM [express] GET /api/ai-summary/e4a2263e-4e4f-4f59-8f5f-d60cddebc830 200 in 1269ms :: {"sch…
+2025-12-12 12:49:28.74
+f1d159d9
+User
+table: undefined,
+
+2025-12-12 12:49:28.74
+f1d159d9
+User
+schema: undefined,
+2025-12-12 12:49:28.74
+f1d159d9
+User
+hint: undefined,
+2025-12-12 12:49:28.74
+f1d159d9
+User
+column: undefined,
+2025-12-12 12:49:28.74
+f1d159d9
+User
+dataType: undefined,
+2025-12-12 12:49:28.74
+f1d159d9
+User
+at async NeonPreparedQuery.execute (file:///home/runner/workspace/node_modules/drizzle-orm/neon-serverless/session.js:76:20)
+2025-12-12 12:49:28.74
+f1d159d9
+User
+constraint: undefined,
+2025-12-12 12:49:28.74
+f1d159d9
+User
+at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+2025-12-12 12:49:28.74
+f1d159d9
+User
+at async DbStorage.getContacts (file:///home/runner/workspace/dist/index.js:8495:18)
+2025-12-12 12:49:28.74
+f1d159d9
+User
+severity: 'ERROR',
+2025-12-12 12:49:28.74
+f1d159d9
+User
+internalPosition: undefined,
+2025-12-12 12:49:28.74
+f1d159d9
+User
+internalQuery: undefined,
+2025-12-12 12:49:28.74
+f1d159d9
+User
+code: '42703',
+2025-12-12 12:49:28.74
+f1d159d9
+User
+at file:///home/runner/workspace/node_modules/@neondatabase/serverless/index.mjs:1345:74
+2025-12-12 12:49:28.74
+f1d159d9
+User
+position: '504',
+2025-12-12 12:49:28.74
+f1d159d9
+User
+at async file:///home/runner/workspace/dist/index.js:20587:25 {
+2025-12-12 12:49:28.74
+f1d159d9
+User
+line: '3722',
+2025-12-12 12:49:28.74
+f1d159d9
+User
+where: undefined,
+2025-12-12 12:49:28.74
+f1d159d9
+User
+file: 'parse_relation.c',
+2025-12-12 12:49:28.74
+f1d159d9
+User
+Database error in getContacts: error: column "avatar_url" does not exist
+2025-12-12 12:49:28.74
+f1d159d9
+User
+routine: 'errorMissingColumn'
+2025-12-12 12:49:28.74
+f1d159d9
+User
+}
+2025-12-12 12:49:28.74
+f1d159d9
+User
+length: 111,
+2025-12-12 12:49:28.74
+f1d159d9
+User
+detail: undefined,
+2025-12-12 12:49:28.77
+f1d159d9
+User
+1:49:28 AM [express] GET /api/contacts 500 in 151ms :: {"error":"Failed to fetch contacts"}
+2025-12-12 12:49:46.47
+f1d159d9
+User
+[ReminderProcessor] Starting reminder processing...
+2025-12-12 12:49:46.56
+f1d159d9
+User
+[ReminderProcessor] Found 0 due reminders
+2025-12-12 12:49:46.58
+f1d159d9
+User
+[ReminderProcessor] Reminder processing completed
+2025-12-12 12:49:46.58
+f1d159d9
+User
+[ReminderProcessor] Found 0 business reminders for 01:49
+2025-12-12 12:49:54.11
+f1d159d9
+User
+1:49:54 AM [express] GET /api/notifications/unread-count 304 in 267ms :: {"count":0}
+2025-12-12 12:49:54.39
+f1d159d9
+User
+1:49:54 AM [express] GET /api/channels/unread/counts 304 in 449ms :: {"6f7d4813-1cd4-4e65-807a-6ee8d…
+2025-12-12 12:50:46.48
+f1d159d9
+User
+[ReminderProcessor] Starting reminder processing...
