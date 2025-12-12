@@ -33,7 +33,7 @@ import {
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { type Contact } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -332,14 +332,18 @@ export default function Contacts() {
               {filteredContacts.map((contact) => (
                 <TableRow 
                   key={contact.id} 
-                  className="hover-elevate"
+                  className="hover-elevate cursor-pointer"
                   data-testid={`row-contact-${contact.id}`}
+                  onDoubleClick={() => handleEdit(contact)}
                 >
                   <TableCell className="py-2">
                     <Avatar 
                       className="h-7 w-7" 
-                      style={{ backgroundColor: contact.avatarColor || "#bba7db" }}
+                      style={{ backgroundColor: contact.avatarUrl ? undefined : (contact.avatarColor || "#bba7db") }}
                     >
+                      {contact.avatarUrl && (
+                        <AvatarImage src={contact.avatarUrl} alt={contact.name || "Avatar"} />
+                      )}
                       <AvatarFallback className="text-white text-xs" style={{ backgroundColor: "transparent" }}>
                         {getInitials(contact)}
                       </AvatarFallback>
@@ -490,8 +494,14 @@ export default function Contacts() {
                       <TableRow key={contact.id} className="opacity-60">
                         <TableCell>
                           <div className="flex items-center gap-3">
-                            <Avatar className="h-8 w-8">
-                              <AvatarFallback className="text-xs bg-muted">
+                            <Avatar 
+                              className="h-8 w-8"
+                              style={{ backgroundColor: contact.avatarUrl ? undefined : (contact.avatarColor || "#bba7db") }}
+                            >
+                              {contact.avatarUrl && (
+                                <AvatarImage src={contact.avatarUrl} alt={contact.name || "Avatar"} />
+                              )}
+                              <AvatarFallback className="text-xs text-white" style={{ backgroundColor: "transparent" }}>
                                 {getInitials(contact)}
                               </AvatarFallback>
                             </Avatar>

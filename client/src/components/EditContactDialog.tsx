@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { Upload, X } from "lucide-react";
 import {
   Form,
   FormControl,
@@ -34,12 +36,30 @@ type EditContactDialogProps = {
   contact: Contact;
 };
 
+const AVATAR_COLORS = [
+  "#3b82f6", // blue
+  "#8b5cf6", // purple
+  "#ec4899", // pink
+  "#ef4444", // red
+  "#f97316", // orange
+  "#eab308", // yellow
+  "#22c55e", // green
+  "#14b8a6", // teal
+  "#06b6d4", // cyan
+  "#6366f1", // indigo
+  "#bba7db", // lilac (default)
+  "#64748b", // slate
+];
+
 export default function EditContactDialog({
   open,
   onOpenChange,
   contact,
 }: EditContactDialogProps) {
   const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
   const { data: costCodes = [] } = useQuery<CostCode[]>({
     queryKey: ["/api/cost-codes"],
@@ -78,7 +98,7 @@ export default function EditContactDialog({
     },
   });
 
-  // Reset form when contact changes
+  // Reset form and avatar preview when contact changes
   useEffect(() => {
     if (contact) {
       form.reset({
@@ -106,12 +126,105 @@ export default function EditContactDialog({
         notes: contact.notes || "",
         labels: (contact.labels as string[]) || [],
         projectIds: (contact.projectIds as string[]) || [],
-        avatarColor: contact.avatarColor || "",
+        avatarColor: contact.avatarColor || "#bba7db",
         portalEnabled: contact.portalEnabled || false,
         isArchived: contact.isArchived || false,
       });
+      setAvatarPreview(contact.avatarUrl || null);
     }
   }, [contact, form]);
+
+  // Get initials for avatar fallback
+  const getInitials = () => {
+    const name = contact.name || contact.company || "";
+    const firstName = contact.firstName || "";
+    const lastName = contact.lastName || "";
+    
+    if (firstName || lastName) {
+      return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
+    }
+    return name.substring(0, 2).toUpperCase();
+  };
+
+  // Handle avatar file upload
+  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      toast({
+        title: "Invalid file type",
+        description: "Please upload an image file",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate file size (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      toast({
+        title: "File too large",
+        description: "Please upload an image smaller than 2MB",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsUploadingAvatar(true);
+    
+    try {
+      // Create form data for upload
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("contactId", contact.id);
+
+      const response = await fetch("/api/contacts/avatar/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to upload avatar");
+      }
+
+      const result = await response.json();
+      setAvatarPreview(result.avatarUrl);
+      
+      // Update the contact with the new avatar URL
+      await apiRequest(`/api/contacts/${contact.id}`, "PATCH", {
+        avatarUrl: result.avatarUrl,
+      });
+      
+      queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
+      toast({ title: "Avatar uploaded successfully" });
+    } catch (error) {
+      toast({
+        title: "Upload failed",
+        description: "Failed to upload avatar image",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
+  // Remove avatar
+  const handleRemoveAvatar = async () => {
+    try {
+      await apiRequest(`/api/contacts/${contact.id}`, "PATCH", {
+        avatarUrl: null,
+      });
+      setAvatarPreview(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
+      toast({ title: "Avatar removed" });
+    } catch (error) {
+      toast({
+        title: "Failed to remove avatar",
+        variant: "destructive",
+      });
+    }
+  };
 
   const updateMutation = useMutation({
     mutationFn: async (data: InsertContact) => {
@@ -145,8 +258,10 @@ export default function EditContactDialog({
 
   const selectedType = form.watch("contactType");
   const isTeam = selectedType === "team";
+  const isTrade = selectedType === "trade";
   const isSupplier = selectedType === "supplier";
   const isClient = selectedType === "client";
+  const isBusinessType = isTrade || isSupplier; // Both use company-first layout
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -170,9 +285,10 @@ export default function EditContactDialog({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="team">Team Member</SelectItem>
+                      <SelectItem value="trade">Trade (Subcontractor)</SelectItem>
                       <SelectItem value="supplier">Supplier</SelectItem>
                       <SelectItem value="client">Client</SelectItem>
+                      <SelectItem value="team">Team Member</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -182,8 +298,99 @@ export default function EditContactDialog({
 
             <Separator />
 
-            {/* Supplier Layout: Company First, Then Primary Contact */}
-            {isSupplier ? (
+            {/* Avatar & Color Section */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-medium">Avatar & Color</h3>
+              <div className="flex items-start gap-6">
+                {/* Avatar Preview & Upload */}
+                <div className="flex flex-col items-center gap-2">
+                  <div className="relative">
+                    <Avatar 
+                      className="h-16 w-16 border-2 border-border"
+                      style={{ backgroundColor: avatarPreview ? undefined : (form.watch("avatarColor") || "#bba7db") }}
+                    >
+                      {avatarPreview ? (
+                        <AvatarImage src={avatarPreview} alt="Avatar" />
+                      ) : (
+                        <AvatarFallback 
+                          className="text-white text-lg font-medium" 
+                          style={{ backgroundColor: "transparent" }}
+                        >
+                          {getInitials()}
+                        </AvatarFallback>
+                      )}
+                    </Avatar>
+                    {avatarPreview && (
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="destructive"
+                        className="absolute -top-1 -right-1 h-5 w-5"
+                        onClick={handleRemoveAvatar}
+                        data-testid="button-remove-avatar"
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleAvatarUpload}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploadingAvatar}
+                    data-testid="button-upload-avatar"
+                  >
+                    <Upload className="h-3 w-3 mr-1" />
+                    {isUploadingAvatar ? "Uploading..." : "Upload Photo"}
+                  </Button>
+                </div>
+
+                {/* Color Selector */}
+                <div className="flex-1">
+                  <FormField
+                    control={form.control}
+                    name="avatarColor"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs text-muted-foreground">Avatar Color (used when no photo)</FormLabel>
+                        <FormControl>
+                          <div className="flex flex-wrap gap-2">
+                            {AVATAR_COLORS.map((color) => (
+                              <button
+                                key={color}
+                                type="button"
+                                className={`h-7 w-7 rounded-full border-2 transition-all ${
+                                  field.value === color 
+                                    ? "border-foreground scale-110" 
+                                    : "border-transparent hover:scale-105"
+                                }`}
+                                style={{ backgroundColor: color }}
+                                onClick={() => field.onChange(color)}
+                                data-testid={`color-${color.replace("#", "")}`}
+                              />
+                            ))}
+                          </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Trade/Supplier Layout: Company First, Then Primary Contact */}
+            {isBusinessType ? (
               <>
                 {/* Company Name */}
                 <FormField
@@ -460,8 +667,8 @@ export default function EditContactDialog({
               </div>
             )}
 
-            {/* Supplier-specific fields */}
-            {isSupplier && (
+            {/* Trade/Supplier-specific fields */}
+            {isBusinessType && (
               <>
                 <div className="grid grid-cols-2 gap-4">
                   <FormField

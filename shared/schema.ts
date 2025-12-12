@@ -1327,6 +1327,7 @@ export const contacts = pgTable("contacts", {
   labels: json("labels").default([]), // Array of string tags
   projectIds: json("project_ids").default([]), // Array of associated project IDs
   avatarColor: text("avatar_color"), // Hex color for avatar background
+  avatarUrl: text("avatar_url"), // URL to uploaded avatar image (photo or logo)
   scheduleColor: text("schedule_color"), // Hex color for trade/supplier color-coding in schedules
   
   // Portal access (for clients - future feature)

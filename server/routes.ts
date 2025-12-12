@@ -6458,6 +6458,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Contact avatar upload - use memory storage first, then write to disk after validation
+  const contactAvatarUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+      fileSize: 2 * 1024 * 1024, // 2MB limit
+    },
+    fileFilter: (req, file, cb) => {
+      // Only allow specific image types
+      const allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+      if (allowedMimes.includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(new Error('Only JPEG, PNG, GIF, and WebP images are allowed'));
+      }
+    }
+  });
+
+  app.post("/api/contacts/avatar/upload", requireAuth, requireTeamMember, contactAvatarUpload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      const contactId = req.body.contactId;
+      if (!contactId) {
+        return res.status(400).json({ error: "Contact ID is required" });
+      }
+
+      const companyId = req.user!.companyId!;
+
+      // Verify contact belongs to user's company before allowing upload
+      const existingContact = await storage.getContact(contactId, companyId);
+      if (!existingContact) {
+        return res.status(404).json({ error: "Contact not found or access denied" });
+      }
+
+      // Generate safe filename based on mimetype only (no user input in filename)
+      const mimeToExt: Record<string, string> = {
+        'image/jpeg': 'jpg',
+        'image/png': 'png',
+        'image/gif': 'gif',
+        'image/webp': 'webp',
+      };
+      const ext = mimeToExt[req.file.mimetype] || 'jpg';
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      const filename = `avatar-${uniqueSuffix}.${ext}`;
+
+      // Ensure upload directory exists
+      const uploadDir = 'uploads/contact-avatars/';
+      const fs = await import('fs');
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
+
+      // Write file to disk
+      const filePath = `${uploadDir}${filename}`;
+      fs.writeFileSync(filePath, req.file.buffer);
+
+      // Construct the URL for the uploaded file
+      const avatarUrl = `/uploads/contact-avatars/${filename}`;
+
+      // Update the contact with the new avatar URL
+      await storage.updateContact(contactId, { avatarUrl }, companyId);
+
+      res.json({ avatarUrl });
+    } catch (error) {
+      console.error("Avatar upload error:", error);
+      res.status(500).json({ error: "Failed to upload avatar" });
+    }
+  });
+
   app.post("/api/contacts/:id/archive", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const companyId = req.user!.companyId!;
