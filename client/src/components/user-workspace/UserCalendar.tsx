@@ -103,7 +103,12 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
     queryFn: async () => {
       const allTasks = await apiRequest("/api/tasks", "GET");
       return Array.isArray(allTasks) 
-        ? allTasks.filter((task: any) => task.assigneeId === displayedUserId && task.dueDate) 
+        ? allTasks.filter((task: any) => {
+            // Check if user is assigned via assigneeId or assignedTo array
+            const isAssigned = task.assigneeId === displayedUserId || 
+              (Array.isArray(task.assignedTo) && task.assignedTo.includes(displayedUserId));
+            return isAssigned && task.dueDate;
+          }) 
         : [];
     },
     enabled: !!displayedUserId,
