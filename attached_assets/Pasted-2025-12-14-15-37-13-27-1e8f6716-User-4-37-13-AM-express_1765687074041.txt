@@ -1,0 +1,109 @@
+2025-12-14 15:37:13.27
+1e8f6716
+User
+4:37:13 AM [express] GET /api/contacts 304 in 440ms :: [{"id":"4be1ae15-db86-437c-853d-cbd77d3a5204"…
+
+2025-12-14 15:37:14.32
+1e8f6716
+User
+4:37:14 AM [express] GET /api/notifications/unread-count 304 in 134ms :: {"count":0}
+2025-12-14 15:37:14.85
+1e8f6716
+User
+4:37:14 AM [express] GET /api/channels/unread/counts 304 in 345ms :: {"6f7d4813-1cd4-4e65-807a-6ee8d…
+2025-12-14 15:37:15.32
+1e8f6716
+User
+User disconnected: 44689844
+2025-12-14 15:37:15.34
+1e8f6716
+User
+schema: undefined,
+2025-12-14 15:37:15.34
+1e8f6716
+User
+column: undefined,
+2025-12-14 15:37:15.34
+1e8f6716
+User
+at async file:///home/runner/workspace/dist/index.js:23987:23 {
+2025-12-14 15:37:15.34
+1e8f6716
+User
+table: undefined,
+2025-12-14 15:37:15.34
+1e8f6716
+User
+line: '1449',
+2025-12-14 15:37:15.34
+1e8f6716
+User
+routine: 'parserOpenTable'
+2025-12-14 15:37:15.34
+1e8f6716
+User
+internalQuery: undefined,
+2025-12-14 15:37:15.34
+1e8f6716
+User
+position: '161',
+2025-12-14 15:37:15.34
+1e8f6716
+User
+code: '42P01',
+2025-12-14 15:37:15.34
+1e8f6716
+User
+Database error in getPaymentTermsOptions: error: relation "payment_terms_options" does not exist
+2025-12-14 15:37:15.34
+1e8f6716
+User
+where: undefined,
+2025-12-14 15:37:15.34
+1e8f6716
+User
+at async DbStorage.getPaymentTermsOptions (file:///home/runner/workspace/dist/index.js:7438:18)
+2025-12-14 15:37:15.34
+1e8f6716
+User
+}
+2025-12-14 15:37:15.34
+1e8f6716
+User
+at async NeonPreparedQuery.execute (file:///home/runner/workspace/node_modules/drizzle-orm/neon-serverless/session.js:76:20)
+2025-12-14 15:37:15.34
+1e8f6716
+User
+length: 121,
+2025-12-14 15:37:15.34
+1e8f6716
+User
+severity: 'ERROR',
+2025-12-14 15:37:15.34
+1e8f6716
+User
+internalPosition: undefined,
+2025-12-14 15:37:15.34
+1e8f6716
+User
+at file:///home/runner/workspace/node_modules/@neondatabase/serverless/index.mjs:1345:74
+2025-12-14 15:37:15.34
+1e8f6716
+User
+constraint: undefined,
+2025-12-14 15:37:15.34
+1e8f6716
+User
+file: 'parse_relation.c',
+2025-12-14 15:37:15.34
+1e8f6716
+User
+dataType: undefined,
+2025-12-14 15:37:15.34
+1e8f6716
+User
+hint: undefined,
+2025-12-14 15:37:15.34
+1e8f6716
+User
+detail: undefined,

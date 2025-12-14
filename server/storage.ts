@@ -8166,7 +8166,12 @@ export class DbStorage implements IStorage {
           eq(schema.paymentTermsOptions.isActive, true)
         ))
         .orderBy(schema.paymentTermsOptions.sortOrder);
-    } catch (error) {
+    } catch (error: any) {
+      // If table doesn't exist in production (migration not yet applied), return empty array
+      if (error?.code === '42P01') {
+        console.warn("payment_terms_options table does not exist yet. Returning empty array.");
+        return [];
+      }
       console.error("Database error in getPaymentTermsOptions:", error);
       throw error;
     }
