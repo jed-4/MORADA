@@ -97,6 +97,26 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
   const { toast } = useToast();
   const defaultViewCreationAttempted = useRef(false);
 
+  // Sync eventTypes filter when isOwnPage changes (e.g., when currentUser loads)
+  useEffect(() => {
+    setFilters(prev => {
+      // Calculate expected event types based on isOwnPage
+      const expectedEventTypes = isOwnPage 
+        ? ["task", "schedule", "google-calendar"] 
+        : ["task", "schedule"];
+      
+      // If google-calendar should be in the options but isn't in filters, add it
+      if (isOwnPage && !prev.eventTypes?.includes("google-calendar")) {
+        return {
+          ...prev,
+          eventTypes: [...(prev.eventTypes || []), "google-calendar"]
+        };
+      }
+      
+      return prev;
+    });
+  }, [isOwnPage]);
+
   const displayedUserId = user.id;
 
   // Fetch tasks for displayed user
