@@ -45,7 +45,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { type Contact, type CostCode } from "@shared/schema";
+import { type Contact } from "@shared/schema";
+import { CostCodeSelect } from "@/components/CostCodeSelect";
 import { z } from "zod";
 
 const quickReviewSchema = z.object({
@@ -129,11 +130,6 @@ export default function QuickReviewPanel({
     return currentContact ? findSimilarContacts(currentContact, contacts) : [];
   }, [currentContact, contacts]);
 
-  const { data: costCodes = [] } = useQuery<CostCode[]>({
-    queryKey: ["/api/cost-codes"],
-    enabled: open,
-  });
-
   const form = useForm<QuickReviewFormData>({
     resolver: zodResolver(quickReviewSchema),
     defaultValues: {
@@ -145,7 +141,7 @@ export default function QuickReviewPanel({
       mobile: "",
       company: "",
       contactType: "supplier",
-      defaultCostCodeId: "__none__",
+      defaultCostCodeId: "",
       paymentTerms: "",
       role: "",
       notes: "",
@@ -163,7 +159,7 @@ export default function QuickReviewPanel({
         mobile: currentContact.mobile || currentContact.phone || "",
         company: currentContact.company || "",
         contactType: currentContact.contactType,
-        defaultCostCodeId: currentContact.defaultCostCodeId || "__none__",
+        defaultCostCodeId: currentContact.defaultCostCodeId || "",
         paymentTerms: currentContact.paymentTerms || "__none__",
         role: currentContact.role || "",
         notes: currentContact.notes || "",
@@ -198,7 +194,7 @@ export default function QuickReviewPanel({
       if (data.notes !== (currentContact.notes || "")) patchData.notes = data.notes || null;
       if (data.contactType !== currentContact.contactType) patchData.contactType = data.contactType;
       
-      const formCostCode = data.defaultCostCodeId === "__none__" ? null : data.defaultCostCodeId;
+      const formCostCode = !data.defaultCostCodeId ? null : data.defaultCostCodeId;
       if (formCostCode !== (currentContact.defaultCostCodeId || null)) {
         patchData.defaultCostCodeId = formCostCode;
       }
@@ -635,21 +631,16 @@ export default function QuickReviewPanel({
                         render={({ field }) => (
                           <FormItem className="space-y-1">
                             <FormLabel className="text-[11px]">Default Cost Code</FormLabel>
-                            <Select onValueChange={field.onChange} value={field.value || "__none__"}>
-                              <FormControl>
-                                <SelectTrigger className="h-7 text-[11px]" data-testid="select-cost-code">
-                                  <SelectValue placeholder="Select cost code" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                <SelectItem value="__none__">None</SelectItem>
-                                {costCodes.map(cc => (
-                                  <SelectItem key={cc.id} value={cc.id}>
-                                    {cc.code} - {cc.title}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                            <FormControl>
+                              <CostCodeSelect
+                                value={field.value || ""}
+                                onValueChange={field.onChange}
+                                placeholder="Select cost code..."
+                                allowNone={true}
+                                className="h-7 text-[11px]"
+                                data-testid="select-cost-code"
+                              />
+                            </FormControl>
                             <FormMessage className="text-[10px]" />
                           </FormItem>
                         )}
