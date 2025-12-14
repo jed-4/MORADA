@@ -265,9 +265,6 @@ export default function Contacts() {
           <h2 className="text-sm font-semibold" data-testid="text-page-title">
             Contacts
           </h2>
-          <Badge variant="secondary" className="text-xs" data-testid="text-contact-count">
-            {filteredContacts.length} {filteredContacts.length === 1 ? 'contact' : 'contacts'}
-          </Badge>
         </div>
 
         <div className="flex items-center gap-1.5">
@@ -348,14 +345,6 @@ export default function Contacts() {
               data-testid={`tab-${tab.value}`}
             >
               {tab.label}
-              <Badge 
-                variant="secondary" 
-                className={`ml-1.5 text-[10px] h-4 min-w-4 px-1 ${
-                  selectedTab === tab.value ? "bg-[#bba7db]/30" : ""
-                }`}
-              >
-                {tab.count}
-              </Badge>
             </Button>
           ))}
         </div>
