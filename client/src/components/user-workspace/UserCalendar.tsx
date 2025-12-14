@@ -191,11 +191,14 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
         // If view doesn't have eventTypes defined, use default (all selected)
         if (!normalizedFilters.eventTypes) {
           normalizedFilters.eventTypes = defaultEventTypes;
+        } else if (isOwnPage && !normalizedFilters.eventTypes.includes("google-calendar")) {
+          // Ensure google-calendar is included for own page if not already present
+          normalizedFilters.eventTypes = [...normalizedFilters.eventTypes, "google-calendar"];
         }
         setFilters(normalizedFilters);
       }
     }
-  }, [selectedViewId, savedViews, defaultEventTypes]);
+  }, [selectedViewId, savedViews, defaultEventTypes, isOwnPage]);
 
   // Convert tasks, schedule items, and Google Calendar events to calendar events
   const calendarEvents: CalendarEvent[] = useMemo(() => {
