@@ -27,8 +27,9 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { insertContactSchema, type InsertContact, type Contact, type CostCode, type PaymentTermsOption } from "@shared/schema";
+import { insertContactSchema, type InsertContact, type Contact, type PaymentTermsOption } from "@shared/schema";
 import { ContactInsuranceSection } from "@/components/contacts/ContactInsuranceSection";
+import { CostCodeSelect } from "@/components/CostCodeSelect";
 
 type EditContactDialogProps = {
   open: boolean;
@@ -46,10 +47,6 @@ export default function EditContactDialog({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
-
-  const { data: costCodes = [] } = useQuery<CostCode[]>({
-    queryKey: ["/api/cost-codes"],
-  });
 
   const { data: paymentTermsOptions = [] } = useQuery<PaymentTermsOption[]>({
     queryKey: ["/api/payment-terms-options"],
@@ -810,23 +807,15 @@ export default function EditContactDialog({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Default Cost Code</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value || "__none__"}>
-                        <FormControl>
-                          <SelectTrigger data-testid="select-cost-code">
-                            <SelectValue placeholder="Select cost code" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="__none__">None</SelectItem>
-                          {costCodes
-                            .filter(cc => !cc.isArchived)
-                            .map((cc) => (
-                              <SelectItem key={cc.id} value={cc.id}>
-                                {cc.code} - {cc.title}
-                              </SelectItem>
-                            ))}
-                        </SelectContent>
-                      </Select>
+                      <FormControl>
+                        <CostCodeSelect
+                          value={field.value === "__none__" ? "" : (field.value || "")}
+                          onValueChange={(val) => field.onChange(val || "__none__")}
+                          placeholder="Select cost code..."
+                          allowNone={true}
+                          data-testid="select-cost-code"
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
