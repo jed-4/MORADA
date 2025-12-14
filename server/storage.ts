@@ -9687,7 +9687,12 @@ export class DbStorage implements IStorage {
         .from(schema.contactInsurances)
         .where(eq(schema.contactInsurances.contactId, contactId))
         .orderBy(schema.contactInsurances.insuranceType);
-    } catch (error) {
+    } catch (error: any) {
+      // If table doesn't exist in production (migration not yet applied), return empty array
+      if (error?.code === '42P01') {
+        console.warn("contact_insurances table does not exist yet. Returning empty array.");
+        return [];
+      }
       console.error("Database error in getContactInsurances:", error);
       throw error;
     }
@@ -9755,7 +9760,12 @@ export class DbStorage implements IStorage {
         ...r.insurance,
         contact: r.contact,
       }));
-    } catch (error) {
+    } catch (error: any) {
+      // If table doesn't exist in production (migration not yet applied), return empty array
+      if (error?.code === '42P01') {
+        console.warn("contact_insurances table does not exist yet. Returning empty array.");
+        return [];
+      }
       console.error("Database error in getExpiringContactInsurances:", error);
       throw error;
     }

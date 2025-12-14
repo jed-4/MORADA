@@ -561,7 +561,7 @@ export default function QuickReviewPanel({
                                   <SelectItem value="__none__">None</SelectItem>
                                   {costCodes.map(cc => (
                                     <SelectItem key={cc.id} value={cc.id}>
-                                      {cc.code} - {cc.name}
+                                      {cc.code} - {cc.title}
                                     </SelectItem>
                                   ))}
                                 </SelectContent>
