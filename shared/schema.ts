@@ -3419,7 +3419,7 @@ export const insertTaskTemplateSchema = createInsertSchema(taskTemplates).omit({
   assigneeUserName: true, // Server will populate this
 }).extend({
   assigneeType: z.enum(["role", "user"]).optional(),
-  assigneeUserId: z.string().optional(),
+  assigneeUserId: z.string().nullable().optional(),
   goal: z.string().optional(),
   frequency: z.enum(["daily", "weekly", "monthly", "yearly", "once"]).optional(),
   frequencyInterval: z.number().optional(),
