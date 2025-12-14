@@ -14167,6 +14167,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       
       console.log("[POST /api/systems/task-templates] Template created successfully:", template.id);
+      
+      // If this is a recurring template and it's active, generate the next 4 weeks of tasks immediately
+      if (template.isRecurringTemplate && template.isActive) {
+        try {
+          const result = await storage.clearAndRegenerateTemplateTask(template.id, companyId);
+          console.log(`[POST /api/systems/task-templates] Generated ${result.generated} recurring task instances for template ${template.id}`);
+        } catch (genError) {
+          console.error("[POST /api/systems/task-templates] Failed to generate recurring tasks (non-fatal):", genError);
+        }
+      }
+      
       res.status(201).json(template);
     } catch (error: any) {
       console.error("[POST /api/systems/task-templates] Error creating task template:", error);
@@ -14193,6 +14204,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!template) {
         return res.status(404).json({ error: "Task template not found" });
       }
+      
+      // If this is a recurring template, regenerate tasks to reflect changes
+      if (template.isRecurringTemplate && template.isActive) {
+        try {
+          const result = await storage.clearAndRegenerateTemplateTask(template.id, companyId);
+          console.log(`[PATCH /api/systems/task-templates] Regenerated ${result.generated} recurring task instances for template ${template.id}`);
+        } catch (genError) {
+          console.error("[PATCH /api/systems/task-templates] Failed to regenerate recurring tasks (non-fatal):", genError);
+        }
+      }
+      
       res.json(template);
     } catch (error) {
       res.status(500).json({ error: "Failed to update task template" });

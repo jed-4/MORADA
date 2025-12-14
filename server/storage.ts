@@ -6181,7 +6181,8 @@ export class DbStorage implements IStorage {
   }
 
   async getTasksByUser(userId: string, companyId: string): Promise<Task[]> {
-    const tasks = await db.select()
+    // Get project-based tasks
+    const projectTasks = await db.select()
       .from(schema.notes)
       .innerJoin(schema.projects, eq(schema.notes.projectId, schema.projects.id))
       .where(
@@ -6192,7 +6193,27 @@ export class DbStorage implements IStorage {
         )
       )
       .orderBy(desc(schema.notes.createdAt));
-    return tasks.map((row: any) => row.notes) as Task[];
+    
+    // Get business/system tasks (no projectId, but has companyId)
+    const businessTasks = await db.select()
+      .from(schema.notes)
+      .where(
+        and(
+          eq(schema.notes.type, "task"),
+          eq(schema.notes.companyId, companyId),
+          eq(schema.notes.assigneeId, userId),
+          isNull(schema.notes.projectId)
+        )
+      )
+      .orderBy(desc(schema.notes.createdAt));
+    
+    // Combine and sort by createdAt
+    const allTasks = [
+      ...projectTasks.map((row: any) => row.notes),
+      ...businessTasks
+    ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    
+    return allTasks as Task[];
   }
 
   async getTask(id: string): Promise<Task | undefined> {
