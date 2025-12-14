@@ -34,11 +34,12 @@ export const sessionMiddleware = (() => {
     store: sessionStore,
     resave: false,
     saveUninitialized: false,
+    rolling: true,  // Extend session cookie on each request - keeps active users logged in
     cookie: {
       httpOnly: true,
       secure: true,  // REQUIRED with sameSite: 'none' - browsers reject otherwise
       sameSite: 'none',  // Required for Replit iframe
-      maxAge: 24 * 60 * 60 * 1000
+      maxAge: sessionTtl  // Match cookie lifetime to session TTL (7 days)
     }
   });
 })();

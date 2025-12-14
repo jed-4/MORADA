@@ -254,7 +254,7 @@ export async function processInsuranceExpiryReminders() {
           const allUsers = await storage.getUsersByCompany(company.id);
           const adminUser = allUsers.find(u => {
             const role = (u as any).role?.toLowerCase() || '';
-            return role.includes('admin') || role.includes('general manager') || role.includes('owner');
+            return role.includes('admin') || role.includes('general manage') || role.includes('owner');
           });
           if (adminUser) {
             assigneeUserId = adminUser.id;
