@@ -78,10 +78,8 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   
-  // Initialize with all event types selected by default
-  const defaultEventTypes = isOwnPage 
-    ? ["task", "schedule", "google-calendar"] 
-    : ["task", "schedule"];
+  // Initialize with all event types selected by default (including google-calendar)
+  const defaultEventTypes = ["task", "schedule", "google-calendar"];
   
   const [filters, setFilters] = useState<CalendarFiltersType>({
     eventTypes: defaultEventTypes,
@@ -96,26 +94,6 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const { toast } = useToast();
   const defaultViewCreationAttempted = useRef(false);
-
-  // Sync eventTypes filter when isOwnPage changes (e.g., when currentUser loads)
-  useEffect(() => {
-    setFilters(prev => {
-      // Calculate expected event types based on isOwnPage
-      const expectedEventTypes = isOwnPage 
-        ? ["task", "schedule", "google-calendar"] 
-        : ["task", "schedule"];
-      
-      // If google-calendar should be in the options but isn't in filters, add it
-      if (isOwnPage && !prev.eventTypes?.includes("google-calendar")) {
-        return {
-          ...prev,
-          eventTypes: [...(prev.eventTypes || []), "google-calendar"]
-        };
-      }
-      
-      return prev;
-    });
-  }, [isOwnPage]);
 
   const displayedUserId = user.id;
 
@@ -153,6 +131,21 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
     enabled: !!displayedUserId,
   });
 
+  // Fetch Google Calendar connection status
+  const { data: googleCalendarStatus } = useQuery<{ connected: boolean; email?: string }>({
+    queryKey: ["/api/google-calendar/status"],
+    queryFn: async () => {
+      try {
+        return await apiRequest("/api/google-calendar/status", "GET");
+      } catch (error) {
+        return { connected: false };
+      }
+    },
+    enabled: isOwnPage,
+  });
+  
+  const isGoogleCalendarConnected = googleCalendarStatus?.connected ?? false;
+
   // Fetch Google Calendar events
   const { data: googleCalendarEvents = [] } = useQuery({
     queryKey: ["/api/google-calendar/events", displayedUserId],
@@ -168,7 +161,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
         return [];
       }
     },
-    enabled: isOwnPage, // Only fetch for own calendar
+    enabled: isOwnPage && isGoogleCalendarConnected, // Only fetch when connected
   });
 
   // Fetch saved views
@@ -211,14 +204,14 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
         // If view doesn't have eventTypes defined, use default (all selected)
         if (!normalizedFilters.eventTypes) {
           normalizedFilters.eventTypes = defaultEventTypes;
-        } else if (isOwnPage && !normalizedFilters.eventTypes.includes("google-calendar")) {
-          // Ensure google-calendar is included for own page if not already present
+        } else if (!normalizedFilters.eventTypes.includes("google-calendar")) {
+          // Ensure google-calendar is always included in eventTypes
           normalizedFilters.eventTypes = [...normalizedFilters.eventTypes, "google-calendar"];
         }
         setFilters(normalizedFilters);
       }
     }
-  }, [selectedViewId, savedViews, defaultEventTypes, isOwnPage]);
+  }, [selectedViewId, savedViews, defaultEventTypes]);
 
   // Convert tasks, schedule items, and Google Calendar events to calendar events
   const calendarEvents: CalendarEvent[] = useMemo(() => {
@@ -371,11 +364,11 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
     { key: "completed", label: "Completed" },
   ];
 
-  // Event type options for filtering
+  // Event type options for filtering - always show Google Calendar but disable if not connected
   const eventTypeOptions = [
-    { key: "task", label: "Tasks" },
-    { key: "schedule", label: "Schedule Items" },
-    ...(isOwnPage ? [{ key: "google-calendar", label: "Google Calendar" }] : []),
+    { key: "task", label: "Tasks", disabled: false },
+    { key: "schedule", label: "Schedule Items", disabled: false },
+    { key: "google-calendar", label: "Google Calendar", disabled: !isGoogleCalendarConnected },
   ];
 
   // Count active filters (don't count eventTypes if all are selected - that's the default)
@@ -647,10 +640,16 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
                   </div>
                   <div className="space-y-1.5">
                     {eventTypeOptions.map((type: any) => (
-                      <label key={type.key} className="flex items-center gap-2 cursor-pointer">
+                      <label 
+                        key={type.key} 
+                        className={`flex items-center gap-2 ${type.disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                        title={type.disabled && type.key === 'google-calendar' ? 'Connect Google Calendar in Settings to enable' : undefined}
+                      >
                         <Checkbox
                           checked={filters.eventTypes?.includes(type.key) || false}
+                          disabled={type.disabled}
                           onCheckedChange={() => {
+                            if (type.disabled) return;
                             const current = filters.eventTypes || defaultEventTypes;
                             const updated = current.includes(type.key)
                               ? current.filter(t => t !== type.key)
@@ -659,6 +658,9 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
                           }}
                         />
                         <span className="text-xs">{type.label}</span>
+                        {type.disabled && type.key === 'google-calendar' && (
+                          <span className="text-[10px] text-muted-foreground">(not connected)</span>
+                        )}
                       </label>
                     ))}
                   </div>
