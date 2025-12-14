@@ -723,8 +723,8 @@ export default function QuickReviewPanel({
             )}
           </div>
 
-          {/* Footer with navigation and actions */}
-          <div className="flex-shrink-0 flex items-center justify-between pt-3 border-t bg-background sticky bottom-0">
+          {/* Footer with navigation and actions - fixed at bottom */}
+          <div className="flex-shrink-0 flex items-center justify-between pt-3 border-t bg-background -mx-6 -mb-6 px-6 pb-4">
             <div className="flex items-center gap-1">
               <Button
                 variant="ghost"

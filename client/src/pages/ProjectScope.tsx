@@ -1500,6 +1500,7 @@ export default function ProjectScope() {
   const [isAddStageDialogOpen, setIsAddStageDialogOpen] = useState(false);
   const [newStageName, setNewStageName] = useState("");
   const [addStageAfterId, setAddStageAfterId] = useState<string | null>(null);
+  const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
   
   // Import from Estimate state
   const [isImportFromEstimateOpen, setIsImportFromEstimateOpen] = useState(false);
@@ -1794,7 +1795,12 @@ export default function ProjectScope() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope`] });
+      setDeletingItemId(null);
       toast({ title: "Scope item deleted" });
+    },
+    onError: () => {
+      setDeletingItemId(null);
+      toast({ title: "Failed to delete item", variant: "destructive" });
     },
   });
 
@@ -2087,7 +2093,14 @@ export default function ProjectScope() {
   };
 
   const handleDeleteItem = (id: string) => {
-    deleteItemMutation.mutate(id);
+    setDeletingItemId(id);
+  };
+
+  const confirmDeleteItem = () => {
+    if (deletingItemId) {
+      deleteItemMutation.mutate(deletingItemId);
+      setDeletingItemId(null);
+    }
   };
 
   // Handle view PO - navigate to the PO page
@@ -2210,7 +2223,27 @@ export default function ProjectScope() {
   };
 
   const handleEditStage = (stageId: string, newName: string) => {
-    updateStageMutation.mutate({ id: stageId, name: newName });
+    const trimmedNewName = newName.trim();
+    if (!trimmedNewName) {
+      toast({ 
+        title: "Invalid stage name", 
+        description: "Stage name cannot be empty",
+        variant: "destructive" 
+      });
+      return;
+    }
+    const isDuplicate = scopeStages.some(s => 
+      s.id !== stageId && s.name.trim().toLowerCase() === trimmedNewName.toLowerCase()
+    );
+    if (isDuplicate) {
+      toast({ 
+        title: "Duplicate stage name", 
+        description: `A stage named "${trimmedNewName}" already exists`,
+        variant: "destructive" 
+      });
+      return;
+    }
+    updateStageMutation.mutate({ id: stageId, name: trimmedNewName });
   };
 
   const handleDeleteStage = (stageId: string) => {
@@ -2223,7 +2256,20 @@ export default function ProjectScope() {
   };
 
   const handleCreateNewStage = () => {
-    if (!newStageName.trim() || !addStageAfterId) return;
+    const trimmedName = newStageName.trim();
+    if (!trimmedName || !addStageAfterId) return;
+    
+    const isDuplicate = scopeStages.some(s => 
+      s.name.trim().toLowerCase() === trimmedName.toLowerCase()
+    );
+    if (isDuplicate) {
+      toast({ 
+        title: "Duplicate stage name", 
+        description: `A stage named "${trimmedName}" already exists`,
+        variant: "destructive" 
+      });
+      return;
+    }
     
     const afterStage = scopeStages.find(s => s.id === addStageAfterId);
     if (!afterStage) return;
@@ -2231,7 +2277,7 @@ export default function ProjectScope() {
     const displayOrder = afterStage.displayOrder + 1;
     
     createStageMutation.mutate({
-      name: newStageName.trim(),
+      name: trimmedName,
       displayOrder,
     });
     
@@ -3150,6 +3196,28 @@ export default function ProjectScope() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Scope Item Confirmation Dialog */}
+      <AlertDialog open={!!deletingItemId} onOpenChange={(open) => !open && setDeletingItemId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Scope Item</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{scopeItems.find(i => i.id === deletingItemId)?.title}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete-item">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteItem}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete-item"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
