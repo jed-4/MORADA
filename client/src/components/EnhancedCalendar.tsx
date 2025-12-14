@@ -175,7 +175,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
       data-testid={`event-${event.type}-${event.id}`}
       onClick={() => onEventClick?.(event)}
       className={cn(
-        "group relative flex items-start gap-1.5 px-1.5 py-1 rounded text-[11px] mb-0.5 transition-all",
+        "group relative flex items-start gap-1.5 px-1.5 py-1 rounded text-[11px] mb-0.5 transition-all overflow-hidden",
         showResizeHandles && "h-full",
         !isGoogleCalendarEvent && "touch-none",
         !isGoogleCalendarEvent && !showResizeHandles && "cursor-move hover:shadow-sm",
@@ -241,16 +241,6 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
           <div className="text-[9px] text-white/70 font-normal">
             {event.startTime}{event.endTime && ` - ${event.endTime}`}
           </div>
-        )}
-        {isGoogleCalendarEvent && (
-          <Badge 
-            variant="outline" 
-            className="flex-shrink-0 text-[8px] px-1 py-0 h-3 bg-white/95 border-none font-medium mt-0.5"
-            style={{ color: '#4285f4' }}
-            data-testid={`google-badge-${event.id}`}
-          >
-            Google
-          </Badge>
         )}
       </div>
 
