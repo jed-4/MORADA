@@ -113,6 +113,7 @@ import type { ContactInsurance, InsertContactInsurance } from "@shared/schema";
 import { contactInsurances as contactInsurancesTable } from "@shared/schema";
 import type { PriceListCategory, InsertPriceListCategory, PriceListItem, InsertPriceListItem, BillLineItemPriceLink, InsertBillLineItemPriceLink } from "@shared/schema";
 import type { DashboardView, InsertDashboardView, DashboardViewPermission, InsertDashboardViewPermission, UserDashboardPreference } from "@shared/schema";
+import type { PaymentTermsOption, InsertPaymentTermsOption } from "@shared/schema";
 
 // modify the interface with any CRUD methods
 // you might need
@@ -285,6 +286,14 @@ export interface IStorage {
   deleteCostCategory(id: string, companyId: string): Promise<boolean>;
   archiveCostCategory(id: string, companyId: string): Promise<CostCategory | undefined>;
   mergeCostCategories(sourceId: string, targetId: string, companyId: string): Promise<void>;
+
+  // Payment Terms Options CRUD (company-specific)
+  getPaymentTermsOptions(companyId: string): Promise<PaymentTermsOption[]>;
+  getPaymentTermsOption(id: string, companyId: string): Promise<PaymentTermsOption | undefined>;
+  createPaymentTermsOption(option: InsertPaymentTermsOption): Promise<PaymentTermsOption>;
+  updatePaymentTermsOption(id: string, option: Partial<InsertPaymentTermsOption>, companyId: string): Promise<PaymentTermsOption | undefined>;
+  deletePaymentTermsOption(id: string, companyId: string): Promise<boolean>;
+  setPaymentTermsDefault(id: string, type: 'bill' | 'invoice', companyId: string): Promise<void>;
 
   // Cost Codes CRUD (company-specific)
   getCostCodes(companyId: string): Promise<CostCode[]>;
@@ -8142,6 +8151,109 @@ export class DbStorage implements IStorage {
         ));
     } catch (error) {
       console.error("Database error in mergeCostCategories:", error);
+      throw error;
+    }
+  }
+
+  // Payment Terms Options CRUD operations (company-specific)
+  async getPaymentTermsOptions(companyId: string): Promise<PaymentTermsOption[]> {
+    try {
+      return await db
+        .select()
+        .from(schema.paymentTermsOptions)
+        .where(and(
+          eq(schema.paymentTermsOptions.companyId, companyId),
+          eq(schema.paymentTermsOptions.isActive, true)
+        ))
+        .orderBy(schema.paymentTermsOptions.sortOrder);
+    } catch (error) {
+      console.error("Database error in getPaymentTermsOptions:", error);
+      throw error;
+    }
+  }
+
+  async getPaymentTermsOption(id: string, companyId: string): Promise<PaymentTermsOption | undefined> {
+    try {
+      const result = await db
+        .select()
+        .from(schema.paymentTermsOptions)
+        .where(and(
+          eq(schema.paymentTermsOptions.id, id),
+          eq(schema.paymentTermsOptions.companyId, companyId)
+        ))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error("Database error in getPaymentTermsOption:", error);
+      throw error;
+    }
+  }
+
+  async createPaymentTermsOption(option: InsertPaymentTermsOption): Promise<PaymentTermsOption> {
+    try {
+      const result = await db
+        .insert(schema.paymentTermsOptions)
+        .values(option)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createPaymentTermsOption:", error);
+      throw error;
+    }
+  }
+
+  async updatePaymentTermsOption(id: string, option: Partial<InsertPaymentTermsOption>, companyId: string): Promise<PaymentTermsOption | undefined> {
+    try {
+      const result = await db
+        .update(schema.paymentTermsOptions)
+        .set({ ...option, updatedAt: new Date() })
+        .where(and(
+          eq(schema.paymentTermsOptions.id, id),
+          eq(schema.paymentTermsOptions.companyId, companyId)
+        ))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updatePaymentTermsOption:", error);
+      throw error;
+    }
+  }
+
+  async deletePaymentTermsOption(id: string, companyId: string): Promise<boolean> {
+    try {
+      await db
+        .update(schema.paymentTermsOptions)
+        .set({ isActive: false })
+        .where(and(
+          eq(schema.paymentTermsOptions.id, id),
+          eq(schema.paymentTermsOptions.companyId, companyId)
+        ));
+      return true;
+    } catch (error) {
+      console.error("Database error in deletePaymentTermsOption:", error);
+      return false;
+    }
+  }
+
+  async setPaymentTermsDefault(id: string, type: 'bill' | 'invoice', companyId: string): Promise<void> {
+    try {
+      // First, unset all defaults for this type
+      const field = type === 'bill' ? 'isBillDefault' : 'isInvoiceDefault';
+      await db
+        .update(schema.paymentTermsOptions)
+        .set({ [field]: false })
+        .where(eq(schema.paymentTermsOptions.companyId, companyId));
+
+      // Then set the new default
+      await db
+        .update(schema.paymentTermsOptions)
+        .set({ [field]: true })
+        .where(and(
+          eq(schema.paymentTermsOptions.id, id),
+          eq(schema.paymentTermsOptions.companyId, companyId)
+        ));
+    } catch (error) {
+      console.error("Database error in setPaymentTermsDefault:", error);
       throw error;
     }
   }

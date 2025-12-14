@@ -780,6 +780,30 @@ export const insertCompanySettingsSchema = createInsertSchema(companySettings).o
 export type InsertCompanySettings = z.infer<typeof insertCompanySettingsSchema>;
 export type CompanySettings = typeof companySettings.$inferSelect;
 
+// Payment Terms Options - configurable payment terms for bills and invoices
+export const paymentTermsOptions = pgTable("payment_terms_options", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(), // "Due on Receipt", "Net 7", "Net 14", "Net 30", "End of Month", etc.
+  dueValue: integer("due_value").notNull().default(0), // Number of days or day of month
+  dueType: text("due_type").notNull().default("days"), // "days" | "of_current_month" | "of_next_month"
+  isBillDefault: boolean("is_bill_default").notNull().default(false),
+  isInvoiceDefault: boolean("is_invoice_default").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertPaymentTermsOptionSchema = createInsertSchema(paymentTermsOptions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertPaymentTermsOption = z.infer<typeof insertPaymentTermsOptionSchema>;
+export type PaymentTermsOption = typeof paymentTermsOptions.$inferSelect;
+
 // System Configuration
 export const systemConfiguration = pgTable("system_configuration", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

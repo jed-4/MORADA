@@ -1255,9 +1255,98 @@ function DefaultValuesSection() {
     currencyPosition: "before"
   });
 
+  // Payment Terms state
+  const [showPaymentTermsDialog, setShowPaymentTermsDialog] = useState(false);
+  const [editingPaymentTerm, setEditingPaymentTerm] = useState<any>(null);
+  const [newPaymentTerm, setNewPaymentTerm] = useState({
+    name: "",
+    dueValue: 0,
+    dueType: "days" as "days" | "of_current_month" | "of_next_month"
+  });
+
+  // Fetch payment terms options
+  const { data: paymentTermsOptions = [], isLoading: isLoadingPaymentTerms } = useQuery<any[]>({
+    queryKey: ['/api/payment-terms-options'],
+  });
+
+  // Mutations for payment terms
+  const createPaymentTermMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const response = await apiRequest("/api/payment-terms-options", "POST", data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/payment-terms-options'] });
+      toast({ title: "Payment term created" });
+      setShowPaymentTermsDialog(false);
+      setNewPaymentTerm({ name: "", dueValue: 0, dueType: "days" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to create payment term", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const updatePaymentTermMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      const response = await apiRequest(`/api/payment-terms-options/${id}`, "PATCH", data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/payment-terms-options'] });
+      toast({ title: "Payment term updated" });
+      setEditingPaymentTerm(null);
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to update payment term", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const deletePaymentTermMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest(`/api/payment-terms-options/${id}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/payment-terms-options'] });
+      toast({ title: "Payment term deleted" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to delete payment term", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const setDefaultMutation = useMutation({
+    mutationFn: async ({ id, type }: { id: string; type: 'bill' | 'invoice' }) => {
+      await apiRequest(`/api/payment-terms-options/${id}/set-default`, "POST", { type });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/payment-terms-options'] });
+      toast({ title: "Default updated" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to set default", description: error.message, variant: "destructive" });
+    }
+  });
+
   const handleSave = () => {
     localStorage.setItem('defaultValues', JSON.stringify(defaults));
     toast({ title: "Default values saved" });
+  };
+
+  const formatDueType = (dueValue: number, dueType: string) => {
+    if (dueType === "days") {
+      return dueValue === 0 ? "Due on Receipt" : `${dueValue} days`;
+    } else if (dueType === "of_current_month") {
+      return `${dueValue}${getOrdinalSuffix(dueValue)} of current month`;
+    } else if (dueType === "of_next_month") {
+      return `${dueValue}${getOrdinalSuffix(dueValue)} of next month`;
+    }
+    return `${dueValue} ${dueType}`;
+  };
+
+  const getOrdinalSuffix = (n: number) => {
+    const s = ["th", "st", "nd", "rd"];
+    const v = n % 100;
+    return s[(v - 20) % 10] || s[v] || s[0];
   };
 
   const unitOptions = ["each", "m", "m²", "m³", "kg", "L", "hours", "days", "lump sum"];
@@ -1284,17 +1373,6 @@ function DefaultValuesSection() {
               />
             </div>
             <div>
-              <Label className="text-sm font-medium">Payment Terms (days)</Label>
-              <Input
-                type="number"
-                value={defaults.defaultPaymentTerms}
-                onChange={(e) => setDefaults({ ...defaults, defaultPaymentTerms: e.target.value })}
-                min="0"
-                className="mt-1.5"
-                data-testid="input-payment-terms"
-              />
-            </div>
-            <div>
               <Label className="text-sm font-medium">Default Tax Rate (%)</Label>
               <Input
                 type="number"
@@ -1310,6 +1388,219 @@ function DefaultValuesSection() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Payment Terms Options */}
+      <Card className="border-2">
+        <CardHeader className="pb-4 flex flex-row items-center justify-between gap-4">
+          <div>
+            <CardTitle className="text-base font-semibold">Payment Terms</CardTitle>
+            <p className="text-sm text-muted-foreground">Configure payment terms for bills and invoices</p>
+          </div>
+          <Button 
+            size="sm"
+            onClick={() => setShowPaymentTermsDialog(true)}
+            data-testid="button-add-payment-term"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Add Term
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {isLoadingPaymentTerms ? (
+            <div className="text-sm text-muted-foreground">Loading...</div>
+          ) : paymentTermsOptions.length === 0 ? (
+            <div className="text-sm text-muted-foreground py-4 text-center">
+              No payment terms configured. Add your first payment term to get started.
+            </div>
+          ) : (
+            <div className="border rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="text-left p-3 font-medium">Name</th>
+                    <th className="text-left p-3 font-medium">Due</th>
+                    <th className="text-center p-3 font-medium">Bill Default</th>
+                    <th className="text-center p-3 font-medium">Invoice Default</th>
+                    <th className="text-right p-3 font-medium">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {paymentTermsOptions.map((term: any) => (
+                    <tr key={term.id} className="hover:bg-muted/30">
+                      <td className="p-3 font-medium">{term.name}</td>
+                      <td className="p-3 text-muted-foreground">{formatDueType(term.dueValue, term.dueType)}</td>
+                      <td className="p-3 text-center">
+                        <Switch
+                          checked={term.isBillDefault}
+                          onCheckedChange={() => setDefaultMutation.mutate({ id: term.id, type: 'bill' })}
+                          data-testid={`switch-bill-default-${term.id}`}
+                        />
+                      </td>
+                      <td className="p-3 text-center">
+                        <Switch
+                          checked={term.isInvoiceDefault}
+                          onCheckedChange={() => setDefaultMutation.mutate({ id: term.id, type: 'invoice' })}
+                          data-testid={`switch-invoice-default-${term.id}`}
+                        />
+                      </td>
+                      <td className="p-3 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => setEditingPaymentTerm(term)}
+                            data-testid={`button-edit-payment-term-${term.id}`}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => deletePaymentTermMutation.mutate(term.id)}
+                            data-testid={`button-delete-payment-term-${term.id}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Add Payment Term Dialog */}
+      {showPaymentTermsDialog && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-md">
+            <CardHeader>
+              <CardTitle>Add Payment Term</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <Label>Name</Label>
+                <Input
+                  value={newPaymentTerm.name}
+                  onChange={(e) => setNewPaymentTerm({ ...newPaymentTerm, name: e.target.value })}
+                  placeholder="e.g., Net 30"
+                  className="mt-1.5"
+                  data-testid="input-new-payment-term-name"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Due Value</Label>
+                  <Input
+                    type="number"
+                    value={newPaymentTerm.dueValue}
+                    onChange={(e) => setNewPaymentTerm({ ...newPaymentTerm, dueValue: parseInt(e.target.value) || 0 })}
+                    min="0"
+                    className="mt-1.5"
+                    data-testid="input-new-payment-term-value"
+                  />
+                </div>
+                <div>
+                  <Label>Due Type</Label>
+                  <Select
+                    value={newPaymentTerm.dueType}
+                    onValueChange={(value: any) => setNewPaymentTerm({ ...newPaymentTerm, dueType: value })}
+                  >
+                    <SelectTrigger className="mt-1.5" data-testid="select-new-payment-term-type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="days">Days from invoice</SelectItem>
+                      <SelectItem value="of_current_month">Day of current month</SelectItem>
+                      <SelectItem value="of_next_month">Day of next month</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-4">
+                <Button variant="outline" onClick={() => setShowPaymentTermsDialog(false)}>Cancel</Button>
+                <Button 
+                  onClick={() => createPaymentTermMutation.mutate(newPaymentTerm)}
+                  disabled={!newPaymentTerm.name || createPaymentTermMutation.isPending}
+                  data-testid="button-save-new-payment-term"
+                >
+                  {createPaymentTermMutation.isPending ? "Saving..." : "Save"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Edit Payment Term Dialog */}
+      {editingPaymentTerm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-md">
+            <CardHeader>
+              <CardTitle>Edit Payment Term</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <Label>Name</Label>
+                <Input
+                  value={editingPaymentTerm.name}
+                  onChange={(e) => setEditingPaymentTerm({ ...editingPaymentTerm, name: e.target.value })}
+                  className="mt-1.5"
+                  data-testid="input-edit-payment-term-name"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Due Value</Label>
+                  <Input
+                    type="number"
+                    value={editingPaymentTerm.dueValue}
+                    onChange={(e) => setEditingPaymentTerm({ ...editingPaymentTerm, dueValue: parseInt(e.target.value) || 0 })}
+                    min="0"
+                    className="mt-1.5"
+                    data-testid="input-edit-payment-term-value"
+                  />
+                </div>
+                <div>
+                  <Label>Due Type</Label>
+                  <Select
+                    value={editingPaymentTerm.dueType}
+                    onValueChange={(value: any) => setEditingPaymentTerm({ ...editingPaymentTerm, dueType: value })}
+                  >
+                    <SelectTrigger className="mt-1.5" data-testid="select-edit-payment-term-type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="days">Days from invoice</SelectItem>
+                      <SelectItem value="of_current_month">Day of current month</SelectItem>
+                      <SelectItem value="of_next_month">Day of next month</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-4">
+                <Button variant="outline" onClick={() => setEditingPaymentTerm(null)}>Cancel</Button>
+                <Button 
+                  onClick={() => updatePaymentTermMutation.mutate({ 
+                    id: editingPaymentTerm.id, 
+                    data: { 
+                      name: editingPaymentTerm.name, 
+                      dueValue: editingPaymentTerm.dueValue, 
+                      dueType: editingPaymentTerm.dueType 
+                    } 
+                  })}
+                  disabled={!editingPaymentTerm.name || updatePaymentTermMutation.isPending}
+                  data-testid="button-save-edit-payment-term"
+                >
+                  {updatePaymentTermMutation.isPending ? "Saving..." : "Save"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       <Card className="border-2">
         <CardHeader className="pb-4">

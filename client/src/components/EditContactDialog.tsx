@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { insertContactSchema, type InsertContact, type Contact, type CostCode } from "@shared/schema";
+import { insertContactSchema, type InsertContact, type Contact, type CostCode, type PaymentTermsOption } from "@shared/schema";
 import { ContactInsuranceSection } from "@/components/contacts/ContactInsuranceSection";
 
 type EditContactDialogProps = {
@@ -49,6 +49,10 @@ export default function EditContactDialog({
 
   const { data: costCodes = [] } = useQuery<CostCode[]>({
     queryKey: ["/api/cost-codes"],
+  });
+
+  const { data: paymentTermsOptions = [] } = useQuery<PaymentTermsOption[]>({
+    queryKey: ["/api/payment-terms-options"],
   });
 
   const form = useForm<InsertContact>({
@@ -780,9 +784,21 @@ export default function EditContactDialog({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Payment Terms</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., Net 30, COD, EOM" {...field} value={field.value || ""} data-testid="input-payment-terms" />
-                      </FormControl>
+                      <Select onValueChange={field.onChange} value={field.value || ""}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-payment-terms">
+                            <SelectValue placeholder="Select payment terms" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="">None</SelectItem>
+                          {paymentTermsOptions.map((option) => (
+                            <SelectItem key={option.id} value={option.name}>
+                              {option.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}

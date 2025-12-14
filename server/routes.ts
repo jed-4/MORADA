@@ -118,7 +118,8 @@ import {
   insertRfqTemplateSchema,
   insertRfiTemplateSchema,
   insertTemplateCategorySchema,
-  insertDashboardViewSchema
+  insertDashboardViewSchema,
+  insertPaymentTermsOptionSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -10230,6 +10231,116 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to merge cost categories",
+        details: error.message 
+      });
+    }
+  });
+
+  // Payment Terms Options routes (company-specific)
+  app.get("/api/payment-terms-options", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const options = await storage.getPaymentTermsOptions(req.user!.companyId);
+      res.json(options);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch payment terms options",
+        details: error.message 
+      });
+    }
+  });
+
+  app.get("/api/payment-terms-options/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const option = await storage.getPaymentTermsOption(req.params.id, req.user!.companyId);
+      if (!option) {
+        return res.status(404).json({ error: "Payment terms option not found" });
+      }
+      res.json(option);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch payment terms option",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/payment-terms-options", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertPaymentTermsOptionSchema.omit({ companyId: true }).safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const option = await storage.createPaymentTermsOption({
+        ...validationResult.data,
+        companyId: req.user!.companyId
+      });
+      res.status(201).json(option);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to create payment terms option",
+        details: error.message 
+      });
+    }
+  });
+
+  app.patch("/api/payment-terms-options/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const validationResult = insertPaymentTermsOptionSchema.omit({ companyId: true }).partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: fromZodError(validationResult.error).toString() 
+        });
+      }
+
+      const option = await storage.updatePaymentTermsOption(
+        req.params.id, 
+        validationResult.data, 
+        req.user!.companyId
+      );
+      if (!option) {
+        return res.status(404).json({ error: "Payment terms option not found" });
+      }
+      res.json(option);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to update payment terms option",
+        details: error.message 
+      });
+    }
+  });
+
+  app.delete("/api/payment-terms-options/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const success = await storage.deletePaymentTermsOption(req.params.id, req.user!.companyId);
+      if (!success) {
+        return res.status(404).json({ error: "Payment terms option not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to delete payment terms option",
+        details: error.message 
+      });
+    }
+  });
+
+  app.post("/api/payment-terms-options/:id/set-default", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { type } = req.body;
+      if (!type || !['bill', 'invoice'].includes(type)) {
+        return res.status(400).json({ error: "Type must be 'bill' or 'invoice'" });
+      }
+
+      await storage.setPaymentTermsDefault(req.params.id, type, req.user!.companyId);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to set payment terms default",
         details: error.message 
       });
     }

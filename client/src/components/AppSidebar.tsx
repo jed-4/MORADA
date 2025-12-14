@@ -63,9 +63,16 @@ import { ProjectSwitcher } from "./ProjectSwitcher";
 import { ProjectIcon } from "./ProjectIcon";
 
 const FAVORITE_PROJECTS_KEY = "sidebar_favorite_projects";
+const FAVORITE_PAGES_KEY = "sidebar_favorite_pages";
+const SELECTED_PROJECT_KEY = "sidebar_selected_project";
 
 interface FavoriteProject {
   id: string;
+  order: number;
+}
+
+interface FavoritePage {
+  baseUrl: string;
   order: number;
 }
 
@@ -144,6 +151,23 @@ export function AppSidebar() {
     }
   });
 
+  const [favoritePages, setFavoritePages] = useState<FavoritePage[]>(() => {
+    try {
+      const saved = localStorage.getItem(FAVORITE_PAGES_KEY);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(SELECTED_PROJECT_KEY);
+    } catch {
+      return null;
+    }
+  });
+
   // Listen for changes from other components
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
@@ -151,6 +175,14 @@ export function AppSidebar() {
         try {
           setFavoriteProjects(JSON.parse(e.newValue));
         } catch {}
+      }
+      if (e.key === FAVORITE_PAGES_KEY && e.newValue) {
+        try {
+          setFavoritePages(JSON.parse(e.newValue));
+        } catch {}
+      }
+      if (e.key === SELECTED_PROJECT_KEY) {
+        setSelectedProjectId(e.newValue);
       }
     };
     window.addEventListener('storage', handleStorageChange);
@@ -278,7 +310,7 @@ export function AppSidebar() {
         </SidebarGroup>
 
         {/* Favorites Section - Collapsible */}
-        {favoriteProjects.length > 0 && (
+        {(favoriteProjects.length > 0 || favoritePages.length > 0) && (
           <Collapsible
             open={isFavoritesOpen}
             onOpenChange={setIsFavoritesOpen}
@@ -301,24 +333,65 @@ export function AppSidebar() {
               <CollapsibleContent>
                 <SidebarGroupContent>
                   <SidebarMenu>
+                    {/* Favorite Projects */}
                     {favoriteProjects.map((fp) => {
                       const project = activeProjects.find(p => p.id === fp.id);
                       if (!project) return null;
+                      const isSelected = selectedProjectId === fp.id;
+                      const projectUrl = `/projects/${fp.id}`;
                       return (
-                        <SidebarMenuItem key={fp.id}>
+                        <SidebarMenuItem key={`project-${fp.id}`}>
                           <SidebarMenuButton 
                             asChild
                             tooltip={project.name}
                             data-testid={`nav-favorite-${fp.id}`}
                             data-active={location.startsWith(`/projects/${fp.id}`)}
+                            className={isSelected ? "ring-1 ring-primary/50 bg-primary/5" : ""}
                           >
-                            <Link href={`/projects/${fp.id}`}>
+                            <Link 
+                              href={projectUrl}
+                              onClick={() => {
+                                localStorage.setItem(SELECTED_PROJECT_KEY, fp.id);
+                                setSelectedProjectId(fp.id);
+                                const projectToSet = activeProjects.find(p => p.id === fp.id);
+                                if (projectToSet) {
+                                  setCurrentProject(projectToSet);
+                                }
+                              }}
+                            >
                               <ProjectIcon 
                                 iconName={project.iconName} 
                                 iconColor={project.iconColor} 
                                 className="h-4 w-4" 
                               />
-                              <span className="group-data-[collapsible=icon]:hidden truncate">{project.name}</span>
+                              <span className="group-data-[collapsible=icon]:hidden truncate flex-1">{project.name}</span>
+                              {isSelected && (
+                                <div className="h-1.5 w-1.5 rounded-full bg-primary group-data-[collapsible=icon]:hidden" />
+                              )}
+                            </Link>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      );
+                    })}
+                    {/* Favorite Pages */}
+                    {favoritePages.map((fp) => {
+                      const pageInfo = projectItemsBase.find(p => p.baseUrl === fp.baseUrl);
+                      if (!pageInfo) return null;
+                      const selectedProject = activeProjects.find(p => p.id === selectedProjectId);
+                      const targetUrl = selectedProject 
+                        ? (fp.baseUrl === "" ? `/projects/${selectedProject.id}` : `/projects/${selectedProject.id}${fp.baseUrl}`)
+                        : fp.baseUrl || "/";
+                      return (
+                        <SidebarMenuItem key={`page-${fp.baseUrl}`}>
+                          <SidebarMenuButton 
+                            asChild
+                            tooltip={`${pageInfo.title}${selectedProject ? ` (${selectedProject.name})` : ''}`}
+                            data-testid={`nav-favorite-page-${pageInfo.title.toLowerCase().replace(/\s+/g, '-')}`}
+                            data-active={location === targetUrl}
+                          >
+                            <Link href={targetUrl}>
+                              <pageInfo.icon className="h-4 w-4" />
+                              <span className="group-data-[collapsible=icon]:hidden truncate">{pageInfo.title}</span>
                             </Link>
                           </SidebarMenuButton>
                         </SidebarMenuItem>
@@ -338,21 +411,50 @@ export function AppSidebar() {
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {projectItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton 
-                    asChild 
-                    tooltip={item.title}
-                    data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
-                    data-active={location === item.url}
-                  >
-                    <Link href={item.url}>
-                      <item.icon className="h-4 w-4" />
-                      <span className="group-data-[collapsible=icon]:hidden">{item.title}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              {projectItems.map((item) => {
+                const baseItem = projectItemsBase.find(p => p.title === item.title);
+                const isFavorite = favoritePages.some(fp => fp.baseUrl === baseItem?.baseUrl);
+                
+                const toggleFavorite = (e: React.MouseEvent) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (!baseItem) return;
+                  
+                  let newFavorites: FavoritePage[];
+                  if (isFavorite) {
+                    newFavorites = favoritePages.filter(fp => fp.baseUrl !== baseItem.baseUrl);
+                  } else {
+                    newFavorites = [...favoritePages, { baseUrl: baseItem.baseUrl, order: favoritePages.length }];
+                  }
+                  setFavoritePages(newFavorites);
+                  localStorage.setItem(FAVORITE_PAGES_KEY, JSON.stringify(newFavorites));
+                };
+                
+                return (
+                  <SidebarMenuItem key={item.title} className="group/item">
+                    <SidebarMenuButton 
+                      asChild 
+                      tooltip={item.title}
+                      data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
+                      data-active={location === item.url}
+                    >
+                      <Link href={item.url}>
+                        <item.icon className="h-4 w-4" />
+                        <span className="group-data-[collapsible=icon]:hidden flex-1">{item.title}</span>
+                        <button
+                          onClick={toggleFavorite}
+                          className={`h-4 w-4 group-data-[collapsible=icon]:hidden transition-opacity ${
+                            isFavorite ? 'opacity-100' : 'opacity-0 group-hover/item:opacity-50 hover:!opacity-100'
+                          }`}
+                          data-testid={`favorite-page-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
+                        >
+                          <Star className={`h-3.5 w-3.5 ${isFavorite ? 'text-primary fill-current' : 'text-muted-foreground'}`} />
+                        </button>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
