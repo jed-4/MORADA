@@ -146,7 +146,6 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
         return { connected: false };
       }
     },
-    enabled: isOwnPage,
   });
   
   const isGoogleCalendarConnected = googleCalendarStatus?.connected ?? false;
@@ -166,7 +165,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
         return [];
       }
     },
-    enabled: isOwnPage && isGoogleCalendarConnected, // Only fetch when connected
+    enabled: isGoogleCalendarConnected, // Only fetch when connected
   });
 
   // Fetch saved views
