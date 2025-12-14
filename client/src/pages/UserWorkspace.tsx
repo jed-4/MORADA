@@ -53,7 +53,12 @@ export default function UserWorkspace() {
   const user = isMeRoute ? currentUser : fetchedUser;
   
   // isOwnPage: true when viewing own profile
-  const isOwnPage = isMeRoute || (currentUser?.id === userId);
+  // Wait for currentUser to load before making this determination for non-"me" routes
+  const isOwnPage = isMeRoute || (!isCurrentUserLoading && currentUser?.id === userId);
+  
+  // isOwnPageDetermined: true when we can definitively say whether it's own page or not
+  // For "me" route, it's always determined. For other routes, wait for currentUser to load.
+  const isOwnPageDetermined = isMeRoute || !isCurrentUserLoading;
   
   // For settings tab: only show "not available" when we're certain it's NOT own page
   const isDefinitelyNotOwnPage = !isCurrentUserLoading && currentUser && currentUser.id !== userId && !isMeRoute;
@@ -117,7 +122,9 @@ export default function UserWorkspace() {
     return [firstName, lastName].filter(Boolean).join(" ") || "Unknown User";
   };
 
-  if (!user) {
+  // Wait for both user and isOwnPageDetermined before rendering content
+  // This ensures isOwnPage is correctly calculated before components initialize their state
+  if (!user || !isOwnPageDetermined) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-muted-foreground">Loading...</div>
