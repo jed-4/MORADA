@@ -472,6 +472,7 @@ export interface IStorage {
   updateContact(id: string, contact: Partial<InsertContact>): Promise<Contact | undefined>;
   archiveContact(id: string): Promise<Contact | undefined>;
   restoreContact(id: string): Promise<Contact | undefined>;
+  deleteContact(id: string, companyId: string): Promise<void>;
   mergeContacts(sourceId: string, targetId: string, companyId: string): Promise<{ success: boolean; transferredCounts: Record<string, number> }>;
 
   // RFQ (Request for Quote) CRUD
@@ -9937,6 +9938,19 @@ export class DbStorage implements IStorage {
       return restoredContacts[0];
     } catch (error) {
       console.error("Database error in restoreContact:", error);
+      throw error;
+    }
+  }
+
+  async deleteContact(id: string, companyId: string): Promise<void> {
+    try {
+      await db.delete(schema.contacts)
+        .where(and(
+          eq(schema.contacts.id, id),
+          eq(schema.contacts.companyId, companyId)
+        ));
+    } catch (error) {
+      console.error("Database error in deleteContact:", error);
       throw error;
     }
   }

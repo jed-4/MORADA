@@ -6574,6 +6574,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.delete("/api/contacts/:id", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const companyId = req.user!.companyId!;
+      const contactId = req.params.id;
+      
+      const contact = await storage.getContact(contactId, companyId);
+      if (!contact) {
+        return res.status(404).json({ error: "Contact not found" });
+      }
+      
+      await storage.deleteContact(contactId, companyId);
+      res.json({ success: true, message: "Contact deleted" });
+    } catch (error) {
+      console.error("Error deleting contact:", error);
+      res.status(500).json({ error: "Failed to delete contact" });
+    }
+  });
+
   app.post("/api/contacts/merge", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const { sourceId, targetId } = req.body;
