@@ -359,7 +359,9 @@ export default function QuickReviewPanel({
 
   const contactType = form.watch("contactType");
   const isSupplier = contactType === "supplier";
+  const isTrade = contactType === "trade";
   const isTeam = contactType === "team";
+  const showDefaults = isSupplier || isTrade;
 
   const getContactIcon = () => {
     if (isSupplier) return <Building2 className="h-4 w-4" />;
@@ -541,64 +543,6 @@ export default function QuickReviewPanel({
                       />
                     </div>
 
-                    <div className="border-t pt-3 space-y-2">
-                      <h3 className="text-[11px] font-medium text-muted-foreground">Defaults</h3>
-                      
-                      <div className="grid grid-cols-2 gap-2">
-                        <FormField
-                          control={form.control}
-                          name="defaultCostCodeId"
-                          render={({ field }) => (
-                            <FormItem className="space-y-1">
-                              <FormLabel className="text-[11px]">Default Cost Code</FormLabel>
-                              <Select onValueChange={field.onChange} value={field.value || "__none__"}>
-                                <FormControl>
-                                  <SelectTrigger className="h-7 text-[11px]" data-testid="select-cost-code">
-                                    <SelectValue placeholder="Select cost code" />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  <SelectItem value="__none__">None</SelectItem>
-                                  {costCodes.map(cc => (
-                                    <SelectItem key={cc.id} value={cc.id}>
-                                      {cc.code} - {cc.title}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <FormMessage className="text-[10px]" />
-                            </FormItem>
-                          )}
-                        />
-
-                        <FormField
-                          control={form.control}
-                          name="paymentTerms"
-                          render={({ field }) => (
-                            <FormItem className="space-y-1">
-                              <FormLabel className="text-[11px]">Payment Terms</FormLabel>
-                              <Select onValueChange={field.onChange} value={field.value || "__none__"}>
-                                <FormControl>
-                                  <SelectTrigger className="h-7 text-[11px]" data-testid="select-payment-terms">
-                                    <SelectValue placeholder="Select terms" />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  <SelectItem value="__none__">Not Set</SelectItem>
-                                  <SelectItem value="COD">COD</SelectItem>
-                                  <SelectItem value="Net 7">Net 7</SelectItem>
-                                  <SelectItem value="Net 14">Net 14</SelectItem>
-                                  <SelectItem value="Net 30">Net 30</SelectItem>
-                                  <SelectItem value="Net 60">Net 60</SelectItem>
-                                  <SelectItem value="EOM">EOM</SelectItem>
-                                </SelectContent>
-                              </Select>
-                              <FormMessage className="text-[10px]" />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                    </div>
                   </>
                 )}
 
@@ -678,6 +622,67 @@ export default function QuickReviewPanel({
                       />
                     )}
                   </>
+                )}
+
+                {showDefaults && (
+                  <div className="border-t pt-3 space-y-2">
+                    <h3 className="text-[11px] font-medium text-muted-foreground">Defaults</h3>
+                    
+                    <div className="grid grid-cols-2 gap-2">
+                      <FormField
+                        control={form.control}
+                        name="defaultCostCodeId"
+                        render={({ field }) => (
+                          <FormItem className="space-y-1">
+                            <FormLabel className="text-[11px]">Default Cost Code</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value || "__none__"}>
+                              <FormControl>
+                                <SelectTrigger className="h-7 text-[11px]" data-testid="select-cost-code">
+                                  <SelectValue placeholder="Select cost code" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="__none__">None</SelectItem>
+                                {costCodes.map(cc => (
+                                  <SelectItem key={cc.id} value={cc.id}>
+                                    {cc.code} - {cc.title}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage className="text-[10px]" />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="paymentTerms"
+                        render={({ field }) => (
+                          <FormItem className="space-y-1">
+                            <FormLabel className="text-[11px]">Payment Terms</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value || "__none__"}>
+                              <FormControl>
+                                <SelectTrigger className="h-7 text-[11px]" data-testid="select-payment-terms">
+                                  <SelectValue placeholder="Select terms" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="__none__">Not Set</SelectItem>
+                                <SelectItem value="COD">COD</SelectItem>
+                                <SelectItem value="Net 7">Net 7</SelectItem>
+                                <SelectItem value="Net 14">Net 14</SelectItem>
+                                <SelectItem value="Net 30">Net 30</SelectItem>
+                                <SelectItem value="Net 60">Net 60</SelectItem>
+                                <SelectItem value="EOM">EOM</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage className="text-[10px]" />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </div>
                 )}
               </form>
             </Form>
