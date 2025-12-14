@@ -458,13 +458,13 @@ export default function QuickReviewPanel({
 
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
-                {/* Business Name */}
+                {/* Name */}
                 <FormField
                   control={form.control}
                   name="name"
                   render={({ field }) => (
                     <FormItem className="space-y-1">
-                      <FormLabel className="text-[11px]">Business Name *</FormLabel>
+                      <FormLabel className="text-[11px]">Name *</FormLabel>
                       <FormControl>
                         <Input 
                           {...field} 
