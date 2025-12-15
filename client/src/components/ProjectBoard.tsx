@@ -904,13 +904,32 @@ export function ProjectBoard({
       const columnId = over.data.current.column.id;
       
       if (preferences.groupBy === "phase") {
-        // Phase grouping - block cross-phase moves
+        // Phase grouping - allow phase moves (that's the point of this view)
         if (draggedProject.projectStatus !== columnId) {
-          if (checkAndBlockCrossPhase(columnId)) return;
-          moveProjectMutation.mutate({ 
-            projectId: activeProjectId, 
-            newStatus: columnId 
-          });
+          // When moving between phases, show the phase transition dialog
+          const fromPhase = (draggedProject.currentSystemPhase as SystemPhase) || 
+            (draggedProject.projectStatus as SystemPhase);
+          const toPhase = columnId as SystemPhase;
+          
+          if (fromPhase && toPhase && fromPhase !== toPhase) {
+            // Find the first sub-status in the target phase to use as default
+            const targetSubStatus = subStatuses.find(s => s.systemPhase === toPhase);
+            const newStatusKey = targetSubStatus?.key || toPhase;
+            
+            setPhaseTransitionData({
+              open: true,
+              project: draggedProject,
+              fromPhase,
+              toPhase,
+              newStatusKey,
+            });
+          } else {
+            // Same phase, just update status directly
+            moveProjectMutation.mutate({ 
+              projectId: activeProjectId, 
+              newStatus: columnId 
+            });
+          }
         }
       } else {
         // Sub-status grouping - block cross-phase moves
@@ -928,11 +947,30 @@ export function ProjectBoard({
       const overProject = over.data.current.project;
       if (preferences.groupBy === "phase") {
         if (draggedProject.projectStatus !== overProject.projectStatus) {
-          if (checkAndBlockCrossPhase(overProject.projectStatus)) return;
-          moveProjectMutation.mutate({ 
-            projectId: activeProjectId, 
-            newStatus: overProject.projectStatus 
-          });
+          // When moving between phases, show the phase transition dialog
+          const fromPhase = (draggedProject.currentSystemPhase as SystemPhase) || 
+            (draggedProject.projectStatus as SystemPhase);
+          const toPhase = overProject.projectStatus as SystemPhase;
+          
+          if (fromPhase && toPhase && fromPhase !== toPhase) {
+            // Find the first sub-status in the target phase to use as default
+            const targetSubStatus = subStatuses.find(s => s.systemPhase === toPhase);
+            const newStatusKey = targetSubStatus?.key || toPhase;
+            
+            setPhaseTransitionData({
+              open: true,
+              project: draggedProject,
+              fromPhase,
+              toPhase,
+              newStatusKey,
+            });
+          } else {
+            // Same phase, just update status directly
+            moveProjectMutation.mutate({ 
+              projectId: activeProjectId, 
+              newStatus: overProject.projectStatus 
+            });
+          }
         }
       } else {
         // Sub-status grouping - block cross-phase moves
