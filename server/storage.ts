@@ -5898,7 +5898,10 @@ export class DbStorage implements IStorage {
         found: existingUser.length > 0,
         existingId: existingUser[0]?.id,
         incomingId: userData.id,
-        idsMatch: existingUser[0]?.id === userData.id
+        idsMatch: existingUser[0]?.id === userData.id,
+        // Log Google Calendar token status BEFORE any updates
+        googleCalendarConnected: !!existingUser[0]?.googleCalendarAccessToken,
+        googleCalendarEmail: existingUser[0]?.googleCalendarEmail || null,
       });
       
       if (existingUser.length > 0 && existingUser[0].id !== userData.id) {
@@ -5946,7 +5949,15 @@ export class DbStorage implements IStorage {
     // Fetch full user with role/company to populate companyId
     const userWithRole = await this.getUserWithRole(upsertedUser.id);
     const fullUser = userWithRole as User;
-    console.log('📝 [upsertUser] Upserted user:', { id: fullUser.id, email: fullUser.email, companyId: fullUser.companyId, isNew: !fullUser.companyId });
+    console.log('📝 [upsertUser] Upserted user:', { 
+      id: fullUser.id, 
+      email: fullUser.email, 
+      companyId: fullUser.companyId, 
+      isNew: !fullUser.companyId,
+      // Log Google Calendar token status AFTER upsert to verify preservation
+      googleCalendarConnected: !!fullUser.googleCalendarAccessToken,
+      googleCalendarEmail: fullUser.googleCalendarEmail || null,
+    });
     return fullUser;
   }
 

@@ -4237,6 +4237,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { GoogleOAuthService } = await import('./services/googleOAuthService');
       const oauthService = new GoogleOAuthService(storage);
       const status = await oauthService.getConnectionStatus(req.user.id);
+      console.log('📅 [Google Calendar Status]', {
+        userId: req.user.id,
+        connected: status.connected,
+        email: status.email,
+        tokenExpiry: status.tokenExpiry,
+        isExpired: status.isExpired,
+        connectedAt: status.connectedAt,
+      });
       res.json(status);
     } catch (error) {
       console.error("Error getting Google Calendar status:", error);
