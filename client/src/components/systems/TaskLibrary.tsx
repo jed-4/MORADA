@@ -1008,6 +1008,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                 type="number"
                 value={templateForm.estimatedDuration}
                 onChange={(e) => setTemplateForm({ ...templateForm, estimatedDuration: parseInt(e.target.value) || 0 })}
+                onFocus={(e) => e.target.select()}
                 placeholder="60"
                 data-testid="input-template-duration"
               />
