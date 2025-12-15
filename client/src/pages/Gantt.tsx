@@ -1297,7 +1297,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
           <div style={{ width: `${timelineWidth}px`, position: 'relative' }}>
             {/* Timeline Header - ClickUp Style Double Header (60px) */}
             {groupedTimelineHeaders ? (
-              <div className="h-[60px] bg-card sticky top-0 z-10 flex flex-col">
+              <div className="h-[60px] bg-card sticky top-0 z-30 flex flex-col">
                 {/* Top Row: Week Numbers */}
                 <div className="h-[30px] flex border-b border-border">
                   {groupedTimelineHeaders.map((week, idx) => (
@@ -1332,7 +1332,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
               </div>
             ) : (
               /* Fallback for week/month zoom levels (60px) */
-              <div className="h-[60px] bg-card sticky top-0 z-10 flex border-b border-border">
+              <div className="h-[60px] bg-card sticky top-0 z-30 flex border-b border-border">
                 {timelineHeaders.map((header, idx) => {
                   const isToday = format(header.date, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
                   return (
