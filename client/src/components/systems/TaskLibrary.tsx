@@ -525,8 +525,8 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
   const activeTemplates = templates.filter((t) => t.isActive);
   const inactiveTemplates = templates.filter((t) => !t.isActive);
 
-  // Grid template with minimum widths to prevent column squashing
-  const gridTemplate = "32px minmax(260px, 1.4fr) minmax(140px, 0.7fr) minmax(130px, 0.6fr) minmax(160px, 0.8fr) minmax(160px, 0.8fr) minmax(90px, 0.4fr) minmax(70px, 0.3fr) 32px";
+  // Grid template with minimum widths to prevent column squashing - tighter layout
+  const gridTemplate = "24px minmax(200px, 1.4fr) minmax(120px, 0.7fr) minmax(100px, 0.6fr) minmax(140px, 0.8fr) minmax(140px, 0.8fr) minmax(70px, 0.4fr) minmax(50px, 0.3fr) 28px";
 
   return (
     <div className="flex flex-col h-full">
@@ -538,24 +538,24 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
             </div>
           </Card>
         ) : (
-          <Card className="overflow-hidden">
+          <div className="border border-border rounded-md bg-background overflow-hidden">
             <div className="overflow-x-auto">
-              {/* Header Row */}
+              {/* Header Row - compact like TaskListCompact */}
               <div 
-                className="grid items-center gap-4 px-4 h-10 bg-gray-50 dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800"
+                className="grid items-center gap-2 px-2 h-8 bg-muted/30 border-b border-border/50"
                 style={{ gridTemplateColumns: gridTemplate }}
               >
               <div></div>
               <button 
-                className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5 hover-elevate active-elevate-2 rounded px-2 py-1 -ml-2 text-left"
+                className="text-xs font-medium text-muted-foreground flex items-center gap-1 hover:text-foreground rounded px-1 py-0.5 text-left"
                 onClick={() => handleSort('title')}
                 data-testid="sort-title"
               >
-                <span>Title & Goal</span>
+                <span>Title</span>
                 {getSortIcon('title')}
               </button>
               <button 
-                className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5 hover-elevate active-elevate-2 rounded px-2 py-1 -ml-2 text-left"
+                className="text-xs font-medium text-muted-foreground flex items-center gap-1 hover:text-foreground rounded px-1 py-0.5 text-left"
                 onClick={() => handleSort('category')}
                 data-testid="sort-category"
               >
@@ -563,7 +563,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                 {getSortIcon('category')}
               </button>
               <button 
-                className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5 hover-elevate active-elevate-2 rounded px-2 py-1 -ml-2 text-left"
+                className="text-xs font-medium text-muted-foreground flex items-center gap-1 hover:text-foreground rounded px-1 py-0.5 text-left"
                 onClick={() => handleSort('role')}
                 data-testid="sort-role"
               >
@@ -571,7 +571,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                 {getSortIcon('role')}
               </button>
               <button 
-                className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5 hover-elevate active-elevate-2 rounded px-2 py-1 -ml-2 text-left"
+                className="text-xs font-medium text-muted-foreground flex items-center gap-1 hover:text-foreground rounded px-1 py-0.5 text-left"
                 onClick={() => handleSort('frequency')}
                 data-testid="sort-frequency"
               >
@@ -579,7 +579,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                 {getSortIcon('frequency')}
               </button>
               <button 
-                className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5 hover-elevate active-elevate-2 rounded px-2 py-1 -ml-2 text-left"
+                className="text-xs font-medium text-muted-foreground flex items-center gap-1 hover:text-foreground rounded px-1 py-0.5 text-left"
                 onClick={() => handleSort('assignee')}
                 data-testid="sort-assignee"
               >
@@ -587,7 +587,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                 {getSortIcon('assignee')}
               </button>
               <button 
-                className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5 hover-elevate active-elevate-2 rounded px-2 py-1 -ml-2 text-left"
+                className="text-xs font-medium text-muted-foreground flex items-center gap-1 hover:text-foreground rounded px-1 py-0.5 text-left"
                 onClick={() => handleSort('status')}
                 data-testid="sort-status"
               >
@@ -595,7 +595,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                 {getSortIcon('status')}
               </button>
               <button 
-                className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5 hover-elevate active-elevate-2 rounded px-2 py-1 -ml-2 text-left"
+                className="text-xs font-medium text-muted-foreground flex items-center gap-1 hover:text-foreground rounded px-1 py-0.5 text-left"
                 onClick={() => handleSort('active')}
                 data-testid="sort-active"
               >
@@ -609,12 +609,11 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
               {sortedTemplates.map((template) => {
                 const checklistCount = Array.isArray(template.checklist) ? template.checklist.length : 0;
                 const linksCount = Array.isArray(template.externalLinks) ? template.externalLinks.length : 0;
-                const hasGoal = !!template.goal;
                 
                 return (
                   <div 
                     key={template.id}
-                    className="grid items-center gap-4 px-4 h-10 border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors cursor-pointer"
+                    className="grid items-center gap-2 px-2 h-10 border-b border-border/50 hover:bg-muted/50 transition-colors cursor-pointer"
                     style={{ gridTemplateColumns: gridTemplate }}
                     onClick={() => openEditTemplateDialog(template)}
                     data-testid={`template-row-${template.id}`}
@@ -622,27 +621,21 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                   {/* Leading space for consistency */}
                   <div></div>
 
-                  {/* Title & Goal */}
+                  {/* Title */}
                   <div className="min-w-0">
-                    <div className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">{template.title}</div>
-                    {hasGoal && (
-                      <div className="text-xs text-gray-500 dark:text-gray-400 truncate flex items-center gap-1 mt-0.5">
-                        <Target className="h-3 w-3 flex-shrink-0" />
-                        <span className="truncate">{template.goal}</span>
-                      </div>
-                    )}
+                    <div className="text-sm text-foreground truncate leading-5">{template.title}</div>
                   </div>
 
-                  {/* Info Badges */}
-                  <div className="flex items-center gap-1 flex-wrap min-w-0">
+                  {/* Category & Info Badges */}
+                  <div className="flex items-center gap-1 min-w-0">
                     {template.category && (() => {
                       const categoryInfo = getCategoryInfo(template.category);
                       return (
                         <Badge 
                           variant="outline" 
-                          className="text-[10px] px-1.5 py-0 h-4 flex-shrink-0"
+                          className="text-xs px-1.5 py-0 h-5 rounded-full flex-shrink-0 border-0 no-default-hover-elevate no-default-active-elevate"
                           style={{ 
-                            borderColor: categoryInfo?.color || '#6B7280',
+                            backgroundColor: `${categoryInfo?.color || '#6B7280'}15`,
                             color: categoryInfo?.color || '#6B7280'
                           }}
                         >
@@ -651,41 +644,39 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                       );
                     })()}
                     {checklistCount > 0 && (
-                      <Badge variant="outline" className="gap-1 text-[10px] px-1.5 py-0 h-4 flex-shrink-0">
-                        <CheckSquare className="h-3 w-3" />
+                      <Badge variant="outline" className="gap-0.5 text-xs px-1.5 py-0 h-5 rounded-full flex-shrink-0 no-default-hover-elevate no-default-active-elevate">
+                        <CheckSquare className="h-2.5 w-2.5" />
                         {checklistCount}
                       </Badge>
                     )}
                     {linksCount > 0 && (
-                      <Badge variant="outline" className="gap-1 text-[10px] px-1.5 py-0 h-4 flex-shrink-0">
-                        <Link className="h-3 w-3" />
+                      <Badge variant="outline" className="gap-0.5 text-xs px-1.5 py-0 h-5 rounded-full flex-shrink-0 no-default-hover-elevate no-default-active-elevate">
+                        <Link className="h-2.5 w-2.5" />
                         {linksCount}
                       </Badge>
                     )}
                   </div>
 
                   {/* Role */}
-                  <div className="text-sm text-gray-700 dark:text-gray-300 truncate">
+                  <div className="text-xs text-muted-foreground truncate">
                     {getRoleName(template.defaultRoleId)}
                   </div>
 
                   {/* Frequency */}
-                  <div className="text-sm text-gray-700 dark:text-gray-300 truncate">
+                  <div className="text-xs text-muted-foreground truncate">
                     {getFrequencyLabel(template)}
                   </div>
 
                   {/* Assignee */}
-                  <div className="text-sm text-gray-700 dark:text-gray-300 truncate">
+                  <div className="text-xs text-muted-foreground truncate">
                     {template.assigneeType === 'user' ? (
                       template.assigneeUserName ? (
-                        <Badge variant="outline" className="h-5 px-2 text-xs">
-                          {template.assigneeUserName}
-                        </Badge>
+                        <span className="text-foreground">{template.assigneeUserName}</span>
                       ) : (
-                        <span className="text-gray-500 dark:text-gray-400">-</span>
+                        <span>-</span>
                       )
                     ) : (
-                      <span className="text-gray-500 dark:text-gray-400">
+                      <span>
                         {template.defaultRoleId ? getRoleName(template.defaultRoleId) : '-'}
                       </span>
                     )}
@@ -694,15 +685,15 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                   {/* Status (Published/Draft/Archived) */}
                   <div>
                     {(template.status === 'published' || template.status === 'active' || !template.status) ? (
-                      <Badge className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800 h-5 px-1.5 text-[10px]">
+                      <Badge className="bg-blue-500/10 text-blue-700 dark:text-blue-400 h-5 px-2 py-0.5 rounded-full text-xs border-0 no-default-hover-elevate no-default-active-elevate">
                         Published
                       </Badge>
                     ) : template.status === 'draft' ? (
-                      <Badge variant="outline" className="h-5 px-1.5 text-[10px] text-amber-600 dark:text-amber-400 border-amber-300 dark:border-amber-700">
+                      <Badge className="bg-amber-500/10 text-amber-700 dark:text-amber-400 h-5 px-2 py-0.5 rounded-full text-xs border-0 no-default-hover-elevate no-default-active-elevate">
                         Draft
                       </Badge>
                     ) : (
-                      <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+                      <Badge className="bg-gray-500/10 text-gray-700 dark:text-gray-400 h-5 px-2 py-0.5 rounded-full text-xs border-0 no-default-hover-elevate no-default-active-elevate">
                         Archived
                       </Badge>
                     )}
@@ -711,11 +702,11 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                   {/* Active/Inactive */}
                   <div>
                     {template.isActive ? (
-                      <Badge className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800 h-5 px-1.5 text-[10px]">
+                      <Badge className="bg-green-500/10 text-green-700 dark:text-green-400 h-5 px-2 py-0.5 rounded-full text-xs border-0 no-default-hover-elevate no-default-active-elevate">
                         On
                       </Badge>
                     ) : (
-                      <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+                      <Badge className="bg-gray-500/10 text-gray-600 dark:text-gray-500 h-5 px-2 py-0.5 rounded-full text-xs border-0 no-default-hover-elevate no-default-active-elevate">
                         Off
                       </Badge>
                     )}
@@ -726,7 +717,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-6 w-6" data-testid={`template-menu-${template.id}`}>
-                          <MoreVertical className="h-4 w-4" />
+                          <MoreVertical className="h-3.5 w-3.5" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
@@ -777,7 +768,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
               );
             })}
             </div>
-          </Card>
+          </div>
         )}
       </div>
 
