@@ -502,6 +502,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!task) {
         return res.status(404).json({ error: "Task not found" });
       }
+
+      // Asana-style: Create next week's task when transitioning to 'done' (not already done)
+      // Use the freshly updated task (not pre-update snapshot) to preserve per-user assignee
+      const wasNotDone = existingTask.status !== 'done';
+      const nowDone = task.status === 'done';
+      if (wasNotDone && nowDone && task.templateId && task.dueDate) {
+        try {
+          await storage.createNextRecurringTask(task as any, user.companyId);
+        } catch (err) {
+          console.error("Failed to create next recurring task:", err);
+        }
+      }
+
       res.json(task);
     } catch (error) {
       console.error("Error updating task:", error);

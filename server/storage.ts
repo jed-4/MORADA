@@ -99,7 +99,7 @@ import {
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
-import { generateRecurringTaskInstances, getRecurringTaskKey } from "./utils/recurringTasks";
+import { generateRecurringTaskInstances, getRecurringTaskKey, generateNextRecurringInstance } from "./utils/recurringTasks";
 import { db } from "./db";
 import { eq, or, and, desc, asc, gte, lte, sql, inArray, isNull, gt } from "drizzle-orm";
 import * as schema from "@shared/schema";
@@ -846,6 +846,7 @@ export interface IStorage {
   deleteTaskTemplate(id: string, companyId: string): Promise<boolean>;
   generateRecurringTasks(companyId: string): Promise<{ generated: number }>;
   clearAndRegenerateTemplateTask(templateId: string, companyId: string): Promise<{ deleted: number; generated: number }>;
+  createNextRecurringTask(completedTask: Task, companyId: string): Promise<Task | null>;
 
   // Systems Library - Workflow Templates
   getWorkflowTemplates(companyId: string, isActive?: boolean): Promise<WorkflowTemplate[]>;
@@ -14613,6 +14614,72 @@ export class DbStorage implements IStorage {
       return { deleted: deletedCount, generated: generatedCount };
     } catch (error) {
       console.error("Database error in clearAndRegenerateTemplateTask:", error);
+      throw error;
+    }
+  }
+
+  async createNextRecurringTask(completedTask: Task, companyId: string): Promise<Task | null> {
+    try {
+      if (!completedTask.templateId || !completedTask.dueDate) return null;
+      
+      const template = await this.getTaskTemplate(completedTask.templateId, companyId);
+      if (!template || !template.isRecurringTemplate) return null;
+      
+      // Calculate next week's due date (7 days later)
+      const currentDueDate = typeof completedTask.dueDate === 'string' 
+        ? new Date(completedTask.dueDate) 
+        : completedTask.dueDate;
+      const nextDueDate = new Date(currentDueDate);
+      nextDueDate.setDate(nextDueDate.getDate() + 7);
+      
+      // Clone assignee from completed task (preserves per-user assignment)
+      const assigneeId = completedTask.assigneeId;
+      const assigneeName = completedTask.assigneeName;
+      
+      // Check if task already exists for next week's date AND same assignee
+      const dateKey = getRecurringTaskKey(completedTask.templateId, nextDueDate);
+      const existingTasks = await db.select().from(schema.notes).where(
+        and(
+          eq(schema.notes.templateId, completedTask.templateId),
+          eq(schema.notes.companyId, companyId),
+          eq(schema.notes.type, "task")
+        )
+      );
+      
+      // Include assignee in duplicate check for per-user instances
+      const exists = existingTasks.some(t => {
+        if (!t.dueDate) return false;
+        const taskDateKey = getRecurringTaskKey(completedTask.templateId, t.dueDate);
+        const sameAssignee = (t.assigneeId || null) === (assigneeId || null);
+        return taskDateKey === dateKey && sameAssignee;
+      });
+      
+      if (exists) return null;
+      
+      // Clone key fields from completed task, reset status
+      const taskData: InsertNote = {
+        title: completedTask.title,
+        content: completedTask.content || "",
+        author: "System",
+        type: "task",
+        priority: completedTask.priority as any,
+        status: "todo",
+        assigneeId: assigneeId,
+        assigneeName: assigneeName,
+        dueDate: nextDueDate,
+        startTime: completedTask.startTime,
+        endTime: completedTask.endTime,
+        tags: completedTask.tags || [],
+        labels: completedTask.labels || [],
+        category: completedTask.category,
+        templateId: completedTask.templateId,
+        companyId: companyId,
+      };
+      
+      const [newTask] = await db.insert(schema.notes).values(taskData).returning();
+      return newTask as Task;
+    } catch (error) {
+      console.error("Database error in createNextRecurringTask:", error);
       throw error;
     }
   }
