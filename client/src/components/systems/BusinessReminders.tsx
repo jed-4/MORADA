@@ -4,13 +4,12 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { 
-  Bell, Plus, Trash2, Clock, Users, CheckSquare, FileText, 
-  ClipboardList, Wrench, Calendar, Power, PowerOff, Pencil,
-  AlertTriangle, Timer, CalendarClock, Repeat
+  Bell, Plus, Trash2, Users, 
+  ClipboardList, Wrench, Pencil,
+  AlertTriangle, Timer, CalendarClock, Repeat, X, Check
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { 
   Dialog, 
   DialogContent, 
@@ -22,7 +21,6 @@ import {
 import {
   Form,
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -48,9 +46,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { insertBusinessReminderSchema, type BusinessReminder } from "@shared/schema";
+import { type BusinessReminder, type UserRole, type User } from "@shared/schema";
 
 export interface BusinessRemindersHandle {
   openNewReminderDialog: () => void;
@@ -61,34 +60,26 @@ interface BusinessRemindersProps {
 }
 
 const formSchema = z.object({
-  name: z.string().min(1, "Name is required"),
+  title: z.string().min(1, "Title is required"),
   description: z.string().optional(),
-  reminderType: z.enum(["timesheet_submission", "site_diary_entry", "task_overdue", "defect_followup", "custom"]),
+  targetType: z.enum(["timesheet", "site_diary", "custom"]),
   isActive: z.boolean().default(true),
-  targetAudience: z.enum(["all_users", "project_managers", "site_managers", "custom"]).default("all_users"),
-  targetRoles: z.array(z.string()).optional(),
-  recurringPattern: z.object({
-    frequency: z.enum(["daily", "weekly", "monthly"]),
-    daysOfWeek: z.array(z.number()).optional(),
-    dayOfMonth: z.number().optional(),
-    timeOfDay: z.string().optional(),
-  }).optional(),
-  deliveryMethods: z.object({
-    push: z.boolean().default(true),
-    email: z.boolean().default(false),
-    inApp: z.boolean().default(true),
-  }).default({ push: true, email: false, inApp: true }),
-  leadTimeDays: z.coerce.number().int().min(0).max(30).optional(),
-  leadTimeHours: z.coerce.number().int().min(0).max(23).optional(),
+  targetUsers: z.enum(["all", "field", "office", "specific", "roles"]).default("all"),
+  targetRoleIds: z.array(z.string()).default([]),
+  specificUserIds: z.array(z.string()).default([]),
+  scheduleType: z.enum(["daily", "weekly", "monthly"]).default("daily"),
+  scheduleTime: z.string().default("09:00"),
+  scheduleDays: z.array(z.number()).default([]),
+  sendInApp: z.boolean().default(true),
+  sendEmail: z.boolean().default(false),
+  sendPush: z.boolean().default(true),
 });
 
 type FormValues = z.infer<typeof formSchema>;
 
-const REMINDER_TYPE_OPTIONS = [
-  { value: "timesheet_submission", label: "Timesheet Submission", icon: Timer, description: "Remind users to submit timesheets" },
-  { value: "site_diary_entry", label: "Site Diary Entry", icon: ClipboardList, description: "Remind users to complete site diary" },
-  { value: "task_overdue", label: "Task Overdue", icon: AlertTriangle, description: "Alert on overdue tasks" },
-  { value: "defect_followup", label: "Defect Follow-up", icon: Wrench, description: "Follow up on unresolved defects" },
+const TARGET_TYPE_OPTIONS = [
+  { value: "timesheet", label: "Timesheet Submission", icon: Timer, description: "Remind users to submit timesheets" },
+  { value: "site_diary", label: "Site Diary Entry", icon: ClipboardList, description: "Remind users to complete site diary" },
   { value: "custom", label: "Custom Reminder", icon: Bell, description: "Create a custom business reminder" },
 ];
 
@@ -115,52 +106,58 @@ export const BusinessReminders = forwardRef<BusinessRemindersHandle, BusinessRem
     const [editingReminder, setEditingReminder] = useState<BusinessReminder | null>(null);
     const [deleteReminder, setDeleteReminder] = useState<BusinessReminder | null>(null);
 
-    useImperativeHandle(ref, () => ({
-      openNewReminderDialog: () => {
-        setEditingReminder(null);
-        form.reset({
-          name: "",
-          description: "",
-          reminderType: "timesheet_submission",
-          isActive: true,
-          targetAudience: "all_users",
-          targetRoles: [],
-          recurringPattern: {
-            frequency: "weekly",
-            daysOfWeek: [1, 2, 3, 4, 5],
-            timeOfDay: "09:00",
-          },
-          deliveryMethods: { push: true, email: false, inApp: true },
-          leadTimeDays: 0,
-          leadTimeHours: 0,
-        });
-        setIsDialogOpen(true);
-      },
-    }));
-
     const { data: reminders = [], isLoading } = useQuery<BusinessReminder[]>({
       queryKey: ["/api/business-reminders"],
+    });
+
+    const { data: roles = [] } = useQuery<UserRole[]>({
+      queryKey: ["/api/user-roles"],
+    });
+
+    const { data: users = [] } = useQuery<User[]>({
+      queryKey: ["/api/users"],
     });
 
     const form = useForm<FormValues>({
       resolver: zodResolver(formSchema),
       defaultValues: {
-        name: "",
+        title: "",
         description: "",
-        reminderType: "timesheet_submission",
+        targetType: "timesheet",
         isActive: true,
-        targetAudience: "all_users",
-        targetRoles: [],
-        recurringPattern: {
-          frequency: "weekly",
-          daysOfWeek: [1, 2, 3, 4, 5],
-          timeOfDay: "09:00",
-        },
-        deliveryMethods: { push: true, email: false, inApp: true },
-        leadTimeDays: 0,
-        leadTimeHours: 0,
+        targetUsers: "all",
+        targetRoleIds: [],
+        specificUserIds: [],
+        scheduleType: "weekly",
+        scheduleTime: "16:30",
+        scheduleDays: [1, 2, 3, 4, 5],
+        sendInApp: true,
+        sendEmail: false,
+        sendPush: true,
       },
     });
+
+    useImperativeHandle(ref, () => ({
+      openNewReminderDialog: () => {
+        setEditingReminder(null);
+        form.reset({
+          title: "",
+          description: "",
+          targetType: "timesheet",
+          isActive: true,
+          targetUsers: "all",
+          targetRoleIds: [],
+          specificUserIds: [],
+          scheduleType: "weekly",
+          scheduleTime: "16:30",
+          scheduleDays: [1, 2, 3, 4, 5],
+          sendInApp: true,
+          sendEmail: false,
+          sendPush: true,
+        });
+        setIsDialogOpen(true);
+      },
+    }));
 
     const createMutation = useMutation({
       mutationFn: async (data: FormValues) => {
@@ -245,53 +242,68 @@ export const BusinessReminders = forwardRef<BusinessRemindersHandle, BusinessRem
 
     const handleEdit = (reminder: BusinessReminder) => {
       setEditingReminder(reminder);
-      const pattern = reminder.recurringPattern as any || {};
       form.reset({
-        name: reminder.name,
+        title: reminder.title,
         description: reminder.description || "",
-        reminderType: reminder.reminderType as any,
+        targetType: reminder.targetType as any,
         isActive: reminder.isActive,
-        targetAudience: reminder.targetAudience as any,
-        targetRoles: (reminder.targetRoles as string[]) || [],
-        recurringPattern: {
-          frequency: pattern.frequency || "weekly",
-          daysOfWeek: pattern.daysOfWeek || [1, 2, 3, 4, 5],
-          dayOfMonth: pattern.dayOfMonth,
-          timeOfDay: pattern.timeOfDay || "09:00",
-        },
-        deliveryMethods: (reminder.deliveryMethods as any) || { push: true, email: false, inApp: true },
-        leadTimeDays: reminder.leadTimeDays || 0,
-        leadTimeHours: reminder.leadTimeHours || 0,
+        targetUsers: reminder.targetUsers as any,
+        targetRoleIds: (reminder.targetRoleIds as string[]) || [],
+        specificUserIds: (reminder.specificUserIds as string[]) || [],
+        scheduleType: reminder.scheduleType as any,
+        scheduleTime: reminder.scheduleTime,
+        scheduleDays: (reminder.scheduleDays as number[]) || [],
+        sendInApp: reminder.sendInApp,
+        sendEmail: reminder.sendEmail,
+        sendPush: reminder.sendPush,
       });
       setIsDialogOpen(true);
     };
 
     const filteredReminders = reminders.filter(r => 
-      r.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      r.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (r.description?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false)
     );
 
-    const getReminderTypeInfo = (type: string) => {
-      return REMINDER_TYPE_OPTIONS.find(t => t.value === type) || REMINDER_TYPE_OPTIONS[4];
+    const getTargetTypeInfo = (type: string) => {
+      return TARGET_TYPE_OPTIONS.find(t => t.value === type) || TARGET_TYPE_OPTIONS[2];
     };
 
-    const formatRecurringPattern = (pattern: any) => {
-      if (!pattern) return "Not configured";
-      const freq = pattern.frequency || "weekly";
-      const time = pattern.timeOfDay || "09:00";
+    const formatSchedule = (reminder: BusinessReminder) => {
+      const time = reminder.scheduleTime || "09:00";
+      const days = (reminder.scheduleDays as number[]) || [];
       
-      if (freq === "daily") {
+      if (reminder.scheduleType === "daily") {
         return `Daily at ${time}`;
-      } else if (freq === "weekly") {
-        const days = (pattern.daysOfWeek || []).map((d: number) => DAYS_OF_WEEK[d]?.label).join(", ");
-        return `Weekly on ${days || "weekdays"} at ${time}`;
-      } else if (freq === "monthly") {
-        return `Monthly on day ${pattern.dayOfMonth || 1} at ${time}`;
+      } else if (reminder.scheduleType === "weekly") {
+        const dayLabels = days.map((d: number) => DAYS_OF_WEEK[d]?.label).join(", ");
+        return `Weekly on ${dayLabels || "weekdays"} at ${time}`;
+      } else if (reminder.scheduleType === "monthly") {
+        return `Monthly on day ${days[0] || 1} at ${time}`;
       }
       return "Custom schedule";
     };
 
-    const watchFrequency = form.watch("recurringPattern.frequency");
+    const formatTargetAudience = (reminder: BusinessReminder) => {
+      if (reminder.targetUsers === "all") return "All Users";
+      if (reminder.targetUsers === "field") return "Field Team";
+      if (reminder.targetUsers === "office") return "Office Team";
+      if (reminder.targetUsers === "roles") {
+        const roleIds = (reminder.targetRoleIds as string[]) || [];
+        if (roleIds.length === 0) return "No roles selected";
+        const roleNames = roleIds.map(id => roles.find(r => r.id === id)?.name).filter(Boolean);
+        return roleNames.length > 2 ? `${roleNames.slice(0, 2).join(", ")} +${roleNames.length - 2}` : roleNames.join(", ");
+      }
+      if (reminder.targetUsers === "specific") {
+        const userIds = (reminder.specificUserIds as string[]) || [];
+        if (userIds.length === 0) return "No users selected";
+        return `${userIds.length} user${userIds.length > 1 ? 's' : ''}`;
+      }
+      return "Custom";
+    };
+
+    const watchTargetUsers = form.watch("targetUsers");
+    const watchScheduleType = form.watch("scheduleType");
 
     if (isLoading) {
       return (
@@ -326,10 +338,8 @@ export const BusinessReminders = forwardRef<BusinessRemindersHandle, BusinessRem
         ) : (
           <div className="space-y-3">
             {filteredReminders.map((reminder) => {
-              const typeInfo = getReminderTypeInfo(reminder.reminderType);
+              const typeInfo = getTargetTypeInfo(reminder.targetType);
               const TypeIcon = typeInfo.icon;
-              const pattern = reminder.recurringPattern as any;
-              const deliveryMethods = reminder.deliveryMethods as any || {};
               
               return (
                 <div
@@ -345,7 +355,7 @@ export const BusinessReminders = forwardRef<BusinessRemindersHandle, BusinessRem
                   
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="font-medium text-sm truncate">{reminder.name}</span>
+                      <span className="font-medium text-sm truncate">{reminder.title}</span>
                       {!reminder.isActive && (
                         <Badge variant="outline" className="text-xs">Inactive</Badge>
                       )}
@@ -353,13 +363,11 @@ export const BusinessReminders = forwardRef<BusinessRemindersHandle, BusinessRem
                     <div className="flex items-center gap-3 text-xs text-muted-foreground">
                       <span className="flex items-center gap-1">
                         <Repeat className="h-3 w-3" />
-                        {formatRecurringPattern(pattern)}
+                        {formatSchedule(reminder)}
                       </span>
                       <span className="flex items-center gap-1">
                         <Users className="h-3 w-3" />
-                        {reminder.targetAudience === "all_users" ? "All Users" : 
-                         reminder.targetAudience === "project_managers" ? "Project Managers" :
-                         reminder.targetAudience === "site_managers" ? "Site Managers" : "Custom"}
+                        {formatTargetAudience(reminder)}
                       </span>
                     </div>
                     {reminder.description && (
@@ -369,13 +377,13 @@ export const BusinessReminders = forwardRef<BusinessRemindersHandle, BusinessRem
 
                   <div className="flex items-center gap-2">
                     <div className="flex items-center gap-1">
-                      {deliveryMethods.push && (
+                      {reminder.sendPush && (
                         <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">Push</Badge>
                       )}
-                      {deliveryMethods.email && (
+                      {reminder.sendEmail && (
                         <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">Email</Badge>
                       )}
-                      {deliveryMethods.inApp && (
+                      {reminder.sendInApp && (
                         <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">In-App</Badge>
                       )}
                     </div>
@@ -426,18 +434,18 @@ export const BusinessReminders = forwardRef<BusinessRemindersHandle, BusinessRem
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                 <FormField
                   control={form.control}
-                  name="reminderType"
+                  name="targetType"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Reminder Type</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
-                          <SelectTrigger data-testid="select-reminder-type">
+                          <SelectTrigger data-testid="select-target-type">
                             <SelectValue placeholder="Select reminder type" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {REMINDER_TYPE_OPTIONS.map((opt) => (
+                          {TARGET_TYPE_OPTIONS.map((opt) => (
                             <SelectItem key={opt.value} value={opt.value}>
                               <div className="flex items-center gap-2">
                                 <opt.icon className="h-4 w-4" />
@@ -454,12 +462,12 @@ export const BusinessReminders = forwardRef<BusinessRemindersHandle, BusinessRem
 
                 <FormField
                   control={form.control}
-                  name="name"
+                  name="title"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Name</FormLabel>
+                      <FormLabel>Title</FormLabel>
                       <FormControl>
-                        <Input {...field} placeholder="e.g., Weekly Timesheet Reminder" data-testid="input-reminder-name" />
+                        <Input {...field} placeholder="e.g., Weekly Timesheet Reminder" data-testid="input-reminder-title" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -480,29 +488,114 @@ export const BusinessReminders = forwardRef<BusinessRemindersHandle, BusinessRem
                   )}
                 />
 
-                <FormField
-                  control={form.control}
-                  name="targetAudience"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Target Audience</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl>
-                          <SelectTrigger data-testid="select-target-audience">
-                            <SelectValue placeholder="Select target audience" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="all_users">All Users</SelectItem>
-                          <SelectItem value="project_managers">Project Managers</SelectItem>
-                          <SelectItem value="site_managers">Site Managers</SelectItem>
-                          <SelectItem value="custom">Custom Roles</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
+                <div className="space-y-3 p-3 rounded-lg border bg-muted/30">
+                  <h4 className="text-sm font-medium flex items-center gap-2">
+                    <Users className="h-4 w-4" />
+                    Target Audience
+                  </h4>
+
+                  <FormField
+                    control={form.control}
+                    name="targetUsers"
+                    render={({ field }) => (
+                      <FormItem>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-target-users">
+                              <SelectValue placeholder="Select target audience" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="all">All Users</SelectItem>
+                            <SelectItem value="field">Field Team</SelectItem>
+                            <SelectItem value="office">Office Team</SelectItem>
+                            <SelectItem value="roles">Specific Roles</SelectItem>
+                            <SelectItem value="specific">Specific Users</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {watchTargetUsers === "roles" && (
+                    <FormField
+                      control={form.control}
+                      name="targetRoleIds"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Select Roles</FormLabel>
+                          <div className="space-y-2 max-h-40 overflow-y-auto border rounded-md p-2">
+                            {roles.filter(r => r.isActive).map((role) => (
+                              <div key={role.id} className="flex items-center gap-2">
+                                <Checkbox
+                                  id={`role-${role.id}`}
+                                  checked={(field.value || []).includes(role.id)}
+                                  onCheckedChange={(checked) => {
+                                    const current = field.value || [];
+                                    if (checked) {
+                                      field.onChange([...current, role.id]);
+                                    } else {
+                                      field.onChange(current.filter(id => id !== role.id));
+                                    }
+                                  }}
+                                  data-testid={`checkbox-role-${role.id}`}
+                                />
+                                <label htmlFor={`role-${role.id}`} className="text-sm cursor-pointer">
+                                  {role.name}
+                                </label>
+                              </div>
+                            ))}
+                            {roles.filter(r => r.isActive).length === 0 && (
+                              <p className="text-xs text-muted-foreground">No roles available</p>
+                            )}
+                          </div>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                   )}
-                />
+
+                  {watchTargetUsers === "specific" && (
+                    <FormField
+                      control={form.control}
+                      name="specificUserIds"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Select Users</FormLabel>
+                          <div className="space-y-2 max-h-40 overflow-y-auto border rounded-md p-2">
+                            {users.filter(u => u.isActive).map((user) => (
+                              <div key={user.id} className="flex items-center gap-2">
+                                <Checkbox
+                                  id={`user-${user.id}`}
+                                  checked={(field.value || []).includes(user.id)}
+                                  onCheckedChange={(checked) => {
+                                    const current = field.value || [];
+                                    if (checked) {
+                                      field.onChange([...current, user.id]);
+                                    } else {
+                                      field.onChange(current.filter(id => id !== user.id));
+                                    }
+                                  }}
+                                  data-testid={`checkbox-user-${user.id}`}
+                                />
+                                <label htmlFor={`user-${user.id}`} className="text-sm cursor-pointer">
+                                  {user.firstName && user.lastName 
+                                    ? `${user.firstName} ${user.lastName}` 
+                                    : user.email || 'Unknown User'}
+                                </label>
+                              </div>
+                            ))}
+                            {users.filter(u => u.isActive).length === 0 && (
+                              <p className="text-xs text-muted-foreground">No users available</p>
+                            )}
+                          </div>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
+                </div>
 
                 <div className="space-y-3 p-3 rounded-lg border bg-muted/30">
                   <h4 className="text-sm font-medium flex items-center gap-2">
@@ -512,13 +605,13 @@ export const BusinessReminders = forwardRef<BusinessRemindersHandle, BusinessRem
                   
                   <FormField
                     control={form.control}
-                    name="recurringPattern.frequency"
+                    name="scheduleType"
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Frequency</FormLabel>
                         <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
-                            <SelectTrigger data-testid="select-frequency">
+                            <SelectTrigger data-testid="select-schedule-type">
                               <SelectValue placeholder="Select frequency" />
                             </SelectTrigger>
                           </FormControl>
@@ -533,10 +626,10 @@ export const BusinessReminders = forwardRef<BusinessRemindersHandle, BusinessRem
                     )}
                   />
 
-                  {watchFrequency === "weekly" && (
+                  {watchScheduleType === "weekly" && (
                     <FormField
                       control={form.control}
-                      name="recurringPattern.daysOfWeek"
+                      name="scheduleDays"
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Days of Week</FormLabel>
@@ -568,21 +661,21 @@ export const BusinessReminders = forwardRef<BusinessRemindersHandle, BusinessRem
                     />
                   )}
 
-                  {watchFrequency === "monthly" && (
+                  {watchScheduleType === "monthly" && (
                     <FormField
                       control={form.control}
-                      name="recurringPattern.dayOfMonth"
+                      name="scheduleDays"
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Day of Month</FormLabel>
                           <FormControl>
-                            <Input 
-                              type="number" 
-                              min={1} 
-                              max={31} 
-                              {...field} 
-                              onChange={(e) => field.onChange(parseInt(e.target.value) || 1)}
-                              data-testid="input-day-of-month" 
+                            <Input
+                              type="number"
+                              min={1}
+                              max={31}
+                              value={(field.value || [])[0] || 1}
+                              onChange={(e) => field.onChange([parseInt(e.target.value) || 1])}
+                              data-testid="input-day-of-month"
                             />
                           </FormControl>
                           <FormMessage />
@@ -593,12 +686,12 @@ export const BusinessReminders = forwardRef<BusinessRemindersHandle, BusinessRem
 
                   <FormField
                     control={form.control}
-                    name="recurringPattern.timeOfDay"
+                    name="scheduleTime"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Time of Day</FormLabel>
+                        <FormLabel>Time</FormLabel>
                         <FormControl>
-                          <Input type="time" {...field} data-testid="input-time-of-day" />
+                          <Input type="time" {...field} data-testid="input-schedule-time" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -607,80 +700,61 @@ export const BusinessReminders = forwardRef<BusinessRemindersHandle, BusinessRem
                 </div>
 
                 <div className="space-y-3 p-3 rounded-lg border bg-muted/30">
-                  <h4 className="text-sm font-medium flex items-center gap-2">
-                    <Bell className="h-4 w-4" />
-                    Delivery Methods
-                  </h4>
+                  <h4 className="text-sm font-medium">Delivery Methods</h4>
                   
                   <div className="flex flex-wrap gap-4">
                     <FormField
                       control={form.control}
-                      name="deliveryMethods.inApp"
+                      name="sendInApp"
                       render={({ field }) => (
-                        <FormItem className="flex items-center gap-2 space-y-0">
+                        <FormItem className="flex items-center gap-2">
                           <FormControl>
-                            <Switch checked={field.value} onCheckedChange={field.onChange} />
+                            <Switch checked={field.value} onCheckedChange={field.onChange} data-testid="switch-in-app" />
                           </FormControl>
-                          <FormLabel className="font-normal">In-App</FormLabel>
+                          <FormLabel className="!mt-0 cursor-pointer">In-App</FormLabel>
                         </FormItem>
                       )}
                     />
-                    
+
                     <FormField
                       control={form.control}
-                      name="deliveryMethods.push"
+                      name="sendPush"
                       render={({ field }) => (
-                        <FormItem className="flex items-center gap-2 space-y-0">
+                        <FormItem className="flex items-center gap-2">
                           <FormControl>
-                            <Switch checked={field.value} onCheckedChange={field.onChange} />
+                            <Switch checked={field.value} onCheckedChange={field.onChange} data-testid="switch-push" />
                           </FormControl>
-                          <FormLabel className="font-normal">Push</FormLabel>
+                          <FormLabel className="!mt-0 cursor-pointer">Push</FormLabel>
                         </FormItem>
                       )}
                     />
-                    
+
                     <FormField
                       control={form.control}
-                      name="deliveryMethods.email"
+                      name="sendEmail"
                       render={({ field }) => (
-                        <FormItem className="flex items-center gap-2 space-y-0">
+                        <FormItem className="flex items-center gap-2">
                           <FormControl>
-                            <Switch checked={field.value} onCheckedChange={field.onChange} />
+                            <Switch checked={field.value} onCheckedChange={field.onChange} data-testid="switch-email" />
                           </FormControl>
-                          <FormLabel className="font-normal">Email</FormLabel>
+                          <FormLabel className="!mt-0 cursor-pointer">Email</FormLabel>
                         </FormItem>
                       )}
                     />
                   </div>
                 </div>
 
-                <FormField
-                  control={form.control}
-                  name="isActive"
-                  render={({ field }) => (
-                    <FormItem className="flex items-center justify-between rounded-lg border p-3">
-                      <div>
-                        <FormLabel>Active</FormLabel>
-                        <FormDescription>Enable or disable this reminder</FormDescription>
-                      </div>
-                      <FormControl>
-                        <Switch checked={field.value} onCheckedChange={field.onChange} />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-
                 <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+                  <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)} data-testid="button-cancel">
                     Cancel
                   </Button>
                   <Button 
                     type="submit" 
                     disabled={createMutation.isPending || updateMutation.isPending}
                     className="bg-[#bba7db] text-white hover:bg-[#bba7db]/90"
-                    data-testid="button-save-reminder"
+                    data-testid="button-submit"
                   >
-                    {(createMutation.isPending || updateMutation.isPending) ? "Saving..." : editingReminder ? "Update Reminder" : "Create Reminder"}
+                    {createMutation.isPending || updateMutation.isPending ? "Saving..." : editingReminder ? "Update Reminder" : "Create Reminder"}
                   </Button>
                 </DialogFooter>
               </form>
@@ -693,14 +767,15 @@ export const BusinessReminders = forwardRef<BusinessRemindersHandle, BusinessRem
             <AlertDialogHeader>
               <AlertDialogTitle>Delete Reminder</AlertDialogTitle>
               <AlertDialogDescription>
-                Are you sure you want to delete "{deleteReminder?.name}"? This action cannot be undone.
+                Are you sure you want to delete "{deleteReminder?.title}"? This action cannot be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
               <AlertDialogAction
                 onClick={() => deleteReminder && deleteMutation.mutate(deleteReminder.id)}
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                data-testid="button-confirm-delete"
               >
                 Delete
               </AlertDialogAction>
