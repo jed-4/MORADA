@@ -149,6 +149,7 @@ const sections: Record<SectionId, { label: string; icon: React.ComponentType<{ c
     label: "Resources",
     icon: Library,
     items: [
+      { title: "Operations", url: "/systems", icon: Cog },
       { title: "Templates", url: "/templates", icon: LayoutTemplate },
       { title: "Price List", url: "/price-list", icon: DollarSign },
       { title: "AI Price Review", url: "/ai-price-review", icon: Sparkles },
@@ -368,6 +369,7 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   Mail,
   UserPlus,
   Settings,
+  Cog,
   Calendar,
   Bell,
   Library,
@@ -673,31 +675,6 @@ export function SidebarNav() {
               </Tooltip>
             );
           })}
-        </div>
-        
-        {/* Systems */}
-        <div className="pb-0.5">
-          <Tooltip delayDuration={0}>
-            <TooltipTrigger asChild>
-              <Link href="/systems">
-                <button
-                  className={cn(
-                    "flex items-center justify-center h-8 w-8 mx-auto rounded-md transition-colors",
-                    "hover-elevate active-elevate-2",
-                    location.startsWith("/systems")
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                  data-testid="rail-systems"
-                >
-                  <Cog className="h-4 w-4" />
-                </button>
-              </Link>
-            </TooltipTrigger>
-            <TooltipContent side="right" sideOffset={8}>
-              Systems
-            </TooltipContent>
-          </Tooltip>
         </div>
         
         {/* Settings at bottom */}
