@@ -4503,9 +4503,10 @@ export const businessReminders = pgTable("business_reminders", {
   scheduleTime: text("schedule_time").notNull(), // "16:30" (24hr format)
   scheduleDays: json("schedule_days").default([]), // [1,2,3,4,5] for Mon-Fri, or [1,15] for monthly
   
-  // Who receives it
-  targetUsers: text("target_users").notNull().default("all"), // "all" | "field" | "office" | "specific"
-  specificUserIds: json("specific_user_ids").default([]), // Array of user IDs if targetUsers is "specific"
+  // Who receives it - like task templates, supports roles and/or specific users
+  targetUsers: text("target_users").notNull().default("all"), // "all" | "field" | "office" | "specific" | "roles"
+  targetRoleIds: json("target_role_ids").default([]), // Array of role IDs when targetUsers includes role targeting
+  specificUserIds: json("specific_user_ids").default([]), // Array of user IDs when targetUsers includes specific users
   
   // Delivery methods
   sendInApp: boolean("send_in_app").notNull().default(true),
@@ -4527,6 +4528,7 @@ export const insertBusinessReminderSchema = createInsertSchema(businessReminders
   updatedAt: true,
 }).extend({
   scheduleDays: z.array(z.number()).optional(),
+  targetRoleIds: z.array(z.string()).optional(),
   specificUserIds: z.array(z.string()).optional(),
 });
 
