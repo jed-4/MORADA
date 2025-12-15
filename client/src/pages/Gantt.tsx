@@ -200,20 +200,10 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     }
   };
 
-  // Mutation to batch update sortOrder for schedule items
-  const updateSortOrderMutation = useMutation({
-    mutationFn: async (updates: Array<{ id: string; sortOrder: number; parentItemId?: string | null }>) => {
-      return apiRequest(`/api/schedule-items/batch-sort`, "POST", { updates });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
-    },
-    onError: () => {
-      toast({ title: "Failed to reorder items", variant: "destructive" });
-    },
-  });
+  // Local session order state - resets on page refresh
+  const [sessionItemOrder, setSessionItemOrder] = useState<string[]>([]);
 
-  // Handle row drag end for reordering tasks
+  // Handle row drag end for reordering tasks (temporary, session-only)
   const handleRowDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     
@@ -222,103 +212,18 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     const activeId = active.id as string;
     const overId = over.id as string;
     
-    // Find the items
-    const activeItem = allItems.find(item => item.id === activeId);
-    const overItem = allItems.find(item => item.id === overId);
-    
-    if (!activeItem || !overItem) return;
-    
-    // Determine if we're reordering within the same parent group or moving to a different group
-    const activeParentId = activeItem.parentItemId;
-    const overParentId = overItem.parentItemId;
-    
-    // Handle moving to different parent group (drag-to-nest)
-    if (activeParentId !== overParentId) {
-      // Determine the new parent:
-      // - If dropping onto a root item, make activeItem a child of overItem
-      // - If dropping onto a child item, make activeItem a sibling (same parent as overItem)
-      const isOverItemRoot = !overItem.parentItemId;
-      const newParentId = isOverItemRoot ? overId : overItem.parentItemId;
+    // Update the local session order
+    setSessionItemOrder(currentOrder => {
+      // If order is empty, initialize from current sortableItemIds
+      const order = currentOrder.length > 0 ? [...currentOrder] : [...sortableItemIds];
       
-      // Prevent circular dependency: traverse upward from newParentId to check if activeId is an ancestor
-      const isDescendant = (potentialAncestorId: string, itemId: string | null | undefined): boolean => {
-        if (!itemId) return false;
-        if (itemId === potentialAncestorId) return true;
-        const item = allItems.find(i => i.id === itemId);
-        if (!item) return false;
-        return isDescendant(potentialAncestorId, item.parentItemId);
-      };
+      const oldIndex = order.indexOf(activeId);
+      const newIndex = order.indexOf(overId);
       
-      if (newParentId && isDescendant(activeId, newParentId)) {
-        toast({ title: "Cannot nest an item under its own descendant", variant: "destructive" });
-        return;
-      }
+      if (oldIndex === -1 || newIndex === -1) return order;
       
-      // Get current siblings in the OLD parent group to reindex after removal
-      const oldSiblings = allItems
-        .filter(item => item.parentItemId === activeParentId && item.id !== activeId)
-        .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-      
-      // Get siblings in the new parent group to determine sort order
-      const newSiblings = allItems
-        .filter(item => item.parentItemId === newParentId && item.id !== activeId)
-        .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-      
-      // Calculate insertion index:
-      // - If dropping onto a root item (making it a child), append to end
-      // - If dropping onto a child item (making it a sibling), insert after the over item
-      let insertIndex: number;
-      if (isOverItemRoot) {
-        // Dropping onto a root item = adding as last child of that parent
-        insertIndex = newSiblings.length;
-      } else {
-        // Dropping onto a child = insert after the over item in its sibling list
-        const overIndexInNewSiblings = newSiblings.findIndex(item => item.id === overId);
-        insertIndex = overIndexInNewSiblings >= 0 ? overIndexInNewSiblings + 1 : newSiblings.length;
-      }
-      
-      // Build the reordered list by inserting the active item at the calculated position
-      const reorderedNewSiblings = [...newSiblings];
-      reorderedNewSiblings.splice(insertIndex, 0, activeItem);
-      
-      // Generate updates for all items in the new sibling list with correct sort orders
-      const updates: Array<{ id: string; sortOrder: number; parentItemId?: string | null }> = 
-        reorderedNewSiblings.map((item, idx) => ({
-          id: item.id,
-          sortOrder: idx,
-          ...(item.id === activeId ? { parentItemId: newParentId || null } : {}),
-        }));
-      
-      // Reindex old siblings after removal
-      oldSiblings.forEach((item, idx) => {
-        updates.push({
-          id: item.id,
-          sortOrder: idx,
-        });
-      });
-      
-      updateSortOrderMutation.mutate(updates);
-      return;
-    }
-    
-    // Get the list of siblings (items with the same parent)
-    const siblings = allItems
-      .filter(item => item.parentItemId === activeParentId)
-      .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-    
-    const oldIndex = siblings.findIndex(item => item.id === activeId);
-    const newIndex = siblings.findIndex(item => item.id === overId);
-    
-    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
-    
-    // Reorder and generate updates
-    const reordered = arrayMove(siblings, oldIndex, newIndex);
-    const updates = reordered.map((item, index) => ({
-      id: item.id,
-      sortOrder: index,
-    }));
-    
-    updateSortOrderMutation.mutate(updates);
+      return arrayMove(order, oldIndex, newIndex);
+    });
   };
   
   const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
@@ -462,19 +367,30 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
       }
     });
 
-    // Sort parent items by sortOrder (manual ordering via drag-and-drop)
-    parents.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+    // Sort parent items by startDate (resets to date order on page refresh)
+    parents.sort((a, b) => {
+      // Items without startDate go to the end
+      if (!a.startDate && !b.startDate) return 0;
+      if (!a.startDate) return 1;
+      if (!b.startDate) return -1;
+      return new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
+    });
 
-    // Sort child items within each parent by sortOrder
+    // Sort child items within each parent by startDate
     Object.keys(children).forEach(parentId => {
-      children[parentId].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+      children[parentId].sort((a, b) => {
+        if (!a.startDate && !b.startDate) return 0;
+        if (!a.startDate) return 1;
+        if (!b.startDate) return -1;
+        return new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
+      });
     });
 
     return { parentItems: parents, childItemsByParent: children };
   }, [allItems, searchQuery]);
 
-  // Create flattened list of item IDs for SortableContext
-  const sortableItemIds = useMemo(() => {
+  // Create flattened list of item IDs for SortableContext (sorted by date initially)
+  const defaultItemIds = useMemo(() => {
     const ids: string[] = [];
     parentItems.forEach(parent => {
       ids.push(parent.id);
@@ -485,6 +401,35 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     });
     return ids;
   }, [parentItems, childItemsByParent, collapsedItems]);
+
+  // Use session order if user has dragged, otherwise use default date-sorted order
+  const sortableItemIds = useMemo(() => {
+    if (sessionItemOrder.length === 0) return defaultItemIds;
+    
+    // Filter session order to only include items that still exist
+    const validIds = new Set(defaultItemIds);
+    const filtered = sessionItemOrder.filter(id => validIds.has(id));
+    
+    // Add any new items that aren't in the session order
+    const sessionSet = new Set(filtered);
+    defaultItemIds.forEach(id => {
+      if (!sessionSet.has(id)) {
+        filtered.push(id);
+      }
+    });
+    
+    return filtered;
+  }, [sessionItemOrder, defaultItemIds]);
+
+  // Build ordered items list for rendering based on sortableItemIds
+  const orderedItems = useMemo(() => {
+    const itemMap = new Map<string, ScheduleItem>();
+    allItems.forEach(item => itemMap.set(item.id, item));
+    
+    return sortableItemIds
+      .map(id => itemMap.get(id))
+      .filter((item): item is ScheduleItem => item !== undefined);
+  }, [allItems, sortableItemIds]);
 
   // Update mutation for schedule items
   const updateItemMutation = useMutation({
@@ -1162,34 +1107,33 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
               onDragEnd={handleRowDragEnd}
             >
               <SortableContext items={sortableItemIds} strategy={verticalListSortingStrategy}>
-            {parentItems.map((parentItem, parentIdx) => {
-              const isCollapsed = collapsedItems.has(parentItem.id);
-              const childItems = childItemsByParent[parentItem.id] || [];
+            {orderedItems.map((item, idx) => {
+              const isParent = !item.parentItemId;
+              const childItems = childItemsByParent[item.id] || [];
+              const isCollapsed = collapsedItems.has(item.id);
 
               return (
-                <div key={parentItem.id}>
-                  {/* Parent item row - 40px height */}
-                  <SortableTaskRow id={parentItem.id}>
-                    {({ attributes, listeners }) => (
+                <SortableTaskRow key={item.id} id={item.id}>
+                  {({ attributes, listeners }) => (
                   <div
                     className={`h-10 flex items-center px-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer group border-b border-border`}
-                    data-testid={`row-parent-${parentItem.id}`}
+                    data-testid={`row-${isParent ? 'parent' : 'child'}-${item.id}`}
                   >
                     {/* Task name column */}
-                    <div style={{ width: columnWidths.taskName }} className="flex items-center min-w-0 flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
+                    <div style={{ width: columnWidths.taskName }} className={`flex items-center min-w-0 flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all ${!isParent ? 'pl-4' : ''}`}>
                       <div 
                         {...attributes}
                         {...listeners}
                         className="cursor-grab active:cursor-grabbing p-0.5 hover:bg-accent rounded flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                        data-testid={`drag-handle-${parentItem.id}`}
+                        data-testid={`drag-handle-${item.id}`}
                       >
                         <GripVertical className="w-3.5 h-3.5 text-muted-foreground" />
                       </div>
-                      {childItems.length > 0 && (
+                      {isParent && childItems.length > 0 && (
                         <button
-                          onClick={() => toggleCollapse(parentItem.id)}
+                          onClick={() => toggleCollapse(item.id)}
                           className="p-1 hover:bg-accent rounded flex-shrink-0"
-                          data-testid={`button-toggle-${parentItem.id}`}
+                          data-testid={`button-toggle-${item.id}`}
                         >
                           {isCollapsed ? (
                             <ChevronRight className="w-4 h-4" />
@@ -1198,15 +1142,15 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                           )}
                         </button>
                       )}
-                      {childItems.length === 0 && <div className="w-6 flex-shrink-0" />}
-                      <span className="font-medium text-sm truncate">{parentItem.name}</span>
+                      {(isParent && childItems.length === 0) && <div className="w-6 flex-shrink-0" />}
+                      <span className={`text-sm truncate ${isParent ? 'font-medium' : 'text-muted-foreground ml-1'}`}>{item.name}</span>
                     </div>
 
                     {/* Status column */}
                     {visibleColumns.status && (
                       <div style={{ width: columnWidths.status }} className="flex items-center justify-center flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
-                        {parentItem.status && (() => {
-                          const statusInfo = getStatusInfo(parentItem.status);
+                        {item.status && (() => {
+                          const statusInfo = getStatusInfo(item.status);
                           return (
                             <Badge 
                               className="text-xs px-1.5 h-5 border-0"
@@ -1226,8 +1170,8 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                     {visibleColumns.notes && (
                       <div style={{ width: columnWidths.notes }} className="flex items-center justify-center flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
                         <ActivityNotesPopover 
-                          scheduleItemId={parentItem.id} 
-                          externalNoteCount={noteCounts[parentItem.id] || 0}
+                          scheduleItemId={item.id} 
+                          externalNoteCount={noteCounts[item.id] || 0}
                         />
                       </div>
                     )}
@@ -1235,17 +1179,17 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                     {/* Completion column */}
                     {visibleColumns.completion && (
                       <div style={{ width: columnWidths.completion }} className="flex items-center justify-center flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
-                        <span className="text-xs text-muted-foreground">{parentItem.progressPercent || 0}%</span>
+                        <span className="text-xs text-muted-foreground">{item.progressPercent || 0}%</span>
                       </div>
                     )}
 
                     {/* Assignee column */}
                     {visibleColumns.assignee && (
                       <div style={{ width: columnWidths.assignee }} className="flex items-center justify-center flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
-                        {parentItem.assignedToName && (
+                        {item.assignedToName && (
                           <Avatar className="w-5 h-5">
                             <AvatarFallback className="text-[10px]">
-                              {parentItem.assignedToName.substring(0, 2).toUpperCase()}
+                              {item.assignedToName.substring(0, 2).toUpperCase()}
                             </AvatarFallback>
                           </Avatar>
                         )}
@@ -1260,59 +1204,59 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                             size="icon"
                             variant="ghost"
                             className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                            data-testid={`button-menu-${parentItem.id}`}
+                            data-testid={`button-menu-${item.id}`}
                             onClick={(e) => e.stopPropagation()}
                           >
                             <MoreVertical className="h-3.5 w-3.5" />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" data-testid={`menu-${parentItem.id}`}>
-                          <DropdownMenuItem onClick={() => handleEditItem(parentItem)} data-testid="menu-edit">
+                        <DropdownMenuContent align="end" data-testid={`menu-${item.id}`}>
+                          <DropdownMenuItem onClick={() => handleEditItem(item)} data-testid="menu-edit">
                             <Edit className="mr-2 h-4 w-4" />
                             Edit
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleViewItem(parentItem)} data-testid="menu-view">
+                          <DropdownMenuItem onClick={() => handleViewItem(item)} data-testid="menu-view">
                             <Eye className="mr-2 h-4 w-4" />
                             View
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleDuplicateItem(parentItem)} data-testid="menu-duplicate">
+                          <DropdownMenuItem onClick={() => handleDuplicateItem(item)} data-testid="menu-duplicate">
                             <Copy className="mr-2 h-4 w-4" />
                             Duplicate
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleToggleComplete(parentItem)} data-testid="menu-complete">
+                          <DropdownMenuItem onClick={() => handleToggleComplete(item)} data-testid="menu-complete">
                             <Check className="mr-2 h-4 w-4" />
-                            {parentItem.status === "completed" ? "Mark Incomplete" : "Mark Complete"}
+                            {item.status === "completed" ? "Mark Incomplete" : "Mark Complete"}
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             asChild
                             onSelect={(e) => e.preventDefault()}
                             data-testid="menu-colour"
-                            onMouseEnter={() => handleColorPickerMouseEnter(parentItem.id)}
+                            onMouseEnter={() => handleColorPickerMouseEnter(item.id)}
                             onMouseLeave={handleColorPickerMouseLeave}
                           >
                             <div className="flex items-center cursor-pointer">
                               <Palette className="mr-2 h-4 w-4" />
                               <span className="flex-1">Colour</span>
                               <ScheduleColorPicker
-                                currentColor={parentItem.color}
-                                assigneeId={parentItem.assignedToId}
-                                assigneeName={parentItem.assignedToName}
+                                currentColor={item.color}
+                                assigneeId={item.assignedToId}
+                                assigneeName={item.assignedToName}
                                 onColorChange={(color) => {
-                                  handleColorChange(parentItem, color);
+                                  handleColorChange(item, color);
                                   setColorPickerOpen(null);
                                 }}
                                 align="end"
-                                open={colorPickerOpen === parentItem.id}
-                                onMouseEnter={() => handleColorPickerMouseEnter(parentItem.id)}
+                                open={colorPickerOpen === item.id}
+                                onMouseEnter={() => handleColorPickerMouseEnter(item.id)}
                                 onMouseLeave={handleColorPickerMouseLeave}
                                 triggerButton={
-                                  <div className="w-4 h-4 rounded border ml-2" style={{ backgroundColor: parentItem.color || '#9ca3af' }} />
+                                  <div className="w-4 h-4 rounded border ml-2" style={{ backgroundColor: item.color || '#9ca3af' }} />
                                 }
                               />
                             </div>
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem onClick={() => handleDeleteItem(parentItem)} className="text-destructive" data-testid="menu-delete">
+                          <DropdownMenuItem onClick={() => handleDeleteItem(item)} className="text-destructive" data-testid="menu-delete">
                             <Trash2 className="mr-2 h-4 w-4" />
                             Delete
                           </DropdownMenuItem>
@@ -1320,152 +1264,8 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                       </DropdownMenu>
                     </div>
                   </div>
-                    )}
-                  </SortableTaskRow>
-
-                  {/* Child item rows */}
-                  {!isCollapsed && childItems.map((childItem, childIdx) => (
-                      <SortableTaskRow key={childItem.id} id={childItem.id}>
-                        {({ attributes, listeners }) => (
-                      <div
-                        className={`h-10 flex items-center px-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer border-b border-border group`}
-                        data-testid={`row-child-${childItem.id}`}
-                      >
-                        {/* Task name column */}
-                        <div style={{ width: columnWidths.taskName }} className="flex items-center min-w-0 pl-4 flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
-                          <div 
-                            {...attributes}
-                            {...listeners}
-                            className="cursor-grab active:cursor-grabbing p-0.5 hover:bg-accent rounded flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                            data-testid={`drag-handle-${childItem.id}`}
-                          >
-                            <GripVertical className="w-3.5 h-3.5 text-muted-foreground" />
-                          </div>
-                          <span className="text-sm text-muted-foreground truncate ml-1">{childItem.name}</span>
-                        </div>
-
-                        {/* Status column */}
-                        {visibleColumns.status && (
-                          <div style={{ width: columnWidths.status }} className="flex items-center justify-center flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
-                            {childItem.status && (() => {
-                              const statusInfo = getStatusInfo(childItem.status);
-                              return (
-                                <Badge 
-                                  className="text-xs px-1.5 h-5 border-0"
-                                  style={{
-                                    backgroundColor: statusInfo.color,
-                                    color: '#ffffff'
-                                  }}
-                                >
-                                  {statusInfo.name}
-                                </Badge>
-                              );
-                            })()}
-                          </div>
-                        )}
-
-                        {/* Notes column */}
-                        {visibleColumns.notes && (
-                          <div style={{ width: columnWidths.notes }} className="flex items-center justify-center flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
-                            <ActivityNotesPopover 
-                              scheduleItemId={childItem.id} 
-                              externalNoteCount={noteCounts[childItem.id] || 0}
-                            />
-                          </div>
-                        )}
-
-                        {/* Completion column */}
-                        {visibleColumns.completion && (
-                          <div style={{ width: columnWidths.completion }} className="flex items-center justify-center flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
-                            <span className="text-xs text-muted-foreground">{childItem.progressPercent || 0}%</span>
-                          </div>
-                        )}
-
-                        {/* Assignee column */}
-                        {visibleColumns.assignee && (
-                          <div style={{ width: columnWidths.assignee }} className="flex items-center justify-center flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
-                            {childItem.assignedToName && (
-                              <Avatar className="w-5 h-5">
-                                <AvatarFallback className="text-[10px]">
-                                  {childItem.assignedToName.substring(0, 2).toUpperCase()}
-                                </AvatarFallback>
-                              </Avatar>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Menu column */}
-                        <div style={{ width: columnWidths.menu }} className="flex items-center justify-center flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                                data-testid={`button-menu-${childItem.id}`}
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <MoreVertical className="h-3.5 w-3.5" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" data-testid={`menu-${childItem.id}`}>
-                              <DropdownMenuItem onClick={() => handleEditItem(childItem)} data-testid="menu-edit">
-                                <Edit className="mr-2 h-4 w-4" />
-                                Edit
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleViewItem(childItem)} data-testid="menu-view">
-                                <Eye className="mr-2 h-4 w-4" />
-                                View
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleDuplicateItem(childItem)} data-testid="menu-duplicate">
-                                <Copy className="mr-2 h-4 w-4" />
-                                Duplicate
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleToggleComplete(childItem)} data-testid="menu-complete">
-                                <Check className="mr-2 h-4 w-4" />
-                                {childItem.status === "completed" ? "Mark Incomplete" : "Mark Complete"}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                asChild
-                                onSelect={(e) => e.preventDefault()}
-                                data-testid="menu-colour"
-                                onMouseEnter={() => handleColorPickerMouseEnter(childItem.id)}
-                                onMouseLeave={handleColorPickerMouseLeave}
-                              >
-                                <div className="flex items-center cursor-pointer">
-                                  <Palette className="mr-2 h-4 w-4" />
-                                  <span className="flex-1">Colour</span>
-                                  <ScheduleColorPicker
-                                    currentColor={childItem.color}
-                                    assigneeId={childItem.assignedToId}
-                                    assigneeName={childItem.assignedToName}
-                                    onColorChange={(color) => {
-                                      handleColorChange(childItem, color);
-                                      setColorPickerOpen(null);
-                                    }}
-                                    align="end"
-                                    open={colorPickerOpen === childItem.id}
-                                    onMouseEnter={() => handleColorPickerMouseEnter(childItem.id)}
-                                    onMouseLeave={handleColorPickerMouseLeave}
-                                    triggerButton={
-                                      <div className="w-4 h-4 rounded border ml-2" style={{ backgroundColor: childItem.color || '#9ca3af' }} />
-                                    }
-                                  />
-                                </div>
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem onClick={() => handleDeleteItem(childItem)} className="text-destructive" data-testid="menu-delete">
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Delete
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      </div>
-                        )}
-                      </SortableTaskRow>
-                  ))}
-                </div>
+                  )}
+                </SortableTaskRow>
               );
             })}
               </SortableContext>
