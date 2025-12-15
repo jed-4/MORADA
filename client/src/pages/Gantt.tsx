@@ -123,6 +123,8 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
   } = useScheduleView();
   
   const timelineRef = useRef<HTMLDivElement>(null);
+  const leftPanelRef = useRef<HTMLDivElement>(null);
+  const isScrollSyncing = useRef(false);
   const [zoomLevel, setZoomLevel] = useState<ZoomLevel>('day');
   const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set());
   const [dragging, setDragging] = useState<{
@@ -751,6 +753,25 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     });
   };
 
+  // Scroll synchronization between left panel and timeline
+  const handleLeftPanelScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    if (isScrollSyncing.current) return;
+    isScrollSyncing.current = true;
+    if (timelineRef.current) {
+      timelineRef.current.scrollTop = e.currentTarget.scrollTop;
+    }
+    requestAnimationFrame(() => { isScrollSyncing.current = false; });
+  };
+
+  const handleTimelineScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    if (isScrollSyncing.current) return;
+    isScrollSyncing.current = true;
+    if (leftPanelRef.current) {
+      leftPanelRef.current.scrollTop = e.currentTarget.scrollTop;
+    }
+    requestAnimationFrame(() => { isScrollSyncing.current = false; });
+  };
+
   // Menu action handlers
   const handleEditItem = (item: ScheduleItem) => {
     if (onEditItem) {
@@ -961,7 +982,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
           </div>
           
           {/* Task rows */}
-          <div className="flex-1 overflow-y-auto">
+          <div ref={leftPanelRef} onScroll={handleLeftPanelScroll} className="flex-1 overflow-y-auto">
             {parentItems.map((parentItem, parentIdx) => {
               const isCollapsed = collapsedItems.has(parentItem.id);
               const childItems = childItemsByParent[parentItem.id] || [];
@@ -1269,6 +1290,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
         {/* Timeline Scroll Container */}
         <div
           ref={timelineRef}
+          onScroll={handleTimelineScroll}
           className="flex-1 overflow-x-auto overflow-y-auto relative"
           style={{ scrollbarGutter: 'stable' }}
         >
