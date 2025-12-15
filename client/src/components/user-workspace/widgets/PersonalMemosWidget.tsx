@@ -16,7 +16,7 @@ interface Memo {
   updatedAt?: string;
 }
 
-export default function PersonalMemosWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
+export default function PersonalMemosWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId }: WidgetProps) {
   const maxMemos = widget.config?.maxMemos || 5;
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const [configMaxMemos, setConfigMaxMemos] = useState(maxMemos);
@@ -27,16 +27,12 @@ export default function PersonalMemosWidget({ widget, onUpdate, isConfiguring, o
     setConfigMaxMemos(widget.config?.maxMemos || 5);
   }, [widget.title, widget.config]);
 
-  const { data: currentUser } = useQuery<{ id: string }>({
-    queryKey: ["/api/user"],
-  });
-
   const { data: memos = [], isLoading } = useQuery<Memo[]>({
-    queryKey: ["/api/memos", currentUser?.id],
+    queryKey: ["/api/memos", userId],
     queryFn: async () => {
-      if (!currentUser?.id) return [];
+      if (!userId) return [];
       try {
-        const response = await fetch(`/api/memos?userId=${currentUser.id}`, {
+        const response = await fetch(`/api/memos?userId=${userId}`, {
           credentials: 'include'
         });
         if (!response.ok) return [];
@@ -45,7 +41,7 @@ export default function PersonalMemosWidget({ widget, onUpdate, isConfiguring, o
         return [];
       }
     },
-    enabled: !!currentUser?.id,
+    enabled: !!userId,
   });
 
   const sortedMemos = [...memos].sort((a, b) => {

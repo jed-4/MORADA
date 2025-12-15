@@ -19,7 +19,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Timesheet } from "@shared/schema";
 
-export default function PersonalQuickActionsWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
+export default function PersonalQuickActionsWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId }: WidgetProps) {
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -27,10 +27,6 @@ export default function PersonalQuickActionsWidget({ widget, onUpdate, isConfigu
   useEffect(() => {
     setEditingTitle(widget.title);
   }, [widget.title]);
-
-  const { data: currentUser } = useQuery<{ id: string }>({
-    queryKey: ["/api/user"],
-  });
 
   const { data: activeTimesheet } = useQuery<Timesheet | null>({
     queryKey: ["/api/timesheets/active"],
@@ -88,7 +84,7 @@ export default function PersonalQuickActionsWidget({ widget, onUpdate, isConfigu
       icon: Timer,
       color: 'text-blue-600',
       bgColor: 'bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30',
-      onClick: () => setLocation(`/users/${currentUser?.id}/time`),
+      onClick: () => setLocation(`/users/${userId}/time`),
     },
     {
       id: 'new-task',

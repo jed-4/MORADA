@@ -20,7 +20,7 @@ interface DeadlineItem {
   daysUntil: number;
 }
 
-export default function CrossProjectDeadlinesWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
+export default function CrossProjectDeadlinesWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId }: WidgetProps) {
   const maxItems = widget.config?.maxItems || 10;
   const daysAhead = widget.config?.daysAhead || 14;
   const [editingTitle, setEditingTitle] = useState(widget.title);
@@ -34,21 +34,17 @@ export default function CrossProjectDeadlinesWidget({ widget, onUpdate, isConfig
     setConfigDaysAhead(widget.config?.daysAhead || 14);
   }, [widget.title, widget.config]);
 
-  const { data: currentUser } = useQuery<{ id: string }>({
-    queryKey: ["/api/user"],
-  });
-
   const { data: tasks = [] } = useQuery<Task[]>({
-    queryKey: ["/api/tasks", { assigneeId: currentUser?.id }],
+    queryKey: ["/api/tasks", { assigneeId: userId }],
     queryFn: async () => {
-      if (!currentUser?.id) return [];
-      const response = await fetch(`/api/tasks?assigneeId=${currentUser.id}`, {
+      if (!userId) return [];
+      const response = await fetch(`/api/tasks?assigneeId=${userId}`, {
         credentials: 'include'
       });
       if (!response.ok) throw new Error('Failed to fetch tasks');
       return response.json();
     },
-    enabled: !!currentUser?.id,
+    enabled: !!userId,
   });
 
   const { data: milestones = [] } = useQuery<Milestone[]>({
@@ -58,12 +54,12 @@ export default function CrossProjectDeadlinesWidget({ widget, onUpdate, isConfig
       if (!response.ok) return [];
       return response.json();
     },
-    enabled: !!currentUser?.id,
+    enabled: !!userId,
   });
 
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
-    enabled: !!currentUser?.id,
+    enabled: !!userId,
   });
 
   const projectMap = new Map(projects.map(p => [p.id, p]));

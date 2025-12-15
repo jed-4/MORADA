@@ -8,7 +8,7 @@ import { WidgetProps } from "@/types/widgets";
 import { useQuery } from "@tanstack/react-query";
 import { type Task, type Timesheet } from "@shared/schema";
 
-export default function PersonalMetricsWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
+export default function PersonalMetricsWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId }: WidgetProps) {
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const weeklyHoursTarget = widget.config?.weeklyHoursTarget || 40;
   const [configWeeklyTarget, setConfigWeeklyTarget] = useState(weeklyHoursTarget);
@@ -18,34 +18,30 @@ export default function PersonalMetricsWidget({ widget, onUpdate, isConfiguring,
     setConfigWeeklyTarget(widget.config?.weeklyHoursTarget || 40);
   }, [widget.title, widget.config]);
 
-  const { data: currentUser } = useQuery<{ id: string }>({
-    queryKey: ["/api/user"],
-  });
-
   const { data: tasks = [] } = useQuery<Task[]>({
-    queryKey: ["/api/tasks", { assigneeId: currentUser?.id }],
+    queryKey: ["/api/tasks", { assigneeId: userId }],
     queryFn: async () => {
-      if (!currentUser?.id) return [];
-      const response = await fetch(`/api/tasks?assigneeId=${currentUser.id}`, {
+      if (!userId) return [];
+      const response = await fetch(`/api/tasks?assigneeId=${userId}`, {
         credentials: 'include'
       });
       if (!response.ok) throw new Error('Failed to fetch tasks');
       return response.json();
     },
-    enabled: !!currentUser?.id,
+    enabled: !!userId,
   });
 
   const { data: timesheets = [] } = useQuery<Timesheet[]>({
-    queryKey: ["/api/timesheets", { userId: currentUser?.id }],
+    queryKey: ["/api/timesheets", { odinguserId: userId }],
     queryFn: async () => {
-      if (!currentUser?.id) return [];
-      const response = await fetch(`/api/timesheets?userId=${currentUser.id}`, {
+      if (!userId) return [];
+      const response = await fetch(`/api/timesheets?userId=${userId}`, {
         credentials: 'include'
       });
       if (!response.ok) return [];
       return response.json();
     },
-    enabled: !!currentUser?.id,
+    enabled: !!userId,
   });
 
   const today = new Date();

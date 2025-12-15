@@ -50,6 +50,7 @@ import PersonalWidgetContainer from "./widgets/PersonalWidgetContainer";
 interface UserOverviewProps {
   user: User;
   isOwnPage: boolean;
+  currentUserId?: string;
 }
 
 interface DashboardView {
@@ -78,13 +79,15 @@ function SortableWidget({
   onUpdate, 
   onRemove, 
   isConfiguring, 
-  onConfigure 
+  onConfigure,
+  userId
 }: { 
   widget: Widget; 
   onUpdate: (widget: Widget) => void;
   onRemove: (id: string) => void;
   isConfiguring: boolean;
   onConfigure: (id: string | null) => void;
+  userId?: string;
 }) {
   const {
     attributes,
@@ -132,13 +135,14 @@ function SortableWidget({
           onRemove={onRemove}
           isConfiguring={isConfiguring}
           onCloseConfig={() => onConfigure(null)}
+          userId={userId}
         />
       </PersonalWidgetContainer>
     </div>
   );
 }
 
-export default function UserOverview({ user, isOwnPage }: UserOverviewProps) {
+export default function UserOverview({ user, isOwnPage, currentUserId }: UserOverviewProps) {
   const [widgets, setWidgets] = useState<Widget[]>(DEFAULT_WIDGETS);
   const [savedViews, setSavedViews] = useState<DashboardView[]>([DEFAULT_VIEW]);
   const [activeViewId, setActiveViewId] = useState("overview");
@@ -399,6 +403,7 @@ export default function UserOverview({ user, isOwnPage }: UserOverviewProps) {
                   onRemove={removeWidget}
                   isConfiguring={configuringWidget === widget.id}
                   onConfigure={setConfiguringWidget}
+                  userId={currentUserId}
                 />
               ))}
               

@@ -19,7 +19,7 @@ interface CalendarEvent {
   projectId?: string;
 }
 
-export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
+export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId }: WidgetProps) {
   const maxEvents = widget.config?.maxEvents || 8;
   const daysAhead = widget.config?.daysAhead || 7;
   const [editingTitle, setEditingTitle] = useState(widget.title);
@@ -33,21 +33,17 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
     setConfigDaysAhead(widget.config?.daysAhead || 7);
   }, [widget.title, widget.config]);
 
-  const { data: currentUser } = useQuery<{ id: string }>({
-    queryKey: ["/api/user"],
-  });
-
   const { data: tasks = [], isLoading: tasksLoading } = useQuery<any[]>({
-    queryKey: ["/api/tasks", { assigneeId: currentUser?.id }],
+    queryKey: ["/api/tasks", { assigneeId: userId }],
     queryFn: async () => {
-      if (!currentUser?.id) return [];
-      const response = await fetch(`/api/tasks?assigneeId=${currentUser.id}`, {
+      if (!userId) return [];
+      const response = await fetch(`/api/tasks?assigneeId=${userId}`, {
         credentials: 'include'
       });
       if (!response.ok) return [];
       return response.json();
     },
-    enabled: !!currentUser?.id,
+    enabled: !!userId,
   });
 
   const startDate = new Date();

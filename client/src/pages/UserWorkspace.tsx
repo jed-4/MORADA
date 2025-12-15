@@ -87,7 +87,7 @@ export default function UserWorkspace() {
     
     switch (activeTab) {
       case "overview":
-        return <UserOverview user={user} isOwnPage={isOwnPage} />;
+        return <UserOverview user={user} isOwnPage={isOwnPage} currentUserId={currentUser?.id ? String(currentUser.id) : undefined} />;
       case "calendar":
         return <UserCalendar user={user} isOwnPage={isOwnPage} />;
       case "tasks":
@@ -109,7 +109,7 @@ export default function UserWorkspace() {
         }
         return <UserSettings />;
       default:
-        return <UserOverview user={user} isOwnPage={isOwnPage} />;
+        return <UserOverview user={user} isOwnPage={isOwnPage} currentUserId={currentUser?.id ? String(currentUser.id) : undefined} />;
     }
   };
 

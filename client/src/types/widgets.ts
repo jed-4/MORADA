@@ -31,6 +31,7 @@ export interface WidgetProps {
   onRemove?: (widgetId: string) => void;
   isConfiguring?: boolean;
   onCloseConfig?: () => void;
+  userId?: string;
 }
 
 export interface ProjectDashboard {

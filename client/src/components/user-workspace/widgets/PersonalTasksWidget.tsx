@@ -9,7 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import { type Task, type Project } from "@shared/schema";
 import { useLocation } from "wouter";
 
-export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
+export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId }: WidgetProps) {
   const maxTasks = widget.config?.maxTasks || 8;
   const showFilter = widget.config?.showFilter ?? 'all';
   const [editingTitle, setEditingTitle] = useState(widget.title);
@@ -23,21 +23,17 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
     setConfigShowFilter(widget.config?.showFilter ?? 'all');
   }, [widget.title, widget.config]);
 
-  const { data: currentUser } = useQuery<{ id: string }>({
-    queryKey: ["/api/user"],
-  });
-
   const { data: tasks = [], isLoading } = useQuery<Task[]>({
-    queryKey: ["/api/tasks", { assigneeId: currentUser?.id }],
+    queryKey: ["/api/tasks", { assigneeId: userId }],
     queryFn: async () => {
-      if (!currentUser?.id) return [];
-      const response = await fetch(`/api/tasks?assigneeId=${currentUser.id}`, {
+      if (!userId) return [];
+      const response = await fetch(`/api/tasks?assigneeId=${userId}`, {
         credentials: 'include'
       });
       if (!response.ok) throw new Error('Failed to fetch tasks');
       return response.json();
     },
-    enabled: !!currentUser?.id,
+    enabled: !!userId,
   });
 
   const { data: projects = [] } = useQuery<Project[]>({
