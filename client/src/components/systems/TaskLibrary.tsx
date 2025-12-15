@@ -307,6 +307,13 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
       // Include recurring fields if enabled
       isRecurringTemplate: templateForm.isRecurringTemplate,
       recurringSchedule: recurringScheduleData,
+      // IMPORTANT: Set recurringDays from dueDayOfWeek when isRecurringTemplate is enabled
+      // The backend uses recurringDays to determine which days to generate tasks
+      recurringDays: templateForm.isRecurringTemplate && templateForm.frequency === "weekly" 
+        ? templateForm.dueDayOfWeek 
+        : templateForm.isRecurringTemplate && templateForm.frequency === "daily"
+          ? [0, 1, 2, 3, 4, 5, 6] // Daily = all days
+          : [],
       defaultRoleId: templateForm.isRecurringTemplate ? (templateForm.defaultRoleId || null) : null,
       // Include assignee fields
       assigneeType: templateForm.assigneeType,
