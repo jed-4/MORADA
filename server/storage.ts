@@ -191,7 +191,7 @@ export interface IStorage {
   deleteNote(id: string): Promise<boolean>;
 
   // Tasks CRUD operations (specific to type="task")
-  getTasks(projectId?: string, status?: string, businessTasks?: boolean): Promise<Task[]>;
+  getTasks(projectId?: string, status?: string, businessTasks?: boolean, assigneeId?: string): Promise<Task[]>;
   getTasksByUser(userId: string, companyId: string): Promise<Task[]>;
   getTask(id: string): Promise<Task | undefined>;
   createTask(task: InsertTask): Promise<Task>;
@@ -6173,7 +6173,7 @@ export class DbStorage implements IStorage {
   }
 
   // Tasks CRUD operations
-  async getTasks(projectId?: string, status?: string, businessTasks?: boolean): Promise<Task[]> {
+  async getTasks(projectId?: string, status?: string, businessTasks?: boolean, assigneeId?: string): Promise<Task[]> {
     const conditions = [eq(schema.notes.type, "task")];
     
     if (businessTasks) {
@@ -6183,6 +6183,9 @@ export class DbStorage implements IStorage {
     }
     if (status) {
       conditions.push(eq(schema.notes.status, status));
+    }
+    if (assigneeId) {
+      conditions.push(eq(schema.notes.assigneeId, assigneeId));
     }
     
     const tasks = await db.select().from(schema.notes).where(
