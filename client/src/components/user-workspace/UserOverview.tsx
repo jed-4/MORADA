@@ -60,12 +60,14 @@ interface DashboardView {
 }
 
 const DEFAULT_WIDGETS: Widget[] = [
-  { id: "1", type: "personalQuickActions", title: "Quick Actions", size: "sm" },
-  { id: "2", type: "personalMetrics", title: "My Metrics", size: "md" },
+  { id: "1", type: "myDay", title: "My Day", size: "md" },
+  { id: "2", type: "personalQuickActions", title: "Quick Actions", size: "sm" },
   { id: "3", type: "personalTasks", title: "My Tasks", size: "md" },
-  { id: "4", type: "crossProjectDeadlines", title: "Upcoming Deadlines", size: "md" },
-  { id: "5", type: "personalCalendar", title: "My Calendar", size: "md" },
+  { id: "4", type: "personalReminders", title: "My Reminders", size: "md" },
+  { id: "5", type: "crossProjectDeadlines", title: "Upcoming Deadlines", size: "md" },
   { id: "6", type: "personalMemos", title: "My Memos", size: "md" },
+  { id: "7", type: "personalCalendar", title: "My Calendar", size: "md" },
+  { id: "8", type: "personalAISummary", title: "AI Summary", size: "md" },
 ];
 
 const DEFAULT_VIEW: DashboardView = {

@@ -15658,6 +15658,66 @@ Keep each item under 15 words. Be specific and practical. Don't include empty ar
     }
   });
 
+  // Personal AI Daily Summary endpoint
+  app.post("/api/ai/daily-summary", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const { taskSummary } = req.body;
+
+      // Generate personalized AI summary
+      const OpenAI = (await import('openai')).default;
+      const openai = new OpenAI({
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+      });
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `You are a friendly productivity assistant for a construction project manager. Generate a brief, encouraging daily summary. Return JSON with:
+- summary: A 1-2 sentence overview of their day (friendly and motivating)
+- highlights: Array of 2-3 positive observations or accomplishments
+- suggestions: Array of 2-3 actionable tips to be more productive today
+Keep language casual and encouraging. Focus on what they can accomplish.`
+          },
+          {
+            role: "user",
+            content: `Daily summary for a team member:
+- Active tasks: ${taskSummary?.activeTasks || 0}
+- Overdue tasks: ${taskSummary?.overdueTasks || 0}
+- Completed this week: ${taskSummary?.completedThisWeek || 0}
+- Upcoming tasks: ${taskSummary?.upcomingTasks?.map((t: any) => t.title).join(', ') || 'none scheduled'}`
+          }
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      const aiResponse = JSON.parse(completion.choices[0]?.message?.content || '{}');
+      
+      res.json({
+        summary: aiResponse.summary || "Have a productive day!",
+        highlights: aiResponse.highlights || [],
+        suggestions: aiResponse.suggestions || [],
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      console.error("Personal AI Summary error:", error);
+      // Return a fallback response instead of error for better UX
+      res.json({
+        summary: "Ready to tackle today's tasks! Focus on your priorities and you'll have a great day.",
+        highlights: ["Your workspace is organized and ready", "New day, new opportunities"],
+        suggestions: ["Start with your most important task", "Take short breaks to stay focused"],
+        generatedAt: new Date().toISOString(),
+      });
+    }
+  });
+
   const httpServer = createServer(app);
 
   // Setup Socket.io for real-time messaging with session authentication

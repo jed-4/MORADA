@@ -4,7 +4,11 @@ import {
   Calendar, 
   Target,
   Zap,
-  FileText
+  FileText,
+  Bell,
+  Sun,
+  Activity,
+  Sparkles
 } from "lucide-react";
 import { WidgetDefinition } from "@/types/widgets";
 import PersonalTasksWidget from "./PersonalTasksWidget";
@@ -13,6 +17,10 @@ import CrossProjectDeadlinesWidget from "./CrossProjectDeadlinesWidget";
 import PersonalQuickActionsWidget from "./PersonalQuickActionsWidget";
 import PersonalMemosWidget from "./PersonalMemosWidget";
 import PersonalCalendarWidget from "./PersonalCalendarWidget";
+import PersonalRemindersWidget from "./PersonalRemindersWidget";
+import MyDayWidget from "./MyDayWidget";
+import PersonalActivityWidget from "./PersonalActivityWidget";
+import PersonalAISummaryWidget from "./PersonalAISummaryWidget";
 
 export const personalWidgetRegistry: Record<string, WidgetDefinition> = {
   personalTasks: {
@@ -66,6 +74,42 @@ export const personalWidgetRegistry: Record<string, WidgetDefinition> = {
     description: "Quick notes and personal reminders",
     icon: FileText,
     component: PersonalMemosWidget,
+    defaultSize: "md",
+    configurable: true,
+  },
+  personalReminders: {
+    type: "personalReminders",
+    name: "My Reminders",
+    description: "Personal reminders and alerts you've set",
+    icon: Bell,
+    component: PersonalRemindersWidget,
+    defaultSize: "md",
+    configurable: true,
+  },
+  myDay: {
+    type: "myDay",
+    name: "My Day",
+    description: "Today's tasks, reminders, and schedule at a glance",
+    icon: Sun,
+    component: MyDayWidget,
+    defaultSize: "md",
+    configurable: true,
+  },
+  personalActivity: {
+    type: "personalActivity",
+    name: "My Activity",
+    description: "Activity on your tasks and items you're watching",
+    icon: Activity,
+    component: PersonalActivityWidget,
+    defaultSize: "md",
+    configurable: true,
+  },
+  personalAISummary: {
+    type: "personalAISummary",
+    name: "AI Summary",
+    description: "AI-powered daily summary and productivity insights",
+    icon: Sparkles,
+    component: PersonalAISummaryWidget,
     defaultSize: "md",
     configurable: true,
   },
