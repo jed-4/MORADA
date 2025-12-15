@@ -12499,7 +12499,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Get existing items count for sort order offset
-      const existingItems = await storage.getScheduleItemsByScheduleId(scheduleId);
+      const existingItems = await storage.getScheduleItems(scheduleId);
       const sortOrderOffset = existingItems.length;
 
       const createdItems = [];
