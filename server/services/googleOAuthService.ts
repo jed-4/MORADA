@@ -8,7 +8,7 @@ const SCOPES = [
   'https://www.googleapis.com/auth/calendar.readonly',
   'https://www.googleapis.com/auth/calendar.events',
   'https://www.googleapis.com/auth/userinfo.email',
-  'https://www.googleapis.com/auth/gmail.send', // Send emails on behalf of user
+  // 'https://www.googleapis.com/auth/gmail.send', // Temporarily disabled - requires Google verification
 ];
 
 export class GoogleOAuthService {
