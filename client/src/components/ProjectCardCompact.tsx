@@ -115,26 +115,9 @@ export default function ProjectCardCompact({
 
           {/* Title & Status */}
           <div className="flex-1 min-w-0">
-            <div className="flex items-start gap-1">
-              <h3 className="text-sm leading-5 truncate flex-1 text-foreground font-medium">
-                {project.name}
-              </h3>
-              
-              {/* Status chip - only shown when grouped by phase (column already shows phase, so show status) */}
-              {/* When grouped by status, show NO chips (column already shows the status) */}
-              {groupBy === "phase" && statusOption && (
-                <Badge 
-                  className="text-[10px] px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
-                  style={{
-                    backgroundColor: `${statusOption.color}15`,
-                    color: statusOption.color,
-                    borderColor: `${statusOption.color}30`
-                  }}
-                >
-                  {statusOption.name}
-                </Badge>
-              )}
-            </div>
+            <h3 className="text-sm leading-5 truncate text-foreground font-medium">
+              {project.name}
+            </h3>
 
             {/* Custom fields - small line below title */}
             {(visibleFields.client || visibleFields.budget || visibleFields.progress) && (
@@ -166,17 +149,31 @@ export default function ProjectCardCompact({
           )}
         </div>
 
-        {/* Bottom row: Due date & Foreman */}
+        {/* Bottom row: Status/Due date & Foreman */}
         <div className="flex items-center justify-between mt-1">
-          {/* Due date - only show when enabled and project has end date */}
-          {visibleFields.dueDate && project.endDate ? (
-            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 rounded-full bg-background border-border/50 no-default-hover-elevate no-default-active-elevate">
-              <Calendar className="h-2 w-2 mr-0.5" />
-              {format(new Date(project.endDate), 'MMM d')}
-            </Badge>
-          ) : (
-            <div />
-          )}
+          {/* Left side: Status chip (phase grouping) or Due date */}
+          <div className="flex items-center gap-1.5">
+            {/* Status chip - only shown when grouped by phase */}
+            {groupBy === "phase" && statusOption && (
+              <Badge 
+                className="text-[10px] px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
+                style={{
+                  backgroundColor: `${statusOption.color}15`,
+                  color: statusOption.color,
+                  borderColor: `${statusOption.color}30`
+                }}
+              >
+                {statusOption.name}
+              </Badge>
+            )}
+            {/* Due date */}
+            {visibleFields.dueDate && project.endDate && (
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 rounded-full bg-background border-border/50 no-default-hover-elevate no-default-active-elevate">
+                <Calendar className="h-2 w-2 mr-0.5" />
+                {format(new Date(project.endDate), 'MMM d')}
+              </Badge>
+            )}
+          </div>
 
           {/* Foreman avatar */}
           {visibleFields.foreman && project.foreman ? (

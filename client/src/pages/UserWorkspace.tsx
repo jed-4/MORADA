@@ -54,14 +54,15 @@ export default function UserWorkspace() {
   
   // isOwnPage: true when viewing own profile
   // Wait for currentUser to load before making this determination for non-"me" routes
-  const isOwnPage = isMeRoute || (!isCurrentUserLoading && currentUser?.id === userId);
+  // Convert both to strings for comparison since userId from URL is a string and currentUser.id is a number
+  const isOwnPage = isMeRoute || (!isCurrentUserLoading && String(currentUser?.id) === String(userId));
   
   // isOwnPageDetermined: true when we can definitively say whether it's own page or not
   // For "me" route, it's always determined. For other routes, wait for currentUser to load.
   const isOwnPageDetermined = isMeRoute || !isCurrentUserLoading;
   
   // For settings tab: only show "not available" when we're certain it's NOT own page
-  const isDefinitelyNotOwnPage = !isCurrentUserLoading && currentUser && currentUser.id !== userId && !isMeRoute;
+  const isDefinitelyNotOwnPage = !isCurrentUserLoading && currentUser && String(currentUser.id) !== String(userId) && !isMeRoute;
 
   // Determine active tab based on URL
   const activeTab = useMemo(() => {
