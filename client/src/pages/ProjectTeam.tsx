@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { UserPlus, Trash2, Search, Users, Building2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { getUserDisplayName, getUserInitials } from "@/lib/utils";
 import AssignUserDialog from "@/components/AssignUserDialog";
 
 export default function ProjectTeam() {
@@ -96,9 +97,6 @@ export default function ProjectTeam() {
     }
   };
 
-  const getInitials = (firstName?: string, lastName?: string) => {
-    return `${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase();
-  };
 
   const renderUserTable = (users: any[], type: "team" | "supplier") => (
     <Table>
@@ -129,11 +127,11 @@ export default function ProjectTeam() {
               <div className="flex items-center gap-3">
                 <Avatar className="h-8 w-8">
                   <AvatarFallback className="text-xs bg-[#bba7db]/10 text-[#bba7db]">
-                    {getInitials(user.firstName, user.lastName)}
+                    {getUserInitials(user)}
                   </AvatarFallback>
                 </Avatar>
                 <span className="font-medium text-sm">
-                  {user.firstName} {user.lastName}
+                  {getUserDisplayName(user)}
                 </span>
               </div>
             </TableCell>

@@ -92,7 +92,7 @@ export default function PersonalCalendar() {
   });
 
   const hasTeamCalendarPermission = permissions.some(
-    (p: any) => p.permission?.key === "calendar.view_team_calendars"
+    (p: any) => p.permission?.key === "projects.team_calendars"
   );
 
   // Fetch team members (other users in company)

@@ -13,6 +13,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { getUserDisplayName, getUserInitials } from "@/lib/utils";
 import { UserPlus } from "lucide-react";
 
 interface AssignUserDialogProps {
@@ -79,9 +80,6 @@ export default function AssignUserDialog({
     assignUserMutation.mutate(userId);
   };
 
-  const getInitials = (firstName?: string, lastName?: string) => {
-    return `${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase();
-  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -112,12 +110,12 @@ export default function AssignUserDialog({
                     <div className="flex items-center gap-3">
                       <Avatar className="h-8 w-8">
                         <AvatarFallback className="text-xs">
-                          {getInitials(user.firstName, user.lastName)}
+                          {getUserInitials(user)}
                         </AvatarFallback>
                       </Avatar>
                       <div>
                         <p className="font-medium text-sm">
-                          {user.firstName} {user.lastName}
+                          {getUserDisplayName(user)}
                         </p>
                         <p className="text-xs text-muted-foreground">{user.email}</p>
                       </div>
@@ -157,12 +155,12 @@ export default function AssignUserDialog({
                     <div className="flex items-center gap-3">
                       <Avatar className="h-8 w-8">
                         <AvatarFallback className="text-xs">
-                          {getInitials(user.firstName, user.lastName)}
+                          {getUserInitials(user)}
                         </AvatarFallback>
                       </Avatar>
                       <div>
                         <p className="font-medium text-sm">
-                          {user.firstName} {user.lastName}
+                          {getUserDisplayName(user)}
                         </p>
                         <p className="text-xs text-muted-foreground">{user.email}</p>
                       </div>

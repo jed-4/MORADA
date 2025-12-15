@@ -1069,6 +1069,7 @@ export class MemStorage implements IStorage {
       { key: "admin.terms", name: "Terms and Conditions", description: "Manage terms", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "admin.payment_templates", name: "Payment schedule templates", description: "Manage payment templates", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "admin.company", name: "Company settings", description: "Manage company settings", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "admin.manage_team_members", name: "Manage Team Members", description: "Edit team member profiles and details", category: "admin", actions: ["view", "edit"], isBuiltIn: true },
       
       // Sales category
       { key: "sales.client", name: "Client", description: "Manage clients", category: "sales", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
@@ -5063,6 +5064,7 @@ export class DbStorage implements IStorage {
       { key: "admin.terms", name: "Terms and Conditions", description: "Manage terms", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "admin.payment_templates", name: "Payment schedule templates", description: "Manage payment templates", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
       { key: "admin.company", name: "Company settings", description: "Manage company settings", category: "admin", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },
+      { key: "admin.manage_team_members", name: "Manage Team Members", description: "Edit team member profiles and details", category: "admin", actions: ["view", "edit"], isBuiltIn: true },
       
       // Sales category
       { key: "sales.client", name: "Client", description: "Manage clients", category: "sales", actions: ["view", "add", "edit", "delete"], isBuiltIn: true },

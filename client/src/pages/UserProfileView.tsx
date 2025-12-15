@@ -33,6 +33,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { getUserDisplayName, getUserInitials } from "@/lib/utils";
 import { useState } from "react";
 import type { UserWithRole, UserProjectAccess, UserRole } from "@shared/schema";
 import {
@@ -183,11 +184,6 @@ export default function UserProfileView() {
     );
   }
 
-  const getInitials = (firstName?: string, lastName?: string) => {
-    const first = firstName?.[0] || "";
-    const last = lastName?.[0] || "";
-    return `${first}${last}`.toUpperCase() || "U";
-  };
 
   const isCurrentUser = currentUser?.id === userId;
   const isAdmin = currentUser?.role?.name === "General admin" || currentUser?.role?.name === "Admin";
@@ -205,7 +201,7 @@ export default function UserProfileView() {
           <ChevronLeft className="h-5 w-5" />
         </Button>
         <div>
-          <h1 className="text-2xl font-semibold">{user.firstName} {user.lastName}</h1>
+          <h1 className="text-2xl font-semibold">{getUserDisplayName(user)}</h1>
           <p className="text-sm text-muted-foreground">User Profile</p>
         </div>
       </div>
@@ -221,7 +217,7 @@ export default function UserProfileView() {
             <div className="flex items-start gap-4">
               <Avatar className="h-16 w-16">
                 <AvatarFallback className="text-lg">
-                  {getInitials(user.firstName, user.lastName)}
+                  {getUserInitials(user)}
                 </AvatarFallback>
               </Avatar>
               <div className="flex-1 space-y-4">
@@ -231,7 +227,7 @@ export default function UserProfileView() {
                     <div>
                       <p className="text-sm text-muted-foreground">Name</p>
                       <p className="font-medium" data-testid="text-user-name">
-                        {user.firstName} {user.lastName}
+                        {getUserDisplayName(user)}
                       </p>
                     </div>
                   </div>
@@ -395,7 +391,7 @@ export default function UserProfileView() {
           <AlertDialogHeader>
             <AlertDialogTitle>Disable User</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to disable {user.firstName} {user.lastName}? They will no
+              Are you sure you want to disable {getUserDisplayName(user)}? They will no
               longer be able to access the system, but their data will be preserved.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -425,8 +421,8 @@ export default function UserProfileView() {
           <AlertDialogHeader>
             <AlertDialogTitle>Remove User Permanently</AlertDialogTitle>
             <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete {user.firstName}{" "}
-              {user.lastName}'s account and remove all their data from the system. All items
+              This action cannot be undone. This will permanently delete {getUserDisplayName(user)}'s 
+              account and remove all their data from the system. All items
               assigned to this user will be reassigned to the general admin.
             </AlertDialogDescription>
           </AlertDialogHeader>
