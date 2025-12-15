@@ -1762,7 +1762,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // If projectStatus (high-level phase) is being updated directly (e.g., from board grouped by phase),
       // also sync currentSystemPhase to match
       if ('projectStatus' in req.body && !('projectSubStatus' in req.body)) {
-        const newProjectStatus = validationResult.data.projectStatus;
+        const newProjectStatus = updateData.projectStatus;
         if (newProjectStatus) {
           // projectStatus values (lead, pre_construction, construction, post_construction) map directly to currentSystemPhase
           const validPhases = ['lead', 'pre_construction', 'construction', 'post_construction', 'archive'];
@@ -1770,6 +1770,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
             updateData.currentSystemPhase = newProjectStatus;
             console.log(`[PATCH /api/projects/:id] Syncing currentSystemPhase from projectStatus: ${newProjectStatus}`);
           }
+        } else if (newProjectStatus === null) {
+          // projectStatus is being cleared - also clear currentSystemPhase
+          updateData.currentSystemPhase = null;
+          console.log(`[PATCH /api/projects/:id] Clearing currentSystemPhase as projectStatus was cleared`);
         }
       }
 
