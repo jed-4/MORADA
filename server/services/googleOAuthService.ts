@@ -38,8 +38,7 @@ export class GoogleOAuthService {
   }
   
   generateAuthUrl(userId: string): string {
-    const codeVerifier = this.generateCodeVerifier();
-    const state = this.generateState(userId, codeVerifier);
+    const state = this.generateState(userId);
     
     console.log('🔍 [OAuth] Generating auth URL for user:', userId);
     console.log('🔍 [OAuth] Client ID:', process.env.GOOGLE_OAUTH_CLIENT_ID?.substring(0, 20) + '...');
@@ -50,8 +49,6 @@ export class GoogleOAuthService {
       scope: SCOPES,
       state,
       prompt: 'consent',
-      code_challenge: this.generateCodeChallenge(codeVerifier),
-      code_challenge_method: 'S256',
     });
     
     console.log('🔍 [OAuth] Generated auth URL:', authUrl.substring(0, 150) + '...');
@@ -59,9 +56,9 @@ export class GoogleOAuthService {
     return authUrl;
   }
   
-  private generateState(userId: string, codeVerifier: string): string {
+  private generateState(userId: string): string {
     const nonce = randomBytes(16).toString('hex');
-    return Buffer.from(JSON.stringify({ userId, nonce, timestamp: Date.now(), codeVerifier })).toString('base64');
+    return Buffer.from(JSON.stringify({ userId, nonce, timestamp: Date.now() })).toString('base64');
   }
   
   private generateCodeVerifier(): string {
@@ -72,12 +69,12 @@ export class GoogleOAuthService {
     return createHash('sha256').update(verifier).digest('base64url');
   }
   
-  parseState(state: string): { userId: string; nonce: string; timestamp: number; codeVerifier: string } {
+  parseState(state: string): { userId: string; nonce: string; timestamp: number } {
     try {
       const decoded = Buffer.from(state, 'base64').toString('utf8');
       const parsed = JSON.parse(decoded);
       
-      if (!parsed.userId || !parsed.nonce || !parsed.timestamp || !parsed.codeVerifier) {
+      if (!parsed.userId || !parsed.nonce || !parsed.timestamp) {
         throw new Error('Invalid state format');
       }
       
@@ -93,12 +90,9 @@ export class GoogleOAuthService {
   }
   
   async handleCallback(code: string, state: string): Promise<User> {
-    const { userId, codeVerifier } = this.parseState(state);
+    const { userId } = this.parseState(state);
     
-    const { tokens } = await this.oauth2Client.getToken({
-      code,
-      codeVerifier,
-    });
+    const { tokens } = await this.oauth2Client.getToken(code);
     
     if (!tokens.access_token || !tokens.refresh_token) {
       throw new Error('Missing tokens from Google OAuth response');
