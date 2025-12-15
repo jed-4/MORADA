@@ -120,7 +120,8 @@ export default function ProjectCardCompact({
                 {project.name}
               </h3>
               
-              {/* Status chip when grouped by phase, Phase chip when grouped by status */}
+              {/* Status chip - only shown when grouped by phase (column already shows phase, so show status) */}
+              {/* When grouped by status, show NO chips (column already shows the status) */}
               {groupBy === "phase" && statusOption && (
                 <Badge 
                   className="text-[10px] px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
@@ -131,18 +132,6 @@ export default function ProjectCardCompact({
                   }}
                 >
                   {statusOption.name}
-                </Badge>
-              )}
-              {groupBy === "status" && phaseOption && (
-                <Badge 
-                  className="text-[10px] px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
-                  style={{
-                    backgroundColor: `${phaseOption.color}15`,
-                    color: phaseOption.color,
-                    borderColor: `${phaseOption.color}30`
-                  }}
-                >
-                  {phaseOption.name}
                 </Badge>
               )}
             </div>
@@ -177,25 +166,13 @@ export default function ProjectCardCompact({
           )}
         </div>
 
-        {/* Bottom row: Due date/Stage & Foreman */}
+        {/* Bottom row: Due date & Foreman */}
         <div className="flex items-center justify-between mt-1">
-          {/* Due date or Phase chip */}
+          {/* Due date - only show when enabled and project has end date */}
           {visibleFields.dueDate && project.endDate ? (
             <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 rounded-full bg-background border-border/50 no-default-hover-elevate no-default-active-elevate">
               <Calendar className="h-2 w-2 mr-0.5" />
               {format(new Date(project.endDate), 'MMM d')}
-            </Badge>
-          ) : visibleFields.phase && phaseOption ? (
-            <Badge 
-              variant="outline" 
-              className="text-[10px] px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate truncate max-w-[120px]"
-              style={{
-                backgroundColor: `${phaseOption.color}10`,
-                borderColor: `${phaseOption.color}30`,
-                color: phaseOption.color
-              }}
-            >
-              <span className="truncate">{phaseOption.name}</span>
             </Badge>
           ) : (
             <div />
