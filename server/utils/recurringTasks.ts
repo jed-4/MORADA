@@ -50,7 +50,8 @@ function calculateEndTime(startTime: string, durationMinutes: number): string {
 }
 
 /**
- * Generate task instances for a recurring template for the next 4 weeks
+ * Generate task instances for a recurring template for the CURRENT WEEK only (Asana-style)
+ * Tasks for the next week are created when the current week's task is completed
  * @param template Task template with recurring schedule
  * @param existingTaskDates Set of existing task dates (ISO strings) to avoid duplicates
  * @returns Array of task instances to create
@@ -69,8 +70,10 @@ export function generateRecurringTaskInstances(
   const today = new Date();
   today.setHours(0, 0, 0, 0); // Start of today
 
-  // Generate for next 4 weeks from today (28 days rolling window)
-  const endDate = addWeeks(today, 4);
+  // Generate for current week only (Monday-Sunday of this week)
+  // Start from Monday of current week, end on Sunday
+  const weekStart = startOfWeek(today, { weekStartsOn: 1 }); // Monday
+  const endDate = addDays(weekStart, 6); // Sunday
 
   // Iterate through each day in the 4-week window starting from today
   for (let currentDate = new Date(today); currentDate <= endDate; currentDate = addDays(currentDate, 1)) {
@@ -143,4 +146,88 @@ export function getRecurringTaskKey(templateId: string, dueDate: Date | string):
     ? format(new Date(dueDate), 'yyyy-MM-dd')  // Parse ISO string to Date, then format
     : format(dueDate, 'yyyy-MM-dd');
   return `${templateId}:${dateStr}`;
+}
+
+/**
+ * Calculate the next week's date for a given due date (Asana-style recurring)
+ * When a task is completed, create the same-day-next-week task
+ * @param dueDate The current task's due date
+ * @returns The date for the next occurrence (7 days later)
+ */
+export function getNextWeekDate(dueDate: Date | string): Date {
+  const date = typeof dueDate === 'string' ? new Date(dueDate) : dueDate;
+  return addDays(date, 7);
+}
+
+/**
+ * Generate a single task instance for the next occurrence of a recurring template
+ * Used when completing a task to create the next week's task (Asana-style)
+ * @param template Task template with recurring schedule
+ * @param completedTaskDueDate The due date of the task being completed
+ * @returns A single task instance for next week, or null if not applicable
+ */
+export function generateNextRecurringInstance(
+  template: RecurringTaskTemplate,
+  completedTaskDueDate: Date | string
+): GeneratedTaskInstance | null {
+  // Validate template has recurring schedule
+  if (!template.recurringDays || template.recurringDays.length === 0) {
+    return null;
+  }
+
+  const dueDate = typeof completedTaskDueDate === 'string' 
+    ? new Date(completedTaskDueDate) 
+    : completedTaskDueDate;
+  
+  // Get day of week for the completed task
+  const dayOfWeek = dueDate.getDay();
+  
+  // Verify this day is still in the template's recurring days
+  if (!template.recurringDays.includes(dayOfWeek)) {
+    return null;
+  }
+
+  // Calculate next week's date
+  const nextDueDate = getNextWeekDate(dueDate);
+  
+  // Determine assignee
+  const effectiveAssigneeId = template.assigneeType === 'user' && template.assigneeUserId 
+    ? template.assigneeUserId 
+    : template.defaultAssigneeId;
+
+  // Create task instance
+  const instance: GeneratedTaskInstance = {
+    templateId: template.id,
+    title: template.title,
+    content: template.content,
+    priority: template.priority,
+    assigneeId: effectiveAssigneeId,
+    tagIds: template.tagIds,
+    category: template.category,
+    dueDate: nextDueDate,
+  };
+
+  // Copy checklist from template (reset all to uncompleted)
+  if (template.checklist && template.checklist.length > 0) {
+    instance.checklist = template.checklist.map(item => ({
+      text: item.text,
+      completed: false
+    }));
+  }
+
+  // Add start and end times from schedule
+  const scheduleForDay = template.recurringSchedule?.find(s => Number(s.dayOfWeek) === dayOfWeek);
+  if (scheduleForDay) {
+    instance.startTime = scheduleForDay.startTime;
+    if (scheduleForDay.duration > 0) {
+      instance.endTime = calculateEndTime(scheduleForDay.startTime, scheduleForDay.duration);
+    }
+  } else if (template.recurringStartTime) {
+    instance.startTime = template.recurringStartTime;
+    if (template.recurringDuration && template.recurringDuration > 0) {
+      instance.endTime = calculateEndTime(template.recurringStartTime, template.recurringDuration);
+    }
+  }
+
+  return instance;
 }
