@@ -478,6 +478,17 @@ export function ProjectBoard({
   // Active field for drag overlay
   const [activeField, setActiveField] = useState<CardField | null>(null);
 
+  // Sync cardFields with preferences.visibleFields when dialog opens
+  // This ensures the checkboxes reflect the actual current visible state
+  useEffect(() => {
+    if (cardFieldsDialogOpen) {
+      setCardFields(prev => prev.map(field => ({
+        ...field,
+        visible: preferences.visibleFields[field.id as keyof VisibleFields] ?? field.visible
+      })));
+    }
+  }, [cardFieldsDialogOpen, preferences.visibleFields]);
+
   // Save preferences to localStorage
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences));
