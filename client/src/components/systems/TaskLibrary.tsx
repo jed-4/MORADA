@@ -281,7 +281,9 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
 
   const handleSaveTemplate = () => {
     // Build recurringSchedule from dueDayOfWeek and individual day schedules
+    // Use estimatedDuration for all schedules
     let recurringScheduleData: Array<{ dayOfWeek: number; startTime: string; duration: number }> = [];
+    const duration = templateForm.estimatedDuration || 60;
     
     if (templateForm.isRecurringTemplate && templateForm.frequency === "weekly") {
       recurringScheduleData = templateForm.dueDayOfWeek
@@ -291,7 +293,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
             return {
               dayOfWeek: dayValue,
               startTime: schedule.startTime,
-              duration: schedule.duration || 60
+              duration: duration
             };
           }
           return null;
@@ -929,51 +931,34 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                     {/* Time and duration for each selected day */}
                     {templateForm.dueDayOfWeek.length > 0 && (
                       <div className="space-y-3">
-                        <Label>Day Schedules</Label>
+                        <Label>Start Times</Label>
                         {templateForm.dueDayOfWeek.map((dayValue) => {
                           const day = DAYS_OF_WEEK.find(d => d.value === dayValue);
                           const schedule = getDaySchedule(dayValue);
                           
                           return (
-                            <div key={dayValue} className="border rounded-md p-3">
-                              <div className="font-medium mb-2">{day?.fullLabel}</div>
-                              <div className="grid grid-cols-2 gap-2">
-                                <div>
-                                  <Label className="text-xs">Start Time</Label>
-                                  <Select
-                                    value={schedule?.startTime || ""}
-                                    onValueChange={(value) => updateDaySchedule(dayValue, value, schedule?.duration || 60)}
-                                  >
-                                    <SelectTrigger data-testid={`select-recurring-time-${day?.label.toLowerCase()}`}>
-                                      <SelectValue placeholder="Select time" />
-                                    </SelectTrigger>
-                                    <SelectContent className="max-h-[200px]">
-                                      {Array.from({ length: 96 }, (_, i) => {
-                                        const hours = Math.floor(i / 4);
-                                        const minutes = (i % 4) * 15;
-                                        const time = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-                                        return (
-                                          <SelectItem key={time} value={time}>
-                                            {time}
-                                          </SelectItem>
-                                        );
-                                      })}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                                <div>
-                                  <Label className="text-xs">Duration (min)</Label>
-                                  <Input
-                                    type="number"
-                                    min="15"
-                                    step="15"
-                                    value={schedule?.duration || ""}
-                                    onChange={(e) => updateDaySchedule(dayValue, schedule?.startTime || "", parseInt(e.target.value) || 60)}
-                                    placeholder="60"
-                                    data-testid={`input-recurring-duration-${day?.label.toLowerCase()}`}
-                                  />
-                                </div>
-                              </div>
+                            <div key={dayValue} className="flex items-center gap-3">
+                              <span className="w-20 text-sm font-medium">{day?.fullLabel}</span>
+                              <Select
+                                value={schedule?.startTime || ""}
+                                onValueChange={(value) => updateDaySchedule(dayValue, value, templateForm.estimatedDuration || 60)}
+                              >
+                                <SelectTrigger className="w-32" data-testid={`select-recurring-time-${day?.label.toLowerCase()}`}>
+                                  <SelectValue placeholder="Time" />
+                                </SelectTrigger>
+                                <SelectContent className="max-h-[200px]">
+                                  {Array.from({ length: 96 }, (_, i) => {
+                                    const hours = Math.floor(i / 4);
+                                    const minutes = (i % 4) * 15;
+                                    const time = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+                                    return (
+                                      <SelectItem key={time} value={time}>
+                                        {time}
+                                      </SelectItem>
+                                    );
+                                  })}
+                                </SelectContent>
+                              </Select>
                             </div>
                           );
                         })}
