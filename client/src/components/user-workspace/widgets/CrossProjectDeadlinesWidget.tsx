@@ -58,10 +58,12 @@ export default function CrossProjectDeadlinesWidget({ widget, onUpdate, isConfig
       if (!response.ok) return [];
       return response.json();
     },
+    enabled: !!currentUser?.id,
   });
 
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
+    enabled: !!currentUser?.id,
   });
 
   const projectMap = new Map(projects.map(p => [p.id, p]));
