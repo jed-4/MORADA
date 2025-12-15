@@ -13,6 +13,8 @@ export interface RecurringTaskTemplate {
   priority?: string;
   defaultRoleId?: string; // Role to assign (will be resolved to users)
   defaultAssigneeId?: string; // DEPRECATED: use defaultRoleId instead
+  assigneeType?: string; // "role" | "user" - determines how to assign
+  assigneeUserId?: string; // Specific user assignment when assigneeType === "user"
   tagIds?: string[];
   category?: string;
   checklist?: Array<{ text: string; completed: boolean }>;
@@ -81,13 +83,18 @@ export function generateRecurringTaskInstances(
       const dateKey = `${template.id}:${format(currentDate, 'yyyy-MM-dd')}`;
       
       if (!existingTaskDates.has(dateKey)) {
+        // Determine assignee - prefer assigneeUserId when assigneeType is "user", otherwise use legacy defaultAssigneeId
+        const effectiveAssigneeId = template.assigneeType === 'user' && template.assigneeUserId 
+          ? template.assigneeUserId 
+          : template.defaultAssigneeId;
+        
         // Create task instance
         const instance: GeneratedTaskInstance = {
           templateId: template.id,
           title: template.title,
           content: template.content,
           priority: template.priority,
-          assigneeId: template.defaultAssigneeId,
+          assigneeId: effectiveAssigneeId,
           tagIds: template.tagIds,
           category: template.category,
           dueDate: new Date(currentDate),
