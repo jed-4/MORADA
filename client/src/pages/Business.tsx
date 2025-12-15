@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useLocation } from "wouter";
-import { Home, FolderOpen, CheckSquare, Calendar as CalendarIcon, CreditCard, Timer, MessageSquare, ClipboardList, Users, Settings as SettingsIcon, FileText, HardDrive } from "lucide-react";
+import { Home, FolderOpen, CheckSquare, Calendar as CalendarIcon, CreditCard, Timer, MessageSquare, ClipboardList, Users, FileText, HardDrive } from "lucide-react";
 import BusinessOverview from "@/components/BusinessOverview";
 import BusinessProjects from "./BusinessProjects";
 import BusinessTasks from "./BusinessTasks";
@@ -9,7 +9,6 @@ import BusinessFiles from "./BusinessFiles";
 import Timesheets from "./Timesheets";
 import Minutes from "./Minutes";
 import TeamManagement from "./TeamManagement";
-import Systems from "./Systems";
 import Messages from "./Messages";
 import Notes from "./Notes";
 import ComingSoonPage from "./ComingSoonPage";
@@ -27,7 +26,6 @@ const BUSINESS_TABS = [
   { id: "notes", label: "Notes", icon: FileText, path: "/business/notes" },
   { id: "leave", label: "Leave", icon: CalendarIcon, path: "/business/leave" },
   { id: "team", label: "Team", icon: Users, path: "/business-team" },
-  { id: "systems", label: "Systems", icon: SettingsIcon, path: "/systems" },
 ] as const;
 
 export default function Business() {
@@ -71,8 +69,6 @@ export default function Business() {
         return <ComingSoonPage section="business-leave" />;
       case "team":
         return <TeamManagement />;
-      case "systems":
-        return <Systems />;
       default:
         return <BusinessOverview />;
     }

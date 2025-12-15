@@ -37,6 +37,7 @@ import {
   Mail,
   UserPlus,
   Settings,
+  Cog,
   Library,
   Sparkles,
   ChevronRight,
@@ -674,6 +675,31 @@ export function SidebarNav() {
           })}
         </div>
         
+        {/* Systems */}
+        <div className="pb-0.5">
+          <Tooltip delayDuration={0}>
+            <TooltipTrigger asChild>
+              <Link href="/systems">
+                <button
+                  className={cn(
+                    "flex items-center justify-center h-8 w-8 mx-auto rounded-md transition-colors",
+                    "hover-elevate active-elevate-2",
+                    location.startsWith("/systems")
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                  data-testid="rail-systems"
+                >
+                  <Cog className="h-4 w-4" />
+                </button>
+              </Link>
+            </TooltipTrigger>
+            <TooltipContent side="right" sideOffset={8}>
+              Systems
+            </TooltipContent>
+          </Tooltip>
+        </div>
+        
         {/* Settings at bottom */}
         <div className="pb-1">
           <Tooltip delayDuration={0}>
@@ -683,7 +709,9 @@ export function SidebarNav() {
                   className={cn(
                     "flex items-center justify-center h-8 w-8 mx-auto rounded-md transition-colors",
                     "hover-elevate active-elevate-2",
-                    "text-muted-foreground hover:text-foreground"
+                    location.startsWith("/settings")
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground"
                   )}
                   data-testid="rail-settings"
                 >
