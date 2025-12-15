@@ -674,10 +674,8 @@ export function SidebarNav() {
               </Tooltip>
             );
           })}
-        </div>
-        
-        {/* Operations */}
-        <div className="py-0.5">
+          
+          {/* Operations - right below Resources */}
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
               <Link href="/systems">
