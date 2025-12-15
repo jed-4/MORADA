@@ -892,7 +892,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
           className="border-r flex flex-col bg-card flex-shrink-0 overflow-x-auto relative"
         >
           {/* Content wrapper with actual column widths */}
-          <div style={{ width: totalPanelWidth }} className="flex flex-col">
+          <div style={{ width: totalPanelWidth }} className="flex flex-col flex-1 overflow-hidden">
             {/* Double-row header to match timeline (60px total) */}
             
             {/* Top row - Search bar (30px) */}
