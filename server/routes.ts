@@ -12481,6 +12481,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Batch update sortOrder for schedule items (drag reorder)
+  app.post("/api/schedule-items/batch-sort", requireAuth, async (req, res) => {
+    try {
+      const { updates } = req.body;
+      if (!Array.isArray(updates)) {
+        return res.status(400).json({ error: "Expected updates array" });
+      }
+      
+      // Validate all items belong to user's company before updating
+      const userCompanyId = req.user?.companyId;
+      if (!userCompanyId) {
+        return res.status(403).json({ error: "User must belong to a company" });
+      }
+      
+      // Verify each item's ownership
+      for (const update of updates) {
+        const { id } = update;
+        if (!id) continue;
+        
+        const item = await storage.getScheduleItem(id);
+        if (!item) {
+          return res.status(404).json({ error: `Schedule item ${id} not found` });
+        }
+        
+        const schedule = await storage.getScheduleById(item.scheduleId);
+        if (!schedule) {
+          return res.status(404).json({ error: `Schedule not found for item ${id}` });
+        }
+        
+        const project = await storage.getProject(schedule.projectId);
+        if (!project || project.companyId !== userCompanyId) {
+          return res.status(403).json({ error: "Unauthorized to update this schedule item" });
+        }
+      }
+      
+      const updatedItems = [];
+      for (const update of updates) {
+        const { id, sortOrder, parentItemId } = update;
+        if (!id || sortOrder === undefined) continue;
+        
+        const updateData: any = { sortOrder };
+        if (parentItemId !== undefined) {
+          updateData.parentItemId = parentItemId;
+        }
+        
+        const item = await storage.updateScheduleItem(id, updateData);
+        if (item) {
+          updatedItems.push(item);
+        }
+      }
+      
+      res.json(updatedItems);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to batch update sort order",
+        details: error.message 
+      });
+    }
+  });
+
   // Bulk create schedule items from import
   app.post("/api/schedule-items/bulk-create", requireAuth, async (req, res) => {
     try {

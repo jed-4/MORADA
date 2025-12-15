@@ -104,6 +104,36 @@ function SortableColumnItem({
   );
 }
 
+function SortableTaskRow({ 
+  id, 
+  children 
+}: { 
+  id: string; 
+  children: (dragHandleProps: { attributes: any; listeners: any }) => React.ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+  
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 50 : 'auto',
+  };
+  
+  return (
+    <div ref={setNodeRef} style={style as React.CSSProperties}>
+      {children({ attributes, listeners })}
+    </div>
+  );
+}
+
 export default function Gantt({ onEditItem }: GanttProps = {}) {
   const { projectId } = useParams();
   const { toast } = useToast();
@@ -168,6 +198,127 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
         return arrayMove(items, oldIndex, newIndex);
       });
     }
+  };
+
+  // Mutation to batch update sortOrder for schedule items
+  const updateSortOrderMutation = useMutation({
+    mutationFn: async (updates: Array<{ id: string; sortOrder: number; parentItemId?: string | null }>) => {
+      return apiRequest(`/api/schedule-items/batch-sort`, "POST", { updates });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+    },
+    onError: () => {
+      toast({ title: "Failed to reorder items", variant: "destructive" });
+    },
+  });
+
+  // Handle row drag end for reordering tasks
+  const handleRowDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    
+    if (!over || active.id === over.id) return;
+    
+    const activeId = active.id as string;
+    const overId = over.id as string;
+    
+    // Find the items
+    const activeItem = allItems.find(item => item.id === activeId);
+    const overItem = allItems.find(item => item.id === overId);
+    
+    if (!activeItem || !overItem) return;
+    
+    // Determine if we're reordering within the same parent group or moving to a different group
+    const activeParentId = activeItem.parentItemId;
+    const overParentId = overItem.parentItemId;
+    
+    // Handle moving to different parent group (drag-to-nest)
+    if (activeParentId !== overParentId) {
+      // Determine the new parent:
+      // - If dropping onto a root item, make activeItem a child of overItem
+      // - If dropping onto a child item, make activeItem a sibling (same parent as overItem)
+      const isOverItemRoot = !overItem.parentItemId;
+      const newParentId = isOverItemRoot ? overId : overItem.parentItemId;
+      
+      // Prevent circular dependency: traverse upward from newParentId to check if activeId is an ancestor
+      const isDescendant = (potentialAncestorId: string, itemId: string | null | undefined): boolean => {
+        if (!itemId) return false;
+        if (itemId === potentialAncestorId) return true;
+        const item = allItems.find(i => i.id === itemId);
+        if (!item) return false;
+        return isDescendant(potentialAncestorId, item.parentItemId);
+      };
+      
+      if (newParentId && isDescendant(activeId, newParentId)) {
+        toast({ title: "Cannot nest an item under its own descendant", variant: "destructive" });
+        return;
+      }
+      
+      // Get current siblings in the OLD parent group to reindex after removal
+      const oldSiblings = allItems
+        .filter(item => item.parentItemId === activeParentId && item.id !== activeId)
+        .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+      
+      // Get siblings in the new parent group to determine sort order
+      const newSiblings = allItems
+        .filter(item => item.parentItemId === newParentId && item.id !== activeId)
+        .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+      
+      // Calculate insertion index:
+      // - If dropping onto a root item (making it a child), append to end
+      // - If dropping onto a child item (making it a sibling), insert after the over item
+      let insertIndex: number;
+      if (isOverItemRoot) {
+        // Dropping onto a root item = adding as last child of that parent
+        insertIndex = newSiblings.length;
+      } else {
+        // Dropping onto a child = insert after the over item in its sibling list
+        const overIndexInNewSiblings = newSiblings.findIndex(item => item.id === overId);
+        insertIndex = overIndexInNewSiblings >= 0 ? overIndexInNewSiblings + 1 : newSiblings.length;
+      }
+      
+      // Build the reordered list by inserting the active item at the calculated position
+      const reorderedNewSiblings = [...newSiblings];
+      reorderedNewSiblings.splice(insertIndex, 0, activeItem);
+      
+      // Generate updates for all items in the new sibling list with correct sort orders
+      const updates: Array<{ id: string; sortOrder: number; parentItemId?: string | null }> = 
+        reorderedNewSiblings.map((item, idx) => ({
+          id: item.id,
+          sortOrder: idx,
+          ...(item.id === activeId ? { parentItemId: newParentId || null } : {}),
+        }));
+      
+      // Reindex old siblings after removal
+      oldSiblings.forEach((item, idx) => {
+        updates.push({
+          id: item.id,
+          sortOrder: idx,
+        });
+      });
+      
+      updateSortOrderMutation.mutate(updates);
+      return;
+    }
+    
+    // Get the list of siblings (items with the same parent)
+    const siblings = allItems
+      .filter(item => item.parentItemId === activeParentId)
+      .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+    
+    const oldIndex = siblings.findIndex(item => item.id === activeId);
+    const newIndex = siblings.findIndex(item => item.id === overId);
+    
+    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
+    
+    // Reorder and generate updates
+    const reordered = arrayMove(siblings, oldIndex, newIndex);
+    const updates = reordered.map((item, index) => ({
+      id: item.id,
+      sortOrder: index,
+    }));
+    
+    updateSortOrderMutation.mutate(updates);
   };
   
   const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
@@ -349,6 +500,19 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
     return { parentItems: parents, childItemsByParent: children };
   }, [allItems, searchQuery]);
+
+  // Create flattened list of item IDs for SortableContext
+  const sortableItemIds = useMemo(() => {
+    const ids: string[] = [];
+    parentItems.forEach(parent => {
+      ids.push(parent.id);
+      if (!collapsedItems.has(parent.id)) {
+        const children = childItemsByParent[parent.id] || [];
+        children.forEach(child => ids.push(child.id));
+      }
+    });
+    return ids;
+  }, [parentItems, childItemsByParent, collapsedItems]);
 
   // Update mutation for schedule items
   const updateItemMutation = useMutation({
@@ -896,7 +1060,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
             {/* Double-row header to match timeline (60px total) */}
             
             {/* Top row - Search bar (30px) */}
-            <div className="h-[30px] flex items-center px-2 border-b border-border">
+            <div className="h-[30px] flex items-center px-2 border-b border-border gap-2">
               <div className="relative flex-1 max-w-xs">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
                 <Input
@@ -907,6 +1071,43 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                   data-testid="input-search-gantt-tasks"
                 />
               </div>
+              
+              {/* Columns visibility/reorder popover */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-6 w-6" data-testid="button-columns">
+                    <Columns className="w-3.5 h-3.5" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-56 p-2" data-testid="popover-columns">
+                  <div className="text-xs font-medium text-muted-foreground mb-2 px-2">Show & Reorder Columns</div>
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleColumnDragEnd}
+                  >
+                    <SortableContext items={columnOrder} strategy={verticalListSortingStrategy}>
+                      {columnOrder.map((colId) => {
+                        const labels: Record<string, string> = {
+                          status: 'Status',
+                          notes: 'Notes',
+                          completion: 'Completion %',
+                          assignee: 'Assignee',
+                        };
+                        return (
+                          <SortableColumnItem
+                            key={colId}
+                            id={colId}
+                            label={labels[colId] || colId}
+                            checked={visibleColumns[colId as keyof typeof visibleColumns]}
+                            onChange={(checked) => setVisibleColumns(prev => ({ ...prev, [colId]: checked }))}
+                          />
+                        );
+                      })}
+                    </SortableContext>
+                  </DndContext>
+                </PopoverContent>
+              </Popover>
             </div>
             
             {/* Bottom row - Column names (30px) */}
@@ -983,6 +1184,12 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
           
           {/* Task rows */}
           <div ref={leftPanelRef} onScroll={handleLeftPanelScroll} className="flex-1 overflow-y-auto">
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleRowDragEnd}
+            >
+              <SortableContext items={sortableItemIds} strategy={verticalListSortingStrategy}>
             {parentItems.map((parentItem, parentIdx) => {
               const isCollapsed = collapsedItems.has(parentItem.id);
               const childItems = childItemsByParent[parentItem.id] || [];
@@ -990,12 +1197,22 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
               return (
                 <div key={parentItem.id}>
                   {/* Parent item row - 40px height */}
+                  <SortableTaskRow id={parentItem.id}>
+                    {({ attributes, listeners }) => (
                   <div
-                    className={`h-10 flex items-center px-2 hover:bg-gray-50 cursor-pointer group border-b border-border`}
+                    className={`h-10 flex items-center px-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer group border-b border-border`}
                     data-testid={`row-parent-${parentItem.id}`}
                   >
                     {/* Task name column */}
                     <div style={{ width: columnWidths.taskName }} className="flex items-center min-w-0 flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
+                      <div 
+                        {...attributes}
+                        {...listeners}
+                        className="cursor-grab active:cursor-grabbing p-0.5 hover:bg-accent rounded flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                        data-testid={`drag-handle-${parentItem.id}`}
+                      >
+                        <GripVertical className="w-3.5 h-3.5 text-muted-foreground" />
+                      </div>
                       {childItems.length > 0 && (
                         <button
                           onClick={() => toggleCollapse(parentItem.id)}
@@ -1131,19 +1348,28 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                       </DropdownMenu>
                     </div>
                   </div>
+                    )}
+                  </SortableTaskRow>
 
                   {/* Child item rows */}
-                  {!isCollapsed && childItems.map((childItem, childIdx) => {
-                    const rowIdx = parentIdx * 1000 + childIdx + 1;
-                    return (
+                  {!isCollapsed && childItems.map((childItem, childIdx) => (
+                      <SortableTaskRow key={childItem.id} id={childItem.id}>
+                        {({ attributes, listeners }) => (
                       <div
-                        key={childItem.id}
-                        className={`h-10 flex items-center px-2 hover:bg-gray-50 cursor-pointer border-b border-border`}
+                        className={`h-10 flex items-center px-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer border-b border-border group`}
                         data-testid={`row-child-${childItem.id}`}
                       >
                         {/* Task name column */}
-                        <div style={{ width: columnWidths.taskName }} className="flex items-center min-w-0 pl-8 flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
-                          <span className="text-sm text-muted-foreground truncate">{childItem.name}</span>
+                        <div style={{ width: columnWidths.taskName }} className="flex items-center min-w-0 pl-4 flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
+                          <div 
+                            {...attributes}
+                            {...listeners}
+                            className="cursor-grab active:cursor-grabbing p-0.5 hover:bg-accent rounded flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                            data-testid={`drag-handle-${childItem.id}`}
+                          >
+                            <GripVertical className="w-3.5 h-3.5 text-muted-foreground" />
+                          </div>
+                          <span className="text-sm text-muted-foreground truncate ml-1">{childItem.name}</span>
                         </div>
 
                         {/* Status column */}
@@ -1264,11 +1490,14 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                           </DropdownMenu>
                         </div>
                       </div>
-                    );
-                  })}
+                        )}
+                      </SortableTaskRow>
+                  ))}
                 </div>
               );
             })}
+              </SortableContext>
+            </DndContext>
           </div>
           </div>
 
