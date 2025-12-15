@@ -120,7 +120,7 @@ export default function ProjectCardCompact({
                 {project.name}
               </h3>
               
-              {/* Status chip - only shown when grouped by phase (since status column already shows the status when grouped by status) */}
+              {/* Status chip when grouped by phase, Phase chip when grouped by status */}
               {groupBy === "phase" && statusOption && (
                 <Badge 
                   className="text-[10px] px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
@@ -131,6 +131,18 @@ export default function ProjectCardCompact({
                   }}
                 >
                   {statusOption.name}
+                </Badge>
+              )}
+              {groupBy === "status" && phaseOption && (
+                <Badge 
+                  className="text-[10px] px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
+                  style={{
+                    backgroundColor: `${phaseOption.color}15`,
+                    color: phaseOption.color,
+                    borderColor: `${phaseOption.color}30`
+                  }}
+                >
+                  {phaseOption.name}
                 </Badge>
               )}
             </div>
@@ -144,10 +156,10 @@ export default function ProjectCardCompact({
                     {project.clientName}
                   </span>
                 )}
-                {visibleFields.budget && project.budget && (
+                {visibleFields.budget && (project.budget || project.estimateTotal || project.contractValue) && (
                   <span className="flex items-center gap-0.5">
                     <DollarSign className="h-2.5 w-2.5" />
-                    {formatCurrency(project.budget)}
+                    {formatCurrency(project.budget || project.estimateTotal || project.contractValue)}
                   </span>
                 )}
                 {visibleFields.progress && project.progress !== null && project.progress !== undefined && (
