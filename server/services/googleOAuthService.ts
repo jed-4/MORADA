@@ -32,11 +32,13 @@ export class GoogleOAuthService {
   }
   
   private getRedirectUri(): string {
-    const isDev = process.env.NODE_ENV !== 'production';
-    if (isDev) {
-      return 'http://localhost:5000/api/google-calendar/callback';
+    // Use REPLIT_DOMAINS to get the correct callback URL for both dev and production
+    // This allows Google OAuth to work in both environments
+    if (process.env.REPLIT_DOMAINS) {
+      const domain = process.env.REPLIT_DOMAINS.split(',')[0].trim();
+      return `https://${domain}/api/google-calendar/callback`;
     }
-    return 'https://buildpro4.replit.app/api/google-calendar/callback';
+    return 'http://localhost:5000/api/google-calendar/callback';
   }
   
   generateAuthUrl(userId: string): string {
