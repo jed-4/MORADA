@@ -266,8 +266,8 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
       }
     });
 
-    // Add Google Calendar events (only for own calendar)
-    if (isOwnPage && googleCalendarEvents.length > 0) {
+    // Add Google Calendar events (always show when connected - events are from the logged-in user's account)
+    if (googleCalendarEvents.length > 0) {
       googleCalendarEvents.forEach((event: any) => {
         events.push({
           id: event.id,
@@ -284,7 +284,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
     }
 
     return events;
-  }, [userTasks, scheduleItems, googleCalendarEvents, projects, taskTemplates, isOwnPage]);
+  }, [userTasks, scheduleItems, googleCalendarEvents, projects, taskTemplates]);
 
   // Apply filters
   const filteredEvents = useMemo(() => {
