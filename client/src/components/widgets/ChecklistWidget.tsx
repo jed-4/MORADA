@@ -6,9 +6,21 @@ import { Label } from "@/components/ui/label";
 import { ListChecks, Plus, AlertCircle, Clock } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery } from "@tanstack/react-query";
-import { type ChecklistTemplate } from "@shared/schema";
+import { type ChecklistInstance } from "@shared/schema";
 import { useProject } from "@/contexts/ProjectContext";
 import { useLocation } from "wouter";
+
+interface ChecklistInstanceWithGroups extends ChecklistInstance {
+  groups?: Array<{
+    id: string;
+    name: string;
+    items?: Array<{
+      id: string;
+      completed?: boolean;
+      completedAt?: Date | null;
+    }>;
+  }>;
+}
 
 export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
   const maxChecklists = widget.config?.maxChecklists || 5;
@@ -45,12 +57,12 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
   const { currentProject } = useProject();
   const [, setLocation] = useLocation();
   
-  // Fetch checklist templates filtered by current project
-  const { data: checklists = [], isLoading } = useQuery<ChecklistTemplate[]>({
-    queryKey: ["/api/checklist-templates", currentProject?.id],
+  // Fetch checklist instances (actual checklists added to the project from templates)
+  const { data: checklists = [], isLoading } = useQuery<ChecklistInstanceWithGroups[]>({
+    queryKey: ["/api/checklist-instances", currentProject?.id],
     queryFn: async () => {
       if (!currentProject?.id) return [];
-      const response = await fetch(`/api/checklist-templates?projectId=${currentProject.id}`, {
+      const response = await fetch(`/api/checklist-instances?projectId=${currentProject.id}`, {
         credentials: "include",
       });
       if (!response.ok) {
@@ -63,28 +75,28 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
   
   const displayChecklists = checklists.slice(0, maxChecklists);
 
-  const getTypeBadgeColor = (type: string) => {
+  const getStatusBadgeColor = (status: string) => {
     const colors: Record<string, string> = {
-      'handover': 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
-      'pre_start': 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
-      'progress': 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
-      'quality': 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400',
-      'safety': 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
-      'custom': 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400',
+      'active': 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+      'in_progress': 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400',
+      'completed': 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+      'cancelled': 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400',
     };
-    return colors[type] || colors.custom;
+    return colors[status] || colors.active;
   };
 
-  const getTypeLabel = (type: string) => {
+  const getStatusLabel = (status: string) => {
     const labels: Record<string, string> = {
-      'handover': 'Handover',
-      'pre_start': 'Pre-Start',
-      'progress': 'Progress',
-      'quality': 'Quality',
-      'safety': 'Safety',
-      'custom': 'Custom',
+      'active': 'Active',
+      'in_progress': 'In Progress',
+      'completed': 'Completed',
+      'cancelled': 'Cancelled',
     };
-    return labels[type] || 'Custom';
+    return labels[status] || 'Active';
+  };
+
+  const getPriorityIndicator = (priority: string | null | undefined) => {
+    return priority === 'high' || priority === 'urgent';
   };
 
   if (!currentProject) {
@@ -152,12 +164,12 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
     );
   }
 
-  const getStatusIndicator = (checklist: ChecklistTemplate) => {
+  const getStatusIndicator = (checklist: ChecklistInstanceWithGroups) => {
     const hasIncomplete = checklist.groups?.some(group => 
-      group.items?.some(item => !(item as any).completed)
+      group.items?.some(item => !item.completed)
     );
     const isActionable = hasIncomplete && checklist.status !== 'completed';
-    const isPriority = checklist.type === 'safety' || checklist.type === 'quality';
+    const isPriority = getPriorityIndicator(checklist.priority);
     
     if (isPriority && isActionable) {
       return { 
@@ -190,7 +202,7 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
           size="sm" 
           variant="ghost"
           className="h-6 px-2 text-xs"
-          onClick={() => setLocation('/checklist-templates')}
+          onClick={() => setLocation(`/projects/${currentProject.id}/checklists`)}
           data-testid="checklist-widget-view-all"
         >
           <Plus className="h-3 w-3 mr-1" />
@@ -220,7 +232,7 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
               <div 
                 key={checklist.id} 
                 className={`p-2 border rounded-md hover-elevate cursor-pointer border-l-2 ${status.color}`}
-                onClick={() => setLocation(`/checklist-templates/${checklist.id}`)}
+                onClick={() => setLocation(`/projects/${currentProject.id}/checklists/${checklist.id}`)}
                 data-testid={`checklist-widget-item-${checklist.id}`}
               >
                 <div className="flex items-start gap-1.5">
@@ -231,9 +243,9 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
                       {status.icon}
                     </div>
                     <Badge 
-                      className={`${getTypeBadgeColor(checklist.type)} text-[10px] px-1.5 py-0 h-4 no-default-hover-elevate no-default-active-elevate`}
+                      className={`${getStatusBadgeColor(checklist.status)} text-[10px] px-1.5 py-0 h-4 no-default-hover-elevate no-default-active-elevate`}
                     >
-                      {getTypeLabel(checklist.type)}
+                      {getStatusLabel(checklist.status)}
                     </Badge>
                   </div>
                 </div>
