@@ -42,6 +42,8 @@ type SidebarContextProps = {
   toggleSidebar: () => void
   isHoveredOpen: boolean
   setIsHoveredOpen: (open: boolean) => void
+  hoverEnabled: boolean
+  setHoverEnabled: (enabled: boolean) => void
 }
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null)
@@ -71,6 +73,18 @@ function SidebarProvider({
   const isMobile = useIsMobile()
   const [openMobile, setOpenMobile] = React.useState(false)
   const [isHoveredOpen, setIsHoveredOpen] = React.useState(false)
+  const [hoverEnabled, setHoverEnabled] = React.useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('sidebar_hover_enabled')
+      return saved !== null ? JSON.parse(saved) : false
+    }
+    return false
+  })
+
+  // Persist hover enabled setting
+  React.useEffect(() => {
+    localStorage.setItem('sidebar_hover_enabled', JSON.stringify(hoverEnabled))
+  }, [hoverEnabled])
 
   // This is the internal state of the sidebar.
   // We use openProp and setOpenProp for control from outside the component.
@@ -127,8 +141,10 @@ function SidebarProvider({
       toggleSidebar,
       isHoveredOpen,
       setIsHoveredOpen,
+      hoverEnabled,
+      setHoverEnabled,
     }),
-    [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar, isHoveredOpen]
+    [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar, isHoveredOpen, hoverEnabled]
   )
 
   return (
@@ -168,14 +184,14 @@ function Sidebar({
   variant?: "sidebar" | "floating" | "inset"
   collapsible?: "offcanvas" | "icon" | "none"
 }) {
-  const { isMobile, state, openMobile, setOpenMobile, isHoveredOpen, setIsHoveredOpen } = useSidebar()
+  const { isMobile, state, openMobile, setOpenMobile, isHoveredOpen, setIsHoveredOpen, hoverEnabled } = useSidebar()
   
   // Handle mouse enter/leave for hover-to-expand (Notion-style)
   const handleMouseEnter = React.useCallback(() => {
-    if (state === "collapsed" && collapsible === "icon") {
+    if (hoverEnabled && state === "collapsed" && collapsible === "icon") {
       setIsHoveredOpen(true)
     }
-  }, [state, collapsible, setIsHoveredOpen])
+  }, [hoverEnabled, state, collapsible, setIsHoveredOpen])
   
   const handleMouseLeave = React.useCallback(() => {
     setIsHoveredOpen(false)

@@ -35,6 +35,7 @@ import {
   ListChecks,
   Star,
   LayoutDashboard,
+  MousePointer2,
 } from "lucide-react";
 
 import {
@@ -62,6 +63,8 @@ import { Project } from "@shared/schema";
 import { useState, useEffect } from "react";
 import { ProjectSwitcher } from "./ProjectSwitcher";
 import { ProjectIcon } from "./ProjectIcon";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
 const FAVORITE_PROJECTS_KEY = "sidebar_favorite_projects";
 const FAVORITE_PAGES_KEY = "sidebar_favorite_pages";
@@ -541,7 +544,37 @@ export function AppSidebar() {
             </CollapsibleContent>
           </SidebarGroup>
         </Collapsible>
+        
+        {/* Hover to Expand Toggle */}
+        <HoverExpandToggle />
       </SidebarFooter>
     </Sidebar>
+  );
+}
+
+// Toggle component for hover-to-expand feature
+function HoverExpandToggle() {
+  const { state, hoverEnabled, setHoverEnabled } = useSidebar();
+  
+  // Only show when sidebar is collapsed
+  if (state === "expanded") return null;
+  
+  return (
+    <div className="px-3 py-2">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            onClick={() => setHoverEnabled(!hoverEnabled)}
+            className="flex items-center justify-center w-full p-1.5 rounded-md hover-elevate active-elevate-2 text-muted-foreground"
+            data-testid="button-toggle-hover-expand"
+          >
+            <MousePointer2 className={cn("h-4 w-4", hoverEnabled && "text-primary")} />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="right">
+          <p>{hoverEnabled ? "Disable" : "Enable"} hover to expand</p>
+        </TooltipContent>
+      </Tooltip>
+    </div>
   );
 }
