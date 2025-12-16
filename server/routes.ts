@@ -385,7 +385,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Security: Only allow users to view their own personal notes
       // Admins with appropriate permissions could be added here
-      if (currentUser.id !== targetUserId) {
+      // Use String() to handle type mismatch (currentUser.id is number, targetUserId is string)
+      if (String(currentUser.id) !== String(targetUserId)) {
         return res.status(403).json({ error: "Forbidden - cannot access other users' personal notes" });
       }
       
