@@ -487,6 +487,14 @@ function GroupFormDialog({
     },
   });
 
+  useEffect(() => {
+    if (group) {
+      form.reset({ name: group.name });
+    } else {
+      form.reset({ name: "" });
+    }
+  }, [group, form]);
+
   const createMutation = useMutation({
     mutationFn: async (data: { name: string }) => {
       return await apiRequest("/api/checklist-template-groups", 'POST', {
@@ -506,9 +514,32 @@ function GroupFormDialog({
     },
   });
 
+  const updateMutation = useMutation({
+    mutationFn: async (data: { name: string }) => {
+      return await apiRequest(`/api/checklist-template-groups/${group!.id}`, 'PATCH', {
+        name: data.name,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates", templateId, "groups"] });
+      toast({
+        title: "Checklist updated",
+        description: "The checklist has been updated successfully.",
+      });
+      onOpenChange(false);
+      form.reset();
+    },
+  });
+
   const onSubmit = (data: { name: string }) => {
-    createMutation.mutate(data);
+    if (group) {
+      updateMutation.mutate(data);
+    } else {
+      createMutation.mutate(data);
+    }
   };
+
+  const isPending = createMutation.isPending || updateMutation.isPending;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -551,10 +582,10 @@ function GroupFormDialog({
               </Button>
               <Button
                 type="submit"
-                disabled={createMutation.isPending}
+                disabled={isPending}
                 data-testid="button-save-group"
               >
-                {createMutation.isPending ? "Saving..." : group ? "Update" : "Create"}
+                {isPending ? "Saving..." : group ? "Update" : "Create"}
               </Button>
             </div>
           </form>
