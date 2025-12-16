@@ -628,6 +628,7 @@ export const estimates = pgTable("estimates", {
   notes: text("notes"),
   ownerId: varchar("owner_id").references(() => users.id),
   ownerName: text("owner_name"),
+  assigneeIds: text("assignee_ids").array().default([]), // Multiple user IDs who can work on this estimate
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

@@ -119,6 +119,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
+import { MultiUserSelect } from "@/components/MultiUserSelect";
 import { GridRow, GridCell, GridHeaderRow, GridHeaderCell } from "@/components/estimates/GridRow";
 import { EstimateGridLayoutProvider, useEstimateGridLayout } from "@/contexts/EstimateGridLayoutContext";
 
@@ -1491,6 +1492,28 @@ export default function EstimateDetail() {
       </div>
     );
   }
+
+  // Mutation for updating estimate assignees
+  const updateAssigneesMutation = useMutation({
+    mutationFn: async (assigneeIds: string[]) => {
+      return await apiRequest(`/api/estimates/${effectiveEstimateId}`, "PATCH", { assigneeIds });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
+      toast({
+        title: "Success",
+        description: "Assignees updated successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update assignees.",
+        variant: "destructive",
+      });
+    },
+  });
 
   // Mutation for updating estimate name
   const updateEstimateMutation = useMutation({
@@ -4250,6 +4273,14 @@ export default function EstimateDetail() {
         {/* Right: Action Buttons */}
         <div className="flex items-center gap-1.5">
           {estimate && getStatusBadge(estimate)}
+          <MultiUserSelect
+            value={estimate?.assigneeIds || []}
+            onValueChange={(assigneeIds) => updateAssigneesMutation.mutate(assigneeIds)}
+            placeholder="Assignees"
+            disabled={estimate?.isLocked}
+            className="w-auto min-w-[100px] max-w-[200px]"
+            data-testid="select-estimate-assignees"
+          />
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>

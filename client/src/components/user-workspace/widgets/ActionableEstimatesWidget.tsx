@@ -81,7 +81,11 @@ export default function ActionableEstimatesWidget({
         if (est.status === "draft" && !showDraft) return false;
         if (est.status === "working" && !showWorking) return false;
         if (est.status === "locked" && !showLocked) return false;
-        if (onlyMyEstimates && est.ownerId !== userId) return false;
+        if (onlyMyEstimates) {
+          const isOwner = est.ownerId === userId;
+          const isAssignee = est.assigneeIds?.includes(userId) ?? false;
+          if (!isOwner && !isAssignee) return false;
+        }
         return true;
       })
       .map(est => ({
@@ -116,7 +120,7 @@ export default function ActionableEstimatesWidget({
             />
             <div>
               <span className="text-xs font-medium">Only show my estimates</span>
-              <p className="text-[10px] text-muted-foreground">Filter to estimates where you are the owner</p>
+              <p className="text-[10px] text-muted-foreground">Filter to estimates where you are an owner or assignee</p>
             </div>
           </label>
           
