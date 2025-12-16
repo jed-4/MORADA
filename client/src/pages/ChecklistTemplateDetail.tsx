@@ -36,7 +36,17 @@ import {
   CircleDot,
   ListChecks,
   X,
+  MoreVertical,
+  Edit3,
+  FolderInput,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
@@ -66,6 +76,7 @@ export default function ChecklistTemplateDetail() {
   const [addingItemToGroup, setAddingItemToGroup] = useState<string | null>(null);
   const [editingItem, setEditingItem] = useState<ChecklistTemplateItem | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [movingGroup, setMovingGroup] = useState<ChecklistTemplateGroup | null>(null);
 
   // Fetch template
   const { data: template, isLoading: templateLoading } = useQuery<ChecklistTemplate>({
@@ -236,7 +247,7 @@ export default function ChecklistTemplateDetail() {
                     {groups.map((group) => (
                       <div
                         key={group.id}
-                        className={`flex items-center justify-between gap-2 py-2 px-2 rounded border cursor-pointer hover-elevate ${
+                        className={`flex items-center justify-between gap-2 py-2 px-2 rounded border cursor-pointer hover-elevate group/item ${
                           selectedGroupId === group.id 
                             ? 'bg-accent border-accent' 
                             : 'bg-card border-border'
@@ -248,18 +259,54 @@ export default function ChecklistTemplateDetail() {
                           <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />
                           <span className="font-medium truncate text-sm">{group.name}</span>
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 shrink-0"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteGroupMutation.mutate(group.id);
-                          }}
-                          data-testid={`button-delete-group-${group.id}`}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 shrink-0 opacity-0 group-hover/item:opacity-100"
+                              onClick={(e) => e.stopPropagation()}
+                              data-testid={`button-menu-group-${group.id}`}
+                            >
+                              <MoreVertical className="h-3 w-3" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingGroup(group);
+                              }}
+                              data-testid={`button-edit-group-${group.id}`}
+                            >
+                              <Edit3 className="h-4 w-4 mr-2" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setMovingGroup(group);
+                              }}
+                              disabled={groups.length < 2}
+                              data-testid={`button-move-group-${group.id}`}
+                            >
+                              <FolderInput className="h-4 w-4 mr-2" />
+                              Move to Group
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteGroupMutation.mutate(group.id);
+                              }}
+                              className="text-destructive"
+                              data-testid={`button-delete-group-${group.id}`}
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     ))}
                   </div>
@@ -398,6 +445,17 @@ export default function ChecklistTemplateDetail() {
         }}
         item={editingItem}
         groupId={addingItemToGroup || editingItem?.groupId || ""}
+        templateId={templateId!}
+      />
+
+      {/* Move to Group Dialog */}
+      <MoveToGroupDialog
+        open={!!movingGroup}
+        onOpenChange={(open) => {
+          if (!open) setMovingGroup(null);
+        }}
+        sourceGroup={movingGroup}
+        groups={groups}
         templateId={templateId!}
       />
     </div>
@@ -773,6 +831,103 @@ function ItemFormDialog({
             </div>
           </form>
         </Form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function MoveToGroupDialog({
+  open,
+  onOpenChange,
+  sourceGroup,
+  groups,
+  templateId,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  sourceGroup: ChecklistTemplateGroup | null;
+  groups: ChecklistTemplateGroup[];
+  templateId: string;
+}) {
+  const { toast } = useToast();
+  const [targetGroupId, setTargetGroupId] = useState<string>("");
+
+  const availableGroups = groups.filter(g => g.id !== sourceGroup?.id);
+
+  const moveMutation = useMutation({
+    mutationFn: async () => {
+      if (!sourceGroup || !targetGroupId) return;
+      return await apiRequest(`/api/checklist-template-groups/${sourceGroup.id}/move-to`, 'POST', {
+        targetGroupId,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates", templateId, "groups"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/checklist-template-items", templateId] });
+      toast({
+        title: "Checklist moved",
+        description: `"${sourceGroup?.name}" has been converted to a checklist inside the selected group.`,
+      });
+      onOpenChange(false);
+      setTargetGroupId("");
+    },
+    onError: () => {
+      toast({
+        title: "Move failed",
+        description: "Failed to move the checklist. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Move to Group</DialogTitle>
+          <DialogDescription>
+            Convert "{sourceGroup?.name}" into a checklist inside another group. All items will be moved as well.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Select destination group</label>
+            <Select value={targetGroupId} onValueChange={setTargetGroupId}>
+              <SelectTrigger data-testid="select-target-group">
+                <SelectValue placeholder="Choose a group..." />
+              </SelectTrigger>
+              <SelectContent>
+                {availableGroups.map((group) => (
+                  <SelectItem key={group.id} value={group.id}>
+                    {group.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {targetGroupId && (
+            <div className="p-3 bg-muted rounded-md text-sm">
+              <p className="text-muted-foreground">
+                "{sourceGroup?.name}" will become a checklist inside "{availableGroups.find(g => g.id === targetGroupId)?.name}"
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="button-cancel-move">
+            Cancel
+          </Button>
+          <Button 
+            onClick={() => moveMutation.mutate()}
+            disabled={!targetGroupId || moveMutation.isPending}
+            data-testid="button-confirm-move"
+          >
+            {moveMutation.isPending ? "Moving..." : "Move"}
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   );

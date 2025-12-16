@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { type Task, type FieldCategoryWithOptions } from "@shared/schema";
+import { type Task, type FieldCategoryWithOptions, type Project } from "@shared/schema";
 import { z } from "zod";
 import { format } from "date-fns";
 
@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { RichTextEditor } from "@/components/RichTextEditor";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Dialog,
   DialogContent,
@@ -36,10 +37,8 @@ import {
 import {
   Calendar,
   X,
-  Heart,
   Paperclip,
   MoreHorizontal,
-  ChevronDown,
   Plus,
   GripVertical,
   Pencil,
@@ -47,6 +46,15 @@ import {
   FileText,
   ExternalLink,
   Trash2,
+  ChevronDown,
+  ChevronRight,
+  User,
+  Flag,
+  CircleDot,
+  FolderOpen,
+  Clock,
+  RotateCcw,
+  Settings2,
 } from "lucide-react";
 import { SetReminderDialog } from "@/components/SetReminderDialog";
 import { DriveFilePicker } from "@/components/DriveFilePicker";
@@ -81,31 +89,31 @@ interface TaskModalAsanaProps {
 export default function TaskModalAsana({ task, open, onOpenChange, projectId, initialStatus }: TaskModalAsanaProps) {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleValue, setTitleValue] = useState(task?.title || "");
-  const [isRepeatsOpen, setIsRepeatsOpen] = useState(false);
   const [subtaskInput, setSubtaskInput] = useState("");
   const [showReminderDialog, setShowReminderDialog] = useState(false);
   const [showSubtaskInput, setShowSubtaskInput] = useState(false);
   const [showDriveFilePicker, setShowDriveFilePicker] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
-  // Fetch field categories for status options
   const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
     queryKey: ["/api/field-categories"],
   });
 
-  // Fetch users for assignee dropdown
   const { data: users = [] } = useQuery<any[]>({
     queryKey: ["/api/users"],
   });
 
-  // Fetch subtasks
+  const { data: projects = [] } = useQuery<Project[]>({
+    queryKey: ["/api/projects"],
+  });
+
   const { data: subtasks = [] } = useQuery<Task[]>({
     queryKey: ["/api/tasks", task?.id, "subtasks"],
     enabled: !!task?.id,
   });
 
-  // Fetch Drive file attachments
   const { data: attachments = [] } = useQuery<any[]>({
     queryKey: ["/api/drive-attachments", "task", task?.id],
     queryFn: async () => {
@@ -117,7 +125,6 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
     enabled: !!task?.id,
   });
 
-  // Mutation to add attachment
   const addAttachmentMutation = useMutation({
     mutationFn: async (file: { id: string; name: string; mimeType: string; webViewLink?: string }) => {
       return await apiRequest("/api/drive-attachments", "POST", {
@@ -138,7 +145,6 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
     },
   });
 
-  // Mutation to remove attachment
   const removeAttachmentMutation = useMutation({
     mutationFn: async (attachmentId: string) => {
       return await apiRequest(`/api/drive-attachments/${attachmentId}`, "DELETE");
@@ -186,7 +192,6 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
     },
   });
 
-  // Reset form when task or open state changes
   useEffect(() => {
     if (open) {
       const newDefaults = {
@@ -207,10 +212,10 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
       };
       form.reset(newDefaults);
       setTitleValue(newDefaults.title);
+      setShowAdvanced(newDefaults.isRecurring);
     }
   }, [task, open, initialStatus, projectId, form]);
 
-  // Update title when editing starts
   useEffect(() => {
     if (isEditingTitle && titleInputRef.current) {
       titleInputRef.current.focus();
@@ -218,7 +223,6 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
     }
   }, [isEditingTitle]);
 
-  // Create or update task mutation
   const saveTaskMutation = useMutation({
     mutationFn: async (data: TaskFormData) => {
       if (task) {
@@ -241,14 +245,13 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
     },
   });
 
-  // Add subtask mutation
   const addSubtaskMutation = useMutation({
     mutationFn: async (title: string) => {
       return await apiRequest("/api/tasks", "POST", {
         title,
         type: "task",
         parentTaskId: task?.id,
-        projectId,
+        projectId: form.watch("projectId"),
         status: "todo",
       });
     },
@@ -259,7 +262,6 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
     },
   });
 
-  // Toggle completion mutation
   const toggleCompleteMutation = useMutation({
     mutationFn: async (checked: boolean) => {
       const newStatus = checked ? (completedOption?.key || "done") : "todo";
@@ -316,18 +318,30 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
   };
 
   const assignee = users.find(u => u.id === form.watch("assigneeId"));
+  const selectedProject = projects.find(p => p.id === form.watch("projectId"));
   const getInitials = (name: string) => name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '?';
 
-  const priorityColors = {
-    high: "bg-red-100 text-red-700 border-red-200",
-    medium: "bg-amber-100 text-amber-700 border-amber-200",
-    low: "bg-gray-100 text-gray-700 border-gray-200",
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case 'high': return 'text-red-600 bg-red-50 dark:bg-red-900/20';
+      case 'medium': return 'text-amber-600 bg-amber-50 dark:bg-amber-900/20';
+      case 'low': return 'text-slate-500 bg-slate-50 dark:bg-slate-900/20';
+      default: return 'text-muted-foreground';
+    }
+  };
+
+  const getStatusColor = (statusKey: string) => {
+    const option = statusOptions.find(o => o.key === statusKey);
+    if (option?.color) {
+      return { backgroundColor: option.color + '20', color: option.color };
+    }
+    return {};
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-6xl p-0 rounded-xl overflow-hidden bg-background border-gray-200 shadow-sm"
+        className="max-w-4xl p-0 gap-0 rounded-lg overflow-hidden flex flex-col max-h-[85vh]"
         onKeyDown={handleKeyDown}
         data-testid="task-modal-asana"
       >
@@ -337,15 +351,18 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
         <DialogDescription className="sr-only">
           Edit task details, assignee, due date, and other properties
         </DialogDescription>
-        {/* Header - Sticky */}
-        <div className="sticky top-0 z-10 bg-background flex items-start justify-between p-4 border-b border-gray-200">
-          <div className="flex items-start gap-2 flex-1">
-            <Checkbox
-              checked={isCompleted}
-              onCheckedChange={(checked) => task && toggleCompleteMutation.mutate(!!checked)}
-              className="mt-1"
-              data-testid="checkbox-complete-task"
-            />
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b bg-muted/30">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            {task && (
+              <Checkbox
+                checked={isCompleted}
+                onCheckedChange={(checked) => toggleCompleteMutation.mutate(!!checked)}
+                className="h-5 w-5"
+                data-testid="checkbox-complete-task"
+              />
+            )}
             {isEditingTitle ? (
               <Input
                 ref={titleInputRef}
@@ -359,12 +376,12 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                     setIsEditingTitle(false);
                   }
                 }}
-                className="text-xl font-bold bg-background border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500"
+                className="text-lg font-semibold border-0 shadow-none px-0 h-auto focus-visible:ring-0"
                 data-testid="input-task-title"
               />
             ) : (
               <h2
-                className="text-xl font-bold text-gray-900 cursor-pointer hover:bg-gray-50 px-2 py-1 rounded"
+                className={`text-lg font-semibold cursor-pointer hover:text-primary truncate ${isCompleted ? 'line-through text-muted-foreground' : ''}`}
                 onClick={() => {
                   setTitleValue(form.watch("title"));
                   setIsEditingTitle(true);
@@ -376,20 +393,10 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
             )}
           </div>
 
-          {/* Top-right action icons */}
           <div className="flex items-center gap-1">
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8 hover:bg-gray-100 text-gray-600"
-              data-testid="button-like-task"
-            >
-              <Heart className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 hover:bg-gray-100 text-gray-600"
               onClick={() => task && setShowDriveFilePicker(true)}
               disabled={!task}
               data-testid="button-attach-file"
@@ -398,405 +405,416 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 hover:bg-gray-100 text-gray-600"
-                  data-testid="button-more-actions"
-                >
+                <Button variant="ghost" size="icon" data-testid="button-more-actions">
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="bg-background border-gray-200">
+              <DropdownMenuContent align="end">
                 {task && (
-                  <DropdownMenuItem 
-                    className="text-gray-900 hover:bg-gray-50"
-                    onClick={() => setShowReminderDialog(true)}
-                    data-testid="menu-item-set-reminder"
-                  >
+                  <DropdownMenuItem onClick={() => setShowReminderDialog(true)} data-testid="menu-item-set-reminder">
                     <Bell className="h-4 w-4 mr-2" />
                     Set Reminder
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuItem className="text-gray-900 hover:bg-gray-50">Duplicate</DropdownMenuItem>
-                <DropdownMenuItem className="text-gray-900 hover:bg-gray-50">Delete</DropdownMenuItem>
+                <DropdownMenuItem>Duplicate</DropdownMenuItem>
+                <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
         </div>
 
-        {/* Split Layout */}
-        <div className="flex h-[600px]">
-          {/* Left Panel - Subtasks (40%) */}
-          <div className="w-[40%] border-r border-gray-200 overflow-y-auto bg-gray-50">
-            <div className="p-4 space-y-2">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Subtasks</h3>
-              
-              {subtasks.map((subtask) => (
-                <div
-                  key={subtask.id}
-                  className="flex items-center gap-2 p-2 rounded hover:bg-background group"
-                  data-testid={`subtask-${subtask.id}`}
-                >
-                  <GripVertical className="h-3 w-3 text-gray-400" />
-                  <Checkbox className="h-3.5 w-3.5" />
-                  <span className="text-sm text-gray-900 flex-1">{subtask.title}</span>
-                  <Pencil className="h-3 w-3 text-gray-400 opacity-0 group-hover:opacity-100" />
-                </div>
-              ))}
-
-              {showSubtaskInput ? (
-                <div className="flex items-center gap-2 p-2">
-                  <Input
-                    value={subtaskInput}
-                    onChange={(e) => setSubtaskInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleAddSubtask();
-                      if (e.key === "Escape") {
-                        setShowSubtaskInput(false);
-                        setSubtaskInput("");
-                      }
-                    }}
-                    placeholder="Subtask name"
-                    className="bg-background border-gray-300 text-gray-900 text-sm focus:ring-2 focus:ring-blue-500"
-                    autoFocus
-                    data-testid="input-add-subtask"
+        {/* Main Content - Two Columns */}
+        <div className="flex flex-1 overflow-hidden">
+          {/* Left Column - Main Content */}
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            {/* Description */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-muted-foreground">Description</label>
+              <Controller
+                name="content"
+                control={form.control}
+                render={({ field }) => (
+                  <RichTextEditor
+                    content={field.value}
+                    onChange={(html) => field.onChange(html)}
+                    placeholder="Add a description..."
+                    className="min-h-[120px]"
+                    data-testid="editor-description"
                   />
-                </div>
-              ) : (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="w-full justify-start text-gray-600 hover:text-gray-900 hover:bg-background"
-                  onClick={() => setShowSubtaskInput(true)}
-                  data-testid="button-add-subtask"
-                >
-                  <Plus className="h-3 w-3 mr-2" />
-                  Add subtask
-                </Button>
-              )}
+                )}
+              />
+            </div>
 
-              {/* Attachments Section */}
-              {task && (
-                <div className="mt-6 pt-4 border-t border-gray-200">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm font-semibold text-gray-700">Attachments</h3>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 px-2 text-xs text-gray-600 hover:text-gray-900"
-                      onClick={() => setShowDriveFilePicker(true)}
-                      data-testid="button-add-attachment"
+            {/* Subtasks */}
+            {task && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium text-muted-foreground">Subtasks</label>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => setShowSubtaskInput(true)}
+                    data-testid="button-add-subtask"
+                  >
+                    <Plus className="h-3 w-3 mr-1" />
+                    Add
+                  </Button>
+                </div>
+                
+                <div className="space-y-1">
+                  {subtasks.map((subtask) => (
+                    <div
+                      key={subtask.id}
+                      className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 group"
+                      data-testid={`subtask-${subtask.id}`}
                     >
-                      <Plus className="h-3 w-3 mr-1" />
-                      Add
-                    </Button>
-                  </div>
-                  {attachments.length === 0 ? (
-                    <p className="text-xs text-gray-500 italic">No files attached</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {attachments.map((attachment: any) => (
-                        <div
-                          key={attachment.id}
-                          className="flex items-center gap-2 p-2 rounded hover:bg-background group"
-                          data-testid={`attachment-${attachment.id}`}
-                        >
-                          <FileText className="h-4 w-4 text-blue-500 flex-shrink-0" />
-                          <span className="text-sm text-gray-900 flex-1 truncate">{attachment.fileName}</span>
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100">
-                            {attachment.webViewLink && (
-                              <a
-                                href={attachment.webViewLink}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="p-1 hover:bg-gray-200 rounded"
-                                data-testid={`button-open-attachment-${attachment.id}`}
-                              >
-                                <ExternalLink className="h-3 w-3 text-gray-600" />
-                              </a>
-                            )}
-                            <button
-                              onClick={() => removeAttachmentMutation.mutate(attachment.id)}
-                              className="p-1 hover:bg-red-100 rounded"
-                              data-testid={`button-remove-attachment-${attachment.id}`}
-                            >
-                              <Trash2 className="h-3 w-3 text-red-500" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+                      <GripVertical className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100" />
+                      <Checkbox className="h-4 w-4" />
+                      <span className="text-sm flex-1">{subtask.title}</span>
+                      <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 cursor-pointer" />
+                    </div>
+                  ))}
+
+                  {showSubtaskInput && (
+                    <div className="flex items-center gap-2 p-2">
+                      <Input
+                        value={subtaskInput}
+                        onChange={(e) => setSubtaskInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleAddSubtask();
+                          if (e.key === "Escape") {
+                            setShowSubtaskInput(false);
+                            setSubtaskInput("");
+                          }
+                        }}
+                        placeholder="Subtask name..."
+                        className="h-8 text-sm"
+                        autoFocus
+                        data-testid="input-add-subtask"
+                      />
                     </div>
                   )}
+
+                  {subtasks.length === 0 && !showSubtaskInput && (
+                    <p className="text-xs text-muted-foreground italic py-2">No subtasks yet</p>
+                  )}
                 </div>
-              )}
-            </div>
+              </div>
+            )}
+
+            {/* Attachments */}
+            {task && attachments.length > 0 && (
+              <div className="space-y-3">
+                <label className="text-sm font-medium text-muted-foreground">Attachments</label>
+                <div className="space-y-2">
+                  {attachments.map((attachment: any) => (
+                    <div
+                      key={attachment.id}
+                      className="flex items-center gap-2 p-2 rounded-md border hover:bg-muted/50 group"
+                      data-testid={`attachment-${attachment.id}`}
+                    >
+                      <FileText className="h-4 w-4 text-primary flex-shrink-0" />
+                      <span className="text-sm flex-1 truncate">{attachment.fileName}</span>
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100">
+                        {attachment.webViewLink && (
+                          <a
+                            href={attachment.webViewLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1 hover:bg-muted rounded"
+                            data-testid={`button-open-attachment-${attachment.id}`}
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                          </a>
+                        )}
+                        <button
+                          onClick={() => removeAttachmentMutation.mutate(attachment.id)}
+                          className="p-1 hover:bg-destructive/10 rounded"
+                          data-testid={`button-remove-attachment-${attachment.id}`}
+                        >
+                          <Trash2 className="h-3 w-3 text-destructive" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Right Panel - Details (60%) */}
-          <div className="w-[60%] overflow-y-auto">
+          {/* Right Column - Properties Sidebar */}
+          <div className="w-72 border-l bg-muted/20 overflow-y-auto">
             <div className="p-4 space-y-4">
-              {/* Quick Fields */}
-              <div className="space-y-4">
-                {/* Assignee */}
-                <div className="flex items-center gap-3">
-                  <span className="text-sm text-gray-600 w-24">Assignee</span>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        className="h-7 px-2 hover:bg-gray-50 text-gray-900 justify-start"
-                        data-testid="button-select-assignee"
-                      >
-                        {assignee ? (
-                          <div className="flex items-center gap-2">
-                            <Avatar className="h-5 w-5">
-                              <AvatarFallback className="text-xs bg-amber-100 text-amber-700">
-                                {getInitials(assignee.name || assignee.email)}
-                              </AvatarFallback>
-                            </Avatar>
-                            <span className="text-sm">{assignee.name || assignee.email}</span>
-                          </div>
-                        ) : (
-                          <span className="text-sm text-gray-400">No assignee</span>
-                        )}
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent className="bg-background border-gray-200">
-                      {users.map((user) => (
-                        <DropdownMenuItem
-                          key={user.id}
-                          onClick={() => form.setValue("assigneeId", user.id, { shouldDirty: true, shouldTouch: true })}
-                          className="text-gray-900 hover:bg-gray-50"
-                        >
-                          <Avatar className="h-5 w-5 mr-2">
-                            <AvatarFallback className="text-xs bg-amber-100 text-amber-700">
-                              {getInitials(user.name || user.email)}
+              {/* Project */}
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                  <FolderOpen className="h-3 w-3" />
+                  Project
+                </label>
+                <Select
+                  value={form.watch("projectId") || ""}
+                  onValueChange={(value) => form.setValue("projectId", value || undefined, { shouldDirty: true, shouldTouch: true })}
+                >
+                  <SelectTrigger className="h-9" data-testid="select-project">
+                    <SelectValue placeholder="Select project..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {projects.map((project) => (
+                      <SelectItem key={project.id} value={project.id}>
+                        <div className="flex items-center gap-2">
+                          <div 
+                            className="w-2 h-2 rounded-full" 
+                            style={{ backgroundColor: project.color || '#6b7280' }}
+                          />
+                          {project.name}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Assignee */}
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                  <User className="h-3 w-3" />
+                  Assignee
+                </label>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start h-9 font-normal"
+                      data-testid="button-select-assignee"
+                    >
+                      {assignee ? (
+                        <div className="flex items-center gap-2">
+                          <Avatar className="h-5 w-5">
+                            <AvatarFallback className="text-[10px]">
+                              {getInitials(assignee.name || assignee.email)}
                             </AvatarFallback>
                           </Avatar>
-                          {user.name || user.email}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
+                          <span className="truncate">{assignee.name || assignee.email}</span>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">Unassigned</span>
+                      )}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="w-56">
+                    <DropdownMenuItem onClick={() => form.setValue("assigneeId", undefined, { shouldDirty: true, shouldTouch: true })}>
+                      <span className="text-muted-foreground">Unassigned</span>
+                    </DropdownMenuItem>
+                    {users.map((user) => (
+                      <DropdownMenuItem
+                        key={user.id}
+                        onClick={() => form.setValue("assigneeId", user.id, { shouldDirty: true, shouldTouch: true })}
+                      >
+                        <Avatar className="h-5 w-5 mr-2">
+                          <AvatarFallback className="text-[10px]">
+                            {getInitials(user.name || user.email)}
+                          </AvatarFallback>
+                        </Avatar>
+                        {user.name || user.email}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
 
-                {/* Due Date */}
-                <div className="flex items-center gap-3">
-                  <span className="text-sm text-gray-600 w-24">Due date</span>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="date"
-                      {...form.register("dueDate")}
-                      className="h-7 text-xs bg-background border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500"
-                      data-testid="input-due-date"
-                    />
-                    {form.watch("dueDate") && (
-                      <Badge className="h-5 px-2 bg-red-100 text-red-700 border-red-200 no-default-hover-elevate">
-                        <Calendar className="h-2.5 w-2.5 mr-1" />
-                        {format(new Date(form.watch("dueDate")!), "MMM d")}
-                        <X
-                          className="h-2.5 w-2.5 ml-1 cursor-pointer hover:text-red-900"
-                          onClick={() => form.setValue("dueDate", undefined, { shouldDirty: true, shouldTouch: true })}
-                        />
-                      </Badge>
-                    )}
-                  </div>
-                </div>
+              {/* Status */}
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                  <CircleDot className="h-3 w-3" />
+                  Status
+                </label>
+                <Select
+                  value={form.watch("status")}
+                  onValueChange={(value) => form.setValue("status", value, { shouldDirty: true, shouldTouch: true })}
+                >
+                  <SelectTrigger className="h-9" data-testid="select-status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {statusOptions.map((option) => (
+                      <SelectItem key={option.key} value={option.key}>
+                        <div className="flex items-center gap-2">
+                          <div 
+                            className="w-2 h-2 rounded-full" 
+                            style={{ backgroundColor: option.color || '#6b7280' }}
+                          />
+                          {option.name}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-                {/* Start Time */}
-                <div className="flex items-center gap-3">
-                  <span className="text-sm text-gray-600 w-24">Start time</span>
+              {/* Priority */}
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                  <Flag className="h-3 w-3" />
+                  Priority
+                </label>
+                <Select
+                  value={form.watch("priority")}
+                  onValueChange={(value) => form.setValue("priority", value as any, { shouldDirty: true, shouldTouch: true })}
+                >
+                  <SelectTrigger className="h-9" data-testid="select-priority">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {priorityOptions.map((option) => (
+                      <SelectItem key={option.key} value={option.key}>
+                        {option.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Due Date */}
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                  <Calendar className="h-3 w-3" />
+                  Due Date
+                </label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="date"
+                    {...form.register("dueDate")}
+                    className="h-9 flex-1"
+                    data-testid="input-due-date"
+                  />
+                  {form.watch("dueDate") && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 shrink-0"
+                      onClick={() => form.setValue("dueDate", undefined, { shouldDirty: true, shouldTouch: true })}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {/* Time Range */}
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                  <Clock className="h-3 w-3" />
+                  Time
+                </label>
+                <div className="flex items-center gap-2">
                   <Input
                     type="time"
                     {...form.register("startTime")}
-                    className="h-7 w-32 text-xs bg-background border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500"
+                    className="h-9 flex-1"
+                    placeholder="Start"
                     data-testid="input-start-time"
                   />
-                </div>
-
-                {/* End Time */}
-                <div className="flex items-center gap-3">
-                  <span className="text-sm text-gray-600 w-24">End time</span>
+                  <span className="text-muted-foreground">-</span>
                   <Input
                     type="time"
                     {...form.register("endTime")}
-                    className="h-7 w-32 text-xs bg-background border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500"
+                    className="h-9 flex-1"
+                    placeholder="End"
                     data-testid="input-end-time"
                   />
                 </div>
-
-                {/* Priority */}
-                <div className="flex items-center gap-3">
-                  <span className="text-sm text-gray-600 w-24">Priority</span>
-                  <Select
-                    value={form.watch("priority")}
-                    onValueChange={(value) => form.setValue("priority", value as any, { shouldDirty: true, shouldTouch: true })}
-                  >
-                    <SelectTrigger className="h-7 w-32 bg-background border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-background border-gray-200">
-                      {priorityOptions.map((option) => (
-                        <SelectItem key={option.key} value={option.key} className="text-gray-900 hover:bg-gray-50">
-                          {option.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Badge className={`h-5 px-2 border ${priorityColors[form.watch("priority")]} no-default-hover-elevate`}>
-                    {form.watch("priority")}
-                  </Badge>
-                </div>
-
-                {/* Status */}
-                <div className="flex items-center gap-3">
-                  <span className="text-sm text-gray-600 w-24">Status</span>
-                  <Select
-                    value={form.watch("status")}
-                    onValueChange={(value) => form.setValue("status", value, { shouldDirty: true, shouldTouch: true })}
-                  >
-                    <SelectTrigger className="h-7 w-40 bg-background border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-background border-gray-200">
-                      {statusOptions.map((option) => (
-                        <SelectItem key={option.key} value={option.key} className="text-gray-900 hover:bg-gray-50">
-                          {option.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
               </div>
 
-              {/* Description */}
-              <div className="space-y-2">
-                <label className="text-sm text-gray-600">Description</label>
-                <div className="[&_.border]:border-gray-300 [&_.bg-border]:bg-gray-200 [&_button:hover]:bg-gray-100 [&_.prose]:text-gray-900 [&_.text-muted-foreground]:text-gray-500">
-                  <Controller
-                    name="content"
-                    control={form.control}
-                    render={({ field }) => (
-                      <RichTextEditor
-                        content={field.value}
-                        onChange={(html, text) => {
-                          field.onChange(html);
-                        }}
-                        placeholder="What is this task about?"
-                        className="bg-background border-gray-300"
-                        data-testid="editor-description"
-                      />
-                    )}
-                  />
-                </div>
-              </div>
-
-              {/* Repeats Panel */}
-              <div className="border border-gray-300 rounded-lg p-3 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      checked={form.watch("isRecurring")}
-                      onCheckedChange={(checked) => {
-                        form.setValue("isRecurring", !!checked, { shouldDirty: true, shouldTouch: true });
-                        setIsRepeatsOpen(!!checked);
-                      }}
-                      data-testid="checkbox-repeats"
-                    />
-                    <span className="text-sm text-gray-700">Repeats</span>
-                  </div>
-                  {form.watch("isRecurring") && (
-                    <Select
-                      value={form.watch("recurringType")}
-                      onValueChange={(value) => form.setValue("recurringType", value as any, { shouldDirty: true, shouldTouch: true })}
-                    >
-                      <SelectTrigger className="h-6 w-24 text-xs bg-background border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500">
-                        <SelectValue placeholder="Weekly" />
-                      </SelectTrigger>
-                      <SelectContent className="bg-background border-gray-200">
-                        <SelectItem value="daily" className="text-gray-900 hover:bg-gray-50">Daily</SelectItem>
-                        <SelectItem value="weekly" className="text-gray-900 hover:bg-gray-50">Weekly</SelectItem>
-                        <SelectItem value="monthly" className="text-gray-900 hover:bg-gray-50">Monthly</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  )}
-                </div>
-
-                {form.watch("isRecurring") && form.watch("recurringType") === "weekly" && (
+              {/* Advanced Options - Collapsible */}
+              <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
+                <CollapsibleTrigger asChild>
+                  <Button variant="ghost" className="w-full justify-between h-8 px-2 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1.5">
+                      <Settings2 className="h-3 w-3" />
+                      Advanced
+                    </span>
+                    {showAdvanced ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                  </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="space-y-4 pt-3">
+                  {/* Recurring */}
                   <div className="space-y-2">
-                    <label className="text-xs text-gray-600">On these days</label>
-                    <div className="flex gap-1">
-                      {weekDays.map((day) => (
-                        <button
-                          key={day.value}
-                          type="button"
-                          onClick={() => toggleDay(day.value)}
-                          className={`h-7 w-7 rounded-full text-xs font-medium transition-colors ${
-                            selectedDays?.includes(day.value)
-                              ? "bg-amber-500 text-white"
-                              : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                          }`}
-                          data-testid={`button-day-${day.value}`}
-                        >
-                          {day.label}
-                        </button>
-                      ))}
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        checked={form.watch("isRecurring")}
+                        onCheckedChange={(checked) => form.setValue("isRecurring", !!checked, { shouldDirty: true, shouldTouch: true })}
+                        data-testid="checkbox-repeats"
+                      />
+                      <label className="text-xs font-medium flex items-center gap-1.5">
+                        <RotateCcw className="h-3 w-3" />
+                        Repeats
+                      </label>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 text-xs text-gray-600 hover:text-gray-900"
-                      onClick={() => form.setValue("recurringDays", [], { shouldDirty: true, shouldTouch: true })}
-                    >
-                      Clear
-                    </Button>
+                    
+                    {form.watch("isRecurring") && (
+                      <div className="space-y-3 pl-6">
+                        <Select
+                          value={form.watch("recurringType") || "weekly"}
+                          onValueChange={(value) => form.setValue("recurringType", value as any, { shouldDirty: true, shouldTouch: true })}
+                        >
+                          <SelectTrigger className="h-8 text-xs">
+                            <SelectValue placeholder="Weekly" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="daily">Daily</SelectItem>
+                            <SelectItem value="weekly">Weekly</SelectItem>
+                            <SelectItem value="monthly">Monthly</SelectItem>
+                          </SelectContent>
+                        </Select>
+
+                        {form.watch("recurringType") === "weekly" && (
+                          <div className="flex gap-1">
+                            {weekDays.map((day) => (
+                              <button
+                                key={day.value}
+                                type="button"
+                                onClick={() => toggleDay(day.value)}
+                                className={`h-6 w-6 rounded-full text-[10px] font-medium transition-colors ${
+                                  selectedDays?.includes(day.value)
+                                    ? "bg-primary text-primary-foreground"
+                                    : "bg-muted hover:bg-muted/80"
+                                }`}
+                                data-testid={`button-day-${day.value}`}
+                              >
+                                {day.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-
-              {/* Comments */}
-              <div className="space-y-3 pt-4 border-t border-gray-200">
-                <h3 className="text-sm font-semibold text-gray-700">Comments</h3>
-                <div className="flex items-start gap-2">
-                  <Avatar className="h-7 w-7">
-                    <AvatarFallback className="text-xs bg-amber-100 text-amber-700">
-                      JS
-                    </AvatarFallback>
-                  </Avatar>
-                  <Input
-                    placeholder="Add a comment"
-                    className="flex-1 h-8 bg-background border-gray-300 text-gray-900 focus:ring-2 focus:ring-blue-500"
-                    data-testid="input-add-comment"
-                  />
-                </div>
-              </div>
-
-              {/* Save Button */}
-              <div className="flex justify-end gap-2 pt-4">
-                <Button
-                  variant="ghost"
-                  onClick={() => onOpenChange(false)}
-                  className="text-gray-600 hover:text-gray-900"
-                  data-testid="button-cancel"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={form.handleSubmit(onSubmit)}
-                  disabled={saveTaskMutation.isPending}
-                  className="bg-amber-500 hover:bg-amber-600 text-white"
-                  data-testid="button-save-task"
-                >
-                  {saveTaskMutation.isPending ? "Saving..." : task ? "Save changes" : "Create task"}
-                </Button>
-              </div>
+                </CollapsibleContent>
+              </Collapsible>
             </div>
           </div>
         </div>
+
+        {/* Footer - Sticky */}
+        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-muted/30">
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            data-testid="button-cancel"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={form.handleSubmit(onSubmit)}
+            disabled={saveTaskMutation.isPending}
+            data-testid="button-save-task"
+          >
+            {saveTaskMutation.isPending ? "Saving..." : task ? "Save Changes" : "Create Task"}
+          </Button>
+        </div>
       </DialogContent>
 
-      {/* Set Reminder Dialog */}
       <SetReminderDialog
         open={showReminderDialog}
         onOpenChange={setShowReminderDialog}
@@ -806,7 +824,6 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
         projectId={projectId || task?.projectId}
       />
 
-      {/* Drive File Picker */}
       <DriveFilePicker
         open={showDriveFilePicker}
         onOpenChange={setShowDriveFilePicker}

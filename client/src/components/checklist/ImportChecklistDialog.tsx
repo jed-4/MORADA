@@ -201,12 +201,12 @@ export function ImportChecklistDialog({ open, onOpenChange }: ImportChecklistDia
   };
 
   const handleDownloadTemplate = () => {
-    const headers = ["Template Name", "Description", "Type", "Group Name", "Item Description"];
+    const headers = ["Checklist Group", "Checklist", "Checklist Item", "Type", "Description"];
     const exampleRows = [
-      ["Pre-Construction Checklist", "Tasks to complete before starting construction", "Job", "Site Preparation", "Clear and level the site"],
-      ["Pre-Construction Checklist", "Tasks to complete before starting construction", "Job", "Site Preparation", "Set up temporary fencing"],
-      ["Pre-Construction Checklist", "Tasks to complete before starting construction", "Job", "Permits & Approvals", "Obtain building permit"],
-      ["Lead Qualification", "Steps to qualify a potential lead", "Lead", "Initial Contact", "Make first phone call"],
+      ["Site Preparation", "Pre-Construction Checklist", "Clear and level the site", "Job", "Tasks to complete before starting construction"],
+      ["Site Preparation", "Pre-Construction Checklist", "Set up temporary fencing", "Job", "Tasks to complete before starting construction"],
+      ["Permits & Approvals", "Pre-Construction Checklist", "Obtain building permit", "Job", "Tasks to complete before starting construction"],
+      ["Initial Contact", "Lead Qualification", "Make first phone call", "Lead", "Steps to qualify a potential lead"],
     ];
     
     const csvRows = [
@@ -257,7 +257,7 @@ export function ImportChecklistDialog({ open, onOpenChange }: ImportChecklistDia
               </Button>
             </div>
             <p className="text-sm text-muted-foreground">
-              Expected columns: Template Name, Description, Type (Task/Job/Estimation/Lead), Group Name, Item Description
+              Expected columns: Checklist Group, Checklist, Checklist Item, Type (Task/Job/Estimation/Lead), Description
             </p>
           </div>
 
@@ -276,14 +276,54 @@ export function ImportChecklistDialog({ open, onOpenChange }: ImportChecklistDia
               <p className="text-sm text-muted-foreground">
                 Select which column from your file matches each field. Fields marked with * are required.
               </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="map-template-name">Template Name *</Label>
+                  <Label htmlFor="map-group">Checklist Group</Label>
+                  <Select
+                    value={columnMapping.groupName || "__none__"}
+                    onValueChange={(value) => handleColumnMappingChange('groupName', value)}
+                  >
+                    <SelectTrigger id="map-group" data-testid="select-map-group">
+                      <SelectValue placeholder="Select column" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">-- None --</SelectItem>
+                      {headers.map((header) => (
+                        <SelectItem key={header} value={header}>
+                          {header}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="map-template-name">Checklist *</Label>
                   <Select
                     value={columnMapping.templateName || "__none__"}
                     onValueChange={(value) => handleColumnMappingChange('templateName', value)}
                   >
                     <SelectTrigger id="map-template-name" data-testid="select-map-template-name">
+                      <SelectValue placeholder="Select column" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">-- None --</SelectItem>
+                      {headers.map((header) => (
+                        <SelectItem key={header} value={header}>
+                          {header}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="map-item">Checklist Item</Label>
+                  <Select
+                    value={columnMapping.itemDescription || "__none__"}
+                    onValueChange={(value) => handleColumnMappingChange('itemDescription', value)}
+                  >
+                    <SelectTrigger id="map-item" data-testid="select-map-item">
                       <SelectValue placeholder="Select column" />
                     </SelectTrigger>
                     <SelectContent>
@@ -318,52 +358,12 @@ export function ImportChecklistDialog({ open, onOpenChange }: ImportChecklistDia
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="map-description">Template Description</Label>
+                  <Label htmlFor="map-description">Description</Label>
                   <Select
                     value={columnMapping.templateDescription || "__none__"}
                     onValueChange={(value) => handleColumnMappingChange('templateDescription', value)}
                   >
                     <SelectTrigger id="map-description" data-testid="select-map-description">
-                      <SelectValue placeholder="Select column" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">-- None --</SelectItem>
-                      {headers.map((header) => (
-                        <SelectItem key={header} value={header}>
-                          {header}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="map-group">Group Name</Label>
-                  <Select
-                    value={columnMapping.groupName || "__none__"}
-                    onValueChange={(value) => handleColumnMappingChange('groupName', value)}
-                  >
-                    <SelectTrigger id="map-group" data-testid="select-map-group">
-                      <SelectValue placeholder="Select column" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">-- None --</SelectItem>
-                      {headers.map((header) => (
-                        <SelectItem key={header} value={header}>
-                          {header}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="map-item">Item Description</Label>
-                  <Select
-                    value={columnMapping.itemDescription || "__none__"}
-                    onValueChange={(value) => handleColumnMappingChange('itemDescription', value)}
-                  >
-                    <SelectTrigger id="map-item" data-testid="select-map-item">
                       <SelectValue placeholder="Select column" />
                     </SelectTrigger>
                     <SelectContent>
@@ -388,21 +388,21 @@ export function ImportChecklistDialog({ open, onOpenChange }: ImportChecklistDia
                 <table className="w-full text-sm">
                   <thead className="bg-muted sticky top-0">
                     <tr>
-                      <th className="text-left p-2 border-b font-medium">Template</th>
-                      <th className="text-left p-2 border-b font-medium">Description</th>
+                      <th className="text-left p-2 border-b font-medium">Checklist Group</th>
+                      <th className="text-left p-2 border-b font-medium">Checklist</th>
+                      <th className="text-left p-2 border-b font-medium">Checklist Item</th>
                       <th className="text-left p-2 border-b font-medium">Type</th>
-                      <th className="text-left p-2 border-b font-medium">Group</th>
-                      <th className="text-left p-2 border-b font-medium">Item</th>
+                      <th className="text-left p-2 border-b font-medium">Description</th>
                     </tr>
                   </thead>
                   <tbody>
                     {previewData.slice(0, 10).map((row, idx) => (
                       <tr key={idx} className="border-b">
-                        <td className="p-2">{row.templateName}</td>
-                        <td className="p-2">{row.templateDescription}</td>
-                        <td className="p-2">{row.type}</td>
                         <td className="p-2">{row.groupName}</td>
+                        <td className="p-2">{row.templateName}</td>
                         <td className="p-2">{row.itemDescription}</td>
+                        <td className="p-2">{row.type}</td>
+                        <td className="p-2">{row.templateDescription}</td>
                       </tr>
                     ))}
                   </tbody>

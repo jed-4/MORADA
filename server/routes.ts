@@ -11123,6 +11123,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/checklist-template-groups/:id/move-to", async (req, res) => {
+    try {
+      const { targetGroupId } = req.body;
+      if (!targetGroupId) {
+        return res.status(400).json({ error: "Target group ID is required" });
+      }
+
+      const sourceGroupId = req.params.id;
+      
+      const sourceGroup = await storage.getChecklistTemplateGroup(sourceGroupId);
+      if (!sourceGroup) {
+        return res.status(404).json({ error: "Source group not found" });
+      }
+
+      const targetGroup = await storage.getChecklistTemplateGroup(targetGroupId);
+      if (!targetGroup) {
+        return res.status(404).json({ error: "Target group not found" });
+      }
+
+      const sourceItems = await storage.getChecklistTemplateItems(sourceGroupId);
+
+      for (const item of sourceItems) {
+        await storage.updateChecklistTemplateItem(item.id, { groupId: targetGroupId });
+      }
+
+      await storage.deleteChecklistTemplateGroup(sourceGroupId);
+
+      res.json({ 
+        success: true, 
+        message: `Moved ${sourceItems.length} items from "${sourceGroup.name}" to "${targetGroup.name}"`,
+        itemsMoved: sourceItems.length
+      });
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to move group",
+        details: error.message 
+      });
+    }
+  });
+
   // Checklist Template Item routes
   app.get("/api/checklist-template-groups/:groupId/items", async (req, res) => {
     try {
