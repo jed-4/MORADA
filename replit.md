@@ -54,12 +54,15 @@ Preferred communication style: Simple, everyday language.
 - **Business Page Reorganization**: Unified navigation with a 2-row header and tab system.
 - **Timesheets System**: Global access via All Items section, compact table design (h-7 rows, text-[11px], py-1 padding), configurable columns with localStorage persistence, tabbed views (Table/Weekly/Calendar). Weekly view shows user×days matrix with aggregated hours and totals. Rapidfire Approval Modal enables batch review of pending timesheets with inline editing, 15min rounding, missing info highlights, and "Approve & Next" workflow. Simplified status flow: Draft → Approved. Planned features: subcontractor-to-PO workflow.
 - **User Workspace**: Personal workspace with tabs for Overview, Tasks, and future Schedule/Time/Notes. The Overview tab features a fully customizable widget-based dashboard with:
-  - Personal widgets: My Tasks, My Calendar (task-based), Cross-Project Deadlines, Personal Metrics, Quick Actions (clock in/out, log time), My Memos
+  - Personal widgets: My Tasks, My Calendar (task-based), Cross-Project Deadlines, Personal Metrics, Quick Actions (clock in/out, log time), My Memos, Day Calendar, Week Calendar
+  - Day Calendar widget: Scrollable 24-hour timeline with all-day items pinned at top, configurable data sources (tasks, schedule, timesheets, Google Calendar, reminders)
+  - Week Calendar widget: 7-column grid view with expandable day columns, show/hide more events per day
+  - Widget resizing: Drag corner handle to resize widgets (snaps to 8-column grid), dimensions persisted in localStorage
   - Drag-and-drop widget reordering via @dnd-kit
   - Add/remove widgets with configuration dialogs
   - Saved views with create/delete/switch functionality
   - Default "Overview" view protected from deletion
-  - localStorage persistence per user
+  - localStorage persistence per user including widget dimensions
 - **Notes & Memos**: Dedicated business/project notes and personal quick-capture memos.
 - **Onboarding Flow**: Two-step process for user profile completion and company creation.
 - **Activity Feed Settings**: Company Settings > Activity section allows toggling visibility of activity types (task, estimate, bill, variation, invoice, proposal, project, site_diary, other). Stored in `companySettings.activityTypesVisible` JSON field. ActivityWidget respects these settings and filters activities accordingly.

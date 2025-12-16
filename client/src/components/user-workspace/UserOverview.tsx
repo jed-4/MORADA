@@ -91,6 +91,8 @@ function SortableWidget({
   onConfigure: (id: string | null) => void;
   userId?: string;
 }) {
+  const [isResizing, setIsResizing] = useState(false);
+  
   const {
     attributes,
     listeners,
@@ -98,31 +100,55 @@ function SortableWidget({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: widget.id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
+  } = useSortable({ id: widget.id, disabled: isResizing });
 
   const definition = getPersonalWidgetDefinition(widget.type);
   if (!definition) return null;
 
   const WidgetComponent = definition.component;
 
-  const sizeClasses = {
+  const sizeClasses: Record<string, string> = {
     sm: "col-span-2",
     md: "col-span-4",
     lg: "col-span-6",
     xl: "col-span-8",
   };
 
+  const getColSpanClass = () => {
+    if (widget.dimensions?.columns) {
+      const colSpanMap: Record<number, string> = {
+        1: 'col-span-1',
+        2: 'col-span-2', 
+        3: 'col-span-3',
+        4: 'col-span-4',
+        5: 'col-span-5',
+        6: 'col-span-6',
+        7: 'col-span-7',
+        8: 'col-span-8',
+      };
+      return colSpanMap[widget.dimensions.columns] || sizeClasses[widget.size];
+    }
+    return sizeClasses[widget.size];
+  };
+
+  const handleResizeEnd = (columns: number, height: number) => {
+    onUpdate({
+      ...widget,
+      dimensions: { columns, height }
+    });
+  };
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition: isResizing ? 'none' : transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className={sizeClasses[widget.size]}
+      className={getColSpanClass()}
     >
       <PersonalWidgetContainer
         title={widget.title}
@@ -130,6 +156,10 @@ function SortableWidget({
         onRemove={() => onRemove(widget.id)}
         onConfigure={definition.configurable ? () => onConfigure(widget.id) : undefined}
         dragHandleProps={{ ...attributes, ...listeners }}
+        onResizeEnd={handleResizeEnd}
+        dimensions={widget.dimensions}
+        isResizing={isResizing}
+        setIsResizing={setIsResizing}
       >
         <WidgetComponent
           widget={widget}

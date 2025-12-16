@@ -8,7 +8,9 @@ import {
   Bell,
   Sun,
   Activity,
-  Sparkles
+  Sparkles,
+  CalendarDays,
+  CalendarRange
 } from "lucide-react";
 import { WidgetDefinition } from "@/types/widgets";
 import PersonalTasksWidget from "./PersonalTasksWidget";
@@ -21,6 +23,8 @@ import PersonalRemindersWidget from "./PersonalRemindersWidget";
 import MyDayWidget from "./MyDayWidget";
 import PersonalActivityWidget from "./PersonalActivityWidget";
 import PersonalAISummaryWidget from "./PersonalAISummaryWidget";
+import DayCalendarWidget from "./DayCalendarWidget";
+import WeekCalendarWidget from "./WeekCalendarWidget";
 
 export const personalWidgetRegistry: Record<string, WidgetDefinition> = {
   personalTasks: {
@@ -111,6 +115,24 @@ export const personalWidgetRegistry: Record<string, WidgetDefinition> = {
     icon: Sparkles,
     component: PersonalAISummaryWidget,
     defaultSize: "md",
+    configurable: true,
+  },
+  dayCalendar: {
+    type: "dayCalendar",
+    name: "Day Calendar",
+    description: "Scrollable timeline view of today's tasks, events, and schedule",
+    icon: CalendarDays,
+    component: DayCalendarWidget,
+    defaultSize: "md",
+    configurable: true,
+  },
+  weekCalendar: {
+    type: "weekCalendar",
+    name: "Week Calendar",
+    description: "7-day grid view of your week with all events at a glance",
+    icon: CalendarRange,
+    component: WeekCalendarWidget,
+    defaultSize: "lg",
     configurable: true,
   },
 };
