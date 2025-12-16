@@ -22,6 +22,7 @@ import {
   type CustomFieldOption,
   type NoteTemplate,
   type NoteTemplateField,
+  type NoteGroup,
   type User as UserType
 } from "@shared/schema";
 import { RichTextEditor } from "@/components/RichTextEditor";
@@ -71,7 +72,14 @@ import {
   Clock,
   Pin,
   PinOff,
+  Archive,
+  ArchiveRestore,
+  FolderPlus,
+  Folder,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { UserSelect } from "@/components/UserSelect";
 import { format } from "date-fns";
 import { z } from "zod";
@@ -114,6 +122,170 @@ interface NotesProps {
   projectId?: string | null;
 }
 
+// Reusable NoteCard component
+interface NoteCardProps {
+  note: Note;
+  indented?: boolean;
+  onEdit: (note: Note) => void;
+  onDelete: (id: string) => void;
+  onTogglePin: (note: Note) => void;
+  onArchive: (id: string) => void;
+  onMoveToGroup: (noteId: string, groupId: string | null) => void;
+  noteGroups: NoteGroup[];
+  effectiveProjectId?: string | null;
+  getProjectName: (projectId: string | null | undefined) => string;
+  getVisibilityLabel: (visibility: string) => string;
+  isPinPending: boolean;
+}
+
+function NoteCard({
+  note,
+  indented,
+  onEdit,
+  onDelete,
+  onTogglePin,
+  onArchive,
+  onMoveToGroup,
+  noteGroups,
+  effectiveProjectId,
+  getProjectName,
+  getVisibilityLabel,
+  isPinPending,
+}: NoteCardProps) {
+  return (
+    <div 
+      className={`group border rounded-md p-2 bg-card hover-elevate transition-all cursor-pointer ${indented ? 'ml-6' : ''}`}
+      data-testid={`note-card-${note.id}`}
+      onDoubleClick={() => onEdit(note)}
+    >
+      <div className="flex items-start gap-2">
+        {note.pinned && (
+          <div className="flex-shrink-0 pt-0.5">
+            <Pin className="h-3 w-3 text-[#bba7db]" data-testid={`note-pinned-indicator-${note.id}`} />
+          </div>
+        )}
+        
+        <div className="flex-1 min-w-0">
+          <h3 className="font-semibold text-sm mb-1 line-clamp-1">
+            {note.title}
+          </h3>
+          <p className="text-xs text-muted-foreground line-clamp-2">
+            {note.contentText || note.content}
+          </p>
+        </div>
+        
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {!effectiveProjectId && note.projectId && (
+            <Badge variant="default" className="h-4 px-1.5 text-[10px]" data-testid={`note-project-${note.id}`}>
+              {getProjectName(note.projectId)}
+            </Badge>
+          )}
+
+          <Badge variant="secondary" className="h-4 px-1.5 text-[10px]" data-testid={`note-category-${note.id}`}>
+            {note.category}
+          </Badge>
+          
+          <Badge variant="outline" className="h-4 px-1.5 text-[10px]" data-testid={`note-visibility-${note.id}`}>
+            {getVisibilityLabel(note.visibility || "team_only")}
+          </Badge>
+          
+          <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+            <Clock className="h-3 w-3" />
+            <span data-testid={`note-date-${note.id}`}>
+              {format(new Date(note.createdAt), "MMM d, yyyy")}
+            </span>
+          </div>
+          
+          <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+            <User className="h-3 w-3" />
+            <span>{note.author}</span>
+          </div>
+          
+          {note.assigneeName && (
+            <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+              <UserPlus className="h-3 w-3 text-[#bba7db]" />
+              <span data-testid={`note-assignee-${note.id}`}>{note.assigneeName}</span>
+            </div>
+          )}
+          
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100" data-testid={`note-menu-trigger-${note.id}`}>
+                <MoreVertical className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem 
+                onClick={() => onTogglePin(note)} 
+                disabled={isPinPending}
+                data-testid={`note-pin-${note.id}`}
+              >
+                {note.pinned ? (
+                  <>
+                    <PinOff className="h-4 w-4 mr-2" />
+                    Unpin
+                  </>
+                ) : (
+                  <>
+                    <Pin className="h-4 w-4 mr-2" />
+                    Pin
+                  </>
+                )}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onEdit(note)} data-testid={`note-edit-${note.id}`}>
+                <Edit3 className="h-4 w-4 mr-2" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onArchive(note.id)} data-testid={`note-archive-${note.id}`}>
+                <Archive className="h-4 w-4 mr-2" />
+                Archive
+              </DropdownMenuItem>
+              
+              {/* Move to Group submenu */}
+              {noteGroups.length > 0 && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                      <Folder className="h-4 w-4 mr-2" />
+                      Move to Group
+                      <ChevronRight className="h-4 w-4 ml-auto" />
+                    </DropdownMenuItem>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent side="right" align="start">
+                    {note.groupId && (
+                      <DropdownMenuItem onClick={() => onMoveToGroup(note.id, null)}>
+                        Remove from Group
+                      </DropdownMenuItem>
+                    )}
+                    {noteGroups.filter(g => g.id !== note.groupId).map(group => (
+                      <DropdownMenuItem 
+                        key={group.id} 
+                        onClick={() => onMoveToGroup(note.id, group.id)}
+                      >
+                        <Folder className="h-4 w-4 mr-2" />
+                        {group.name}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+              
+              <DropdownMenuItem 
+                onClick={() => onDelete(note.id)}
+                className="text-destructive"
+                data-testid={`note-delete-${note.id}`}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
   const [isAddingNote, setIsAddingNote] = useState(false);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
@@ -124,6 +296,15 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [templateFieldValues, setTemplateFieldValues] = useState<Record<string, any>>({});
   const [sortBy, setSortBy] = useState("newest");
+  
+  // Grouping and Archive state
+  const [isArchiveOpen, setIsArchiveOpen] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
+  const [newGroupName, setNewGroupName] = useState("");
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [editingGroupName, setEditingGroupName] = useState("");
+  
   const { toast } = useToast();
   const { currentProject } = useProject();
   const params = useParams<NotesParams>();
@@ -355,6 +536,131 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
     },
   });
 
+  // Fetch note groups for this project
+  const { data: noteGroups = [] } = useQuery<NoteGroup[]>({
+    queryKey: ["/api/note-groups", effectiveProjectId],
+    queryFn: async () => {
+      const url = effectiveProjectId === null
+        ? '/api/note-groups?projectId=null'
+        : effectiveProjectId
+        ? `/api/note-groups?projectId=${effectiveProjectId}`
+        : '/api/note-groups';
+      const response = await fetch(url, { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to fetch note groups");
+      return response.json();
+    },
+  });
+
+  // Archive note mutation
+  const archiveNoteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest(`/api/notes/${id}/archive`, "POST");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/notes", effectiveProjectId] });
+      toast({ title: "Note archived" });
+    },
+    onError: (error) => {
+      toast({ 
+        title: "Failed to archive note", 
+        description: error.message,
+        variant: "destructive" 
+      });
+    },
+  });
+
+  // Unarchive note mutation
+  const unarchiveNoteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest(`/api/notes/${id}/unarchive`, "POST");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/notes", effectiveProjectId] });
+      toast({ title: "Note restored" });
+    },
+    onError: (error) => {
+      toast({ 
+        title: "Failed to restore note", 
+        description: error.message,
+        variant: "destructive" 
+      });
+    },
+  });
+
+  // Create note group mutation
+  const createGroupMutation = useMutation({
+    mutationFn: async (data: { name: string; projectId?: string | null }) => {
+      return await apiRequest("/api/note-groups", "POST", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/note-groups", effectiveProjectId] });
+      toast({ title: "Group created" });
+      setIsCreateGroupOpen(false);
+      setNewGroupName("");
+    },
+    onError: (error) => {
+      toast({ 
+        title: "Failed to create group", 
+        description: error.message,
+        variant: "destructive" 
+      });
+    },
+  });
+
+  // Update note group mutation
+  const updateGroupMutation = useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+      return await apiRequest(`/api/note-groups/${id}`, "PATCH", { name });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/note-groups", effectiveProjectId] });
+      setEditingGroupId(null);
+      setEditingGroupName("");
+    },
+    onError: (error) => {
+      toast({ 
+        title: "Failed to rename group", 
+        description: error.message,
+        variant: "destructive" 
+      });
+    },
+  });
+
+  // Delete note group mutation
+  const deleteGroupMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest(`/api/note-groups/${id}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/note-groups", effectiveProjectId] });
+      toast({ title: "Group deleted" });
+    },
+    onError: (error) => {
+      toast({ 
+        title: "Failed to delete group", 
+        description: error.message,
+        variant: "destructive" 
+      });
+    },
+  });
+
+  // Move note to group mutation
+  const moveNoteToGroupMutation = useMutation({
+    mutationFn: async ({ noteId, groupId }: { noteId: string; groupId: string | null }) => {
+      return await apiRequest(`/api/notes/${noteId}`, "PATCH", { groupId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/notes", effectiveProjectId] });
+    },
+    onError: (error) => {
+      toast({ 
+        title: "Failed to move note", 
+        description: error.message,
+        variant: "destructive" 
+      });
+    },
+  });
+
   const handleTogglePin = (note: Note) => {
     const newPinnedState = !note.pinned;
     
@@ -375,8 +681,24 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
   };
 
 
+  // Separate archived and active notes
+  const { activeNotes, archivedNotes } = useMemo(() => {
+    const active: Note[] = [];
+    const archived: Note[] = [];
+    
+    notes.forEach(note => {
+      if (note.archivedAt) {
+        archived.push(note);
+      } else {
+        active.push(note);
+      }
+    });
+    
+    return { activeNotes: active, archivedNotes: archived };
+  }, [notes]);
+
   const filteredNotes = useMemo(() => {
-    let filtered = notes.filter(note => {
+    let filtered = activeNotes.filter(note => {
       const searchableContent = [
         note.title,
         note.content,
@@ -425,7 +747,39 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
     });
     
     return filtered;
-  }, [notes, searchTerm, selectedCategory, selectedField, sortBy]);
+  }, [activeNotes, searchTerm, selectedCategory, selectedField, sortBy]);
+
+  // Group notes by groupId
+  const { groupedNotes, ungroupedNotes } = useMemo(() => {
+    const grouped: Record<string, Note[]> = {};
+    const ungrouped: Note[] = [];
+    
+    filteredNotes.forEach(note => {
+      if (note.groupId) {
+        if (!grouped[note.groupId]) {
+          grouped[note.groupId] = [];
+        }
+        grouped[note.groupId].push(note);
+      } else {
+        ungrouped.push(note);
+      }
+    });
+    
+    return { groupedNotes: grouped, ungroupedNotes: ungrouped };
+  }, [filteredNotes]);
+
+  // Toggle group expansion
+  const toggleGroupExpanded = (groupId: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  };
 
   const onSubmit = (data: NoteFormData) => {
     try {
@@ -658,6 +1012,18 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
 
           <div className="flex-1" />
 
+          {/* Create Group Button */}
+          <Button 
+            variant="outline"
+            size="sm"
+            onClick={() => setIsCreateGroupOpen(true)} 
+            className="h-6 px-2 text-xs gap-1"
+            data-testid="create-group-button"
+          >
+            <FolderPlus className="h-3 w-3" />
+            New Group
+          </Button>
+
           {/* Add Note Button */}
           <Button 
             size="sm"
@@ -677,7 +1043,7 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
         <div className="text-center py-8 text-muted-foreground text-sm">
           Loading notes...
         </div>
-      ) : filteredNotes.length === 0 ? (
+      ) : filteredNotes.length === 0 && archivedNotes.length === 0 ? (
         <div className="text-center py-8">
           <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
           <h3 className="text-sm font-medium mb-2">
@@ -702,119 +1068,235 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
           )}
         </div>
       ) : (
-        <div className="space-y-2">
-          {filteredNotes.map((note) => (
-            <div 
-              key={note.id} 
-              className="group border rounded-md p-2 bg-card hover-elevate transition-all cursor-pointer"
-              data-testid={`note-card-${note.id}`}
-              onDoubleClick={() => handleEditNote(note)}
-            >
-              <div className="flex items-start gap-2">
-                {/* Pin indicator */}
-                {note.pinned && (
-                  <div className="flex-shrink-0 pt-0.5">
-                    <Pin className="h-3 w-3 text-[#bba7db]" data-testid={`note-pinned-indicator-${note.id}`} />
-                  </div>
-                )}
-                
-                {/* Title and Content */}
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-sm mb-1 line-clamp-1">
-                    {note.title}
-                  </h3>
-                  <p className="text-xs text-muted-foreground line-clamp-2">
-                    {note.contentText || note.content}
-                  </p>
-                </div>
-                
-                {/* Metadata Column */}
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  {/* Project (only show when viewing all items) */}
-                  {!effectiveProjectId && note.projectId && (
-                    <Badge variant="default" className="h-4 px-1.5 text-[10px]" data-testid={`note-project-${note.id}`}>
-                      {getProjectName(note.projectId)}
-                    </Badge>
+        <div className="space-y-3">
+          {/* Note Groups */}
+          {noteGroups.map((group) => {
+            const groupNotesArr = groupedNotes[group.id] || [];
+            const isExpanded = expandedGroups.has(group.id);
+            
+            return (
+              <div key={group.id} className="border rounded-md bg-muted/30" data-testid={`note-group-${group.id}`}>
+                {/* Group Header */}
+                <div 
+                  className="flex items-center gap-2 p-2 cursor-pointer hover-elevate"
+                  onClick={() => toggleGroupExpanded(group.id)}
+                >
+                  {isExpanded ? (
+                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
                   )}
-
-                  {/* Category */}
-                  <Badge variant="secondary" className="h-4 px-1.5 text-[10px]" data-testid={`note-category-${note.id}`}>
-                    {note.category}
-                  </Badge>
-                  
-                  {/* Visibility */}
-                  <Badge variant="outline" className="h-4 px-1.5 text-[10px]" data-testid={`note-visibility-${note.id}`}>
-                    {getVisibilityLabel(note.visibility || "team_only")}
-                  </Badge>
-                  
-                  {/* Date */}
-                  <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                    <Clock className="h-3 w-3" />
-                    <span data-testid={`note-date-${note.id}`}>
-                      {format(new Date(note.createdAt), "MMM d, yyyy")}
-                    </span>
-                  </div>
-                  
-                  {/* Author */}
-                  <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                    <User className="h-3 w-3" />
-                    <span>{note.author}</span>
-                  </div>
-                  
-                  {/* Assignee */}
-                  {note.assigneeName && (
-                    <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                      <UserPlus className="h-3 w-3 text-[#bba7db]" />
-                      <span data-testid={`note-assignee-${note.id}`}>{note.assigneeName}</span>
-                    </div>
+                  <Folder className="h-4 w-4 text-[#bba7db]" />
+                  {editingGroupId === group.id ? (
+                    <Input
+                      value={editingGroupName}
+                      onChange={(e) => setEditingGroupName(e.target.value)}
+                      onBlur={() => {
+                        if (editingGroupName.trim()) {
+                          updateGroupMutation.mutate({ id: group.id, name: editingGroupName.trim() });
+                        } else {
+                          setEditingGroupId(null);
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && editingGroupName.trim()) {
+                          updateGroupMutation.mutate({ id: group.id, name: editingGroupName.trim() });
+                        } else if (e.key === 'Escape') {
+                          setEditingGroupId(null);
+                        }
+                      }}
+                      className="h-5 text-xs w-40"
+                      autoFocus
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  ) : (
+                    <span className="font-medium text-sm">{group.name}</span>
                   )}
-                  
-                  {/* Actions */}
+                  <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
+                    {groupNotesArr.length}
+                  </Badge>
+                  <div className="flex-1" />
                   <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100" data-testid={`note-menu-trigger-${note.id}`}>
+                    <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                      <Button variant="ghost" size="icon" className="h-6 w-6" data-testid={`group-menu-${group.id}`}>
                         <MoreVertical className="h-3 w-3" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem 
-                        onClick={() => handleTogglePin(note)} 
-                        disabled={togglePinMutation.isPending}
-                        data-testid={`note-pin-${note.id}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingGroupId(group.id);
+                          setEditingGroupName(group.name);
+                        }}
+                        data-testid={`group-rename-${group.id}`}
                       >
-                        {note.pinned ? (
-                          <>
-                            <PinOff className="h-4 w-4 mr-2" />
-                            Unpin
-                          </>
-                        ) : (
-                          <>
-                            <Pin className="h-4 w-4 mr-2" />
-                            Pin
-                          </>
-                        )}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleEditNote(note)} data-testid={`note-edit-${note.id}`}>
                         <Edit3 className="h-4 w-4 mr-2" />
-                        Edit
+                        Rename
                       </DropdownMenuItem>
                       <DropdownMenuItem 
-                        onClick={() => handleDeleteNote(note.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteGroupMutation.mutate(group.id);
+                        }}
                         className="text-destructive"
-                        data-testid={`note-delete-${note.id}`}
+                        data-testid={`group-delete-${group.id}`}
                       >
                         <Trash2 className="h-4 w-4 mr-2" />
-                        Delete
+                        Delete Group
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
+                
+                {/* Group Notes */}
+                {isExpanded && groupNotesArr.length > 0 && (
+                  <div className="px-2 pb-2 space-y-1">
+                    {groupNotesArr.map((note) => (
+                      <NoteCard 
+                        key={note.id} 
+                        note={note} 
+                        indented 
+                        onEdit={handleEditNote}
+                        onDelete={handleDeleteNote}
+                        onTogglePin={handleTogglePin}
+                        onArchive={(id) => archiveNoteMutation.mutate(id)}
+                        onMoveToGroup={(noteId, groupId) => moveNoteToGroupMutation.mutate({ noteId, groupId })}
+                        noteGroups={noteGroups}
+                        effectiveProjectId={effectiveProjectId}
+                        getProjectName={getProjectName}
+                        getVisibilityLabel={getVisibilityLabel}
+                        isPinPending={togglePinMutation.isPending}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
+            );
+          })}
+
+          {/* Ungrouped Notes */}
+          {ungroupedNotes.length > 0 && (
+            <div className="space-y-2">
+              {noteGroups.length > 0 && (
+                <h4 className="text-xs font-medium text-muted-foreground px-1">Ungrouped</h4>
+              )}
+              {ungroupedNotes.map((note) => (
+                <NoteCard 
+                  key={note.id} 
+                  note={note}
+                  onEdit={handleEditNote}
+                  onDelete={handleDeleteNote}
+                  onTogglePin={handleTogglePin}
+                  onArchive={(id) => archiveNoteMutation.mutate(id)}
+                  onMoveToGroup={(noteId, groupId) => moveNoteToGroupMutation.mutate({ noteId, groupId })}
+                  noteGroups={noteGroups}
+                  effectiveProjectId={effectiveProjectId}
+                  getProjectName={getProjectName}
+                  getVisibilityLabel={getVisibilityLabel}
+                  isPinPending={togglePinMutation.isPending}
+                />
+              ))}
             </div>
-          ))}
+          )}
+
+          {/* Archived Notes Section */}
+          {archivedNotes.length > 0 && (
+            <Collapsible open={isArchiveOpen} onOpenChange={setIsArchiveOpen} className="mt-6">
+              <CollapsibleTrigger className="flex items-center gap-2 w-full p-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
+                {isArchiveOpen ? (
+                  <ChevronDown className="h-4 w-4" />
+                ) : (
+                  <ChevronRight className="h-4 w-4" />
+                )}
+                <Archive className="h-4 w-4" />
+                <span>Archived Notes</span>
+                <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
+                  {archivedNotes.length}
+                </Badge>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="space-y-2 pt-2">
+                {archivedNotes.map((note) => (
+                  <div 
+                    key={note.id} 
+                    className="group border rounded-md p-2 bg-muted/50 opacity-75"
+                    data-testid={`archived-note-${note.id}`}
+                  >
+                    <div className="flex items-start gap-2">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-medium text-sm mb-1 line-clamp-1">
+                          {note.title}
+                        </h3>
+                        <p className="text-xs text-muted-foreground line-clamp-1">
+                          Archived {note.archivedAt ? format(new Date(note.archivedAt), "MMM d, yyyy") : ''}
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-xs gap-1"
+                        onClick={() => unarchiveNoteMutation.mutate(note.id)}
+                        disabled={unarchiveNoteMutation.isPending}
+                        data-testid={`restore-note-${note.id}`}
+                      >
+                        <ArchiveRestore className="h-3 w-3" />
+                        Restore
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </CollapsibleContent>
+            </Collapsible>
+          )}
         </div>
       )}
       </div>
+
+      {/* Create Group Dialog */}
+      <Dialog open={isCreateGroupOpen} onOpenChange={setIsCreateGroupOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Create Note Group</DialogTitle>
+            <DialogDescription>
+              Create a group to organize related notes together.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Group Name</label>
+              <Input
+                placeholder="Enter group name..."
+                value={newGroupName}
+                onChange={(e) => setNewGroupName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newGroupName.trim()) {
+                    createGroupMutation.mutate({ 
+                      name: newGroupName.trim(), 
+                      projectId: effectiveProjectId 
+                    });
+                  }
+                }}
+                data-testid="new-group-name-input"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setIsCreateGroupOpen(false)}>
+                Cancel
+              </Button>
+              <Button 
+                onClick={() => createGroupMutation.mutate({ 
+                  name: newGroupName.trim(), 
+                  projectId: effectiveProjectId 
+                })}
+                disabled={!newGroupName.trim() || createGroupMutation.isPending}
+                data-testid="create-group-submit"
+              >
+                Create Group
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Dialog */}
       <Dialog 
