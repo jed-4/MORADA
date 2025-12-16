@@ -113,6 +113,7 @@ import type { ContactInsurance, InsertContactInsurance } from "@shared/schema";
 import { contactInsurances as contactInsurancesTable } from "@shared/schema";
 import type { PriceListCategory, InsertPriceListCategory, PriceListItem, InsertPriceListItem, BillLineItemPriceLink, InsertBillLineItemPriceLink } from "@shared/schema";
 import type { DashboardView, InsertDashboardView, DashboardViewPermission, InsertDashboardViewPermission, UserDashboardPreference } from "@shared/schema";
+import type { NoteGroup, InsertNoteGroup } from "@shared/schema";
 import type { PaymentTermsOption, InsertPaymentTermsOption } from "@shared/schema";
 
 // modify the interface with any CRUD methods
@@ -184,12 +185,22 @@ export interface IStorage {
   acceptInvitation(token: string, userData: Partial<InsertUser>): Promise<{ user: User, invitation: UserInvitation } | undefined>;
   
   // Notes CRUD operations
-  getNotes(projectId?: string | null, companyId?: string, userId?: string): Promise<Note[]>;
+  getNotes(projectId?: string | null, companyId?: string, userId?: string, includeArchived?: boolean): Promise<Note[]>;
   getNote(id: string, companyId?: string): Promise<Note | undefined>;
   getPersonalNotesByUser(userId: string, companyId: string): Promise<Note[]>;
   createNote(note: InsertNote): Promise<Note>;
   updateNote(id: string, note: Partial<InsertNote>): Promise<Note | undefined>;
   deleteNote(id: string): Promise<boolean>;
+  archiveNote(id: string, userId: string): Promise<Note | undefined>;
+  unarchiveNote(id: string): Promise<Note | undefined>;
+  
+  // Note Groups CRUD operations
+  getNoteGroups(companyId: string, projectId?: string | null): Promise<NoteGroup[]>;
+  getNoteGroup(id: string, companyId: string): Promise<NoteGroup | undefined>;
+  createNoteGroup(group: InsertNoteGroup): Promise<NoteGroup>;
+  updateNoteGroup(id: string, group: Partial<InsertNoteGroup>, companyId: string): Promise<NoteGroup | undefined>;
+  deleteNoteGroup(id: string, companyId: string): Promise<boolean>;
+  reorderNoteGroups(companyId: string, projectId: string | null, groupIds: string[]): Promise<NoteGroup[]>;
 
   // Tasks CRUD operations (specific to type="task")
   getTasks(projectId?: string, status?: string, businessTasks?: boolean, assigneeId?: string): Promise<Task[]>;
@@ -994,6 +1005,7 @@ export class MemStorage implements IStorage {
   private userColumnPreferences: Map<string, UserColumnPreferences>;
   private userViewPreferences: Map<string, UserViewPreferences>;
   private notes: Map<string, Note>;
+  private noteGroups: Map<string, NoteGroup>;
   private customFieldDefs: Map<string, CustomFieldDef>;
   private customFieldOptions: Map<string, CustomFieldOption>;
   private noteTemplates: Map<string, NoteTemplate>;
@@ -1028,6 +1040,7 @@ export class MemStorage implements IStorage {
     this.userColumnPreferences = new Map();
     this.userViewPreferences = new Map();
     this.notes = new Map();
+    this.noteGroups = new Map();
     this.customFieldDefs = new Map();
     this.customFieldOptions = new Map();
     this.noteTemplates = new Map();
@@ -2590,6 +2603,110 @@ export class MemStorage implements IStorage {
 
   async deleteNote(id: string): Promise<boolean> {
     return this.notes.delete(id);
+  }
+
+  async archiveNote(id: string, userId: string): Promise<Note | undefined> {
+    const existingNote = this.notes.get(id);
+    if (!existingNote) return undefined;
+    
+    const archivedNote: Note = {
+      ...existingNote,
+      archivedAt: new Date(),
+      archivedById: userId,
+      updatedAt: new Date(),
+    };
+    this.notes.set(id, archivedNote);
+    return archivedNote;
+  }
+
+  async unarchiveNote(id: string): Promise<Note | undefined> {
+    const existingNote = this.notes.get(id);
+    if (!existingNote) return undefined;
+    
+    const unarchivedNote: Note = {
+      ...existingNote,
+      archivedAt: null,
+      archivedById: null,
+      updatedAt: new Date(),
+    };
+    this.notes.set(id, unarchivedNote);
+    return unarchivedNote;
+  }
+
+  // Note Groups CRUD operations
+  async getNoteGroups(companyId: string, projectId?: string | null): Promise<NoteGroup[]> {
+    const allGroups = Array.from(this.noteGroups.values());
+    let filtered = allGroups.filter(g => g.companyId === companyId);
+    
+    if (projectId !== undefined) {
+      filtered = filtered.filter(g => g.projectId === projectId);
+    }
+    
+    return filtered.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+  }
+
+  async getNoteGroup(id: string, companyId: string): Promise<NoteGroup | undefined> {
+    const group = this.noteGroups.get(id);
+    if (!group || group.companyId !== companyId) return undefined;
+    return group;
+  }
+
+  async createNoteGroup(insertGroup: InsertNoteGroup): Promise<NoteGroup> {
+    const id = randomUUID();
+    const now = new Date();
+    const group: NoteGroup = {
+      ...insertGroup,
+      id,
+      description: insertGroup.description || null,
+      sortOrder: insertGroup.sortOrder || 0,
+      createdById: insertGroup.createdById || null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.noteGroups.set(id, group);
+    return group;
+  }
+
+  async updateNoteGroup(id: string, updateData: Partial<InsertNoteGroup>, companyId: string): Promise<NoteGroup | undefined> {
+    const existingGroup = this.noteGroups.get(id);
+    if (!existingGroup || existingGroup.companyId !== companyId) return undefined;
+
+    const updatedGroup: NoteGroup = {
+      ...existingGroup,
+      ...updateData,
+      updatedAt: new Date(),
+    };
+    this.noteGroups.set(id, updatedGroup);
+    return updatedGroup;
+  }
+
+  async deleteNoteGroup(id: string, companyId: string): Promise<boolean> {
+    const group = this.noteGroups.get(id);
+    if (!group || group.companyId !== companyId) return false;
+    
+    // Remove group from all notes that have this group
+    for (const [noteId, note] of this.notes) {
+      if (note.groupId === id) {
+        this.notes.set(noteId, { ...note, groupId: null });
+      }
+    }
+    
+    return this.noteGroups.delete(id);
+  }
+
+  async reorderNoteGroups(companyId: string, projectId: string | null, groupIds: string[]): Promise<NoteGroup[]> {
+    const updatedGroups: NoteGroup[] = [];
+    
+    for (let i = 0; i < groupIds.length; i++) {
+      const group = this.noteGroups.get(groupIds[i]);
+      if (group && group.companyId === companyId && group.projectId === projectId) {
+        const updatedGroup: NoteGroup = { ...group, sortOrder: i, updatedAt: new Date() };
+        this.noteGroups.set(groupIds[i], updatedGroup);
+        updatedGroups.push(updatedGroup);
+      }
+    }
+    
+    return updatedGroups.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
   }
 
   // Custom Field Definitions CRUD
@@ -7064,6 +7181,161 @@ export class DbStorage implements IStorage {
     const result = await db.delete(schema.notes).where(eq(schema.notes.id, id)).returning({ id: schema.notes.id });
     return result.length > 0;
   }
+
+  async archiveNote(id: string, userId: string): Promise<Note | undefined> {
+    try {
+      const now = new Date();
+      const result = await db.update(schema.notes)
+        .set({
+          archivedAt: now,
+          archivedById: userId,
+          updatedAt: now,
+        })
+        .where(eq(schema.notes.id, id))
+        .returning();
+      return result[0] as Note | undefined;
+    } catch (error) {
+      console.error("Database error in archiveNote:", error);
+      return undefined;
+    }
+  }
+
+  async unarchiveNote(id: string): Promise<Note | undefined> {
+    try {
+      const now = new Date();
+      const result = await db.update(schema.notes)
+        .set({
+          archivedAt: null,
+          archivedById: null,
+          updatedAt: now,
+        })
+        .where(eq(schema.notes.id, id))
+        .returning();
+      return result[0] as Note | undefined;
+    } catch (error) {
+      console.error("Database error in unarchiveNote:", error);
+      return undefined;
+    }
+  }
+
+  // Note Groups CRUD operations
+  async getNoteGroups(companyId: string, projectId?: string | null): Promise<NoteGroup[]> {
+    try {
+      let conditions: any[] = [eq(schema.noteGroups.companyId, companyId)];
+      
+      if (projectId === null) {
+        conditions.push(isNull(schema.noteGroups.projectId));
+      } else if (projectId !== undefined) {
+        conditions.push(eq(schema.noteGroups.projectId, projectId));
+      }
+      
+      const result = await db.select()
+        .from(schema.noteGroups)
+        .where(and(...conditions))
+        .orderBy(asc(schema.noteGroups.sortOrder));
+      
+      return result as NoteGroup[];
+    } catch (error) {
+      console.error("Database error in getNoteGroups:", error);
+      return [];
+    }
+  }
+
+  async getNoteGroup(id: string, companyId: string): Promise<NoteGroup | undefined> {
+    try {
+      const result = await db.select()
+        .from(schema.noteGroups)
+        .where(and(
+          eq(schema.noteGroups.id, id),
+          eq(schema.noteGroups.companyId, companyId)
+        ));
+      return result[0] as NoteGroup | undefined;
+    } catch (error) {
+      console.error("Database error in getNoteGroup:", error);
+      return undefined;
+    }
+  }
+
+  async createNoteGroup(insertGroup: InsertNoteGroup): Promise<NoteGroup> {
+    const now = new Date();
+    const groupData = {
+      ...insertGroup,
+      createdAt: now,
+      updatedAt: now,
+    };
+    
+    const result = await db.insert(schema.noteGroups).values(groupData).returning();
+    return result[0];
+  }
+
+  async updateNoteGroup(id: string, updateData: Partial<InsertNoteGroup>, companyId: string): Promise<NoteGroup | undefined> {
+    try {
+      const now = new Date();
+      const result = await db.update(schema.noteGroups)
+        .set({ ...updateData, updatedAt: now })
+        .where(and(
+          eq(schema.noteGroups.id, id),
+          eq(schema.noteGroups.companyId, companyId)
+        ))
+        .returning();
+      return result[0] as NoteGroup | undefined;
+    } catch (error) {
+      console.error("Database error in updateNoteGroup:", error);
+      return undefined;
+    }
+  }
+
+  async deleteNoteGroup(id: string, companyId: string): Promise<boolean> {
+    try {
+      // First, remove group reference from all notes in this group
+      await db.update(schema.notes)
+        .set({ groupId: null })
+        .where(eq(schema.notes.groupId, id));
+      
+      // Then delete the group
+      const result = await db.delete(schema.noteGroups)
+        .where(and(
+          eq(schema.noteGroups.id, id),
+          eq(schema.noteGroups.companyId, companyId)
+        ))
+        .returning({ id: schema.noteGroups.id });
+      
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteNoteGroup:", error);
+      return false;
+    }
+  }
+
+  async reorderNoteGroups(companyId: string, projectId: string | null, groupIds: string[]): Promise<NoteGroup[]> {
+    try {
+      const updatedGroups: NoteGroup[] = [];
+      const now = new Date();
+      
+      for (let i = 0; i < groupIds.length; i++) {
+        const result = await db.update(schema.noteGroups)
+          .set({ sortOrder: i, updatedAt: now })
+          .where(and(
+            eq(schema.noteGroups.id, groupIds[i]),
+            eq(schema.noteGroups.companyId, companyId),
+            projectId === null
+              ? isNull(schema.noteGroups.projectId)
+              : eq(schema.noteGroups.projectId, projectId)
+          ))
+          .returning();
+        
+        if (result[0]) {
+          updatedGroups.push(result[0] as NoteGroup);
+        }
+      }
+      
+      return updatedGroups.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+    } catch (error) {
+      console.error("Database error in reorderNoteGroups:", error);
+      return [];
+    }
+  }
+
   async getCustomFieldDefs(): Promise<CustomFieldDef[]> { return []; }
   async getCustomFieldDef(id: string): Promise<CustomFieldDef | undefined> { return undefined; }
   async createCustomFieldDef(fieldDef: InsertCustomFieldDef): Promise<CustomFieldDef> { throw new Error("Not implemented"); }
