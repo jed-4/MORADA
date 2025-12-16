@@ -162,6 +162,7 @@ export interface IStorage {
   updateRolePermission(id: string, rolePermission: Partial<InsertRolePermission>): Promise<RolePermission | undefined>;
   deleteRolePermission(id: string): Promise<boolean>;
   setRolePermissions(roleId: string, permissions: { permissionId: string, allowedActions: PermissionAction[] }[]): Promise<void>;
+  checkUserPermission(userId: string, permissionKey: string, action: string): Promise<boolean>;
 
   // User Project Access operations
   getUserProjectAccess(userId: string): Promise<UserProjectAccess[]>;
@@ -2008,6 +2009,12 @@ export class MemStorage implements IStorage {
       }
     }
     return permissions;
+  }
+
+  // Check if user has a specific permission
+  async checkUserPermission(userId: string, permissionKey: string, action: string): Promise<boolean> {
+    const permissions = await this.getUserPermissions(userId);
+    return permissions.some(p => p.key === permissionKey && (p as any)[action] === true);
   }
 
   // User Role operations

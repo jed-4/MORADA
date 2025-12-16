@@ -4939,12 +4939,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/users/:id", requireTeamMember, requirePermission("admin.users", "view"), async (req, res) => {
+  app.get("/api/users/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
+      const currentUser = req.user as any;
+      const requestedUserId = req.params.id;
+      
+      if (!currentUser?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      // Allow users to always view their own profile
+      const isOwnProfile = String(currentUser?.id) === String(requestedUserId);
+      
+      // If not own profile, check admin.users view permission
+      if (!isOwnProfile) {
+        const hasPermission = await storage.checkUserPermission(currentUser.id, "admin.users", "view");
+        if (!hasPermission) {
+          return res.status(403).json({ error: "Permission denied" });
+        }
+      }
+      
       const user = await storage.getUserWithRole(req.params.id);
       if (!user) {
         return res.status(404).json({ error: "User not found" });
       }
+      
+      // Security: Ensure user is in same company (prevents cross-tenant access)
+      if (user.companyId !== currentUser.companyId) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
       // Use safe user helper consistently
       res.json(toSafeUser(user));
     } catch (error) {

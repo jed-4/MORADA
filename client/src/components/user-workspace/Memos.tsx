@@ -42,6 +42,13 @@ export default function Memos({ user, isOwnPage }: UserNotesProps) {
   // Fetch personal notes for this user
   const { data: notes = [], isLoading } = useQuery<Note[]>({
     queryKey: ["/api/users", user.id, "notes"],
+    queryFn: async () => {
+      const response = await fetch(`/api/users/${user.id}/notes`, { credentials: 'include' });
+      if (!response.ok) {
+        throw new Error('Failed to fetch notes');
+      }
+      return response.json();
+    },
     enabled: isOwnPage, // Only fetch if viewing own page
   });
 

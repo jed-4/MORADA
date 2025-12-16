@@ -106,6 +106,13 @@ export default function UserReminders({ user, isOwnPage }: UserRemindersProps) {
 
   const { data: reminders = [], isLoading } = useQuery<Reminder[]>({
     queryKey: ["/api/reminders"],
+    queryFn: async () => {
+      const response = await fetch('/api/reminders', { credentials: 'include' });
+      if (!response.ok) {
+        throw new Error('Failed to fetch reminders');
+      }
+      return response.json();
+    },
     enabled: isOwnPage,
   });
 
