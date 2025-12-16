@@ -372,6 +372,197 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Archive/Unarchive Notes
+  app.post("/api/notes/:id/archive", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      // Verify the note belongs to the user's company
+      const note = await storage.getNote(req.params.id, companyId);
+      if (!note) {
+        return res.status(404).json({ error: "Note not found" });
+      }
+      
+      const archivedNote = await storage.archiveNote(req.params.id, user.id);
+      if (!archivedNote) {
+        return res.status(500).json({ error: "Failed to archive note" });
+      }
+      
+      res.json(archivedNote);
+    } catch (error) {
+      console.error("Error archiving note:", error);
+      res.status(500).json({ error: "Failed to archive note" });
+    }
+  });
+
+  app.post("/api/notes/:id/unarchive", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      // Verify the note belongs to the user's company
+      const note = await storage.getNote(req.params.id, companyId);
+      if (!note) {
+        return res.status(404).json({ error: "Note not found" });
+      }
+      
+      const unarchivedNote = await storage.unarchiveNote(req.params.id);
+      if (!unarchivedNote) {
+        return res.status(500).json({ error: "Failed to unarchive note" });
+      }
+      
+      res.json(unarchivedNote);
+    } catch (error) {
+      console.error("Error unarchiving note:", error);
+      res.status(500).json({ error: "Failed to unarchive note" });
+    }
+  });
+
+  // Note Groups API Routes
+  app.get("/api/note-groups", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      const { projectId } = req.query;
+      const groups = await storage.getNoteGroups(
+        companyId, 
+        projectId === 'null' ? null : (projectId as string | undefined)
+      );
+      res.json(groups);
+    } catch (error) {
+      console.error("Error fetching note groups:", error);
+      res.status(500).json({ error: "Failed to fetch note groups" });
+    }
+  });
+
+  app.get("/api/note-groups/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      const group = await storage.getNoteGroup(req.params.id, companyId);
+      if (!group) {
+        return res.status(404).json({ error: "Note group not found" });
+      }
+      res.json(group);
+    } catch (error) {
+      console.error("Error fetching note group:", error);
+      res.status(500).json({ error: "Failed to fetch note group" });
+    }
+  });
+
+  app.post("/api/note-groups", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      const { name, description, projectId, sortOrder } = req.body;
+      
+      if (!name || !name.trim()) {
+        return res.status(400).json({ error: "Group name is required" });
+      }
+      
+      const group = await storage.createNoteGroup({
+        companyId,
+        name: name.trim(),
+        description: description || null,
+        projectId: projectId || null,
+        sortOrder: sortOrder || 0,
+        createdById: user.id,
+      });
+      
+      res.status(201).json(group);
+    } catch (error) {
+      console.error("Error creating note group:", error);
+      res.status(500).json({ error: "Failed to create note group" });
+    }
+  });
+
+  app.patch("/api/note-groups/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      const group = await storage.updateNoteGroup(req.params.id, req.body, companyId);
+      if (!group) {
+        return res.status(404).json({ error: "Note group not found" });
+      }
+      res.json(group);
+    } catch (error) {
+      console.error("Error updating note group:", error);
+      res.status(500).json({ error: "Failed to update note group" });
+    }
+  });
+
+  app.delete("/api/note-groups/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      const success = await storage.deleteNoteGroup(req.params.id, companyId);
+      if (!success) {
+        return res.status(404).json({ error: "Note group not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting note group:", error);
+      res.status(500).json({ error: "Failed to delete note group" });
+    }
+  });
+
+  app.post("/api/note-groups/reorder", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      const { projectId, groupIds } = req.body;
+      
+      if (!Array.isArray(groupIds)) {
+        return res.status(400).json({ error: "groupIds must be an array" });
+      }
+      
+      const groups = await storage.reorderNoteGroups(companyId, projectId || null, groupIds);
+      res.json(groups);
+    } catch (error) {
+      console.error("Error reordering note groups:", error);
+      res.status(500).json({ error: "Failed to reorder note groups" });
+    }
+  });
+
   // User Personal Notes - scoped to specific user's private notes
   app.get("/api/users/:userId/notes", async (req, res) => {
     try {
