@@ -271,6 +271,28 @@ export type UserWithRole = User & {
 export type PermissionAction = "view" | "add" | "edit" | "delete";
 export type UserCategory = "team" | "supplier" | "client";
 
+// Note Groups for organizing notes
+export const noteGroups = pgTable("note_groups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull(),
+  projectId: text("project_id"), // Null for personal/company-wide groups
+  name: text("name").notNull(),
+  description: text("description"),
+  sortOrder: integer("sort_order").default(0),
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertNoteGroupSchema = createInsertSchema(noteGroups).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertNoteGroup = z.infer<typeof insertNoteGroupSchema>;
+export type NoteGroup = typeof noteGroups.$inferSelect;
+
 export const notes: any = pgTable("notes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   companyId: varchar("company_id").notNull(),
@@ -318,6 +340,13 @@ export const notes: any = pgTable("notes", {
   // Reference fields for system-generated tasks (e.g., insurance expiry reminders)
   referenceType: text("reference_type"), // e.g., "insurance_expiry_30", "insurance_expiry_7"
   referenceId: varchar("reference_id"), // ID of the referenced entity (e.g., insurance ID)
+  
+  // Grouping support
+  groupId: varchar("group_id").references(() => noteGroups.id), // Note group for organization
+  
+  // Archive support
+  archivedAt: timestamp("archived_at"), // When the note was archived (null = not archived)
+  archivedById: varchar("archived_by_id").references(() => users.id), // Who archived the note
   
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -369,6 +398,11 @@ export const insertNoteSchema = createInsertSchema(notes).omit({
   // Reference fields for system-generated tasks
   referenceType: z.string().optional(),
   referenceId: z.string().optional(),
+  // Grouping support
+  groupId: z.string().nullable().optional(),
+  // Archive support (server-managed)
+  archivedAt: z.coerce.date().nullable().optional(),
+  archivedById: z.string().nullable().optional(),
 });
 
 export type InsertNote = z.infer<typeof insertNoteSchema>;
