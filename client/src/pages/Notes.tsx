@@ -135,7 +135,7 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
 
   // Fetch current user
   const { data: currentUser } = useQuery<UserType>({
-    queryKey: ["/api/user"],
+    queryKey: ["/api/auth/user"],
   });
 
   // Fetch custom field definitions and templates

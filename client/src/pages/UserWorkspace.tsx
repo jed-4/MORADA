@@ -36,7 +36,7 @@ export default function UserWorkspace() {
 
   // Fetch current user - always needed to check ownership
   const { data: currentUser, isLoading: isCurrentUserLoading } = useQuery<User>({
-    queryKey: ["/api/user"],
+    queryKey: ["/api/auth/user"],
   });
 
   // For "me" route, use currentUser directly; for other routes, fetch specific user
