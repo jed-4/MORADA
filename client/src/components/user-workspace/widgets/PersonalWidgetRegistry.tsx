@@ -10,7 +10,8 @@ import {
   Activity,
   Sparkles,
   CalendarDays,
-  CalendarRange
+  CalendarRange,
+  FileSpreadsheet
 } from "lucide-react";
 import { WidgetDefinition } from "@/types/widgets";
 import PersonalTasksWidget from "./PersonalTasksWidget";
@@ -25,6 +26,7 @@ import PersonalActivityWidget from "./PersonalActivityWidget";
 import PersonalAISummaryWidget from "./PersonalAISummaryWidget";
 import DayCalendarWidget from "./DayCalendarWidget";
 import WeekCalendarWidget from "./WeekCalendarWidget";
+import ActionableEstimatesWidget from "./ActionableEstimatesWidget";
 
 export const personalWidgetRegistry: Record<string, WidgetDefinition> = {
   personalTasks: {
@@ -133,6 +135,15 @@ export const personalWidgetRegistry: Record<string, WidgetDefinition> = {
     icon: CalendarRange,
     component: WeekCalendarWidget,
     defaultSize: "lg",
+    configurable: true,
+  },
+  actionableEstimates: {
+    type: "actionableEstimates",
+    name: "Actionable Estimates",
+    description: "Estimates that need attention: drafts, work in progress, and pending approval",
+    icon: FileSpreadsheet,
+    component: ActionableEstimatesWidget,
+    defaultSize: "md",
     configurable: true,
   },
 };

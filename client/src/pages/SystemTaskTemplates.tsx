@@ -40,6 +40,9 @@ import {
   Calendar as CalendarIcon,
   Tag as TagIcon,
   X,
+  Search,
+  Filter,
+  RotateCcw,
 } from "lucide-react";
 import type { TaskTemplate, TaskTag, TaskTemplateStatus } from "@shared/schema";
 
@@ -80,6 +83,12 @@ export default function SystemTaskTemplates() {
   const { toast } = useToast();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<TaskTemplate | null>(null);
+  
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [tagFilter, setTagFilter] = useState<string[]>([]);
+  const [recurringFilter, setRecurringFilter] = useState<"all" | "yes" | "no">("all");
+  
   const [formData, setFormData] = useState<TaskTemplateFormData>({
     title: "",
     goal: "",
@@ -322,6 +331,43 @@ export default function SystemTaskTemplates() {
   const getTagById = (id: string) => tags.find(tag => tag.id === id);
   const getStatusById = (id: string) => statuses.find(status => status.id === id);
 
+  const filteredTemplates = templates.filter(template => {
+    if (searchTerm && !template.title.toLowerCase().includes(searchTerm.toLowerCase())) {
+      return false;
+    }
+    if (statusFilter !== "all" && template.statusId !== statusFilter) {
+      return false;
+    }
+    if (tagFilter.length > 0) {
+      const templateTagIds = (template.tagIds as string[]) || [];
+      if (!tagFilter.some(tagId => templateTagIds.includes(tagId))) {
+        return false;
+      }
+    }
+    if (recurringFilter === "yes" && !template.isRecurringTemplate) {
+      return false;
+    }
+    if (recurringFilter === "no" && template.isRecurringTemplate) {
+      return false;
+    }
+    return true;
+  });
+
+  const hasActiveFilters = searchTerm || statusFilter !== "all" || tagFilter.length > 0 || recurringFilter !== "all";
+
+  const clearFilters = () => {
+    setSearchTerm("");
+    setStatusFilter("all");
+    setTagFilter([]);
+    setRecurringFilter("all");
+  };
+
+  const toggleTagFilter = (tagId: string) => {
+    setTagFilter(prev => 
+      prev.includes(tagId) ? prev.filter(id => id !== tagId) : [...prev, tagId]
+    );
+  };
+
   return (
     <div className="flex flex-col h-full" data-testid="system-task-templates">
       <div className="flex-1 min-h-0 p-6">
@@ -339,6 +385,76 @@ export default function SystemTaskTemplates() {
             </Button>
           </div>
 
+          <div className="flex flex-wrap items-center gap-2 py-2 border-b">
+            <div className="relative flex-1 min-w-[200px] max-w-sm">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search templates..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-8 h-8"
+                data-testid="input-search"
+              />
+            </div>
+            
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-[140px] h-8" data-testid="filter-status">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Statuses</SelectItem>
+                {statuses.map(status => (
+                  <SelectItem key={status.id} value={status.id}>
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: status.color }} />
+                      {status.name}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={recurringFilter} onValueChange={(v) => setRecurringFilter(v as "all" | "yes" | "no")}>
+              <SelectTrigger className="w-[130px] h-8" data-testid="filter-recurring">
+                <SelectValue placeholder="Recurring" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Types</SelectItem>
+                <SelectItem value="yes">Recurring</SelectItem>
+                <SelectItem value="no">One-time</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {tags.length > 0 && (
+              <div className="flex items-center gap-1 flex-wrap max-w-md overflow-x-auto">
+                <span className="text-xs text-muted-foreground mr-1 flex-shrink-0">Tags:</span>
+                {tags.map(tag => (
+                  <Badge
+                    key={tag.id}
+                    variant={tagFilter.includes(tag.id) ? "default" : "outline"}
+                    className="cursor-pointer text-[10px] px-1.5 py-0 flex-shrink-0"
+                    style={tagFilter.includes(tag.id) ? { backgroundColor: tag.color } : { borderColor: tag.color, color: tag.color }}
+                    onClick={() => toggleTagFilter(tag.id)}
+                    data-testid={`filter-tag-${tag.id}`}
+                  >
+                    {tag.name}
+                  </Badge>
+                ))}
+              </div>
+            )}
+
+            {hasActiveFilters && (
+              <Button variant="ghost" size="sm" onClick={clearFilters} className="h-7 px-2 text-xs" data-testid="button-clear-filters">
+                <RotateCcw className="h-3 w-3 mr-1" />
+                Clear
+              </Button>
+            )}
+
+            <div className="ml-auto text-xs text-muted-foreground">
+              {filteredTemplates.length} of {templates.length} templates
+            </div>
+          </div>
+
           {isLoading ? (
             <div className="flex items-center justify-center h-64">
               <p className="text-muted-foreground">Loading templates...</p>
@@ -349,6 +465,18 @@ export default function SystemTaskTemplates() {
                 <p className="text-muted-foreground text-center">
                   No task templates yet. Create your first template to get started.
                 </p>
+              </CardContent>
+            </Card>
+          ) : filteredTemplates.length === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center h-64 p-6">
+                <Filter className="h-8 w-8 text-muted-foreground mb-2" />
+                <p className="text-muted-foreground text-center">
+                  No templates match your filters.
+                </p>
+                <Button variant="link" onClick={clearFilters} className="mt-2" data-testid="button-clear-filters-empty">
+                  Clear all filters
+                </Button>
               </CardContent>
             </Card>
           ) : (
@@ -365,7 +493,7 @@ export default function SystemTaskTemplates() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {templates.map(template => {
+                    {filteredTemplates.map(template => {
                       const templateTags = (template.tagIds as string[] || [])
                         .map(id => getTagById(id))
                         .filter(Boolean);
