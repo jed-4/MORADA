@@ -3,11 +3,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { CheckSquare, Clock, AlertCircle } from "lucide-react";
+import { CheckSquare, Clock, AlertCircle, Plus } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery } from "@tanstack/react-query";
 import { type Task, type Project } from "@shared/schema";
 import { useLocation } from "wouter";
+import TaskModalAsana from "@/components/TaskModalAsana";
 
 export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId }: WidgetProps) {
   const maxTasks = widget.config?.maxTasks || 8;
@@ -15,6 +16,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const [configMaxTasks, setConfigMaxTasks] = useState(maxTasks);
   const [configShowFilter, setConfigShowFilter] = useState(showFilter);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [, setLocation] = useLocation();
 
   useEffect(() => {
@@ -168,7 +170,21 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
         <div className="text-xs text-muted-foreground">
           {filteredTasks.length} task{filteredTasks.length !== 1 ? 's' : ''}
         </div>
+        <Button 
+          size="icon" 
+          variant="ghost" 
+          className="h-6 w-6"
+          onClick={() => setShowCreateDialog(true)}
+          data-testid="button-add-task-widget"
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </Button>
       </div>
+      
+      <TaskModalAsana
+        open={showCreateDialog}
+        onOpenChange={setShowCreateDialog}
+      />
       
       <div className="space-y-1">
         {isLoading ? (
