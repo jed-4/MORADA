@@ -120,10 +120,13 @@ export default function CustomizableProjectOverview() {
   const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
 
-  // Rename Modal state
-  const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
-  const [viewToRename, setViewToRename] = useState<DashboardView | null>(null);
-  const [renameValue, setRenameValue] = useState("");
+  // Edit View Modal state
+  const [isEditViewModalOpen, setIsEditViewModalOpen] = useState(false);
+  const [viewToEdit, setViewToEdit] = useState<DashboardView | null>(null);
+  const [editViewName, setEditViewName] = useState("");
+  const [editViewVisibility, setEditViewVisibility] = useState<VisibilityOption>("private");
+  const [editSelectedRoleIds, setEditSelectedRoleIds] = useState<string[]>([]);
+  const [editSelectedUserIds, setEditSelectedUserIds] = useState<string[]>([]);
 
   // Delete confirmation state
   const [viewToDelete, setViewToDelete] = useState<DashboardView | null>(null);
@@ -187,9 +190,9 @@ export default function CustomizableProjectOverview() {
     },
   });
 
-  // Update view mutation
+  // Update view mutation - includes optional roleIds/userIds for permission updates
   const updateViewMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<DashboardView> }) => {
+    mutationFn: async ({ id, data }: { id: string; data: Partial<DashboardView> & { roleIds?: string[]; userIds?: string[] } }) => {
       return apiRequest(`/api/dashboard-views/${id}`, "PATCH", data);
     },
     onSuccess: () => {
@@ -421,32 +424,81 @@ export default function CustomizableProjectOverview() {
     setViewToDelete(view);
   };
 
-  // Open rename modal
-  const openRenameModal = (view: DashboardView) => {
-    setViewToRename(view);
-    setRenameValue(view.name);
-    setIsRenameModalOpen(true);
+  // Open edit view modal - fetches permissions first
+  const openEditViewModal = async (view: DashboardView) => {
+    setViewToEdit(view);
+    setEditViewName(view.name);
+    setEditViewVisibility((view.visibility as VisibilityOption) || "private");
+    
+    // Fetch current permissions if this is a by_role or by_user view
+    if (view.visibility === "by_role" || view.visibility === "by_user") {
+      try {
+        const response = await fetch(`/api/dashboard-views/${view.id}/permissions`, {
+          credentials: "include",
+        });
+        if (response.ok) {
+          const { roleIds, userIds } = await response.json();
+          setEditSelectedRoleIds(roleIds || []);
+          setEditSelectedUserIds(userIds || []);
+        } else {
+          setEditSelectedRoleIds([]);
+          setEditSelectedUserIds([]);
+        }
+      } catch (error) {
+        console.error("Failed to fetch view permissions:", error);
+        setEditSelectedRoleIds([]);
+        setEditSelectedUserIds([]);
+      }
+    } else {
+      setEditSelectedRoleIds([]);
+      setEditSelectedUserIds([]);
+    }
+    
+    setIsEditViewModalOpen(true);
   };
 
-  // Handle rename
-  const handleRenameView = () => {
-    if (!viewToRename || !renameValue.trim()) {
+  // Handle edit view
+  const handleEditView = () => {
+    if (!viewToEdit || !editViewName.trim()) {
       toast({ title: "Name required", description: "Please enter a name for the view", variant: "destructive" });
       return;
     }
 
+    // Build update payload - includes roleIds/userIds for permissions
+    const updateData: Partial<DashboardView> & { roleIds?: string[]; userIds?: string[] } = {
+      name: editViewName.trim(),
+      visibility: editViewVisibility,
+    };
+
+    // Only include roleIds/userIds when visibility requires them
+    // When switching away from by_role/by_user, we need to clear the permissions
+    if (editViewVisibility === "by_role") {
+      updateData.roleIds = editSelectedRoleIds;
+      updateData.userIds = []; // Clear user permissions when switching to role-based
+    } else if (editViewVisibility === "by_user") {
+      updateData.userIds = editSelectedUserIds;
+      updateData.roleIds = []; // Clear role permissions when switching to user-based
+    } else {
+      // For private/everyone visibility, clear both permission types
+      updateData.roleIds = [];
+      updateData.userIds = [];
+    }
+
     updateViewMutation.mutate({
-      id: viewToRename.id,
-      data: { name: renameValue.trim() },
+      id: viewToEdit.id,
+      data: updateData,
     }, {
       onSuccess: () => {
-        toast({ title: "View renamed", description: `View renamed to "${renameValue.trim()}"` });
-        setIsRenameModalOpen(false);
-        setViewToRename(null);
-        setRenameValue("");
+        toast({ title: "View updated", description: `"${editViewName.trim()}" has been updated.` });
+        setIsEditViewModalOpen(false);
+        setViewToEdit(null);
+        setEditViewName("");
+        setEditViewVisibility("private");
+        setEditSelectedRoleIds([]);
+        setEditSelectedUserIds([]);
       },
       onError: () => {
-        toast({ title: "Error", description: "Failed to rename view", variant: "destructive" });
+        toast({ title: "Error", description: "Failed to update view", variant: "destructive" });
       },
     });
   };
@@ -707,11 +759,11 @@ export default function CustomizableProjectOverview() {
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              openRenameModal(view);
+                              openEditViewModal(view);
                             }}
                             className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground"
-                            data-testid={`button-rename-view-${view.id}`}
-                            title="Rename view"
+                            data-testid={`button-edit-view-${view.id}`}
+                            title="Edit view"
                           >
                             <Pencil className="w-3 h-3" />
                           </button>
@@ -1006,42 +1058,129 @@ export default function CustomizableProjectOverview() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Rename View Dialog */}
-      <Dialog open={isRenameModalOpen} onOpenChange={setIsRenameModalOpen}>
-        <DialogContent className="max-w-sm">
+      {/* Edit View Dialog */}
+      <Dialog open={isEditViewModalOpen} onOpenChange={setIsEditViewModalOpen}>
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Rename View</DialogTitle>
+            <DialogTitle>Edit View</DialogTitle>
             <DialogDescription>
-              Enter a new name for this dashboard view.
+              Update the name and visibility settings for this view.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>View Name</Label>
+              <Label htmlFor="edit-view-name">View Name</Label>
               <Input
+                id="edit-view-name"
                 placeholder="e.g., My Dashboard"
-                value={renameValue}
-                onChange={(e) => setRenameValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    handleRenameView();
-                  }
-                }}
-                data-testid="input-rename-view"
+                value={editViewName}
+                onChange={(e) => setEditViewName(e.target.value)}
+                data-testid="input-edit-view-name"
               />
             </div>
+
+            <div className="space-y-2">
+              <Label>Visibility</Label>
+              <Select 
+                value={editViewVisibility} 
+                onValueChange={(v) => {
+                  const visibility = v as VisibilityOption;
+                  setEditViewVisibility(visibility);
+                  if (visibility !== "by_role") setEditSelectedRoleIds([]);
+                  if (visibility !== "by_user") setEditSelectedUserIds([]);
+                }}
+              >
+                <SelectTrigger data-testid="select-edit-visibility">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {visibilityOptions.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      <div className="flex items-center gap-2">
+                        <opt.icon className="w-4 h-4" />
+                        <div>
+                          <div className="font-medium">{opt.label}</div>
+                          <div className="text-xs text-muted-foreground">{opt.description}</div>
+                        </div>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {editViewVisibility === "by_role" && (
+              <div className="space-y-2">
+                <Label>Select Roles</Label>
+                <div className="border rounded-md p-2 max-h-32 overflow-y-auto space-y-1">
+                  {isLoadingRoles ? (
+                    <p className="text-xs text-muted-foreground py-2 text-center">Loading roles...</p>
+                  ) : roles.length === 0 ? (
+                    <p className="text-xs text-muted-foreground py-2 text-center">No roles available</p>
+                  ) : (
+                    roles.map((role) => (
+                      <label key={role.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 p-1 rounded">
+                        <input
+                          type="checkbox"
+                          checked={editSelectedRoleIds.includes(role.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setEditSelectedRoleIds([...editSelectedRoleIds, role.id]);
+                            } else {
+                              setEditSelectedRoleIds(editSelectedRoleIds.filter(id => id !== role.id));
+                            }
+                          }}
+                          className="rounded"
+                        />
+                        {role.name}
+                      </label>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
+            {editViewVisibility === "by_user" && (
+              <div className="space-y-2">
+                <Label>Select Users</Label>
+                <div className="border rounded-md p-2 max-h-32 overflow-y-auto space-y-1">
+                  {isLoadingUsers ? (
+                    <p className="text-xs text-muted-foreground py-2 text-center">Loading users...</p>
+                  ) : companyUsers.filter(u => u.id !== user?.id).length === 0 ? (
+                    <p className="text-xs text-muted-foreground py-2 text-center">No other users available</p>
+                  ) : (
+                    companyUsers.filter(u => u.id !== user?.id).map((u) => (
+                      <label key={u.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 p-1 rounded">
+                        <input
+                          type="checkbox"
+                          checked={editSelectedUserIds.includes(u.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setEditSelectedUserIds([...editSelectedUserIds, u.id]);
+                            } else {
+                              setEditSelectedUserIds(editSelectedUserIds.filter(id => id !== u.id));
+                            }
+                          }}
+                          className="rounded"
+                        />
+                        {u.firstName} {u.lastName} {u.email && `(${u.email})`}
+                      </label>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setIsRenameModalOpen(false)}>
+            <Button variant="ghost" onClick={() => setIsEditViewModalOpen(false)}>
               Cancel
             </Button>
             <Button
-              onClick={handleRenameView}
-              disabled={updateViewMutation.isPending || !renameValue.trim()}
+              onClick={handleEditView}
+              disabled={updateViewMutation.isPending || !editViewName.trim()}
               className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
             >
-              {updateViewMutation.isPending ? "Saving..." : "Save"}
+              {updateViewMutation.isPending ? "Saving..." : "Save Changes"}
             </Button>
           </DialogFooter>
         </DialogContent>

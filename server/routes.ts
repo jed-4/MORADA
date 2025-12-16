@@ -5257,6 +5257,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get Dashboard View Permissions
+  app.get("/api/dashboard-views/:id/permissions", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      // Check if view exists and belongs to the company
+      const view = await storage.getDashboardView(req.params.id, companyId);
+      if (!view) {
+        return res.status(404).json({ error: "Dashboard view not found" });
+      }
+      
+      const permissions = await storage.getDashboardViewPermissions(req.params.id);
+      
+      // Extract roleIds and userIds from permissions
+      const roleIds = permissions.filter(p => p.roleId).map(p => p.roleId as string);
+      const userIds = permissions.filter(p => p.userId).map(p => p.userId as string);
+      
+      res.json({ roleIds, userIds });
+    } catch (error) {
+      console.error("Error fetching dashboard view permissions:", error);
+      res.status(500).json({ error: "Failed to fetch permissions" });
+    }
+  });
+
   // User Dashboard Preference (active view)
   app.get("/api/dashboard-preference", requireAuth, async (req, res) => {
     try {
