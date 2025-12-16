@@ -5339,10 +5339,10 @@ export class DbStorage implements IStorage {
     switch (categoryKey) {
       case 'task.status':
         return [
-          { id: 'opt-status-todo', categoryId, key: 'todo', name: 'Not Started', color: '#6B7280', isDefault: true, sortOrder: 0 },
-          { id: 'opt-status-progress', categoryId, key: 'in-progress', name: 'In Progress', color: '#F59E0B', isDefault: false, sortOrder: 1 },
-          { id: 'opt-status-done', categoryId, key: 'done', name: 'Complete', color: '#10B981', isDefault: false, sortOrder: 2 },
-          { id: 'opt-status-hold', categoryId, key: 'on-hold', name: 'On Hold', color: '#EF4444', isDefault: false, sortOrder: 3 },
+          { id: 'opt-status-todo', categoryId, key: 'todo', name: 'Not Started', color: '#6B7280', isDefault: true, isCompleted: false, sortOrder: 0 },
+          { id: 'opt-status-progress', categoryId, key: 'in-progress', name: 'In Progress', color: '#F59E0B', isDefault: false, isCompleted: false, sortOrder: 1 },
+          { id: 'opt-status-done', categoryId, key: 'done', name: 'Done', color: '#10B981', isDefault: false, isCompleted: true, sortOrder: 2 },
+          { id: 'opt-status-hold', categoryId, key: 'on-hold', name: 'On Hold', color: '#EF4444', isDefault: false, isCompleted: false, sortOrder: 3 },
         ];
       case 'task.priority':
         return [
@@ -5525,10 +5525,10 @@ export class DbStorage implements IStorage {
     switch (category.key) {
       case 'task.status':
         optionsToInsert = [
-          { id: 'opt-status-todo', categoryId: category.id, key: 'todo', name: 'Not Started', color: '#6B7280', isDefault: true, sortOrder: 0 },
-          { id: 'opt-status-progress', categoryId: category.id, key: 'in-progress', name: 'In Progress', color: '#F59E0B', isDefault: false, sortOrder: 1 },
-          { id: 'opt-status-done', categoryId: category.id, key: 'done', name: 'Complete', color: '#10B981', isDefault: false, sortOrder: 2 },
-          { id: 'opt-status-hold', categoryId: category.id, key: 'on-hold', name: 'On Hold', color: '#EF4444', isDefault: false, sortOrder: 3 },
+          { id: 'opt-status-todo', categoryId: category.id, key: 'todo', name: 'Not Started', color: '#6B7280', isDefault: true, isCompleted: false, sortOrder: 0 },
+          { id: 'opt-status-progress', categoryId: category.id, key: 'in-progress', name: 'In Progress', color: '#F59E0B', isDefault: false, isCompleted: false, sortOrder: 1 },
+          { id: 'opt-status-done', categoryId: category.id, key: 'done', name: 'Done', color: '#10B981', isDefault: false, isCompleted: true, sortOrder: 2 },
+          { id: 'opt-status-hold', categoryId: category.id, key: 'on-hold', name: 'On Hold', color: '#EF4444', isDefault: false, isCompleted: false, sortOrder: 3 },
         ];
         break;
       case 'task.priority':
@@ -5680,10 +5680,10 @@ export class DbStorage implements IStorage {
   private async seedDefaultFieldOptions(now: Date): Promise<void> {
     const fieldOptions = [
       // Task Status Options
-      { id: 'opt-status-todo', categoryId: 'cat-task-status', key: 'todo', name: 'Not Started', color: '#6B7280', isDefault: true, sortOrder: 0 },
-      { id: 'opt-status-progress', categoryId: 'cat-task-status', key: 'in-progress', name: 'In Progress', color: '#F59E0B', isDefault: false, sortOrder: 1 },
-      { id: 'opt-status-done', categoryId: 'cat-task-status', key: 'done', name: 'Complete', color: '#10B981', isDefault: false, sortOrder: 2 },
-      { id: 'opt-status-hold', categoryId: 'cat-task-status', key: 'on-hold', name: 'On Hold', color: '#EF4444', isDefault: false, sortOrder: 3 },
+      { id: 'opt-status-todo', categoryId: 'cat-task-status', key: 'todo', name: 'Not Started', color: '#6B7280', isDefault: true, isCompleted: false, sortOrder: 0 },
+      { id: 'opt-status-progress', categoryId: 'cat-task-status', key: 'in-progress', name: 'In Progress', color: '#F59E0B', isDefault: false, isCompleted: false, sortOrder: 1 },
+      { id: 'opt-status-done', categoryId: 'cat-task-status', key: 'done', name: 'Done', color: '#10B981', isDefault: false, isCompleted: true, sortOrder: 2 },
+      { id: 'opt-status-hold', categoryId: 'cat-task-status', key: 'on-hold', name: 'On Hold', color: '#EF4444', isDefault: false, isCompleted: false, sortOrder: 3 },
       
       // Task Priority Options
       { id: 'opt-priority-low', categoryId: 'cat-task-priority', key: 'low', name: 'Low', color: '#10B981', isDefault: false, sortOrder: 0 },
@@ -5769,7 +5769,7 @@ export class DbStorage implements IStorage {
   
   private async seedOptionsForCategory(categoryKey: string, categoryId: string, now: Date): Promise<string[]> {
     const addedOptions: string[] = [];
-    let optionsToInsert: { id: string; categoryId: string; key: string; name: string; color: string; isDefault: boolean; sortOrder: number }[] = [];
+    let optionsToInsert: { id: string; categoryId: string; key: string; name: string; color: string; isDefault: boolean; isCompleted?: boolean; sortOrder: number }[] = [];
     
     switch (categoryKey) {
       case 'checklist.type':
@@ -5782,10 +5782,10 @@ export class DbStorage implements IStorage {
         break;
       case 'task.status':
         optionsToInsert = [
-          { id: 'opt-status-todo', categoryId, key: 'todo', name: 'Not Started', color: '#6B7280', isDefault: true, sortOrder: 0 },
-          { id: 'opt-status-progress', categoryId, key: 'in-progress', name: 'In Progress', color: '#F59E0B', isDefault: false, sortOrder: 1 },
-          { id: 'opt-status-done', categoryId, key: 'done', name: 'Complete', color: '#10B981', isDefault: false, sortOrder: 2 },
-          { id: 'opt-status-hold', categoryId, key: 'on-hold', name: 'On Hold', color: '#EF4444', isDefault: false, sortOrder: 3 },
+          { id: 'opt-status-todo', categoryId, key: 'todo', name: 'Not Started', color: '#6B7280', isDefault: true, isCompleted: false, sortOrder: 0 },
+          { id: 'opt-status-progress', categoryId, key: 'in-progress', name: 'In Progress', color: '#F59E0B', isDefault: false, isCompleted: false, sortOrder: 1 },
+          { id: 'opt-status-done', categoryId, key: 'done', name: 'Done', color: '#10B981', isDefault: false, isCompleted: true, sortOrder: 2 },
+          { id: 'opt-status-hold', categoryId, key: 'on-hold', name: 'On Hold', color: '#EF4444', isDefault: false, isCompleted: false, sortOrder: 3 },
         ];
         break;
       case 'task.priority':

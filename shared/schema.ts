@@ -3520,6 +3520,7 @@ export const taskTemplateStatuses = pgTable("task_template_statuses", {
   color: text("color").notNull(), // Hex color code (e.g., "#10b981")
   displayOrder: integer("display_order").notNull().default(0),
   isDefault: boolean("is_default").notNull().default(false), // One status should be marked as default
+  isComplete: boolean("is_complete").notNull().default(false), // Marks status as a "completed" state (e.g., Done, Closed)
   isActive: boolean("is_active").notNull().default(true),
   
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -3537,6 +3538,7 @@ export const insertTaskTemplateStatusSchema = createInsertSchema(taskTemplateSta
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, "Must be a valid hex color code"),
   displayOrder: z.number().optional(),
   isDefault: z.boolean().optional(),
+  isComplete: z.boolean().optional(),
   isActive: z.boolean().optional(),
 });
 

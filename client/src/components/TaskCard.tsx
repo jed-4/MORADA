@@ -3,6 +3,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -203,7 +204,10 @@ export default function TaskCard({
                 className="mt-0.5"
                 data-testid={`checkbox-complete-${task.id}`}
               />
-              <h3 className="font-medium text-sm flex-1">{title}</h3>
+              <h3 className={cn(
+                "font-medium text-sm flex-1",
+                isCompleted && "line-through text-muted-foreground"
+              )}>{title}</h3>
             </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

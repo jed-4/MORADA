@@ -161,7 +161,12 @@ function DraggableGridRow({
       {/* Title */}
       <div className="flex items-center gap-2 min-w-0">
         <span 
-          className="truncate text-sm font-medium text-gray-900" 
+          className={cn(
+            "truncate text-sm font-medium",
+            task.status === completedOption?.key 
+              ? "line-through text-muted-foreground" 
+              : "text-gray-900"
+          )}
           title={task.title}
         >
           {task.title}
