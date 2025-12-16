@@ -34,23 +34,27 @@ export default function ActionableEstimatesWidget({
   onUpdate,
   isConfiguring,
   onCloseConfig,
+  userId,
 }: ActionableEstimatesWidgetProps) {
   const config = (widget.config as {
     showDraft?: boolean;
     showWorking?: boolean;
     showLocked?: boolean;
+    onlyMyEstimates?: boolean;
     maxItems?: number;
   }) || {};
 
   const showDraft = config.showDraft ?? true;
   const showWorking = config.showWorking ?? true;
   const showLocked = config.showLocked ?? false;
+  const onlyMyEstimates = config.onlyMyEstimates ?? true;
   const maxItems = config.maxItems ?? 5;
 
   const [configState, setConfigState] = useState({
     showDraft,
     showWorking,
     showLocked,
+    onlyMyEstimates,
     maxItems,
   });
 
@@ -77,6 +81,7 @@ export default function ActionableEstimatesWidget({
         if (est.status === "draft" && !showDraft) return false;
         if (est.status === "working" && !showWorking) return false;
         if (est.status === "locked" && !showLocked) return false;
+        if (onlyMyEstimates && est.ownerId !== userId) return false;
         return true;
       })
       .map(est => ({
@@ -86,7 +91,7 @@ export default function ActionableEstimatesWidget({
       }))
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
       .slice(0, maxItems);
-  }, [estimates, projectMap, showDraft, showWorking, showLocked, maxItems]);
+  }, [estimates, projectMap, showDraft, showWorking, showLocked, onlyMyEstimates, userId, maxItems]);
 
   const handleSaveConfig = () => {
     onUpdate({
@@ -100,6 +105,20 @@ export default function ActionableEstimatesWidget({
       <div className="p-3 space-y-4">
         <div className="space-y-3">
           <p className="text-xs text-muted-foreground">Show estimates with these statuses:</p>
+          
+          <label className="flex items-start gap-2 cursor-pointer pb-2 border-b">
+            <Checkbox
+              checked={configState.onlyMyEstimates}
+              onCheckedChange={(checked) => 
+                setConfigState(prev => ({ ...prev, onlyMyEstimates: !!checked }))
+              }
+              className="mt-0.5"
+            />
+            <div>
+              <span className="text-xs font-medium">Only show my estimates</span>
+              <p className="text-[10px] text-muted-foreground">Filter to estimates where you are the owner</p>
+            </div>
+          </label>
           
           {[
             { key: "showDraft", label: "Draft", desc: "Estimates still being created" },

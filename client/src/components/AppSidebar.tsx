@@ -34,6 +34,7 @@ import {
   User,
   ListChecks,
   Star,
+  LayoutDashboard,
 } from "lucide-react";
 
 import {
@@ -283,24 +284,22 @@ export function AppSidebar() {
       </SidebarHeader>
       
       <SidebarContent>
-        {/* Personal Section */}
-        <SidebarGroup>
-          <SidebarGroupLabel className="text-xs font-medium text-muted-foreground">
-            Personal
-          </SidebarGroupLabel>
+        {/* My Dashboard - Primary User Hub */}
+        <SidebarGroup className="pb-1">
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton 
                   asChild
-                  tooltip="My Workspace"
-                  data-testid="nav-my-workspace"
+                  tooltip="My Dashboard"
+                  data-testid="nav-my-dashboard"
                   data-active={location.startsWith("/me") || location.startsWith("/users/")}
+                  className="bg-primary/5 hover:bg-primary/10 border border-primary/20"
                 >
                   <Link href="/me">
-                    <User className="h-4 w-4" />
-                    <span className="group-data-[collapsible=icon]:hidden">
-                      My Workspace
+                    <LayoutDashboard className="h-4 w-4 text-primary" />
+                    <span className="group-data-[collapsible=icon]:hidden font-medium">
+                      My Dashboard
                     </span>
                   </Link>
                 </SidebarMenuButton>
