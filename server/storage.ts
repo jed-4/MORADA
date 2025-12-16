@@ -3240,6 +3240,7 @@ export class MemStorage implements IStorage {
         status: insertEstimate.status || "draft",
         ownerId: insertEstimate.ownerId ?? null,
         ownerName: insertEstimate.ownerName ?? null,
+        assigneeIds: insertEstimate.assigneeIds ?? [],
         projectMarkupPercent: insertEstimate.projectMarkupPercent ?? null,
         taxRate: insertEstimate.taxRate ?? null,
         notes: insertEstimate.notes ?? null,

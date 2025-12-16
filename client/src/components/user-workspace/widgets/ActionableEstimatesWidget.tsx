@@ -83,7 +83,8 @@ export default function ActionableEstimatesWidget({
         if (est.status === "locked" && !showLocked) return false;
         if (onlyMyEstimates) {
           const isOwner = est.ownerId === userId;
-          const isAssignee = est.assigneeIds?.includes(userId) ?? false;
+          const assignees = est.assigneeIds ?? [];
+          const isAssignee = Array.isArray(assignees) && assignees.includes(userId);
           if (!isOwner && !isAssignee) return false;
         }
         return true;
