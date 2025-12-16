@@ -167,11 +167,12 @@ export function ImportChecklistDialog({ open, onOpenChange }: ImportChecklistDia
           return columnIndex !== undefined ? (row[columnIndex] || "") : "";
         };
 
+        const groupName = getColumnValue('groupName');
         return {
           templateName: getColumnValue('templateName'),
           templateDescription: getColumnValue('templateDescription'),
           type: getColumnValue('type'),
-          groupName: getColumnValue('groupName'),
+          groupName: groupName && groupName.trim() ? groupName.trim() : "General",
           itemDescription: getColumnValue('itemDescription'),
         };
       });

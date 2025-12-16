@@ -11276,21 +11276,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         const template = templateMap.get(templateKey)!;
         
-        // Add group if provided
-        if (row.groupName) {
-          const groupKey = row.groupName.trim();
-          
-          if (!template.groups.has(groupKey)) {
-            template.groups.set(groupKey, []);
-          }
+        // Use "General" as default group if no group name provided
+        const groupKey = (row.groupName && row.groupName.trim()) ? row.groupName.trim() : "General";
+        
+        if (!template.groups.has(groupKey)) {
+          template.groups.set(groupKey, []);
+        }
 
-          // Add item if provided
-          if (row.itemDescription && row.itemDescription.trim()) {
-            template.groups.get(groupKey)!.push({
-              description: row.itemDescription,
-              order: template.groups.get(groupKey)!.length,
-            });
-          }
+        // Add item if provided
+        if (row.itemDescription && row.itemDescription.trim()) {
+          template.groups.get(groupKey)!.push({
+            description: row.itemDescription,
+            order: template.groups.get(groupKey)!.length,
+          });
         }
       }
 
