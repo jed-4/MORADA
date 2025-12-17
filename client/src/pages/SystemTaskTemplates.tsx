@@ -43,7 +43,13 @@ import {
   Search,
   Filter,
   RotateCcw,
+  Info,
 } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import type { TaskTemplate, TaskTag, TaskTemplateStatus } from "@shared/schema";
 
 interface RecurringScheduleItem {
@@ -503,7 +509,29 @@ export default function SystemTaskTemplates() {
                         <TableRow key={template.id} data-testid={`row-template-${template.id}`}>
                           <TableCell>
                             <div className="flex flex-col gap-1">
-                              <span className="font-medium">{template.title}</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-medium">{template.title}</span>
+                                {template.description && (
+                                  <Popover>
+                                    <PopoverTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-5 w-5 text-muted-foreground hover:text-foreground"
+                                        data-testid={`button-description-${template.id}`}
+                                      >
+                                        <Info className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-80 text-sm" align="start">
+                                      <div className="space-y-1">
+                                        <p className="font-medium text-xs text-muted-foreground">Description</p>
+                                        <p className="whitespace-pre-wrap">{template.description}</p>
+                                      </div>
+                                    </PopoverContent>
+                                  </Popover>
+                                )}
+                              </div>
                               {template.goal && (
                                 <span className="text-sm text-muted-foreground">{template.goal}</span>
                               )}
