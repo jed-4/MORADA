@@ -807,6 +807,23 @@ export type EstimateSummary = {
   itemCount: number;
 };
 
+// Estimate Notes (running notes for team collaboration)
+export const estimateNotes = pgTable("estimate_notes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  estimateId: varchar("estimate_id").notNull().references(() => estimates.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertEstimateNoteSchema = createInsertSchema(estimateNotes).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertEstimateNote = z.infer<typeof insertEstimateNoteSchema>;
+export type EstimateNote = typeof estimateNotes.$inferSelect;
+
 // Company Settings
 export const companySettings = pgTable("company_settings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

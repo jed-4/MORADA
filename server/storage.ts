@@ -11,6 +11,7 @@ import {
   type Estimate, type InsertEstimate,
   type EstimateItem, type InsertEstimateItem,
   type EstimateGroup, type InsertEstimateGroup,
+  type EstimateNote, type InsertEstimateNote,
   type UserRole, type InsertUserRole,
   type Permission, type InsertPermission,
   type RolePermission, type InsertRolePermission,
@@ -285,6 +286,11 @@ export interface IStorage {
   deleteEstimateGroup(id: string): Promise<boolean>;
   duplicateEstimateGroup(id: string): Promise<EstimateGroup>;
   copyGroupToEstimate(groupId: string, targetEstimateId: string): Promise<EstimateGroup>;
+  
+  // Estimate Notes CRUD
+  getEstimateNotes(estimateId: string): Promise<EstimateNote[]>;
+  createEstimateNote(note: InsertEstimateNote): Promise<EstimateNote>;
+  deleteEstimateNote(id: string): Promise<boolean>;
   
   // Estimate Items Duplication and Copying
   duplicateEstimateItem(id: string): Promise<EstimateItem>;
@@ -8298,6 +8304,46 @@ export class DbStorage implements IStorage {
     } catch (error) {
       console.error("Database error in copyGroupToEstimate:", error);
       throw error;
+    }
+  }
+
+  // Estimate Notes CRUD
+  async getEstimateNotes(estimateId: string): Promise<EstimateNote[]> {
+    try {
+      const notes = await db
+        .select()
+        .from(schema.estimateNotes)
+        .where(eq(schema.estimateNotes.estimateId, estimateId))
+        .orderBy(desc(schema.estimateNotes.createdAt));
+      return notes;
+    } catch (error) {
+      console.error("Database error in getEstimateNotes:", error);
+      return [];
+    }
+  }
+
+  async createEstimateNote(note: InsertEstimateNote): Promise<EstimateNote> {
+    try {
+      const [created] = await db
+        .insert(schema.estimateNotes)
+        .values(note)
+        .returning();
+      return created;
+    } catch (error) {
+      console.error("Database error in createEstimateNote:", error);
+      throw error;
+    }
+  }
+
+  async deleteEstimateNote(id: string): Promise<boolean> {
+    try {
+      const result = await db
+        .delete(schema.estimateNotes)
+        .where(eq(schema.estimateNotes.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteEstimateNote:", error);
+      return false;
     }
   }
 

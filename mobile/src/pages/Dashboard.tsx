@@ -340,46 +340,35 @@ export function Dashboard() {
         />
       )}
       <MobileHeader 
-        title={mode === "personal" ? "User Workspace" : "Business Dashboard"} 
+        title={mode === "personal" ? "My Workspace" : "Business"} 
         action={
-          <button
-            onClick={() => setIsThemeSettingsOpen(true)}
-            className="p-2 hover-elevate active-elevate-2 rounded-md"
-            data-testid="button-theme-settings"
-          >
-            <Palette className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => {
+                const newMode = mode === "personal" ? "business" : "personal";
+                setMode(newMode);
+                triggerHaptic();
+              }}
+              className="p-2 hover-elevate active-elevate-2 rounded-md relative"
+              data-testid="button-toggle-mode"
+              title={mode === "personal" ? "Switch to Business" : "Switch to Personal"}
+            >
+              {mode === "personal" ? (
+                <Briefcase className="w-5 h-5" />
+              ) : (
+                <User className="w-5 h-5" />
+              )}
+            </button>
+            <button
+              onClick={() => setIsThemeSettingsOpen(true)}
+              className="p-2 hover-elevate active-elevate-2 rounded-md"
+              data-testid="button-theme-settings"
+            >
+              <Palette className="w-5 h-5" />
+            </button>
+          </div>
         }
       />
-      
-      <div className="px-4 pt-2 pb-1 relative z-10">
-        <div className="bg-muted rounded-lg p-1 flex gap-1">
-          <button
-            onClick={() => setMode("personal")}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-sm font-medium transition-all ${
-              mode === "personal"
-                ? "bg-primary text-primary-foreground shadow-md"
-                : "bg-transparent text-muted-foreground hover:bg-muted-foreground/10"
-            }`}
-            data-testid="toggle-personal-dashboard"
-          >
-            <User className="w-4 h-4" />
-            <span>Personal</span>
-          </button>
-          <button
-            onClick={() => setMode("business")}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-sm font-medium transition-all ${
-              mode === "business"
-                ? "bg-primary text-primary-foreground shadow-md"
-                : "bg-transparent text-muted-foreground hover:bg-muted-foreground/10"
-            }`}
-            data-testid="toggle-business-dashboard"
-          >
-            <Briefcase className="w-4 h-4" />
-            <span>Business</span>
-          </button>
-        </div>
-      </div>
 
       <div className="px-4 py-1 flex justify-end relative z-10">
         <button

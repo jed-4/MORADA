@@ -122,6 +122,7 @@ import { CostCodeSelect } from "@/components/CostCodeSelect";
 import { MultiUserSelect } from "@/components/MultiUserSelect";
 import { GridRow, GridCell, GridHeaderRow, GridHeaderCell } from "@/components/estimates/GridRow";
 import { EstimateGridLayoutProvider, useEstimateGridLayout } from "@/contexts/EstimateGridLayoutContext";
+import { EstimateNotesPopover } from "@/components/estimates/EstimateNotesPopover";
 
 interface EstimateDetailParams {
   id?: string;
@@ -4325,6 +4326,18 @@ export default function EstimateDetail() {
               <TooltipContent>Browse catalog</TooltipContent>
             </Tooltip>
           </TooltipProvider>
+          {effectiveEstimateId && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div>
+                    <EstimateNotesPopover estimateId={effectiveEstimateId} />
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>Estimate notes</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
         </div>
       </div>
 

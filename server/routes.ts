@@ -3506,6 +3506,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ============================================================
+  // ESTIMATE NOTES API ROUTES
+  // ============================================================
+
+  // Get all notes for an estimate
+  app.get("/api/estimates/:id/notes", requireAuth, async (req, res) => {
+    try {
+      const notes = await storage.getEstimateNotes(req.params.id);
+      res.json(notes);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch estimate notes" });
+    }
+  });
+
+  // Create a new note for an estimate
+  app.post("/api/estimates/:id/notes", requireAuth, async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      
+      const note = await storage.createEstimateNote({
+        estimateId: req.params.id,
+        userId,
+        content: req.body.content,
+      });
+      res.status(201).json(note);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create estimate note" });
+    }
+  });
+
+  // Delete a note
+  app.delete("/api/estimate-notes/:noteId", requireAuth, async (req, res) => {
+    try {
+      const success = await storage.deleteEstimateNote(req.params.noteId);
+      if (success) {
+        res.status(204).send();
+      } else {
+        res.status(404).json({ error: "Note not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete estimate note" });
+    }
+  });
+
+  // ============================================================
   // SCOPE SECTION API ROUTES (Single Source of Truth)
   // ============================================================
 
