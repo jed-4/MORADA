@@ -47,6 +47,7 @@ interface TaskBoardProps {
   isLoading?: boolean;
   filters?: Record<string, any>;
   onTaskClick?: (task: Task) => void;
+  onAddTask?: (status: string) => void;
   projectId?: string;
   displaySettings?: CardDisplaySettings;
   cardWidth?: 'compact' | 'comfortable' | 'spacious';
@@ -183,7 +184,7 @@ function DroppableColumn({
   );
 }
 
-export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, filters, onTaskClick, projectId, displaySettings, cardWidth: propCardWidth = 'comfortable' }: TaskBoardProps = {}) {
+export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, filters, onTaskClick, onAddTask: propOnAddTask, projectId, displaySettings, cardWidth: propCardWidth = 'comfortable' }: TaskBoardProps = {}) {
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
   const [selectedColumnStatus, setSelectedColumnStatus] = useState<string>("todo");
   const [activeTask, setActiveTask] = useState<Task | null>(null);
@@ -357,8 +358,14 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
   }, {} as Record<string, Task[]>);
 
   const handleAddTaskToColumn = (status: string) => {
-    setSelectedColumnStatus(status);
-    setIsCreateTaskOpen(true);
+    // If parent provides onAddTask callback, use it (for BusinessTasks without projectId)
+    if (propOnAddTask) {
+      propOnAddTask(status);
+    } else {
+      // Otherwise use internal modal (requires projectId)
+      setSelectedColumnStatus(status);
+      setIsCreateTaskOpen(true);
+    }
   };
 
   const handleDragStart = (event: DragStartEvent) => {

@@ -92,6 +92,9 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
   const [subtaskInput, setSubtaskInput] = useState("");
   const [showReminderDialog, setShowReminderDialog] = useState(false);
   const [showSubtaskInput, setShowSubtaskInput] = useState(false);
+  const [checklistItems, setChecklistItems] = useState<Array<{ id?: string; text: string; completed: boolean }>>([]);
+  const [checklistInput, setChecklistInput] = useState("");
+  const [showChecklistInput, setShowChecklistInput] = useState(false);
   const [showDriveFilePicker, setShowDriveFilePicker] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -213,6 +216,19 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
       form.reset(newDefaults);
       setTitleValue(newDefaults.title);
       setShowAdvanced(newDefaults.isRecurring);
+      // Initialize checklist from task - preserve existing IDs, only generate for items without IDs
+      if (task) {
+        const taskChecklist = (task.checklist as Array<{ id?: string; text: string; completed: boolean }>) || [];
+        setChecklistItems(taskChecklist.map(item => ({
+          ...item,
+          id: item.id || crypto.randomUUID(), // Only generate ID if item doesn't have one
+        })));
+      } else {
+        // Clear checklist for new task creation
+        setChecklistItems([]);
+      }
+      setShowChecklistInput(false);
+      setChecklistInput("");
     }
   }, [task, open, initialStatus, projectId, form]);
 
@@ -271,6 +287,53 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
     },
   });
+
+  // Checklist mutations and handlers
+  const updateChecklistMutation = useMutation({
+    mutationFn: async (newChecklist: Array<{ id?: string; text: string; completed: boolean }>) => {
+      if (!task?.id) throw new Error("No task to update");
+      return await apiRequest(`/api/tasks/${task.id}`, "PATCH", { checklist: newChecklist });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to update checklist",
+        description: error.message,
+        variant: "destructive",
+      });
+      // Revert to previous state on error by re-fetching
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+    },
+  });
+
+  const handleAddChecklistItem = () => {
+    if (checklistInput.trim() && task) {
+      const newItem = { id: crypto.randomUUID(), text: checklistInput.trim(), completed: false };
+      const newChecklist = [...checklistItems, newItem];
+      setChecklistItems(newChecklist);
+      updateChecklistMutation.mutate(newChecklist);
+      setChecklistInput("");
+      setShowChecklistInput(false);
+    }
+  };
+
+  const handleToggleChecklistItem = (itemId: string) => {
+    if (!task) return;
+    const newChecklist = checklistItems.map(item =>
+      item.id === itemId ? { ...item, completed: !item.completed } : item
+    );
+    setChecklistItems(newChecklist);
+    updateChecklistMutation.mutate(newChecklist);
+  };
+
+  const handleRemoveChecklistItem = (itemId: string) => {
+    if (!task) return;
+    const newChecklist = checklistItems.filter(item => item.id !== itemId);
+    setChecklistItems(newChecklist);
+    updateChecklistMutation.mutate(newChecklist);
+  };
 
   const onSubmit = (data: TaskFormData) => {
     saveTaskMutation.mutate(data);
@@ -505,6 +568,83 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
 
                   {subtasks.length === 0 && !showSubtaskInput && (
                     <p className="text-xs text-muted-foreground italic py-2">No subtasks yet</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Checklist */}
+            {task && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium text-muted-foreground">Checklist</label>
+                  <div className="flex items-center gap-2">
+                    {checklistItems.length > 0 && (
+                      <span className="text-xs text-muted-foreground">
+                        {checklistItems.filter(i => i.completed).length}/{checklistItems.length}
+                      </span>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => setShowChecklistInput(true)}
+                      data-testid="button-add-checklist-item"
+                    >
+                      <Plus className="h-3 w-3 mr-1" />
+                      Add
+                    </Button>
+                  </div>
+                </div>
+                
+                <div className="space-y-1">
+                  {checklistItems.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 group"
+                      data-testid={`checklist-item-${item.id}`}
+                    >
+                      <Checkbox 
+                        className="h-4 w-4" 
+                        checked={item.completed}
+                        onCheckedChange={() => handleToggleChecklistItem(item.id!)}
+                        data-testid={`checkbox-checklist-${item.id}`}
+                      />
+                      <span className={`text-sm flex-1 ${item.completed ? 'line-through text-muted-foreground' : ''}`}>
+                        {item.text}
+                      </span>
+                      <button
+                        onClick={() => handleRemoveChecklistItem(item.id!)}
+                        className="p-1 hover:bg-destructive/10 rounded opacity-0 group-hover:opacity-100"
+                        data-testid={`button-remove-checklist-${item.id}`}
+                      >
+                        <X className="h-3 w-3 text-destructive" />
+                      </button>
+                    </div>
+                  ))}
+
+                  {showChecklistInput && (
+                    <div className="flex items-center gap-2 p-2">
+                      <Input
+                        value={checklistInput}
+                        onChange={(e) => setChecklistInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleAddChecklistItem();
+                          if (e.key === "Escape") {
+                            setShowChecklistInput(false);
+                            setChecklistInput("");
+                          }
+                        }}
+                        placeholder="Checklist item..."
+                        className="h-8 text-sm"
+                        autoFocus
+                        data-testid="input-add-checklist-item"
+                      />
+                    </div>
+                  )}
+
+                  {checklistItems.length === 0 && !showChecklistInput && (
+                    <p className="text-xs text-muted-foreground italic py-2">No checklist items yet</p>
                   )}
                 </div>
               </div>

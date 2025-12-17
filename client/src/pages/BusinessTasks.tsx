@@ -35,6 +35,7 @@ export default function BusinessTasks() {
   const [activeTab, setActiveTab] = useState<"board" | "list" | "calendar">("board");
   const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [initialTaskStatus, setInitialTaskStatus] = useState<string>("todo");
   const [groupBy, setGroupBy] = useState<'none' | 'status' | 'priority' | 'assignee'>('none');
   const [filters, setFilters] = useState<FilterState>({});
   const [selectedViewId, setSelectedViewId] = useState<string | undefined>(undefined);
@@ -687,6 +688,11 @@ export default function BusinessTasks() {
                 setEditingTask(task);
                 setShowCreateTaskDialog(true);
               }}
+              onAddTask={(status) => {
+                setInitialTaskStatus(status);
+                setEditingTask(null);
+                setShowCreateTaskDialog(true);
+              }}
               displaySettings={cardDisplaySettings}
             />
           </div>
@@ -730,9 +736,13 @@ export default function BusinessTasks() {
           open={showCreateTaskDialog}
           onOpenChange={(open) => {
             setShowCreateTaskDialog(open);
-            if (!open) setEditingTask(null);
+            if (!open) {
+              setEditingTask(null);
+              setInitialTaskStatus("todo");
+            }
           }}
           projectId=""
+          initialStatus={initialTaskStatus}
         />
       )}
 
