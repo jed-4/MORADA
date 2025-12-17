@@ -192,10 +192,18 @@ export function ImportChecklistDialog({ open, onOpenChange }: ImportChecklistDia
       return;
     }
 
-    // Validate that required fields are mapped
-    if (!columnMapping.templateName || !columnMapping.type) {
-      setError("Please map at least Template Name and Type columns");
+    // Validate that required fields are mapped - only Template Name is strictly required
+    if (!columnMapping.templateName) {
+      setError("Please map the Template Name column to identify your checklist templates.");
       return;
+    }
+    
+    // Type is optional - will default to "Job" if not mapped
+    if (!columnMapping.type) {
+      toast({
+        title: "Note",
+        description: "Type column not mapped. All items will default to 'Job' type.",
+      });
     }
 
     importMutation.mutate(previewData);
@@ -258,7 +266,8 @@ export function ImportChecklistDialog({ open, onOpenChange }: ImportChecklistDia
               </Button>
             </div>
             <p className="text-sm text-muted-foreground">
-              Expected columns: Checklist Group, Checklist, Checklist Item, Type (Task/Job/Estimation/Lead), Description
+              Supported columns: Template Name (required), Group, Item Description, Type, Description. 
+              Only Template Name is required - other fields are optional.
             </p>
           </div>
 
@@ -275,7 +284,7 @@ export function ImportChecklistDialog({ open, onOpenChange }: ImportChecklistDia
             <div className="space-y-3 p-4 border rounded-md bg-muted/50">
               <Label className="text-base">Map Your Columns</Label>
               <p className="text-sm text-muted-foreground">
-                Select which column from your file matches each field. Fields marked with * are required.
+                Select which column from your file matches each field. Only Template Name is required.
               </p>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="space-y-2">
