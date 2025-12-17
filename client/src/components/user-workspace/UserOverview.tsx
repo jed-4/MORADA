@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { 
@@ -9,7 +10,8 @@ import {
   PlusCircle,
   Trash2,
   GripVertical,
-  X
+  X,
+  Palette
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -25,8 +27,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { User } from "@shared/schema";
+import type { User, DashboardTheme } from "@shared/schema";
 import type { Widget } from "@/types/widgets";
+import DashboardThemeSettings from "../DashboardThemeSettings";
 import { personalWidgetRegistry, getPersonalWidgetDefinition } from "./widgets/PersonalWidgetRegistry";
 import { 
   DndContext, 
@@ -181,6 +184,12 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
   const [isAddingWidget, setIsAddingWidget] = useState(false);
   const [configuringWidget, setConfiguringWidget] = useState<string | null>(null);
   const [isCreatingView, setIsCreatingView] = useState(false);
+  const [isThemeSettingsOpen, setIsThemeSettingsOpen] = useState(false);
+
+  // Fetch user dashboard theme
+  const { data: theme } = useQuery<DashboardTheme | null>({
+    queryKey: ["/api/dashboard-themes/user"],
+  });
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -332,6 +341,54 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
     return "Good evening";
   };
 
+  const hexToRgba = (hex: string, opacity: number) => {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${opacity / 100})`;
+  };
+
+  const getThemeBackground = (): React.CSSProperties => {
+    if (!theme) return {};
+    
+    if (theme.backgroundType === "color" && theme.backgroundColor) {
+      return { backgroundColor: theme.backgroundColor };
+    } else if (theme.backgroundType === "gradient" && theme.backgroundGradient) {
+      return { background: theme.backgroundGradient };
+    } else if (theme.backgroundType === "image" && theme.backgroundImage) {
+      return { 
+        backgroundImage: `url(${theme.backgroundImage})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      };
+    }
+    return {};
+  };
+
+  const getWidgetStyle = (): { className: string; style?: React.CSSProperties } => {
+    if (!theme) return { className: "" };
+    const opacity = (theme.widgetOpacity ?? 100) / 100;
+    if (theme.widgetBackgroundType === "frosted") {
+      return { 
+        className: "backdrop-blur-sm", 
+        style: { backgroundColor: `hsl(var(--card) / ${opacity * 0.8})` }
+      };
+    }
+    if (theme.widgetBackgroundType === "transparent") {
+      return { 
+        className: "border-white/20", 
+        style: { backgroundColor: 'transparent' }
+      };
+    }
+    if (opacity < 1) {
+      return { 
+        className: "", 
+        style: { backgroundColor: `hsl(var(--card) / ${opacity})` }
+      };
+    }
+    return { className: "" };
+  };
+
   return (
     <div className="flex flex-col h-full" data-testid="user-overview">
       {/* Header with view switcher */}
@@ -403,20 +460,44 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
           </button>
           
           {isOwnPage && (
-            <button
-              className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
-              onClick={() => setIsAddingWidget(true)}
-              data-testid="button-add-widget"
-            >
-              <Plus className="w-3 h-3" />
-              <span>Add Widget</span>
-            </button>
+            <>
+              <button
+                className="h-6 w-6 text-xs border rounded-md flex items-center justify-center hover-elevate active-elevate-2"
+                onClick={() => setIsThemeSettingsOpen(true)}
+                data-testid="button-theme-settings"
+              >
+                <Palette className="w-3 h-3" />
+              </button>
+              <button
+                className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
+                onClick={() => setIsAddingWidget(true)}
+                data-testid="button-add-widget"
+              >
+                <Plus className="w-3 h-3" />
+                <span>Add Widget</span>
+              </button>
+            </>
           )}
         </div>
       </div>
 
-      {/* Widgets Area */}
-      <div className="flex-1 overflow-auto p-4">
+      {/* Widgets Area with Theme Background */}
+      <div 
+        className="flex-1 overflow-auto relative"
+        style={getThemeBackground()}
+      >
+        {/* Overlay for image backgrounds */}
+        {theme?.backgroundType === "image" && theme.overlayEnabled && (
+          <div 
+            className="absolute inset-0 pointer-events-none"
+            style={{ 
+              backgroundColor: hexToRgba(theme.overlayColor || '#000000', theme.overlayOpacity || 40),
+              backdropFilter: theme.blurStrength ? `blur(${theme.blurStrength}px)` : undefined,
+            }}
+          />
+        )}
+        
+        <div className="relative p-4">
         <DndContext 
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -465,6 +546,7 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
             </div>
           </SortableContext>
         </DndContext>
+        </div>
       </div>
 
       {/* Add Widget Dialog */}
@@ -493,6 +575,12 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
           </div>
         </DialogContent>
       </Dialog>
+
+      <DashboardThemeSettings
+        open={isThemeSettingsOpen}
+        onOpenChange={setIsThemeSettingsOpen}
+        dashboardType="user"
+      />
     </div>
   );
 }

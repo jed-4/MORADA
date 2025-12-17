@@ -16,6 +16,7 @@ interface DashboardThemeSettingsProps {
   onOpenChange: (open: boolean) => void;
   dashboardType: "business" | "user" | "project";
   projectId?: string;
+  projectColor?: string;
 }
 
 const COLOR_PRESETS = [
@@ -47,6 +48,7 @@ export default function DashboardThemeSettings({
   onOpenChange,
   dashboardType,
   projectId,
+  projectColor,
 }: DashboardThemeSettingsProps) {
   const queryClient = useQueryClient();
   
@@ -229,6 +231,17 @@ export default function DashboardThemeSettings({
                     className="flex-1 h-8 text-xs"
                     placeholder="#f8fafc"
                   />
+                  {projectColor && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs whitespace-nowrap"
+                      onClick={() => setBackgroundColor(projectColor)}
+                    >
+                      Copy Project Color
+                    </Button>
+                  )}
                 </div>
               </div>
               <div className="space-y-1.5">

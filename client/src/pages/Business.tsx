@@ -79,7 +79,7 @@ export default function Business() {
       {/* Row 1 - Title (36px) */}
       <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0 border-b border-border">
         <h2 className="text-sm font-semibold" data-testid="text-page-title">
-          Business
+          Business Dashboard
         </h2>
       </div>
 

@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Settings, ChevronDown, Search, PlusCircle, Check, LayoutGrid, Trash2, Lock, Users, Globe, Eye, Pencil, Star } from "lucide-react";
+import { Plus, Settings, ChevronDown, Search, PlusCircle, Check, LayoutGrid, Trash2, Lock, Users, Globe, Eye, Pencil, Star, Palette } from "lucide-react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -46,7 +46,8 @@ import { widgetRegistry, getWidgetDefinition } from "./widgets/WidgetRegistry";
 import WidgetContainer from "./widgets/WidgetContainer";
 import { useProject } from "@/contexts/ProjectContext";
 import { useAuth } from "@/hooks/use-auth";
-import type { FieldCategoryWithOptions, DashboardView, UserRole } from "@shared/schema";
+import type { FieldCategoryWithOptions, DashboardView, UserRole, DashboardTheme } from "@shared/schema";
+import DashboardThemeSettings from "./DashboardThemeSettings";
 import {
   DndContext,
   closestCenter,
@@ -131,6 +132,9 @@ export default function CustomizableProjectOverview() {
   // Delete confirmation state
   const [viewToDelete, setViewToDelete] = useState<DashboardView | null>(null);
   
+  // Theme settings modal state
+  const [isThemeSettingsOpen, setIsThemeSettingsOpen] = useState(false);
+  
   // Track if default view creation was attempted
   const defaultViewCreatedRef = useRef(false);
 
@@ -165,6 +169,12 @@ export default function CustomizableProjectOverview() {
   // Fetch field categories for phase colors
   const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
     queryKey: ["/api/field-categories"],
+  });
+
+  // Fetch project dashboard theme
+  const { data: theme } = useQuery<DashboardTheme | null>({
+    queryKey: ["/api/dashboard-themes/project", currentProject?.id],
+    enabled: !!currentProject?.id,
   });
 
   // Create view mutation
@@ -656,6 +666,55 @@ export default function CustomizableProjectOverview() {
     'Lead';
   const phaseColor = currentPhaseOption?.color || '#6b7280';
 
+  // Theme helper functions
+  const hexToRgba = (hex: string, opacity: number) => {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${opacity / 100})`;
+  };
+
+  const getThemeBackground = (): React.CSSProperties => {
+    if (!theme) return {};
+    
+    if (theme.backgroundType === "color" && theme.backgroundColor) {
+      return { backgroundColor: theme.backgroundColor };
+    } else if (theme.backgroundType === "gradient" && theme.backgroundGradient) {
+      return { background: theme.backgroundGradient };
+    } else if (theme.backgroundType === "image" && theme.backgroundImage) {
+      return { 
+        backgroundImage: `url(${theme.backgroundImage})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      };
+    }
+    return {};
+  };
+
+  const getWidgetStyle = (): { className: string; style?: React.CSSProperties } => {
+    if (!theme) return { className: "" };
+    const opacity = (theme.widgetOpacity ?? 100) / 100;
+    if (theme.widgetBackgroundType === "frosted") {
+      return { 
+        className: "backdrop-blur-sm", 
+        style: { backgroundColor: `hsl(var(--card) / ${opacity * 0.8})` }
+      };
+    }
+    if (theme.widgetBackgroundType === "transparent") {
+      return { 
+        className: "border-white/20", 
+        style: { backgroundColor: 'transparent' }
+      };
+    }
+    if (opacity < 1) {
+      return { 
+        className: "", 
+        style: { backgroundColor: `hsl(var(--card) / ${opacity})` }
+      };
+    }
+    return { className: "" };
+  };
+
   // Get visibility icon for a view
   const getVisibilityIcon = (visibility: string) => {
     switch (visibility) {
@@ -671,12 +730,12 @@ export default function CustomizableProjectOverview() {
     <div className="flex flex-col h-full" data-testid="customizable-project-overview">
       {/* Row 1 - Title & Actions (36px / h-9) */}
       <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
-        {/* Left: Project Name · Dashboard breadcrumb + Active chip */}
+        {/* Left: Project Name · Project Overview breadcrumb + Active chip */}
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold flex items-center gap-1.5" data-testid="text-page-title">
             <span className="truncate max-w-[180px]">{currentProject.name}</span>
             <span className="text-muted-foreground">·</span>
-            <span>Dashboard</span>
+            <span>Project Overview</span>
           </h2>
           <Badge
             variant="secondary"
@@ -703,6 +762,13 @@ export default function CustomizableProjectOverview() {
           >
             {phaseDisplayName}
           </Badge>
+          <button
+            className="h-6 w-6 text-xs border rounded-md flex items-center justify-center hover-elevate active-elevate-2"
+            onClick={() => setIsThemeSettingsOpen(true)}
+            data-testid="button-theme-settings"
+          >
+            <Palette className="w-3 h-3" />
+          </button>
           <button
             className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
             onClick={() => setIsAddingWidget(true)}
@@ -836,7 +902,22 @@ export default function CustomizableProjectOverview() {
       </div>
 
       {/* Widgets Area with Background */}
-      <div className={`flex-1 overflow-auto ${currentBackground} p-4`}>
+      <div 
+        className={`flex-1 overflow-auto relative ${!theme ? currentBackground : ''}`}
+        style={getThemeBackground()}
+      >
+        {/* Overlay for image backgrounds */}
+        {theme?.backgroundType === "image" && theme.overlayEnabled && (
+          <div 
+            className="absolute inset-0 pointer-events-none"
+            style={{ 
+              backgroundColor: hexToRgba(theme.overlayColor || '#000000', theme.overlayOpacity || 40),
+              backdropFilter: theme.blurStrength ? `blur(${theme.blurStrength}px)` : undefined,
+            }}
+          />
+        )}
+        
+        <div className="relative p-4">
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -874,6 +955,7 @@ export default function CustomizableProjectOverview() {
             </div>
           </SortableContext>
         </DndContext>
+        </div>
       </div>
 
       {/* Add Widget Dialog */}
@@ -1217,6 +1299,14 @@ export default function CustomizableProjectOverview() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <DashboardThemeSettings
+        open={isThemeSettingsOpen}
+        onOpenChange={setIsThemeSettingsOpen}
+        dashboardType="project"
+        projectId={currentProject?.id}
+        projectColor={phaseColor}
+      />
     </div>
   );
 }

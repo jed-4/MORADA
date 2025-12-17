@@ -287,22 +287,22 @@ export function AppSidebar() {
       </SidebarHeader>
       
       <SidebarContent>
-        {/* My Dashboard - Primary User Hub */}
+        {/* User Workspace - Primary User Hub */}
         <SidebarGroup className="pb-1">
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton 
                   asChild
-                  tooltip="My Dashboard"
-                  data-testid="nav-my-dashboard"
+                  tooltip="User Workspace"
+                  data-testid="nav-user-workspace"
                   data-active={location.startsWith("/me") || location.startsWith("/users/")}
                   className="bg-primary/5 hover:bg-primary/10 border border-primary/20"
                 >
                   <Link href="/me">
                     <LayoutDashboard className="h-4 w-4 text-primary" />
                     <span className="group-data-[collapsible=icon]:hidden font-medium">
-                      My Dashboard
+                      User Workspace
                     </span>
                   </Link>
                 </SidebarMenuButton>
