@@ -1,5 +1,5 @@
 import { useAuth } from "@/hooks/use-auth";
-import { Button } from "@/components/ui/MobileButton";
+import { MobileButton } from "@/components/ui/MobileButton";
 import { LogIn, RefreshCw, Wifi } from "lucide-react";
 
 interface MobileAuthGuardProps {
@@ -31,10 +31,10 @@ export function MobileAuthGuard({ children }: MobileAuthGuardProps) {
           Your session has expired or you've been logged out. Please sign in again to continue.
         </p>
         <a href={loginUrl} className="w-full max-w-xs">
-          <Button className="w-full gap-2">
+          <MobileButton className="w-full gap-2">
             <LogIn className="h-4 w-4" />
             Sign In with Replit
-          </Button>
+          </MobileButton>
         </a>
       </div>
     );

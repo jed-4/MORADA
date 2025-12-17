@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { BottomSheet } from "./BottomSheet";
-import { Button } from "@/components/ui/button";
+import { MobileButton as Button } from "@/components/ui/MobileButton";
 import { Check, Image, Palette as PaletteIcon, Sparkles, Copy } from "lucide-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
