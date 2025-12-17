@@ -361,6 +361,21 @@ export function EnhancedCalendar({
   const [showSchedule, setShowSchedule] = useState(true);
   const [showMeetings, setShowMeetings] = useState(true);
   const [showGoogleCalendar, setShowGoogleCalendar] = useState(true);
+  
+  // Current time state for time indicator - updates every minute
+  const [currentTimeMinutes, setCurrentTimeMinutes] = useState(() => {
+    const now = new Date();
+    return now.getHours() * 60 + now.getMinutes();
+  });
+  
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = new Date();
+      setCurrentTimeMinutes(now.getHours() * 60 + now.getMinutes());
+    }, 60000); // Update every minute
+    return () => clearInterval(interval);
+  }, []);
+  
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const allDayScrollRef = useRef<HTMLDivElement>(null);
   const timeGridScrollRef = useRef<HTMLDivElement>(null);
@@ -1039,6 +1054,18 @@ export function EnhancedCalendar({
                             });
                           });
                         })()}
+                        
+                        {/* Current time indicator - red line for today */}
+                        {isToday(date) && (
+                          <div
+                            className="absolute left-0 right-0 z-30 pointer-events-none"
+                            style={{ top: `${(currentTimeMinutes / 60) * HOUR_HEIGHT}px` }}
+                            data-testid="current-time-indicator"
+                          >
+                            <div className="absolute -left-1 -top-1.5 w-3 h-3 rounded-full bg-red-500" />
+                            <div className="h-0.5 bg-red-500 w-full" />
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

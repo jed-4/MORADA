@@ -113,6 +113,20 @@ export default function DayCalendarWidget({ widget, onUpdate, isConfiguring, onC
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const scrollRef = useRef<HTMLDivElement>(null);
   
+  // Current time state that updates every minute
+  const [currentTimeMinutes, setCurrentTimeMinutes] = useState(() => {
+    const now = new Date();
+    return now.getHours() * 60 + now.getMinutes();
+  });
+  
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = new Date();
+      setCurrentTimeMinutes(now.getHours() * 60 + now.getMinutes());
+    }, 60000); // Update every minute
+    return () => clearInterval(interval);
+  }, []);
+  
   const config = widget.config || {};
   const [configState, setConfigState] = useState({
     includeTasks: config.includeTasks ?? true,
@@ -211,9 +225,6 @@ export default function DayCalendarWidget({ widget, onUpdate, isConfiguring, onC
   const goToPrev = () => setSelectedDate(d => subDays(d, 1));
   const goToNext = () => setSelectedDate(d => addDays(d, 1));
 
-  const currentHour = new Date().getHours();
-  const currentMinute = new Date().getMinutes();
-
   return (
     <div className="flex flex-col h-full -m-3 overflow-hidden">
       <div className="flex-shrink-0 flex items-center justify-between px-3 py-1.5 border-b bg-muted/30">
@@ -271,7 +282,7 @@ export default function DayCalendarWidget({ widget, onUpdate, isConfiguring, onC
             {isToday(selectedDate) && (
               <div
                 className="absolute left-10 right-0 border-t-2 border-red-500 z-20 pointer-events-none"
-                style={{ top: `${(currentHour + currentMinute / 60) * HOUR_HEIGHT}px` }}
+                style={{ top: `${(currentTimeMinutes / 60) * HOUR_HEIGHT}px` }}
               >
                 <div className="absolute -left-1 -top-1.5 w-3 h-3 rounded-full bg-red-500" />
               </div>
