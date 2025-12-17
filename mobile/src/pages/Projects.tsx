@@ -6,9 +6,18 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { useProject } from "@/contexts/ProjectContext";
 
+const PHASE_LABELS: Record<string, string> = {
+  lead: "Lead",
+  pre_construction: "Pre-Construction",
+  construction: "Construction",
+  post_construction: "Post-Construction",
+  archive: "Archive",
+};
+
 export function Projects() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [phaseFilter, setPhaseFilter] = useState<string>("all");
   const [, setLocation] = useLocation();
   const { setCurrentProject } = useProject();
 
@@ -16,8 +25,12 @@ export function Projects() {
     queryKey: ["/api/projects"],
   });
 
+  // Get unique phases from projects for filter chips
+  const availablePhases = Array.from(new Set(projects.map(p => p.currentSystemPhase).filter(Boolean)));
+
   const filteredProjects = projects.filter((project) => {
     if (statusFilter !== "all" && project.status !== statusFilter) return false;
+    if (phaseFilter !== "all" && project.currentSystemPhase !== phaseFilter) return false;
     if (searchQuery && !project.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
     return true;
   });
@@ -50,6 +63,36 @@ export function Projects() {
           />
         </div>
         
+        {/* Phase Filter */}
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          <button
+            onClick={() => setPhaseFilter("all")}
+            className={`px-3 h-7 rounded-md text-xs font-medium whitespace-nowrap ${
+              phaseFilter === "all"
+                ? "bg-primary text-primary-foreground"
+                : "border hover-elevate"
+            }`}
+            data-testid="filter-phase-all"
+          >
+            All Phases
+          </button>
+          {availablePhases.map((phase) => (
+            <button
+              key={phase}
+              onClick={() => setPhaseFilter(phase || "all")}
+              className={`px-3 h-7 rounded-md text-xs font-medium whitespace-nowrap ${
+                phaseFilter === phase
+                  ? "bg-primary text-primary-foreground"
+                  : "border hover-elevate"
+              }`}
+              data-testid={`filter-phase-${phase}`}
+            >
+              {PHASE_LABELS[phase || ""] || phase}
+            </button>
+          ))}
+        </div>
+        
+        {/* Status Filter */}
         <div className="flex gap-2 overflow-x-auto">
           {[
             { label: "All", value: "all" },
@@ -62,10 +105,10 @@ export function Projects() {
               onClick={() => setStatusFilter(filter.value)}
               className={`px-3 h-7 rounded-md text-xs font-medium whitespace-nowrap ${
                 statusFilter === filter.value
-                  ? "bg-[#bba7db] text-white"
+                  ? "bg-muted-foreground/20 text-foreground"
                   : "border hover-elevate"
               }`}
-              data-testid={`filter-${filter.value}`}
+              data-testid={`filter-status-${filter.value}`}
             >
               {filter.label}
             </button>
@@ -79,7 +122,7 @@ export function Projects() {
             <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <div className="p-4 space-y-3">
+          <div className="p-3 space-y-2">
             {filteredProjects.map((project) => (
               <button
                 key={project.id}
@@ -87,36 +130,32 @@ export function Projects() {
                   setCurrentProject(project);
                   setLocation(`/projects/${project.id}/overview`);
                 }}
-                className="w-full bg-card rounded-xl p-4 border hover-elevate active-elevate-2 text-left"
+                className="w-full bg-card rounded-lg p-3 border hover-elevate active-elevate-2 text-left"
                 data-testid={`project-card-${project.id}`}
               >
-                <div className="flex items-start gap-3 mb-2">
+                <div className="flex items-center gap-2.5">
                   <div
-                    className="w-10 h-10 rounded-lg flex-shrink-0"
+                    className="w-8 h-8 rounded-md flex-shrink-0"
                     style={{ backgroundColor: project.color || "#bba7db" }}
                   />
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-sm mb-1">{project.name}</h3>
-                    {project.clientName && (
-                      <p className="text-xs text-muted-foreground">{project.clientName}</p>
-                    )}
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-semibold text-sm truncate">{project.name}</h3>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap flex-shrink-0 ${
+                        project.status === "active" ? "bg-green-500/10 text-green-600" :
+                        project.status === "on_hold" ? "bg-yellow-500/10 text-yellow-600" :
+                        "bg-muted text-muted-foreground"
+                      }`}>
+                        {project.status === "active" ? "Active" :
+                         project.status === "on_hold" ? "Hold" :
+                         project.status === "completed" ? "Done" : project.status}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      {project.clientName || project.address || (project.currentSystemPhase ? PHASE_LABELS[project.currentSystemPhase] : "")}
+                    </p>
                   </div>
-                  <span className={`px-2 py-1 rounded-md text-xs font-medium whitespace-nowrap ${
-                    project.status === "active" ? "bg-green-500/10 text-green-600" :
-                    project.status === "on_hold" ? "bg-yellow-500/10 text-yellow-600" :
-                    "bg-muted text-muted-foreground"
-                  }`}>
-                    {project.status === "active" ? "Active" :
-                     project.status === "on_hold" ? "On Hold" :
-                     project.status === "completed" ? "Completed" : project.status}
-                  </span>
                 </div>
-                
-                {project.address && (
-                  <div className="text-xs text-muted-foreground">
-                    {project.address}
-                  </div>
-                )}
               </button>
             ))}
             

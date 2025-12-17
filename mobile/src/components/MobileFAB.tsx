@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, X, ClipboardList, StickyNote, CheckSquare, FileText } from "lucide-react";
+import { Plus, X, ClipboardList, StickyNote, CheckSquare, FileText, Bell, Camera, Users } from "lucide-react";
 
 interface QuickAction {
   id: string;
@@ -77,6 +77,9 @@ export function useDefaultQuickActions(callbacks: {
   onCreateSiteDiary?: () => void;
   onCreateNote?: () => void;
   onCreateMemo?: () => void;
+  onCreateReminder?: () => void;
+  onCapturePhoto?: () => void;
+  onCreateMeetingMinute?: () => void;
 }): QuickAction[] {
   const actions: QuickAction[] = [];
 
@@ -104,6 +107,33 @@ export function useDefaultQuickActions(callbacks: {
       label: "New Note",
       icon: FileText,
       onClick: callbacks.onCreateNote,
+    });
+  }
+
+  if (callbacks.onCreateReminder) {
+    actions.push({
+      id: "reminder",
+      label: "Set Reminder",
+      icon: Bell,
+      onClick: callbacks.onCreateReminder,
+    });
+  }
+
+  if (callbacks.onCapturePhoto) {
+    actions.push({
+      id: "photo",
+      label: "Capture Photo",
+      icon: Camera,
+      onClick: callbacks.onCapturePhoto,
+    });
+  }
+
+  if (callbacks.onCreateMeetingMinute) {
+    actions.push({
+      id: "meeting-minute",
+      label: "Meeting Minute",
+      icon: Users,
+      onClick: callbacks.onCreateMeetingMinute,
     });
   }
 

@@ -166,6 +166,23 @@ export function Dashboard() {
         toast({ title: "No Projects", description: "Create a project first to add notes." });
       }
     },
+    onCreateReminder: () => {
+      toast({ title: "Set Reminder", description: "Reminder feature coming soon!" });
+    },
+    onCapturePhoto: () => {
+      if (projects.length > 0) {
+        setLocation(`/projects/${projects[0].id}/site-diary?create=true&capture=photo`);
+      } else {
+        toast({ title: "No Projects", description: "Create a project first to capture photos." });
+      }
+    },
+    onCreateMeetingMinute: () => {
+      if (projects.length > 0) {
+        setLocation(`/projects/${projects[0].id}/minutes?create=true`);
+      } else {
+        toast({ title: "No Projects", description: "Create a project first to add meeting minutes." });
+      }
+    },
     onCreateMemo: () => {
       toast({ title: "Quick Memo", description: "Memo feature coming soon!" });
     },
@@ -339,10 +356,10 @@ export function Dashboard() {
         <div className="bg-muted rounded-lg p-1 flex gap-1">
           <button
             onClick={() => setMode("personal")}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-sm font-medium transition-all ${
               mode === "personal"
-                ? "bg-card text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
+                ? "bg-primary text-primary-foreground shadow-md"
+                : "bg-transparent text-muted-foreground hover:bg-muted-foreground/10"
             }`}
             data-testid="toggle-personal-dashboard"
           >
@@ -351,10 +368,10 @@ export function Dashboard() {
           </button>
           <button
             onClick={() => setMode("business")}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-sm font-medium transition-all ${
               mode === "business"
-                ? "bg-card text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
+                ? "bg-primary text-primary-foreground shadow-md"
+                : "bg-transparent text-muted-foreground hover:bg-muted-foreground/10"
             }`}
             data-testid="toggle-business-dashboard"
           >
