@@ -87,14 +87,20 @@ export default function DashboardThemeSettings({
 
   const saveMutation = useMutation({
     mutationFn: async (data: Partial<DashboardTheme>) => {
-      return apiRequest("/api/dashboard-themes", {
+      const response = await fetch("/api/dashboard-themes", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           dashboardType,
           projectId: projectId || null,
           ...data,
         }),
       });
+      if (!response.ok) {
+        throw new Error("Failed to save theme");
+      }
+      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey });
@@ -152,17 +158,17 @@ export default function DashboardThemeSettings({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Palette className="h-5 w-5" />
+      <DialogContent className="max-w-lg max-h-[85vh] flex flex-col p-0">
+        <DialogHeader className="px-4 py-3 border-b flex-shrink-0">
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <Palette className="h-4 w-4" />
             Dashboard Appearance
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-6">
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
           <div 
-            className="relative h-32 rounded-lg border overflow-hidden"
+            className="relative h-24 rounded-lg border overflow-hidden"
             style={getPreviewBackground()}
           >
             {backgroundType === "image" && overlayEnabled && (
@@ -176,7 +182,7 @@ export default function DashboardThemeSettings({
             )}
             <div className="absolute inset-0 flex items-center justify-center">
               <div 
-                className={`p-4 rounded-lg border ${
+                className={`p-3 rounded-lg border text-xs ${
                   widgetBackgroundType === "frosted" 
                     ? "bg-background/80 backdrop-blur-sm" 
                     : widgetBackgroundType === "transparent"
@@ -185,55 +191,55 @@ export default function DashboardThemeSettings({
                 }`}
                 style={{ opacity: widgetOpacity / 100 }}
               >
-                <span className="text-sm font-medium">Widget Preview</span>
+                <span className="font-medium">Widget Preview</span>
               </div>
             </div>
           </div>
 
           <Tabs value={backgroundType} onValueChange={(v) => setBackgroundType(v as any)}>
-            <TabsList className="grid grid-cols-3">
-              <TabsTrigger value="color" className="gap-2">
-                <Palette className="h-4 w-4" />
+            <TabsList className="grid grid-cols-3 h-8">
+              <TabsTrigger value="color" className="gap-1 text-xs h-7">
+                <Palette className="h-3 w-3" />
                 Color
               </TabsTrigger>
-              <TabsTrigger value="gradient" className="gap-2">
-                <Sparkles className="h-4 w-4" />
+              <TabsTrigger value="gradient" className="gap-1 text-xs h-7">
+                <Sparkles className="h-3 w-3" />
                 Gradient
               </TabsTrigger>
-              <TabsTrigger value="image" className="gap-2">
-                <Image className="h-4 w-4" />
+              <TabsTrigger value="image" className="gap-1 text-xs h-7">
+                <Image className="h-3 w-3" />
                 Image
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="color" className="space-y-4 mt-4">
-              <div className="space-y-2">
-                <Label>Background Color</Label>
+            <TabsContent value="color" className="space-y-3 mt-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Background Color</Label>
                 <div className="flex items-center gap-2">
                   <Input
                     type="color"
                     value={backgroundColor}
                     onChange={(e) => setBackgroundColor(e.target.value)}
-                    className="w-12 h-10 p-1 cursor-pointer"
+                    className="w-10 h-8 p-1 cursor-pointer"
                   />
                   <Input
                     type="text"
                     value={backgroundColor}
                     onChange={(e) => setBackgroundColor(e.target.value)}
-                    className="flex-1"
+                    className="flex-1 h-8 text-xs"
                     placeholder="#f8fafc"
                   />
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label>Presets</Label>
-                <div className="grid grid-cols-6 gap-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Presets</Label>
+                <div className="grid grid-cols-6 gap-1.5">
                   {COLOR_PRESETS.map((preset) => (
                     <button
                       key={preset.name}
                       type="button"
                       onClick={() => setBackgroundColor(preset.color)}
-                      className={`h-8 rounded-md border-2 transition-all ${
+                      className={`h-6 rounded-md border-2 transition-all ${
                         backgroundColor === preset.color ? "border-primary ring-2 ring-primary/20" : "border-transparent"
                       }`}
                       style={{ backgroundColor: preset.color }}
@@ -244,47 +250,51 @@ export default function DashboardThemeSettings({
               </div>
             </TabsContent>
 
-            <TabsContent value="gradient" className="space-y-4 mt-4">
+            <TabsContent value="gradient" className="space-y-3 mt-3">
               <div className="space-y-2">
-                <Label>Gradient Presets</Label>
-                <div className="grid grid-cols-3 gap-2">
+                <Label className="text-xs">Gradient Presets</Label>
+                <div className="grid grid-cols-3 gap-1.5">
                   {GRADIENT_PRESETS.map((preset) => (
                     <button
                       key={preset.name}
                       type="button"
                       onClick={() => setBackgroundGradient(preset.gradient)}
-                      className={`h-16 rounded-md border-2 transition-all ${
+                      className={`h-12 rounded-md border-2 transition-all ${
                         backgroundGradient === preset.gradient ? "border-primary ring-2 ring-primary/20" : "border-transparent"
                       }`}
                       style={{ background: preset.gradient }}
                     >
-                      <span className="text-xs text-white font-medium drop-shadow-md">
+                      <span className="text-[10px] text-white font-medium drop-shadow-md">
                         {preset.name}
                       </span>
                     </button>
                   ))}
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label>Custom Gradient (CSS)</Label>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Custom Gradient</Label>
                 <Input
                   type="text"
                   value={backgroundGradient}
                   onChange={(e) => setBackgroundGradient(e.target.value)}
                   placeholder="linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
+                  className="h-8 text-xs"
                 />
+                <p className="text-[10px] text-muted-foreground">
+                  Format: linear-gradient(angle, #color1 0%, #color2 100%)
+                </p>
               </div>
             </TabsContent>
 
-            <TabsContent value="image" className="space-y-4 mt-4">
-              <div className="space-y-2">
-                <Label>Upload Image</Label>
+            <TabsContent value="image" className="space-y-3 mt-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Upload Image</Label>
                 <div className="flex items-center gap-2">
                   <label className="flex-1">
-                    <div className="flex items-center justify-center gap-2 p-4 border-2 border-dashed rounded-lg cursor-pointer hover:bg-muted/50 transition-colors">
-                      <Upload className="h-5 w-5 text-muted-foreground" />
-                      <span className="text-sm text-muted-foreground">
-                        Click to upload or drag and drop
+                    <div className="flex items-center justify-center gap-2 p-3 border-2 border-dashed rounded-lg cursor-pointer hover:bg-muted/50 transition-colors">
+                      <Upload className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground">
+                        Click to upload
                       </span>
                     </div>
                     <input
@@ -298,9 +308,10 @@ export default function DashboardThemeSettings({
                     <Button 
                       variant="outline" 
                       size="icon"
+                      className="h-8 w-8"
                       onClick={() => setBackgroundImage("")}
                     >
-                      <X className="h-4 w-4" />
+                      <X className="h-3 w-3" />
                     </Button>
                   )}
                 </div>
@@ -309,7 +320,7 @@ export default function DashboardThemeSettings({
               {backgroundImage && (
                 <>
                   <div className="flex items-center justify-between">
-                    <Label>Enable Overlay</Label>
+                    <Label className="text-xs">Enable Overlay</Label>
                     <Switch
                       checked={overlayEnabled}
                       onCheckedChange={setOverlayEnabled}
@@ -318,29 +329,29 @@ export default function DashboardThemeSettings({
 
                   {overlayEnabled && (
                     <>
-                      <div className="space-y-2">
-                        <Label>Overlay Color</Label>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Overlay Color</Label>
                         <div className="flex items-center gap-2">
                           <Input
                             type="color"
                             value={overlayColor}
                             onChange={(e) => setOverlayColor(e.target.value)}
-                            className="w-12 h-10 p-1 cursor-pointer"
+                            className="w-10 h-8 p-1 cursor-pointer"
                           />
                           <Input
                             type="text"
                             value={overlayColor}
                             onChange={(e) => setOverlayColor(e.target.value)}
-                            className="flex-1"
+                            className="flex-1 h-8 text-xs"
                             placeholder="#000000"
                           />
                         </div>
                       </div>
 
-                      <div className="space-y-2">
+                      <div className="space-y-1.5">
                         <div className="flex items-center justify-between">
-                          <Label>Overlay Opacity</Label>
-                          <span className="text-sm text-muted-foreground">{overlayOpacity}%</span>
+                          <Label className="text-xs">Overlay Opacity</Label>
+                          <span className="text-xs text-muted-foreground">{overlayOpacity}%</span>
                         </div>
                         <Slider
                           value={[overlayOpacity]}
@@ -351,10 +362,10 @@ export default function DashboardThemeSettings({
                         />
                       </div>
 
-                      <div className="space-y-2">
+                      <div className="space-y-1.5">
                         <div className="flex items-center justify-between">
-                          <Label>Blur Strength</Label>
-                          <span className="text-sm text-muted-foreground">{blurStrength}px</span>
+                          <Label className="text-xs">Blur Strength</Label>
+                          <span className="text-xs text-muted-foreground">{blurStrength}px</span>
                         </div>
                         <Slider
                           value={[blurStrength]}
@@ -371,30 +382,30 @@ export default function DashboardThemeSettings({
             </TabsContent>
           </Tabs>
 
-          <div className="space-y-4 pt-4 border-t">
-            <Label className="text-base font-medium">Widget Style</Label>
+          <div className="space-y-3 pt-3 border-t">
+            <Label className="text-xs font-medium">Widget Style</Label>
             
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-1.5">
               {(["default", "frosted", "transparent"] as const).map((type) => (
                 <button
                   key={type}
                   type="button"
                   onClick={() => setWidgetBackgroundType(type)}
-                  className={`p-3 rounded-lg border-2 transition-all text-center ${
+                  className={`p-2 rounded-md border-2 transition-all text-center ${
                     widgetBackgroundType === type 
                       ? "border-primary ring-2 ring-primary/20" 
                       : "border-border"
                   }`}
                 >
-                  <span className="text-sm font-medium capitalize">{type}</span>
+                  <span className="text-xs font-medium capitalize">{type}</span>
                 </button>
               ))}
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <Label>Widget Opacity</Label>
-                <span className="text-sm text-muted-foreground">{widgetOpacity}%</span>
+                <Label className="text-xs">Widget Opacity</Label>
+                <span className="text-xs text-muted-foreground">{widgetOpacity}%</span>
               </div>
               <Slider
                 value={[widgetOpacity]}
@@ -407,11 +418,11 @@ export default function DashboardThemeSettings({
           </div>
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+        <DialogFooter className="px-4 py-3 border-t flex-shrink-0">
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={saveMutation.isPending}>
+          <Button size="sm" onClick={handleSave} disabled={saveMutation.isPending}>
             {saveMutation.isPending ? "Saving..." : "Save Changes"}
           </Button>
         </DialogFooter>

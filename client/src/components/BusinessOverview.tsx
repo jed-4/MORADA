@@ -406,30 +406,7 @@ export default function BusinessOverview() {
 
   return (
     <div className="flex flex-col h-full" data-testid="business-overview">
-      {/* Row 1 - Business Info Header (36px) */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0 border-b border-border">
-        <div className="flex items-center gap-2">
-          <div className="h-6 w-6 rounded bg-primary/10 flex items-center justify-center">
-            <Building2 className="h-4 w-4 text-primary" />
-          </div>
-          <h2 className="text-sm font-semibold" data-testid="text-company-name">
-            {company?.name || "Business Overview"}
-          </h2>
-        </div>
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => setIsThemeSettingsOpen(true)}
-            data-testid="button-theme-settings"
-          >
-            <Palette className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-
-      {/* Row 2 - View Controls (36px) */}
+      {/* View Controls Header (36px) */}
       <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-2">
           <DropdownMenu>
@@ -476,10 +453,21 @@ export default function BusinessOverview() {
           </DropdownMenu>
         </div>
 
-        <Button size="sm" className="h-7" onClick={() => setIsAddingWidget(true)} data-testid="add-widget-button">
-          <Plus className="h-3 w-3 mr-1" />
-          Add Widget
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => setIsThemeSettingsOpen(true)}
+            data-testid="button-theme-settings"
+          >
+            <Palette className="h-4 w-4" />
+          </Button>
+          <Button size="sm" className="h-7" onClick={() => setIsAddingWidget(true)} data-testid="add-widget-button">
+            <Plus className="h-3 w-3 mr-1" />
+            Add Widget
+          </Button>
+        </div>
       </div>
 
       {/* Widget Grid with Theme Background */}
