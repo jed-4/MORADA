@@ -18,8 +18,16 @@ import {
   RefreshCw,
   ArrowUpDown,
   ArrowUp,
-  ArrowDown
+  ArrowDown,
+  PlayCircle
 } from "lucide-react";
+import { format } from "date-fns";
+import { Calendar } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -216,6 +224,72 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
       toast({ title: "Failed to generate recurring tasks", variant: "destructive" });
     },
   });
+
+  // Create task from template state
+  const [isCreateTaskDialogOpen, setIsCreateTaskDialogOpen] = useState(false);
+  const [selectedTemplateForTask, setSelectedTemplateForTask] = useState<TaskTemplate | null>(null);
+  const [createTaskFormData, setCreateTaskFormData] = useState({
+    title: "",
+    content: "",
+    assigneeId: undefined as string | undefined,
+    dueDate: undefined as Date | undefined,
+    status: "todo",
+  });
+
+  // Create task from template mutation
+  const createTaskMutation = useMutation({
+    mutationFn: async (data: any) => await apiRequest("/api/tasks", "POST", data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      toast({ title: "Task created from template" });
+      setIsCreateTaskDialogOpen(false);
+      setSelectedTemplateForTask(null);
+      setCreateTaskFormData({
+        title: "",
+        content: "",
+        assigneeId: undefined,
+        dueDate: undefined,
+        status: "todo",
+      });
+    },
+    onError: () => {
+      toast({ title: "Failed to create task", variant: "destructive" });
+    },
+  });
+
+  const handleOpenCreateTaskDialog = (template: TaskTemplate) => {
+    setSelectedTemplateForTask(template);
+    setCreateTaskFormData({
+      title: template.title,
+      content: template.description || template.goal || "",
+      assigneeId: template.assigneeUserId || undefined,
+      dueDate: undefined,
+      status: "todo",
+    });
+    setIsCreateTaskDialogOpen(true);
+  };
+
+  const handleCreateTaskFromTemplate = () => {
+    if (!createTaskFormData.title.trim()) {
+      toast({ title: "Task title is required", variant: "destructive" });
+      return;
+    }
+
+    const assignee = users.find((u: any) => u.id === createTaskFormData.assigneeId);
+    const taskData = {
+      type: "task",
+      title: createTaskFormData.title,
+      content: createTaskFormData.content || "",
+      assigneeId: createTaskFormData.assigneeId || undefined,
+      assigneeName: assignee ? `${assignee.firstName} ${assignee.lastName}` : undefined,
+      dueDate: createTaskFormData.dueDate || undefined,
+      status: createTaskFormData.status,
+      templateId: selectedTemplateForTask?.id,
+      projectId: null, // Business task
+    };
+
+    createTaskMutation.mutate(taskData);
+  };
 
   const resetForm = () => {
     setTemplateForm({
@@ -721,6 +795,13 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
+                        <DropdownMenuItem 
+                          onClick={() => handleOpenCreateTaskDialog(template)} 
+                          data-testid="menu-create-task"
+                        >
+                          <PlayCircle className="h-4 w-4 mr-2" />
+                          Create Task
+                        </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => openEditTemplateDialog(template)} data-testid="menu-edit-template">
                           <Edit className="h-4 w-4 mr-2" />
                           Edit
@@ -1146,6 +1227,106 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
             </Button>
             <Button size="sm" className="h-7 text-[11px]" onClick={handleSaveTemplate} data-testid="button-save-template">
               {editingTemplate ? "Update" : "Create"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Task from Template Dialog */}
+      <Dialog open={isCreateTaskDialogOpen} onOpenChange={setIsCreateTaskDialogOpen}>
+        <DialogContent className="sm:max-w-[420px]" data-testid="dialog-create-task">
+          <DialogHeader className="pb-2">
+            <DialogTitle className="text-sm">Create Task from Template</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
+            <div>
+              <Label className="text-[10px] text-muted-foreground">Title *</Label>
+              <Input
+                value={createTaskFormData.title}
+                onChange={(e) => setCreateTaskFormData(prev => ({ ...prev, title: e.target.value }))}
+                placeholder="Task title"
+                className="h-7 text-[11px]"
+                data-testid="input-create-task-title"
+              />
+            </div>
+            <div>
+              <Label className="text-[10px] text-muted-foreground">Description</Label>
+              <Textarea
+                value={createTaskFormData.content}
+                onChange={(e) => setCreateTaskFormData(prev => ({ ...prev, content: e.target.value }))}
+                placeholder="Task description..."
+                rows={3}
+                className="text-[11px]"
+                data-testid="input-create-task-content"
+              />
+            </div>
+            <div>
+              <Label className="text-[10px] text-muted-foreground">Assignee</Label>
+              <Select
+                value={createTaskFormData.assigneeId || "none"}
+                onValueChange={(v) => setCreateTaskFormData(prev => ({ ...prev, assigneeId: v === "none" ? undefined : v }))}
+              >
+                <SelectTrigger className="h-7 text-[11px]" data-testid="select-create-task-assignee">
+                  <SelectValue placeholder="Select assignee" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Unassigned</SelectItem>
+                  {users.map((user: any) => (
+                    <SelectItem key={user.id} value={user.id}>
+                      {user.firstName} {user.lastName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-[10px] text-muted-foreground">Due Date</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start text-left font-normal h-7 text-[11px]"
+                    data-testid="button-create-task-due-date"
+                  >
+                    <CalendarIcon className="mr-2 h-3.5 w-3.5" />
+                    {createTaskFormData.dueDate
+                      ? format(createTaskFormData.dueDate, "PPP")
+                      : "Pick a date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={createTaskFormData.dueDate}
+                    onSelect={(date) => setCreateTaskFormData(prev => ({ ...prev, dueDate: date }))}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+            <div>
+              <Label className="text-[10px] text-muted-foreground">Status</Label>
+              <Select
+                value={createTaskFormData.status}
+                onValueChange={(v) => setCreateTaskFormData(prev => ({ ...prev, status: v }))}
+              >
+                <SelectTrigger className="h-7 text-[11px]" data-testid="select-create-task-status">
+                  <SelectValue placeholder="Select status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todo">To Do</SelectItem>
+                  <SelectItem value="in-progress">In Progress</SelectItem>
+                  <SelectItem value="done">Done</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter className="pt-2">
+            <Button variant="outline" size="sm" className="h-7 text-[11px]" onClick={() => setIsCreateTaskDialogOpen(false)} data-testid="button-cancel-create-task">
+              Cancel
+            </Button>
+            <Button size="sm" className="h-7 text-[11px]" onClick={handleCreateTaskFromTemplate} disabled={createTaskMutation.isPending} data-testid="button-submit-create-task">
+              {createTaskMutation.isPending ? "Creating..." : "Create Task"}
             </Button>
           </DialogFooter>
         </DialogContent>
