@@ -5568,6 +5568,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Dashboard Theme Customization Routes
+  app.get("/api/dashboard-themes/:dashboardType", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      const { dashboardType } = req.params;
+      const { projectId } = req.query;
+      
+      const theme = await storage.getDashboardTheme(
+        user.id, 
+        companyId, 
+        dashboardType,
+        projectId as string | undefined
+      );
+      res.json(theme || null);
+    } catch (error) {
+      console.error("Error fetching dashboard theme:", error);
+      res.status(500).json({ error: "Failed to fetch dashboard theme" });
+    }
+  });
+
+  app.post("/api/dashboard-themes", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      const themeData = {
+        ...req.body,
+        userId: user.id,
+        companyId,
+      };
+      
+      const theme = await storage.saveDashboardTheme(themeData);
+      res.json(theme);
+    } catch (error) {
+      console.error("Error saving dashboard theme:", error);
+      res.status(500).json({ error: "Failed to save dashboard theme" });
+    }
+  });
+
+  app.delete("/api/dashboard-themes/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      await storage.deleteDashboardTheme(req.params.id, companyId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting dashboard theme:", error);
+      res.status(500).json({ error: "Failed to delete dashboard theme" });
+    }
+  });
+
   // User Role Management Routes
   app.get("/api/user-roles", requireAuth, requireTeamMember, requirePermission("admin.roles", "view"), async (req, res) => {
     try {

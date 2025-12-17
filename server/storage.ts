@@ -997,6 +997,11 @@ export interface IStorage {
   // User Dashboard Preferences
   getUserDashboardPreference(userId: string, companyId: string): Promise<UserDashboardPreference | undefined>;
   setUserDashboardPreference(userId: string, companyId: string, activeViewId: string | null): Promise<UserDashboardPreference>;
+
+  // Dashboard Theme Customization
+  getDashboardTheme(userId: string, companyId: string, dashboardType: string, projectId?: string): Promise<import("@shared/schema").DashboardTheme | undefined>;
+  saveDashboardTheme(theme: import("@shared/schema").InsertDashboardTheme): Promise<import("@shared/schema").DashboardTheme>;
+  deleteDashboardTheme(id: string, companyId: string): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
@@ -5147,6 +5152,18 @@ export class MemStorage implements IStorage {
     return undefined;
   }
   async setUserDashboardPreference(userId: string, companyId: string, activeViewId: string | null): Promise<UserDashboardPreference> {
+    throw new Error("Not implemented in MemStorage");
+  }
+
+  async getDashboardTheme(userId: string, companyId: string, dashboardType: string, projectId?: string): Promise<import("@shared/schema").DashboardTheme | undefined> {
+    throw new Error("Not implemented in MemStorage");
+  }
+
+  async saveDashboardTheme(theme: import("@shared/schema").InsertDashboardTheme): Promise<import("@shared/schema").DashboardTheme> {
+    throw new Error("Not implemented in MemStorage");
+  }
+
+  async deleteDashboardTheme(id: string, companyId: string): Promise<boolean> {
     throw new Error("Not implemented in MemStorage");
   }
 }
@@ -17050,6 +17067,79 @@ export class DbStorage implements IStorage {
       }
     } catch (error) {
       console.error("Database error in setUserDashboardPreference:", error);
+      throw error;
+    }
+  }
+
+  // Dashboard Theme Customization
+  async getDashboardTheme(userId: string, companyId: string, dashboardType: string, projectId?: string): Promise<import("@shared/schema").DashboardTheme | undefined> {
+    try {
+      const conditions = [
+        eq(schema.dashboardThemes.companyId, companyId),
+        eq(schema.dashboardThemes.dashboardType, dashboardType),
+      ];
+      
+      if (userId) {
+        conditions.push(eq(schema.dashboardThemes.userId, userId));
+      }
+      
+      if (projectId) {
+        conditions.push(eq(schema.dashboardThemes.projectId, projectId));
+      } else {
+        conditions.push(isNull(schema.dashboardThemes.projectId));
+      }
+      
+      const [theme] = await db.select()
+        .from(schema.dashboardThemes)
+        .where(and(...conditions))
+        .limit(1);
+      return theme;
+    } catch (error) {
+      console.error("Database error in getDashboardTheme:", error);
+      throw error;
+    }
+  }
+
+  async saveDashboardTheme(theme: import("@shared/schema").InsertDashboardTheme): Promise<import("@shared/schema").DashboardTheme> {
+    try {
+      const existing = await this.getDashboardTheme(
+        theme.userId || '',
+        theme.companyId,
+        theme.dashboardType,
+        theme.projectId || undefined
+      );
+      
+      if (existing) {
+        const [updated] = await db.update(schema.dashboardThemes)
+          .set({
+            ...theme,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.dashboardThemes.id, existing.id))
+          .returning();
+        return updated;
+      } else {
+        const [created] = await db.insert(schema.dashboardThemes)
+          .values(theme)
+          .returning();
+        return created;
+      }
+    } catch (error) {
+      console.error("Database error in saveDashboardTheme:", error);
+      throw error;
+    }
+  }
+
+  async deleteDashboardTheme(id: string, companyId: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.dashboardThemes)
+        .where(and(
+          eq(schema.dashboardThemes.id, id),
+          eq(schema.dashboardThemes.companyId, companyId)
+        ));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteDashboardTheme:", error);
       throw error;
     }
   }

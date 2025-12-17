@@ -21,6 +21,8 @@ interface BusinessWidgetContainerProps {
   isResizing?: boolean;
   setIsResizing?: (v: boolean) => void;
   onResizeEnd?: (columns: number, height: number) => void;
+  themeClassName?: string;
+  themeStyleOverride?: React.CSSProperties;
 }
 
 export default function BusinessWidgetContainer({
@@ -34,11 +36,16 @@ export default function BusinessWidgetContainer({
   isResizing,
   setIsResizing,
   onResizeEnd,
+  themeClassName,
+  themeStyleOverride,
 }: BusinessWidgetContainerProps) {
   return (
     <Card 
-      className="h-full flex flex-col overflow-hidden relative"
-      style={{ height: dimensions?.height ? `${dimensions.height}px` : undefined }}
+      className={`h-full flex flex-col overflow-hidden relative ${themeClassName || ''}`}
+      style={{ 
+        height: dimensions?.height ? `${dimensions.height}px` : undefined,
+        ...themeStyleOverride 
+      }}
       data-testid={`widget-${title.toLowerCase().replace(/\s+/g, '-')}`}
     >
       <CardHeader className="flex flex-row items-center justify-between p-3 pb-2 gap-2 flex-shrink-0">

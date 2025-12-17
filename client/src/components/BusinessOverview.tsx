@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +11,9 @@ import {
   PlusCircle,
   Trash2,
   GripVertical,
-  X
+  X,
+  Building2,
+  Palette
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -36,7 +39,9 @@ import {
   getAvailableBusinessWidgets 
 } from "./business-widgets/BusinessWidgetRegistry";
 import BusinessWidgetContainer from "./business-widgets/BusinessWidgetContainer";
+import DashboardThemeSettings from "./DashboardThemeSettings";
 import { useAuth } from "@/hooks/use-auth";
+import type { DashboardTheme, Company } from "@shared/schema";
 import { 
   DndContext, 
   closestCenter, 
@@ -83,13 +88,15 @@ function SortableWidget({
   onUpdate, 
   onRemove, 
   isConfiguring, 
-  onConfigure
+  onConfigure,
+  themeStyle
 }: { 
   widget: Widget; 
   onUpdate: (widget: Widget) => void;
   onRemove: (id: string) => void;
   isConfiguring: boolean;
   onConfigure: (id: string | null) => void;
+  themeStyle?: { className: string; style?: React.CSSProperties };
 }) {
   const [isResizing, setIsResizing] = useState(false);
   
@@ -160,6 +167,8 @@ function SortableWidget({
         dimensions={widget.dimensions}
         isResizing={isResizing}
         setIsResizing={setIsResizing}
+        themeClassName={themeStyle?.className}
+        themeStyleOverride={themeStyle?.style}
       >
         <WidgetComponent
           widget={widget}
@@ -182,6 +191,16 @@ export default function BusinessOverview() {
   const [configuringWidget, setConfiguringWidget] = useState<string | null>(null);
   const [isCreatingView, setIsCreatingView] = useState(false);
   const [newViewName, setNewViewName] = useState("");
+  const [isThemeSettingsOpen, setIsThemeSettingsOpen] = useState(false);
+
+  const { data: company } = useQuery<Company>({
+    queryKey: [`/api/companies/${user?.companyId}`],
+    enabled: !!user?.companyId,
+  });
+
+  const { data: theme } = useQuery<DashboardTheme | null>({
+    queryKey: ["/api/dashboard-themes/business"],
+  });
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -337,25 +356,90 @@ export default function BusinessOverview() {
   const availableWidgets = getAvailableBusinessWidgets();
   const addedWidgetTypes = new Set(widgets.map(w => w.type));
 
+  const getBackgroundStyle = () => {
+    if (!theme) return {};
+    
+    if (theme.backgroundType === "color" && theme.backgroundColor) {
+      return { backgroundColor: theme.backgroundColor };
+    } else if (theme.backgroundType === "gradient" && theme.backgroundGradient) {
+      return { background: theme.backgroundGradient };
+    } else if (theme.backgroundType === "image" && theme.backgroundImage) {
+      return { 
+        backgroundImage: `url(${theme.backgroundImage})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      };
+    }
+    return {};
+  };
+
+  const getWidgetStyle = (): { className: string; style?: React.CSSProperties } => {
+    if (!theme) return { className: "" };
+    const opacity = (theme.widgetOpacity ?? 100) / 100;
+    if (theme.widgetBackgroundType === "frosted") {
+      return { 
+        className: "backdrop-blur-sm", 
+        style: { backgroundColor: `hsl(var(--card) / ${opacity * 0.8})` }
+      };
+    }
+    if (theme.widgetBackgroundType === "transparent") {
+      return { 
+        className: "border-white/20", 
+        style: { backgroundColor: 'transparent' }
+      };
+    }
+    if (opacity < 1) {
+      return { 
+        className: "", 
+        style: { backgroundColor: `hsl(var(--card) / ${opacity})` }
+      };
+    }
+    return { className: "" };
+  };
+
+  const hexToRgba = (hex: string, opacity: number) => {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${opacity / 100})`;
+  };
+
   return (
-    <div className="p-6 space-y-6" data-testid="business-overview">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold">Business Overview</h1>
-          <p className="text-muted-foreground">
-            Central hub for all business operations and insights
-          </p>
+    <div className="flex flex-col h-full" data-testid="business-overview">
+      {/* Row 1 - Business Info Header (36px) */}
+      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0 border-b border-border">
+        <div className="flex items-center gap-2">
+          <div className="h-6 w-6 rounded bg-primary/10 flex items-center justify-center">
+            <Building2 className="h-4 w-4 text-primary" />
+          </div>
+          <h2 className="text-sm font-semibold" data-testid="text-company-name">
+            {company?.name || "Business Overview"}
+          </h2>
         </div>
-        
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => setIsThemeSettingsOpen(true)}
+            data-testid="button-theme-settings"
+          >
+            <Palette className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Row 2 - View Controls (36px) */}
+      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="gap-2" data-testid="view-selector">
+              <Button variant="ghost" size="sm" className="h-7 gap-1 px-2" data-testid="view-selector">
                 {activeView?.name || "Overview"}
-                <ChevronDown className="h-4 w-4" />
+                <ChevronDown className="h-3 w-3" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent align="start">
               <DropdownMenuLabel>Saved Views</DropdownMenuLabel>
               <DropdownMenuSeparator />
               {savedViews.map(view => (
@@ -390,34 +474,54 @@ export default function BusinessOverview() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          
-          <Button onClick={() => setIsAddingWidget(true)} data-testid="add-widget-button">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Widget
-          </Button>
         </div>
+
+        <Button size="sm" className="h-7" onClick={() => setIsAddingWidget(true)} data-testid="add-widget-button">
+          <Plus className="h-3 w-3 mr-1" />
+          Add Widget
+        </Button>
       </div>
 
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
+      {/* Widget Grid with Theme Background */}
+      <div 
+        className="flex-1 overflow-auto relative"
+        style={getBackgroundStyle()}
       >
-        <SortableContext items={widgets.map(w => w.id)} strategy={rectSortingStrategy}>
-          <div className="grid grid-cols-8 gap-4">
-            {widgets.map(widget => (
-              <SortableWidget
-                key={widget.id}
-                widget={widget}
-                onUpdate={handleWidgetUpdate}
-                onRemove={handleWidgetRemove}
-                isConfiguring={configuringWidget === widget.id}
-                onConfigure={setConfiguringWidget}
-              />
-            ))}
-          </div>
-        </SortableContext>
-      </DndContext>
+        {/* Overlay for image backgrounds */}
+        {theme?.backgroundType === "image" && theme.overlayEnabled && (
+          <div 
+            className="absolute inset-0 pointer-events-none"
+            style={{ 
+              backgroundColor: hexToRgba(theme.overlayColor || '#000000', theme.overlayOpacity || 40),
+              backdropFilter: theme.blurStrength ? `blur(${theme.blurStrength}px)` : undefined,
+            }}
+          />
+        )}
+        
+        <div className="relative p-4">
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext items={widgets.map(w => w.id)} strategy={rectSortingStrategy}>
+              <div className="grid grid-cols-8 gap-4">
+                {widgets.map(widget => (
+                  <SortableWidget
+                    key={widget.id}
+                    widget={widget}
+                    onUpdate={handleWidgetUpdate}
+                    onRemove={handleWidgetRemove}
+                    isConfiguring={configuringWidget === widget.id}
+                    onConfigure={setConfiguringWidget}
+                    themeStyle={getWidgetStyle()}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+          </DndContext>
+        </div>
+      </div>
 
       <Dialog open={isAddingWidget} onOpenChange={setIsAddingWidget}>
         <DialogContent className="max-w-lg">
@@ -478,6 +582,12 @@ export default function BusinessOverview() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <DashboardThemeSettings
+        open={isThemeSettingsOpen}
+        onOpenChange={setIsThemeSettingsOpen}
+        dashboardType="business"
+      />
     </div>
   );
 }

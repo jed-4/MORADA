@@ -173,6 +173,53 @@ export const userViewPreferences = pgTable("user_view_preferences", {
   uniqueUserView: uniqueIndex("user_view_preferences_user_view_unique").on(table.userId, table.viewKey),
 }));
 
+// Dashboard themes for customizable backgrounds
+export const dashboardThemes = pgTable("dashboard_themes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  dashboardType: text("dashboard_type").notNull(), // "business" | "user" | "project"
+  projectId: varchar("project_id"), // Only for project dashboards
+  
+  // Background settings
+  backgroundType: text("background_type").notNull().default("color"), // "color" | "gradient" | "image"
+  backgroundColor: text("background_color").default("#f8fafc"), // Hex color
+  backgroundGradient: text("background_gradient"), // CSS gradient string
+  backgroundImage: text("background_image"), // URL to uploaded image
+  
+  // Overlay settings for images
+  overlayEnabled: boolean("overlay_enabled").default(true),
+  overlayColor: text("overlay_color").default("#000000"),
+  overlayOpacity: integer("overlay_opacity").default(40), // 0-100
+  blurStrength: integer("blur_strength").default(0), // 0-20
+  
+  // Header theming
+  headerBackgroundType: text("header_background_type").default("inherit"), // "inherit" | "color" | "transparent"
+  headerColor: text("header_color"),
+  
+  // Widget theming
+  widgetBackgroundType: text("widget_background_type").default("default"), // "default" | "frosted" | "transparent"
+  widgetOpacity: integer("widget_opacity").default(100), // 0-100
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueUserDashboard: uniqueIndex("dashboard_themes_user_dashboard_unique").on(
+    table.userId, 
+    table.dashboardType, 
+    table.projectId
+  ),
+}));
+
+export const insertDashboardThemeSchema = createInsertSchema(dashboardThemes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type DashboardTheme = typeof dashboardThemes.$inferSelect;
+export type InsertDashboardTheme = z.infer<typeof insertDashboardThemeSchema>;
+
 // Schema for company creation/updates
 export const insertCompanySchema = createInsertSchema(companies).omit({
   id: true,
