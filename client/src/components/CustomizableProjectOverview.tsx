@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Settings, ChevronDown, Search, PlusCircle, Check, LayoutGrid, Trash2, Lock, Users, Globe, Eye, Pencil } from "lucide-react";
+import { Plus, Settings, ChevronDown, Search, PlusCircle, Check, LayoutGrid, Trash2, Lock, Users, Globe, Eye, Pencil, Star } from "lucide-react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -169,8 +169,8 @@ export default function CustomizableProjectOverview() {
 
   // Create view mutation
   const createViewMutation = useMutation({
-    mutationFn: async (data: { name: string; visibility: VisibilityOption; widgets: Widget[]; roleIds?: string[]; userIds?: string[] }) => {
-      return apiRequest("/api/dashboard-views", "POST", data);
+    mutationFn: async (data: { name: string; visibility: VisibilityOption; widgets: Widget[]; viewType?: "personal" | "business"; roleIds?: string[]; userIds?: string[] }) => {
+      return apiRequest("/api/dashboard-views", "POST", { ...data, viewType: data.viewType || "business" });
     },
     onSuccess: (newView: DashboardView) => {
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-views"] });
@@ -187,6 +187,20 @@ export default function CustomizableProjectOverview() {
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to create view", variant: "destructive" });
+    },
+  });
+
+  // Set as company default mutation
+  const setCompanyDefaultMutation = useMutation({
+    mutationFn: async (viewId: string) => {
+      return apiRequest(`/api/dashboard-views/${viewId}/set-company-default`, "POST");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-views"] });
+      toast({ title: "Company default set", description: "This view is now the default for everyone." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to set company default", variant: "destructive" });
     },
   });
 
@@ -754,6 +768,11 @@ export default function CustomizableProjectOverview() {
                           <Check className="w-3 h-3 text-[#bba7db] flex-shrink-0" />
                         )}
                       </button>
+                      {view.isCompanyDefault && (
+                        <span className="text-[10px] px-1 py-0.5 bg-[#bba7db]/20 text-[#bba7db] rounded" title="Company Default">
+                          Default
+                        </span>
+                      )}
                       {isOwner && (
                         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button
@@ -767,7 +786,20 @@ export default function CustomizableProjectOverview() {
                           >
                             <Pencil className="w-3 h-3" />
                           </button>
-                          {dashboardViews.length > 1 && (
+                          {!view.isCompanyDefault && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCompanyDefaultMutation.mutate(view.id);
+                              }}
+                              className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground"
+                              data-testid={`button-set-default-${view.id}`}
+                              title="Set as company default"
+                            >
+                              <Star className="w-3 h-3" />
+                            </button>
+                          )}
+                          {dashboardViews.length > 1 && !view.isCompanyDefault && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();

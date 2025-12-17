@@ -5321,11 +5321,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Unauthorized - no company context" });
       }
       
-      const views = await storage.getDashboardViews(companyId, user.id);
+      const viewType = req.query.viewType as "personal" | "business" | undefined;
+      const views = await storage.getDashboardViews(companyId, user.id, viewType);
       res.json(views);
     } catch (error) {
       console.error("Error fetching dashboard views:", error);
       res.status(500).json({ error: "Failed to fetch dashboard views" });
+    }
+  });
+
+  // Get company default dashboard for a view type
+  app.get("/api/dashboard-views/company-default/:viewType", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      const viewType = req.params.viewType as "personal" | "business";
+      if (!["personal", "business"].includes(viewType)) {
+        return res.status(400).json({ error: "Invalid view type" });
+      }
+      
+      const view = await storage.getCompanyDefaultDashboard(companyId, viewType);
+      res.json(view || null);
+    } catch (error) {
+      console.error("Error fetching company default dashboard:", error);
+      res.status(500).json({ error: "Failed to fetch company default dashboard" });
     }
   });
 
@@ -5445,6 +5469,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: "Failed to delete dashboard view" });
+    }
+  });
+
+  // Set a view as company default
+  app.post("/api/dashboard-views/:id/set-company-default", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      // Check if view exists
+      const existingView = await storage.getDashboardView(req.params.id, companyId);
+      if (!existingView) {
+        return res.status(404).json({ error: "Dashboard view not found" });
+      }
+      
+      // Check if user has permission - must be creator or admin/manager
+      const userRole = await storage.getUserRole(user.roleId);
+      const isAdminOrManager = userRole && (userRole.name === "Admin" || userRole.name === "Manager");
+      const isCreator = existingView.creatorId === user.id;
+      
+      if (!isAdminOrManager && !isCreator) {
+        return res.status(403).json({ error: "Only admins, managers, or the view creator can set company defaults" });
+      }
+      
+      await storage.setCompanyDefaultView(req.params.id, companyId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error setting company default view:", error);
+      res.status(500).json({ error: "Failed to set company default view" });
     }
   });
 
@@ -14810,7 +14867,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const channels = await storage.getChannels(companyId, userId, filters);
-      res.json(channels);
+      
+      // Get user's channel membership info and message counts
+      const membershipPromises = channels.map(async (channel) => {
+        const members = await storage.getChannelMembers(channel.id);
+        const userMembership = members.find(m => m.userId === userId);
+        
+        // Get last message for this channel
+        const messages = await storage.getMessages(channel.id, 1);
+        const lastMessage = messages[0];
+        const messageCount = await storage.getMessageCount(channel.id);
+        
+        return {
+          ...channel,
+          isPinned: userMembership?.isPinned || false,
+          lastMessageAt: lastMessage?.createdAt || null,
+          messageCount,
+        };
+      });
+      
+      const channelsWithPinned = await Promise.all(membershipPromises);
+      
+      // Sort pinned channels first, then by last message date
+      channelsWithPinned.sort((a, b) => {
+        if (a.isPinned && !b.isPinned) return -1;
+        if (!a.isPinned && b.isPinned) return 1;
+        // Then sort by last message date (most recent first)
+        if (a.lastMessageAt && b.lastMessageAt) {
+          return new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime();
+        }
+        if (a.lastMessageAt && !b.lastMessageAt) return -1;
+        if (!a.lastMessageAt && b.lastMessageAt) return 1;
+        return a.name.localeCompare(b.name);
+      });
+      
+      res.json(channelsWithPinned);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch channels" });
     }
@@ -15049,6 +15140,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to update last read" });
+    }
+  });
+
+  // Toggle pin status for a channel
+  app.post("/api/channels/:channelId/pin", requireAuth, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const { isPinned } = req.body;
+      
+      if (typeof isPinned !== "boolean") {
+        return res.status(400).json({ error: "isPinned must be a boolean" });
+      }
+      
+      await storage.updateChannelMemberPin(req.params.channelId, userId, isPinned);
+      res.json({ success: true, isPinned });
+    } catch (error) {
+      console.error("Failed to toggle pin:", error);
+      res.status(500).json({ error: "Failed to toggle pin status" });
     }
   });
 

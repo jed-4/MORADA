@@ -3707,6 +3707,7 @@ export const channelMembers = pgTable("channel_members", {
   // Member settings
   role: text("role").notNull().default("member"), // "owner" | "admin" | "member"
   isNotificationsMuted: boolean("is_notifications_muted").notNull().default(false),
+  isPinned: boolean("is_pinned").notNull().default(false), // Pinned/favorite channels appear at top
   lastReadAt: timestamp("last_read_at"), // For unread badges
   
   joinedAt: timestamp("joined_at").notNull().defaultNow(),
@@ -4952,22 +4953,31 @@ export const dashboardViewVisibilityEnum = pgEnum("dashboard_view_visibility", [
   "everyone",     // Company-wide visibility
 ]);
 
+// Dashboard View type enum
+export const dashboardViewTypeEnum = pgEnum("dashboard_view_type", [
+  "personal",     // User's personal workspace dashboard
+  "business",     // Company-wide business dashboard
+]);
+
 // Dashboard Views - shared across all projects for a company
 export const dashboardViews = pgTable("dashboard_views", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
   creatorId: varchar("creator_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
+  viewType: dashboardViewTypeEnum("view_type").notNull().default("personal"), // personal or business
   visibility: dashboardViewVisibilityEnum("visibility").notNull().default("private"),
   widgets: jsonb("widgets").notNull().default([]), // Array of Widget objects
   backgroundId: text("background_id").default("default"),
   isDefault: boolean("is_default").notNull().default(false), // Default view for the company
+  isCompanyDefault: boolean("is_company_default").notNull().default(false), // Main view everyone sees
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   companyIdx: index("dashboard_views_company_idx").on(table.companyId),
   creatorIdx: index("dashboard_views_creator_idx").on(table.creatorId),
+  viewTypeIdx: index("dashboard_views_view_type_idx").on(table.viewType),
 }));
 
 // Dashboard View Permissions - for role/user sharing
@@ -5001,8 +5011,10 @@ export const insertDashboardViewSchema = createInsertSchema(dashboardViews).omit
   createdAt: true,
   updatedAt: true,
 }).extend({
+  viewType: z.enum(["personal", "business"]).default("personal"),
   visibility: z.enum(["private", "by_role", "by_user", "everyone"]).default("private"),
   widgets: z.array(z.any()).default([]),
+  isCompanyDefault: z.boolean().default(false),
 });
 
 export const insertDashboardViewPermissionSchema = createInsertSchema(dashboardViewPermissions).omit({

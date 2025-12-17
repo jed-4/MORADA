@@ -887,10 +887,12 @@ export interface IStorage {
   addChannelMember(member: InsertChannelMember): Promise<ChannelMember>;
   removeChannelMember(channelId: string, userId: string): Promise<boolean>;
   updateChannelMemberLastRead(channelId: string, userId: string): Promise<void>;
+  updateChannelMemberPin(channelId: string, userId: string, isPinned: boolean): Promise<void>;
   getUnreadCounts(userId: string, companyId: string): Promise<Record<string, number>>;
 
   // Messaging - Messages
   getMessages(channelId: string, limit?: number, before?: string): Promise<Message[]>;
+  getMessageCount(channelId: string): Promise<number>;
   getMessage(id: string): Promise<Message | undefined>;
   createMessage(message: InsertMessage): Promise<Message>;
   updateMessage(id: string, message: Partial<InsertMessage>): Promise<Message | undefined>;
@@ -980,10 +982,12 @@ export interface IStorage {
   getUnlinkedBillLineItems(companyId: string): Promise<Array<import("@shared/schema").BillLineItem & { bill: import("@shared/schema").Bill; supplier: import("@shared/schema").Contact | null }>>;
 
   // Dashboard Views CRUD
-  getDashboardViews(companyId: string, userId: string): Promise<DashboardView[]>;
+  getDashboardViews(companyId: string, userId: string, viewType?: "personal" | "business"): Promise<DashboardView[]>;
   getDashboardView(id: string, companyId: string): Promise<DashboardView | undefined>;
+  getCompanyDefaultDashboard(companyId: string, viewType: "personal" | "business"): Promise<DashboardView | undefined>;
   createDashboardView(view: InsertDashboardView & { companyId: string; creatorId: string }): Promise<DashboardView>;
   updateDashboardView(id: string, view: Partial<InsertDashboardView>, companyId: string): Promise<DashboardView | undefined>;
+  setCompanyDefaultView(viewId: string, companyId: string): Promise<void>;
   deleteDashboardView(id: string, companyId: string): Promise<boolean>;
 
   // Dashboard View Permissions CRUD
@@ -5112,10 +5116,13 @@ export class MemStorage implements IStorage {
   }
 
   // Dashboard Views - stub implementations
-  async getDashboardViews(companyId: string, userId: string): Promise<DashboardView[]> {
+  async getDashboardViews(companyId: string, userId: string, viewType?: "personal" | "business"): Promise<DashboardView[]> {
     return [];
   }
   async getDashboardView(id: string, companyId: string): Promise<DashboardView | undefined> {
+    return undefined;
+  }
+  async getCompanyDefaultDashboard(companyId: string, viewType: "personal" | "business"): Promise<DashboardView | undefined> {
     return undefined;
   }
   async createDashboardView(view: InsertDashboardView & { companyId: string; creatorId: string }): Promise<DashboardView> {
@@ -5123,6 +5130,9 @@ export class MemStorage implements IStorage {
   }
   async updateDashboardView(id: string, view: Partial<InsertDashboardView>, companyId: string): Promise<DashboardView | undefined> {
     return undefined;
+  }
+  async setCompanyDefaultView(viewId: string, companyId: string): Promise<void> {
+    // Not implemented
   }
   async deleteDashboardView(id: string, companyId: string): Promise<boolean> {
     return false;
@@ -15326,6 +15336,22 @@ export class DbStorage implements IStorage {
     }
   }
 
+  async updateChannelMemberPin(channelId: string, userId: string, isPinned: boolean): Promise<void> {
+    try {
+      await db.update(schema.channelMembers)
+        .set({ isPinned, updatedAt: new Date() })
+        .where(
+          and(
+            eq(schema.channelMembers.channelId, channelId),
+            eq(schema.channelMembers.userId, userId)
+          )
+        );
+    } catch (error) {
+      console.error("Database error in updateChannelMemberPin:", error);
+      throw error;
+    }
+  }
+
   async getUnreadCounts(userId: string, companyId: string): Promise<Record<string, number>> {
     try {
       // Get all channels for the company where user is a member
@@ -15414,6 +15440,24 @@ export class DbStorage implements IStorage {
       return result[0] as Message | undefined;
     } catch (error) {
       console.error("Database error in getMessage:", error);
+      throw error;
+    }
+  }
+
+  async getMessageCount(channelId: string): Promise<number> {
+    try {
+      const result = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(schema.messages)
+        .where(
+          and(
+            eq(schema.messages.channelId, channelId),
+            eq(schema.messages.isDeleted, false)
+          )
+        );
+      return Number(result[0]?.count || 0);
+    } catch (error) {
+      console.error("Database error in getMessageCount:", error);
       throw error;
     }
   }
@@ -16748,38 +16792,45 @@ export class DbStorage implements IStorage {
   }
 
   // Dashboard Views CRUD
-  async getDashboardViews(companyId: string, userId: string): Promise<DashboardView[]> {
+  async getDashboardViews(companyId: string, userId: string, viewType?: "personal" | "business"): Promise<DashboardView[]> {
     try {
       // Get user's role for permission checking
       const user = await this.getUser(userId);
       const userRoleId = user?.roleId;
 
-      // Get all views the user can access:
-      // 1. Views they created (private)
-      // 2. Views shared with everyone
-      // 3. Views shared with their role
-      // 4. Views shared with them specifically
+      // Build where conditions
+      const conditions = [
+        eq(schema.dashboardViews.companyId, companyId),
+        or(
+          eq(schema.dashboardViews.creatorId, userId),
+          eq(schema.dashboardViews.visibility, "everyone"),
+          eq(schema.dashboardViews.isCompanyDefault, true), // Company default is always visible
+          and(
+            eq(schema.dashboardViews.visibility, "by_role"),
+            userRoleId ? eq(schema.dashboardViewPermissions.roleId, userRoleId) : sql`false`
+          ),
+          and(
+            eq(schema.dashboardViews.visibility, "by_user"),
+            eq(schema.dashboardViewPermissions.userId, userId)
+          )
+        )
+      ];
+
+      // Add viewType filter if specified
+      if (viewType) {
+        conditions.push(eq(schema.dashboardViews.viewType, viewType));
+      }
+
+      // Get all views the user can access
       const views = await db.select()
         .from(schema.dashboardViews)
         .leftJoin(schema.dashboardViewPermissions, eq(schema.dashboardViews.id, schema.dashboardViewPermissions.viewId))
-        .where(
-          and(
-            eq(schema.dashboardViews.companyId, companyId),
-            or(
-              eq(schema.dashboardViews.creatorId, userId),
-              eq(schema.dashboardViews.visibility, "everyone"),
-              and(
-                eq(schema.dashboardViews.visibility, "by_role"),
-                userRoleId ? eq(schema.dashboardViewPermissions.roleId, userRoleId) : sql`false`
-              ),
-              and(
-                eq(schema.dashboardViews.visibility, "by_user"),
-                eq(schema.dashboardViewPermissions.userId, userId)
-              )
-            )
-          )
-        )
-        .orderBy(asc(schema.dashboardViews.sortOrder), asc(schema.dashboardViews.name));
+        .where(and(...conditions))
+        .orderBy(
+          desc(schema.dashboardViews.isCompanyDefault), // Company defaults first
+          asc(schema.dashboardViews.sortOrder), 
+          asc(schema.dashboardViews.name)
+        );
 
       // De-duplicate views (join can create duplicates)
       const uniqueViews = new Map<string, DashboardView>();
@@ -16791,6 +16842,23 @@ export class DbStorage implements IStorage {
       return Array.from(uniqueViews.values());
     } catch (error) {
       console.error("Database error in getDashboardViews:", error);
+      throw error;
+    }
+  }
+
+  async getCompanyDefaultDashboard(companyId: string, viewType: "personal" | "business"): Promise<DashboardView | undefined> {
+    try {
+      const [view] = await db.select()
+        .from(schema.dashboardViews)
+        .where(and(
+          eq(schema.dashboardViews.companyId, companyId),
+          eq(schema.dashboardViews.viewType, viewType),
+          eq(schema.dashboardViews.isCompanyDefault, true)
+        ))
+        .limit(1);
+      return view;
+    } catch (error) {
+      console.error("Database error in getCompanyDefaultDashboard:", error);
       throw error;
     }
   }
@@ -16840,6 +16908,36 @@ export class DbStorage implements IStorage {
       return result;
     } catch (error) {
       console.error("Database error in updateDashboardView:", error);
+      throw error;
+    }
+  }
+
+  async setCompanyDefaultView(viewId: string, companyId: string): Promise<void> {
+    try {
+      // First get the view to determine its type
+      const view = await this.getDashboardView(viewId, companyId);
+      if (!view) {
+        throw new Error("Dashboard view not found");
+      }
+
+      // Clear any existing company default for this view type
+      await db.update(schema.dashboardViews)
+        .set({ isCompanyDefault: false, updatedAt: new Date() })
+        .where(and(
+          eq(schema.dashboardViews.companyId, companyId),
+          eq(schema.dashboardViews.viewType, view.viewType),
+          eq(schema.dashboardViews.isCompanyDefault, true)
+        ));
+
+      // Set the new company default
+      await db.update(schema.dashboardViews)
+        .set({ isCompanyDefault: true, visibility: "everyone", updatedAt: new Date() })
+        .where(and(
+          eq(schema.dashboardViews.id, viewId),
+          eq(schema.dashboardViews.companyId, companyId)
+        ));
+    } catch (error) {
+      console.error("Database error in setCompanyDefaultView:", error);
       throw error;
     }
   }

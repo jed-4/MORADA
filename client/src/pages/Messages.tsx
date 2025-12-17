@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useSocket, useChannelMessages, useTypingIndicator, useAllNewMessages } from "@/lib/socket";
@@ -27,9 +27,28 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Hash, Plus, Send, Loader2, Sparkles, MoreVertical, Bell, BellOff, Lock, Eye, Settings, UserPlus, User } from "lucide-react";
+import { Hash, Plus, Send, Loader2, Sparkles, MoreVertical, Bell, BellOff, Lock, Eye, Settings, UserPlus, User, Pin, PinOff, Filter, EyeOff, Clock } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { formatDistanceToNow } from "date-fns";
 import type { Channel, Message, ChannelMember } from "@shared/schema";
+
+// Extended channel type with isPinned, lastMessageAt, and messageCount from API
+interface ChannelWithMeta extends Channel {
+  isPinned?: boolean;
+  lastMessageAt?: Date | string | null;
+  messageCount?: number;
+}
 import {
   initFavicon,
   updateFaviconBadge,
@@ -117,6 +136,18 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   const [mentionSearch, setMentionSearch] = useState("");
   const [mentionStartPos, setMentionStartPos] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  
+  // Channel filter settings (persisted in localStorage)
+  const [hideEmptyChats, setHideEmptyChats] = useState(() => {
+    return localStorage.getItem("messages-hide-empty") === "true";
+  });
+  const [hideInactiveChats, setHideInactiveChats] = useState(() => {
+    return localStorage.getItem("messages-hide-inactive") === "true";
+  });
+  const [inactiveDaysThreshold, setInactiveDaysThreshold] = useState(() => {
+    return parseInt(localStorage.getItem("messages-inactive-days") || "30", 10);
+  });
+  const [showFilterSettings, setShowFilterSettings] = useState(false);
 
   // Build query params for channel filtering
   const channelQueryParams = new URLSearchParams();
@@ -128,7 +159,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   }
   const channelQueryString = channelQueryParams.toString();
 
-  const { data: channels = [], isLoading: channelsLoading } = useQuery<Channel[]>({
+  const { data: channels = [], isLoading: channelsLoading } = useQuery<ChannelWithMeta[]>({
     queryKey: ["/api/channels", channelQueryString],
     queryFn: async () => {
       const url = `/api/channels${channelQueryString ? `?${channelQueryString}` : ''}`;
@@ -136,6 +167,67 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
       if (!response.ok) throw new Error("Failed to fetch channels");
       return response.json();
     },
+  });
+
+  // Persist filter settings to localStorage
+  useEffect(() => {
+    localStorage.setItem("messages-hide-empty", String(hideEmptyChats));
+  }, [hideEmptyChats]);
+
+  useEffect(() => {
+    localStorage.setItem("messages-hide-inactive", String(hideInactiveChats));
+  }, [hideInactiveChats]);
+
+  useEffect(() => {
+    localStorage.setItem("messages-inactive-days", String(inactiveDaysThreshold));
+  }, [inactiveDaysThreshold]);
+
+  // Filter channels based on settings
+  const filteredChannels = useMemo(() => {
+    let result = [...channels];
+    
+    // Hide empty chats (no messages)
+    if (hideEmptyChats) {
+      result = result.filter(channel => (channel.messageCount || 0) > 0);
+    }
+    
+    // Hide inactive chats (no activity in X days)
+    if (hideInactiveChats) {
+      const thresholdDate = new Date();
+      thresholdDate.setDate(thresholdDate.getDate() - inactiveDaysThreshold);
+      
+      result = result.filter(channel => {
+        // Always show pinned channels
+        if (channel.isPinned) return true;
+        // Always show channels with unread messages
+        if (unreadCounts[channel.id] > 0) return true;
+        // Always show the currently selected channel
+        if (channel.id === selectedChannelId) return true;
+        // Filter by last message date
+        if (!channel.lastMessageAt) return false;
+        const lastMessageDate = new Date(channel.lastMessageAt);
+        return lastMessageDate >= thresholdDate;
+      });
+    }
+    
+    return result;
+  }, [channels, hideEmptyChats, hideInactiveChats, inactiveDaysThreshold, unreadCounts, selectedChannelId]);
+
+  // Pin/unpin channel mutation
+  const togglePinMutation = useMutation({
+    mutationFn: async ({ channelId, isPinned }: { channelId: string; isPinned: boolean }) => {
+      const response = await fetch(`/api/channels/${channelId}/pin`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isPinned }),
+        credentials: "include"
+      });
+      if (!response.ok) throw new Error("Failed to toggle pin");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
+    }
   });
 
   const { data: unreadCounts = {}, isLoading: unreadLoading } = useQuery<Record<string, number>>({
@@ -569,6 +661,85 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
           <div className="p-3 border-b flex items-center justify-between">
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Channels</span>
             <div className="flex items-center gap-1">
+              <Popover open={showFilterSettings} onOpenChange={setShowFilterSettings}>
+                <PopoverTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className={`h-6 w-6 p-0 ${(hideEmptyChats || hideInactiveChats) ? 'text-primary' : ''}`}
+                    title="Filter settings"
+                    data-testid="button-filter-settings"
+                  >
+                    <Filter className="h-3.5 w-3.5" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-72" align="end">
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-medium">Filter Channels</h4>
+                      <p className="text-xs text-muted-foreground">
+                        Control which conversations appear in the list
+                      </p>
+                    </div>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <EyeOff className="h-4 w-4 text-muted-foreground" />
+                          <Label htmlFor="hide-empty" className="text-sm">Hide empty chats</Label>
+                        </div>
+                        <Switch
+                          id="hide-empty"
+                          checked={hideEmptyChats}
+                          onCheckedChange={setHideEmptyChats}
+                          data-testid="switch-hide-empty"
+                        />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Clock className="h-4 w-4 text-muted-foreground" />
+                          <Label htmlFor="hide-inactive" className="text-sm">Auto-hide inactive</Label>
+                        </div>
+                        <Switch
+                          id="hide-inactive"
+                          checked={hideInactiveChats}
+                          onCheckedChange={setHideInactiveChats}
+                          data-testid="switch-hide-inactive"
+                        />
+                      </div>
+                      {hideInactiveChats && (
+                        <div className="pl-6 space-y-2">
+                          <Label htmlFor="inactive-days" className="text-xs text-muted-foreground">
+                            Hide after days of inactivity
+                          </Label>
+                          <Select
+                            value={String(inactiveDaysThreshold)}
+                            onValueChange={(val) => setInactiveDaysThreshold(parseInt(val, 10))}
+                          >
+                            <SelectTrigger className="h-8" data-testid="select-inactive-days">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="7">7 days</SelectItem>
+                              <SelectItem value="14">14 days</SelectItem>
+                              <SelectItem value="30">30 days</SelectItem>
+                              <SelectItem value="60">60 days</SelectItem>
+                              <SelectItem value="90">90 days</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-muted-foreground">
+                            Pinned and unread chats always remain visible
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                    {(hideEmptyChats || hideInactiveChats) && channels.length !== filteredChannels.length && (
+                      <p className="text-xs text-muted-foreground border-t pt-2">
+                        Showing {filteredChannels.length} of {channels.length} channels
+                      </p>
+                    )}
+                  </div>
+                </PopoverContent>
+              </Popover>
               <Button
                 size="sm"
                 variant="ghost"
@@ -599,21 +770,24 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                 <div className="flex items-center justify-center p-4">
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                 </div>
-              ) : channels.length === 0 ? (
+              ) : filteredChannels.length === 0 ? (
                 <div className="text-center text-xs text-muted-foreground p-4">
-                  {channelTypeFilter === "dm" ? "No direct messages yet" : channelTypeFilter === "channel" ? "No channels yet" : "No channels yet"}
+                  {channels.length > 0 
+                    ? "All channels are hidden by filters" 
+                    : channelTypeFilter === "dm" ? "No direct messages yet" : channelTypeFilter === "channel" ? "No channels yet" : "No channels yet"}
                 </div>
               ) : (
-                channels.map((channel) => {
+                filteredChannels.map((channel) => {
                   const unreadCount = unreadCounts[channel.id] || 0;
                   const isActive = selectedChannelId === channel.id;
+                  const isPinned = channel.isPinned || false;
                   
                   return (
-                    <button
+                    <div
                       key={channel.id}
                       className={`
-                        w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md text-sm
-                        transition-all
+                        group w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md text-sm
+                        transition-all cursor-pointer
                         ${isActive 
                           ? 'bg-[#bba7db]/10 text-[#bba7db] font-medium' 
                           : 'hover-elevate text-foreground'
@@ -623,6 +797,9 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                       data-testid={`channel-${channel.id}`}
                     >
                       <div className="flex items-center gap-2 min-w-0 flex-1">
+                        {isPinned && (
+                          <Pin className="h-3 w-3 shrink-0 text-amber-500 dark:text-amber-400 rotate-45" />
+                        )}
                         {channel.type === "dm" ? (
                           <User className="h-3.5 w-3.5 shrink-0 text-purple-600 dark:text-purple-400" />
                         ) : channel.isClientFacing ? (
@@ -632,12 +809,35 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                         )}
                         <span className="truncate">{getDmDisplayName(channel)}</span>
                       </div>
-                      {unreadCount > 0 && !isActive && (
-                        <Badge variant="default" className="h-4 text-[10px] px-1.5 shrink-0" data-testid={`unread-${channel.id}`}>
-                          {unreadCount}
-                        </Badge>
-                      )}
-                    </button>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {unreadCount > 0 && !isActive && (
+                          <Badge variant="default" className="h-4 text-[10px] px-1.5" data-testid={`unread-${channel.id}`}>
+                            {unreadCount}
+                          </Badge>
+                        )}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            togglePinMutation.mutate({ channelId: channel.id, isPinned: !isPinned });
+                          }}
+                          className={`
+                            p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity
+                            ${isPinned 
+                              ? 'text-amber-500 hover:bg-amber-500/10' 
+                              : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                            }
+                          `}
+                          title={isPinned ? "Unpin conversation" : "Pin conversation"}
+                          data-testid={`pin-${channel.id}`}
+                        >
+                          {isPinned ? (
+                            <PinOff className="h-3.5 w-3.5" />
+                          ) : (
+                            <Pin className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
                   );
                 })
               )}
