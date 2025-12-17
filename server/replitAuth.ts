@@ -163,9 +163,12 @@ export async function setupAuth(app: Express) {
   });
 
   app.get("/api/login", (req, res, next) => {
-    const hostname = req.hostname;
-    const protocol = req.protocol;
-    const callbackUrl = `${protocol}://${hostname}/api/callback`;
+    // CRITICAL: Use canonical Replit domain for OAuth callback, not request hostname
+    // Custom domains are not registered with Replit's OIDC provider and cause "invalid_interaction" errors
+    const domains = process.env.REPLIT_DOMAINS?.split(',') || [];
+    const canonicalDomain = domains.find(d => d.trim().endsWith('.replit.app')) || domains[0]?.trim() || req.hostname;
+    const protocol = 'https'; // Always use https for OAuth
+    const callbackUrl = `${protocol}://${canonicalDomain}/api/callback`;
     
     // Store redirect URL in session for after auth
     // SECURITY: Only allow safe relative paths starting with / to prevent open redirect attacks
@@ -175,18 +178,24 @@ export async function setupAuth(app: Express) {
       (req.session as any).authRedirect = redirectTo;
     }
     
-    console.log(`[OAuth Login] hostname: ${hostname}, protocol: ${protocol}, callback: ${callbackUrl}, redirect: ${redirectTo || '/'}`);
+    // Store the original hostname so we can redirect back after auth
+    (req.session as any).originalHost = req.hostname;
     
-    ensureStrategy(hostname);
-    passport.authenticate(`replitauth:${hostname}`, {
+    console.log(`[OAuth Login] canonical: ${canonicalDomain}, original: ${req.hostname}, callback: ${callbackUrl}, redirect: ${redirectTo || '/'}`);
+    
+    ensureStrategy(canonicalDomain);
+    passport.authenticate(`replitauth:${canonicalDomain}`, {
       prompt: "login consent",
       scope: ["openid", "email", "profile", "offline_access"],
     })(req, res, next);
   });
 
   app.get("/api/callback", (req, res, next) => {
-    ensureStrategy(req.hostname);
-    passport.authenticate(`replitauth:${req.hostname}`, {
+    // Use same canonical domain logic for callback
+    const domains = process.env.REPLIT_DOMAINS?.split(',') || [];
+    const canonicalDomain = domains.find(d => d.trim().endsWith('.replit.app')) || domains[0]?.trim() || req.hostname;
+    ensureStrategy(canonicalDomain);
+    passport.authenticate(`replitauth:${canonicalDomain}`, {
       failureRedirect: "/api/login",
     })(req, res, (err?: any) => {
       if (err) {

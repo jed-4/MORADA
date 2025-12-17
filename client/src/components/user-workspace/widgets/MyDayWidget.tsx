@@ -19,6 +19,7 @@ import { useLocation } from "wouter";
 import { format, isToday, parseISO, isBefore, startOfDay } from "date-fns";
 import { type Task } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import TaskModalAsana from "@/components/TaskModalAsana";
 
 interface Reminder {
   id: string;
@@ -36,6 +37,7 @@ interface ScheduleItem {
 
 export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId }: WidgetProps) {
   const [editingTitle, setEditingTitle] = useState(widget.title);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [, setLocation] = useLocation();
   const today = startOfDay(new Date());
 
@@ -186,7 +188,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
                 <div 
                   key={task.id}
                   className="flex items-center gap-2 p-1.5 rounded-md bg-red-50 dark:bg-red-900/20 hover-elevate cursor-pointer"
-                  onClick={() => setLocation(`/projects/${task.projectId}/tasks`)}
+                  onClick={() => setSelectedTaskId(task.id)}
                   data-testid={`myday-task-${task.id}`}
                 >
                   <button
@@ -213,7 +215,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
                 <div 
                   key={task.id}
                   className="flex items-center gap-2 p-1.5 rounded-md border hover-elevate cursor-pointer"
-                  onClick={() => setLocation(`/projects/${task.projectId}/tasks`)}
+                  onClick={() => setSelectedTaskId(task.id)}
                   data-testid={`myday-task-${task.id}`}
                 >
                   <button
@@ -264,6 +266,12 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
       >
         View Calendar <ArrowRight className="h-3 w-3 ml-1" />
       </Button>
+      
+      <TaskModalAsana
+        open={!!selectedTaskId}
+        onOpenChange={(open) => !open && setSelectedTaskId(null)}
+        taskId={selectedTaskId || undefined}
+      />
     </div>
   );
 }

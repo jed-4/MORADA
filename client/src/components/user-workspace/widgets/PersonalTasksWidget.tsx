@@ -17,6 +17,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
   const [configMaxTasks, setConfigMaxTasks] = useState(maxTasks);
   const [configShowFilter, setConfigShowFilter] = useState(showFilter);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [, setLocation] = useLocation();
 
   useEffect(() => {
@@ -186,6 +187,12 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
         onOpenChange={setShowCreateDialog}
       />
       
+      <TaskModalAsana
+        open={!!selectedTaskId}
+        onOpenChange={(open) => !open && setSelectedTaskId(null)}
+        taskId={selectedTaskId || undefined}
+      />
+      
       <div className="space-y-1">
         {isLoading ? (
           <div className="space-y-1">
@@ -204,7 +211,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
               <div 
                 key={task.id}
                 className={`p-2 border rounded-md hover-elevate cursor-pointer ${status.bgColor}`}
-                onClick={() => setLocation(`/tasks/${task.id}`)}
+                onClick={() => setSelectedTaskId(task.id)}
                 data-testid={`personal-task-${task.id}`}
               >
                 <div className="flex items-start gap-2">

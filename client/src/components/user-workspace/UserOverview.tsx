@@ -85,7 +85,8 @@ function SortableWidget({
   onRemove, 
   isConfiguring, 
   onConfigure,
-  userId
+  userId,
+  themeStyle
 }: { 
   widget: Widget; 
   onUpdate: (widget: Widget) => void;
@@ -93,6 +94,7 @@ function SortableWidget({
   isConfiguring: boolean;
   onConfigure: (id: string | null) => void;
   userId?: string;
+  themeStyle?: { className: string; style?: React.CSSProperties };
 }) {
   const [isResizing, setIsResizing] = useState(false);
   
@@ -163,6 +165,8 @@ function SortableWidget({
         dimensions={widget.dimensions}
         isResizing={isResizing}
         setIsResizing={setIsResizing}
+        themeClassName={themeStyle?.className}
+        themeStyleOverride={themeStyle?.style}
       >
         <WidgetComponent
           widget={widget}
@@ -517,6 +521,7 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
                   isConfiguring={configuringWidget === widget.id}
                   onConfigure={setConfiguringWidget}
                   userId={currentUserId}
+                  themeStyle={getWidgetStyle()}
                 />
               ))}
               

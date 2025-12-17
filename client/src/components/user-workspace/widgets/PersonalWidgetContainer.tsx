@@ -1,3 +1,4 @@
+import type { ReactNode, CSSProperties } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { MoreVertical, X, Settings, GripVertical } from "lucide-react";
@@ -12,8 +13,8 @@ import { useState, useRef, useCallback } from "react";
 
 interface PersonalWidgetContainerProps {
   title: string;
-  icon?: React.ReactNode;
-  children: React.ReactNode;
+  icon?: ReactNode;
+  children: ReactNode;
   onRemove?: () => void;
   onConfigure?: () => void;
   dragHandleProps?: Record<string, unknown>;
@@ -21,6 +22,8 @@ interface PersonalWidgetContainerProps {
   dimensions?: { columns?: number; height?: number };
   isResizing?: boolean;
   setIsResizing?: (value: boolean) => void;
+  themeClassName?: string;
+  themeStyleOverride?: CSSProperties;
 }
 
 function ResizeHandle({ 
@@ -130,6 +133,8 @@ export default function PersonalWidgetContainer({
   dimensions,
   isResizing: externalIsResizing,
   setIsResizing: externalSetIsResizing,
+  themeClassName,
+  themeStyleOverride,
 }: PersonalWidgetContainerProps) {
   const [currentDimensions, setCurrentDimensions] = useState(dimensions);
 
@@ -151,8 +156,8 @@ export default function PersonalWidgetContainer({
 
   return (
     <Card 
-      className={`relative h-full flex flex-col overflow-hidden ${externalIsResizing ? 'select-none z-50' : ''}`} 
-      style={{ height: heightStyle }}
+      className={`relative h-full flex flex-col overflow-hidden ${externalIsResizing ? 'select-none z-50' : ''} ${themeClassName || ''}`} 
+      style={{ height: heightStyle, ...themeStyleOverride }}
       data-testid={`personal-widget-${title.toLowerCase().replace(/\s+/g, '-')}`}
     >
       <CardHeader className="flex flex-row items-center justify-between gap-2 py-2 px-3 border-b bg-muted/30">
