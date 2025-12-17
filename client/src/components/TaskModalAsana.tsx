@@ -353,8 +353,8 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
         </DialogDescription>
 
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b bg-muted/30">
-          <div className="flex items-center gap-3 flex-1 min-w-0">
+        <div className="flex items-center justify-between px-6 py-3 border-b bg-muted/30">
+          <div className="flex items-center gap-3">
             {task && (
               <Checkbox
                 checked={isCompleted}
@@ -363,34 +363,9 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
                 data-testid="checkbox-complete-task"
               />
             )}
-            {isEditingTitle ? (
-              <Input
-                ref={titleInputRef}
-                value={titleValue}
-                onChange={(e) => setTitleValue(e.target.value)}
-                onBlur={handleTitleSave}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleTitleSave();
-                  if (e.key === "Escape") {
-                    setTitleValue(form.watch("title"));
-                    setIsEditingTitle(false);
-                  }
-                }}
-                className="text-lg font-semibold border-0 shadow-none px-0 h-auto focus-visible:ring-0"
-                data-testid="input-task-title"
-              />
-            ) : (
-              <h2
-                className={`text-lg font-semibold cursor-pointer hover:text-primary truncate ${isCompleted ? 'line-through text-muted-foreground' : ''}`}
-                onClick={() => {
-                  setTitleValue(form.watch("title"));
-                  setIsEditingTitle(true);
-                }}
-                data-testid="text-task-title"
-              >
-                {form.watch("title")}
-              </h2>
-            )}
+            <span className="text-sm font-medium text-muted-foreground">
+              {task ? "Edit Task" : "New Task"}
+            </span>
           </div>
 
           <div className="flex items-center gap-1">
@@ -427,6 +402,38 @@ export default function TaskModalAsana({ task, open, onOpenChange, projectId, in
         <div className="flex flex-1 overflow-hidden">
           {/* Left Column - Main Content */}
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            {/* Task Title - Editable */}
+            <div className="space-y-1">
+              {isEditingTitle ? (
+                <Input
+                  ref={titleInputRef}
+                  value={titleValue}
+                  onChange={(e) => setTitleValue(e.target.value)}
+                  onBlur={handleTitleSave}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleTitleSave();
+                    if (e.key === "Escape") {
+                      setTitleValue(form.watch("title"));
+                      setIsEditingTitle(false);
+                    }
+                  }}
+                  className="text-xl font-semibold border-0 shadow-none px-0 h-auto focus-visible:ring-0"
+                  data-testid="input-task-title"
+                />
+              ) : (
+                <h2
+                  className={`text-xl font-semibold cursor-pointer hover:text-primary ${isCompleted ? 'line-through text-muted-foreground' : ''}`}
+                  onClick={() => {
+                    setTitleValue(form.watch("title"));
+                    setIsEditingTitle(true);
+                  }}
+                  data-testid="text-task-title"
+                >
+                  {form.watch("title") || "Untitled Task"}
+                </h2>
+              )}
+            </div>
+
             {/* Description */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-muted-foreground">Description</label>
