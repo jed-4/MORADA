@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Settings, ChevronDown, Search, PlusCircle, Check, LayoutGrid, Trash2, Lock, Users, Globe, Eye, Pencil, Star, Palette } from "lucide-react";
+import { Plus, Settings, ChevronDown, Search, PlusCircle, Check, LayoutGrid, Trash2, Lock, Users, Globe, Eye, Pencil, Star, Palette, Home, MessageSquare, ClipboardList, FileText, Calculator, FileBarChart, File, ListTree, Clock, CheckSquare, ListChecks, FileSearch, HelpCircle, CheckCircle, DollarSign, Receipt, AlertCircle, BookOpen, Timer, FolderOpen } from "lucide-react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -64,6 +64,21 @@ import {
   rectSortingStrategy,
 } from "@dnd-kit/sortable";
 import { useToast } from "@/hooks/use-toast";
+
+// Project tabs configuration matching sidebar sections
+const PROJECT_TABS = [
+  { id: "overview", label: "Overview", icon: Home, path: "" },
+  { id: "messages", label: "Messages", icon: MessageSquare, path: "/messages" },
+  { id: "notes", label: "Notes", icon: FileText, path: "/notes" },
+  { id: "scope", label: "Scope", icon: ListTree, path: "/scope" },
+  { id: "schedule", label: "Schedule", icon: Clock, path: "/schedule" },
+  { id: "tasks", label: "Tasks", icon: CheckSquare, path: "/tasks" },
+  { id: "takeoff", label: "Take off", icon: Calculator, path: "/takeoff" },
+  { id: "estimates", label: "Estimates", icon: FileBarChart, path: "/estimates" },
+  { id: "proposals", label: "Proposals", icon: File, path: "/proposals" },
+  { id: "bills", label: "Bills", icon: Receipt, path: "/bills" },
+  { id: "budget", label: "Budget", icon: DollarSign, path: "/budget" },
+] as const;
 
 // Background options
 const backgroundOptions = [
@@ -789,7 +804,39 @@ export default function CustomizableProjectOverview() {
         </div>
       </div>
 
-      {/* Row 2 - View Switcher (36px / h-9) */}
+      {/* Row 2 - Project Tabs (36px / h-9) */}
+      <div className="h-9 bg-background flex items-center px-2 gap-4 border-b border-border flex-shrink-0 overflow-x-auto">
+        {PROJECT_TABS.map((tab) => {
+          const TabIcon = tab.icon;
+          const isActive = tab.id === "overview";
+          const tabPath = tab.path ? `/projects/${currentProject.id}${tab.path}` : `/projects/${currentProject.id}`;
+          
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                navigate(tabPath);
+              }}
+              className={`relative h-full px-1 text-xs flex items-center gap-1.5 flex-shrink-0 transition-colors ${
+                isActive
+                  ? 'text-[#bba7db] font-medium'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+              data-testid={`tab-${tab.id}`}
+            >
+              <TabIcon className="w-3 h-3" />
+              <span>{tab.label}</span>
+              {isActive && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#bba7db]" />
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Row 3 - View Switcher (36px / h-9) */}
       <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
         {/* Left: View split-button selector */}
         <div className="flex items-center gap-1">

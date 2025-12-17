@@ -2,8 +2,8 @@ import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { MobileHeader } from "@/components/MobileHeader";
 import { useQuery } from "@tanstack/react-query";
-import type { Project, Task, Activity } from "@shared/schema";
-import { Loader2, Briefcase, User, CalendarCheck, ListTodo, Building2, Clock, ChevronsDownUp } from "lucide-react";
+import type { Project, Task, Activity, DashboardTheme } from "@shared/schema";
+import { Loader2, Briefcase, User, CalendarCheck, ListTodo, Building2, Clock, ChevronsDownUp, Palette } from "lucide-react";
 import { PullToRefreshIndicator } from "@/components/PullToRefresh";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { MobileFAB, useDefaultQuickActions } from "@/components/MobileFAB";
@@ -47,6 +47,14 @@ async function triggerHaptic() {
   }
 }
 
+function hexToRgba(hex: string, alpha: number): string {
+  const cleanHex = hex.replace('#', '');
+  const r = parseInt(cleanHex.substring(0, 2), 16);
+  const g = parseInt(cleanHex.substring(2, 4), 16);
+  const b = parseInt(cleanHex.substring(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha / 100})`;
+}
+
 export function Dashboard() {
   const { user } = useAuth();
   const [mode, setMode] = useState<DashboardMode>(() => {
@@ -82,6 +90,39 @@ export function Dashboard() {
       return response.json();
     },
   });
+
+  // Query user workspace theme (for personal mode)
+  const { data: userTheme } = useQuery<DashboardTheme | null>({
+    queryKey: ['/api/user-dashboard-themes', user?.id],
+    enabled: !!user?.id && mode === "personal",
+  });
+
+  // Query business dashboard theme (for business mode)
+  const { data: businessTheme } = useQuery<DashboardTheme | null>({
+    queryKey: ['/api/business-dashboard-theme'],
+    enabled: mode === "business",
+  });
+
+  // Get the active theme based on mode
+  const theme = mode === "personal" ? userTheme : businessTheme;
+
+  // Background style based on theme
+  const getBackgroundStyle = (): React.CSSProperties => {
+    if (!theme) return {};
+    
+    if (theme.backgroundType === "color" && theme.backgroundColor) {
+      return { backgroundColor: theme.backgroundColor };
+    } else if (theme.backgroundType === "gradient" && theme.backgroundGradient) {
+      return { background: theme.backgroundGradient };
+    } else if (theme.backgroundType === "image" && theme.backgroundImage) {
+      return { 
+        backgroundImage: `url(${theme.backgroundImage})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      };
+    }
+    return {};
+  };
 
   const pullToRefresh = usePullToRefresh({
     onRefresh: async () => {
@@ -268,10 +309,36 @@ export function Dashboard() {
   const widgets = mode === "personal" ? personalWidgets : businessWidgets;
 
   return (
-    <div className="flex flex-col h-full">
-      <MobileHeader title="Dashboard" />
+    <div className="flex flex-col h-full relative" style={getBackgroundStyle()}>
+      {/* Overlay for image backgrounds */}
+      {theme?.backgroundType === "image" && theme.overlayEnabled && (
+        <div 
+          className="absolute inset-0 pointer-events-none"
+          style={{ 
+            backgroundColor: hexToRgba(theme.overlayColor || '#000000', theme.overlayOpacity || 40),
+            backdropFilter: theme.blurStrength ? `blur(${theme.blurStrength}px)` : undefined,
+          }}
+        />
+      )}
+      <MobileHeader 
+        title={mode === "personal" ? "User Workspace" : "Business Dashboard"} 
+        action={
+          <button
+            onClick={() => {
+              toast({
+                title: "Theme Settings",
+                description: "Theme customization is available in the desktop app. Visit BuildPro on desktop to customize your dashboard theme.",
+              });
+            }}
+            className="p-2 hover-elevate active-elevate-2 rounded-md"
+            data-testid="button-theme-settings"
+          >
+            <Palette className="w-5 h-5" />
+          </button>
+        }
+      />
       
-      <div className="px-4 pt-2 pb-1">
+      <div className="px-4 pt-2 pb-1 relative z-10">
         <div className="bg-muted rounded-lg p-1 flex gap-1">
           <button
             onClick={() => setMode("personal")}
@@ -300,7 +367,7 @@ export function Dashboard() {
         </div>
       </div>
 
-      <div className="px-4 py-1 flex justify-end">
+      <div className="px-4 py-1 flex justify-end relative z-10">
         <button
           onClick={widgetState.collapseAll}
           className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
@@ -313,7 +380,7 @@ export function Dashboard() {
       
       <main 
         ref={pullToRefresh.containerRef}
-        className="flex-1 overflow-y-auto"
+        className="flex-1 overflow-y-auto relative z-10"
         {...pullToRefresh.touchHandlers}
       >
         <PullToRefreshIndicator 

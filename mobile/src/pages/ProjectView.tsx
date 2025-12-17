@@ -5,7 +5,7 @@ import { useProject } from "@/contexts/ProjectContext";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
-import type { Project } from "@shared/schema";
+import type { Project, DashboardTheme } from "@shared/schema";
 import { getApiBaseUrl } from "@lib/queryClient";
 import { useProjectRoute } from "@/hooks/useProjectRoute";
 import { ProjectTasksTab } from "./ProjectTasksTab";
@@ -32,6 +32,14 @@ import { ProjectProposalsTab } from "./ProjectProposalsTab";
 import { ProjectTimesheetsTab } from "./ProjectTimesheetsTab";
 import { ProjectOverviewTab } from "./ProjectOverviewTab";
 import { ProjectAllowancesTab } from "./ProjectAllowancesTab";
+
+function hexToRgba(hex: string, alpha: number): string {
+  const cleanHex = hex.replace('#', '');
+  const r = parseInt(cleanHex.substring(0, 2), 16);
+  const g = parseInt(cleanHex.substring(2, 4), 16);
+  const b = parseInt(cleanHex.substring(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha / 100})`;
+}
 
 export function ProjectView() {
   const routeParams = useProjectRoute();
@@ -62,6 +70,30 @@ export function ProjectView() {
       setCurrentProject(project);
     }
   }, [project, projectId, setCurrentProject]);
+
+  // Query project-specific dashboard theme
+  const { data: theme } = useQuery<DashboardTheme | null>({
+    queryKey: ['/api/project-dashboard-themes', projectId],
+    enabled: !!projectId,
+  });
+
+  // Background style based on theme
+  const getBackgroundStyle = (): React.CSSProperties => {
+    if (!theme) return {};
+    
+    if (theme.backgroundType === "color" && theme.backgroundColor) {
+      return { backgroundColor: theme.backgroundColor };
+    } else if (theme.backgroundType === "gradient" && theme.backgroundGradient) {
+      return { background: theme.backgroundGradient };
+    } else if (theme.backgroundType === "image" && theme.backgroundImage) {
+      return { 
+        backgroundImage: `url(${theme.backgroundImage})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      };
+    }
+    return {};
+  };
 
   const handleTabChange = (newTab: string) => {
     if (projectId) {
@@ -112,10 +144,22 @@ export function ProjectView() {
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <MobileHeader showProjectSelector showNotifications />
-      <ProjectTabs />
-      <SwipeableView tabs={tabs} currentTab={currentTab} onTabChange={handleTabChange} />
+    <div className="flex flex-col h-full relative" style={getBackgroundStyle()}>
+      {/* Overlay for image backgrounds */}
+      {theme?.backgroundType === "image" && theme.overlayEnabled && (
+        <div 
+          className="absolute inset-0 pointer-events-none"
+          style={{ 
+            backgroundColor: hexToRgba(theme.overlayColor || '#000000', theme.overlayOpacity || 40),
+            backdropFilter: theme.blurStrength ? `blur(${theme.blurStrength}px)` : undefined,
+          }}
+        />
+      )}
+      <div className="relative z-10 flex flex-col h-full">
+        <MobileHeader showProjectSelector showNotifications />
+        <ProjectTabs />
+        <SwipeableView tabs={tabs} currentTab={currentTab} onTabChange={handleTabChange} />
+      </div>
     </div>
   );
 }
