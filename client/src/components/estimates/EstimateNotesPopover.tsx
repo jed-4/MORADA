@@ -32,7 +32,6 @@ export function EstimateNotesPopover({ estimateId }: EstimateNotesPopoverProps) 
       if (!res.ok) throw new Error("Failed to fetch notes");
       return res.json();
     },
-    enabled: isOpen,
   });
 
   const { data: users = [] } = useQuery<User[]>({
