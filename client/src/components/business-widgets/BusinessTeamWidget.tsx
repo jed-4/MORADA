@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import type { WidgetProps } from "@/types/widgets";
-import type { User, Task, Timesheet } from "@shared/schema";
+import type { User, Task, Timesheet, UserRole } from "@shared/schema";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +17,10 @@ export default function BusinessTeamWidget({ widget }: WidgetProps) {
 
   const { data: timesheets = [] } = useQuery<Timesheet[]>({
     queryKey: ["/api/timesheets"],
+  });
+
+  const { data: roles = [] } = useQuery<UserRole[]>({
+    queryKey: ["/api/user-roles"],
   });
 
   const activeUsers = users.filter(u => u.status !== "inactive");
@@ -45,6 +49,12 @@ export default function BusinessTeamWidget({ widget }: WidgetProps) {
 
   const getInitials = (firstName: string | null, lastName: string | null) => {
     return `${firstName?.[0] || ''}${lastName?.[0] || ''}`.toUpperCase() || '?';
+  };
+
+  const getRoleName = (roleId: string | null) => {
+    if (!roleId) return null;
+    const role = roles.find(r => r.id === roleId);
+    return role?.name || null;
   };
 
   if (activeUsers.length === 0) {
@@ -76,9 +86,9 @@ export default function BusinessTeamWidget({ widget }: WidgetProps) {
                   <span className="text-sm font-medium truncate">
                     {user.firstName} {user.lastName}
                   </span>
-                  {user.role && (
+                  {getRoleName(user.roleId) && (
                     <Badge variant="outline" className="text-[10px] px-1 py-0">
-                      {user.role}
+                      {getRoleName(user.roleId)}
                     </Badge>
                   )}
                 </div>
