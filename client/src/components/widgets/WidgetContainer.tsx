@@ -22,18 +22,44 @@ interface WidgetContainerProps {
   isConfiguring?: boolean;
 }
 
+// Resize overlay that shows during drag
+function ResizeOverlay({ 
+  columns, 
+  height,
+  visible 
+}: { 
+  columns: number; 
+  height: number;
+  visible: boolean;
+}) {
+  if (!visible) return null;
+  
+  return (
+    <div 
+      className="fixed inset-0 pointer-events-none z-[100]"
+      style={{ cursor: 'se-resize' }}
+    >
+      <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-primary text-primary-foreground px-3 py-1.5 rounded-md shadow-lg text-sm font-medium">
+        {columns} col × {Math.round(height)}px
+      </div>
+    </div>
+  );
+}
+
 // Resize handle component
 function ResizeHandle({ 
   onResize, 
   onResizeStart, 
   onResizeEnd 
 }: { 
-  onResize: (width: number, height: number) => void;
+  onResize: (width: number, height: number, columns: number) => void;
   onResizeStart: () => void;
   onResizeEnd: (width: number, height: number) => void;
 }) {
   const [isResizing, setIsResizing] = useState(false);
-  const startPosRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
+  const [previewColumns, setPreviewColumns] = useState(4);
+  const [previewHeight, setPreviewHeight] = useState(200);
+  const startPosRef = useRef<{ x: number; y: number; width: number; height: number; columnWidth: number; gap: number } | null>(null);
   const elementRef = useRef<HTMLDivElement | null>(null);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -58,6 +84,11 @@ function ResizeHandle({
     // Container width minus gaps between 8 columns (7 gaps)
     const columnWidth = (containerRect.width - (7 * gap)) / 8;
     
+    // Calculate initial columns from current width
+    const initialColumns = Math.round((rect.width + gap) / (columnWidth + gap));
+    setPreviewColumns(Math.max(1, Math.min(8, initialColumns)));
+    setPreviewHeight(rect.height);
+    
     setIsResizing(true);
     onResizeStart();
     
@@ -66,11 +97,14 @@ function ResizeHandle({
       y: e.clientY,
       width: rect.width,
       height: rect.height,
+      columnWidth,
+      gap,
     };
 
     const handleMouseMove = (e: MouseEvent) => {
       if (!startPosRef.current) return;
       
+      const { columnWidth, gap } = startPosRef.current;
       const deltaX = e.clientX - startPosRef.current.x;
       const deltaY = e.clientY - startPosRef.current.y;
       
@@ -87,7 +121,9 @@ function ResizeHandle({
       
       const newHeight = Math.max(150, startPosRef.current.height + deltaY);
       
-      onResize(snappedWidth, newHeight);
+      setPreviewColumns(snappedColumns);
+      setPreviewHeight(newHeight);
+      onResize(snappedWidth, newHeight, snappedColumns);
     };
 
     const handleMouseUp = (e: MouseEvent) => {
@@ -95,16 +131,16 @@ function ResizeHandle({
       
       // Calculate final snapped dimensions at mouseup
       if (startPosRef.current) {
+        const { columnWidth, gap } = startPosRef.current;
         const deltaX = e.clientX - startPosRef.current.x;
         const deltaY = e.clientY - startPosRef.current.y;
         
         const targetWidth = startPosRef.current.width + deltaX;
         const columns = Math.round((targetWidth + gap) / (columnWidth + gap));
         const snappedColumns = Math.max(1, Math.min(8, columns));
-        const snappedWidth = (snappedColumns * columnWidth) + ((snappedColumns - 1) * gap);
         const finalHeight = Math.max(150, startPosRef.current.height + deltaY);
         
-        console.log(`Resize complete - snapped to ${snappedColumns} columns (${snappedWidth}px wide)`);
+        console.log(`Resize complete - snapped to ${snappedColumns} columns`);
         onResizeEnd(snappedColumns, finalHeight);
       }
       
@@ -118,16 +154,21 @@ function ResizeHandle({
   }, [onResize, onResizeStart, onResizeEnd]);
 
   return (
-    <div
-      ref={elementRef}
-      className={`absolute bottom-0 right-0 w-4 h-4 cursor-se-resize group ${
-        isResizing ? 'bg-primary/20' : 'hover:bg-primary/10'
-      }`}
-      onMouseDown={handleMouseDown}
-      data-testid="resize-handle"
-    >
-      <div className="absolute bottom-1 right-1 w-2 h-2 border-r-2 border-b-2 border-muted-foreground/50 group-hover:border-primary" />
-    </div>
+    <>
+      <ResizeOverlay columns={previewColumns} height={previewHeight} visible={isResizing} />
+      <div
+        ref={elementRef}
+        className={`absolute bottom-0 right-0 w-5 h-5 cursor-se-resize group ${
+          isResizing ? 'bg-primary/30' : 'hover:bg-primary/10'
+        }`}
+        onMouseDown={handleMouseDown}
+        data-testid="resize-handle"
+      >
+        <div className={`absolute bottom-1 right-1 w-2.5 h-2.5 border-r-2 border-b-2 transition-colors ${
+          isResizing ? 'border-primary' : 'border-muted-foreground/50 group-hover:border-primary'
+        }`} />
+      </div>
+    </>
   );
 }
 
@@ -166,8 +207,8 @@ export default function WidgetContainer({
     disabled: isResizing, // Disable drag while resizing
   });
 
-  const handleResize = useCallback((width: number, height: number) => {
-    setCurrentDimensions({ width, height });
+  const handleResize = useCallback((width: number, height: number, columns: number) => {
+    setCurrentDimensions({ width, height, columns });
   }, []);
 
   const handleResizeStart = useCallback(() => {

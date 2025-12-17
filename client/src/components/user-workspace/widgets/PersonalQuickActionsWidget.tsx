@@ -100,7 +100,7 @@ export default function PersonalQuickActionsWidget({ widget, onUpdate, isConfigu
       icon: FileText,
       color: 'text-amber-600',
       bgColor: 'bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30',
-      onClick: () => setLocation(`/users/${currentUser?.id}/notes`),
+      onClick: () => setLocation(`/users/${userId}/notes`),
     },
     {
       id: 'calendar',
@@ -108,7 +108,7 @@ export default function PersonalQuickActionsWidget({ widget, onUpdate, isConfigu
       icon: Calendar,
       color: 'text-teal-600',
       bgColor: 'bg-teal-50 dark:bg-teal-900/20 hover:bg-teal-100 dark:hover:bg-teal-900/30',
-      onClick: () => setLocation(`/users/${currentUser?.id}/calendar`),
+      onClick: () => setLocation(`/users/${userId}/calendar`),
     },
   ];
 

@@ -48,7 +48,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
       <div className="h-10 bg-background flex items-center justify-between px-4 gap-4 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-medium">
-            {isOwnPage ? 'My Tasks' : `${user.firstName}'s Tasks`}
+            {isOwnPage ? 'My Tasks' : `${user.firstName} ${user.lastName} - User Tasks`}
           </h3>
           <Badge variant="outline" className="text-xs" data-testid="badge-task-count">
             {tasks.length}

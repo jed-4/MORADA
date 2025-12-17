@@ -169,6 +169,11 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     },
   });
 
+  // Fetch unread counts - must be before filteredChannels useMemo
+  const { data: unreadCounts = {}, isLoading: unreadLoading } = useQuery<Record<string, number>>({
+    queryKey: ["/api/channels/unread/counts"],
+  });
+
   // Persist filter settings to localStorage
   useEffect(() => {
     localStorage.setItem("messages-hide-empty", String(hideEmptyChats));
@@ -228,10 +233,6 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
     }
-  });
-
-  const { data: unreadCounts = {}, isLoading: unreadLoading } = useQuery<Record<string, number>>({
-    queryKey: ["/api/channels/unread/counts"],
   });
 
   const { data: messages = [], isLoading: messagesLoading } = useQuery<Message[]>({

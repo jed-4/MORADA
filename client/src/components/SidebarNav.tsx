@@ -50,6 +50,7 @@ import {
   GripVertical,
   Calendar,
   Bell,
+  User as UserIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -644,6 +645,33 @@ export function SidebarNav() {
             </TooltipContent>
           </Tooltip>
         </div>
+        
+        {/* User Dashboard */}
+        {currentUser?.id && (
+          <div className="py-1 border-b border-sidebar-border">
+            <Tooltip delayDuration={0}>
+              <TooltipTrigger asChild>
+                <Link href={`/users/${currentUser.id}`}>
+                  <button
+                    className={cn(
+                      "flex items-center justify-center h-8 w-8 mx-auto rounded-md transition-colors",
+                      "hover-elevate active-elevate-2",
+                      location.startsWith(`/users/${currentUser.id}`) || location.startsWith('/users/me')
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                    data-testid="rail-user-dashboard"
+                  >
+                    <UserIcon className="h-4 w-4" />
+                  </button>
+                </Link>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={8}>
+                My Workspace
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        )}
         
         {/* Section Icons */}
         <div className="flex-1 flex flex-col py-1 gap-0.5">
