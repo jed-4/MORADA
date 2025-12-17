@@ -4,6 +4,7 @@ import { MobileHeader } from "@/components/MobileHeader";
 import { useQuery } from "@tanstack/react-query";
 import type { Project, Task, Activity, DashboardTheme } from "@shared/schema";
 import { Loader2, Briefcase, User, CalendarCheck, ListTodo, Building2, Clock, ChevronsDownUp, Palette } from "lucide-react";
+import { MobileThemeSettings } from "@/components/MobileThemeSettings";
 import { PullToRefreshIndicator } from "@/components/PullToRefresh";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { MobileFAB, useDefaultQuickActions } from "@/components/MobileFAB";
@@ -61,6 +62,7 @@ export function Dashboard() {
     const savedMode = localStorage.getItem("mobile-dashboard-mode");
     return (savedMode === "personal" || savedMode === "business") ? savedMode : "personal";
   });
+  const [isThemeSettingsOpen, setIsThemeSettingsOpen] = useState(false);
   
   const availableWidgetIds = mode === "personal" 
     ? ["my-day", "upcoming-tasks"] 
@@ -93,13 +95,13 @@ export function Dashboard() {
 
   // Query user workspace theme (for personal mode)
   const { data: userTheme } = useQuery<DashboardTheme | null>({
-    queryKey: ['/api/user-dashboard-themes', user?.id],
+    queryKey: ['/api/dashboard-themes/user'],
     enabled: !!user?.id && mode === "personal",
   });
 
   // Query business dashboard theme (for business mode)
   const { data: businessTheme } = useQuery<DashboardTheme | null>({
-    queryKey: ['/api/business-dashboard-theme'],
+    queryKey: ['/api/dashboard-themes/business'],
     enabled: mode === "business",
   });
 
@@ -324,12 +326,7 @@ export function Dashboard() {
         title={mode === "personal" ? "User Workspace" : "Business Dashboard"} 
         action={
           <button
-            onClick={() => {
-              toast({
-                title: "Theme Settings",
-                description: "Theme customization is available in the desktop app. Visit BuildPro on desktop to customize your dashboard theme.",
-              });
-            }}
+            onClick={() => setIsThemeSettingsOpen(true)}
             className="p-2 hover-elevate active-elevate-2 rounded-md"
             data-testid="button-theme-settings"
           >
@@ -430,6 +427,12 @@ export function Dashboard() {
       </main>
       
       <MobileFAB actions={quickActions} />
+      
+      <MobileThemeSettings
+        isOpen={isThemeSettingsOpen}
+        onClose={() => setIsThemeSettingsOpen(false)}
+        dashboardType={mode === "personal" ? "user" : "business"}
+      />
     </div>
   );
 }

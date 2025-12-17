@@ -65,20 +65,46 @@ import {
 } from "@dnd-kit/sortable";
 import { useToast } from "@/hooks/use-toast";
 
-// Project tabs configuration matching sidebar sections
-const PROJECT_TABS = [
-  { id: "overview", label: "Overview", icon: Home, path: "" },
-  { id: "messages", label: "Messages", icon: MessageSquare, path: "/messages" },
-  { id: "notes", label: "Notes", icon: FileText, path: "/notes" },
-  { id: "scope", label: "Scope", icon: ListTree, path: "/scope" },
-  { id: "schedule", label: "Schedule", icon: Clock, path: "/schedule" },
-  { id: "tasks", label: "Tasks", icon: CheckSquare, path: "/tasks" },
-  { id: "takeoff", label: "Take off", icon: Calculator, path: "/takeoff" },
-  { id: "estimates", label: "Estimates", icon: FileBarChart, path: "/estimates" },
-  { id: "proposals", label: "Proposals", icon: File, path: "/proposals" },
-  { id: "bills", label: "Bills", icon: Receipt, path: "/bills" },
-  { id: "budget", label: "Budget", icon: DollarSign, path: "/budget" },
+// High-level tab groups for Project Overview matching sidebar sections
+const PROJECT_TAB_GROUPS = [
+  { 
+    id: "project", 
+    label: "Project", 
+    icon: Home,
+    items: [
+      { id: "overview", label: "Overview", icon: Home, path: "" },
+      { id: "messages", label: "Messages", icon: MessageSquare, path: "/messages" },
+      { id: "notes", label: "Notes", icon: FileText, path: "/notes" },
+      { id: "scope", label: "Scope", icon: ListTree, path: "/scope" },
+    ]
+  },
+  { 
+    id: "management", 
+    label: "Management", 
+    icon: ClipboardList,
+    items: [
+      { id: "schedule", label: "Schedule", icon: Clock, path: "/schedule" },
+      { id: "tasks", label: "Tasks", icon: CheckSquare, path: "/tasks" },
+      { id: "timesheets", label: "Timesheets", icon: Timer, path: "/timesheets" },
+      { id: "files", label: "Files", icon: FolderOpen, path: "/files" },
+    ]
+  },
+  { 
+    id: "finance", 
+    label: "Finance", 
+    icon: DollarSign,
+    items: [
+      { id: "takeoff", label: "Take off", icon: Calculator, path: "/takeoff" },
+      { id: "estimates", label: "Estimates", icon: FileBarChart, path: "/estimates" },
+      { id: "proposals", label: "Proposals", icon: File, path: "/proposals" },
+      { id: "bills", label: "Bills", icon: Receipt, path: "/bills" },
+      { id: "budget", label: "Budget", icon: DollarSign, path: "/budget" },
+    ]
+  },
 ] as const;
+
+// Flat list of all tabs for backward compatibility
+const PROJECT_TABS = PROJECT_TAB_GROUPS.flatMap(group => group.items);
 
 // Background options
 const backgroundOptions = [
@@ -127,7 +153,7 @@ export default function CustomizableProjectOverview() {
   const [activeViewId, setActiveViewId] = useState<string | null>(null);
   const [backgroundId, setBackgroundId] = useState("default");
   const [searchQuery, setSearchQuery] = useState("");
-  const [, navigate] = useLocation();
+  const [currentLocation, navigate] = useLocation();
 
   // New View Modal state
   const [isNewViewModalOpen, setIsNewViewModalOpen] = useState(false);
@@ -804,34 +830,72 @@ export default function CustomizableProjectOverview() {
         </div>
       </div>
 
-      {/* Row 2 - Project Tabs (36px / h-9) */}
-      <div className="h-9 bg-background flex items-center px-2 gap-4 border-b border-border flex-shrink-0 overflow-x-auto">
-        {PROJECT_TABS.map((tab) => {
-          const TabIcon = tab.icon;
-          const isActive = tab.id === "overview";
-          const tabPath = tab.path ? `/projects/${currentProject.id}${tab.path}` : `/projects/${currentProject.id}`;
+      {/* Row 2 - High-Level Project Tabs (36px / h-9) - Project/Management/Finance */}
+      <div className="h-9 bg-background flex items-center px-2 gap-1 border-b border-border flex-shrink-0 overflow-x-auto">
+        {PROJECT_TAB_GROUPS.map((group) => {
+          const GroupIcon = group.icon;
+          const currentPath = currentLocation.split(`/projects/${currentProject.id}`)[1] || "";
+          const isGroupActive = group.items.some(item => 
+            item.path === "" ? currentPath === "" || currentPath === "/" : currentPath.startsWith(item.path)
+          );
+          const activeItem = group.items.find(item =>
+            item.path === "" ? currentPath === "" || currentPath === "/" : currentPath.startsWith(item.path)
+          );
+          const firstItemPath = group.items[0].path ? `/projects/${currentProject.id}${group.items[0].path}` : `/projects/${currentProject.id}`;
           
           return (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                navigate(tabPath);
-              }}
-              className={`relative h-full px-1 text-xs flex items-center gap-1.5 flex-shrink-0 transition-colors ${
-                isActive
-                  ? 'text-[#bba7db] font-medium'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-              data-testid={`tab-${tab.id}`}
-            >
-              <TabIcon className="w-3 h-3" />
-              <span>{tab.label}</span>
-              {isActive && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#bba7db]" />
-              )}
-            </button>
+            <div key={group.id} className="relative h-full flex items-center">
+              <button
+                type="button"
+                onClick={() => navigate(firstItemPath)}
+                className={`relative h-full px-3 text-xs flex items-center gap-1.5 flex-shrink-0 transition-colors ${
+                  isGroupActive
+                    ? 'text-[#bba7db] font-medium'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                data-testid={`tab-group-${group.id}`}
+              >
+                <GroupIcon className="w-3 h-3" />
+                <span>{group.label}</span>
+                {activeItem && <span className="text-[10px] text-muted-foreground">/ {activeItem.label}</span>}
+                {isGroupActive && (
+                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#bba7db]" />
+                )}
+              </button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className={`h-full px-1 text-xs flex items-center transition-colors ${
+                      isGroupActive
+                        ? 'text-[#bba7db]'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                    data-testid={`tab-group-dropdown-${group.id}`}
+                  >
+                    <ChevronDown className="w-3 h-3" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-40">
+                  {group.items.map((item) => {
+                    const ItemIcon = item.icon;
+                    const itemPath = item.path ? `/projects/${currentProject.id}${item.path}` : `/projects/${currentProject.id}`;
+                    const isItemActive = item.path === "" ? currentPath === "" || currentPath === "/" : currentPath.startsWith(item.path);
+                    return (
+                      <DropdownMenuItem
+                        key={item.id}
+                        className={`text-xs flex items-center gap-2 ${isItemActive ? 'bg-accent' : ''}`}
+                        onClick={() => navigate(itemPath)}
+                        data-testid={`tab-item-${item.id}`}
+                      >
+                        <ItemIcon className="w-3 h-3" />
+                        <span>{item.label}</span>
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           );
         })}
       </div>
