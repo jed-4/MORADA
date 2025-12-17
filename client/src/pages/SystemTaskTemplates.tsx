@@ -46,7 +46,25 @@ import {
   Info,
   MoreVertical,
   PlayCircle,
+  GripVertical,
 } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import {
   Popover,
   PopoverContent,
@@ -83,7 +101,7 @@ interface TaskTemplateFormData {
   recurringDuration?: number; // DEPRECATED
   recurringAssigneeId?: string; // DEPRECATED
   estimatedDuration?: number;
-  checklist: Array<{ text: string; completed: boolean }>;
+  checklist: Array<{ id?: string; text: string; completed: boolean }>;
 }
 
 const DAYS_OF_WEEK = [
@@ -103,6 +121,65 @@ interface CreateTaskFormData {
   dueDate?: Date;
   status: string;
   tags: string[];
+}
+
+interface ChecklistItemData {
+  id: string;
+  text: string;
+  completed: boolean;
+}
+
+function SortableChecklistItem({ 
+  item, 
+  index, 
+  onRemove 
+}: { 
+  item: ChecklistItemData; 
+  index: number;
+  onRemove: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: item.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center gap-2 p-2 border rounded-md bg-muted/30"
+      data-testid={`checklist-item-${index}`}
+    >
+      <button
+        type="button"
+        className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical className="h-4 w-4" />
+      </button>
+      <span className="flex-1 text-sm">{item.text}</span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={onRemove}
+        data-testid={`button-remove-checklist-${index}`}
+      >
+        <X className="h-4 w-4" />
+      </Button>
+    </div>
+  );
 }
 
 export default function SystemTaskTemplates() {
@@ -156,6 +233,22 @@ export default function SystemTaskTemplates() {
   });
   const { data: users = [] } = useQuery<any[]>({ queryKey: ["/api/users"] });
   const { data: userRoles = [] } = useQuery<any[]>({ queryKey: ["/api/user-roles"] });
+  
+  // Query for existing tasks to check for duplicates
+  const { data: existingTasks = [] } = useQuery<any[]>({
+    queryKey: ["/api/tasks"],
+    enabled: isCreateTaskDialogOpen,
+  });
+
+  // DnD sensors for checklist reordering
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   // Mutations
   const createMutation = useMutation({
@@ -270,6 +363,27 @@ export default function SystemTaskTemplates() {
       return;
     }
 
+    // Check for duplicate tasks (same title, template, and status not completed)
+    const normalizedTitle = createTaskFormData.title.trim().toLowerCase();
+    const duplicateTask = existingTasks.find((task: any) => {
+      const taskTitle = (task.title || "").toLowerCase();
+      const sameTitle = taskTitle === normalizedTitle;
+      const sameTemplate = task.templateId === selectedTemplateForTask?.id;
+      const notCompleted = task.status !== "completed" && task.status !== "done";
+      
+      // Consider it a duplicate if same title OR same template and not completed
+      return (sameTitle || sameTemplate) && notCompleted;
+    });
+
+    if (duplicateTask) {
+      toast({
+        title: "Duplicate task detected",
+        description: `A similar task "${duplicateTask.title}" already exists and is not completed.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
     const taskData = {
       type: "task",
       title: createTaskFormData.title,
@@ -307,7 +421,10 @@ export default function SystemTaskTemplates() {
         recurringDuration: template.recurringDuration || undefined,
         recurringAssigneeId: template.recurringAssigneeId || undefined,
         estimatedDuration: template.estimatedDuration || undefined,
-        checklist: (template.checklist as Array<{ text: string; completed: boolean }>) || [],
+        checklist: ((template.checklist as Array<{ id?: string; text: string; completed: boolean }>) || []).map(item => ({
+          ...item,
+          id: item.id || crypto.randomUUID(),
+        })),
       });
     } else {
       setEditingTemplate(null);
@@ -429,7 +546,11 @@ export default function SystemTaskTemplates() {
     if (checklistInput.trim()) {
       setFormData(prev => ({
         ...prev,
-        checklist: [...prev.checklist, { text: checklistInput.trim(), completed: false }],
+        checklist: [...prev.checklist, { 
+          id: crypto.randomUUID(),
+          text: checklistInput.trim(), 
+          completed: false 
+        }],
       }));
       setChecklistInput("");
     }
@@ -440,6 +561,23 @@ export default function SystemTaskTemplates() {
       ...prev,
       checklist: prev.checklist.filter((_, i) => i !== index),
     }));
+  };
+
+  const handleChecklistDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    setFormData(prev => {
+      const oldIndex = prev.checklist.findIndex((item: any) => item.id === active.id);
+      const newIndex = prev.checklist.findIndex((item: any) => item.id === over.id);
+      
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      
+      return {
+        ...prev,
+        checklist: arrayMove(prev.checklist, oldIndex, newIndex),
+      };
+    });
   };
 
   const getTagById = (id: string) => tags.find(tag => tag.id === id);
@@ -981,7 +1119,7 @@ export default function SystemTaskTemplates() {
 
             {/* Checklist */}
             <div className="flex flex-col gap-2">
-              <Label>Checklist Items</Label>
+              <Label>Checklist Items (drag to reorder)</Label>
               <div className="flex items-center gap-2">
                 <Input
                   placeholder="Add checklist item..."
@@ -1007,26 +1145,31 @@ export default function SystemTaskTemplates() {
                 </Button>
               </div>
               {formData.checklist.length > 0 && (
-                <div className="flex flex-col gap-1 mt-2">
-                  {formData.checklist.map((item, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center gap-2 p-2 border rounded-md bg-muted/30"
-                      data-testid={`checklist-item-${index}`}
-                    >
-                      <span className="flex-1 text-sm">{item.text}</span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => removeChecklistItem(index)}
-                        data-testid={`button-remove-checklist-${index}`}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleChecklistDragEnd}
+                >
+                  <SortableContext
+                    items={formData.checklist.map((item, idx) => item.id || `temp-${idx}`)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <div className="flex flex-col gap-1 mt-2">
+                      {formData.checklist.map((item, index) => (
+                        <SortableChecklistItem
+                          key={item.id || index}
+                          item={{ 
+                            id: item.id || `temp-${index}`, 
+                            text: item.text, 
+                            completed: item.completed 
+                          }}
+                          index={index}
+                          onRemove={() => removeChecklistItem(index)}
+                        />
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  </SortableContext>
+                </DndContext>
               )}
             </div>
           </div>
