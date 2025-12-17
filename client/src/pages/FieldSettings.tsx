@@ -43,11 +43,13 @@ interface SortableRowProps {
   onEdit: (option: FieldOption) => void;
   onDelete: (id: string) => void;
   onToggleDefault: (id: string, isDefault: boolean) => void;
+  onToggleCompleted: (id: string, isCompleted: boolean) => void;
   parentOptions: FieldOption[];
   supportsHierarchy: boolean;
+  showDoneColumn: boolean;
 }
 
-function SortableRow({ option, onEdit, onDelete, onToggleDefault, parentOptions, supportsHierarchy }: SortableRowProps) {
+function SortableRow({ option, onEdit, onDelete, onToggleDefault, onToggleCompleted, parentOptions, supportsHierarchy, showDoneColumn }: SortableRowProps) {
   const {
     attributes,
     listeners,
@@ -98,6 +100,16 @@ function SortableRow({ option, onEdit, onDelete, onToggleDefault, parentOptions,
           data-testid={`checkbox-default-${option.id}`}
         />
       </TableCell>
+      {showDoneColumn && (
+        <TableCell className="text-center">
+          <Checkbox
+            checked={option.isCompleted}
+            onCheckedChange={(checked) => onToggleCompleted(option.id, !!checked)}
+            aria-label={`Mark ${option.name} as done status`}
+            data-testid={`checkbox-completed-${option.id}`}
+          />
+        </TableCell>
+      )}
       {supportsHierarchy && (
         <TableCell>
           {parentOption ? (
@@ -198,6 +210,12 @@ export default function FieldSettings() {
   // Determine if the selected category supports hierarchy (parentId)
   const supportsHierarchy = useMemo(
     () => selectedCategory?.key === 'project.status',
+    [selectedCategory]
+  );
+
+  // Show "Done" column for status-type categories where marking completion makes sense
+  const showDoneColumn = useMemo(
+    () => selectedCategory?.key === 'task.status',
     [selectedCategory]
   );
 
@@ -359,6 +377,31 @@ export default function FieldSettings() {
 
   const handleToggleDefault = (id: string, isDefault: boolean) => {
     toggleDefaultMutation.mutate({ id, isDefault });
+  };
+
+  // Toggle completed mutation - marks a status as a "done" state
+  const toggleCompletedMutation = useMutation({
+    mutationFn: async ({ id, isCompleted }: { id: string; isCompleted: boolean }) => {
+      return await apiRequest(`/api/field-options/${id}`, 'PATCH', { isCompleted });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/field-options', selectedCategoryId] });
+      toast({
+        title: "Done status updated",
+        description: "The done status flag has been updated.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update done status.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleToggleCompleted = (id: string, isCompleted: boolean) => {
+    toggleCompletedMutation.mutate({ id, isCompleted });
   };
 
   // Reorder mutation with optimistic updates to prevent snapback
@@ -1253,6 +1296,7 @@ export default function FieldSettings() {
                           <TableHead>Name</TableHead>
                           <TableHead>Preview</TableHead>
                           <TableHead className="text-center w-16">Default</TableHead>
+                          {showDoneColumn && <TableHead className="text-center w-16">Done</TableHead>}
                           {supportsHierarchy && <TableHead>Type</TableHead>}
                           <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
@@ -1260,7 +1304,7 @@ export default function FieldSettings() {
                       <TableBody>
                         {displayOptions.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={supportsHierarchy ? 6 : 5} className="text-center text-muted-foreground py-8">
+                            <TableCell colSpan={5 + (supportsHierarchy ? 1 : 0) + (showDoneColumn ? 1 : 0)} className="text-center text-muted-foreground py-8">
                               No options configured. Click "Add Option" to create one.
                             </TableCell>
                           </TableRow>
@@ -1276,8 +1320,10 @@ export default function FieldSettings() {
                                 onEdit={handleEdit}
                                 onDelete={handleDelete}
                                 onToggleDefault={handleToggleDefault}
+                                onToggleCompleted={handleToggleCompleted}
                                 parentOptions={parentOptions}
                                 supportsHierarchy={supportsHierarchy}
+                                showDoneColumn={showDoneColumn}
                               />
                             ))}
                           </SortableContext>
