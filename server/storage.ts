@@ -7052,47 +7052,54 @@ export class DbStorage implements IStorage {
       return result[0] as Note | undefined;
     }
     
-    // Join with projects to verify company ownership
-    const result = await db
-      .select({
-        id: schema.notes.id,
-        title: schema.notes.title,
-        content: schema.notes.content,
-        contentHtml: schema.notes.contentHtml,
-        contentText: schema.notes.contentText,
-        category: schema.notes.category,
-        priority: schema.notes.priority,
-        author: schema.notes.author,
-        ownerId: schema.notes.ownerId,
-        ownerName: schema.notes.ownerName,
-        visibility: schema.notes.visibility,
-        pinned: schema.notes.pinned,
-        customFields: schema.notes.customFields,
-        projectId: schema.notes.projectId,
-        type: schema.notes.type,
-        status: schema.notes.status,
-        assigneeId: schema.notes.assigneeId,
-        assigneeName: schema.notes.assigneeName,
-        dueDate: schema.notes.dueDate,
-        completedAt: schema.notes.completedAt,
-        tags: schema.notes.tags,
-        labels: schema.notes.labels,
-        parentTaskId: schema.notes.parentTaskId,
-        subtaskOrder: schema.notes.subtaskOrder,
-        recurringSettings: schema.notes.recurringSettings,
-        recurringParentId: schema.notes.recurringParentId,
-        templateId: schema.notes.templateId,
-        createdAt: schema.notes.createdAt,
-        updatedAt: schema.notes.updatedAt,
-      })
-      .from(schema.notes)
-      .leftJoin(schema.projects, eq(schema.notes.projectId, schema.projects.id))
-      .where(and(
-        eq(schema.notes.id, id),
-        eq(schema.projects.companyId, companyId)
-      ));
+    // First, try to get the note directly by id
+    const noteResult = await db.select().from(schema.notes).where(eq(schema.notes.id, id));
+    const note = noteResult[0];
     
-    return result[0] as Note | undefined;
+    if (!note) return undefined;
+    
+    // Security check: If note has a companyId set, it MUST match the requested company
+    // This prevents cross-tenant access for notes with explicit company assignment
+    if (note.companyId) {
+      if (note.companyId === companyId) {
+        return note as Note;
+      }
+      // companyId is set but doesn't match - reject access
+      return undefined;
+    }
+    
+    // For legacy notes without companyId, verify through fallback paths:
+    // 1. Via projectId → project.companyId
+    // 2. Via ownerId → user.companyId (for personal notes without projects)
+    
+    if (note.projectId) {
+      // Check via project
+      const projectResult = await db.select()
+        .from(schema.projects)
+        .where(and(
+          eq(schema.projects.id, note.projectId),
+          eq(schema.projects.companyId, companyId)
+        ));
+      if (projectResult.length > 0) {
+        return note as Note;
+      }
+    }
+    
+    if (note.ownerId && !note.projectId) {
+      // Only check via owner for notes without projects (personal notes)
+      const ownerResult = await db.select()
+        .from(schema.users)
+        .where(and(
+          eq(schema.users.id, note.ownerId),
+          eq(schema.users.companyId, companyId)
+        ));
+      if (ownerResult.length > 0) {
+        return note as Note;
+      }
+    }
+    
+    // No valid company association found
+    return undefined;
   }
 
   async getPersonalNotesByUser(userId: string, companyId: string): Promise<Note[]> {
