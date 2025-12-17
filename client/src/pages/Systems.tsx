@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useSearch } from "wouter";
-import { Folder, ListTodo, Workflow, FolderPlus, FilePlus, Plus, CalendarIcon, Power, PowerOff, Search, Bell } from "lucide-react";
+import { Folder, ListTodo, Workflow, FolderPlus, FilePlus, Plus, CalendarIcon, Power, PowerOff, Search, Bell, CalendarDays } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -8,8 +8,9 @@ import { FolderTree, type FolderTreeHandle } from "@/components/systems/FolderTr
 import { TaskLibrary, type TaskLibraryHandle } from "@/components/systems/TaskLibrary";
 import { WorkflowBuilder, type WorkflowBuilderHandle } from "@/components/systems/WorkflowBuilder";
 import { BusinessReminders, type BusinessRemindersHandle } from "@/components/systems/BusinessReminders";
+import { DefaultDiary, type DefaultDiaryHandle } from "@/components/systems/DefaultDiary";
 
-const ALLOWED_TABS = ["folders", "tasks", "workflows", "reminders"];
+const ALLOWED_TABS = ["folders", "tasks", "workflows", "reminders", "diary"];
 
 export default function Systems() {
   // Get tab from URL query parameter
@@ -34,6 +35,7 @@ export default function Systems() {
   const taskLibraryRef = useRef<TaskLibraryHandle>(null);
   const workflowBuilderRef = useRef<WorkflowBuilderHandle>(null);
   const businessRemindersRef = useRef<BusinessRemindersHandle>(null);
+  const defaultDiaryRef = useRef<DefaultDiaryHandle>(null);
 
   return (
     <div className="flex flex-col h-full" data-testid="systems-page">
@@ -96,6 +98,20 @@ export default function Systems() {
               <span>Reminders</span>
             </div>
           </button>
+          <button
+            onClick={() => setActiveTab("diary")}
+            className={`px-3 h-7 rounded-md text-xs font-medium transition-colors ${
+              activeTab === "diary"
+                ? "bg-[#bba7db]/10 text-[#bba7db]"
+                : "text-muted-foreground hover-elevate"
+            }`}
+            data-testid="tab-diary"
+          >
+            <div className="flex items-center gap-1.5">
+              <CalendarDays className="h-3 w-3" />
+              <span>Default Diary</span>
+            </div>
+          </button>
         </div>
       </div>
 
@@ -130,6 +146,11 @@ export default function Systems() {
         {activeTab === "reminders" && (
           <div className="h-full">
             <BusinessReminders ref={businessRemindersRef} searchQuery={searchQuery} />
+          </div>
+        )}
+        {activeTab === "diary" && (
+          <div className="h-full">
+            <DefaultDiary ref={defaultDiaryRef} searchQuery={searchQuery} />
           </div>
         )}
       </div>

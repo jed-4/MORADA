@@ -39,7 +39,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Feature Specifications & System Design
 - **Budget Tracking**: Manages estimates, bills, and variations with a calculation engine.
-- **Task Management**: Kanban, List, and Calendar views with drag-and-drop, including task templates with user-specific or role-based assignments.
+- **Task Management**: Kanban, List, and Calendar views with drag-and-drop, including task templates with user-specific or role-based assignments. Task modal includes inline checklist management for viewing/adding/toggling checklist items.
 - **Checklist System**: Templates with group functionality and dashboard widget integration. Dashboard widget features responsive multi-column layout (1/2/3 columns based on width), compact headers, and color-coded status indicators (amber for priority+actionable, green for actionable items).
 - **Cost Code Management**: Merge functionality with company isolation.
 - **Import System**: Flexible CSV/Excel import with column mapping and intelligent cost code matching. Schedule import functionality allows importing Excel/CSV files directly into project schedules using the same column mapping and preview system as schedule templates via `/api/schedule-items/bulk-create`.
@@ -66,6 +66,12 @@ Preferred communication style: Simple, everyday language.
 - **Notes & Memos**: Dedicated business/project notes and personal quick-capture memos.
 - **Onboarding Flow**: Two-step process for user profile completion and company creation.
 - **Activity Feed Settings**: Company Settings > Activity section allows toggling visibility of activity types (task, estimate, bill, variation, invoice, proposal, project, site_diary, other). Stored in `companySettings.activityTypesVisible` JSON field. ActivityWidget respects these settings and filters activities accordingly.
+- **Schedule Widget**: Project dashboard schedule widget with multiple view modes (list, day, week, month). Settings configured via edit modal only (widget is display-only). Day/Week views support both stacked (simple list) and timeline (hourly scale) display modes with:
+  - Header row with day names and navigation
+  - All-day items section (pinned at top)
+  - Scrollable hourly timeline with current time indicator (for timeline mode)
+  - Configurable filters for tasks, milestones, priority, status
+- **Default Diary**: Systems > Default Diary tab shows weekly view of recurring tasks. Allows filtering by user to see their "default week" schedule of active recurring tasks.
 - **Suppliers Migration (Complete)**: Legacy `suppliers` table unified into `contacts` with `contactType='supplier'`. 
   - **Completed**: `bills.supplierId`, `rfqQuotes.supplierId`, `priceListItems.supplierId` now reference `contacts.id` instead of `suppliers.id`.
   - **Deprecated**: `suppliers`, `supplierLabels`, `supplierLabelAssignments`, `supplierInsurances`, `supplierContacts` tables marked deprecated but functional for backward compatibility.

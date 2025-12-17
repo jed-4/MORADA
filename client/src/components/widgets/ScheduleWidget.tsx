@@ -44,6 +44,9 @@ import {
 
 type ViewMode = "list" | "day" | "week" | "month";
 
+const HOUR_HEIGHT = 40;
+const HOURS = Array.from({ length: 24 }, (_, i) => i);
+
 interface ScheduleItem {
   id: string;
   title: string;
@@ -74,6 +77,13 @@ const priorityColors = {
   low: "text-blue-500",
 };
 
+function parseTime(timeStr: string | null | undefined): number | null {
+  if (!timeStr) return null;
+  const [hours, minutes] = timeStr.split(':').map(Number);
+  if (isNaN(hours)) return null;
+  return hours + (minutes || 0) / 60;
+}
+
 export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
   const { currentProject } = useProject();
   const [, navigate] = useLocation();
@@ -86,13 +96,31 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
   const showTasks = widget.config?.showTasks !== false;
   const priorityFilter = widget.config?.priorityFilter || "all";
   const statusFilter = widget.config?.statusFilter || "all";
+  const displayMode = (widget.config?.displayMode as "timeline" | "stacked") || "stacked";
   
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [currentTimeMinutes, setCurrentTimeMinutes] = useState(() => {
+    const now = new Date();
+    return now.getHours() * 60 + now.getMinutes();
+  });
   
   useEffect(() => {
     setEditingTitle(widget.title);
   }, [widget.title]);
+
+  // Update current time every minute for timeline views
+  useEffect(() => {
+    if (viewMode !== "day" && viewMode !== "week") return;
+    if (displayMode !== "timeline") return;
+    
+    const interval = setInterval(() => {
+      const now = new Date();
+      setCurrentTimeMinutes(now.getHours() * 60 + now.getMinutes());
+    }, 60000);
+    
+    return () => clearInterval(interval);
+  }, [viewMode, displayMode]);
 
   const { data: tasks = [], isLoading: tasksLoading } = useQuery<any[]>({
     queryKey: ["/api/projects", currentProject?.id, "tasks"],
@@ -358,6 +386,24 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
             />
           </div>
         )}
+
+        {(viewMode === "day" || viewMode === "week") && (
+          <div className="space-y-2">
+            <Label className="text-xs">Display Style</Label>
+            <Select 
+              value={displayMode} 
+              onValueChange={(v) => updateConfig("displayMode", v)}
+            >
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="stacked">Stacked (Simple List)</SelectItem>
+                <SelectItem value="timeline">Timeline (Hourly Scale)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
         
         <div className="flex justify-end gap-2 pt-2">
           <Button size="sm" variant="outline" onClick={handleCancelConfig} className="h-6 px-2 text-xs">
@@ -385,50 +431,6 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
 
   const goToToday = () => setCurrentDate(new Date());
 
-  const setViewMode = (mode: ViewMode) => {
-    onUpdate?.({ ...widget, config: { ...widget.config, viewMode: mode } });
-  };
-
-  const ViewModeToggle = () => (
-    <div className="flex items-center border rounded overflow-hidden">
-      <Button
-        size="icon"
-        variant={viewMode === "list" ? "default" : "ghost"}
-        className="h-5 w-5 rounded-none"
-        onClick={() => setViewMode("list")}
-        title="List View"
-      >
-        <List className="h-3 w-3" />
-      </Button>
-      <Button
-        size="icon"
-        variant={viewMode === "day" ? "default" : "ghost"}
-        className="h-5 w-5 rounded-none"
-        onClick={() => setViewMode("day")}
-        title="Day View"
-      >
-        <Calendar className="h-3 w-3" />
-      </Button>
-      <Button
-        size="icon"
-        variant={viewMode === "week" ? "default" : "ghost"}
-        className="h-5 w-5 rounded-none"
-        onClick={() => setViewMode("week")}
-        title="Week View"
-      >
-        <CalendarDays className="h-3 w-3" />
-      </Button>
-      <Button
-        size="icon"
-        variant={viewMode === "month" ? "default" : "ghost"}
-        className="h-5 w-5 rounded-none"
-        onClick={() => setViewMode("month")}
-        title="Month View"
-      >
-        <LayoutGrid className="h-3 w-3" />
-      </Button>
-    </div>
-  );
 
   const renderListView = () => {
     const sortedItems = scheduleItems.slice(0, maxItems);
@@ -446,19 +448,16 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
               {sortedItems.length} upcoming
             </span>
           </div>
-          <div className="flex items-center gap-1">
-            <ViewModeToggle />
-            <Button 
-              size="sm" 
-              variant="ghost" 
-              className="h-6 px-2"
-              onClick={() => navigate('/tasks')}
-              data-testid="schedule-widget-add"
-            >
-              <Plus className="h-3 w-3 mr-1" />
-              Add
-            </Button>
-          </div>
+          <Button 
+            size="sm" 
+            variant="ghost" 
+            className="h-6 px-2"
+            onClick={() => navigate('/tasks')}
+            data-testid="schedule-widget-add"
+          >
+            <Plus className="h-3 w-3 mr-1" />
+            Add
+          </Button>
         </div>
         
         <div className="space-y-2">
@@ -548,10 +547,15 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
       isSameDay(new Date(item.date), currentDate)
     );
     const isPast = isBefore(startOfDay(currentDate), startOfDay(new Date()));
+    
+    // Separate all-day items from timed items
+    const allDayItems = dayItems.filter(item => !item.time);
+    const timedItems = dayItems.filter(item => item.time);
 
     return (
       <div className="flex flex-col h-full -m-3">
-        <div className="flex items-center justify-between px-3 py-1.5 border-b bg-muted/30 gap-2">
+        {/* Header with navigation */}
+        <div className="flex items-center justify-between px-3 py-1.5 border-b bg-muted/30 gap-2 flex-shrink-0">
           <div className="flex items-center gap-1">
             <Button size="icon" variant="ghost" className="h-6 w-6" onClick={navigatePrev}>
               <ChevronLeft className="h-3.5 w-3.5" />
@@ -564,37 +568,126 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
             </Button>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-xs font-medium hidden sm:inline">
-              {format(currentDate, "MMM d")}
+            <span className="text-xs font-medium">
+              {format(currentDate, "EEEE, MMM d")}
             </span>
-            <ViewModeToggle />
+            {isToday(currentDate) && (
+              <Badge variant="secondary" className="text-[10px] px-1 py-0">Today</Badge>
+            )}
           </div>
         </div>
 
-        <div className={`flex-1 overflow-y-auto p-3 space-y-1.5 ${isPast ? 'opacity-60' : ''}`}>
-          {dayItems.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-              No items scheduled
+        {/* All-day items section */}
+        {allDayItems.length > 0 && (
+          <div className="flex-shrink-0 px-3 py-1.5 border-b space-y-1 bg-muted/10 max-h-20 overflow-y-auto">
+            <div className="text-[10px] text-muted-foreground uppercase tracking-wide">All Day</div>
+            <div className="flex flex-wrap gap-1">
+              {allDayItems.map(item => (
+                <div
+                  key={item.id}
+                  className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] cursor-pointer hover-elevate ${
+                    item.status === 'overdue' ? 'bg-red-100 dark:bg-red-950/50' : 'bg-muted'
+                  }`}
+                >
+                  <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${typeColors[item.type]}`} />
+                  <span className="truncate max-w-[100px]">{item.title}</span>
+                </div>
+              ))}
             </div>
-          ) : (
-            dayItems.map(item => (
-              <div
-                key={item.id}
-                className={`flex items-center gap-2 p-2 rounded border hover-elevate cursor-pointer ${
-                  item.status === 'overdue' ? 'border-red-300 bg-red-50 dark:bg-red-950/30' : ''
-                }`}
-              >
-                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${typeColors[item.type]}`} />
-                <span className="text-sm flex-1 truncate">{item.title}</span>
-                {item.priority && (
-                  <span className={`text-[10px] ${priorityColors[item.priority]}`}>
-                    {item.priority}
+          </div>
+        )}
+
+        {/* Timeline or stacked content */}
+        {displayMode === "timeline" ? (
+          <div className={`flex-1 overflow-y-auto min-h-0 ${isPast ? 'opacity-60' : ''}`}>
+            <div className="relative" style={{ minHeight: `${24 * HOUR_HEIGHT}px`, height: `${24 * HOUR_HEIGHT}px` }}>
+              {/* Hour grid lines */}
+              {HOURS.map(hour => (
+                <div
+                  key={hour}
+                  className="absolute left-0 right-0 border-b border-border/50"
+                  style={{ top: `${hour * HOUR_HEIGHT}px`, height: `${HOUR_HEIGHT}px` }}
+                >
+                  <span className="absolute left-2 top-0 text-[10px] text-muted-foreground -translate-y-1/2">
+                    {format(new Date().setHours(hour, 0), "h a")}
                   </span>
-                )}
+                </div>
+              ))}
+
+              {/* Current time indicator */}
+              {isToday(currentDate) && (
+                <div
+                  className="absolute left-10 right-0 border-t-2 border-red-500 z-20 pointer-events-none"
+                  style={{ top: `${(currentTimeMinutes / 60) * HOUR_HEIGHT}px` }}
+                >
+                  <div className="absolute -left-1 -top-1.5 w-3 h-3 rounded-full bg-red-500" />
+                </div>
+              )}
+
+              {/* Timed events */}
+              {timedItems.map(item => {
+                const startHour = parseTime(item.time);
+                if (startHour === null) return null;
+                const top = startHour * HOUR_HEIGHT;
+                
+                return (
+                  <div
+                    key={item.id}
+                    className={`absolute left-12 right-2 rounded-md border px-2 py-1 cursor-pointer hover-elevate ${
+                      item.status === 'overdue' ? 'border-red-300 bg-red-50 dark:bg-red-950/30' : 'bg-card'
+                    }`}
+                    style={{ top: `${top}px`, minHeight: '20px' }}
+                  >
+                    <div className="flex items-center gap-1">
+                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${typeColors[item.type]}`} />
+                      <span className="text-[11px] truncate flex-1">{item.title}</span>
+                      {item.priority && (
+                        <span className={`text-[9px] ${priorityColors[item.priority]}`}>
+                          {item.priority}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {dayItems.length === 0 && (
+                <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">
+                  No items scheduled
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          /* Stacked view (simple list) */
+          <div className={`flex-1 overflow-y-auto p-3 space-y-1.5 ${isPast ? 'opacity-60' : ''}`}>
+            {dayItems.length === 0 ? (
+              <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
+                No items scheduled
               </div>
-            ))
-          )}
-        </div>
+            ) : (
+              dayItems.map(item => (
+                <div
+                  key={item.id}
+                  className={`flex items-center gap-2 p-2 rounded border hover-elevate cursor-pointer ${
+                    item.status === 'overdue' ? 'border-red-300 bg-red-50 dark:bg-red-950/30' : ''
+                  }`}
+                >
+                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${typeColors[item.type]}`} />
+                  <span className="text-sm flex-1 truncate">{item.title}</span>
+                  {item.time && (
+                    <span className="text-[10px] text-muted-foreground">{item.time}</span>
+                  )}
+                  {item.priority && (
+                    <span className={`text-[10px] ${priorityColors[item.priority]}`}>
+                      {item.priority}
+                    </span>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        )}
       </div>
     );
   };
@@ -602,10 +695,17 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
   const renderWeekView = () => {
     const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
     const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+    
+    // Get all-day items for the week
+    const weekAllDayItems = scheduleItems.filter(item => {
+      const itemDate = new Date(item.date);
+      return !item.time && weekDays.some(day => isSameDay(itemDate, day));
+    });
 
     return (
       <div className="flex flex-col h-full -m-3">
-        <div className="flex items-center justify-between px-3 py-1.5 border-b bg-muted/30 gap-2">
+        {/* Header with navigation */}
+        <div className="flex items-center justify-between px-3 py-1.5 border-b bg-muted/30 gap-2 flex-shrink-0">
           <div className="flex items-center gap-1">
             <Button size="icon" variant="ghost" className="h-6 w-6" onClick={navigatePrev}>
               <ChevronLeft className="h-3.5 w-3.5" />
@@ -617,57 +717,175 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
               <ChevronRight className="h-3.5 w-3.5" />
             </Button>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium hidden sm:inline">
-              {format(weekStart, "MMM d")} - {format(addDays(weekStart, 6), "d")}
-            </span>
-            <ViewModeToggle />
-          </div>
+          <span className="text-xs font-medium">
+            {format(weekStart, "MMM d")} - {format(addDays(weekStart, 6), "MMM d")}
+          </span>
         </div>
 
-        <div className="flex-1 grid grid-cols-7 border-t overflow-hidden">
+        {/* Day headers row */}
+        <div className="grid grid-cols-7 border-b flex-shrink-0" style={{ marginLeft: displayMode === "timeline" ? "40px" : "0" }}>
           {weekDays.map((day, idx) => {
-            const dayItems = scheduleItems.filter(item => isSameDay(new Date(item.date), day));
-            const isPast = isBefore(startOfDay(day), startOfDay(new Date()));
             const isTodayDate = isToday(day);
-            
             return (
               <div 
-                key={idx} 
-                className={`flex flex-col border-r last:border-r-0 min-w-0 ${isPast ? 'opacity-50' : ''}`}
+                key={idx}
+                className={`text-center py-1 border-r last:border-r-0 ${isTodayDate ? 'bg-primary/10' : ''}`}
               >
-                <div className={`text-center py-1 border-b flex-shrink-0 ${isTodayDate ? 'bg-primary/10' : ''}`}>
-                  <div className="text-[9px] text-muted-foreground uppercase">
-                    {format(day, "EEE")}
-                  </div>
-                  <div className={`text-xs font-medium ${isTodayDate ? 'text-primary' : ''}`}>
-                    {format(day, "d")}
-                  </div>
+                <div className="text-[9px] text-muted-foreground uppercase">
+                  {format(day, "EEE")}
                 </div>
-                
-                <div className="flex-1 p-0.5 space-y-0.5 overflow-y-auto">
-                  {dayItems.slice(0, 3).map(item => (
-                    <div
-                      key={item.id}
-                      className={`flex items-center gap-0.5 px-0.5 py-0.5 rounded text-[9px] cursor-pointer hover-elevate ${
-                        item.status === 'overdue' ? 'bg-red-100 dark:bg-red-950/50' : 'bg-muted'
-                      }`}
-                      title={item.title}
-                    >
-                      <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${typeColors[item.type]}`} />
-                      <span className="truncate">{item.title}</span>
-                    </div>
-                  ))}
-                  {dayItems.length > 3 && (
-                    <div className="text-[8px] text-muted-foreground text-center">
-                      +{dayItems.length - 3} more
-                    </div>
-                  )}
+                <div className={`text-xs font-medium ${isTodayDate ? 'text-primary' : ''}`}>
+                  {format(day, "d")}
                 </div>
               </div>
             );
           })}
         </div>
+
+        {/* All-day items row */}
+        {weekAllDayItems.length > 0 && (
+          <div className="border-b flex-shrink-0 bg-muted/10" style={{ marginLeft: displayMode === "timeline" ? "40px" : "0" }}>
+            <div className="grid grid-cols-7">
+              {weekDays.map((day, idx) => {
+                const dayAllDayItems = weekAllDayItems.filter(item => isSameDay(new Date(item.date), day));
+                return (
+                  <div key={idx} className="border-r last:border-r-0 p-0.5 min-h-[20px]">
+                    {dayAllDayItems.slice(0, 2).map(item => (
+                      <div
+                        key={item.id}
+                        className={`flex items-center gap-0.5 px-0.5 py-0.5 rounded text-[8px] cursor-pointer hover-elevate mb-0.5 ${
+                          item.status === 'overdue' ? 'bg-red-100 dark:bg-red-950/50' : 'bg-muted'
+                        }`}
+                        title={item.title}
+                      >
+                        <div className={`w-1 h-1 rounded-full flex-shrink-0 ${typeColors[item.type]}`} />
+                        <span className="truncate">{item.title}</span>
+                      </div>
+                    ))}
+                    {dayAllDayItems.length > 2 && (
+                      <div className="text-[7px] text-muted-foreground text-center">+{dayAllDayItems.length - 2}</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Timeline or stacked content */}
+        {displayMode === "timeline" ? (
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <div className="flex" style={{ minHeight: `${24 * HOUR_HEIGHT}px` }}>
+              {/* Hour labels column */}
+              <div className="flex-shrink-0 w-10 relative">
+                {HOURS.map(hour => (
+                  <div
+                    key={hour}
+                    className="absolute left-0 right-0 border-b border-border/30"
+                    style={{ top: `${hour * HOUR_HEIGHT}px`, height: `${HOUR_HEIGHT}px` }}
+                  >
+                    <span className="absolute left-1 top-0 text-[9px] text-muted-foreground -translate-y-1/2">
+                      {format(new Date().setHours(hour, 0), "ha")}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              
+              {/* Day columns with time grid */}
+              <div className="flex-1 grid grid-cols-7">
+                {weekDays.map((day, idx) => {
+                  const dayTimedItems = scheduleItems.filter(item => 
+                    item.time && isSameDay(new Date(item.date), day)
+                  );
+                  const isPast = isBefore(startOfDay(day), startOfDay(new Date()));
+                  const isTodayDate = isToday(day);
+                  
+                  return (
+                    <div 
+                      key={idx}
+                      className={`relative border-r last:border-r-0 ${isPast ? 'opacity-50' : ''}`}
+                    >
+                      {/* Hour grid lines */}
+                      {HOURS.map(hour => (
+                        <div
+                          key={hour}
+                          className="absolute left-0 right-0 border-b border-border/30"
+                          style={{ top: `${hour * HOUR_HEIGHT}px`, height: `${HOUR_HEIGHT}px` }}
+                        />
+                      ))}
+                      
+                      {/* Current time indicator */}
+                      {isTodayDate && (
+                        <div
+                          className="absolute left-0 right-0 border-t-2 border-red-500 z-20 pointer-events-none"
+                          style={{ top: `${(currentTimeMinutes / 60) * HOUR_HEIGHT}px` }}
+                        />
+                      )}
+                      
+                      {/* Timed events */}
+                      {dayTimedItems.map(item => {
+                        const startHour = parseTime(item.time);
+                        if (startHour === null) return null;
+                        const top = startHour * HOUR_HEIGHT;
+                        
+                        return (
+                          <div
+                            key={item.id}
+                            className={`absolute left-0.5 right-0.5 rounded border px-0.5 py-0.5 cursor-pointer hover-elevate overflow-hidden ${
+                              item.status === 'overdue' ? 'border-red-300 bg-red-50 dark:bg-red-950/30' : 'bg-card'
+                            }`}
+                            style={{ top: `${top}px`, minHeight: '16px' }}
+                            title={item.title}
+                          >
+                            <div className="flex items-center gap-0.5">
+                              <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${typeColors[item.type]}`} />
+                              <span className="text-[8px] truncate">{item.title}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* Stacked view */
+          <div className="flex-1 grid grid-cols-7 overflow-hidden">
+            {weekDays.map((day, idx) => {
+              const dayItems = scheduleItems.filter(item => isSameDay(new Date(item.date), day));
+              const isPast = isBefore(startOfDay(day), startOfDay(new Date()));
+              
+              return (
+                <div 
+                  key={idx} 
+                  className={`flex flex-col border-r last:border-r-0 min-w-0 ${isPast ? 'opacity-50' : ''}`}
+                >
+                  <div className="flex-1 p-0.5 space-y-0.5 overflow-y-auto">
+                    {dayItems.slice(0, 5).map(item => (
+                      <div
+                        key={item.id}
+                        className={`flex items-center gap-0.5 px-0.5 py-0.5 rounded text-[9px] cursor-pointer hover-elevate ${
+                          item.status === 'overdue' ? 'bg-red-100 dark:bg-red-950/50' : 'bg-muted'
+                        }`}
+                        title={item.title}
+                      >
+                        <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${typeColors[item.type]}`} />
+                        <span className="truncate">{item.title}</span>
+                      </div>
+                    ))}
+                    {dayItems.length > 5 && (
+                      <div className="text-[8px] text-muted-foreground text-center">
+                        +{dayItems.length - 5} more
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   };
@@ -704,12 +922,9 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
               <ChevronRight className="h-3.5 w-3.5" />
             </Button>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium hidden sm:inline">
-              {format(currentDate, "MMM yyyy")}
-            </span>
-            <ViewModeToggle />
-          </div>
+          <span className="text-xs font-medium">
+            {format(currentDate, "MMMM yyyy")}
+          </span>
         </div>
 
         <div className="grid grid-cols-7 border-b">
