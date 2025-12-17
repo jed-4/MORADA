@@ -55,7 +55,7 @@ interface TaskBoardProps {
 }
 
 // Draggable Task Card wrapper
-function DraggableTaskCard({ task, onTaskClick, displaySettings }: { task: Task; onTaskClick?: (task: Task) => void; displaySettings?: any }) {
+function DraggableTaskCard({ task, onTaskClick, displaySettings, onDelete, showActions }: { task: Task; onTaskClick?: (task: Task) => void; displaySettings?: any; onDelete?: (task: Task) => void; showActions?: boolean }) {
   const {
     attributes,
     listeners,
@@ -84,7 +84,7 @@ function DraggableTaskCard({ task, onTaskClick, displaySettings }: { task: Task;
       {...listeners}
       className="touch-none"
     >
-      <TaskCardCompact task={task} onClick={() => onTaskClick?.(task)} isDragging={isDragging} displaySettings={displaySettings} />
+      <TaskCardCompact task={task} onClick={() => onTaskClick?.(task)} isDragging={isDragging} displaySettings={displaySettings} onDelete={onDelete} showActions={showActions} />
     </div>
   );
 }
@@ -115,12 +115,16 @@ function DroppableColumn({
   onAddTask,
   onTaskClick,
   displaySettings,
+  onDelete,
+  showActions,
 }: { 
   column: { id: string; title: string; status: string; color?: string }; 
   tasks: Task[]; 
   onAddTask: () => void;
   onTaskClick?: (task: Task) => void;
   displaySettings?: any;
+  onDelete?: (task: Task) => void;
+  showActions?: boolean;
 }) {
   const {
     setNodeRef,
@@ -159,7 +163,7 @@ function DroppableColumn({
       <div className="p-2 space-y-1.5 max-h-[calc(100vh-300px)] overflow-y-auto">
         <SortableContext items={tasks.map(task => task.id)} strategy={verticalListSortingStrategy}>
           {tasks.map((task) => (
-            <DraggableTaskCard key={task.id} task={task} onTaskClick={onTaskClick} displaySettings={displaySettings} />
+            <DraggableTaskCard key={task.id} task={task} onTaskClick={onTaskClick} displaySettings={displaySettings} onDelete={onDelete} showActions={showActions} />
           ))}
         </SortableContext>
 
@@ -316,6 +320,34 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
     },
   });
 
+  // Delete task mutation
+  const deleteTaskMutation = useMutation({
+    mutationFn: async (taskId: string) => {
+      await apiRequest(`/api/tasks/${taskId}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      toast({ title: "Task deleted" });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to delete task", 
+        description: error.message,
+        variant: "destructive" 
+      });
+    },
+  });
+
+  const handleDeleteTask = (task: Task) => {
+    deleteTaskMutation.mutate(task.id);
+  };
+
+  // Board view displaySettings - hide status since tasks are grouped by status columns
+  const boardDisplaySettings = {
+    ...displaySettings,
+    showStatus: false,
+  };
+
   // Group tasks by status
   const tasksByStatus = tasks.reduce((acc, task) => {
     const status = task.status || "todo";
@@ -420,7 +452,9 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
                       setSelectedTask(task);
                       setIsTaskModalOpen(true);
                     }}
-                    displaySettings={displaySettings}
+                    displaySettings={boardDisplaySettings}
+                    onDelete={handleDeleteTask}
+                    showActions={true}
                   />
                 </div>
               );
@@ -454,7 +488,7 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
         <DragOverlay>
           {activeTask ? (
             <div className="rotate-2">
-              <TaskCardCompact task={activeTask} onClick={() => {}} isDragging={true} displaySettings={displaySettings} />
+              <TaskCardCompact task={activeTask} onClick={() => {}} isDragging={true} displaySettings={boardDisplaySettings} />
             </div>
           ) : null}
         </DragOverlay>

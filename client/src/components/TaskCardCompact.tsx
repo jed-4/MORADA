@@ -3,7 +3,14 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Calendar, Flag, Pencil, DollarSign, GripVertical } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Calendar, Flag, Pencil, DollarSign, GripVertical, MoreHorizontal, Trash2 } from "lucide-react";
 import { Task, type FieldCategoryWithOptions } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -20,6 +27,8 @@ interface TaskCardCompactProps {
     showDueDate?: boolean;
     showPriority?: boolean;
   };
+  onDelete?: (task: Task) => void;
+  showActions?: boolean;
 }
 
 // Status colors matching Asana 2025
@@ -45,7 +54,7 @@ const getInitials = (name: string | null | undefined): string => {
   return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 };
 
-export default function TaskCardCompact({ task, onClick, isDragging = false, displaySettings }: TaskCardCompactProps) {
+export default function TaskCardCompact({ task, onClick, isDragging = false, displaySettings, onDelete, showActions = false }: TaskCardCompactProps) {
   const [isHovered, setIsHovered] = useState(false);
   const { toast } = useToast();
 
@@ -156,10 +165,30 @@ export default function TaskCardCompact({ task, onClick, isDragging = false, dis
             </Badge>
           )}
 
-          {/* Pencil icon on hover */}
-          {isHovered && (
+          {/* Actions menu on hover */}
+          {showActions && isHovered && onDelete ? (
+            <div onClick={(e) => e.stopPropagation()}>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-5 w-5 shrink-0">
+                    <MoreHorizontal className="h-3 w-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    className="text-destructive"
+                    onClick={() => onDelete(task)}
+                    data-testid={`delete-task-${task.id}`}
+                  >
+                    <Trash2 className="h-3 w-3 mr-2" />
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          ) : isHovered ? (
             <Pencil className="h-3 w-3 text-muted-foreground shrink-0" />
-          )}
+          ) : null}
         </div>
 
         {/* Bottom row: Status, Due date & Assignee */}
