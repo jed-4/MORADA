@@ -598,7 +598,12 @@ export function ProjectBoard({
           title: status.name,
           color: status.color || "#6b7280",
           systemPhase: status.systemPhase || status.key, // Phase itself
-          filterFn: (p: Project) => p.projectStatus === status.key,
+          // Filter by currentSystemPhase for consistency with Header dropdown
+          // Fall back to projectStatus for projects without currentSystemPhase set
+          filterFn: (p: Project) => {
+            const phase = p.currentSystemPhase || p.projectStatus;
+            return phase === status.key || phase === status.systemPhase;
+          },
         }))
       : subStatuses.map(status => ({
           id: status.key,
@@ -677,8 +682,9 @@ export function ProjectBoard({
       newStatus?: string;
       newSubStatus?: string;
     }) => {
+      // When moving by phase, update both projectStatus and currentSystemPhase for consistency
       const updateData = preferences.groupBy === "phase" 
-        ? { projectStatus: newStatus }
+        ? { projectStatus: newStatus, currentSystemPhase: newStatus }
         : { projectSubStatus: newSubStatus };
       
       await apiRequest(`/api/projects/${projectId}`, "PATCH", updateData);
@@ -699,7 +705,8 @@ export function ProjectBoard({
             if (project.id === projectId) {
               return {
                 ...project,
-                ...(newStatus ? { projectStatus: newStatus } : {}),
+                // When moving by phase, also update currentSystemPhase for consistency
+                ...(newStatus ? { projectStatus: newStatus, currentSystemPhase: newStatus } : {}),
                 ...(newSubStatus ? { projectSubStatus: newSubStatus } : {}),
               };
             }

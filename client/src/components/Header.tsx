@@ -274,7 +274,7 @@ export default function Header() {
               <Kanban className="h-3.5 w-3.5" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-56 p-0">
+          <DropdownMenuContent align="start" className="w-56 p-0 overflow-hidden">
             {/* Phase selector row with search toggle */}
             <div className="flex items-center px-2 py-1.5 border-b">
               <div className="flex-1 flex items-center justify-center gap-1">
