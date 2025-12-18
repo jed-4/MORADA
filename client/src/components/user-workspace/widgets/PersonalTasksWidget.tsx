@@ -1,38 +1,72 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { CheckSquare, Clock, AlertCircle, Plus } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { 
+  CheckSquare, 
+  Clock, 
+  AlertCircle, 
+  Plus, 
+  Circle,
+  ChevronDown,
+  ChevronRight,
+  Folder
+} from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { type Task, type Project } from "@shared/schema";
-import { useLocation } from "wouter";
 import TaskModalAsana from "@/components/TaskModalAsana";
+import { format, isToday, isTomorrow, isBefore, startOfDay, addDays, isWithinInterval } from "date-fns";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+
+type FilterType = 'all' | 'overdue' | 'today' | 'upcoming' | 'high-priority';
+type GroupByType = 'none' | 'project' | 'dueDate' | 'priority';
+
+interface WidgetConfig {
+  maxTasks?: number;
+  showFilter?: FilterType;
+  groupBy?: GroupByType;
+  showCompleted?: boolean;
+  projectFilter?: string;
+}
 
 export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId }: WidgetProps) {
-  const maxTasks = widget.config?.maxTasks || 8;
-  const showFilter = widget.config?.showFilter ?? 'all';
+  const config = widget.config as WidgetConfig || {};
+  const maxTasks = config.maxTasks || 10;
+  const showFilter = config.showFilter ?? 'all';
+  const groupBy = config.groupBy ?? 'none';
+  const showCompleted = config.showCompleted ?? false;
+  const projectFilter = config.projectFilter ?? 'all';
+
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const [configMaxTasks, setConfigMaxTasks] = useState(maxTasks);
-  const [configShowFilter, setConfigShowFilter] = useState(showFilter);
+  const [configShowFilter, setConfigShowFilter] = useState<FilterType>(showFilter);
+  const [configGroupBy, setConfigGroupBy] = useState<GroupByType>(groupBy);
+  const [configShowCompleted, setConfigShowCompleted] = useState(showCompleted);
+  const [configProjectFilter, setConfigProjectFilter] = useState(projectFilter);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [, setLocation] = useLocation();
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setEditingTitle(widget.title);
-    setConfigMaxTasks(widget.config?.maxTasks || 8);
-    setConfigShowFilter(widget.config?.showFilter ?? 'all');
+    setConfigMaxTasks(config.maxTasks || 10);
+    setConfigShowFilter(config.showFilter ?? 'all');
+    setConfigGroupBy(config.groupBy ?? 'none');
+    setConfigShowCompleted(config.showCompleted ?? false);
+    setConfigProjectFilter(config.projectFilter ?? 'all');
   }, [widget.title, widget.config]);
 
   const { data: tasks = [], isLoading } = useQuery<Task[]>({
     queryKey: ["/api/tasks", { assigneeId: userId }],
     queryFn: async () => {
       if (!userId) return [];
-      const response = await fetch(`/api/tasks?assigneeId=${userId}`, {
-        credentials: 'include'
-      });
+      const response = await fetch(`/api/tasks?assigneeId=${userId}`, { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to fetch tasks');
       return response.json();
     },
@@ -43,55 +77,143 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
     queryKey: ["/api/projects"],
   });
 
-  const projectMap = new Map(projects.map(p => [p.id, p]));
+  const projectMap = useMemo(() => new Map(projects.map(p => [p.id, p])), [projects]);
+  const today = startOfDay(new Date());
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  
-  const activeTasks = tasks.filter(t => t.status !== 'done' && t.status !== 'complete');
-  
-  const filteredTasks = activeTasks.filter(task => {
-    if (showFilter === 'all') return true;
-    if (showFilter === 'overdue') {
-      if (!task.dueDate) return false;
-      return new Date(task.dueDate) < today;
-    }
-    if (showFilter === 'today') {
-      if (!task.dueDate) return false;
-      return new Date(task.dueDate).toDateString() === today.toDateString();
-    }
-    if (showFilter === 'upcoming') {
-      if (!task.dueDate) return false;
-      const dueDate = new Date(task.dueDate);
-      const weekFromNow = new Date(today);
-      weekFromNow.setDate(weekFromNow.getDate() + 7);
-      return dueDate >= today && dueDate <= weekFromNow;
-    }
-    return true;
+  const toggleTaskMutation = useMutation({
+    mutationFn: async (task: Task) => {
+      const newStatus = task.status === 'done' || task.status === 'complete' ? 'todo' : 'done';
+      return apiRequest("PATCH", `/api/tasks/${task.id}`, { status: newStatus });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+    },
   });
 
-  const displayTasks = filteredTasks.slice(0, maxTasks);
+  const filteredTasks = useMemo(() => {
+    let result = tasks;
 
-  const getTaskStatus = (task: Task) => {
-    if (!task.dueDate) return { color: '', icon: null, label: '' };
+    if (!showCompleted) {
+      result = result.filter(t => t.status !== 'done' && t.status !== 'complete');
+    }
+
+    if (projectFilter !== 'all') {
+      result = result.filter(t => t.projectId === projectFilter);
+    }
+
+    switch (showFilter) {
+      case 'overdue':
+        result = result.filter(t => t.dueDate && isBefore(new Date(t.dueDate), today));
+        break;
+      case 'today':
+        result = result.filter(t => t.dueDate && isToday(new Date(t.dueDate)));
+        break;
+      case 'upcoming':
+        result = result.filter(t => {
+          if (!t.dueDate) return false;
+          const due = new Date(t.dueDate);
+          return isWithinInterval(due, { start: today, end: addDays(today, 7) });
+        });
+        break;
+      case 'high-priority':
+        result = result.filter(t => t.priority === 'high' || t.priority === 'urgent');
+        break;
+    }
+
+    return result.slice(0, maxTasks);
+  }, [tasks, showFilter, showCompleted, projectFilter, maxTasks, today]);
+
+  const groupedTasks = useMemo(() => {
+    if (groupBy === 'none') {
+      return [{ key: 'all', label: '', tasks: filteredTasks }];
+    }
+
+    const groups = new Map<string, { label: string; tasks: Task[]; color?: string }>();
+
+    filteredTasks.forEach(task => {
+      let key: string;
+      let label: string;
+      let color: string | undefined;
+
+      switch (groupBy) {
+        case 'project':
+          key = task.projectId || 'no-project';
+          const project = task.projectId ? projectMap.get(task.projectId) : null;
+          label = project?.name || 'No Project';
+          color = project?.color || undefined;
+          break;
+        case 'dueDate':
+          if (!task.dueDate) {
+            key = 'no-date';
+            label = 'No Due Date';
+          } else if (isBefore(new Date(task.dueDate), today)) {
+            key = 'overdue';
+            label = 'Overdue';
+          } else if (isToday(new Date(task.dueDate))) {
+            key = 'today';
+            label = 'Today';
+          } else if (isTomorrow(new Date(task.dueDate))) {
+            key = 'tomorrow';
+            label = 'Tomorrow';
+          } else {
+            key = 'later';
+            label = 'Later';
+          }
+          break;
+        case 'priority':
+          key = task.priority || 'none';
+          label = task.priority ? task.priority.charAt(0).toUpperCase() + task.priority.slice(1) : 'No Priority';
+          break;
+        default:
+          key = 'all';
+          label = '';
+      }
+
+      if (!groups.has(key)) {
+        groups.set(key, { label, tasks: [], color });
+      }
+      groups.get(key)!.tasks.push(task);
+    });
+
+    return Array.from(groups.entries()).map(([key, value]) => ({ key, ...value }));
+  }, [filteredTasks, groupBy, projectMap, today]);
+
+  const getTaskDueInfo = (task: Task) => {
+    if (!task.dueDate) return null;
     const dueDate = new Date(task.dueDate);
-    if (dueDate < today) {
-      return { 
-        color: 'text-red-600 dark:text-red-400', 
-        bgColor: 'bg-red-50 dark:bg-red-900/20',
-        icon: <AlertCircle className="h-3 w-3" />,
-        label: 'Overdue'
-      };
+    
+    if (isBefore(dueDate, today)) {
+      return { label: format(dueDate, 'MMM d'), color: 'text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30' };
     }
-    if (dueDate.toDateString() === today.toDateString()) {
-      return { 
-        color: 'text-amber-600 dark:text-amber-400', 
-        bgColor: 'bg-amber-50 dark:bg-amber-900/20',
-        icon: <Clock className="h-3 w-3" />,
-        label: 'Today'
-      };
+    if (isToday(dueDate)) {
+      return { label: 'Today', color: 'text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30' };
     }
-    return { color: '', bgColor: '', icon: null, label: '' };
+    if (isTomorrow(dueDate)) {
+      return { label: 'Tomorrow', color: 'text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30' };
+    }
+    return { label: format(dueDate, 'MMM d'), color: 'text-muted-foreground bg-muted' };
+  };
+
+  const getPriorityColor = (priority: string | null | undefined) => {
+    switch (priority) {
+      case 'urgent': return 'border-l-red-500';
+      case 'high': return 'border-l-orange-500';
+      case 'medium': return 'border-l-yellow-500';
+      case 'low': return 'border-l-green-500';
+      default: return 'border-l-transparent';
+    }
+  };
+
+  const toggleGroup = (key: string) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
   };
 
   if (isConfiguring) {
@@ -100,7 +222,14 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
         onUpdate({
           ...widget,
           title: editingTitle,
-          config: { ...widget.config, maxTasks: configMaxTasks, showFilter: configShowFilter }
+          config: {
+            ...widget.config,
+            maxTasks: configMaxTasks,
+            showFilter: configShowFilter,
+            groupBy: configGroupBy,
+            showCompleted: configShowCompleted,
+            projectFilter: configProjectFilter,
+          }
         });
       }
       onCloseConfig?.();
@@ -108,8 +237,11 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
 
     const handleCancelConfig = () => {
       setEditingTitle(widget.title);
-      setConfigMaxTasks(widget.config?.maxTasks || 8);
-      setConfigShowFilter(widget.config?.showFilter ?? 'all');
+      setConfigMaxTasks(config.maxTasks || 10);
+      setConfigShowFilter(config.showFilter ?? 'all');
+      setConfigGroupBy(config.groupBy ?? 'none');
+      setConfigShowCompleted(config.showCompleted ?? false);
+      setConfigProjectFilter(config.projectFilter ?? 'all');
       onCloseConfig?.();
     };
 
@@ -129,16 +261,48 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
         
         <div className="space-y-2">
           <Label className="text-xs">Filter</Label>
-          <select 
-            value={configShowFilter}
-            onChange={(e) => setConfigShowFilter(e.target.value)}
-            className="w-full h-7 text-xs border rounded px-2"
-          >
-            <option value="all">All Active Tasks</option>
-            <option value="overdue">Overdue Only</option>
-            <option value="today">Due Today</option>
-            <option value="upcoming">Due This Week</option>
-          </select>
+          <Select value={configShowFilter} onValueChange={(v) => setConfigShowFilter(v as FilterType)}>
+            <SelectTrigger className="h-7 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Active Tasks</SelectItem>
+              <SelectItem value="overdue">Overdue Only</SelectItem>
+              <SelectItem value="today">Due Today</SelectItem>
+              <SelectItem value="upcoming">Due This Week</SelectItem>
+              <SelectItem value="high-priority">High Priority</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label className="text-xs">Project</Label>
+          <Select value={configProjectFilter} onValueChange={setConfigProjectFilter}>
+            <SelectTrigger className="h-7 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Projects</SelectItem>
+              {projects.map(p => (
+                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label className="text-xs">Group By</Label>
+          <Select value={configGroupBy} onValueChange={(v) => setConfigGroupBy(v as GroupByType)}>
+            <SelectTrigger className="h-7 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">No Grouping</SelectItem>
+              <SelectItem value="project">Project</SelectItem>
+              <SelectItem value="dueDate">Due Date</SelectItem>
+              <SelectItem value="priority">Priority</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         
         <div className="space-y-2">
@@ -146,10 +310,18 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
           <Input 
             type="number"
             min={1}
-            max={20}
+            max={30}
             value={configMaxTasks}
-            onChange={(e) => setConfigMaxTasks(parseInt(e.target.value) || 8)}
+            onChange={(e) => setConfigMaxTasks(parseInt(e.target.value) || 10)}
             className="h-7 text-xs w-20"
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <Label className="text-xs">Show Completed</Label>
+          <Switch 
+            checked={configShowCompleted} 
+            onCheckedChange={setConfigShowCompleted}
           />
         </div>
         
@@ -166,19 +338,19 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
   }
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <div className="text-xs text-muted-foreground">
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-[11px] text-muted-foreground">
           {filteredTasks.length} task{filteredTasks.length !== 1 ? 's' : ''}
         </div>
         <Button 
           size="icon" 
           variant="ghost" 
-          className="h-6 w-6"
+          className="h-5 w-5"
           onClick={() => setShowCreateDialog(true)}
           data-testid="button-add-task-widget"
         >
-          <Plus className="h-3.5 w-3.5" />
+          <Plus className="h-3 w-3" />
         </Button>
       </div>
       
@@ -194,56 +366,144 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
         taskId={selectedTaskId || undefined}
       />
       
-      <div className="space-y-1">
-        {isLoading ? (
-          <div className="space-y-1">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="animate-pulse p-2 border rounded-md">
-                <div className="h-3 bg-muted rounded w-3/4 mb-1"></div>
-                <div className="h-2 bg-muted rounded w-1/2"></div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          displayTasks.map((task) => {
-            const status = getTaskStatus(task);
-            const project = task.projectId ? projectMap.get(task.projectId) : null;
-            return (
-              <div 
-                key={task.id}
-                className={`p-2 border rounded-md hover-elevate cursor-pointer ${status.bgColor}`}
-                onClick={() => setSelectedTaskId(task.id)}
-                data-testid={`personal-task-${task.id}`}
-              >
-                <div className="flex items-start gap-2">
-                  <CheckSquare className="h-3 w-3 text-muted-foreground mt-0.5 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium truncate leading-tight">{task.title}</p>
-                    <div className="flex items-center gap-1 mt-0.5">
-                      {project && (
-                        <span className="text-[10px] text-muted-foreground truncate max-w-[100px]">
-                          {project.name}
-                        </span>
+      <ScrollArea className="flex-1">
+        <div className="space-y-2 pr-2">
+          {isLoading ? (
+            <div className="space-y-1">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="animate-pulse h-7 bg-muted rounded" />
+              ))}
+            </div>
+          ) : filteredTasks.length === 0 ? (
+            <div className="text-center py-4 text-xs text-muted-foreground">
+              No tasks match your filters
+            </div>
+          ) : groupBy === 'none' ? (
+            <div className="space-y-0.5">
+              {filteredTasks.map((task) => {
+                const dueInfo = getTaskDueInfo(task);
+                const project = task.projectId ? projectMap.get(task.projectId) : null;
+                const isCompleted = task.status === 'done' || task.status === 'complete';
+                
+                return (
+                  <div 
+                    key={task.id}
+                    className={`flex items-center gap-2 py-1.5 px-2 rounded border-l-2 hover-elevate cursor-pointer ${getPriorityColor(task.priority)} ${isCompleted ? 'opacity-50' : ''}`}
+                    onClick={() => setSelectedTaskId(task.id)}
+                    data-testid={`personal-task-${task.id}`}
+                  >
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleTaskMutation.mutate(task);
+                      }}
+                      className="flex-shrink-0"
+                    >
+                      {isCompleted ? (
+                        <CheckSquare className="h-3.5 w-3.5 text-green-500" />
+                      ) : (
+                        <Circle className="h-3.5 w-3.5 text-muted-foreground" />
                       )}
-                      {status.icon && (
-                        <Badge className={`${status.color} text-[10px] px-1 py-0 h-4`}>
-                          {status.label}
-                        </Badge>
-                      )}
-                    </div>
+                    </button>
+                    
+                    {project?.color && (
+                      <div 
+                        className="w-1.5 h-1.5 rounded-full flex-shrink-0" 
+                        style={{ backgroundColor: project.color }}
+                        title={project.name}
+                      />
+                    )}
+                    
+                    <span className={`text-[11px] flex-1 truncate ${isCompleted ? 'line-through' : ''}`}>
+                      {task.title}
+                    </span>
+                    
+                    {dueInfo && (
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${dueInfo.color}`}>
+                        {dueInfo.label}
+                      </span>
+                    )}
                   </div>
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
-      
-      {displayTasks.length === 0 && !isLoading && (
-        <div className="text-center py-3 text-xs text-muted-foreground">
-          No tasks
+                );
+              })}
+            </div>
+          ) : (
+            groupedTasks.map((group) => (
+              <Collapsible 
+                key={group.key} 
+                open={!collapsedGroups.has(group.key)}
+                onOpenChange={() => toggleGroup(group.key)}
+              >
+                <CollapsibleTrigger className="flex items-center gap-2 w-full py-1 px-2 rounded bg-muted/50 hover-elevate cursor-pointer">
+                  {collapsedGroups.has(group.key) ? (
+                    <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                  ) : (
+                    <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                  )}
+                  {group.color && (
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: group.color }} />
+                  )}
+                  {!group.color && groupBy === 'project' && (
+                    <Folder className="h-3 w-3 text-muted-foreground" />
+                  )}
+                  <span className="text-[11px] font-medium flex-1 text-left">{group.label}</span>
+                  <Badge variant="secondary" className="text-[9px] h-4 px-1">
+                    {group.tasks.length}
+                  </Badge>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="pt-1 space-y-0.5 ml-2">
+                  {group.tasks.map((task) => {
+                    const dueInfo = getTaskDueInfo(task);
+                    const project = task.projectId ? projectMap.get(task.projectId) : null;
+                    const isCompleted = task.status === 'done' || task.status === 'complete';
+                    
+                    return (
+                      <div 
+                        key={task.id}
+                        className={`flex items-center gap-2 py-1.5 px-2 rounded border-l-2 hover-elevate cursor-pointer ${getPriorityColor(task.priority)} ${isCompleted ? 'opacity-50' : ''}`}
+                        onClick={() => setSelectedTaskId(task.id)}
+                        data-testid={`personal-task-${task.id}`}
+                      >
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleTaskMutation.mutate(task);
+                          }}
+                          className="flex-shrink-0"
+                        >
+                          {isCompleted ? (
+                            <CheckSquare className="h-3.5 w-3.5 text-green-500" />
+                          ) : (
+                            <Circle className="h-3.5 w-3.5 text-muted-foreground" />
+                          )}
+                        </button>
+                        
+                        {groupBy !== 'project' && project?.color && (
+                          <div 
+                            className="w-1.5 h-1.5 rounded-full flex-shrink-0" 
+                            style={{ backgroundColor: project.color }}
+                            title={project.name}
+                          />
+                        )}
+                        
+                        <span className={`text-[11px] flex-1 truncate ${isCompleted ? 'line-through' : ''}`}>
+                          {task.title}
+                        </span>
+                        
+                        {groupBy !== 'dueDate' && dueInfo && (
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${dueInfo.color}`}>
+                            {dueInfo.label}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </CollapsibleContent>
+              </Collapsible>
+            ))
+          )}
         </div>
-      )}
+      </ScrollArea>
     </div>
   );
 }
