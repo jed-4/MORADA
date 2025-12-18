@@ -73,7 +73,7 @@ function DayColumn({
                 key={event.id}
                 className="flex items-center gap-0.5 px-1 py-0.5 rounded border text-[10px] cursor-pointer hover-elevate"
                 style={{
-                  backgroundColor: event.projectColor ? `${event.projectColor}15` : 'hsl(var(--muted))',
+                  backgroundColor: event.projectColor ? `${event.projectColor}e6` : 'hsl(var(--card))',
                   borderColor: event.projectColor || 'hsl(var(--border))',
                 }}
                 title={`${event.title}${event.startTime ? ` at ${event.startTime}` : ''}`}

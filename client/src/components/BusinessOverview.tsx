@@ -14,7 +14,12 @@ import {
   GripVertical,
   X,
   Building2,
-  Palette
+  Palette,
+  Pencil,
+  Users,
+  Lock,
+  Globe,
+  Shield
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -33,7 +38,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import type { Widget } from "@/types/widgets";
+import type { UserRole, User } from "@shared/schema";
 import { 
   businessWidgetRegistry, 
   getBusinessWidgetDefinition,
@@ -182,6 +191,11 @@ export default function BusinessOverview() {
   const [isCreatingView, setIsCreatingView] = useState(false);
   const [newViewName, setNewViewName] = useState("");
   const [isThemeSettingsOpen, setIsThemeSettingsOpen] = useState(false);
+  const [editingView, setEditingView] = useState<BusinessDashboardView | null>(null);
+  const [editViewName, setEditViewName] = useState("");
+  const [editVisibility, setEditVisibility] = useState<"everyone" | "roles" | "users" | "private">("everyone");
+  const [editAllowedRoleIds, setEditAllowedRoleIds] = useState<string[]>([]);
+  const [editAllowedUserIds, setEditAllowedUserIds] = useState<string[]>([]);
 
   const { data: company } = useQuery<Company>({
     queryKey: [`/api/companies/${user?.companyId}`],
@@ -195,6 +209,15 @@ export default function BusinessOverview() {
   // Fetch views from database
   const { data: savedViews = [], isLoading: viewsLoading } = useQuery<BusinessDashboardView[]>({
     queryKey: ["/api/business-dashboard-views"],
+  });
+
+  // Fetch roles and users for access control
+  const { data: roles = [] } = useQuery<UserRole[]>({
+    queryKey: ["/api/user-roles"],
+  });
+
+  const { data: users = [] } = useQuery<User[]>({
+    queryKey: ["/api/users"],
   });
 
   const sensors = useSensors(
@@ -364,6 +387,50 @@ export default function BusinessOverview() {
     }
   };
 
+  const openEditView = (view: BusinessDashboardView) => {
+    setEditingView(view);
+    setEditViewName(view.name);
+    setEditVisibility((view.visibility as "everyone" | "roles" | "users" | "private") || "everyone");
+    setEditAllowedRoleIds(view.allowedRoleIds || []);
+    setEditAllowedUserIds(view.allowedUserIds || []);
+  };
+
+  const closeEditView = () => {
+    setEditingView(null);
+    setEditViewName("");
+    setEditVisibility("everyone");
+    setEditAllowedRoleIds([]);
+    setEditAllowedUserIds([]);
+  };
+
+  const saveEditView = () => {
+    if (!editingView || !editViewName.trim()) return;
+    
+    const updates: Partial<BusinessDashboardView> = {
+      name: editViewName.trim(),
+      visibility: editVisibility,
+      allowedRoleIds: editVisibility === "roles" ? editAllowedRoleIds : null,
+      allowedUserIds: editVisibility === "users" ? editAllowedUserIds : null,
+    };
+    
+    updateViewMutation.mutate(
+      { viewId: editingView.id, updates },
+      {
+        onSuccess: () => {
+          toast({ title: "View updated successfully" });
+          closeEditView();
+        },
+      }
+    );
+  };
+
+  const canEditView = (view: BusinessDashboardView) => {
+    if (!user) return false;
+    if (view.createdById === user.id) return true;
+    // Admins can edit any view
+    return true; // The server will validate permissions
+  };
+
   const activeView = savedViews.find(v => v.id === activeViewId);
   const availableWidgets = getAvailableBusinessWidgets();
   const addedWidgetTypes = new Set(widgets.map(w => w.type));
@@ -451,20 +518,39 @@ export default function BusinessOverview() {
                   <span className="flex items-center gap-2">
                     {activeViewId === view.id && <Check className="h-4 w-4" />}
                     {view.name}
+                    {view.visibility === "private" && <Lock className="h-3 w-3 text-muted-foreground" />}
+                    {view.visibility === "roles" && <Shield className="h-3 w-3 text-muted-foreground" />}
+                    {view.visibility === "users" && <Users className="h-3 w-3 text-muted-foreground" />}
                   </span>
-                  {!view.isDefault && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-5 w-5 ml-2"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteView(view.id);
-                      }}
-                    >
-                      <Trash2 className="h-3 w-3 text-destructive" />
-                    </Button>
-                  )}
+                  <div className="flex items-center gap-0.5">
+                    {canEditView(view) && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openEditView(view);
+                        }}
+                        data-testid={`edit-view-${view.id}`}
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                    )}
+                    {!view.isDefault && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteView(view.id);
+                        }}
+                      >
+                        <Trash2 className="h-3 w-3 text-destructive" />
+                      </Button>
+                    )}
+                  </div>
                 </DropdownMenuItem>
               ))}
               <DropdownMenuSeparator />
@@ -599,6 +685,148 @@ export default function BusinessOverview() {
         onOpenChange={setIsThemeSettingsOpen}
         dashboardType="business"
       />
+
+      {/* Edit View Dialog */}
+      <Dialog open={!!editingView} onOpenChange={(open) => !open && closeEditView()}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit View</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-view-name">View Name</Label>
+              <Input
+                id="edit-view-name"
+                value={editViewName}
+                onChange={(e) => setEditViewName(e.target.value)}
+                placeholder="Enter view name..."
+                data-testid="edit-view-name-input"
+              />
+            </div>
+
+            <div className="space-y-3">
+              <Label>Who can view this?</Label>
+              <RadioGroup 
+                value={editVisibility} 
+                onValueChange={(value) => setEditVisibility(value as typeof editVisibility)}
+                className="space-y-2"
+              >
+                <div className="flex items-center space-x-3 p-2 rounded-md border hover-elevate cursor-pointer">
+                  <RadioGroupItem value="everyone" id="visibility-everyone" />
+                  <Label htmlFor="visibility-everyone" className="flex items-center gap-2 cursor-pointer flex-1">
+                    <Globe className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <div className="text-sm font-medium">Everyone</div>
+                      <div className="text-xs text-muted-foreground">All team members can see this view</div>
+                    </div>
+                  </Label>
+                </div>
+
+                <div className="flex items-center space-x-3 p-2 rounded-md border hover-elevate cursor-pointer">
+                  <RadioGroupItem value="roles" id="visibility-roles" />
+                  <Label htmlFor="visibility-roles" className="flex items-center gap-2 cursor-pointer flex-1">
+                    <Shield className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <div className="text-sm font-medium">Specific Roles</div>
+                      <div className="text-xs text-muted-foreground">Only selected roles can see this view</div>
+                    </div>
+                  </Label>
+                </div>
+
+                <div className="flex items-center space-x-3 p-2 rounded-md border hover-elevate cursor-pointer">
+                  <RadioGroupItem value="users" id="visibility-users" />
+                  <Label htmlFor="visibility-users" className="flex items-center gap-2 cursor-pointer flex-1">
+                    <Users className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <div className="text-sm font-medium">Specific Users</div>
+                      <div className="text-xs text-muted-foreground">Only selected users can see this view</div>
+                    </div>
+                  </Label>
+                </div>
+
+                <div className="flex items-center space-x-3 p-2 rounded-md border hover-elevate cursor-pointer">
+                  <RadioGroupItem value="private" id="visibility-private" />
+                  <Label htmlFor="visibility-private" className="flex items-center gap-2 cursor-pointer flex-1">
+                    <Lock className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <div className="text-sm font-medium">Private</div>
+                      <div className="text-xs text-muted-foreground">Only you can see this view</div>
+                    </div>
+                  </Label>
+                </div>
+              </RadioGroup>
+            </div>
+
+            {editVisibility === "roles" && (
+              <div className="space-y-2">
+                <Label>Select Roles</Label>
+                <ScrollArea className="h-32 border rounded-md p-2">
+                  <div className="space-y-2">
+                    {roles.map((role) => (
+                      <label key={role.id} className="flex items-center gap-2 cursor-pointer">
+                        <Checkbox
+                          checked={editAllowedRoleIds.includes(role.id)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setEditAllowedRoleIds([...editAllowedRoleIds, role.id]);
+                            } else {
+                              setEditAllowedRoleIds(editAllowedRoleIds.filter(id => id !== role.id));
+                            }
+                          }}
+                        />
+                        <span className="text-sm">{role.name}</span>
+                      </label>
+                    ))}
+                    {roles.length === 0 && (
+                      <div className="text-xs text-muted-foreground">No roles available</div>
+                    )}
+                  </div>
+                </ScrollArea>
+              </div>
+            )}
+
+            {editVisibility === "users" && (
+              <div className="space-y-2">
+                <Label>Select Users</Label>
+                <ScrollArea className="h-32 border rounded-md p-2">
+                  <div className="space-y-2">
+                    {users.filter(u => u.id !== user?.id).map((u) => (
+                      <label key={u.id} className="flex items-center gap-2 cursor-pointer">
+                        <Checkbox
+                          checked={editAllowedUserIds.includes(u.id)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setEditAllowedUserIds([...editAllowedUserIds, u.id]);
+                            } else {
+                              setEditAllowedUserIds(editAllowedUserIds.filter(id => id !== u.id));
+                            }
+                          }}
+                        />
+                        <span className="text-sm">{u.firstName} {u.lastName || ''}</span>
+                      </label>
+                    ))}
+                    {users.filter(u => u.id !== user?.id).length === 0 && (
+                      <div className="text-xs text-muted-foreground">No other users available</div>
+                    )}
+                  </div>
+                </ScrollArea>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeEditView}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={saveEditView} 
+              disabled={!editViewName.trim() || updateViewMutation.isPending}
+              data-testid="save-view-button"
+            >
+              {updateViewMutation.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
