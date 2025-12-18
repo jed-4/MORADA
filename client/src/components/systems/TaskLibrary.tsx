@@ -84,6 +84,13 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
   const { toast } = useToast();
   const { categoryOptions, getCategoryInfo } = useTaskTemplateCategoryOptions();
 
+  // Filter state
+  const [filterCategory, setFilterCategory] = useState<string>("all");
+  const [filterRole, setFilterRole] = useState<string>("all");
+  const [filterFrequency, setFilterFrequency] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterActive, setFilterActive] = useState<string>("all");
+
   // Sorting state
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -548,7 +555,36 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
       : <ArrowDown className="h-3.5 w-3.5 text-gray-700" />;
   };
 
-  const sortedTemplates = [...templates].sort((a, b) => {
+  // Filter templates
+  const filteredTemplates = templates.filter(template => {
+    const matchesSearch = !searchQuery || 
+      template.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      template.description?.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    const matchesCategory = filterCategory === "all" || template.category === filterCategory;
+    const matchesRole = filterRole === "all" || template.defaultRoleId === filterRole;
+    const matchesFrequency = filterFrequency === "all" || 
+      (filterFrequency === "recurring" && template.isRecurringTemplate) ||
+      (filterFrequency === "once" && !template.isRecurringTemplate);
+    const matchesStatus = filterStatus === "all" || template.status === filterStatus;
+    const matchesActive = filterActive === "all" || 
+      (filterActive === "active" && template.isActive) ||
+      (filterActive === "inactive" && !template.isActive);
+    
+    return matchesSearch && matchesCategory && matchesRole && matchesFrequency && matchesStatus && matchesActive;
+  });
+
+  const hasActiveFilters = filterCategory !== "all" || filterRole !== "all" || filterFrequency !== "all" || filterStatus !== "all" || filterActive !== "all";
+
+  const clearAllFilters = () => {
+    setFilterCategory("all");
+    setFilterRole("all");
+    setFilterFrequency("all");
+    setFilterStatus("all");
+    setFilterActive("all");
+  };
+
+  const sortedTemplates = [...filteredTemplates].sort((a, b) => {
     if (!sortColumn) return 0;
     
     const direction = sortDirection === 'asc' ? 1 : -1;
@@ -604,11 +640,99 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
 
   return (
     <div className="flex flex-col h-full">
+      {/* Filter Row */}
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-background flex-shrink-0 overflow-x-auto">
+        <Select value={filterCategory} onValueChange={setFilterCategory}>
+          <SelectTrigger className="h-7 w-32 text-xs flex-shrink-0" data-testid="filter-category">
+            <SelectValue placeholder="Category" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Categories</SelectItem>
+            {categoryOptions.map((cat) => (
+              <SelectItem key={cat.value} value={cat.value}>
+                {"  ".repeat(cat.depth || 0)}{cat.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={filterRole} onValueChange={setFilterRole}>
+          <SelectTrigger className="h-7 w-28 text-xs flex-shrink-0" data-testid="filter-role">
+            <SelectValue placeholder="Role" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Roles</SelectItem>
+            {roles.map((role) => (
+              <SelectItem key={role.id} value={role.id}>{role.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={filterFrequency} onValueChange={setFilterFrequency}>
+          <SelectTrigger className="h-7 w-28 text-xs flex-shrink-0" data-testid="filter-frequency">
+            <SelectValue placeholder="Frequency" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All</SelectItem>
+            <SelectItem value="recurring">Recurring</SelectItem>
+            <SelectItem value="once">One-time</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select value={filterStatus} onValueChange={setFilterStatus}>
+          <SelectTrigger className="h-7 w-28 text-xs flex-shrink-0" data-testid="filter-status">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            <SelectItem value="published">Published</SelectItem>
+            <SelectItem value="draft">Draft</SelectItem>
+            <SelectItem value="archived">Archived</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select value={filterActive} onValueChange={setFilterActive}>
+          <SelectTrigger className="h-7 w-24 text-xs flex-shrink-0" data-testid="filter-active">
+            <SelectValue placeholder="Active" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All</SelectItem>
+            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="inactive">Inactive</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {hasActiveFilters && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs flex-shrink-0"
+            onClick={clearAllFilters}
+            data-testid="button-clear-filters"
+          >
+            <X className="h-3 w-3 mr-1" />
+            Clear
+          </Button>
+        )}
+
+        <div className="ml-auto flex-shrink-0">
+          <Badge variant="secondary" className="text-xs">
+            {filteredTemplates.length} / {templates.length}
+          </Badge>
+        </div>
+      </div>
+
       <div className="flex-1 overflow-auto p-3">
         {templates.length === 0 ? (
           <Card className="p-8">
             <div className="text-center text-muted-foreground">
               No task templates yet. Create your first template to get started.
+            </div>
+          </Card>
+        ) : filteredTemplates.length === 0 ? (
+          <Card className="p-8">
+            <div className="text-center text-muted-foreground">
+              No templates match your filters. Try adjusting your filters.
             </div>
           </Card>
         ) : (
