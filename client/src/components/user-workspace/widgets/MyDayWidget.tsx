@@ -335,7 +335,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
         open={!isCollapsed}
         onOpenChange={() => toggleCollapsed(sectionConfig.id)}
       >
-        <CollapsibleTrigger className="flex items-center gap-2 w-full p-1.5 rounded-md hover-elevate cursor-pointer">
+        <CollapsibleTrigger className="flex items-center gap-2 w-full p-2 rounded-md bg-muted/50 border hover-elevate cursor-pointer">
           {isCollapsed ? (
             <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
           ) : (
