@@ -1,25 +1,45 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { 
   Sun, 
-  CheckSquare, 
-  Calendar, 
-  Bell, 
-  Clock,
-  ArrowRight,
   Circle,
-  CheckCircle2
+  Bell,
+  ChevronDown,
+  ChevronRight,
+  GripVertical,
+  AlertTriangle,
+  CheckSquare,
+  CalendarDays
 } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { format, isToday, parseISO, isBefore, startOfDay } from "date-fns";
+import { format, isToday, isBefore, startOfDay } from "date-fns";
 import { type Task } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import TaskModalAsana from "@/components/TaskModalAsana";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 interface Reminder {
   id: string;
@@ -32,7 +52,68 @@ interface ScheduleItem {
   id: string;
   title: string;
   startDate: string;
+  startTime?: string;
   endDate?: string;
+  projectId?: string;
+}
+
+interface SectionConfig {
+  id: string;
+  visible: boolean;
+  collapsed: boolean;
+}
+
+const DEFAULT_SECTIONS: SectionConfig[] = [
+  { id: "overdue", visible: true, collapsed: false },
+  { id: "today", visible: true, collapsed: false },
+  { id: "schedule", visible: true, collapsed: false },
+];
+
+const SECTION_LABELS: Record<string, { label: string; icon: typeof AlertTriangle }> = {
+  overdue: { label: "Overdue", icon: AlertTriangle },
+  today: { label: "Today's Tasks", icon: CheckSquare },
+  schedule: { label: "Today's Schedule", icon: CalendarDays },
+};
+
+function SortableSectionItem({ 
+  section, 
+  onToggleVisible,
+}: { 
+  section: SectionConfig;
+  onToggleVisible: (id: string) => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+  } = useSortable({ id: section.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  const sectionDef = SECTION_LABELS[section.id];
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center gap-2 p-2 border rounded-md bg-background"
+    >
+      <button {...attributes} {...listeners} className="cursor-grab">
+        <GripVertical className="h-4 w-4 text-muted-foreground" />
+      </button>
+      <sectionDef.icon className="h-4 w-4 text-muted-foreground" />
+      <span className="text-sm flex-1">{sectionDef.label}</span>
+      <Switch
+        checked={section.visible}
+        onCheckedChange={() => onToggleVisible(section.id)}
+      />
+    </div>
+  );
 }
 
 export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId }: WidgetProps) {
@@ -41,9 +122,34 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
   const [, setLocation] = useLocation();
   const today = startOfDay(new Date());
 
+  const sections: SectionConfig[] = useMemo(() => {
+    const saved = widget.config?.sections as SectionConfig[] | undefined;
+    if (saved && Array.isArray(saved) && saved.length > 0) {
+      const existingIds = new Set(saved.map(s => s.id));
+      const missingSections = DEFAULT_SECTIONS.filter(s => !existingIds.has(s.id));
+      return [...saved, ...missingSections];
+    }
+    return DEFAULT_SECTIONS;
+  }, [widget.config?.sections]);
+
+  const [editingSections, setEditingSections] = useState<SectionConfig[]>(sections);
+  const [collapsedState, setCollapsedState] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {};
+    sections.forEach(s => { initial[s.id] = s.collapsed; });
+    return initial;
+  });
+
   useEffect(() => {
     setEditingTitle(widget.title);
-  }, [widget.title]);
+    setEditingSections(sections);
+  }, [widget.title, sections]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   const { data: tasks = [], isLoading: tasksLoading } = useQuery<Task[]>({
     queryKey: ["/api/tasks", { assigneeId: userId }],
@@ -56,63 +162,94 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
     enabled: !!userId,
   });
 
-  const { data: reminders = [], isLoading: remindersLoading } = useQuery<Reminder[]>({
-    queryKey: ["/api/reminders", userId],
+  const { data: scheduleItems = [], isLoading: scheduleLoading } = useQuery<ScheduleItem[]>({
+    queryKey: ["/api/schedule-items", { date: format(today, 'yyyy-MM-dd') }],
     queryFn: async () => {
-      if (!userId) return [];
-      const response = await fetch('/api/reminders', { credentials: 'include' });
+      const todayStr = format(today, 'yyyy-MM-dd');
+      const response = await fetch(`/api/schedule-items?startDate=${todayStr}&endDate=${todayStr}`, { credentials: 'include' });
       if (!response.ok) return [];
-      return response.json();
+      const items = await response.json();
+      return items.filter((item: ScheduleItem) => {
+        const itemDate = new Date(item.startDate);
+        return isToday(itemDate);
+      });
     },
-    enabled: !!userId,
+    enabled: !!userId && sections.some(s => s.id === 'schedule' && s.visible),
   });
 
-  const todaysTasks = tasks.filter(t => {
+  const todaysTasks = useMemo(() => tasks.filter(t => {
     if (t.status === 'done' || t.status === 'complete') return false;
     if (!t.dueDate) return false;
     return isToday(new Date(t.dueDate));
-  });
+  }), [tasks]);
 
-  const overdueTasks = tasks.filter(t => {
+  const overdueTasks = useMemo(() => tasks.filter(t => {
     if (t.status === 'done' || t.status === 'complete') return false;
     if (!t.dueDate) return false;
     return isBefore(new Date(t.dueDate), today);
-  });
-
-  const todaysReminders = reminders.filter(r => {
-    if (r.status === 'dismissed') return false;
-    return isToday(new Date(r.triggerAt));
-  });
-
-  const completedToday = tasks.filter(t => {
-    if (t.status !== 'done' && t.status !== 'complete') return false;
-    if (!t.updatedAt) return false;
-    return isToday(new Date(t.updatedAt));
-  });
+  }), [tasks, today]);
 
   const toggleTaskMutation = useMutation({
     mutationFn: async (task: Task) => {
       const newStatus = task.status === 'done' || task.status === 'complete' ? 'todo' : 'done';
-      return apiRequest(`/api/tasks/${task.id}`, "PATCH", { status: newStatus });
+      return apiRequest("PATCH", `/api/tasks/${task.id}`, { status: newStatus });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
     },
   });
 
-  const totalItems = todaysTasks.length + todaysReminders.length;
-  const isLoading = tasksLoading || remindersLoading;
+  const toggleCollapsed = (sectionId: string) => {
+    setCollapsedState(prev => {
+      const newState = { ...prev, [sectionId]: !prev[sectionId] };
+      if (onUpdate) {
+        const updatedSections = sections.map(s => ({
+          ...s,
+          collapsed: s.id === sectionId ? !prev[sectionId] : prev[s.id] ?? s.collapsed
+        }));
+        onUpdate({ 
+          ...widget, 
+          config: { ...widget.config, sections: updatedSections } 
+        });
+      }
+      return newState;
+    });
+  };
+
+  const isLoading = tasksLoading || scheduleLoading;
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setEditingSections((items) => {
+        const oldIndex = items.findIndex(i => i.id === active.id);
+        const newIndex = items.findIndex(i => i.id === over.id);
+        return arrayMove(items, oldIndex, newIndex);
+      });
+    }
+  };
+
+  const handleToggleVisible = (sectionId: string) => {
+    setEditingSections(prev => prev.map(s => 
+      s.id === sectionId ? { ...s, visible: !s.visible } : s
+    ));
+  };
 
   if (isConfiguring) {
     const handleSaveConfig = () => {
       if (onUpdate) {
-        onUpdate({ ...widget, title: editingTitle });
+        onUpdate({ 
+          ...widget, 
+          title: editingTitle,
+          config: { ...widget.config, sections: editingSections }
+        });
       }
       onCloseConfig?.();
     };
 
     const handleCancelConfig = () => {
       setEditingTitle(widget.title);
+      setEditingSections(sections);
       onCloseConfig?.();
     };
 
@@ -128,6 +265,28 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
             placeholder="Widget title"
           />
         </div>
+        
+        <div className="space-y-2">
+          <Label className="text-xs">Sections (drag to reorder)</Label>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext items={editingSections.map(s => s.id)} strategy={verticalListSortingStrategy}>
+              <div className="space-y-1">
+                {editingSections.map(section => (
+                  <SortableSectionItem
+                    key={section.id}
+                    section={section}
+                    onToggleVisible={handleToggleVisible}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+          </DndContext>
+        </div>
+
         <div className="flex justify-end gap-2 pt-2">
           <Button size="sm" variant="outline" onClick={handleCancelConfig} className="h-6 px-2 text-xs">
             Cancel
@@ -140,27 +299,121 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
     );
   }
 
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">{format(new Date(), 'EEEE, MMMM d')}</span>
-        </div>
-      </div>
+  const visibleSections = sections.filter(s => s.visible);
+  const hasAnyItems = overdueTasks.length > 0 || todaysTasks.length > 0 || scheduleItems.length > 0;
 
-      <div className="grid grid-cols-3 gap-2 text-center">
-        <div className="p-2 rounded-md bg-muted/50">
-          <div className="text-lg font-semibold">{todaysTasks.length}</div>
-          <div className="text-[10px] text-muted-foreground">Due Today</div>
-        </div>
-        <div className="p-2 rounded-md bg-muted/50">
-          <div className="text-lg font-semibold text-red-600 dark:text-red-400">{overdueTasks.length}</div>
-          <div className="text-[10px] text-muted-foreground">Overdue</div>
-        </div>
-        <div className="p-2 rounded-md bg-muted/50">
-          <div className="text-lg font-semibold text-green-600 dark:text-green-400">{completedToday.length}</div>
-          <div className="text-[10px] text-muted-foreground">Done Today</div>
-        </div>
+  const renderSection = (sectionConfig: SectionConfig) => {
+    const isCollapsed = collapsedState[sectionConfig.id] ?? sectionConfig.collapsed;
+    const sectionDef = SECTION_LABELS[sectionConfig.id];
+    
+    let items: any[] = [];
+    let emptyMessage = "";
+    let itemColor = "";
+    
+    switch (sectionConfig.id) {
+      case "overdue":
+        items = overdueTasks;
+        emptyMessage = "No overdue tasks";
+        itemColor = "text-red-600 dark:text-red-400";
+        break;
+      case "today":
+        items = todaysTasks;
+        emptyMessage = "No tasks due today";
+        itemColor = "";
+        break;
+      case "schedule":
+        items = scheduleItems;
+        emptyMessage = "No schedule items today";
+        itemColor = "text-blue-600 dark:text-blue-400";
+        break;
+    }
+
+    const count = items.length;
+
+    return (
+      <Collapsible 
+        key={sectionConfig.id} 
+        open={!isCollapsed}
+        onOpenChange={() => toggleCollapsed(sectionConfig.id)}
+      >
+        <CollapsibleTrigger className="flex items-center gap-2 w-full p-1.5 rounded-md hover-elevate cursor-pointer">
+          {isCollapsed ? (
+            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+          ) : (
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+          )}
+          <sectionDef.icon className={`h-3.5 w-3.5 ${sectionConfig.id === 'overdue' ? 'text-red-500' : 'text-muted-foreground'}`} />
+          <span className={`text-xs font-medium flex-1 text-left ${sectionConfig.id === 'overdue' && count > 0 ? 'text-red-600 dark:text-red-400' : ''}`}>
+            {sectionDef.label}
+          </span>
+          <Badge variant={sectionConfig.id === 'overdue' && count > 0 ? "destructive" : "secondary"} className="text-[10px] h-4 px-1.5">
+            {count}
+          </Badge>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="pt-1 space-y-1">
+          {items.length === 0 ? (
+            <div className="text-[10px] text-muted-foreground pl-6 py-1">{emptyMessage}</div>
+          ) : (
+            <>
+              {sectionConfig.id === "schedule" ? (
+                items.map((item: ScheduleItem) => (
+                  <div 
+                    key={item.id}
+                    className="flex items-center gap-2 p-1.5 rounded-md border hover-elevate cursor-pointer ml-4"
+                    onClick={() => item.projectId && setLocation(`/projects/${item.projectId}/schedule`)}
+                    data-testid={`myday-schedule-${item.id}`}
+                  >
+                    <CalendarDays className="h-3.5 w-3.5 text-blue-500 flex-shrink-0" />
+                    <span className="text-xs truncate flex-1">{item.title}</span>
+                    {item.startTime && (
+                      <span className="text-[10px] text-muted-foreground">{item.startTime}</span>
+                    )}
+                  </div>
+                ))
+              ) : (
+                (items as Task[]).slice(0, 5).map((task) => (
+                  <div 
+                    key={task.id}
+                    className={`flex items-center gap-2 p-1.5 rounded-md border hover-elevate cursor-pointer ml-4 ${
+                      sectionConfig.id === 'overdue' ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800' : ''
+                    }`}
+                    onClick={() => setSelectedTaskId(task.id)}
+                    data-testid={`myday-task-${task.id}`}
+                  >
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleTaskMutation.mutate(task);
+                      }}
+                      className="flex-shrink-0"
+                    >
+                      <Circle className={`h-3.5 w-3.5 ${sectionConfig.id === 'overdue' ? 'text-red-500' : 'text-muted-foreground'}`} />
+                    </button>
+                    <span className="text-xs truncate flex-1">{task.title}</span>
+                    {task.dueDate && (
+                      <span className="text-[10px] text-muted-foreground">
+                        {format(new Date(task.dueDate), 'MMM d')}
+                      </span>
+                    )}
+                  </div>
+                ))
+              )}
+              {items.length > 5 && sectionConfig.id !== "schedule" && (
+                <div className="text-[10px] text-muted-foreground pl-6 py-0.5">
+                  +{items.length - 5} more
+                </div>
+              )}
+            </>
+          )}
+        </CollapsibleContent>
+      </Collapsible>
+    );
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-muted-foreground">{format(new Date(), 'EEEE, MMMM d')}</span>
       </div>
 
       {isLoading ? (
@@ -171,101 +424,23 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
             </div>
           ))}
         </div>
-      ) : totalItems === 0 && overdueTasks.length === 0 ? (
+      ) : visibleSections.length === 0 ? (
+        <div className="text-center py-4 text-xs text-muted-foreground">
+          <Sun className="h-8 w-8 mx-auto mb-2 text-amber-400" />
+          <p>No sections enabled</p>
+          <p className="text-muted-foreground">Configure widget to show sections</p>
+        </div>
+      ) : !hasAnyItems ? (
         <div className="text-center py-4 text-xs text-muted-foreground">
           <Sun className="h-8 w-8 mx-auto mb-2 text-amber-400" />
           <p className="font-medium">All clear for today!</p>
-          <p className="text-muted-foreground">No tasks or reminders due</p>
+          <p className="text-muted-foreground">No tasks or schedule items</p>
         </div>
       ) : (
-        <div className="space-y-2">
-          {overdueTasks.length > 0 && (
-            <div className="space-y-1">
-              <div className="text-[10px] font-medium text-red-600 dark:text-red-400 uppercase tracking-wide">
-                Overdue
-              </div>
-              {overdueTasks.slice(0, 3).map(task => (
-                <div 
-                  key={task.id}
-                  className="flex items-center gap-2 p-1.5 rounded-md bg-red-50 dark:bg-red-900/20 hover-elevate cursor-pointer"
-                  onClick={() => setSelectedTaskId(task.id)}
-                  data-testid={`myday-task-${task.id}`}
-                >
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleTaskMutation.mutate(task);
-                    }}
-                    className="flex-shrink-0"
-                  >
-                    <Circle className="h-3.5 w-3.5 text-red-500" />
-                  </button>
-                  <span className="text-xs truncate flex-1">{task.title}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {todaysTasks.length > 0 && (
-            <div className="space-y-1">
-              <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
-                Tasks
-              </div>
-              {todaysTasks.slice(0, 5).map(task => (
-                <div 
-                  key={task.id}
-                  className="flex items-center gap-2 p-1.5 rounded-md border hover-elevate cursor-pointer"
-                  onClick={() => setSelectedTaskId(task.id)}
-                  data-testid={`myday-task-${task.id}`}
-                >
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleTaskMutation.mutate(task);
-                    }}
-                    className="flex-shrink-0"
-                  >
-                    <Circle className="h-3.5 w-3.5 text-muted-foreground" />
-                  </button>
-                  <span className="text-xs truncate flex-1">{task.title}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {todaysReminders.length > 0 && (
-            <div className="space-y-1">
-              <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
-                Reminders
-              </div>
-              {todaysReminders.slice(0, 3).map(reminder => (
-                <div 
-                  key={reminder.id}
-                  className="flex items-center gap-2 p-1.5 rounded-md border hover-elevate cursor-pointer"
-                  onClick={() => userId && setLocation(`/users/${userId}/reminders`)}
-                  data-testid={`myday-reminder-${reminder.id}`}
-                >
-                  <Bell className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" />
-                  <span className="text-xs truncate flex-1">{reminder.title}</span>
-                  <span className="text-[10px] text-muted-foreground">
-                    {format(new Date(reminder.triggerAt), 'h:mm a')}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
+        <div className="space-y-1">
+          {visibleSections.map(section => renderSection(section))}
         </div>
       )}
-
-      <Button
-        variant="ghost"
-        size="sm"
-        className="w-full h-6 text-xs text-muted-foreground"
-        onClick={() => setLocation('/calendar')}
-        data-testid="myday-view-calendar"
-      >
-        View Calendar <ArrowRight className="h-3 w-3 ml-1" />
-      </Button>
       
       <TaskModalAsana
         open={!!selectedTaskId}
