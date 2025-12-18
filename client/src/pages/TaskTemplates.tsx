@@ -90,6 +90,11 @@ export default function TaskTemplates() {
   const { toast } = useToast();
   const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
+  const [filterCategory, setFilterCategory] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterRole, setFilterRole] = useState<string>("all");
+  const [filterTag, setFilterTag] = useState<string>("all");
+  const [filterRecurring, setFilterRecurring] = useState<string>("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<TaskTemplate | null>(null);
   const [formData, setFormData] = useState<TaskTemplateFormData>({
@@ -414,12 +419,22 @@ export default function TaskTemplates() {
     }));
   };
 
-  const filteredTemplates = templates.filter(
-    template =>
+  const filteredTemplates = templates.filter(template => {
+    const matchesSearch = 
       template.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       template.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      getCategoryBreadcrumb(template.categoryId).toLowerCase().includes(searchTerm.toLowerCase())
-  );
+      getCategoryBreadcrumb(template.categoryId).toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesCategory = filterCategory === "all" || template.categoryId === filterCategory;
+    const matchesStatus = filterStatus === "all" || template.statusId === filterStatus;
+    const matchesRole = filterRole === "all" || template.defaultRoleId === filterRole;
+    const matchesTag = filterTag === "all" || (template.tagIds as string[] | null)?.includes(filterTag);
+    const matchesRecurring = filterRecurring === "all" || 
+      (filterRecurring === "yes" && template.isRecurringTemplate) ||
+      (filterRecurring === "no" && !template.isRecurringTemplate);
+    
+    return matchesSearch && matchesCategory && matchesStatus && matchesRole && matchesTag && matchesRecurring;
+  });
 
   const getChecklistCount = (template: TaskTemplate) => {
     const checklist = template.checklist as Array<{ text: string; completed: boolean }> | null;
@@ -461,8 +476,8 @@ export default function TaskTemplates() {
       </div>
 
       {/* Row 2 - Search & Filters (36px) */}
-      <div className="h-9 bg-background flex items-center px-2 gap-4 flex-shrink-0 border-b border-border">
-        <div className="relative flex-1 max-w-sm">
+      <div className="h-9 bg-background flex items-center px-2 gap-2 flex-shrink-0 border-b border-border overflow-x-auto">
+        <div className="relative flex-shrink-0 w-48">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input
             placeholder="Search templates..."
@@ -472,6 +487,86 @@ export default function TaskTemplates() {
             data-testid="input-search-templates"
           />
         </div>
+        
+        <Select value={filterCategory} onValueChange={setFilterCategory}>
+          <SelectTrigger className="h-7 w-32 text-xs flex-shrink-0" data-testid="select-filter-category">
+            <SelectValue placeholder="Category" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Categories</SelectItem>
+            {buildCategoryTree().map((cat) => (
+              <SelectItem key={cat.id} value={cat.id}>
+                {"  ".repeat(cat.depth)}{cat.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={filterStatus} onValueChange={setFilterStatus}>
+          <SelectTrigger className="h-7 w-28 text-xs flex-shrink-0" data-testid="select-filter-status">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            {statuses.map((status) => (
+              <SelectItem key={status.id} value={status.id}>{status.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={filterRole} onValueChange={setFilterRole}>
+          <SelectTrigger className="h-7 w-28 text-xs flex-shrink-0" data-testid="select-filter-role">
+            <SelectValue placeholder="Role" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Roles</SelectItem>
+            {userRoles.map((role: any) => (
+              <SelectItem key={role.id} value={role.id}>{role.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={filterTag} onValueChange={setFilterTag}>
+          <SelectTrigger className="h-7 w-28 text-xs flex-shrink-0" data-testid="select-filter-tag">
+            <SelectValue placeholder="Tag" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Tags</SelectItem>
+            {tags.map((tag) => (
+              <SelectItem key={tag.id} value={tag.id}>{tag.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={filterRecurring} onValueChange={setFilterRecurring}>
+          <SelectTrigger className="h-7 w-28 text-xs flex-shrink-0" data-testid="select-filter-recurring">
+            <SelectValue placeholder="Recurring" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All</SelectItem>
+            <SelectItem value="yes">Recurring</SelectItem>
+            <SelectItem value="no">One-time</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {(filterCategory !== "all" || filterStatus !== "all" || filterRole !== "all" || filterTag !== "all" || filterRecurring !== "all") && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs flex-shrink-0"
+            onClick={() => {
+              setFilterCategory("all");
+              setFilterStatus("all");
+              setFilterRole("all");
+              setFilterTag("all");
+              setFilterRecurring("all");
+            }}
+            data-testid="button-clear-filters"
+          >
+            <X className="h-3 w-3 mr-1" />
+            Clear
+          </Button>
+        )}
       </div>
 
       {/* Content */}
@@ -484,9 +579,11 @@ export default function TaskTemplates() {
           <div className="flex flex-col items-center justify-center h-32 text-center">
             <CheckSquare className="h-8 w-8 text-muted-foreground mb-2" />
             <p className="text-sm text-muted-foreground">
-              {searchTerm ? "No templates match your search" : "No task templates yet"}
+              {searchTerm || filterCategory !== "all" || filterStatus !== "all" || filterRole !== "all" || filterTag !== "all" || filterRecurring !== "all"
+                ? "No templates match your filters" 
+                : "No task templates yet"}
             </p>
-            {!searchTerm && (
+            {!searchTerm && filterCategory === "all" && filterStatus === "all" && filterRole === "all" && filterTag === "all" && filterRecurring === "all" && (
               <Button
                 variant="outline"
                 size="sm"
