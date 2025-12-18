@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { 
   Plus, 
   Settings, 
@@ -11,7 +13,8 @@ import {
   Trash2,
   GripVertical,
   X,
-  Palette
+  Palette,
+  Pencil
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -172,7 +175,7 @@ function SortableWidget({
           widget={widget}
           onUpdate={onUpdate}
           onRemove={onRemove}
-          isConfiguring={isConfiguring}
+          isConfiguring={false}
           onCloseConfig={() => onConfigure(null)}
           userId={userId}
         />
@@ -189,6 +192,8 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
   const [configuringWidget, setConfiguringWidget] = useState<string | null>(null);
   const [isCreatingView, setIsCreatingView] = useState(false);
   const [isThemeSettingsOpen, setIsThemeSettingsOpen] = useState(false);
+  const [editingView, setEditingView] = useState<DashboardView | null>(null);
+  const [editViewName, setEditViewName] = useState("");
 
   // Fetch user dashboard theme
   const { data: theme } = useQuery<DashboardTheme | null>({
@@ -290,6 +295,23 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
       setWidgets(newActiveView.widgets);
       localStorage.setItem(activeViewKey, newActiveView.id);
     }
+  };
+
+  const openEditViewModal = (view: DashboardView) => {
+    setEditingView(view);
+    setEditViewName(view.name);
+  };
+
+  const saveEditView = () => {
+    if (!editingView || !editViewName.trim()) return;
+    
+    const updatedViews = savedViews.map(v => 
+      v.id === editingView.id ? { ...v, name: editViewName.trim() } : v
+    );
+    setSavedViews(updatedViews);
+    saveViews(updatedViews);
+    setEditingView(null);
+    setEditViewName("");
   };
 
   const addWidget = (type: string) => {
@@ -426,18 +448,30 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
                       <Check className="w-3 h-3 text-[#bba7db] flex-shrink-0" />
                     )}
                   </button>
-                  {savedViews.length > 1 && view.id !== "overview" && (
+                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        deleteView(view.id);
+                        openEditViewModal(view);
                       }}
-                      className="opacity-0 group-hover:opacity-100 p-1 hover:bg-destructive/10 rounded text-muted-foreground hover:text-destructive transition-opacity"
-                      data-testid={`button-delete-view-${view.id}`}
+                      className="p-1 hover:bg-accent rounded text-muted-foreground hover:text-foreground"
+                      data-testid={`button-edit-view-${view.id}`}
                     >
-                      <Trash2 className="w-3 h-3" />
+                      <Pencil className="w-3 h-3" />
                     </button>
-                  )}
+                    {savedViews.length > 1 && view.id !== "overview" && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteView(view.id);
+                        }}
+                        className="p-1 hover:bg-destructive/10 rounded text-muted-foreground hover:text-destructive"
+                        data-testid={`button-delete-view-${view.id}`}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
@@ -586,6 +620,72 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
         onOpenChange={setIsThemeSettingsOpen}
         dashboardType="user"
       />
+
+      {/* Edit View Modal */}
+      <Dialog open={!!editingView} onOpenChange={(open) => !open && setEditingView(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-sm">Edit View</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label className="text-xs">View Name</Label>
+              <Input
+                value={editViewName}
+                onChange={(e) => setEditViewName(e.target.value)}
+                placeholder="Enter view name"
+                className="h-8 text-sm"
+                data-testid="input-edit-view-name"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => setEditingView(null)}
+              >
+                Cancel
+              </Button>
+              <Button 
+                size="sm"
+                onClick={saveEditView}
+                data-testid="button-save-view"
+              >
+                Save
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Widget Config Modal */}
+      <Dialog open={!!configuringWidget} onOpenChange={(open) => !open && setConfiguringWidget(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-sm flex items-center gap-2">
+              <Settings className="h-4 w-4 text-[#bba7db]" />
+              Configure Widget
+            </DialogTitle>
+          </DialogHeader>
+          {configuringWidget && (() => {
+            const configWidget = widgets.find(w => w.id === configuringWidget);
+            if (!configWidget) return null;
+            const definition = getPersonalWidgetDefinition(configWidget.type);
+            if (!definition) return null;
+            const WidgetComponent = definition.component;
+            return (
+              <WidgetComponent
+                widget={configWidget}
+                onUpdate={updateWidget}
+                onRemove={removeWidget}
+                isConfiguring={true}
+                onCloseConfig={() => setConfiguringWidget(null)}
+                userId={currentUserId}
+              />
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

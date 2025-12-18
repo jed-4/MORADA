@@ -270,6 +270,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
       <TaskModalAsana
         open={!!selectedTaskId}
         onOpenChange={(open) => !open && setSelectedTaskId(null)}
+        task={tasks.find(t => t.id === selectedTaskId)}
         taskId={selectedTaskId || undefined}
       />
     </div>

@@ -190,6 +190,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
       <TaskModalAsana
         open={!!selectedTaskId}
         onOpenChange={(open) => !open && setSelectedTaskId(null)}
+        task={tasks.find(t => t.id === selectedTaskId)}
         taskId={selectedTaskId || undefined}
       />
       

@@ -80,13 +80,25 @@ type TaskFormData = z.infer<typeof taskFormSchema>;
 
 interface TaskModalAsanaProps {
   task?: Task;
+  taskId?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projectId?: string;
   initialStatus?: string;
 }
 
-export default function TaskModalAsana({ task, open, onOpenChange, projectId, initialStatus }: TaskModalAsanaProps) {
+export default function TaskModalAsana({ task: propTask, taskId, open, onOpenChange, projectId, initialStatus }: TaskModalAsanaProps) {
+  const { data: fetchedTask } = useQuery<Task>({
+    queryKey: ["/api/tasks", taskId],
+    queryFn: async () => {
+      const response = await fetch(`/api/tasks/${taskId}`, { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to fetch task");
+      return response.json();
+    },
+    enabled: !!taskId && open && !propTask,
+  });
+
+  const task = propTask || fetchedTask;
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleValue, setTitleValue] = useState(task?.title || "");
   const [subtaskInput, setSubtaskInput] = useState("");

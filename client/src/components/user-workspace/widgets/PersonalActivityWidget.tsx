@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
   Activity, 
   MessageSquare, 
@@ -10,28 +11,18 @@ import {
   FileText, 
   DollarSign,
   Eye,
-  Clock
+  Clock,
+  Briefcase,
+  Building2,
+  Users,
+  Calendar
 } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { formatDistanceToNow } from "date-fns";
 import { getUserDisplayName } from "@/lib/utils";
-
-interface ActivityItem {
-  id: string;
-  type: string;
-  action: string;
-  entityType: string;
-  entityId: string;
-  entityName?: string;
-  projectId?: string;
-  projectName?: string;
-  userId: string;
-  user?: { firstName?: string; lastName?: string; email?: string };
-  createdAt: string;
-  metadata?: Record<string, any>;
-}
+import type { User, Project, Activity as ActivityType } from "@shared/schema";
 
 const ACTIVITY_ICONS: Record<string, any> = {
   task: CheckSquare,
@@ -39,6 +30,8 @@ const ACTIVITY_ICONS: Record<string, any> = {
   note: FileText,
   estimate: DollarSign,
   bill: DollarSign,
+  project: Building2,
+  user: Users,
   default: Activity,
 };
 
@@ -61,55 +54,53 @@ export default function PersonalActivityWidget({ widget, onUpdate, isConfiguring
     setConfigMaxItems(widget.config?.maxItems || 8);
   }, [widget.title, widget.config]);
 
-  const { data: projects = [] } = useQuery<any[]>({
+  const { data: activities = [], isLoading } = useQuery<ActivityType[]>({
+    queryKey: ["/api/activities"],
+  });
+
+  const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
   });
 
-  const { data: tasks = [] } = useQuery<any[]>({
-    queryKey: ["/api/tasks", "user", userId],
-    queryFn: async () => {
-      if (!userId) return [];
-      const response = await fetch(`/api/tasks?assigneeId=${userId}`, { credentials: 'include' });
-      if (!response.ok) return [];
-      return response.json();
-    },
-    enabled: !!userId,
+  const { data: users = [] } = useQuery<User[]>({
+    queryKey: ["/api/users"],
   });
 
-  const recentlyUpdatedTasks = tasks
-    .filter(t => t.updatedAt && new Date(t.updatedAt) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
-    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+  const getUserName = (id: string | null) => {
+    if (!id) return "System";
+    const user = users.find(u => u.id === id);
+    if (user) return getUserDisplayName(user);
+    return "Unknown User";
+  };
+
+  const getProjectName = (projectId: string | null) => {
+    if (!projectId) return null;
+    const project = projects.find(p => p.id === projectId);
+    return project?.name || null;
+  };
+
+  const getProjectColor = (projectId: string | null) => {
+    if (!projectId) return '#6b7280';
+    const project = projects.find(p => p.id === projectId);
+    return project?.color || '#6b7280';
+  };
+
+  const displayActivities = activities
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, maxItems);
-
-  const activities: ActivityItem[] = recentlyUpdatedTasks.map(task => {
-    const project = projects.find(p => p.id === task.projectId);
-    return {
-      id: task.id,
-      type: 'task',
-      action: task.status === 'done' || task.status === 'complete' ? 'completed' : 'updated',
-      entityType: 'task',
-      entityId: task.id,
-      entityName: task.title,
-      projectId: task.projectId,
-      projectName: project?.name,
-      userId: task.assigneeId || userId,
-      createdAt: task.updatedAt,
-    };
-  });
-
-  const isLoading = false;
-
-  const displayActivities = activities.slice(0, maxItems);
 
   const getActivityIcon = (type: string) => {
     const Icon = ACTIVITY_ICONS[type] || ACTIVITY_ICONS.default;
     return Icon;
   };
 
-  const formatAction = (activity: ActivityItem) => {
-    const userName = activity.user ? getUserDisplayName(activity.user) : 'Someone';
-    const entityName = activity.entityName || activity.entityType;
-    return `${userName} ${activity.action} ${entityName}`;
+  const getActionColor = (action: string) => {
+    if (action.includes("created")) return ACTION_COLORS.created;
+    if (action.includes("updated")) return ACTION_COLORS.updated;
+    if (action.includes("completed")) return ACTION_COLORS.completed;
+    if (action.includes("deleted")) return ACTION_COLORS.deleted;
+    if (action.includes("commented")) return ACTION_COLORS.commented;
+    return "text-muted-foreground";
   };
 
   if (isConfiguring) {
@@ -195,8 +186,10 @@ export default function PersonalActivityWidget({ widget, onUpdate, isConfiguring
           </div>
         ) : (
           displayActivities.map((activity) => {
-            const Icon = getActivityIcon(activity.entityType);
-            const actionColor = ACTION_COLORS[activity.action] || 'text-muted-foreground';
+            const Icon = getActivityIcon(activity.type);
+            const actionColor = getActionColor(activity.action);
+            const projectName = getProjectName(activity.projectId);
+            const projectColor = getProjectColor(activity.projectId);
             
             return (
               <div 
@@ -213,16 +206,24 @@ export default function PersonalActivityWidget({ widget, onUpdate, isConfiguring
                   <Icon className={`h-3.5 w-3.5 mt-0.5 flex-shrink-0 ${actionColor}`} />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs truncate leading-tight">
-                      {formatAction(activity)}
+                      {activity.description}
                     </p>
-                    <div className="flex items-center gap-2 mt-0.5">
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
                       <span className="text-[10px] text-muted-foreground">
+                        {getUserName(activity.userId)}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                        <Clock className="h-2.5 w-2.5" />
                         {formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}
                       </span>
-                      {activity.projectName && (
-                        <Badge variant="secondary" className="text-[9px] h-4 px-1">
-                          {activity.projectName}
-                        </Badge>
+                      {projectName && (
+                        <span 
+                          className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full text-white font-medium"
+                          style={{ backgroundColor: projectColor }}
+                        >
+                          <Briefcase className="h-2.5 w-2.5" />
+                          {projectName}
+                        </span>
                       )}
                     </div>
                   </div>

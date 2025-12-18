@@ -191,19 +191,19 @@ export default function ActionableEstimatesWidget({
   }
 
   return (
-    <div className="flex flex-col h-full -m-3">
-      <div className="flex-1 overflow-y-auto min-h-0">
-        <div className="divide-y">
-          {actionableEstimates.map(estimate => {
-            const statusConfig = STATUS_CONFIG[estimate.status] || STATUS_CONFIG.draft;
-            const StatusIcon = statusConfig.icon;
+    <div className="space-y-2">
+      <div className="space-y-1">
+        {actionableEstimates.map(estimate => {
+          const statusConfig = STATUS_CONFIG[estimate.status] || STATUS_CONFIG.draft;
+          const StatusIcon = statusConfig.icon;
 
-            return (
-              <Link
-                key={estimate.id}
-                href={`/projects/${estimate.projectId}/estimates/${estimate.id}`}
-                className="block px-3 py-2 hover-elevate cursor-pointer"
-              >
+          return (
+            <Link
+              key={estimate.id}
+              href={`/projects/${estimate.projectId}/estimates/${estimate.id}`}
+              className="block"
+            >
+              <div className="p-2 border rounded-md hover-elevate cursor-pointer">
                 <div className="flex items-start gap-2">
                   <div
                     className={`flex-shrink-0 w-5 h-5 rounded-sm flex items-center justify-center text-white ${statusConfig.color}`}
@@ -217,30 +217,31 @@ export default function ActionableEstimatesWidget({
                         v{estimate.version}
                       </Badge>
                     </div>
-                    <div className="flex items-center gap-1.5 mt-0.5">
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                        <Clock className="h-2.5 w-2.5" />
+                        {formatDistanceToNow(new Date(estimate.updatedAt), { addSuffix: true })}
+                      </span>
                       {estimate.projectName && (
                         <span 
-                          className="text-[10px] truncate"
-                          style={{ color: estimate.projectColor || 'inherit' }}
+                          className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full text-white font-medium"
+                          style={{ backgroundColor: estimate.projectColor || '#6b7280' }}
                         >
                           {estimate.projectName}
                         </span>
                       )}
-                      <span className="text-[10px] text-muted-foreground">
-                        {formatDistanceToNow(new Date(estimate.updatedAt), { addSuffix: true })}
-                      </span>
                     </div>
                   </div>
-                  <ChevronRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                  <ChevronRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 mt-0.5" />
                 </div>
-              </Link>
-            );
-          })}
-        </div>
+              </div>
+            </Link>
+          );
+        })}
       </div>
 
       {estimates.filter(e => e.status !== "approved").length > actionableEstimates.length && (
-        <div className="flex-shrink-0 px-3 py-1.5 border-t bg-muted/30">
+        <div className="pt-1">
           <Link href="/estimates">
             <Button variant="ghost" size="sm" className="w-full h-6 text-[10px]">
               View all {estimates.filter(e => e.status !== "approved").length} estimates
