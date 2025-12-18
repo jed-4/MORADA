@@ -4,7 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Calendar, ChevronLeft, ChevronRight, CheckSquare, CalendarDays, Timer, Bell } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Calendar, ChevronLeft, ChevronRight, CheckSquare, CalendarDays, Timer, Bell, Palette } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { usePersonalCalendarEvents, CalendarItem } from "./usePersonalCalendarEvents";
 import { 
@@ -19,12 +20,21 @@ import {
   startOfDay
 } from "date-fns";
 
+type ColorMode = "type" | "project" | "priority";
+
 const typeColors: Record<string, string> = {
-  task: "bg-blue-500",
-  schedule: "bg-emerald-500",
-  timesheet: "bg-amber-500",
-  "google-calendar": "bg-red-500",
-  reminder: "bg-purple-500",
+  task: "#3b82f6",
+  schedule: "#10b981",
+  timesheet: "#f59e0b",
+  "google-calendar": "#ef4444",
+  reminder: "#a855f7",
+};
+
+const priorityColors: Record<string, string> = {
+  high: "#ef4444",
+  medium: "#f59e0b",
+  low: "#3b82f6",
+  none: "#6b7280",
 };
 
 const typeIcons: Record<string, React.ReactNode> = {
@@ -35,14 +45,32 @@ const typeIcons: Record<string, React.ReactNode> = {
   reminder: <Bell className="h-2 w-2" />,
 };
 
+function getEventColor(event: CalendarItem, colorMode: ColorMode): string {
+  switch (colorMode) {
+    case "type":
+      return typeColors[event.type] || "#6b7280";
+    case "project":
+      return event.projectColor || "#6b7280";
+    case "priority":
+      if (event.type === "task" && event.priority) {
+        return priorityColors[event.priority] || priorityColors.none;
+      }
+      return typeColors[event.type] || "#6b7280";
+    default:
+      return event.projectColor || typeColors[event.type] || "#6b7280";
+  }
+}
+
 function DayColumn({ 
   date, 
   events, 
-  isCurrentDay 
+  isCurrentDay,
+  colorMode 
 }: { 
   date: Date; 
   events: CalendarItem[];
   isCurrentDay: boolean;
+  colorMode: ColorMode;
 }) {
   const [showAll, setShowAll] = useState(false);
   const dayEvents = events.filter(e => isSameDay(e.startDate, date));
@@ -68,22 +96,29 @@ function DayColumn({
           </div>
         ) : (
           <>
-            {visibleEvents.map(event => (
-              <div
-                key={event.id}
-                className="flex items-center gap-0.5 px-1 py-0.5 rounded border text-[10px] cursor-pointer hover-elevate"
-                style={{
-                  backgroundColor: event.projectColor ? `${event.projectColor}e6` : 'hsl(var(--card))',
-                  borderColor: event.projectColor || 'hsl(var(--border))',
-                }}
-                title={`${event.title}${event.startTime ? ` at ${event.startTime}` : ''}`}
-              >
-                <div className={`flex-shrink-0 w-3 h-3 rounded-sm flex items-center justify-center text-white ${typeColors[event.type]}`}>
-                  {typeIcons[event.type]}
+            {visibleEvents.map(event => {
+              const eventColor = getEventColor(event, colorMode);
+              return (
+                <div
+                  key={event.id}
+                  className="flex items-center gap-0.5 px-1 py-0.5 rounded border text-[10px] cursor-pointer hover-elevate"
+                  style={{
+                    backgroundColor: `${eventColor}20`,
+                    borderColor: eventColor,
+                    borderLeftWidth: '2px',
+                  }}
+                  title={`${event.title}${event.startTime ? ` at ${event.startTime}` : ''}`}
+                >
+                  <div 
+                    className="flex-shrink-0 w-3 h-3 rounded-sm flex items-center justify-center text-white"
+                    style={{ backgroundColor: typeColors[event.type] }}
+                  >
+                    {typeIcons[event.type]}
+                  </div>
+                  <span className="truncate flex-1 min-w-0">{event.title}</span>
                 </div>
-                <span className="truncate flex-1 min-w-0">{event.title}</span>
-              </div>
-            ))}
+              );
+            })}
             {hasMore && !showAll && (
               <button 
                 onClick={() => setShowAll(true)}
@@ -118,6 +153,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
     includeTimesheets: config.includeTimesheets ?? true,
     includeGoogleCalendar: config.includeGoogleCalendar ?? true,
     includeReminders: config.includeReminders ?? true,
+    colorMode: (config.colorMode as ColorMode) ?? "project",
   });
 
   useEffect(() => {
@@ -128,8 +164,11 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
       includeTimesheets: widget.config?.includeTimesheets ?? true,
       includeGoogleCalendar: widget.config?.includeGoogleCalendar ?? true,
       includeReminders: widget.config?.includeReminders ?? true,
+      colorMode: (widget.config?.colorMode as ColorMode) ?? "project",
     });
   }, [widget.title, widget.config]);
+  
+  const colorMode = (widget.config?.colorMode as ColorMode) ?? "project";
 
   const { events, isLoading } = usePersonalCalendarEvents({
     userId,
@@ -175,7 +214,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
             ].map(({ key, label, icon: Icon }) => (
               <label key={key} className="flex items-center gap-2 cursor-pointer">
                 <Checkbox
-                  checked={configState[key as keyof typeof configState]}
+                  checked={configState[key as keyof typeof configState] as boolean}
                   onCheckedChange={(checked) => 
                     setConfigState(prev => ({ ...prev, [key]: !!checked }))
                   }
@@ -185,6 +224,33 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
               </label>
             ))}
           </div>
+        </div>
+        
+        <div className="space-y-2">
+          <Label className="text-xs flex items-center gap-1.5">
+            <Palette className="h-3 w-3" />
+            Color By
+          </Label>
+          <Select
+            value={configState.colorMode}
+            onValueChange={(value: ColorMode) => 
+              setConfigState(prev => ({ ...prev, colorMode: value }))
+            }
+          >
+            <SelectTrigger className="h-7 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="project">Project Color</SelectItem>
+              <SelectItem value="type">Item Type</SelectItem>
+              <SelectItem value="priority">Priority (Tasks)</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-[10px] text-muted-foreground">
+            {configState.colorMode === "project" && "Events colored by their project"}
+            {configState.colorMode === "type" && "Events colored by type (task, schedule, etc.)"}
+            {configState.colorMode === "priority" && "Tasks colored by priority; other items by type"}
+          </p>
         </div>
         
         <div className="flex justify-end gap-2 pt-2">
@@ -239,7 +305,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
         <div className="flex-shrink-0 flex items-center gap-2 px-3 py-1 border-b text-[10px]">
           {legend.map(l => (
             <div key={l.type} className="flex items-center gap-1">
-              <div className={`w-2 h-2 rounded-sm ${typeColors[l.type]}`} />
+              <div className="w-2 h-2 rounded-sm" style={{ backgroundColor: typeColors[l.type] }} />
               <span className="text-muted-foreground">{l.count}</span>
             </div>
           ))}
@@ -261,6 +327,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
                 date={date}
                 events={events}
                 isCurrentDay={isToday(date)}
+                colorMode={colorMode}
               />
             ))}
           </div>

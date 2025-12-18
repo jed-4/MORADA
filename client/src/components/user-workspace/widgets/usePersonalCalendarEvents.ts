@@ -24,6 +24,7 @@ export interface CalendarItem {
   projectName?: string;
   projectColor?: string;
   status?: string;
+  priority?: string;
   description?: string;
   location?: string;
 }
@@ -149,6 +150,7 @@ export function usePersonalCalendarEvents({
           projectName: project?.name,
           projectColor: project?.color,
           status: task.status,
+          priority: task.priority,
           description: task.content,
         });
       });
