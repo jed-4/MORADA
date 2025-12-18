@@ -1008,6 +1008,15 @@ export interface IStorage {
   getDashboardTheme(userId: string, companyId: string, dashboardType: string, projectId?: string): Promise<import("@shared/schema").DashboardTheme | undefined>;
   saveDashboardTheme(theme: import("@shared/schema").InsertDashboardTheme): Promise<import("@shared/schema").DashboardTheme>;
   deleteDashboardTheme(id: string, companyId: string): Promise<boolean>;
+
+  // Business Dashboard Views (with access control)
+  getBusinessDashboardViews(companyId: string, userId: string, roleId: string | null): Promise<import("@shared/schema").BusinessDashboardView[]>;
+  getBusinessDashboardView(id: string, companyId: string, userId: string, roleId: string | null): Promise<import("@shared/schema").BusinessDashboardView | undefined>;
+  getBusinessDashboardViewById(id: string, companyId: string): Promise<import("@shared/schema").BusinessDashboardView | undefined>;
+  createBusinessDashboardView(view: import("@shared/schema").InsertBusinessDashboardView): Promise<import("@shared/schema").BusinessDashboardView>;
+  updateBusinessDashboardView(id: string, companyId: string, updates: Partial<import("@shared/schema").InsertBusinessDashboardView>): Promise<import("@shared/schema").BusinessDashboardView | undefined>;
+  deleteBusinessDashboardView(id: string, companyId: string): Promise<boolean>;
+  ensureDefaultBusinessDashboardView(companyId: string): Promise<import("@shared/schema").BusinessDashboardView>;
 }
 
 export class MemStorage implements IStorage {
@@ -5170,6 +5179,29 @@ export class MemStorage implements IStorage {
   }
 
   async deleteDashboardTheme(id: string, companyId: string): Promise<boolean> {
+    throw new Error("Not implemented in MemStorage");
+  }
+
+  // Business Dashboard Views - MemStorage stubs
+  async getBusinessDashboardViews(companyId: string, userId: string, roleId: string | null): Promise<import("@shared/schema").BusinessDashboardView[]> {
+    return [];
+  }
+  async getBusinessDashboardView(id: string, companyId: string, userId: string, roleId: string | null): Promise<import("@shared/schema").BusinessDashboardView | undefined> {
+    return undefined;
+  }
+  async getBusinessDashboardViewById(id: string, companyId: string): Promise<import("@shared/schema").BusinessDashboardView | undefined> {
+    return undefined;
+  }
+  async createBusinessDashboardView(view: import("@shared/schema").InsertBusinessDashboardView): Promise<import("@shared/schema").BusinessDashboardView> {
+    throw new Error("Not implemented in MemStorage");
+  }
+  async updateBusinessDashboardView(id: string, companyId: string, updates: Partial<import("@shared/schema").InsertBusinessDashboardView>): Promise<import("@shared/schema").BusinessDashboardView | undefined> {
+    return undefined;
+  }
+  async deleteBusinessDashboardView(id: string, companyId: string): Promise<boolean> {
+    return false;
+  }
+  async ensureDefaultBusinessDashboardView(companyId: string): Promise<import("@shared/schema").BusinessDashboardView> {
     throw new Error("Not implemented in MemStorage");
   }
 }
@@ -17186,6 +17218,165 @@ export class DbStorage implements IStorage {
       return true;
     } catch (error) {
       console.error("Database error in deleteDashboardTheme:", error);
+      throw error;
+    }
+  }
+
+  // Business Dashboard Views with Access Control
+  async getBusinessDashboardViews(companyId: string, userId: string, roleId: string | null): Promise<import("@shared/schema").BusinessDashboardView[]> {
+    try {
+      const views = await db.select()
+        .from(schema.businessDashboardViews)
+        .where(eq(schema.businessDashboardViews.companyId, companyId))
+        .orderBy(schema.businessDashboardViews.displayOrder);
+      
+      // Filter by access control
+      return views.filter(view => {
+        // Everyone can see views with "everyone" visibility
+        if (view.visibility === "everyone") return true;
+        // Creator can always see their own views
+        if (view.createdById === userId) return true;
+        // Private views only visible to creator
+        if (view.visibility === "private") return view.createdById === userId;
+        // Role-based access
+        if (view.visibility === "roles" && roleId && view.allowedRoleIds) {
+          return view.allowedRoleIds.includes(roleId);
+        }
+        // User-based access
+        if (view.visibility === "users" && view.allowedUserIds) {
+          return view.allowedUserIds.includes(userId);
+        }
+        return false;
+      });
+    } catch (error) {
+      console.error("Database error in getBusinessDashboardViews:", error);
+      throw error;
+    }
+  }
+
+  async getBusinessDashboardView(id: string, companyId: string, userId: string, roleId: string | null): Promise<import("@shared/schema").BusinessDashboardView | undefined> {
+    try {
+      const [view] = await db.select()
+        .from(schema.businessDashboardViews)
+        .where(and(
+          eq(schema.businessDashboardViews.id, id),
+          eq(schema.businessDashboardViews.companyId, companyId)
+        ));
+      
+      if (!view) return undefined;
+      
+      // Check access
+      if (view.visibility === "everyone") return view;
+      if (view.createdById === userId) return view;
+      if (view.visibility === "private") return view.createdById === userId ? view : undefined;
+      if (view.visibility === "roles" && roleId && view.allowedRoleIds) {
+        return view.allowedRoleIds.includes(roleId) ? view : undefined;
+      }
+      if (view.visibility === "users" && view.allowedUserIds) {
+        return view.allowedUserIds.includes(userId) ? view : undefined;
+      }
+      return undefined;
+    } catch (error) {
+      console.error("Database error in getBusinessDashboardView:", error);
+      throw error;
+    }
+  }
+
+  async getBusinessDashboardViewById(id: string, companyId: string): Promise<import("@shared/schema").BusinessDashboardView | undefined> {
+    try {
+      const [view] = await db.select()
+        .from(schema.businessDashboardViews)
+        .where(and(
+          eq(schema.businessDashboardViews.id, id),
+          eq(schema.businessDashboardViews.companyId, companyId)
+        ));
+      return view;
+    } catch (error) {
+      console.error("Database error in getBusinessDashboardViewById:", error);
+      throw error;
+    }
+  }
+
+  async createBusinessDashboardView(view: import("@shared/schema").InsertBusinessDashboardView): Promise<import("@shared/schema").BusinessDashboardView> {
+    try {
+      const [created] = await db.insert(schema.businessDashboardViews)
+        .values(view)
+        .returning();
+      return created;
+    } catch (error) {
+      console.error("Database error in createBusinessDashboardView:", error);
+      throw error;
+    }
+  }
+
+  async updateBusinessDashboardView(id: string, companyId: string, updates: Partial<import("@shared/schema").InsertBusinessDashboardView>): Promise<import("@shared/schema").BusinessDashboardView | undefined> {
+    try {
+      const [updated] = await db.update(schema.businessDashboardViews)
+        .set({ ...updates, updatedAt: new Date() })
+        .where(and(
+          eq(schema.businessDashboardViews.id, id),
+          eq(schema.businessDashboardViews.companyId, companyId)
+        ))
+        .returning();
+      return updated;
+    } catch (error) {
+      console.error("Database error in updateBusinessDashboardView:", error);
+      throw error;
+    }
+  }
+
+  async deleteBusinessDashboardView(id: string, companyId: string): Promise<boolean> {
+    try {
+      await db.delete(schema.businessDashboardViews)
+        .where(and(
+          eq(schema.businessDashboardViews.id, id),
+          eq(schema.businessDashboardViews.companyId, companyId)
+        ));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteBusinessDashboardView:", error);
+      throw error;
+    }
+  }
+
+  async ensureDefaultBusinessDashboardView(companyId: string): Promise<import("@shared/schema").BusinessDashboardView> {
+    try {
+      // Check if default view exists
+      const [existing] = await db.select()
+        .from(schema.businessDashboardViews)
+        .where(and(
+          eq(schema.businessDashboardViews.companyId, companyId),
+          eq(schema.businessDashboardViews.isDefault, true)
+        ));
+      
+      if (existing) return existing;
+      
+      // Create default view with standard widgets
+      const defaultWidgets = [
+        { id: "1", type: "businessKPIs", title: "Business KPIs", size: "xl", dimensions: { columns: 8 } },
+        { id: "2", type: "businessQuickActions", title: "Quick Actions", size: "sm", dimensions: { columns: 2 } },
+        { id: "3", type: "businessActivity", title: "Recent Activity", size: "md", dimensions: { columns: 3 } },
+        { id: "4", type: "businessAlerts", title: "Alerts & Reminders", size: "md", dimensions: { columns: 3 } },
+        { id: "5", type: "businessProjects", title: "Active Projects", size: "lg", dimensions: { columns: 4 } },
+        { id: "6", type: "businessTeam", title: "Team Overview", size: "md", dimensions: { columns: 4 } },
+        { id: "7", type: "businessFinancials", title: "Financial Summary", size: "md", dimensions: { columns: 4 } },
+        { id: "8", type: "businessTimesheets", title: "Timesheets", size: "md", dimensions: { columns: 4 } },
+      ];
+      
+      const [created] = await db.insert(schema.businessDashboardViews)
+        .values({
+          companyId,
+          name: "Overview",
+          isDefault: true,
+          widgets: defaultWidgets,
+          visibility: "everyone",
+          displayOrder: 0,
+        })
+        .returning();
+      
+      return created;
+    } catch (error) {
+      console.error("Database error in ensureDefaultBusinessDashboardView:", error);
       throw error;
     }
   }

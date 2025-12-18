@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -41,7 +42,8 @@ import {
 import BusinessWidgetContainer from "./business-widgets/BusinessWidgetContainer";
 import DashboardThemeSettings from "./DashboardThemeSettings";
 import { useAuth } from "@/hooks/use-auth";
-import type { DashboardTheme, Company } from "@shared/schema";
+import type { DashboardTheme, Company, BusinessDashboardView } from "@shared/schema";
+import { useToast } from "@/hooks/use-toast";
 import { 
   DndContext, 
   closestCenter, 
@@ -60,12 +62,6 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-interface DashboardView {
-  id: string;
-  name: string;
-  widgets: Widget[];
-}
-
 const DEFAULT_WIDGETS: Widget[] = [
   { id: "1", type: "businessKPIs", title: "Business KPIs", size: "xl", dimensions: { columns: 8 } },
   { id: "2", type: "businessQuickActions", title: "Quick Actions", size: "sm", dimensions: { columns: 2 } },
@@ -76,12 +72,6 @@ const DEFAULT_WIDGETS: Widget[] = [
   { id: "7", type: "businessFinancials", title: "Financial Summary", size: "md", dimensions: { columns: 4 } },
   { id: "8", type: "businessTimesheets", title: "Timesheets", size: "md", dimensions: { columns: 4 } },
 ];
-
-const DEFAULT_VIEW: DashboardView = {
-  id: "overview",
-  name: "Overview",
-  widgets: DEFAULT_WIDGETS,
-};
 
 function SortableWidget({ 
   widget, 
@@ -184,9 +174,9 @@ function SortableWidget({
 
 export default function BusinessOverview() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [widgets, setWidgets] = useState<Widget[]>(DEFAULT_WIDGETS);
-  const [savedViews, setSavedViews] = useState<DashboardView[]>([DEFAULT_VIEW]);
-  const [activeViewId, setActiveViewId] = useState("overview");
+  const [activeViewId, setActiveViewId] = useState<string | null>(null);
   const [isAddingWidget, setIsAddingWidget] = useState(false);
   const [configuringWidget, setConfiguringWidget] = useState<string | null>(null);
   const [isCreatingView, setIsCreatingView] = useState(false);
@@ -202,66 +192,100 @@ export default function BusinessOverview() {
     queryKey: ["/api/dashboard-themes/business"],
   });
 
+  // Fetch views from database
+  const { data: savedViews = [], isLoading: viewsLoading } = useQuery<BusinessDashboardView[]>({
+    queryKey: ["/api/business-dashboard-views"],
+  });
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  const storageKey = `business-dashboard-widgets-${user?.id || 'default'}`;
-  const viewsStorageKey = `business-dashboard-views-${user?.id || 'default'}`;
+  // Active view key for localStorage (just stores which view is selected)
   const activeViewKey = `business-dashboard-active-view-${user?.id || 'default'}`;
 
+  // Initialize active view when views are loaded
   useEffect(() => {
-    const savedViewsJson = localStorage.getItem(viewsStorageKey);
-    if (savedViewsJson) {
-      try {
-        const parsedViews = JSON.parse(savedViewsJson);
-        setSavedViews(parsedViews);
-        
-        const savedActiveView = localStorage.getItem(activeViewKey);
-        if (savedActiveView && parsedViews.find((v: DashboardView) => v.id === savedActiveView)) {
-          setActiveViewId(savedActiveView);
-          const view = parsedViews.find((v: DashboardView) => v.id === savedActiveView);
-          if (view) setWidgets(view.widgets);
-        } else {
-          setWidgets(parsedViews[0]?.widgets || DEFAULT_WIDGETS);
-        }
-      } catch (e) {
-        console.error("Failed to load views", e);
-      }
-    } else {
-      const savedWidgetsJson = localStorage.getItem(storageKey);
-      if (savedWidgetsJson) {
-        try {
-          setWidgets(JSON.parse(savedWidgetsJson));
-        } catch (e) {
-          console.error("Failed to load widgets", e);
-        }
+    if (savedViews.length > 0 && !activeViewId) {
+      const storedActiveId = localStorage.getItem(activeViewKey);
+      const storedView = storedActiveId ? savedViews.find(v => v.id === storedActiveId) : null;
+      const defaultView = savedViews.find(v => v.isDefault) || savedViews[0];
+      const viewToUse = storedView || defaultView;
+      
+      if (viewToUse) {
+        setActiveViewId(viewToUse.id);
+        setWidgets((viewToUse.widgets as Widget[]) || DEFAULT_WIDGETS);
       }
     }
-  }, [user?.id]);
+  }, [savedViews, activeViewId]);
 
-  const saveWidgets = (newWidgets: Widget[]) => {
-    localStorage.setItem(storageKey, JSON.stringify(newWidgets));
-  };
+  // Mutation to update a view
+  const updateViewMutation = useMutation({
+    mutationFn: async ({ viewId, updates }: { viewId: string; updates: Partial<BusinessDashboardView> }) => {
+      return apiRequest("PATCH", `/api/business-dashboard-views/${viewId}`, updates);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/business-dashboard-views"] });
+    },
+    onError: (error) => {
+      toast({ title: "Failed to save changes", variant: "destructive" });
+      console.error("Failed to update view:", error);
+    },
+  });
 
-  const saveViews = (views: DashboardView[]) => {
-    localStorage.setItem(viewsStorageKey, JSON.stringify(views));
-  };
+  // Mutation to create a view
+  const createViewMutation = useMutation({
+    mutationFn: async (data: { name: string; widgets: Widget[] }) => {
+      return apiRequest("POST", "/api/business-dashboard-views", {
+        name: data.name,
+        widgets: data.widgets,
+        visibility: "everyone",
+        displayOrder: savedViews.length,
+      });
+    },
+    onSuccess: async (response) => {
+      const newView = await response.json();
+      queryClient.invalidateQueries({ queryKey: ["/api/business-dashboard-views"] });
+      setActiveViewId(newView.id);
+      setWidgets((newView.widgets as Widget[]) || DEFAULT_WIDGETS);
+      localStorage.setItem(activeViewKey, newView.id);
+      setIsCreatingView(false);
+      setNewViewName("");
+      toast({ title: "View created successfully" });
+    },
+    onError: (error) => {
+      toast({ title: "Failed to create view", variant: "destructive" });
+      console.error("Failed to create view:", error);
+    },
+  });
+
+  // Mutation to delete a view
+  const deleteViewMutation = useMutation({
+    mutationFn: async (viewId: string) => {
+      return apiRequest("DELETE", `/api/business-dashboard-views/${viewId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/business-dashboard-views"] });
+      toast({ title: "View deleted" });
+    },
+    onError: (error: any) => {
+      const message = error?.message || "Failed to delete view";
+      toast({ title: message, variant: "destructive" });
+    },
+  });
 
   const handleWidgetUpdate = (updatedWidget: Widget) => {
     const newWidgets = widgets.map(w => 
       w.id === updatedWidget.id ? updatedWidget : w
     );
     setWidgets(newWidgets);
-    saveWidgets(newWidgets);
     updateCurrentView(newWidgets);
   };
 
   const handleWidgetRemove = (widgetId: string) => {
     const newWidgets = widgets.filter(w => w.id !== widgetId);
     setWidgets(newWidgets);
-    saveWidgets(newWidgets);
     updateCurrentView(newWidgets);
   };
 
@@ -283,7 +307,6 @@ export default function BusinessOverview() {
 
     const newWidgets = [...widgets, newWidget];
     setWidgets(newWidgets);
-    saveWidgets(newWidgets);
     updateCurrentView(newWidgets);
     setIsAddingWidget(false);
   };
@@ -297,58 +320,47 @@ export default function BusinessOverview() {
     
     const newWidgets = arrayMove(widgets, oldIndex, newIndex);
     setWidgets(newWidgets);
-    saveWidgets(newWidgets);
     updateCurrentView(newWidgets);
   };
 
   const updateCurrentView = (newWidgets: Widget[]) => {
-    const updatedViews = savedViews.map(view => 
-      view.id === activeViewId ? { ...view, widgets: newWidgets } : view
-    );
-    setSavedViews(updatedViews);
-    saveViews(updatedViews);
+    if (!activeViewId) return;
+    updateViewMutation.mutate({ viewId: activeViewId, updates: { widgets: newWidgets } });
   };
 
   const switchView = (viewId: string) => {
     const view = savedViews.find(v => v.id === viewId);
     if (view) {
       setActiveViewId(viewId);
-      setWidgets(view.widgets);
+      setWidgets((view.widgets as Widget[]) || DEFAULT_WIDGETS);
       localStorage.setItem(activeViewKey, viewId);
     }
   };
 
   const createNewView = () => {
     if (!newViewName.trim()) return;
-    
-    const newView: DashboardView = {
-      id: Date.now().toString(),
+    createViewMutation.mutate({
       name: newViewName.trim(),
       widgets: [...DEFAULT_WIDGETS],
-    };
-    
-    const updatedViews = [...savedViews, newView];
-    setSavedViews(updatedViews);
-    saveViews(updatedViews);
-    setActiveViewId(newView.id);
-    setWidgets(newView.widgets);
-    localStorage.setItem(activeViewKey, newView.id);
-    setIsCreatingView(false);
-    setNewViewName("");
+    });
   };
 
   const deleteView = (viewId: string) => {
-    if (viewId === "overview") return;
+    const view = savedViews.find(v => v.id === viewId);
+    if (!view || view.isDefault) {
+      toast({ title: "Cannot delete the default view", variant: "destructive" });
+      return;
+    }
     
-    const updatedViews = savedViews.filter(v => v.id !== viewId);
-    setSavedViews(updatedViews);
-    saveViews(updatedViews);
+    deleteViewMutation.mutate(viewId);
     
     if (activeViewId === viewId) {
-      setActiveViewId("overview");
-      const overview = updatedViews.find(v => v.id === "overview");
-      setWidgets(overview?.widgets || DEFAULT_WIDGETS);
-      localStorage.setItem(activeViewKey, "overview");
+      const defaultView = savedViews.find(v => v.isDefault) || savedViews.find(v => v.id !== viewId);
+      if (defaultView) {
+        setActiveViewId(defaultView.id);
+        setWidgets((defaultView.widgets as Widget[]) || DEFAULT_WIDGETS);
+        localStorage.setItem(activeViewKey, defaultView.id);
+      }
     }
   };
 
@@ -404,6 +416,17 @@ export default function BusinessOverview() {
     return `rgba(${r}, ${g}, ${b}, ${opacity / 100})`;
   };
 
+  // Show loading state while views are loading
+  const isInitializing = viewsLoading || (savedViews.length > 0 && !activeViewId);
+
+  if (isInitializing) {
+    return (
+      <div className="flex flex-col h-full items-center justify-center" data-testid="business-overview-loading">
+        <div className="text-muted-foreground text-sm">Loading dashboard...</div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full" data-testid="business-overview">
       {/* View Controls Header (36px) */}
@@ -429,7 +452,7 @@ export default function BusinessOverview() {
                     {activeViewId === view.id && <Check className="h-4 w-4" />}
                     {view.name}
                   </span>
-                  {view.id !== "overview" && (
+                  {!view.isDefault && (
                     <Button
                       variant="ghost"
                       size="icon"

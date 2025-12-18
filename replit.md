@@ -14,7 +14,7 @@ Preferred communication style: Simple, everyday language.
 - **State Management**: TanStack Query for server state, React Context for UI state.
 - **UI Framework**: Radix UI primitives with shadcn/ui.
 - **Styling**: Tailwind CSS with a custom design system, supporting light/dark modes, a white & minimalist aesthetic with muted blue accents, and Inter font family.
-- **Dashboard**: Widget-based with drag & drop, a grid-based layout, and per-project localStorage persistence.
+- **Dashboard**: Widget-based with drag & drop, a grid-based layout. Business dashboard views are now database-backed with access control (visibility: everyone/roles/users/private).
 - **UI/UX Decisions**: Emphasis on a minimalist theme, column resizing for tables, and accessibility compliance, drawing inspiration from Buildern-style interfaces.
 
 ### Backend Architecture
@@ -66,6 +66,12 @@ Preferred communication style: Simple, everyday language.
 - **Notes & Memos**: Dedicated business/project notes and personal quick-capture memos.
 - **Onboarding Flow**: Two-step process for user profile completion and company creation.
 - **Activity Feed Settings**: Company Settings > Activity section allows toggling visibility of activity types (task, estimate, bill, variation, invoice, proposal, project, site_diary, other). Stored in `companySettings.activityTypesVisible` JSON field. ActivityWidget respects these settings and filters activities accordingly.
+- **Business Dashboard Views**: Database-backed views with company-wide access control. Each view stores widget configuration and visibility settings (everyone/roles/users/private). Features include:
+  - View creation/deletion with CRUD via `/api/business-dashboard-views`
+  - Access control: visibility types (everyone, roles, users, private) with allowedRoleIds/allowedUserIds
+  - Default "Overview" view auto-created for each company (protected from deletion)
+  - Widget configuration persisted to database instead of localStorage
+  - Creator and admin permissions for edit/delete operations
 - **Schedule Widget**: Project dashboard schedule widget with multiple view modes (list, day, week, month). Settings configured via edit modal only (widget is display-only). Day/Week views support both stacked (simple list) and timeline (hourly scale) display modes with:
   - Header row with day names and navigation
   - All-day items section (pinned at top)

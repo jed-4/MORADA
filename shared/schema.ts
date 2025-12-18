@@ -220,6 +220,38 @@ export const insertDashboardThemeSchema = createInsertSchema(dashboardThemes).om
 export type DashboardTheme = typeof dashboardThemes.$inferSelect;
 export type InsertDashboardTheme = z.infer<typeof insertDashboardThemeSchema>;
 
+// Business dashboard views with access control
+export const businessDashboardViews = pgTable("business_dashboard_views", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  isDefault: boolean("is_default").notNull().default(false), // Default "Overview" view
+  createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  
+  // Widget configuration
+  widgets: jsonb("widgets").notNull().default([]), // Array of widget configs
+  
+  // Access control
+  visibility: text("visibility").notNull().default("everyone"), // "everyone" | "roles" | "users" | "private"
+  allowedRoleIds: text("allowed_role_ids").array(), // Role IDs that can access (when visibility = "roles")
+  allowedUserIds: text("allowed_user_ids").array(), // User IDs that can access (when visibility = "users")
+  
+  // Ordering
+  displayOrder: integer("display_order").notNull().default(0),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertBusinessDashboardViewSchema = createInsertSchema(businessDashboardViews).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type BusinessDashboardView = typeof businessDashboardViews.$inferSelect;
+export type InsertBusinessDashboardView = z.infer<typeof insertBusinessDashboardViewSchema>;
+
 // Schema for company creation/updates
 export const insertCompanySchema = createInsertSchema(companies).omit({
   id: true,

@@ -5681,6 +5681,149 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Business Dashboard Views Routes (with access control)
+  app.get("/api/business-dashboard-views", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      // Ensure default view exists for this company
+      await storage.ensureDefaultBusinessDashboardView(companyId);
+      
+      const views = await storage.getBusinessDashboardViews(companyId, user.id, user.roleId);
+      res.json(views);
+    } catch (error) {
+      console.error("Error fetching business dashboard views:", error);
+      res.status(500).json({ error: "Failed to fetch dashboard views" });
+    }
+  });
+
+  app.get("/api/business-dashboard-views/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      const view = await storage.getBusinessDashboardView(req.params.id, companyId, user.id, user.roleId);
+      if (!view) {
+        return res.status(404).json({ error: "View not found or access denied" });
+      }
+      res.json(view);
+    } catch (error) {
+      console.error("Error fetching dashboard view:", error);
+      res.status(500).json({ error: "Failed to fetch dashboard view" });
+    }
+  });
+
+  app.post("/api/business-dashboard-views", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      const viewData = {
+        ...req.body,
+        companyId,
+        createdById: user.id,
+      };
+      
+      const view = await storage.createBusinessDashboardView(viewData);
+      res.json(view);
+    } catch (error) {
+      console.error("Error creating dashboard view:", error);
+      res.status(500).json({ error: "Failed to create dashboard view" });
+    }
+  });
+
+  app.patch("/api/business-dashboard-views/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      // Check if user can access this view first (visibility check)
+      const existingView = await storage.getBusinessDashboardView(req.params.id, companyId, user.id, user.roleId);
+      if (!existingView) {
+        return res.status(404).json({ error: "View not found or access denied" });
+      }
+      
+      // For editing: allow if user is creator, is admin, or if it's the default "everyone" view
+      const isCreator = existingView.createdById === user.id;
+      const userPermissions = await storage.getUserPermissions(user.roleId);
+      const isAdmin = userPermissions.some((p: any) => p.key === "admin.general" && p.actions.includes("edit"));
+      const isDefaultEveryoneView = existingView.isDefault && existingView.visibility === "everyone";
+      
+      if (!isCreator && !isAdmin && !isDefaultEveryoneView) {
+        return res.status(403).json({ error: "You don't have permission to edit this view" });
+      }
+      
+      // Validate that only allowed fields are updated
+      const allowedFields = ['name', 'widgets', 'visibility', 'allowedRoleIds', 'allowedUserIds', 'displayOrder'];
+      const updates: Record<string, any> = {};
+      for (const key of allowedFields) {
+        if (req.body[key] !== undefined) {
+          updates[key] = req.body[key];
+        }
+      }
+      
+      const view = await storage.updateBusinessDashboardView(req.params.id, companyId, updates);
+      res.json(view);
+    } catch (error) {
+      console.error("Error updating dashboard view:", error);
+      res.status(500).json({ error: "Failed to update dashboard view" });
+    }
+  });
+
+  app.delete("/api/business-dashboard-views/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      // Check if user can access this view first (visibility check)
+      const existingView = await storage.getBusinessDashboardView(req.params.id, companyId, user.id, user.roleId);
+      if (!existingView) {
+        return res.status(404).json({ error: "View not found or access denied" });
+      }
+      
+      // Cannot delete default view
+      if (existingView.isDefault) {
+        return res.status(400).json({ error: "Cannot delete the default view" });
+      }
+      
+      // Allow delete if user is creator or has admin permission
+      const isCreator = existingView.createdById === user.id;
+      const userPermissions = await storage.getUserPermissions(user.roleId);
+      const isAdmin = userPermissions.some((p: any) => p.key === "admin.general" && p.actions.includes("delete"));
+      
+      if (!isCreator && !isAdmin) {
+        return res.status(403).json({ error: "You don't have permission to delete this view" });
+      }
+      
+      await storage.deleteBusinessDashboardView(req.params.id, companyId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting dashboard view:", error);
+      res.status(500).json({ error: "Failed to delete dashboard view" });
+    }
+  });
+
   // User Role Management Routes
   app.get("/api/user-roles", requireAuth, requireTeamMember, requirePermission("admin.roles", "view"), async (req, res) => {
     try {
