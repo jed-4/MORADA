@@ -132,17 +132,19 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
     return DEFAULT_SECTIONS;
   }, [widget.config?.sections]);
 
-  const [editingSections, setEditingSections] = useState<SectionConfig[]>(sections);
-  const [collapsedState, setCollapsedState] = useState<Record<string, boolean>>(() => {
-    const initial: Record<string, boolean> = {};
-    sections.forEach(s => { initial[s.id] = s.collapsed; });
-    return initial;
-  });
+  const [editingSections, setEditingSections] = useState<SectionConfig[]>(() => sections);
+  const [collapsedState, setCollapsedState] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     setEditingTitle(widget.title);
+  }, [widget.title]);
+
+  useEffect(() => {
     setEditingSections(sections);
-  }, [widget.title, sections]);
+    const initial: Record<string, boolean> = {};
+    sections.forEach(s => { initial[s.id] = s.collapsed; });
+    setCollapsedState(initial);
+  }, [JSON.stringify(widget.config?.sections)]);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -335,19 +337,34 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
         open={!isCollapsed}
         onOpenChange={() => toggleCollapsed(sectionConfig.id)}
       >
-        <CollapsibleTrigger className="flex items-center gap-2 w-full p-2 rounded-md bg-muted/50 border hover-elevate cursor-pointer">
+        <CollapsibleTrigger className={`flex items-center gap-2 w-full py-1.5 px-2 border-l-3 cursor-pointer transition-colors ${
+          sectionConfig.id === 'overdue' 
+            ? 'border-l-red-500 bg-red-50/50 dark:bg-red-950/20' 
+            : sectionConfig.id === 'schedule'
+            ? 'border-l-blue-500 bg-blue-50/50 dark:bg-blue-950/20'
+            : 'border-l-primary bg-primary/5'
+        }`}>
           {isCollapsed ? (
-            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+            <ChevronRight className="h-3 w-3 text-muted-foreground" />
           ) : (
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            <ChevronDown className="h-3 w-3 text-muted-foreground" />
           )}
-          <sectionDef.icon className={`h-3.5 w-3.5 ${sectionConfig.id === 'overdue' ? 'text-red-500' : 'text-muted-foreground'}`} />
-          <span className={`text-xs font-medium flex-1 text-left ${sectionConfig.id === 'overdue' && count > 0 ? 'text-red-600 dark:text-red-400' : ''}`}>
+          <span className={`text-[11px] font-semibold uppercase tracking-wide flex-1 text-left ${
+            sectionConfig.id === 'overdue' && count > 0 
+              ? 'text-red-700 dark:text-red-400' 
+              : sectionConfig.id === 'schedule'
+              ? 'text-blue-700 dark:text-blue-400'
+              : 'text-foreground/80'
+          }`}>
             {sectionDef.label}
           </span>
-          <Badge variant={sectionConfig.id === 'overdue' && count > 0 ? "destructive" : "secondary"} className="text-[10px] h-4 px-1.5">
+          <span className={`text-[10px] font-bold min-w-[18px] h-[18px] flex items-center justify-center rounded-full ${
+            sectionConfig.id === 'overdue' && count > 0 
+              ? 'bg-red-500 text-white' 
+              : 'bg-muted text-muted-foreground'
+          }`}>
             {count}
-          </Badge>
+          </span>
         </CollapsibleTrigger>
         <CollapsibleContent className="pt-1 space-y-1">
           {items.length === 0 ? (
