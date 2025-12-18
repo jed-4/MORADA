@@ -144,7 +144,8 @@ export default function PersonalRemindersWidget({ widget, onUpdate, isConfigurin
           size="sm" 
           variant="ghost"
           className="h-6 px-2 text-xs"
-          onClick={() => setLocation(`/users/${userId}/reminders`)}
+          onClick={() => userId && setLocation(`/users/${userId}/reminders`)}
+          disabled={!userId}
           data-testid="reminders-widget-view-all"
         >
           <Plus className="h-3 w-3 mr-1" />
@@ -174,7 +175,7 @@ export default function PersonalRemindersWidget({ widget, onUpdate, isConfigurin
               <div 
                 key={reminder.id}
                 className={`p-2 border rounded-md hover-elevate cursor-pointer ${status.bgColor}`}
-                onClick={() => setLocation(`/users/${userId}/reminders`)}
+                onClick={() => userId && setLocation(`/users/${userId}/reminders`)}
                 data-testid={`reminder-${reminder.id}`}
               >
                 <div className="flex items-start justify-between gap-2">
@@ -214,7 +215,7 @@ export default function PersonalRemindersWidget({ widget, onUpdate, isConfigurin
           variant="ghost"
           size="sm"
           className="w-full h-6 text-xs text-muted-foreground"
-          onClick={() => setLocation(`/users/${userId}/reminders`)}
+          onClick={() => userId && setLocation(`/users/${userId}/reminders`)}
           data-testid="reminders-view-all"
         >
           View all {activeReminders.length} reminders

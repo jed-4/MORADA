@@ -124,7 +124,8 @@ export default function PersonalMemosWidget({ widget, onUpdate, isConfiguring, o
           size="sm" 
           variant="ghost"
           className="h-6 px-2 text-xs"
-          onClick={() => setLocation(`/users/${currentUser?.id}/notes`)}
+          onClick={() => userId && setLocation(`/users/${userId}/notes`)}
+          disabled={!userId}
           data-testid="memos-widget-view-all"
         >
           <Plus className="h-3 w-3 mr-1" />
@@ -151,7 +152,7 @@ export default function PersonalMemosWidget({ widget, onUpdate, isConfiguring, o
             <div 
               key={memo.id}
               className="p-2 border rounded-md hover-elevate cursor-pointer"
-              onClick={() => setLocation(`/users/${currentUser?.id}/notes`)}
+              onClick={() => userId && setLocation(`/users/${userId}/notes`)}
               data-testid={`memo-${memo.id}`}
             >
               <div className="flex items-start gap-2">

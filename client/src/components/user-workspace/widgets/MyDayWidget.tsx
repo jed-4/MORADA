@@ -242,7 +242,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
                 <div 
                   key={reminder.id}
                   className="flex items-center gap-2 p-1.5 rounded-md border hover-elevate cursor-pointer"
-                  onClick={() => setLocation(`/users/${userId}/reminders`)}
+                  onClick={() => userId && setLocation(`/users/${userId}/reminders`)}
                   data-testid={`myday-reminder-${reminder.id}`}
                 >
                   <Bell className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" />

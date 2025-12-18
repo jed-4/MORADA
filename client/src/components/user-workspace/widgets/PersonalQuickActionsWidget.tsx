@@ -84,7 +84,8 @@ export default function PersonalQuickActionsWidget({ widget, onUpdate, isConfigu
       icon: Timer,
       color: 'text-blue-600',
       bgColor: 'bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30',
-      onClick: () => setLocation(`/users/${userId}/time`),
+      onClick: () => userId && setLocation(`/users/${userId}/time`),
+      disabled: !userId,
     },
     {
       id: 'new-task',
@@ -100,7 +101,8 @@ export default function PersonalQuickActionsWidget({ widget, onUpdate, isConfigu
       icon: FileText,
       color: 'text-amber-600',
       bgColor: 'bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30',
-      onClick: () => setLocation(`/users/${userId}/notes`),
+      onClick: () => userId && setLocation(`/users/${userId}/notes`),
+      disabled: !userId,
     },
     {
       id: 'calendar',
@@ -108,7 +110,8 @@ export default function PersonalQuickActionsWidget({ widget, onUpdate, isConfigu
       icon: Calendar,
       color: 'text-teal-600',
       bgColor: 'bg-teal-50 dark:bg-teal-900/20 hover:bg-teal-100 dark:hover:bg-teal-900/30',
-      onClick: () => setLocation(`/users/${userId}/calendar`),
+      onClick: () => userId && setLocation(`/users/${userId}/calendar`),
+      disabled: !userId,
     },
   ];
 
@@ -158,12 +161,13 @@ export default function PersonalQuickActionsWidget({ widget, onUpdate, isConfigu
     <div className="grid grid-cols-2 gap-2">
       {actions.map((action) => {
         const Icon = action.icon;
+        const isDisabled = action.loading || action.disabled;
         return (
           <button
             key={action.id}
             onClick={action.onClick}
-            disabled={action.loading}
-            className={`p-2 rounded-md border flex flex-col items-center gap-1 transition-colors ${action.bgColor} ${action.loading ? 'opacity-50' : ''}`}
+            disabled={isDisabled}
+            className={`p-2 rounded-md border flex flex-col items-center gap-1 transition-colors ${action.bgColor} ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
             data-testid={`quick-action-${action.id}`}
           >
             <Icon className={`h-4 w-4 ${action.color}`} />
