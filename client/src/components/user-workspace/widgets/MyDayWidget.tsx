@@ -132,19 +132,23 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
     return DEFAULT_SECTIONS;
   }, [widget.config?.sections]);
 
-  const [editingSections, setEditingSections] = useState<SectionConfig[]>(() => sections);
+  const [editingSections, setEditingSections] = useState<SectionConfig[]>(DEFAULT_SECTIONS);
   const [collapsedState, setCollapsedState] = useState<Record<string, boolean>>({});
+  const [initialized, setInitialized] = useState(false);
 
   useEffect(() => {
     setEditingTitle(widget.title);
   }, [widget.title]);
 
   useEffect(() => {
-    setEditingSections(sections);
-    const initial: Record<string, boolean> = {};
-    sections.forEach(s => { initial[s.id] = s.collapsed; });
-    setCollapsedState(initial);
-  }, [JSON.stringify(widget.config?.sections)]);
+    if (!initialized || JSON.stringify(editingSections) !== JSON.stringify(sections)) {
+      setEditingSections(sections);
+      const initial: Record<string, boolean> = {};
+      sections.forEach(s => { initial[s.id] = s.collapsed; });
+      setCollapsedState(initial);
+      setInitialized(true);
+    }
+  }, [sections, initialized]);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
