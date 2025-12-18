@@ -928,7 +928,9 @@ export default function CustomizableProjectOverview() {
               ) : (
                 dashboardViews.map((view) => {
                   const VisIcon = getVisibilityIcon(view.visibility);
-                  const isOwner = view.creatorId === user?.id;
+                  const isViewCreator = view.creatorId === user?.id;
+                  const isAdminOrOwner = user?.role === "owner" || user?.role === "admin";
+                  const canEditView = isViewCreator || isAdminOrOwner;
                   return (
                     <DropdownMenuItem
                       key={view.id}
@@ -950,7 +952,7 @@ export default function CustomizableProjectOverview() {
                           Default
                         </span>
                       )}
-                      {isOwner && (
+                      {canEditView && (
                         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button
                             onClick={(e) => {
