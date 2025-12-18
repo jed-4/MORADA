@@ -187,6 +187,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
       return await apiRequest(`/api/tasks/${taskId}`, "PATCH", { status });
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks", { assigneeId: user.id }] });
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
     },
   });
@@ -198,6 +199,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
       return await apiRequest(`/api/tasks/${taskId}`, "PATCH", payload);
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks", { assigneeId: user.id }] });
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
       toast({ title: "Task rescheduled" });
     },
@@ -208,6 +210,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
       return await apiRequest(`/api/tasks/${taskId}`, "PATCH", { startTime, endTime });
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks", { assigneeId: user.id }] });
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
     },
   });
