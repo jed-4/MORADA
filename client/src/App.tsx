@@ -114,7 +114,19 @@ function Router() {
       <Route path="/privacy" component={PrivacyPolicy} />
       <Route path="/portal/rfq/:token" component={RFQPortal} />
       
-      <Route path="/" component={Dashboard} />
+      <Route path="/">
+        {() => {
+          if (!user) {
+            return (
+              <div className="flex items-center justify-center h-full">
+                <div className="text-muted-foreground">Loading...</div>
+              </div>
+            );
+          }
+          return <Redirect to={`/users/${user.id}`} />;
+        }}
+      </Route>
+      <Route path="/dashboard" component={Dashboard} />
       <Route path="/tasks" component={Tasks} />
       <Route path="/calendar" component={Calendar} />
       <Route path="/messages" component={Messages} />

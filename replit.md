@@ -53,7 +53,7 @@ Preferred communication style: Simple, everyday language.
 - **Roles & Permissions**: Company-isolated user roles with granular control over 25 Buildern permissions.
 - **Business Page Reorganization**: Unified navigation with a 2-row header and tab system.
 - **Timesheets System**: Global access via All Items section, compact table design (h-7 rows, text-[11px], py-1 padding), configurable columns with localStorage persistence, tabbed views (Table/Weekly/Calendar). Weekly view shows user×days matrix with aggregated hours and totals. Rapidfire Approval Modal enables batch review of pending timesheets with inline editing, 15min rounding, missing info highlights, and "Approve & Next" workflow. Simplified status flow: Draft → Approved. Planned features: subcontractor-to-PO workflow.
-- **User Workspace**: Personal workspace with tabs for Overview, Tasks, and future Schedule/Time/Notes. The Overview tab features a fully customizable widget-based dashboard with:
+- **User Workspace**: Personal workspace with tabs for Overview, Tasks, and future Schedule/Time/Notes. **Default landing page after login** - users are automatically redirected to their workspace (`/users/:userId`) from the root URL. The Overview tab features a fully customizable widget-based dashboard with:
   - Personal widgets: My Tasks, My Calendar (task-based), Cross-Project Deadlines, Personal Metrics, Quick Actions (clock in/out, log time), My Memos, Day Calendar, Week Calendar
   - Day Calendar widget: Scrollable 24-hour timeline with all-day items pinned at top, configurable data sources (tasks, schedule, timesheets, Google Calendar, reminders)
   - Week Calendar widget: 7-column grid view with expandable day columns, show/hide more events per day
