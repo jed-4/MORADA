@@ -98,16 +98,21 @@ export function usePersonalCalendarEvents({
     enabled: includeGoogleCalendar,
   });
 
+  // Fetch Google Calendar events directly (like UserCalendarDialog does)
+  // The API will return empty array if not connected
   const { data: googleEvents = [], isLoading: googleLoading } = useQuery<any[]>({
     queryKey: ["/api/google-calendar/events"],
     queryFn: async () => {
       try {
-        return await apiRequest("/api/google-calendar/events", "GET") || [];
+        const response = await fetch("/api/google-calendar/events", { credentials: 'include' });
+        if (!response.ok) return [];
+        return response.json() || [];
       } catch {
         return [];
       }
     },
-    enabled: includeGoogleCalendar && googleCalendarStatus?.connected,
+    enabled: includeGoogleCalendar,
+    retry: false,
   });
 
   const { data: reminders = [], isLoading: remindersLoading } = useQuery<any[]>({
@@ -206,24 +211,25 @@ export function usePersonalCalendarEvents({
       });
     }
 
-    if (includeGoogleCalendar && googleCalendarStatus?.connected) {
+    if (includeGoogleCalendar && googleEvents.length > 0) {
       googleEvents.forEach((event: any) => {
-        const startStr = event.start?.dateTime || event.start?.date;
-        const endStr = event.end?.dateTime || event.end?.date;
+        // Handle different event formats - API might return pre-formatted events
+        const startStr = event.start?.dateTime || event.start?.date || event.startDate;
+        const endStr = event.end?.dateTime || event.end?.date || event.endDate;
         if (!startStr) return;
 
         const eventStart = new Date(startStr);
         if (!isWithinInterval(eventStart, { start: rangeStart, end: rangeEnd })) return;
 
-        const isAllDay = !event.start?.dateTime;
+        const isAllDay = event.allDay || (!event.start?.dateTime && !event.startTime);
 
         items.push({
           id: `google-${event.id}`,
-          title: event.summary || "Untitled Event",
+          title: event.summary || event.title || "Untitled Event",
           startDate: eventStart,
           endDate: endStr ? new Date(endStr) : eventStart,
-          startTime: isAllDay ? null : eventStart.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }),
-          endTime: isAllDay || !endStr ? null : new Date(endStr).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }),
+          startTime: event.startTime || (isAllDay ? null : eventStart.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })),
+          endTime: event.endTime || (isAllDay || !endStr ? null : new Date(endStr).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })),
           allDay: isAllDay,
           type: "google-calendar",
           description: event.description,
@@ -257,7 +263,7 @@ export function usePersonalCalendarEvents({
       if (!a.allDay && b.allDay) return 1;
       return a.startDate.getTime() - b.startDate.getTime();
     });
-  }, [tasks, scheduleItems, timesheets, googleEvents, reminders, projects, rangeStart, rangeEnd, includeTasks, includeSchedule, includeTimesheets, includeGoogleCalendar, includeReminders, googleCalendarStatus?.connected]);
+  }, [tasks, scheduleItems, timesheets, googleEvents, reminders, projects, rangeStart, rangeEnd, includeTasks, includeSchedule, includeTimesheets, includeGoogleCalendar, includeReminders]);
 
   const isLoading = tasksLoading || scheduleLoading || timesheetsLoading || googleLoading || remindersLoading;
 

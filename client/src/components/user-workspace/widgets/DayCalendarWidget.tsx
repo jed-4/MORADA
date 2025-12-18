@@ -199,8 +199,17 @@ export default function DayCalendarWidget({ widget, onUpdate, isConfiguring, onC
   useEffect(() => {
     if (scrollRef.current && !isLoading) {
       const now = new Date();
-      const scrollToHour = isToday(selectedDate) ? Math.max(0, now.getHours() - 1) : 8;
-      scrollRef.current.scrollTop = scrollToHour * HOUR_HEIGHT;
+      if (isToday(selectedDate)) {
+        // For today, scroll to show current time near the top third of the visible area
+        const containerHeight = scrollRef.current.clientHeight;
+        const currentTimePosition = (now.getHours() + now.getMinutes() / 60) * HOUR_HEIGHT;
+        // Position the current time about 1/3 from the top of the view
+        const targetScroll = Math.max(0, currentTimePosition - containerHeight / 3);
+        scrollRef.current.scrollTop = targetScroll;
+      } else {
+        // For other days, scroll to 8am
+        scrollRef.current.scrollTop = 8 * HOUR_HEIGHT;
+      }
     }
   }, [selectedDate, isLoading]);
 
