@@ -67,7 +67,7 @@ function TimelineEvent({ event }: { event: CalendarItem }) {
       style={{
         top: `${top}px`,
         height: `${height}px`,
-        backgroundColor: event.projectColor ? `${event.projectColor}20` : 'hsl(var(--muted))',
+        backgroundColor: event.projectColor ? `${event.projectColor}e6` : 'hsl(var(--card))',
         borderColor: event.projectColor || 'hsl(var(--border))',
       }}
       title={`${event.title}${event.description ? `\n${event.description}` : ''}`}
@@ -95,7 +95,7 @@ function AllDayEvent({ event }: { event: CalendarItem }) {
     <div
       className="flex items-center gap-1.5 px-2 py-1 rounded-md border cursor-pointer hover-elevate"
       style={{
-        backgroundColor: event.projectColor ? `${event.projectColor}20` : 'hsl(var(--muted))',
+        backgroundColor: event.projectColor ? `${event.projectColor}e6` : 'hsl(var(--card))',
         borderColor: event.projectColor || 'hsl(var(--border))',
       }}
       title={event.title}
