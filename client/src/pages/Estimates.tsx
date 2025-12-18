@@ -199,6 +199,13 @@ export default function Estimates() {
       newStatus = over.id as string;
     }
 
+    // Validate that newStatus is a valid estimate status key
+    const validStatusKeys = estimateStatuses.map(s => s.key);
+    if (!validStatusKeys.includes(newStatus)) {
+      console.warn('Invalid status key detected during drag:', newStatus);
+      return;
+    }
+
     // Find the estimate being dragged
     const estimate = estimates.find(e => e.id === estimateId);
     if (!estimate || estimate.status === newStatus) return;
@@ -615,7 +622,7 @@ function KanbanColumn({ status, estimates, count, estimateStatuses, projects, ca
           ref={setNodeRef}
           className="min-h-[200px] p-2"
         >
-          <SortableContext items={estimates.map(e => e.id)} strategy={verticalListSortingStrategy}>
+          <SortableContext id={status.key} items={estimates.map(e => e.id)} strategy={verticalListSortingStrategy}>
             {estimates.map(estimate => (
               <SortableEstimateCard 
                 key={estimate.id} 
