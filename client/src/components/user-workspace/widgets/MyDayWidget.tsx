@@ -300,7 +300,6 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
   }
 
   const visibleSections = sections.filter(s => s.visible);
-  const hasAnyItems = overdueTasks.length > 0 || todaysTasks.length > 0 || scheduleItems.length > 0;
 
   const renderSection = (sectionConfig: SectionConfig) => {
     const isCollapsed = collapsedState[sectionConfig.id] ?? sectionConfig.collapsed;
@@ -429,12 +428,6 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
           <Sun className="h-8 w-8 mx-auto mb-2 text-amber-400" />
           <p>No sections enabled</p>
           <p className="text-muted-foreground">Configure widget to show sections</p>
-        </div>
-      ) : !hasAnyItems ? (
-        <div className="text-center py-4 text-xs text-muted-foreground">
-          <Sun className="h-8 w-8 mx-auto mb-2 text-amber-400" />
-          <p className="font-medium">All clear for today!</p>
-          <p className="text-muted-foreground">No tasks or schedule items</p>
         </div>
       ) : (
         <div className="space-y-1">
