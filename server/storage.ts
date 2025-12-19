@@ -6370,7 +6370,13 @@ export class DbStorage implements IStorage {
     const conditions = [eq(schema.notes.type, "task")];
     
     if (businessTasks) {
-      conditions.push(isNull(schema.notes.projectId));
+      // Business tasks: scope is 'business' OR legacy tasks (null scope + null projectId)
+      conditions.push(
+        or(
+          eq(schema.notes.scope, "business"),
+          and(isNull(schema.notes.scope), isNull(schema.notes.projectId))
+        )!
+      );
     } else if (projectId) {
       conditions.push(eq(schema.notes.projectId, projectId));
     }
@@ -6401,8 +6407,8 @@ export class DbStorage implements IStorage {
       )
       .orderBy(desc(schema.notes.createdAt));
     
-    // Get business/system tasks (no projectId, but has companyId)
-    const businessTasks = await db.select()
+    // Get non-project tasks: scope is 'business', 'personal', 'system', or no projectId (legacy)
+    const nonProjectTasks = await db.select()
       .from(schema.notes)
       .where(
         and(
@@ -6417,7 +6423,7 @@ export class DbStorage implements IStorage {
     // Combine and sort by createdAt
     const allTasks = [
       ...projectTasks.map((row: any) => row.notes),
-      ...businessTasks
+      ...nonProjectTasks
     ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     
     return allTasks as Task[];

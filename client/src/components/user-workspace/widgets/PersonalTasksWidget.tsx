@@ -98,7 +98,10 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
       result = result.filter(t => t.status !== 'done' && t.status !== 'complete');
     }
 
-    if (projectFilter !== 'all') {
+    if (projectFilter === 'business') {
+      // Include scope='business' OR legacy tasks (no scope + no projectId)
+      result = result.filter(t => t.scope === 'business' || (!t.scope && !t.projectId));
+    } else if (projectFilter !== 'all') {
       result = result.filter(t => t.projectId === projectFilter);
     }
 
@@ -138,10 +141,17 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
 
       switch (groupBy) {
         case 'project':
-          key = task.projectId || 'no-project';
-          const project = task.projectId ? projectMap.get(task.projectId) : null;
-          label = project?.name || 'No Project';
-          color = project?.color || undefined;
+          // Include scope='business' OR legacy tasks (no scope + no projectId) as business
+          if (task.scope === 'business' || (!task.scope && !task.projectId)) {
+            key = 'business';
+            label = 'Business';
+            color = undefined;
+          } else {
+            key = task.projectId || 'no-project';
+            const project = task.projectId ? projectMap.get(task.projectId) : null;
+            label = project?.name || 'No Project';
+            color = project?.color || undefined;
+          }
           break;
         case 'dueDate':
           if (!task.dueDate) {
@@ -277,13 +287,15 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
         </div>
 
         <div className="space-y-2">
-          <Label className="text-xs">Project</Label>
+          <Label className="text-xs">Project / Business</Label>
           <Select value={configProjectFilter} onValueChange={setConfigProjectFilter}>
             <SelectTrigger className="h-7 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Projects</SelectItem>
+              <SelectItem value="all">All Tasks</SelectItem>
+              <SelectItem value="business">Business Only</SelectItem>
+              <div className="h-px bg-border my-1" />
               {projects.map(p => (
                 <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
               ))}
@@ -407,11 +419,16 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                       )}
                     </button>
                     
-                    {project?.color && (
+                    {project?.color ? (
                       <div 
                         className="w-1.5 h-1.5 rounded-full flex-shrink-0" 
                         style={{ backgroundColor: project.color }}
                         title={project.name}
+                      />
+                    ) : (task.scope === 'business' || (!task.scope && !task.projectId)) && (
+                      <div 
+                        className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary" 
+                        title="Business"
                       />
                     )}
                     
@@ -479,13 +496,18 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                           )}
                         </button>
                         
-                        {groupBy !== 'project' && project?.color && (
+                        {groupBy !== 'project' && (project?.color ? (
                           <div 
                             className="w-1.5 h-1.5 rounded-full flex-shrink-0" 
                             style={{ backgroundColor: project.color }}
                             title={project.name}
                           />
-                        )}
+                        ) : (task.scope === 'business' || (!task.scope && !task.projectId)) && (
+                          <div 
+                            className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary" 
+                            title="Business"
+                          />
+                        ))}
                         
                         <span className={`text-[11px] flex-1 truncate ${isCompleted ? 'line-through' : ''}`}>
                           {task.title}

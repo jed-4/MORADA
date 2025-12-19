@@ -74,6 +74,7 @@ const taskFormSchema = z.object({
   estimatedCost: z.number().optional(),
   estimatedUnits: z.number().optional(),
   projectId: z.string().optional(),
+  scope: z.enum(["personal", "project", "system", "business"]).default("project"),
 });
 
 type TaskFormData = z.infer<typeof taskFormSchema>;
@@ -204,6 +205,8 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
       estimatedCost: task?.estimatedCost || undefined,
       estimatedUnits: task?.estimatedUnits || undefined,
       projectId: task?.projectId || projectId || undefined,
+      // For legacy business tasks (no scope, no projectId), treat as "business"
+      scope: (task?.scope as any) || (task && !task.projectId ? "business" : projectId ? "project" : "project"),
     },
   });
 
@@ -224,6 +227,8 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
         estimatedCost: task?.estimatedCost || undefined,
         estimatedUnits: task?.estimatedUnits || undefined,
         projectId: task?.projectId || projectId || undefined,
+        // For legacy business tasks (no scope, no projectId), treat as "business"
+        scope: (task?.scope as any) || (task && !task.projectId ? "business" : projectId ? "project" : "project"),
       };
       form.reset(newDefaults);
       setTitleValue(newDefaults.title);
@@ -705,20 +710,35 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
           {/* Right Column - Properties Sidebar */}
           <div className="w-72 border-l bg-muted/20 overflow-y-auto">
             <div className="p-4 space-y-4">
-              {/* Project */}
+              {/* Project / Business */}
               <div className="space-y-2">
                 <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
                   <FolderOpen className="h-3 w-3" />
-                  Project
+                  Assign To
                 </label>
                 <Select
-                  value={form.watch("projectId") || ""}
-                  onValueChange={(value) => form.setValue("projectId", value || undefined, { shouldDirty: true, shouldTouch: true })}
+                  value={form.watch("scope") === "business" ? "business" : (form.watch("projectId") || "")}
+                  onValueChange={(value) => {
+                    if (value === "business") {
+                      form.setValue("scope", "business", { shouldDirty: true, shouldTouch: true });
+                      form.setValue("projectId", undefined, { shouldDirty: true, shouldTouch: true });
+                    } else {
+                      form.setValue("scope", "project", { shouldDirty: true, shouldTouch: true });
+                      form.setValue("projectId", value || undefined, { shouldDirty: true, shouldTouch: true });
+                    }
+                  }}
                 >
                   <SelectTrigger className="h-9" data-testid="select-project">
-                    <SelectValue placeholder="Select project..." />
+                    <SelectValue placeholder="Select project or business..." />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="business">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-primary" />
+                        <span className="font-medium">Business</span>
+                      </div>
+                    </SelectItem>
+                    <div className="h-px bg-border my-1" />
                     {projects.map((project) => (
                       <SelectItem key={project.id} value={project.id}>
                         <div className="flex items-center gap-2">
