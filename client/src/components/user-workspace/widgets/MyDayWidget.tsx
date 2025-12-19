@@ -14,7 +14,10 @@ import {
   GripVertical,
   AlertTriangle,
   CheckSquare,
-  CalendarDays
+  CalendarDays,
+  CloudSun,
+  Cloud,
+  CloudRain
 } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -434,6 +437,10 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <span className="text-xs text-muted-foreground">{format(new Date(), 'EEEE, MMMM d')}</span>
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <CloudSun className="h-3.5 w-3.5 text-amber-500" />
+          <span>--°C</span>
+        </div>
       </div>
 
       {isLoading ? (

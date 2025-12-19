@@ -119,10 +119,13 @@ import {
   insertRfiTemplateSchema,
   insertTemplateCategorySchema,
   insertDashboardViewSchema,
-  insertPaymentTermsOptionSchema
+  insertPaymentTermsOptionSchema,
+  insertPinnedItemSchema,
+  pinnedItems
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
+import { eq, and, asc } from "drizzle-orm";
 import { PasswordUtils } from "./utils/auth";
 import { requireAuth, requireAdmin, requireTeamMember, requirePermission, toSafeUser } from "./middleware/auth";
 import multer from "multer";
@@ -16363,6 +16366,134 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         suggestions: ["Start with your most important task", "Take short breaks to stay focused"],
         generatedAt: new Date().toISOString(),
       });
+    }
+  });
+
+  // ============================================
+  // PINNED ITEMS API
+  // ============================================
+  
+  // Get all pinned items for current user
+  app.get("/api/pinned-items", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any).dbUser?.id;
+      const companyId = (req.user as any).dbUser?.companyId;
+      
+      if (!userId || !companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const items = await db.select()
+        .from(pinnedItems)
+        .where(and(
+          eq(pinnedItems.userId, userId),
+          eq(pinnedItems.companyId, companyId)
+        ))
+        .orderBy(asc(pinnedItems.sortOrder));
+      
+      res.json(items);
+    } catch (error: any) {
+      console.error("Error fetching pinned items:", error);
+      res.status(500).json({ error: "Failed to fetch pinned items" });
+    }
+  });
+  
+  // Add a pinned item
+  app.post("/api/pinned-items", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any).dbUser?.id;
+      const companyId = (req.user as any).dbUser?.companyId;
+      
+      if (!userId || !companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const parsed = insertPinnedItemSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: fromZodError(parsed.error).message });
+      }
+      
+      // Get the max sort order
+      const existing = await db.select()
+        .from(pinnedItems)
+        .where(and(
+          eq(pinnedItems.userId, userId),
+          eq(pinnedItems.companyId, companyId)
+        ));
+      
+      const maxOrder = existing.reduce((max, item) => Math.max(max, item.sortOrder), -1);
+      
+      const [item] = await db.insert(pinnedItems)
+        .values({
+          ...parsed.data,
+          userId,
+          companyId,
+          sortOrder: maxOrder + 1,
+        })
+        .returning();
+      
+      res.json(item);
+    } catch (error: any) {
+      console.error("Error adding pinned item:", error);
+      if (error.code === '23505') { // Unique constraint violation
+        return res.status(400).json({ error: "Item already pinned" });
+      }
+      res.status(500).json({ error: "Failed to add pinned item" });
+    }
+  });
+  
+  // Reorder pinned items
+  app.put("/api/pinned-items/reorder", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any).dbUser?.id;
+      const companyId = (req.user as any).dbUser?.companyId;
+      
+      if (!userId || !companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const { items } = req.body as { items: { id: string; sortOrder: number }[] };
+      
+      if (!items || !Array.isArray(items)) {
+        return res.status(400).json({ error: "Invalid items array" });
+      }
+      
+      // Update each item's sort order
+      for (const { id, sortOrder } of items) {
+        await db.update(pinnedItems)
+          .set({ sortOrder })
+          .where(and(
+            eq(pinnedItems.id, id),
+            eq(pinnedItems.userId, userId)
+          ));
+      }
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error reordering pinned items:", error);
+      res.status(500).json({ error: "Failed to reorder pinned items" });
+    }
+  });
+  
+  // Delete a pinned item
+  app.delete("/api/pinned-items/:id", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any).dbUser?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      await db.delete(pinnedItems)
+        .where(and(
+          eq(pinnedItems.id, req.params.id),
+          eq(pinnedItems.userId, userId)
+        ));
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting pinned item:", error);
+      res.status(500).json({ error: "Failed to delete pinned item" });
     }
   });
 

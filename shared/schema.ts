@@ -5124,3 +5124,28 @@ export type DashboardView = typeof dashboardViews.$inferSelect;
 export type InsertDashboardViewPermission = z.infer<typeof insertDashboardViewPermissionSchema>;
 export type DashboardViewPermission = typeof dashboardViewPermissions.$inferSelect;
 export type UserDashboardPreference = typeof userDashboardPreferences.$inferSelect;
+
+// Pinned Items - for user's quick access favorites
+export const pinnedItems = pgTable("pinned_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  itemType: varchar("item_type", { length: 50 }).notNull(), // project, contact, document, page
+  itemId: varchar("item_id", { length: 255 }).notNull(), // ID of the pinned item or path for pages
+  itemName: varchar("item_name", { length: 255 }).notNull(), // Display name
+  itemIcon: varchar("item_icon", { length: 50 }), // Optional icon name
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueUserItem: uniqueIndex("pinned_items_user_item_unique").on(table.userId, table.itemType, table.itemId),
+}));
+
+export const insertPinnedItemSchema = createInsertSchema(pinnedItems).omit({
+  id: true,
+  userId: true,
+  companyId: true,
+  createdAt: true,
+});
+
+export type InsertPinnedItem = z.infer<typeof insertPinnedItemSchema>;
+export type PinnedItem = typeof pinnedItems.$inferSelect;

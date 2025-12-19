@@ -11,7 +11,10 @@ import {
   Sparkles,
   CalendarDays,
   CalendarRange,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Pin,
+  FolderOpen,
+  TrendingUp
 } from "lucide-react";
 import { WidgetDefinition } from "@/types/widgets";
 import PersonalTasksWidget from "./PersonalTasksWidget";
@@ -27,6 +30,9 @@ import PersonalAISummaryWidget from "./PersonalAISummaryWidget";
 import DayCalendarWidget from "./DayCalendarWidget";
 import WeekCalendarWidget from "./WeekCalendarWidget";
 import ActionableEstimatesWidget from "./ActionableEstimatesWidget";
+import PinnedItemsWidget from "./PinnedItemsWidget";
+import MyProjectsWidget from "./MyProjectsWidget";
+import PersonalKPIsWidget from "./PersonalKPIsWidget";
 
 export const personalWidgetRegistry: Record<string, WidgetDefinition> = {
   personalTasks: {
@@ -143,6 +149,33 @@ export const personalWidgetRegistry: Record<string, WidgetDefinition> = {
     description: "Estimates that need attention: drafts, work in progress, and pending approval",
     icon: FileSpreadsheet,
     component: ActionableEstimatesWidget,
+    defaultSize: "md",
+    configurable: true,
+  },
+  pinnedItems: {
+    type: "pinnedItems",
+    name: "Pinned Items",
+    description: "Quick access to your favorite projects, contacts, and pages",
+    icon: Pin,
+    component: PinnedItemsWidget,
+    defaultSize: "sm",
+    configurable: true,
+  },
+  myProjects: {
+    type: "myProjects",
+    name: "My Projects",
+    description: "View all projects you are assigned to",
+    icon: FolderOpen,
+    component: MyProjectsWidget,
+    defaultSize: "md",
+    configurable: true,
+  },
+  personalKPIs: {
+    type: "personalKPIs",
+    name: "Personal KPIs",
+    description: "Track your personal goals and performance metrics (Coming Soon)",
+    icon: TrendingUp,
+    component: PersonalKPIsWidget,
     defaultSize: "md",
     configurable: true,
   },

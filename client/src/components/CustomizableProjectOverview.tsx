@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Settings, ChevronDown, Search, PlusCircle, Check, LayoutGrid, Trash2, Lock, Users, Globe, Eye, Pencil, Star, Palette, Home, MessageSquare, ClipboardList, FileText, Calculator, FileBarChart, File, ListTree, Clock, CheckSquare, ListChecks, FileSearch, HelpCircle, CheckCircle, DollarSign, Receipt, AlertCircle, BookOpen, Timer, FolderOpen } from "lucide-react";
+import { Plus, Settings, ChevronDown, Search, PlusCircle, Check, LayoutGrid, Trash2, Lock, Users, Globe, Eye, Pencil, Star, Palette, Home, MessageSquare, ClipboardList, FileText, Calculator, FileBarChart, File, ListTree, Clock, CheckSquare, ListChecks, FileSearch, HelpCircle, CheckCircle, DollarSign, Receipt, AlertCircle, BookOpen, Timer, FolderOpen, Menu } from "lucide-react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -770,13 +770,77 @@ export default function CustomizableProjectOverview() {
   return (
     <div className="flex flex-col h-full" data-testid="customizable-project-overview">
       {/* Row 1 - Title & Actions (36px / h-9) */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
-        {/* Left: Project Name · Project Overview breadcrumb + Active chip */}
+      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0 border-b border-border">
+        {/* Left: Hamburger Menu + Project Name + Active chip */}
         <div className="flex items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate"
+                data-testid="button-project-menu"
+              >
+                <Menu className="w-4 h-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56">
+              <DropdownMenuLabel className="text-xs">Navigation</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {PROJECT_TAB_GROUPS.map((group) => {
+                const GroupIcon = group.icon;
+                const currentPath = currentLocation.split(`/projects/${currentProject.id}`)[1] || "";
+                return (
+                  <div key={group.id}>
+                    <DropdownMenuLabel className="text-[10px] text-muted-foreground py-1 flex items-center gap-1">
+                      <GroupIcon className="w-3 h-3" />
+                      {group.label}
+                    </DropdownMenuLabel>
+                    {group.items.map((item) => {
+                      const ItemIcon = item.icon;
+                      const itemPath = item.path ? `/projects/${currentProject.id}${item.path}` : `/projects/${currentProject.id}`;
+                      const isItemActive = item.path === "" ? currentPath === "" || currentPath === "/" : currentPath.startsWith(item.path);
+                      return (
+                        <DropdownMenuItem
+                          key={item.id}
+                          className={`text-xs flex items-center gap-2 ${isItemActive ? 'bg-accent' : ''}`}
+                          onClick={() => navigate(itemPath)}
+                          data-testid={`menu-item-${item.id}`}
+                        >
+                          <ItemIcon className="w-3 h-3" />
+                          <span>{item.label}</span>
+                          {isItemActive && <Check className="w-3 h-3 ml-auto" />}
+                        </DropdownMenuItem>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-xs">Dashboard Views</DropdownMenuLabel>
+              {dashboardViews.length === 0 ? (
+                <DropdownMenuItem disabled className="text-xs text-muted-foreground">
+                  No views yet
+                </DropdownMenuItem>
+              ) : (
+                dashboardViews.slice(0, 5).map((view) => {
+                  const VisIcon = getVisibilityIcon(view.visibility);
+                  return (
+                    <DropdownMenuItem
+                      key={view.id}
+                      className="text-xs flex items-center gap-2"
+                      onClick={() => switchToView(view)}
+                      data-testid={`menu-view-${view.id}`}
+                    >
+                      <VisIcon className="w-3 h-3" />
+                      <span className="truncate">{view.name}</span>
+                      {view.id === activeViewId && <Check className="w-3 h-3 ml-auto" />}
+                    </DropdownMenuItem>
+                  );
+                })
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <h2 className="text-sm font-semibold flex items-center gap-1.5" data-testid="text-page-title">
             <span className="truncate max-w-[180px]">{currentProject.name}</span>
-            <span className="text-muted-foreground">·</span>
-            <span>Project Overview</span>
           </h2>
           <Badge
             variant="secondary"
@@ -830,92 +894,23 @@ export default function CustomizableProjectOverview() {
         </div>
       </div>
 
-      {/* Row 2 - High-Level Project Tabs (36px / h-9) - Project/Management/Finance */}
-      <div className="h-9 bg-background flex items-center px-2 gap-1 border-b border-border flex-shrink-0 overflow-x-auto">
-        {PROJECT_TAB_GROUPS.map((group) => {
-          const GroupIcon = group.icon;
-          const currentPath = currentLocation.split(`/projects/${currentProject.id}`)[1] || "";
-          const isGroupActive = group.items.some(item => 
-            item.path === "" ? currentPath === "" || currentPath === "/" : currentPath.startsWith(item.path)
-          );
-          const activeItem = group.items.find(item =>
-            item.path === "" ? currentPath === "" || currentPath === "/" : currentPath.startsWith(item.path)
-          );
-          const firstItemPath = group.items[0].path ? `/projects/${currentProject.id}${group.items[0].path}` : `/projects/${currentProject.id}`;
-          
-          return (
-            <div key={group.id} className="relative h-full flex items-center">
-              <button
-                type="button"
-                onClick={() => navigate(firstItemPath)}
-                className={`relative h-full px-3 text-xs flex items-center gap-1.5 flex-shrink-0 transition-colors ${
-                  isGroupActive
-                    ? 'text-[#bba7db] font-medium'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-                data-testid={`tab-group-${group.id}`}
-              >
-                <GroupIcon className="w-3 h-3" />
-                <span>{group.label}</span>
-                {activeItem && <span className="text-[10px] text-muted-foreground">/ {activeItem.label}</span>}
-                {isGroupActive && (
-                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#bba7db]" />
-                )}
-              </button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    className={`h-full px-1 text-xs flex items-center transition-colors ${
-                      isGroupActive
-                        ? 'text-[#bba7db]'
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                    data-testid={`tab-group-dropdown-${group.id}`}
-                  >
-                    <ChevronDown className="w-3 h-3" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-40">
-                  {group.items.map((item) => {
-                    const ItemIcon = item.icon;
-                    const itemPath = item.path ? `/projects/${currentProject.id}${item.path}` : `/projects/${currentProject.id}`;
-                    const isItemActive = item.path === "" ? currentPath === "" || currentPath === "/" : currentPath.startsWith(item.path);
-                    return (
-                      <DropdownMenuItem
-                        key={item.id}
-                        className={`text-xs flex items-center gap-2 ${isItemActive ? 'bg-accent' : ''}`}
-                        onClick={() => navigate(itemPath)}
-                        data-testid={`tab-item-${item.id}`}
-                      >
-                        <ItemIcon className="w-3 h-3" />
-                        <span>{item.label}</span>
-                      </DropdownMenuItem>
-                    );
-                  })}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Row 3 - View Switcher (36px / h-9) */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
-        {/* Left: View split-button selector */}
-        <div className="flex items-center gap-1">
+      {/* View Switcher Row - Simplified */}
+      <div className="h-8 bg-muted/30 flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+        {/* Left: Current view indicator */}
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">View:</span>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
-                className="h-6 w-auto px-2.5 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1.5"
+                className="h-6 w-auto px-2 text-xs rounded-md hover:bg-muted flex items-center gap-1.5"
                 data-testid="button-view-switcher"
               >
                 {activeView && (() => {
                   const VisIcon = getVisibilityIcon(activeView.visibility);
-                  return <VisIcon className="w-3 h-3" />;
+                  return <VisIcon className="w-3 h-3 text-muted-foreground" />;
                 })()}
-                <span>{activeView?.name || 'Select View'}</span>
-                <ChevronDown className="w-3 h-3" />
+                <span className="font-medium">{activeView?.name || 'Select View'}</span>
+                <ChevronDown className="w-3 h-3 text-muted-foreground" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-56">
