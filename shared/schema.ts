@@ -450,7 +450,7 @@ export const insertNoteSchema = createInsertSchema(notes).omit({
   visibility: z.enum(["team_only", "everyone", "project_team", "private"]).optional(),
   pinned: z.boolean().optional(),
   customFields: z.record(z.any()).optional(),
-  scope: z.enum(["personal", "project", "system"]).optional(),
+  scope: z.enum(["personal", "project", "system", "business"]).optional(),
   // Task-specific fields
   type: z.enum(["note", "task"]).optional(),
   status: z.enum(["todo", "in-progress", "done"]).optional(),
@@ -492,6 +492,7 @@ export const insertTaskSchema = insertNoteSchema.extend({
   type: z.literal("task"),
   status: z.string().default("todo"),
   projectId: z.string().optional().nullable(), // Optional - null for business/company-wide tasks
+  scope: z.enum(["personal", "project", "system", "business"]).default("project"), // "business" for company-wide tasks
 });
 
 export type InsertTask = z.infer<typeof insertTaskSchema>;
