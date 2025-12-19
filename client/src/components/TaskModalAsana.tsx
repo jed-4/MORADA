@@ -3,6 +3,7 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { type Task, type FieldCategoryWithOptions, type Project } from "@shared/schema";
 import { z } from "zod";
@@ -112,6 +113,8 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
   const [showAdvanced, setShowAdvanced] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+  const { user } = useAuth();
+  const businessLabel = (user as any)?.companyNickname || "Business";
 
   const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
     queryKey: ["/api/field-categories"],
@@ -735,7 +738,7 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
                     <SelectItem value="business">
                       <div className="flex items-center gap-2">
                         <div className="w-2 h-2 rounded-full bg-primary" />
-                        <span className="font-medium">Business</span>
+                        <span className="font-medium">{businessLabel}</span>
                       </div>
                     </SelectItem>
                     <div className="h-px bg-border my-1" />

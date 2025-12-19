@@ -23,6 +23,7 @@ import { type Task, type Project } from "@shared/schema";
 import TaskModalAsana from "@/components/TaskModalAsana";
 import { format, isToday, isTomorrow, isBefore, startOfDay, addDays, isWithinInterval } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/use-auth";
 
 type FilterType = 'all' | 'overdue' | 'today' | 'upcoming' | 'high-priority';
 type GroupByType = 'none' | 'project' | 'dueDate' | 'priority';
@@ -36,6 +37,9 @@ interface WidgetConfig {
 }
 
 export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId }: WidgetProps) {
+  const { user } = useAuth();
+  const businessLabel = (user as any)?.companyNickname || "Business";
+  
   const config = widget.config as WidgetConfig || {};
   const maxTasks = config.maxTasks || 10;
   const showFilter = config.showFilter ?? 'all';
@@ -144,7 +148,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
           // Include scope='business' OR legacy tasks (no scope + no projectId) as business
           if (task.scope === 'business' || (!task.scope && !task.projectId)) {
             key = 'business';
-            label = 'Business';
+            label = businessLabel;
             color = undefined;
           } else {
             key = task.projectId || 'no-project';
@@ -294,7 +298,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Tasks</SelectItem>
-              <SelectItem value="business">Business Only</SelectItem>
+              <SelectItem value="business">{businessLabel} Only</SelectItem>
               <div className="h-px bg-border my-1" />
               {projects.map(p => (
                 <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
@@ -428,7 +432,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                     ) : (task.scope === 'business' || (!task.scope && !task.projectId)) && (
                       <div 
                         className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary" 
-                        title="Business"
+                        title={businessLabel}
                       />
                     )}
                     
@@ -505,7 +509,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                         ) : (task.scope === 'business' || (!task.scope && !task.projectId)) && (
                           <div 
                             className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary" 
-                            title="Business"
+                            title={businessLabel}
                           />
                         ))}
                         

@@ -18,6 +18,18 @@ const getOidcConfig = memoize(
   { maxAge: 3600 * 1000 }
 );
 
+// Get canonical domain for consistent cookie domain across deploys
+function getCanonicalDomain(): string | undefined {
+  const domains = process.env.REPLIT_DOMAINS?.split(',') || [];
+  // Prefer .replit.app domain for production stability
+  const replitAppDomain = domains.find(d => d.trim().endsWith('.replit.app'));
+  if (replitAppDomain) {
+    // Return just the domain without leading dot for cookie domain
+    return replitAppDomain.trim();
+  }
+  return undefined; // Let express use request hostname in dev
+}
+
 // Export session middleware for reuse (e.g., Socket.io)
 export const sessionMiddleware = (() => {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000; // 1 week
@@ -29,6 +41,9 @@ export const sessionMiddleware = (() => {
     tableName: "sessions",
   });
   
+  const canonicalDomain = getCanonicalDomain();
+  console.log('[Session] Cookie domain:', canonicalDomain || 'auto (dev mode)');
+  
   return session({
     secret: process.env.SESSION_SECRET || 'buildpro-secret-key-2025',
     store: sessionStore,
@@ -39,7 +54,9 @@ export const sessionMiddleware = (() => {
       httpOnly: true,
       secure: true,  // REQUIRED with sameSite: 'none' - browsers reject otherwise
       sameSite: 'none',  // Required for Replit iframe
-      maxAge: sessionTtl  // Match cookie lifetime to session TTL (7 days)
+      maxAge: sessionTtl,  // Match cookie lifetime to session TTL (7 days)
+      // Set domain to canonical .replit.app host so cookies persist across deploys
+      ...(canonicalDomain ? { domain: canonicalDomain } : {})
     }
   });
 })();

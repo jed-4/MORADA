@@ -12,6 +12,7 @@ import TeamManagement from "./TeamManagement";
 import Messages from "./Messages";
 import Notes from "./Notes";
 import ComingSoonPage from "./ComingSoonPage";
+import { useAuth } from "@/hooks/use-auth";
 
 const BUSINESS_TABS = [
   { id: "overview", label: "Overview", icon: Home, path: "/business" },
@@ -30,6 +31,8 @@ const BUSINESS_TABS = [
 
 export default function Business() {
   const [location, navigate] = useLocation();
+  const { user } = useAuth();
+  const businessLabel = (user as any)?.companyNickname || "Business";
 
   const activeTab = useMemo(() => {
     // Sort tabs by path length (longest first) to match most specific path
@@ -79,7 +82,7 @@ export default function Business() {
       {/* Row 1 - Title (36px) */}
       <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0 border-b border-border">
         <h2 className="text-sm font-semibold" data-testid="text-page-title">
-          Business Dashboard
+          {businessLabel}
         </h2>
       </div>
 
