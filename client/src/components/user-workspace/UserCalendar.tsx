@@ -150,9 +150,10 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
   
   const isGoogleCalendarConnected = googleCalendarStatus?.connected ?? false;
 
-  // Fetch Google Calendar events
+  // Fetch Google Calendar events - always try to fetch (API returns empty if not connected)
+  // Use same query key as UserCalendarDialog for cache sharing
   const { data: googleCalendarEvents = [] } = useQuery({
-    queryKey: ["/api/google-calendar/events", displayedUserId],
+    queryKey: ["/api/google-calendar/events"],
     queryFn: async () => {
       try {
         const events = await apiRequest("/api/google-calendar/events", "GET");
@@ -165,7 +166,8 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
         return [];
       }
     },
-    enabled: isGoogleCalendarConnected, // Only fetch when connected
+    retry: false,
+    staleTime: 60000, // Cache for 1 minute
   });
 
   // Fetch saved views
@@ -269,13 +271,24 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
     // Add Google Calendar events (always show when connected - events are from the logged-in user's account)
     if (googleCalendarEvents.length > 0) {
       googleCalendarEvents.forEach((event: any) => {
+        // Handle different event formats - API might return pre-formatted events or raw Google API format
+        const startStr = event.start?.dateTime || event.start?.date || event.startDate;
+        const endStr = event.end?.dateTime || event.end?.date || event.endDate;
+        
+        // Skip invalid events
+        if (!startStr) return;
+        
+        const startDate = new Date(startStr);
+        const endDate = endStr ? new Date(endStr) : startDate;
+        const isAllDay = event.allDay || (!event.start?.dateTime && !event.startTime);
+        
         events.push({
           id: event.id,
-          title: event.summary || "Untitled Event",
-          startDate: new Date(event.start.dateTime || event.start.date),
-          endDate: new Date(event.end.dateTime || event.end.date),
-          startTime: event.start.dateTime ? new Date(event.start.dateTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }) : null,
-          endTime: event.end.dateTime ? new Date(event.end.dateTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }) : null,
+          title: event.summary || event.title || "Untitled Event",
+          startDate,
+          endDate,
+          startTime: event.startTime || (isAllDay ? null : startDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })),
+          endTime: event.endTime || (isAllDay ? null : endDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })),
           type: "google-calendar",
           description: event.description,
           location: event.location,
