@@ -44,12 +44,14 @@ interface SortableRowProps {
   onDelete: (id: string) => void;
   onToggleDefault: (id: string, isDefault: boolean) => void;
   onToggleCompleted: (id: string, isCompleted: boolean) => void;
+  onToggleActionable: (id: string, isActionable: boolean) => void;
   parentOptions: FieldOption[];
   supportsHierarchy: boolean;
   showDoneColumn: boolean;
+  showActionableColumn: boolean;
 }
 
-function SortableRow({ option, onEdit, onDelete, onToggleDefault, onToggleCompleted, parentOptions, supportsHierarchy, showDoneColumn }: SortableRowProps) {
+function SortableRow({ option, onEdit, onDelete, onToggleDefault, onToggleCompleted, onToggleActionable, parentOptions, supportsHierarchy, showDoneColumn, showActionableColumn }: SortableRowProps) {
   const {
     attributes,
     listeners,
@@ -107,6 +109,16 @@ function SortableRow({ option, onEdit, onDelete, onToggleDefault, onToggleComple
             onCheckedChange={(checked) => onToggleCompleted(option.id, !!checked)}
             aria-label={`Mark ${option.name} as done status`}
             data-testid={`checkbox-completed-${option.id}`}
+          />
+        </TableCell>
+      )}
+      {showActionableColumn && (
+        <TableCell className="text-center">
+          <Checkbox
+            checked={option.isActionable}
+            onCheckedChange={(checked) => onToggleActionable(option.id, !!checked)}
+            aria-label={`Mark ${option.name} as requiring action`}
+            data-testid={`checkbox-actionable-${option.id}`}
           />
         </TableCell>
       )}
@@ -216,6 +228,12 @@ export default function FieldSettings() {
   // Show "Done" column for status-type categories where marking completion makes sense
   const showDoneColumn = useMemo(
     () => selectedCategory?.key === 'task.status',
+    [selectedCategory]
+  );
+
+  // Show "Actionable" column for estimate and schedule status categories
+  const showActionableColumn = useMemo(
+    () => ['estimate.status', 'schedule.status', 'task.status'].includes(selectedCategory?.key || ''),
     [selectedCategory]
   );
 
@@ -402,6 +420,31 @@ export default function FieldSettings() {
 
   const handleToggleCompleted = (id: string, isCompleted: boolean) => {
     toggleCompletedMutation.mutate({ id, isCompleted });
+  };
+
+  // Toggle actionable mutation - marks a status as requiring action
+  const toggleActionableMutation = useMutation({
+    mutationFn: async ({ id, isActionable }: { id: string; isActionable: boolean }) => {
+      return await apiRequest(`/api/field-options/${id}`, 'PATCH', { isActionable });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/field-options', selectedCategoryId] });
+      toast({
+        title: "Actionable status updated",
+        description: "The actionable flag has been updated.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update actionable status.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleToggleActionable = (id: string, isActionable: boolean) => {
+    toggleActionableMutation.mutate({ id, isActionable });
   };
 
   // Reorder mutation with optimistic updates to prevent snapback
@@ -1297,6 +1340,7 @@ export default function FieldSettings() {
                           <TableHead>Preview</TableHead>
                           <TableHead className="text-center w-16">Default</TableHead>
                           {showDoneColumn && <TableHead className="text-center w-16">Done</TableHead>}
+                          {showActionableColumn && <TableHead className="text-center w-20">Actionable</TableHead>}
                           {supportsHierarchy && <TableHead>Type</TableHead>}
                           <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
@@ -1304,7 +1348,7 @@ export default function FieldSettings() {
                       <TableBody>
                         {displayOptions.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={5 + (supportsHierarchy ? 1 : 0) + (showDoneColumn ? 1 : 0)} className="text-center text-muted-foreground py-8">
+                            <TableCell colSpan={5 + (supportsHierarchy ? 1 : 0) + (showDoneColumn ? 1 : 0) + (showActionableColumn ? 1 : 0)} className="text-center text-muted-foreground py-8">
                               No options configured. Click "Add Option" to create one.
                             </TableCell>
                           </TableRow>
@@ -1321,9 +1365,11 @@ export default function FieldSettings() {
                                 onDelete={handleDelete}
                                 onToggleDefault={handleToggleDefault}
                                 onToggleCompleted={handleToggleCompleted}
+                                onToggleActionable={handleToggleActionable}
                                 parentOptions={parentOptions}
                                 supportsHierarchy={supportsHierarchy}
                                 showDoneColumn={showDoneColumn}
+                                showActionableColumn={showActionableColumn}
                               />
                             ))}
                           </SortableContext>
