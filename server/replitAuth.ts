@@ -200,13 +200,27 @@ export async function setupAuth(app: Express) {
     // Store the original hostname so we can redirect back after auth
     (req.session as any).originalHost = req.hostname;
     
+    // Debug: Log session state before OAuth redirect
     console.log(`[OAuth Login] canonical: ${canonicalDomain}, original: ${req.hostname}, callback: ${callbackUrl}, redirect: ${redirectTo || '/'}`);
+    console.log('[OAuth Login] Session debug:', {
+      sessionID: req.sessionID,
+      cookieHeader: req.headers.cookie?.substring(0, 100),
+      sessionKeys: Object.keys(req.session || {}),
+    });
     
-    ensureStrategy(canonicalDomain);
-    passport.authenticate(`replitauth:${canonicalDomain}`, {
-      prompt: "login consent",
-      scope: ["openid", "email", "profile", "offline_access"],
-    })(req, res, next);
+    // Save session before redirecting to ensure state is persisted
+    req.session.save((err) => {
+      if (err) {
+        console.error('[OAuth Login] Session save error:', err);
+      }
+      console.log('[OAuth Login] Session saved, proceeding with OAuth');
+      
+      ensureStrategy(canonicalDomain);
+      passport.authenticate(`replitauth:${canonicalDomain}`, {
+        prompt: "login consent",
+        scope: ["openid", "email", "profile", "offline_access"],
+      })(req, res, next);
+    });
   });
 
   app.get("/api/callback", (req, res, next) => {
@@ -214,16 +228,20 @@ export async function setupAuth(app: Express) {
     const domains = process.env.REPLIT_DOMAINS?.split(',') || [];
     const canonicalDomain = domains.find(d => d.trim().endsWith('.replit.app')) || domains[0]?.trim() || req.hostname;
     
-    // Log callback attempt details for debugging
+    // Log callback attempt details for debugging - include session contents
     console.log('[OAuth Callback] Received callback:', {
       canonicalDomain,
       sessionID: req.sessionID,
       hasSession: !!req.session,
+      sessionKeys: Object.keys(req.session || {}),
+      cookieHeader: req.headers.cookie?.substring(0, 100),
       query: Object.keys(req.query),
       hasCode: !!req.query.code,
       hasState: !!req.query.state,
       hasError: !!req.query.error,
       errorDescription: req.query.error_description,
+      // Check if PKCE state is present in session (openid-client stores it here)
+      hasOidcState: !!(req.session as any)?.['oidc:replit.com'],
     });
     
     // If OAuth provider returned an error, log it

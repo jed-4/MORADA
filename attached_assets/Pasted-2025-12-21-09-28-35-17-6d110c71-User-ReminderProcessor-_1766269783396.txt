@@ -1,0 +1,112 @@
+2025-12-21 09:28:35.17
+6d110c71
+User
+[ReminderProcessor] Starting reminder processing...
+2025-12-21 09:28:37.37
+6d110c71
+User
+[ReminderProcessor] Found 0 due reminders
+2025-12-21 09:28:38.17
+6d110c71
+User
+[ReminderProcessor] Reminder processing completed
+2025-12-21 09:28:38.17
+6d110c71
+User
+[ReminderProcessor] Found 0 business reminders for 22:28
+2025-12-21 09:28:38.37
+6d110c71
+User
+[ReminderProcessor] Checking for expiring supplier insurances...
+2025-12-21 09:28:43.57
+6d110c71
+User
+[ReminderProcessor] Insurance expiry check completed
+2025-12-21 09:28:57.54
+6d110c71
+User
+10:28:57 PM [express] GET /api/auth/user 401 in 146ms :: {"message":"Unauthorized"}
+2025-12-21 09:28:59.09
+6d110c71
+User
+[OAuth Login] canonical: buildpro4.replit.app, original: buildpro4.replit.app, callback: https://buildpro4.replit.app/api/callback, redirect: /
+2025-12-21 09:28:59.12
+6d110c71
+User
+10:28:59 PM [express] GET /api/login 302 in 56ms
+2025-12-21 09:29:04.19
+6d110c71
+User
+sessionID: 'spCGMWoAqWk40BfHbcCWvtpxWmQEz-yP',
+2025-12-21 09:29:04.19
+6d110c71
+User
+canonicalDomain: 'buildpro4.replit.app',
+2025-12-21 09:29:04.19
+6d110c71
+User
+hasError: false,
+2025-12-21 09:29:04.19
+6d110c71
+User
+errorDescription: undefined
+2025-12-21 09:29:04.19
+6d110c71
+User
+query: [ 'code', 'iss' ],
+2025-12-21 09:29:04.19
+6d110c71
+User
+hasCode: true,
+2025-12-21 09:29:04.19
+6d110c71
+User
+hasState: false,
+2025-12-21 09:29:04.19
+6d110c71
+User
+}
+2025-12-21 09:29:04.19
+6d110c71
+User
+[OAuth Callback] Received callback: {
+2025-12-21 09:29:04.19
+6d110c71
+User
+hasSession: true,
+2025-12-21 09:29:04.20
+6d110c71
+User
+10:29:04 PM [express] GET /api/callback 302 in 23ms
+2025-12-21 09:29:04.44
+6d110c71
+User
+[OAuth Login] canonical: buildpro4.replit.app, original: buildpro4.replit.app, callback: https://buildpro4.replit.app/api/callback, redirect: /
+2025-12-21 09:29:04.46
+6d110c71
+User
+10:29:04 PM [express] GET /api/login 302 in 42ms
+2025-12-21 09:29:10.25
+6d110c71
+User
+hasCode: true,
+2025-12-21 09:29:10.25
+6d110c71
+User
+errorDescription: undefined
+2025-12-21 09:29:10.25
+6d110c71
+User
+query: [ 'code', 'iss' ],
+2025-12-21 09:29:10.25
+6d110c71
+User
+hasError: false,
+2025-12-21 09:29:10.25
+6d110c71
+User
+}
+2025-12-21 09:29:10.25
+6d110c71
+User
+hasState: false,
