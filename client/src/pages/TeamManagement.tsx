@@ -31,7 +31,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import InviteUserDialog from "@/components/InviteUserDialog";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { insertSupplierSchema, type Supplier, type InsertSupplier, type UserInvitation } from "@shared/schema";
+import { insertSupplierSchema, type Supplier, type InsertSupplier, type UserInvitation, type User } from "@shared/schema";
 import { z } from "zod";
 
 const supplierFormSchema = insertSupplierSchema.extend({
@@ -44,12 +44,23 @@ const supplierFormSchema = insertSupplierSchema.extend({
 
 type SupplierFormValues = z.infer<typeof supplierFormSchema>;
 
+const userEditSchema = z.object({
+  firstName: z.string().min(1, "First name is required"),
+  lastName: z.string().min(1, "Last name is required"),
+  email: z.string().email("Invalid email address"),
+  phone: z.string().optional(),
+});
+
+type UserEditFormValues = z.infer<typeof userEditSchema>;
+
 export default function TeamManagement() {
   const [, navigate] = useLocation();
   const pageTitle = usePageTitle({ pageName: "Team" });
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
   const [isSupplierDialogOpen, setIsSupplierDialogOpen] = useState(false);
+  const [isUserEditDialogOpen, setIsUserEditDialogOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
+  const [editingUser, setEditingUser] = useState<any | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeSection, setActiveSection] = useState<"members" | "suppliers">("members");
   const { toast } = useToast();
@@ -62,6 +73,16 @@ export default function TeamManagement() {
       phone: "",
       abn: "",
       address: "",
+    },
+  });
+
+  const userEditForm = useForm<UserEditFormValues>({
+    resolver: zodResolver(userEditSchema),
+    defaultValues: {
+      firstName: "",
+      lastName: "",
+      email: "",
+      phone: "",
     },
   });
 
@@ -152,6 +173,43 @@ export default function TeamManagement() {
       toast({ title: "Failed to delete supplier", variant: "destructive" });
     },
   });
+
+  const updateUserMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<UserEditFormValues> }) => {
+      return await apiRequest(`/api/users/${id}`, "PATCH", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      toast({ title: "User updated successfully" });
+      handleCloseUserEditDialog();
+    },
+    onError: () => {
+      toast({ title: "Failed to update user", variant: "destructive" });
+    },
+  });
+
+  const handleEditUser = (user: any) => {
+    setEditingUser(user);
+    userEditForm.reset({
+      firstName: user.firstName || "",
+      lastName: user.lastName || "",
+      email: user.email || "",
+      phone: user.phone || "",
+    });
+    setIsUserEditDialogOpen(true);
+  };
+
+  const handleCloseUserEditDialog = () => {
+    setIsUserEditDialogOpen(false);
+    setEditingUser(null);
+    userEditForm.reset();
+  };
+
+  const onUserEditSubmit = (data: UserEditFormValues) => {
+    if (editingUser) {
+      updateUserMutation.mutate({ id: editingUser.id, data });
+    }
+  };
 
   const users = allUsers
     .filter((user: any) => user.firstName || user.lastName || user.email)
@@ -364,6 +422,7 @@ export default function TeamManagement() {
                           key={user.id}
                           user={user}
                           onView={(id) => navigate(`/business-team/${id}`)}
+                          onEdit={handleEditUser}
                         />
                       ))}
                     </div>
@@ -505,16 +564,101 @@ export default function TeamManagement() {
           </Form>
         </DialogContent>
       </Dialog>
+
+      {/* Edit User Dialog */}
+      <Dialog open={isUserEditDialogOpen} onOpenChange={setIsUserEditDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Edit Team Member</DialogTitle>
+            <DialogDescription>
+              Update team member details
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...userEditForm}>
+            <form onSubmit={userEditForm.handleSubmit(onUserEditSubmit)} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={userEditForm.control}
+                  name="firstName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>First Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="First name" {...field} data-testid="input-user-firstname" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={userEditForm.control}
+                  name="lastName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Last Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Last name" {...field} data-testid="input-user-lastname" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <FormField
+                control={userEditForm.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Email address" type="email" {...field} data-testid="input-user-email" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={userEditForm.control}
+                name="phone"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Phone (Optional)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Phone number" {...field} data-testid="input-user-phone" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <div className="flex justify-end gap-2 pt-4">
+                <Button type="button" variant="outline" onClick={handleCloseUserEditDialog}>
+                  Cancel
+                </Button>
+                <Button 
+                  type="submit" 
+                  className="bg-[#bba7db] hover:bg-[#bba7db]/90"
+                  disabled={updateUserMutation.isPending}
+                  data-testid="button-save-user"
+                >
+                  Save Changes
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
 function TeamMemberCard({ 
   user,
-  onView
+  onView,
+  onEdit
 }: {
   user: any;
   onView: (id: string) => void;
+  onEdit: (user: any) => void;
 }) {
   const [isHovered, setIsHovered] = useState(false);
   
@@ -609,9 +753,13 @@ function TeamMemberCard({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onView(user.id); }}>
+              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit(user); }}>
                 <Pencil className="h-3 w-3 mr-2" />
-                View Details
+                Edit Details
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onView(user.id); }}>
+                <Briefcase className="h-3 w-3 mr-2" />
+                View Profile
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
