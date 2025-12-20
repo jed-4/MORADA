@@ -246,7 +246,7 @@ export default function BusinessOverview() {
   // Mutation to update a view
   const updateViewMutation = useMutation({
     mutationFn: async ({ viewId, updates }: { viewId: string; updates: Partial<BusinessDashboardView> }) => {
-      return apiRequest("PATCH", `/api/business-dashboard-views/${viewId}`, updates);
+      return apiRequest(`/api/business-dashboard-views/${viewId}`, "PATCH", updates);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/business-dashboard-views"] });
@@ -260,15 +260,14 @@ export default function BusinessOverview() {
   // Mutation to create a view
   const createViewMutation = useMutation({
     mutationFn: async (data: { name: string; widgets: Widget[] }) => {
-      return apiRequest("POST", "/api/business-dashboard-views", {
+      return apiRequest("/api/business-dashboard-views", "POST", {
         name: data.name,
         widgets: data.widgets,
         visibility: "everyone",
         displayOrder: savedViews.length,
       });
     },
-    onSuccess: async (response) => {
-      const newView = await response.json();
+    onSuccess: (newView) => {
       queryClient.invalidateQueries({ queryKey: ["/api/business-dashboard-views"] });
       setActiveViewId(newView.id);
       setWidgets((newView.widgets as Widget[]) || DEFAULT_WIDGETS);
@@ -286,7 +285,7 @@ export default function BusinessOverview() {
   // Mutation to delete a view
   const deleteViewMutation = useMutation({
     mutationFn: async (viewId: string) => {
-      return apiRequest("DELETE", `/api/business-dashboard-views/${viewId}`);
+      return apiRequest(`/api/business-dashboard-views/${viewId}`, "DELETE");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/business-dashboard-views"] });

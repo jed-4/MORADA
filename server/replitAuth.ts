@@ -211,13 +211,41 @@ export async function setupAuth(app: Express) {
     // Use same canonical domain logic for callback
     const domains = process.env.REPLIT_DOMAINS?.split(',') || [];
     const canonicalDomain = domains.find(d => d.trim().endsWith('.replit.app')) || domains[0]?.trim() || req.hostname;
+    
+    // Log callback attempt details for debugging
+    console.log('[OAuth Callback] Received callback:', {
+      canonicalDomain,
+      sessionID: req.sessionID,
+      hasSession: !!req.session,
+      query: Object.keys(req.query),
+      hasCode: !!req.query.code,
+      hasState: !!req.query.state,
+      hasError: !!req.query.error,
+      errorDescription: req.query.error_description,
+    });
+    
+    // If OAuth provider returned an error, log it
+    if (req.query.error) {
+      console.error('[OAuth Callback] Provider error:', {
+        error: req.query.error,
+        description: req.query.error_description,
+      });
+    }
+    
     ensureStrategy(canonicalDomain);
     passport.authenticate(`replitauth:${canonicalDomain}`, {
       failureRedirect: "/api/login",
+      failWithError: true, // Pass errors to our handler instead of silent redirect
     })(req, res, (err?: any) => {
       if (err) {
-        console.error('[OAuth Callback] Authentication failed:', err);
-        return next(err);
+        console.error('[OAuth Callback] Authentication failed:', {
+          error: err.message || err,
+          stack: err.stack,
+          code: err.code,
+          oauthError: err.oauthError,
+        });
+        // Redirect to login on error
+        return res.redirect('/api/login');
       }
       
       const user = (req.user as any)?.dbUser;
