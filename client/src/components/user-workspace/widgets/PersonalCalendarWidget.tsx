@@ -102,16 +102,6 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
     setViewMode((widget.config?.viewMode as ViewMode) || "day");
   }, [widget.title, widget.config]);
 
-  // Scroll to current time on mount
-  useEffect(() => {
-    if (scrollRef.current && (viewMode === "day" || viewMode === "week")) {
-      const now = new Date();
-      const currentHour = now.getHours();
-      const scrollPosition = Math.max(0, (currentHour - 1) * HOUR_HEIGHT);
-      scrollRef.current.scrollTop = scrollPosition;
-    }
-  }, [viewMode]);
-
   const { data: tasks = [], isLoading: tasksLoading } = useQuery<any[]>({
     queryKey: ["/api/tasks", { assigneeId: userId }],
     queryFn: async () => {
@@ -145,6 +135,27 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
       type: 'task',
       projectId: task.projectId,
     }));
+
+  // Scroll to 6 AM or earliest event on mount
+  useEffect(() => {
+    if (scrollRef.current && (viewMode === "day" || viewMode === "week")) {
+      const DEFAULT_START_HOUR = 6; // Default to 6 AM
+      
+      // Find earliest event time
+      let earliestHour = DEFAULT_START_HOUR;
+      allEvents.forEach(event => {
+        if (event.startTime) {
+          const startHour = parseTimeString(event.startTime);
+          if (startHour !== null && startHour < earliestHour) {
+            earliestHour = startHour;
+          }
+        }
+      });
+      
+      const scrollPosition = Math.max(0, earliestHour * HOUR_HEIGHT);
+      scrollRef.current.scrollTop = scrollPosition;
+    }
+  }, [viewMode, allEvents]);
 
   const isLoading = tasksLoading;
 
