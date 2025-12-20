@@ -78,6 +78,7 @@ Preferred communication style: Simple, everyday language.
   - Scrollable hourly timeline with current time indicator (for timeline mode)
   - Configurable filters for tasks, milestones, priority, status
 - **Default Diary**: Systems > Default Diary tab shows weekly view of recurring tasks. Allows filtering by user to see their "default week" schedule of active recurring tasks.
+- **Actionable Status Flag**: Field options for status categories (estimate.status, estimate_item.status, schedule_item.status, task.status) have an `isActionable` boolean flag. Configured via Settings > Field Settings. Enables dashboard widgets to filter and highlight items requiring action.
 - **Suppliers Migration (Complete)**: Legacy `suppliers` table unified into `contacts` with `contactType='supplier'`. 
   - **Completed**: `bills.supplierId`, `rfqQuotes.supplierId`, `priceListItems.supplierId` now reference `contacts.id` instead of `suppliers.id`.
   - **Deprecated**: `suppliers`, `supplierLabels`, `supplierLabelAssignments`, `supplierInsurances`, `supplierContacts` tables marked deprecated but functional for backward compatibility.

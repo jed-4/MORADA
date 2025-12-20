@@ -231,9 +231,9 @@ export default function FieldSettings() {
     [selectedCategory]
   );
 
-  // Show "Actionable" column for estimate and schedule status categories
+  // Show "Actionable" column for estimate, schedule and task status categories
   const showActionableColumn = useMemo(
-    () => ['estimate.status', 'schedule.status', 'task.status'].includes(selectedCategory?.key || ''),
+    () => ['estimate.status', 'estimate_item.status', 'schedule_item.status', 'task.status'].includes(selectedCategory?.key || ''),
     [selectedCategory]
   );
 
