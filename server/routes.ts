@@ -5765,8 +5765,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // For editing: allow if user is creator, is admin, or if it's the default "everyone" view
       const isCreator = existingView.createdById === user.id;
-      const userPermissions = await storage.getUserPermissions(user.roleId);
-      const isAdmin = userPermissions.some((p: any) => p.key === "admin.general" && p.actions.includes("edit"));
+      const isAdmin = await storage.checkUserPermission(user.id, "admin.company", "edit");
       const isDefaultEveryoneView = existingView.isDefault && existingView.visibility === "everyone";
       
       if (!isCreator && !isAdmin && !isDefaultEveryoneView) {
@@ -5812,8 +5811,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Allow delete if user is creator or has admin permission
       const isCreator = existingView.createdById === user.id;
-      const userPermissions = await storage.getUserPermissions(user.roleId);
-      const isAdmin = userPermissions.some((p: any) => p.key === "admin.general" && p.actions.includes("delete"));
+      const isAdmin = await storage.checkUserPermission(user.id, "admin.company", "delete");
       
       if (!isCreator && !isAdmin) {
         return res.status(403).json({ error: "You don't have permission to delete this view" });
