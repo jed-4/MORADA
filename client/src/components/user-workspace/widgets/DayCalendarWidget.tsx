@@ -198,6 +198,17 @@ export default function DayCalendarWidget({ widget, onUpdate, isConfiguring, onC
 
   useEffect(() => {
     if (scrollRef.current && !isLoading) {
+      const DEFAULT_START_HOUR = 6; // Default to 6 AM
+      
+      // Find earliest event time
+      let earliestHour = DEFAULT_START_HOUR;
+      timedEvents.forEach(event => {
+        const startHour = parseTime(event.startTime);
+        if (startHour !== null && startHour < earliestHour) {
+          earliestHour = startHour;
+        }
+      });
+      
       const now = new Date();
       if (isToday(selectedDate)) {
         // For today, scroll to show current time near the top third of the visible area
@@ -205,13 +216,15 @@ export default function DayCalendarWidget({ widget, onUpdate, isConfiguring, onC
         const currentTimePosition = (now.getHours() + now.getMinutes() / 60) * HOUR_HEIGHT;
         // Position the current time about 1/3 from the top of the view
         const targetScroll = Math.max(0, currentTimePosition - containerHeight / 3);
-        scrollRef.current.scrollTop = targetScroll;
+        // But don't scroll past earliest event
+        const earliestScroll = earliestHour * HOUR_HEIGHT;
+        scrollRef.current.scrollTop = Math.min(targetScroll, earliestScroll);
       } else {
-        // For other days, scroll to 8am
-        scrollRef.current.scrollTop = 8 * HOUR_HEIGHT;
+        // For other days, scroll to earliest event or 6am, whichever is earlier
+        scrollRef.current.scrollTop = earliestHour * HOUR_HEIGHT;
       }
     }
-  }, [selectedDate, isLoading]);
+  }, [selectedDate, isLoading, timedEvents]);
 
   if (isConfiguring) {
     const handleSaveConfig = () => {
