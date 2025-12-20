@@ -1113,6 +1113,7 @@ export const fieldOptions = pgTable("field_options", {
   isActive: boolean("is_active").notNull().default(true),
   isDefault: boolean("is_default").notNull().default(false), // Default selection for this category
   isCompleted: boolean("is_completed").notNull().default(false), // Marks this option as the "completed" status
+  isActionable: boolean("is_actionable").notNull().default(false), // Marks this option as requiring action (for widgets/filtering)
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
