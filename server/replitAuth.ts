@@ -41,6 +41,8 @@ export const sessionMiddleware = (() => {
     tableName: "sessions",
   });
   
+  // Use canonical domain for cookie so session persists during OAuth redirect flow
+  // The callback must be able to read the session that /api/login created
   const canonicalDomain = getCanonicalDomain();
   console.log('[Session] Cookie domain:', canonicalDomain || 'auto (dev mode)');
   
@@ -55,7 +57,7 @@ export const sessionMiddleware = (() => {
       secure: true,  // REQUIRED with sameSite: 'none' - browsers reject otherwise
       sameSite: 'none',  // Required for Replit iframe
       maxAge: sessionTtl,  // Match cookie lifetime to session TTL (7 days)
-      // Set domain to canonical .replit.app host so cookies persist across deploys
+      // Set domain to canonical host so cookie persists during OAuth flow
       ...(canonicalDomain ? { domain: canonicalDomain } : {})
     }
   });
@@ -255,16 +257,24 @@ export async function setupAuth(app: Express) {
       (req.session as any).companyId = user?.companyId;
       (req.session as any).roleId = user?.roleId;
       
-      // Get stored redirect URL (for mobile app support)
-      const redirectTo = (req.session as any).authRedirect || '/';
+      // Get stored redirect URL (path only - stay on canonical domain for cookie consistency)
+      const redirectPath = (req.session as any).authRedirect || '/';
+      const originalHost = (req.session as any).originalHost;
       delete (req.session as any).authRedirect;
+      delete (req.session as any).originalHost;
+      
+      // NOTE: We stay on the canonical domain after auth because that's where the cookie is valid
+      // Redirecting to a different domain would lose the session
+      const currentHost = req.hostname;
       
       console.log('✅ [OAuth Callback] LOGIN SUCCESS');
       console.log('   → Session ID:', req.sessionID);
       console.log('   → User ID:', user?.id);
       console.log('   → Company ID:', user?.companyId);
       console.log('   → Role ID:', user?.roleId);
-      console.log('   → Redirect:', redirectTo);
+      console.log('   → Original Host:', originalHost);
+      console.log('   → Current Host:', currentHost);
+      console.log('   → Redirect Path:', redirectPath);
       console.log('   → SESSION SET:', {
         userId: (req.session as any).userId,
         companyId: (req.session as any).companyId,
@@ -277,8 +287,8 @@ export async function setupAuth(app: Express) {
           console.error('[OAuth Callback] Session save failed:', saveErr);
           return res.redirect('/api/login');
         }
-        console.log(`✅ [OAuth Callback] Session saved, redirecting to ${redirectTo}`);
-        res.redirect(redirectTo);
+        console.log(`✅ [OAuth Callback] Session saved, redirecting to ${redirectPath}`);
+        res.redirect(redirectPath);
       });
     });
   });
