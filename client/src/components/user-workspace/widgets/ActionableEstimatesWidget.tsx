@@ -49,7 +49,7 @@ export default function ActionableEstimatesWidget({
     maxItems,
   });
 
-  const { data: estimates = [], isLoading } = useQuery<Estimate[]>({
+  const { data: estimates = [], isLoading: estimatesLoading } = useQuery<Estimate[]>({
     queryKey: ["/api/estimates"],
   });
 
@@ -57,13 +57,15 @@ export default function ActionableEstimatesWidget({
     queryKey: ["/api/projects"],
   });
 
-  const { data: fieldCategories = [] } = useQuery<FieldCategory[]>({
+  const { data: fieldCategories = [], isLoading: categoriesLoading } = useQuery<FieldCategory[]>({
     queryKey: ["/api/field-categories"],
   });
 
-  const { data: fieldOptions = [] } = useQuery<FieldOption[]>({
+  const { data: fieldOptions = [], isLoading: optionsLoading } = useQuery<FieldOption[]>({
     queryKey: ["/api/field-options"],
   });
+
+  const isLoading = estimatesLoading || categoriesLoading || optionsLoading;
 
   const estimateStatusCategory = useMemo(() => {
     return fieldCategories.find(c => c.key === "estimate.status");
@@ -157,7 +159,7 @@ export default function ActionableEstimatesWidget({
             </select>
           </div>
 
-          {actionableStatusKeys.size === 0 && (
+          {!isLoading && actionableStatusKeys.size === 0 && (
             <div className="p-2 bg-amber-500/10 border border-amber-500/20 rounded-md">
               <p className="text-[10px] text-amber-600 dark:text-amber-400 flex items-start gap-1.5">
                 <AlertCircle className="h-3 w-3 mt-0.5 flex-shrink-0" />
