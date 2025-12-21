@@ -416,9 +416,9 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
   };
 
   return (
-    <div className="flex flex-col h-full" data-testid="user-overview">
-      {/* Header with view switcher */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+    <div className="flex flex-col h-full px-4 pt-4" data-testid="user-overview">
+      {/* Toolbar row - sits on page background */}
+      <div className="h-8 flex items-center justify-between mb-4 flex-shrink-0">
         <div className="flex items-center gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -519,23 +519,8 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
         </div>
       </div>
 
-      {/* Widgets Area with Theme Background */}
-      <div 
-        className="flex-1 overflow-auto relative"
-        style={getThemeBackground()}
-      >
-        {/* Overlay for image backgrounds */}
-        {theme?.backgroundType === "image" && theme.overlayEnabled && (
-          <div 
-            className="absolute inset-0 pointer-events-none"
-            style={{ 
-              backgroundColor: hexToRgba(theme.overlayColor || '#000000', theme.overlayOpacity || 40),
-              backdropFilter: theme.blurStrength ? `blur(${theme.blurStrength}px)` : undefined,
-            }}
-          />
-        )}
-        
-        <div className="relative py-4">
+      {/* Widgets Grid - sits directly on page background */}
+      <div className="flex-1 overflow-auto">
         <DndContext 
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -585,7 +570,6 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
             </div>
           </SortableContext>
         </DndContext>
-        </div>
       </div>
 
       {/* Add Widget Dialog */}

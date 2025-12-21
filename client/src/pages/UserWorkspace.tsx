@@ -195,8 +195,8 @@ export default function UserWorkspace() {
         </div>
       </div>
 
-      {/* Content Area - widgets sit directly on background */}
-      <div className="flex-1 overflow-auto px-4">
+      {/* Content Area - widgets sit directly on page background */}
+      <div className="flex-1 overflow-auto">
         {renderContent()}
       </div>
     </div>
