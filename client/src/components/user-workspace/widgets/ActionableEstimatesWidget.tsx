@@ -1,12 +1,12 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { FileSpreadsheet, ChevronRight, AlertCircle, Clock, CheckCircle, Lock } from "lucide-react";
+import { FileSpreadsheet, ChevronRight, Clock, CheckCircle, Lock, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { formatDistanceToNow } from "date-fns";
-import type { Estimate, Project } from "@shared/schema";
+import type { Estimate, Project, FieldOption, FieldCategory } from "@shared/schema";
 import type { Widget } from "@/types/widgets";
 
 interface ActionableEstimatesWidgetProps {
@@ -22,11 +22,11 @@ interface EstimateWithProject extends Estimate {
   projectColor?: string;
 }
 
-const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ElementType }> = {
-  draft: { label: "Draft", color: "bg-gray-500", icon: FileSpreadsheet },
-  working: { label: "Working", color: "bg-blue-500", icon: Clock },
-  locked: { label: "Locked", color: "bg-amber-500", icon: Lock },
-  approved: { label: "Approved", color: "bg-green-500", icon: CheckCircle },
+const STATUS_ICONS: Record<string, React.ElementType> = {
+  draft: FileSpreadsheet,
+  working: Clock,
+  locked: Lock,
+  approved: CheckCircle,
 };
 
 export default function ActionableEstimatesWidget({
@@ -37,23 +37,14 @@ export default function ActionableEstimatesWidget({
   userId,
 }: ActionableEstimatesWidgetProps) {
   const config = (widget.config as {
-    showDraft?: boolean;
-    showWorking?: boolean;
-    showLocked?: boolean;
     onlyMyEstimates?: boolean;
     maxItems?: number;
   }) || {};
 
-  const showDraft = config.showDraft ?? true;
-  const showWorking = config.showWorking ?? true;
-  const showLocked = config.showLocked ?? false;
   const onlyMyEstimates = config.onlyMyEstimates ?? true;
   const maxItems = config.maxItems ?? 5;
 
   const [configState, setConfigState] = useState({
-    showDraft,
-    showWorking,
-    showLocked,
     onlyMyEstimates,
     maxItems,
   });
@@ -66,6 +57,35 @@ export default function ActionableEstimatesWidget({
     queryKey: ["/api/projects"],
   });
 
+  const { data: fieldCategories = [] } = useQuery<FieldCategory[]>({
+    queryKey: ["/api/field-categories"],
+  });
+
+  const { data: fieldOptions = [] } = useQuery<FieldOption[]>({
+    queryKey: ["/api/field-options"],
+  });
+
+  const estimateStatusCategory = useMemo(() => {
+    return fieldCategories.find(c => c.key === "estimate.status");
+  }, [fieldCategories]);
+
+  const actionableStatusKeys = useMemo(() => {
+    if (!estimateStatusCategory) return new Set<string>();
+    const options = fieldOptions.filter(
+      o => o.categoryId === estimateStatusCategory.id && o.isActionable === true && o.isActive !== false
+    );
+    return new Set(options.map(o => o.key));
+  }, [fieldOptions, estimateStatusCategory]);
+
+  const statusOptionsMap = useMemo(() => {
+    if (!estimateStatusCategory) return new Map<string, FieldOption>();
+    const map = new Map<string, FieldOption>();
+    fieldOptions
+      .filter(o => o.categoryId === estimateStatusCategory.id)
+      .forEach(o => map.set(o.key, o));
+    return map;
+  }, [fieldOptions, estimateStatusCategory]);
+
   const projectMap = useMemo(() => {
     const map: Record<string, { name: string; color?: string }> = {};
     projects.forEach(p => {
@@ -77,10 +97,7 @@ export default function ActionableEstimatesWidget({
   const actionableEstimates = useMemo(() => {
     return estimates
       .filter(est => {
-        if (est.status === "approved") return false;
-        if (est.status === "draft" && !showDraft) return false;
-        if (est.status === "working" && !showWorking) return false;
-        if (est.status === "locked" && !showLocked) return false;
+        if (!actionableStatusKeys.has(est.status)) return false;
         if (onlyMyEstimates) {
           const isOwner = est.ownerId === userId;
           const assignees = est.assigneeIds ?? [];
@@ -96,7 +113,7 @@ export default function ActionableEstimatesWidget({
       }))
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
       .slice(0, maxItems);
-  }, [estimates, projectMap, showDraft, showWorking, showLocked, onlyMyEstimates, userId, maxItems]);
+  }, [estimates, projectMap, actionableStatusKeys, onlyMyEstimates, userId, maxItems]);
 
   const handleSaveConfig = () => {
     onUpdate({
@@ -109,7 +126,9 @@ export default function ActionableEstimatesWidget({
     return (
       <div className="p-3 space-y-4">
         <div className="space-y-3">
-          <p className="text-xs text-muted-foreground">Show estimates with these statuses:</p>
+          <p className="text-xs text-muted-foreground">
+            Shows estimates with statuses marked as "actionable" in Settings &gt; Field Settings.
+          </p>
           
           <label className="flex items-start gap-2 cursor-pointer pb-2 border-b">
             <Checkbox
@@ -124,26 +143,6 @@ export default function ActionableEstimatesWidget({
               <p className="text-[10px] text-muted-foreground">Filter to estimates where you are an owner or assignee</p>
             </div>
           </label>
-          
-          {[
-            { key: "showDraft", label: "Draft", desc: "Estimates still being created" },
-            { key: "showWorking", label: "Working", desc: "Estimates actively being worked on" },
-            { key: "showLocked", label: "Locked", desc: "Estimates locked but not approved" },
-          ].map(({ key, label, desc }) => (
-            <label key={key} className="flex items-start gap-2 cursor-pointer">
-              <Checkbox
-                checked={configState[key as keyof typeof configState] as boolean}
-                onCheckedChange={(checked) => 
-                  setConfigState(prev => ({ ...prev, [key]: !!checked }))
-                }
-                className="mt-0.5"
-              />
-              <div>
-                <span className="text-xs font-medium">{label}</span>
-                <p className="text-[10px] text-muted-foreground">{desc}</p>
-              </div>
-            </label>
-          ))}
 
           <div className="pt-2">
             <label className="text-xs text-muted-foreground">Max items to show</label>
@@ -157,6 +156,15 @@ export default function ActionableEstimatesWidget({
               ))}
             </select>
           </div>
+
+          {actionableStatusKeys.size === 0 && (
+            <div className="p-2 bg-amber-500/10 border border-amber-500/20 rounded-md">
+              <p className="text-[10px] text-amber-600 dark:text-amber-400 flex items-start gap-1.5">
+                <AlertCircle className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                No estimate statuses are marked as actionable. Go to Settings &gt; Field Settings to configure.
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="flex justify-end gap-2 pt-2">
@@ -181,6 +189,22 @@ export default function ActionableEstimatesWidget({
     );
   }
 
+  if (actionableStatusKeys.size === 0) {
+    return (
+      <div className="p-6 flex flex-col items-center justify-center text-center h-full min-h-[120px]">
+        <AlertCircle className="h-6 w-6 text-amber-500 mb-2" />
+        <p className="text-xs text-muted-foreground">
+          No statuses marked as actionable.
+        </p>
+        <Link href="/settings/fields">
+          <Button variant="link" size="sm" className="h-6 text-[10px] mt-1">
+            Configure in Field Settings
+          </Button>
+        </Link>
+      </div>
+    );
+  }
+
   if (actionableEstimates.length === 0) {
     return (
       <div className="p-6 flex flex-col items-center justify-center text-center h-full min-h-[120px]">
@@ -194,8 +218,9 @@ export default function ActionableEstimatesWidget({
     <div className="space-y-2">
       <div className="space-y-1">
         {actionableEstimates.map(estimate => {
-          const statusConfig = STATUS_CONFIG[estimate.status] || STATUS_CONFIG.draft;
-          const StatusIcon = statusConfig.icon;
+          const statusOption = statusOptionsMap.get(estimate.status);
+          const StatusIcon = STATUS_ICONS[estimate.status] || FileSpreadsheet;
+          const statusColor = statusOption?.color || "#6B7280";
 
           return (
             <Link
@@ -206,7 +231,8 @@ export default function ActionableEstimatesWidget({
               <div className="p-2 border rounded-md hover-elevate cursor-pointer">
                 <div className="flex items-start gap-2">
                   <div
-                    className={`flex-shrink-0 w-5 h-5 rounded-sm flex items-center justify-center text-white ${statusConfig.color}`}
+                    className="flex-shrink-0 w-5 h-5 rounded-sm flex items-center justify-center text-white"
+                    style={{ backgroundColor: statusColor }}
                   >
                     <StatusIcon className="h-3 w-3" />
                   </div>
@@ -240,11 +266,11 @@ export default function ActionableEstimatesWidget({
         })}
       </div>
 
-      {estimates.filter(e => e.status !== "approved").length > actionableEstimates.length && (
+      {estimates.filter(e => actionableStatusKeys.has(e.status)).length > actionableEstimates.length && (
         <div className="pt-1">
           <Link href="/estimates">
             <Button variant="ghost" size="sm" className="w-full h-6 text-[10px]">
-              View all {estimates.filter(e => e.status !== "approved").length} estimates
+              View all {estimates.filter(e => actionableStatusKeys.has(e.status)).length} actionable estimates
               <ChevronRight className="h-3 w-3 ml-1" />
             </Button>
           </Link>
