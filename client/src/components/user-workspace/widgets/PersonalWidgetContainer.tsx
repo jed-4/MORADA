@@ -1,5 +1,4 @@
 import type { ReactNode, CSSProperties } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { MoreVertical, X, Settings, GripVertical } from "lucide-react";
 import {
@@ -155,12 +154,12 @@ export default function PersonalWidgetContainer({
   const heightStyle = currentDimensions?.height ? `${currentDimensions.height}px` : undefined;
 
   return (
-    <Card 
+    <div 
       className={`relative h-full flex flex-col overflow-hidden ${externalIsResizing ? 'select-none z-50' : ''} ${themeClassName || ''}`} 
       style={{ height: heightStyle, ...themeStyleOverride }}
       data-testid={`personal-widget-${title.toLowerCase().replace(/\s+/g, '-')}`}
     >
-      <CardHeader className="flex flex-row items-center justify-between gap-2 py-2 px-3 border-b bg-muted/30">
+      <div className="flex flex-row items-center justify-between gap-2 py-1 px-1">
         <div className="flex items-center gap-2 min-w-0">
           <div
             {...dragHandleProps}
@@ -170,7 +169,7 @@ export default function PersonalWidgetContainer({
             <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
           </div>
           {icon && <span className="text-muted-foreground flex-shrink-0">{icon}</span>}
-          <CardTitle className="text-sm font-medium truncate">{title}</CardTitle>
+          <span className="text-sm font-medium truncate">{title}</span>
         </div>
         
         <DropdownMenu>
@@ -197,11 +196,11 @@ export default function PersonalWidgetContainer({
             )}
           </DropdownMenuContent>
         </DropdownMenu>
-      </CardHeader>
+      </div>
       
-      <CardContent className="flex-1 overflow-auto p-3">
+      <div className="flex-1 overflow-auto">
         {children}
-      </CardContent>
+      </div>
 
       {onResizeEnd && (
         <ResizeHandle
@@ -210,6 +209,6 @@ export default function PersonalWidgetContainer({
           onResizeEnd={handleResizeEnd}
         />
       )}
-    </Card>
+    </div>
   );
 }

@@ -382,8 +382,8 @@ function AuthWrapper() {
 
   // Show main app if authenticated and has company
   const style = {
-    "--sidebar-width": "3.5rem",
-    "--sidebar-width-icon": "3.5rem",
+    "--sidebar-width": "3rem",
+    "--sidebar-width-icon": "3rem",
   };
 
   return (
@@ -392,7 +392,7 @@ function AuthWrapper() {
         <ProjectProvider>
           <SocketProvider>
             <SidebarProvider style={style as React.CSSProperties}>
-            <div className="flex flex-col h-screen w-full bg-[hsl(var(--page-background))]">
+            <div className="flex flex-col h-screen w-full bg-[hsl(var(--page-background))] p-2 gap-2">
               {DEBUG_MODE && (
                 <div style={{
                   position: 'fixed',
@@ -409,13 +409,13 @@ function AuthWrapper() {
                   <strong>✅ SHOWING DASHBOARD</strong> | User: {debugInfo.email} | CompanyId: {debugInfo.companyId}
                 </div>
               )}
-              {/* Header spans full width at the top */}
+              {/* Header in its own floating bar */}
               <Header />
               
               {/* Sidebar and main content below header */}
-              <div className="flex flex-1 overflow-hidden p-2 gap-2">
+              <div className="flex flex-1 overflow-hidden gap-2">
                 <SidebarNav />
-                <main className="flex-1 overflow-auto bg-background rounded-lg">
+                <main className="flex-1 overflow-auto bg-[hsl(var(--page-background))]">
                   <Router />
                 </main>
               </div>

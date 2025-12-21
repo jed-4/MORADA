@@ -134,34 +134,36 @@ export default function UserWorkspace() {
   }
 
   return (
-    <div className="flex flex-col h-full" data-testid="user-workspace-page">
-      {/* Row 1 - User Info (36px) */}
-      <div className="h-9 flex items-center justify-between px-3 gap-4 flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <Avatar className="h-6 w-6" data-testid="avatar-user">
-            <AvatarFallback className="text-xs bg-primary/20 text-primary">
-              {getInitials(user.firstName, user.lastName)}
-            </AvatarFallback>
-          </Avatar>
-          <h2 className="text-sm font-semibold" data-testid="text-user-name">
-            {getFullName(user.firstName, user.lastName)}
-          </h2>
+    <div className="flex flex-col h-full gap-2" data-testid="user-workspace-page">
+      {/* User Info + Tabs in floating box */}
+      <div className="bg-background rounded-lg flex-shrink-0">
+        {/* Row 1 - User Info (36px) */}
+        <div className="h-9 flex items-center justify-between px-3 gap-4">
+          <div className="flex items-center gap-2">
+            <Avatar className="h-6 w-6" data-testid="avatar-user">
+              <AvatarFallback className="text-xs bg-primary/20 text-primary">
+                {getInitials(user.firstName, user.lastName)}
+              </AvatarFallback>
+            </Avatar>
+            <h2 className="text-sm font-semibold" data-testid="text-user-name">
+              {getFullName(user.firstName, user.lastName)}
+            </h2>
+          </div>
+          {isOwnPage && (
+            <button
+              type="button"
+              onClick={() => navigate("/settings/profile")}
+              className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+              data-testid="button-settings"
+            >
+              <SettingsIcon className="w-3 h-3" />
+              <span>Settings</span>
+            </button>
+          )}
         </div>
-        {isOwnPage && (
-          <button
-            type="button"
-            onClick={() => navigate("/settings/profile")}
-            className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
-            data-testid="button-settings"
-          >
-            <SettingsIcon className="w-3 h-3" />
-            <span>Settings</span>
-          </button>
-        )}
-      </div>
 
-      {/* Row 2 - Tabs (36px) - Underline Style */}
-      <div className="h-9 flex items-center px-3 gap-4 border-b border-border flex-shrink-0 overflow-x-auto">
+        {/* Row 2 - Tabs (36px) - Underline Style */}
+        <div className="h-9 flex items-center px-3 gap-4 border-t border-border overflow-x-auto">
         {USER_TABS.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -190,10 +192,11 @@ export default function UserWorkspace() {
             </button>
           );
         })}
+        </div>
       </div>
 
-      {/* Content Area */}
-      <div className="flex-1 overflow-auto p-3">
+      {/* Content Area - widgets sit directly on background */}
+      <div className="flex-1 overflow-auto px-2">
         {renderContent()}
       </div>
     </div>

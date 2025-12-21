@@ -247,7 +247,7 @@ export default function Header() {
   };
   
   return (
-    <header className="flex items-center justify-between px-2 py-1 bg-[hsl(var(--page-background))] sticky top-0 z-50">
+    <header className="flex items-center justify-between px-3 py-1 bg-background rounded-lg sticky top-0 z-50 flex-shrink-0">
       <div className="flex items-center gap-2">
         {/* Logo */}
         <div className="flex items-center justify-center w-6 h-6 bg-primary rounded" data-testid="company-logo">
