@@ -125,12 +125,15 @@ export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
+  getUserByGoogleId(googleId: string): Promise<User | undefined>;
   validateUserCredentials(username: string, plainPassword: string): Promise<User | undefined>;
   getUserWithRole(id: string): Promise<UserWithRole | undefined>;
   createUser(user: InsertUser): Promise<User>;
-  upsertUser(user: import("@shared/schema").UpsertUser): Promise<User>; // Required for Replit Auth
+  upsertUser(user: import("@shared/schema").UpsertUser): Promise<User>;
   updateUser(id: string, user: Partial<InsertUser>): Promise<User | undefined>;
   changeUserPassword(id: string, newPassword: string): Promise<User | undefined>;
+  linkGoogleAccount(userId: string, googleId: string): Promise<User | undefined>;
+  updateUserLastLogin(userId: string): Promise<void>;
   getUsers(category?: UserCategory): Promise<UserWithRole[]>;
   getUsersByCompanyWithRoles(companyId: string, category?: UserCategory): Promise<UserWithRole[]>;
 
@@ -6029,6 +6032,25 @@ export class DbStorage implements IStorage {
   async getUserByEmail(email: string): Promise<User | undefined> {
     const [user] = await db.select().from(schema.users).where(eq(schema.users.email, email)).limit(1);
     return user;
+  }
+
+  async getUserByGoogleId(googleId: string): Promise<User | undefined> {
+    const [user] = await db.select().from(schema.users).where(eq(schema.users.googleId, googleId)).limit(1);
+    return user;
+  }
+
+  async linkGoogleAccount(userId: string, googleId: string): Promise<User | undefined> {
+    const [user] = await db.update(schema.users)
+      .set({ googleId, updatedAt: new Date() })
+      .where(eq(schema.users.id, userId))
+      .returning();
+    return user;
+  }
+
+  async updateUserLastLogin(userId: string): Promise<void> {
+    await db.update(schema.users)
+      .set({ lastLoginAt: new Date(), updatedAt: new Date() })
+      .where(eq(schema.users.id, userId));
   }
 
   async validateUserCredentials(username: string, plainPassword: string): Promise<User | undefined> {

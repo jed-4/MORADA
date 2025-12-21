@@ -87,6 +87,7 @@ import PrivacyPolicy from "@/pages/PrivacyPolicy";
 import LandingPage from "@/pages/landing";
 import OnboardingPage from "@/pages/onboarding";
 import AcceptInvitation from "@/pages/AcceptInvitation";
+import AuthPage from "@/pages/AuthPage";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation, Redirect } from "wouter";
@@ -111,6 +112,7 @@ function Router() {
   return (
     <Switch>
       {/* Public routes */}
+      <Route path="/auth" component={AuthPage} />
       <Route path="/privacy" component={PrivacyPolicy} />
       <Route path="/portal/rfq/:token" component={RFQPortal} />
       
@@ -310,11 +312,11 @@ function UnauthenticatedRoutes() {
   // Handle public routes for unauthenticated users
   return (
     <Switch>
+      <Route path="/auth" component={AuthPage} />
       <Route path="/accept-invite/:token" component={AcceptInvitation} />
       <Route path="/portal/rfq/:token" component={RFQPortal} />
-      {/* Replit Auth handles login/signup via /api/login */}
-      <Route path="/" component={LandingPage} />
-      <Route component={LandingPage} />
+      <Route path="/" component={AuthPage} />
+      <Route component={AuthPage} />
     </Switch>
   );
 }

@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { db, pool } from "./db";
 import { google } from "googleapis";
 import { randomBytes, randomUUID } from "crypto";
-import { setupAuth, isAuthenticated, sessionMiddleware, ensureLegacySessionFields } from "./replitAuth";
+import { setupAuth, isAuthenticated, sessionMiddleware, ensureLegacySessionFields } from "./auth";
 import { sendInvitationEmail, initializeEmailServices } from "./utils/email";
 import { GoogleOAuthService } from "./services/googleOAuthService";
 import { 
@@ -4226,14 +4226,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
   
-  // Get current authenticated user - Replit Auth
+  // Get current authenticated user
   app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
     try {
-      // User is already hydrated in session during deserialize
-      const user = req.user.dbUser;
+      // User is attached by isAuthenticated middleware
+      const user = req.user;
       
       if (!user) {
-        console.error('❌ [GET /api/auth/user] No dbUser found in session!');
+        console.error('❌ [GET /api/auth/user] No user found!');
         return res.status(404).json({ message: "User not found" });
       }
       
@@ -4263,7 +4263,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Update current user's profile (firstName, lastName, phone)
   app.patch('/api/profile', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.id;
+      const userId = req.userId;
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
       }
@@ -4281,9 +4281,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "User not found" });
       }
 
-      // Update session with fresh user data
-      req.user.dbUser = updatedUser;
-
       res.json(toSafeUser(updatedUser));
     } catch (error) {
       console.error("Error updating profile:", error);
@@ -4294,7 +4291,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Toggle Gmail sending preference
   app.post('/api/profile/gmail-sending', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.id;
+      const userId = req.userId;
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
       }

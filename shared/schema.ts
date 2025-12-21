@@ -63,13 +63,17 @@ export const userRoles = pgTable("user_roles", {
   uniqueNamePerCompany: uniqueIndex("user_roles_company_name_unique").on(table.companyId, table.name),
 }));
 
-// Users table with Replit Auth
+// Users table with custom authentication
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  email: varchar("email").unique(), // Nullable since some Replit login methods don't provide email
+  email: varchar("email").unique(),
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
-  profileImageUrl: varchar("profile_image_url"), // From Replit Auth
+  profileImageUrl: varchar("profile_image_url"),
+  
+  // Authentication fields
+  passwordHash: text("password_hash"), // For email/password login (bcrypt)
+  googleId: varchar("google_id").unique(), // For Google OAuth login
   
   // Application fields
   phone: text("phone"),
