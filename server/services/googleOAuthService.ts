@@ -149,20 +149,31 @@ export class GoogleOAuthService {
       user.googleCalendarTokenExpiry.getTime() < Date.now() + 5 * 60 * 1000;
     
     if (shouldRefresh) {
-      const { credentials } = await this.oauth2Client.refreshAccessToken();
-      
-      if (credentials.access_token) {
-        const encryptedAccessToken = encryptToken(credentials.access_token);
-        const expiryDate = credentials.expiry_date 
-          ? new Date(credentials.expiry_date)
-          : new Date(Date.now() + 3600 * 1000);
+      try {
+        const { credentials } = await this.oauth2Client.refreshAccessToken();
         
+        if (credentials.access_token) {
+          const encryptedAccessToken = encryptToken(credentials.access_token);
+          const expiryDate = credentials.expiry_date 
+            ? new Date(credentials.expiry_date)
+            : new Date(Date.now() + 3600 * 1000);
+          
+          await this.storage.updateUser(userId, {
+            googleCalendarAccessToken: encryptedAccessToken,
+            googleCalendarTokenExpiry: expiryDate,
+          });
+          
+          this.oauth2Client.setCredentials(credentials);
+        }
+      } catch (refreshError: any) {
+        console.error('[GoogleOAuth] Token refresh failed:', refreshError.message);
+        // Clear invalid tokens so user is prompted to reconnect
         await this.storage.updateUser(userId, {
-          googleCalendarAccessToken: encryptedAccessToken,
-          googleCalendarTokenExpiry: expiryDate,
+          googleCalendarAccessToken: null,
+          googleCalendarRefreshToken: null,
+          googleCalendarTokenExpiry: null,
         });
-        
-        this.oauth2Client.setCredentials(credentials);
+        throw new Error('Google Calendar token expired. Please reconnect your calendar.');
       }
     }
     
@@ -221,20 +232,30 @@ export class GoogleOAuthService {
       user.googleCalendarTokenExpiry.getTime() < Date.now() + 5 * 60 * 1000;
     
     if (shouldRefresh) {
-      const { credentials } = await this.oauth2Client.refreshAccessToken();
-      
-      if (credentials.access_token) {
-        const encryptedAccessToken = encryptToken(credentials.access_token);
-        const expiryDate = credentials.expiry_date 
-          ? new Date(credentials.expiry_date)
-          : new Date(Date.now() + 3600 * 1000);
+      try {
+        const { credentials } = await this.oauth2Client.refreshAccessToken();
         
+        if (credentials.access_token) {
+          const encryptedAccessToken = encryptToken(credentials.access_token);
+          const expiryDate = credentials.expiry_date 
+            ? new Date(credentials.expiry_date)
+            : new Date(Date.now() + 3600 * 1000);
+          
+          await this.storage.updateUser(userId, {
+            googleCalendarAccessToken: encryptedAccessToken,
+            googleCalendarTokenExpiry: expiryDate,
+          });
+          
+          this.oauth2Client.setCredentials(credentials);
+        }
+      } catch (refreshError: any) {
+        console.error('[GoogleOAuth] Token refresh failed:', refreshError.message);
         await this.storage.updateUser(userId, {
-          googleCalendarAccessToken: encryptedAccessToken,
-          googleCalendarTokenExpiry: expiryDate,
+          googleCalendarAccessToken: null,
+          googleCalendarRefreshToken: null,
+          googleCalendarTokenExpiry: null,
         });
-        
-        this.oauth2Client.setCredentials(credentials);
+        throw new Error('Google account token expired. Please reconnect.');
       }
     }
     
