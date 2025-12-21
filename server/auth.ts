@@ -155,7 +155,10 @@ export async function setupAuth(app: Express) {
       return res.status(500).json({ message: 'Google OAuth not configured' });
     }
 
-    const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/google/callback`;
+    // Use https in production (behind proxy) or respect x-forwarded-proto header
+    const protocol = req.get('x-forwarded-proto') || req.protocol;
+    const redirectUri = `${protocol}://${req.get('host')}/api/auth/google/callback`;
+    console.log('[Auth] Google OAuth redirect URI:', redirectUri);
     const oauth2Client = new OAuth2Client(googleClientId, googleClientSecret, redirectUri);
 
     // Generate and store CSRF state token
@@ -210,7 +213,9 @@ export async function setupAuth(app: Express) {
         return res.redirect('/auth?error=not_configured');
       }
 
-      const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/google/callback`;
+      // Use https in production (behind proxy) or respect x-forwarded-proto header
+      const protocol = req.get('x-forwarded-proto') || req.protocol;
+      const redirectUri = `${protocol}://${req.get('host')}/api/auth/google/callback`;
       const oauth2Client = new OAuth2Client(googleClientId, googleClientSecret, redirectUri);
 
       // Exchange code for tokens
