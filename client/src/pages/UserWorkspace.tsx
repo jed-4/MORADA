@@ -136,7 +136,7 @@ export default function UserWorkspace() {
   return (
     <div className="flex flex-col h-full gap-2" data-testid="user-workspace-page">
       {/* User Info + Tabs in floating box */}
-      <div className="bg-background rounded-lg flex-shrink-0">
+      <div className="surface-panel flex-shrink-0">
         {/* Row 1 - User Info (36px) */}
         <div className="h-9 flex items-center justify-between px-3 gap-4">
           <div className="flex items-center gap-2">
@@ -196,7 +196,7 @@ export default function UserWorkspace() {
       </div>
 
       {/* Content Area - widgets sit directly on background */}
-      <div className="flex-1 overflow-auto px-2">
+      <div className="flex-1 overflow-auto px-4">
         {renderContent()}
       </div>
     </div>

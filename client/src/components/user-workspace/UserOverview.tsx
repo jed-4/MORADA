@@ -535,7 +535,7 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
           />
         )}
         
-        <div className="relative p-4">
+        <div className="relative py-4">
         <DndContext 
           sensors={sensors}
           collisionDetection={closestCenter}

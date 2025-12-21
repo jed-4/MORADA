@@ -155,11 +155,11 @@ export default function PersonalWidgetContainer({
 
   return (
     <div 
-      className={`relative h-full flex flex-col overflow-hidden bg-card rounded-lg border border-card-border ${externalIsResizing ? 'select-none z-50' : ''} ${themeClassName || ''}`} 
+      className={`relative h-full flex flex-col overflow-hidden surface-widget widget-animate-in ${externalIsResizing ? 'select-none z-50' : ''} ${themeClassName || ''}`} 
       style={{ height: heightStyle, ...themeStyleOverride }}
       data-testid={`personal-widget-${title.toLowerCase().replace(/\s+/g, '-')}`}
     >
-      <div className="flex flex-row items-center justify-between gap-2 py-2 px-3 border-b border-border">
+      <div className="flex flex-row items-center justify-between gap-2 py-2 px-3 border-b border-border/50">
         <div className="flex items-center gap-2 min-w-0">
           <div
             {...dragHandleProps}
