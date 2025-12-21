@@ -280,9 +280,6 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
           <h2 className="text-sm font-semibold" data-testid="text-page-title">
             {isOwnPage ? 'My Tasks' : `${user.firstName}'s Tasks`}
           </h2>
-          <Badge variant="secondary" className="text-xs" data-testid="badge-task-count">
-            {filteredTasks.length} task{filteredTasks.length !== 1 ? 's' : ''}
-          </Badge>
         </div>
 
         <div className="flex items-center gap-1.5">
