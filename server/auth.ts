@@ -7,7 +7,18 @@ import { OAuth2Client } from 'google-auth-library';
 
 const SALT_ROUNDS = 12;
 
+function generateOAuthState(): string {
+  const array = new Uint8Array(32);
+  crypto.getRandomValues(array);
+  return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
 export const sessionMiddleware = (() => {
+  const sessionSecret = process.env.SESSION_SECRET;
+  if (!sessionSecret) {
+    throw new Error('SESSION_SECRET environment variable is required for secure session management');
+  }
+  
   const sessionTtl = 7 * 24 * 60 * 60 * 1000; // 1 week
   const pgStore = connectPg(session);
   const sessionStore = new pgStore({
@@ -18,7 +29,7 @@ export const sessionMiddleware = (() => {
   });
 
   return session({
-    secret: process.env.SESSION_SECRET || 'buildpro-secret-key-2025',
+    secret: sessionSecret,
     store: sessionStore,
     resave: false,
     saveUninitialized: false,
@@ -147,6 +158,10 @@ export async function setupAuth(app: Express) {
     const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/google/callback`;
     const oauth2Client = new OAuth2Client(googleClientId, googleClientSecret, redirectUri);
 
+    // Generate and store CSRF state token
+    const state = generateOAuthState();
+    (req.session as any).oauthState = state;
+
     // Store redirect path in session
     const redirectTo = req.query.redirect as string;
     if (redirectTo && redirectTo.startsWith('/') && !redirectTo.startsWith('//')) {
@@ -157,6 +172,7 @@ export async function setupAuth(app: Express) {
       access_type: 'offline',
       scope: ['openid', 'email', 'profile'],
       prompt: 'consent',
+      state,
     });
 
     req.session.save((err) => {
@@ -170,12 +186,21 @@ export async function setupAuth(app: Express) {
   // Google OAuth callback
   app.get('/api/auth/google/callback', async (req: Request, res: Response) => {
     try {
-      const { code, error } = req.query;
+      const { code, error, state } = req.query;
 
       if (error) {
         console.error('[Auth] Google OAuth error:', error);
         return res.redirect('/auth?error=google_auth_failed');
       }
+
+      // Verify CSRF state token
+      const storedState = (req.session as any).oauthState;
+      if (!state || !storedState || state !== storedState) {
+        console.error('[Auth] OAuth state mismatch - possible CSRF attack');
+        return res.redirect('/auth?error=invalid_state');
+      }
+      // Clear the state after verification
+      delete (req.session as any).oauthState;
 
       if (!code || typeof code !== 'string') {
         return res.redirect('/auth?error=no_code');

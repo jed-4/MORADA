@@ -136,7 +136,8 @@ export default function AuthPage() {
             {errorParam === 'google_auth_failed' && 'Google login failed. Please try again.'}
             {errorParam === 'callback_failed' && 'Authentication callback failed. Please try again.'}
             {errorParam === 'session_failed' && 'Session creation failed. Please try again.'}
-            {!['google_auth_failed', 'callback_failed', 'session_failed'].includes(errorParam) && 'An error occurred. Please try again.'}
+            {errorParam === 'invalid_state' && 'Security check failed. Please try logging in again.'}
+            {!['google_auth_failed', 'callback_failed', 'session_failed', 'invalid_state'].includes(errorParam) && 'An error occurred. Please try again.'}
           </div>
         )}
 

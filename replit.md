@@ -24,6 +24,21 @@ Preferred communication style: Simple, everyday language.
 - **Error Handling**: Centralized middleware.
 - **Email Service**: Resend for transactional emails (user invitations).
 
+### Authentication System
+- **Custom Authentication**: Standalone auth system (not tied to Replit accounts).
+- **Password Auth**: Email/password registration and login with bcrypt hashing (12 salt rounds).
+- **Google OAuth**: Optional Google login using GOOGLE_OAUTH_CLIENT_ID/SECRET with CSRF state token validation.
+- **Session Security**: httpOnly cookies, secure in production, lax sameSite, 7-day TTL.
+- **Account Linking**: Google accounts are automatically linked to existing users by email.
+- **Auth Endpoints**:
+  - POST `/api/auth/register` - Create account with email/password
+  - POST `/api/auth/login` - Login with email/password
+  - GET `/api/auth/google` - Initiate Google OAuth flow
+  - GET `/api/auth/google/callback` - OAuth callback with CSRF validation
+  - POST `/api/auth/logout` - Destroy session
+  - GET `/api/auth/user` - Get current authenticated user
+- **Required Secrets**: SESSION_SECRET (mandatory), GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET.
+
 ### Data Layer
 - **ORM**: Drizzle ORM with PostgreSQL dialect.
 - **Database**: PostgreSQL with Neon serverless hosting.
