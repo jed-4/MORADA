@@ -483,38 +483,44 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
         </div>
 
         <div className="flex items-center gap-1.5">
-          <button
-            className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 ${
-              isCreatingView 
-                ? 'opacity-50 cursor-not-allowed' 
-                : 'hover-elevate active-elevate-2'
-            }`}
-            onClick={createNewView}
-            disabled={isCreatingView}
-            data-testid="button-new-view"
-          >
-            <PlusCircle className="w-3 h-3" />
-            <span>{isCreatingView ? 'Creating...' : 'New View'}</span>
-          </button>
-          
           {isOwnPage && (
-            <>
-              <button
-                className="h-6 w-6 text-xs border rounded-md flex items-center justify-center hover-elevate active-elevate-2"
-                onClick={() => setIsThemeSettingsOpen(true)}
-                data-testid="button-theme-settings"
-              >
-                <Palette className="w-3 h-3" />
-              </button>
-              <button
-                className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
-                onClick={() => setIsAddingWidget(true)}
-                data-testid="button-add-widget"
-              >
-                <Plus className="w-3 h-3" />
-                <span>Add Widget</span>
-              </button>
-            </>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
+                  data-testid="button-add-widget"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>Add Widget</span>
+                  <ChevronDown className="w-3 h-3 ml-0.5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-40">
+                <DropdownMenuItem 
+                  className="text-xs flex items-center gap-2"
+                  onClick={() => setIsAddingWidget(true)}
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>Add Widget</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem 
+                  className="text-xs flex items-center gap-2"
+                  onClick={createNewView}
+                  disabled={isCreatingView}
+                >
+                  <PlusCircle className="w-3 h-3" />
+                  <span>{isCreatingView ? 'Creating...' : 'New View'}</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  className="text-xs flex items-center gap-2"
+                  onClick={() => setIsThemeSettingsOpen(true)}
+                >
+                  <Palette className="w-3 h-3" />
+                  <span>Theme Settings</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
       </div>
