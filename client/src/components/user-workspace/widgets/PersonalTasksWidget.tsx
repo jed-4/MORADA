@@ -356,10 +356,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between mb-2">
-        <div className="text-[11px] text-muted-foreground">
-          {filteredTasks.length} task{filteredTasks.length !== 1 ? 's' : ''}
-        </div>
+      <div className="flex items-center justify-end mb-2">
         <Button 
           size="icon" 
           variant="ghost" 
