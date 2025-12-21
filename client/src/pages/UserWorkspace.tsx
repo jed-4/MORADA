@@ -134,11 +134,11 @@ export default function UserWorkspace() {
   }
 
   return (
-    <div className="flex flex-col h-full gap-2" data-testid="user-workspace-page">
+    <div className="flex flex-col h-full gap-1.5" data-testid="user-workspace-page">
       {/* User Info + Tabs in floating box */}
       <div className="surface-panel flex-shrink-0">
-        {/* Row 1 - User Info (36px) */}
-        <div className="h-9 flex items-center justify-between px-3 gap-4">
+        {/* Row 1 - User Info */}
+        <div className="h-10 flex items-center justify-between px-4 gap-4">
           <div className="flex items-center gap-2">
             <Avatar className="h-6 w-6" data-testid="avatar-user">
               <AvatarFallback className="text-xs bg-primary/20 text-primary">
@@ -162,8 +162,8 @@ export default function UserWorkspace() {
           )}
         </div>
 
-        {/* Row 2 - Tabs (36px) - Underline Style */}
-        <div className="h-9 flex items-center px-3 gap-4 border-t border-border overflow-x-auto">
+        {/* Row 2 - Tabs - Underline Style */}
+        <div className="h-10 flex items-center px-4 gap-4 border-t border-border/50 overflow-x-auto">
         {USER_TABS.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
