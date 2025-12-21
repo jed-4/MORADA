@@ -6,6 +6,7 @@ const config: CapacitorConfig = {
   webDir: 'dist/mobile',
   bundledWebRuntime: false,
   server: {
+    url: 'https://buildpro4.replit.app/mobile',
     androidScheme: 'https',
     iosScheme: 'https',
   },
