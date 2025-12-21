@@ -71,6 +71,7 @@ export default function DashboardThemeSettings({
   const [blurStrength, setBlurStrength] = useState(0);
   const [widgetBackgroundType, setWidgetBackgroundType] = useState<"default" | "frosted" | "transparent">("default");
   const [widgetOpacity, setWidgetOpacity] = useState(100);
+  const [pageBackgroundColor, setPageBackgroundColor] = useState<string>("");
 
   useEffect(() => {
     if (theme) {
@@ -84,6 +85,7 @@ export default function DashboardThemeSettings({
       setBlurStrength(theme.blurStrength ?? 0);
       setWidgetBackgroundType((theme.widgetBackgroundType as any) || "default");
       setWidgetOpacity(theme.widgetOpacity ?? 100);
+      setPageBackgroundColor(theme.pageBackgroundColor || "");
     }
   }, [theme]);
 
@@ -122,6 +124,7 @@ export default function DashboardThemeSettings({
       blurStrength,
       widgetBackgroundType,
       widgetOpacity,
+      pageBackgroundColor: pageBackgroundColor || null,
     });
   };
 
@@ -427,6 +430,81 @@ export default function DashboardThemeSettings({
                 max={100}
                 step={5}
               />
+            </div>
+          </div>
+
+          <div className="space-y-3 pt-3 border-t">
+            <Label className="text-xs font-medium">Page Background</Label>
+            <p className="text-xs text-muted-foreground">
+              The outer background color behind widgets, header, and sidebar.
+            </p>
+            
+            <div className="space-y-1.5">
+              <Label className="text-xs">Page Background Color</Label>
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <Input
+                    type="color"
+                    value={pageBackgroundColor || "#f1f5f9"}
+                    onChange={(e) => setPageBackgroundColor(e.target.value)}
+                    className="w-10 h-8 p-1 cursor-pointer"
+                  />
+                  {!pageBackgroundColor && (
+                    <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                      <span className="text-[8px] text-muted-foreground font-medium">DEF</span>
+                    </div>
+                  )}
+                </div>
+                <Input
+                  type="text"
+                  value={pageBackgroundColor}
+                  onChange={(e) => setPageBackgroundColor(e.target.value)}
+                  className="flex-1 h-8 text-xs"
+                  placeholder="Default (leave empty)"
+                />
+                {pageBackgroundColor && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => setPageBackgroundColor("")}
+                  >
+                    Reset
+                  </Button>
+                )}
+              </div>
+            </div>
+            
+            <div className="space-y-1.5">
+              <Label className="text-xs">Presets</Label>
+              <div className="grid grid-cols-6 gap-1.5">
+                {[
+                  { name: "Light Gray", color: "#f1f5f9" },
+                  { name: "Warm Gray", color: "#f5f5f4" },
+                  { name: "Cool Gray", color: "#f3f4f6" },
+                  { name: "Slate", color: "#e2e8f0" },
+                  { name: "Blue Gray", color: "#e0e7ff" },
+                  { name: "Lavender", color: "#ede9fe" },
+                  { name: "Rose", color: "#fce7f3" },
+                  { name: "Mint", color: "#d1fae5" },
+                  { name: "Amber", color: "#fef3c7" },
+                  { name: "Sky", color: "#e0f2fe" },
+                  { name: "Dark", color: "#1e293b" },
+                  { name: "Charcoal", color: "#27272a" },
+                ].map((preset) => (
+                  <button
+                    key={preset.name}
+                    type="button"
+                    onClick={() => setPageBackgroundColor(preset.color)}
+                    className={`h-6 rounded-md border-2 transition-all ${
+                      pageBackgroundColor === preset.color ? "border-primary ring-2 ring-primary/20" : "border-transparent"
+                    }`}
+                    style={{ backgroundColor: preset.color }}
+                    title={preset.name}
+                  />
+                ))}
+              </div>
             </div>
           </div>
         </div>

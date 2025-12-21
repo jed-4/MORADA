@@ -205,6 +205,9 @@ export const dashboardThemes = pgTable("dashboard_themes", {
   widgetBackgroundType: text("widget_background_type").default("default"), // "default" | "frosted" | "transparent"
   widgetOpacity: integer("widget_opacity").default(100), // 0-100
   
+  // Page background (outer background behind widgets, header, sidebar)
+  pageBackgroundColor: text("page_background_color"), // Hex color for page background
+  
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

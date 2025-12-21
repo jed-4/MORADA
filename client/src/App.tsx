@@ -1,6 +1,7 @@
 import { Switch, Route } from "wouter";
 import { queryClient } from "./lib/queryClient";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, useQuery } from "@tanstack/react-query";
+import type { DashboardTheme } from "@shared/schema";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider } from "@/components/ui/sidebar";
@@ -325,6 +326,11 @@ function AuthWrapper() {
   const { user, isLoading, isAuthenticated } = useAuth();
   const [location, navigate] = useLocation();
   
+  // Fetch user's dashboard theme for page background color
+  const { data: userTheme } = useQuery<DashboardTheme | null>({
+    queryKey: ["/api/dashboard-themes/user"],
+    enabled: isAuthenticated && !!user?.companyId,
+  });
 
   // Show loading while checking auth
   if (isLoading) {
@@ -385,6 +391,11 @@ function AuthWrapper() {
     "--sidebar-width": "3rem",
     "--sidebar-width-icon": "3rem",
   };
+  
+  // Get custom page background color from user theme
+  const pageBackgroundStyle = userTheme?.pageBackgroundColor 
+    ? { backgroundColor: userTheme.pageBackgroundColor }
+    : {};
 
   return (
     <TooltipProvider>
@@ -392,7 +403,10 @@ function AuthWrapper() {
         <ProjectProvider>
           <SocketProvider>
             <SidebarProvider style={style as React.CSSProperties}>
-            <div className="flex flex-col h-screen w-full bg-[hsl(var(--page-background))] p-2 gap-2">
+            <div 
+              className="flex flex-col h-screen w-full bg-[hsl(var(--page-background))] p-2 gap-2"
+              style={pageBackgroundStyle}
+            >
               {DEBUG_MODE && (
                 <div style={{
                   position: 'fixed',
@@ -415,7 +429,7 @@ function AuthWrapper() {
               {/* Sidebar and main content below header */}
               <div className="flex flex-1 overflow-hidden gap-2">
                 <SidebarNav />
-                <main className="flex-1 overflow-auto bg-[hsl(var(--page-background))]">
+                <main className="flex-1 overflow-auto">
                   <Router />
                 </main>
               </div>
