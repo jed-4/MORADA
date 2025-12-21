@@ -21,7 +21,7 @@ import {
   X,
 } from "lucide-react";
 import TaskBoard from "@/components/TaskBoard";
-import TaskListCompact from "@/components/TaskListCompact";
+import TaskListCompact, { type TaskColumnConfig, DEFAULT_COLUMN_ORDER } from "@/components/TaskListCompact";
 import TaskModalAsana from "@/components/TaskModalAsana";
 import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
 import TaskViewsManager, { type TaskView, type TaskViewFilters } from "@/components/TaskViewsManager";
@@ -55,6 +55,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
   
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [calendarMode, setCalendarMode] = useState<"day" | "week" | "month">("week");
+  const [columnConfig, setColumnConfig] = useState<TaskColumnConfig>({ order: DEFAULT_COLUMN_ORDER });
 
   const { data: tasks = [], isLoading } = useQuery<Task[]>({
     queryKey: ["/api/tasks", { assigneeId: user.id }],
@@ -110,6 +111,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
       if (userPreferences.preferences.activeView) setActiveView(userPreferences.preferences.activeView);
       if (userPreferences.preferences.groupBy) setGroupBy(userPreferences.preferences.groupBy);
       if (userPreferences.preferences.filters) setFilters(userPreferences.preferences.filters);
+      if (userPreferences.preferences.columnConfig) setColumnConfig(userPreferences.preferences.columnConfig);
       setPreferencesLoaded(true);
     } else if (userPreferences === null || preferencesError) {
       setPreferencesLoaded(true);
@@ -128,11 +130,15 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
   useEffect(() => {
     if (preferencesLoaded) {
       const timer = setTimeout(() => {
-        savePreferencesMutation.mutate({ activeView, groupBy, filters });
+        savePreferencesMutation.mutate({ activeView, groupBy, filters, columnConfig });
       }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [activeView, groupBy, filters, preferencesLoaded]);
+  }, [activeView, groupBy, filters, columnConfig, preferencesLoaded]);
+  
+  const handleColumnConfigChange = (newConfig: TaskColumnConfig) => {
+    setColumnConfig(newConfig);
+  };
 
   const filteredTasks = useMemo(() => {
     return applyTaskFilters(tasks, filters);
@@ -574,6 +580,8 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                   tasks={groupTasks}
                   isLoading={isLoading && groupName === 'All Tasks'}
                   onTaskClick={(task) => setEditingTask(task)}
+                  columnConfig={columnConfig}
+                  onColumnConfigChange={handleColumnConfigChange}
                 />
               </div>
             ))}
