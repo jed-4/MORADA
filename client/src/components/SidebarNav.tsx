@@ -614,16 +614,16 @@ export function SidebarNav() {
       {/* Rail - Always visible thin sidebar (48px) */}
       <div 
         ref={railRef}
-        className="flex flex-col h-full w-12 bg-sidebar border-r border-sidebar-border z-40"
+        className="flex flex-col h-full w-12 bg-background rounded-lg z-40"
         onMouseEnter={handleMouseEnterRail}
       >
         {/* Logo / Company */}
-        <div className="flex items-center justify-center h-10 border-b border-sidebar-border">
+        <div className="flex items-center justify-center h-10">
           <Building2 className="h-5 w-5 text-primary" />
         </div>
         
         {/* Favorites Section */}
-        <div className="py-1 border-b border-sidebar-border">
+        <div className="py-1">
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
               <button
@@ -648,7 +648,7 @@ export function SidebarNav() {
         
         {/* User Dashboard */}
         {currentUser?.id && (
-          <div className="py-1 border-b border-sidebar-border">
+          <div className="py-1">
             <Tooltip delayDuration={0}>
               <TooltipTrigger asChild>
                 <Link href={`/users/${currentUser.id}`}>
@@ -758,10 +758,10 @@ export function SidebarNav() {
         <div
           ref={drawerRef}
           className={cn(
-            "bg-sidebar shadow-xl z-30 transition-all duration-200 ease-out",
+            "bg-background shadow-xl z-30 transition-all duration-200 ease-out",
             isMobile 
-              ? "fixed bottom-0 left-0 right-0 h-[70vh] rounded-t-xl border-t border-sidebar-border"
-              : "absolute left-12 top-0 h-full w-48 border-r border-sidebar-border translate-x-0"
+              ? "fixed bottom-0 left-0 right-0 h-[70vh] rounded-t-xl border-t border-border"
+              : "absolute left-14 top-0 h-full w-48 rounded-lg border border-border translate-x-0"
           )}
           onMouseLeave={isMobile ? undefined : handleMouseLeaveDrawer}
           onMouseEnter={isMobile ? undefined : handleMouseEnterDrawer}
@@ -770,7 +770,7 @@ export function SidebarNav() {
           <div className="flex flex-col h-full">
             {/* Drawer Header */}
             <div className={cn(
-              "flex items-center justify-between px-3 border-b border-sidebar-border",
+              "flex items-center justify-between px-3 border-b border-border",
               isMobile ? "h-12" : "h-10"
             )}>
               {isMobile && (
@@ -806,7 +806,7 @@ export function SidebarNav() {
             
             {/* Project Switcher for project-related sections */}
             {(activeSection === "project" || activeSection === "management" || activeSection === "finance") && (
-              <div className="px-2 py-1.5 border-b border-sidebar-border">
+              <div className="px-2 py-1.5 border-b border-border">
                 <ProjectSwitcher compact />
               </div>
             )}
@@ -884,7 +884,7 @@ export function SidebarNav() {
           <div className="flex flex-col h-full">
             {/* Favorites Header */}
             <div className={cn(
-              "flex items-center justify-between px-3 border-b border-sidebar-border",
+              "flex items-center justify-between px-3 border-b border-border",
               isMobile ? "h-12" : "h-10"
             )}>
               {isMobile && (

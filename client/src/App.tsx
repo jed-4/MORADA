@@ -392,7 +392,7 @@ function AuthWrapper() {
         <ProjectProvider>
           <SocketProvider>
             <SidebarProvider style={style as React.CSSProperties}>
-            <div className="flex flex-col h-screen w-full">
+            <div className="flex flex-col h-screen w-full bg-[hsl(var(--page-background))]">
               {DEBUG_MODE && (
                 <div style={{
                   position: 'fixed',
@@ -413,9 +413,9 @@ function AuthWrapper() {
               <Header />
               
               {/* Sidebar and main content below header */}
-              <div className="flex flex-1 overflow-hidden">
+              <div className="flex flex-1 overflow-hidden p-2 gap-2">
                 <SidebarNav />
-                <main className="flex-1 overflow-auto">
+                <main className="flex-1 overflow-auto bg-background rounded-lg">
                   <Router />
                 </main>
               </div>

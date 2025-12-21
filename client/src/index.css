@@ -17,6 +17,8 @@
   --elevate-2: rgba(0,0,0, .05);
 
   --background: 0 0% 100%; /* Pure white #ffffff */
+  
+  --page-background: 220 14% 96%; /* Soft gray outer background #f1f5f9 */
 
   --foreground: 215 25% 17%; /* Slate-800 #1e293b */
 
@@ -152,6 +154,8 @@
 
   /* Soft Charcoal Theme - Professional & Easy on Eyes */
   --background: 220 12% 16%; /* Soft charcoal - not too dark */
+  
+  --page-background: 220 12% 10%; /* Dark outer background */
 
   --foreground: 220 10% 92%; /* Slightly warmer white */
 
