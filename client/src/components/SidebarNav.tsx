@@ -41,7 +41,6 @@ import {
   Library,
   Sparkles,
   ChevronRight,
-  Building2,
   ChevronsLeft,
   Clipboard,
   Search,
@@ -162,7 +161,7 @@ const sections: Record<SectionId, { label: string; icon: React.ComponentType<{ c
   },
 };
 
-const sectionOrder: SectionId[] = ["user", "project", "management", "finance", "allitems", "system"];
+const sectionOrder: SectionId[] = ["project", "management", "finance", "allitems", "system"];
 const favoriteSections: SectionId[] = ["user", "project", "management", "finance"];
 
 const HOVER_DELAY_MS = 300;
@@ -617,19 +616,40 @@ export function SidebarNav() {
         className="flex flex-col h-full w-12 bg-background rounded-lg z-40"
         onMouseEnter={handleMouseEnterRail}
       >
-        {/* Logo / Company */}
-        <div className="flex items-center justify-center h-10">
-          <Building2 className="h-5 w-5 text-primary" />
-        </div>
-        
-        {/* Favorites Section */}
-        <div className="py-1">
+        {/* 3-Way Mode Selector */}
+        <div className="flex flex-col items-center py-2 gap-0.5 border-b border-border/50 mx-1">
+          {/* Workspace */}
+          {currentUser?.id && (
+            <Tooltip delayDuration={0}>
+              <TooltipTrigger asChild>
+                <Link href={`/users/${currentUser.id}`}>
+                  <button
+                    className={cn(
+                      "flex items-center justify-center h-7 w-7 rounded-md transition-colors",
+                      "hover-elevate active-elevate-2",
+                      location.startsWith(`/users/${currentUser.id}`) || location.startsWith('/users/me')
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                    data-testid="rail-workspace"
+                  >
+                    <LayoutDashboard className="h-3.5 w-3.5" />
+                  </button>
+                </Link>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={8}>
+                Workspace
+              </TooltipContent>
+            </Tooltip>
+          )}
+          
+          {/* Favorites */}
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
               <button
                 onClick={handleFavoritesClick}
                 className={cn(
-                  "flex items-center justify-center h-8 w-8 mx-auto rounded-md transition-colors",
+                  "flex items-center justify-center h-7 w-7 rounded-md transition-colors",
                   "hover-elevate active-elevate-2",
                   isFavoritesOpen
                     ? "bg-primary text-primary-foreground"
@@ -637,41 +657,36 @@ export function SidebarNav() {
                 )}
                 data-testid="rail-favorites"
               >
-                <Star className={cn("h-4 w-4", favorites.length > 0 && "fill-current")} />
+                <Star className={cn("h-3.5 w-3.5", favorites.length > 0 && "fill-current")} />
               </button>
             </TooltipTrigger>
             <TooltipContent side="right" sideOffset={8}>
-              Favorites
+              Favourites
+            </TooltipContent>
+          </Tooltip>
+          
+          {/* User Sidebar */}
+          <Tooltip delayDuration={0}>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => handleSectionClick("user")}
+                className={cn(
+                  "flex items-center justify-center h-7 w-7 rounded-md transition-colors",
+                  "hover-elevate active-elevate-2",
+                  activeSection === "user" && isDrawerOpen
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+                data-testid="rail-user-sidebar"
+              >
+                <UserIcon className="h-3.5 w-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right" sideOffset={8}>
+              User Sidebar
             </TooltipContent>
           </Tooltip>
         </div>
-        
-        {/* User Dashboard */}
-        {currentUser?.id && (
-          <div className="py-1">
-            <Tooltip delayDuration={0}>
-              <TooltipTrigger asChild>
-                <Link href={`/users/${currentUser.id}`}>
-                  <button
-                    className={cn(
-                      "flex items-center justify-center h-8 w-8 mx-auto rounded-md transition-colors",
-                      "hover-elevate active-elevate-2",
-                      location.startsWith(`/users/${currentUser.id}`) || location.startsWith('/users/me')
-                        ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:text-foreground"
-                    )}
-                    data-testid="rail-user-dashboard"
-                  >
-                    <UserIcon className="h-4 w-4" />
-                  </button>
-                </Link>
-              </TooltipTrigger>
-              <TooltipContent side="right" sideOffset={8}>
-                My Workspace
-              </TooltipContent>
-            </Tooltip>
-          </div>
-        )}
         
         {/* Section Icons */}
         <div className="flex-1 flex flex-col py-1 gap-0.5">

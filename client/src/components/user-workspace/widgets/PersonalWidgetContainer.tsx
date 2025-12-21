@@ -155,7 +155,7 @@ export default function PersonalWidgetContainer({
 
   return (
     <div 
-      className={`relative h-full flex flex-col overflow-hidden surface-widget widget-animate-in ${externalIsResizing ? 'select-none z-50' : ''} ${themeClassName || ''}`} 
+      className={`group relative h-full flex flex-col overflow-hidden surface-widget widget-animate-in ${externalIsResizing ? 'select-none z-50' : ''} ${themeClassName || ''}`} 
       style={{ height: heightStyle, ...themeStyleOverride }}
       data-testid={`personal-widget-${title.toLowerCase().replace(/\s+/g, '-')}`}
     >
@@ -163,7 +163,7 @@ export default function PersonalWidgetContainer({
         <div className="flex items-center gap-2 min-w-0">
           <div
             {...dragHandleProps}
-            className="cursor-grab active:cursor-grabbing p-1 -ml-1 hover:bg-muted rounded"
+            className="cursor-grab active:cursor-grabbing p-1 -ml-1 hover:bg-muted rounded opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
             data-testid="widget-drag-handle"
           >
             <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
@@ -174,7 +174,7 @@ export default function PersonalWidgetContainer({
         
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-6 w-6 flex-shrink-0" data-testid="widget-menu-trigger">
+            <Button variant="ghost" size="icon" className="h-6 w-6 flex-shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity" data-testid="widget-menu-trigger">
               <MoreVertical className="h-3.5 w-3.5" />
             </Button>
           </DropdownMenuTrigger>
