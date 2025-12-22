@@ -643,11 +643,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Unauthorized - no company context" });
       }
 
-      // Preprocess: convert empty strings to null for date/time fields
+      // Preprocess: remove empty/null date/time fields to avoid validation errors
       const body = { ...req.body };
-      if (body.dueDate === "") body.dueDate = null;
-      if (body.startTime === "") body.startTime = null;
-      if (body.endTime === "") body.endTime = null;
+      if (body.dueDate === "" || body.dueDate === null) delete body.dueDate;
+      if (body.startTime === "" || body.startTime === null) delete body.startTime;
+      if (body.endTime === "" || body.endTime === null) delete body.endTime;
 
       console.log("[POST /api/tasks] Request body:", JSON.stringify(body, null, 2));
       const validationResult = insertTaskSchema.safeParse(body);
@@ -690,11 +690,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "Forbidden - task belongs to another company" });
       }
 
-      // Preprocess: convert empty strings to null for date/time fields
+      // Preprocess: remove empty/null date/time fields to avoid validation errors
       const body = { ...req.body };
-      if (body.dueDate === "") body.dueDate = null;
-      if (body.startTime === "") body.startTime = null;
-      if (body.endTime === "") body.endTime = null;
+      if (body.dueDate === "" || body.dueDate === null) delete body.dueDate;
+      if (body.startTime === "" || body.startTime === null) delete body.startTime;
+      if (body.endTime === "" || body.endTime === null) delete body.endTime;
 
       const updateSchema = insertTaskSchema.partial();
       const validationResult = updateSchema.safeParse(body);
