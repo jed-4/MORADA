@@ -45,7 +45,6 @@ import {
 } from "@/components/ui/select";
 import TaskBoard from "@/components/TaskBoard";
 import TaskList from "@/components/TaskList";
-import TaskListCompact from "@/components/TaskListCompact";
 import { CasvaTaskList } from "@/components/tasks/CasvaTaskList";
 import TaskModalAsana from "@/components/TaskModalAsana";
 import FilterPanel, { type FilterState } from "@/components/FilterPanel";
@@ -1153,7 +1152,12 @@ export default function Tasks() {
                   />
                 ) : (
                   <div className="flex-1 overflow-auto">
-                    <TaskListCompact tasks={viewFilteredTasks} isLoading={tasksLoading} onTaskClick={(task: Task) => setEditingTask(task)} projectId={effectiveProjectId} />
+                    <CasvaTaskList
+                      tasks={viewFilteredTasks}
+                      onEditTask={(task: Task) => setEditingTask(task)}
+                      showCheckboxes={true}
+                      projectId={effectiveProjectId}
+                    />
                   </div>
                 )}
               </TabsContent>
