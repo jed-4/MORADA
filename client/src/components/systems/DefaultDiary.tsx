@@ -58,6 +58,25 @@ function formatHour(hour: number): string {
   return `${hour - 12} PM`;
 }
 
+// Calculate relative luminance and determine if text should be dark or light
+function getContrastTextColor(hexColor: string | null | undefined): string {
+  if (!hexColor) return 'inherit';
+  
+  // Remove # if present
+  const hex = hexColor.replace('#', '');
+  if (hex.length !== 6) return 'inherit';
+  
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  
+  // Calculate relative luminance using sRGB
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  
+  // Use dark text for light backgrounds, light text for dark backgrounds
+  return luminance > 0.5 ? '#1f2937' : '#ffffff';
+}
+
 export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
   function DefaultDiary({ searchQuery = "" }, ref) {
     const { user: currentUser } = useAuth();
@@ -275,9 +294,9 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
               })}
             </div>
 
-            {/* All-Day Tasks Row - height matches half-hour bar (24px) */}
-            <div className="grid grid-cols-8 border-b flex-shrink-0" style={{ minHeight: `${HOUR_HEIGHT / 2}px` }}>
-              <div className="p-0.5 text-[9px] text-muted-foreground text-center border-r bg-muted/20 flex items-center justify-center">
+            {/* All-Day Tasks Row */}
+            <div className="grid grid-cols-8 border-b flex-shrink-0">
+              <div className="p-1 text-[10px] text-muted-foreground text-center border-r bg-muted/20 flex items-center justify-center">
                 All Day
               </div>
               {DAYS_OF_WEEK.map((_, dayIndex) => {
@@ -286,24 +305,31 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
                 return (
                   <div 
                     key={dayIndex} 
-                    className={`px-0.5 py-0.5 border-r last:border-r-0 flex items-center ${isToday ? 'bg-primary/5' : ''}`}
-                    style={{ minHeight: `${HOUR_HEIGHT / 2}px` }}
+                    className={`p-1 border-r last:border-r-0 min-h-[40px] ${isToday ? 'bg-primary/5' : ''}`}
                   >
-                    <div className="flex flex-wrap gap-0.5 w-full">
-                      {allDayTemplates.slice(0, 2).map((template) => (
-                        <div
-                          key={template.id}
-                          className="text-[8px] px-1 py-0 rounded truncate border leading-tight max-w-full"
-                          style={template.color ? { backgroundColor: template.color + '20', borderColor: template.color, color: template.color } : {}}
-                          title={template.title}
-                        >
-                          {template.title}
+                    <div className="space-y-0.5">
+                      {allDayTemplates.slice(0, 3).map((template) => {
+                        const bgColor = template.color || undefined;
+                        const textColor = bgColor ? getContrastTextColor(bgColor) : undefined;
+                        return (
+                          <div
+                            key={template.id}
+                            className="text-[8px] px-1 rounded truncate border leading-none"
+                            style={bgColor ? { 
+                              backgroundColor: bgColor, 
+                              borderColor: bgColor, 
+                              color: textColor 
+                            } : {}}
+                            title={template.title}
+                          >
+                            {template.title}
+                          </div>
+                        );
+                      })}
+                      {allDayTemplates.length > 3 && (
+                        <div className="text-[8px] text-muted-foreground px-1">
+                          +{allDayTemplates.length - 3} more
                         </div>
-                      ))}
-                      {allDayTemplates.length > 2 && (
-                        <span className="text-[8px] text-muted-foreground">
-                          +{allDayTemplates.length - 2}
-                        </span>
                       )}
                     </div>
                   </div>
@@ -441,6 +467,8 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
                           const leftPercent = colInfo.colIdx * widthPercent;
                           
                           const assigneeName = template.assigneeUserName || template.defaultRoleName;
+                          const bgColor = template.color || undefined;
+                          const textColor = bgColor ? getContrastTextColor(bgColor) : undefined;
 
                           return (
                             <div
@@ -451,9 +479,9 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
                                 height: `${template.heightPx}px`,
                                 left: `calc(${leftPercent}% + 2px)`,
                                 width: `calc(${widthPercent}% - 4px)`,
-                                backgroundColor: template.color ? template.color + '20' : 'hsl(var(--primary) / 0.1)',
-                                borderColor: template.color || 'hsl(var(--primary) / 0.3)',
-                                color: template.color || 'hsl(var(--primary))',
+                                backgroundColor: bgColor || 'hsl(var(--primary) / 0.1)',
+                                borderColor: bgColor || 'hsl(var(--primary) / 0.3)',
+                                color: textColor || 'hsl(var(--primary))',
                               }}
                               title={`${template.title}${template.timeStr ? ` @ ${template.timeStr}` : ''} (${template.duration}min)`}
                               data-testid={`diary-template-${template.id}`}
