@@ -88,9 +88,10 @@ interface TaskModalAsanaProps {
   projectId?: string;
   initialStatus?: string;
   defaultAssigneeId?: string;
+  defaultScope?: "personal" | "project" | "system" | "business";
 }
 
-export default function TaskModalAsana({ task: propTask, taskId, open, onOpenChange, projectId, initialStatus, defaultAssigneeId }: TaskModalAsanaProps) {
+export default function TaskModalAsana({ task: propTask, taskId, open, onOpenChange, projectId, initialStatus, defaultAssigneeId, defaultScope }: TaskModalAsanaProps) {
   const { data: fetchedTask } = useQuery<Task>({
     queryKey: ["/api/tasks", taskId],
     queryFn: async () => {
@@ -210,8 +211,8 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
       estimatedCost: task?.estimatedCost || undefined,
       estimatedUnits: task?.estimatedUnits || undefined,
       projectId: task?.projectId || projectId || undefined,
-      // For legacy business tasks (no scope, no projectId), treat as "business"
-      scope: (task?.scope as any) || (task && !task.projectId ? "business" : projectId ? "project" : "project"),
+      // Priority: existing task scope > legacy detection > defaultScope prop > project if projectId given > project
+      scope: (task?.scope as any) || (task && !task.projectId ? "business" : defaultScope || (projectId ? "project" : "project")),
     },
   });
 
@@ -232,8 +233,8 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
         estimatedCost: task?.estimatedCost || undefined,
         estimatedUnits: task?.estimatedUnits || undefined,
         projectId: task?.projectId || projectId || undefined,
-        // For legacy business tasks (no scope, no projectId), treat as "business"
-        scope: (task?.scope as any) || (task && !task.projectId ? "business" : projectId ? "project" : "project"),
+        // Priority: existing task scope > legacy detection > defaultScope prop > project if projectId given > project
+        scope: (task?.scope as any) || (task && !task.projectId ? "business" : defaultScope || (projectId ? "project" : "project")),
       };
       form.reset(newDefaults);
       setTitleValue(newDefaults.title);

@@ -8,7 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 
 interface PersonalWidgetContainerProps {
   title: string;
@@ -137,6 +137,11 @@ export default function PersonalWidgetContainer({
 }: PersonalWidgetContainerProps) {
   const [currentDimensions, setCurrentDimensions] = useState(dimensions);
 
+  // Sync internal state when dimensions prop changes (e.g., from saved layouts)
+  useEffect(() => {
+    setCurrentDimensions(dimensions);
+  }, [dimensions]);
+
   const handleResize = useCallback((width: number, height: number) => {
     setCurrentDimensions(prev => ({ ...prev, width, height }));
   }, []);
@@ -151,7 +156,9 @@ export default function PersonalWidgetContainer({
     onResizeEnd?.(columns, height);
   }, [externalSetIsResizing, onResizeEnd]);
 
-  const heightStyle = currentDimensions?.height ? `${currentDimensions.height}px` : undefined;
+  const DEFAULT_WIDGET_HEIGHT = 280;
+  const heightValue = currentDimensions?.height || DEFAULT_WIDGET_HEIGHT;
+  const heightStyle = `${heightValue}px`;
 
   return (
     <div 

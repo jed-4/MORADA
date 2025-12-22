@@ -743,6 +743,7 @@ export default function BusinessTasks() {
           }}
           projectId=""
           initialStatus={initialTaskStatus}
+          defaultScope="business"
         />
       )}
 

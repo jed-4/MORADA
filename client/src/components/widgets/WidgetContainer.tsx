@@ -268,11 +268,14 @@ export default function WidgetContainer({
     return colSpanMap[currentDimensions.columns] || '';
   };
 
+  const DEFAULT_WIDGET_HEIGHT = 280;
+  const heightValue = currentDimensions?.height || DEFAULT_WIDGET_HEIGHT;
+  
   const style = {
     transform: CSS.Transform.toString(transform),
     transition: isResizing ? 'none' : transition,
     width: getWidthStyle(),
-    height: currentDimensions?.height ? `${currentDimensions.height}px` : undefined,
+    height: `${heightValue}px`,
   };
 
   return (
