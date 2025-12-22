@@ -207,105 +207,93 @@ export default function DashboardThemeSettings({
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-          {/* Page Background Colors - Per-page settings */}
-          <div className="space-y-3 p-3 rounded-lg border-2 border-primary/20 bg-primary/5">
-            <Label className="text-sm font-semibold flex items-center gap-2">
-              <div className="h-3 w-3 rounded-full bg-primary" />
-              Page Background Colors
-            </Label>
-            <p className="text-xs text-muted-foreground">
-              Set different background colors for each screen type to help differentiate pages.
-            </p>
-            
-            {/* Per-page color pickers */}
-            <div className="space-y-3">
-              {[
-                { key: "dashboard", label: "Business Dashboard", description: "Business dashboard & other pages" },
-                { key: "workspace", label: "User Workspace", description: "Personal workspace/overview" },
-                { key: "project", label: "Project Pages", description: "Individual project dashboards" },
-              ].map((page) => {
-                const hasColor = !!pageBackgroundPalette[page.key];
-                return (
-                  <div key={page.key} className={`flex items-center gap-2 p-2 rounded-md ${hasColor ? 'bg-background/50' : 'bg-muted/30 border border-dashed border-muted-foreground/20'}`}>
-                    <div className="relative">
-                      <Input
-                        type="color"
-                        value={pageBackgroundPalette[page.key] || "#e5e7eb"}
-                        onChange={(e) => updatePaletteColor(page.key, e.target.value)}
-                        className={`w-8 h-8 p-1 cursor-pointer flex-shrink-0 ${!hasColor ? 'opacity-40' : ''}`}
-                      />
-                      {!hasColor && (
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                          <span className="text-[7px] font-medium text-muted-foreground bg-muted/80 px-0.5 rounded">OFF</span>
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-medium flex items-center gap-1">
-                        {page.label}
-                        {!hasColor && <span className="text-[9px] text-muted-foreground">(default)</span>}
-                      </div>
-                      <div className="text-[10px] text-muted-foreground truncate">{page.description}</div>
-                    </div>
+          {/* Page Background Color - Contextual for current page */}
+          {(() => {
+            const pageKey = dashboardType === "business" ? "dashboard" : dashboardType === "user" ? "workspace" : "project";
+            const pageLabel = dashboardType === "business" ? "Business Dashboard" : dashboardType === "user" ? "User Workspace" : "Project Page";
+            const hasColor = !!pageBackgroundPalette[pageKey];
+            return (
+              <div className="space-y-3 p-3 rounded-lg border-2 border-primary/20 bg-primary/5">
+                <Label className="text-sm font-semibold flex items-center gap-2">
+                  <div className="h-3 w-3 rounded-full bg-primary" />
+                  Page Background
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Set a custom background color for this {pageLabel.toLowerCase()}.
+                </p>
+                
+                <div className={`flex items-center gap-2 p-2 rounded-md ${hasColor ? 'bg-background/50' : 'bg-muted/30 border border-dashed border-muted-foreground/20'}`}>
+                  <div className="relative">
                     <Input
-                      type="text"
-                      value={pageBackgroundPalette[page.key]}
-                      onChange={(e) => updatePaletteColor(page.key, e.target.value)}
-                      className="w-20 h-7 text-[10px] px-1"
-                      placeholder="default"
+                      type="color"
+                      value={pageBackgroundPalette[pageKey] || "#e5e7eb"}
+                      onChange={(e) => updatePaletteColor(pageKey, e.target.value)}
+                      className={`w-10 h-10 p-1 cursor-pointer flex-shrink-0 ${!hasColor ? 'opacity-40' : ''}`}
                     />
-                    {hasColor && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 w-7 p-0"
-                        onClick={() => updatePaletteColor(page.key, "")}
-                        title="Reset to default"
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
+                    {!hasColor && (
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <span className="text-[8px] font-medium text-muted-foreground bg-muted/80 px-0.5 rounded">OFF</span>
+                      </div>
                     )}
                   </div>
-                );
-              })}
-            </div>
-            
-            <div className="space-y-1.5 pt-2 border-t">
-              <Label className="text-xs">Quick Presets (apply to all)</Label>
-              <div className="grid grid-cols-6 gap-1.5">
-                {[
-                  { name: "Light Gray", color: "#f1f5f9" },
-                  { name: "Warm Gray", color: "#f5f5f4" },
-                  { name: "Cool Gray", color: "#f3f4f6" },
-                  { name: "Slate", color: "#e2e8f0" },
-                  { name: "Blue Gray", color: "#e0e7ff" },
-                  { name: "Lavender", color: "#ede9fe" },
-                  { name: "Rose", color: "#fce7f3" },
-                  { name: "Mint", color: "#d1fae5" },
-                  { name: "Amber", color: "#fef3c7" },
-                  { name: "Sky", color: "#e0f2fe" },
-                  { name: "Dark", color: "#1e293b" },
-                  { name: "Charcoal", color: "#27272a" },
-                ].map((preset) => (
-                  <button
-                    key={preset.name}
-                    type="button"
-                    onClick={() => {
-                      setPageBackgroundPalette({
-                        dashboard: preset.color,
-                        workspace: preset.color,
-                        project: preset.color,
-                      });
-                    }}
-                    className="h-6 rounded-md border-2 transition-all border-transparent hover:border-muted-foreground/30"
-                    style={{ backgroundColor: preset.color }}
-                    title={`${preset.name} (apply to all pages)`}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium flex items-center gap-1">
+                      {pageLabel}
+                      {!hasColor && <span className="text-xs text-muted-foreground">(using default)</span>}
+                    </div>
+                  </div>
+                  <Input
+                    type="text"
+                    value={pageBackgroundPalette[pageKey]}
+                    onChange={(e) => updatePaletteColor(pageKey, e.target.value)}
+                    className="w-24 h-8 text-xs px-2"
+                    placeholder="#hex"
                   />
-                ))}
+                  {hasColor && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0"
+                      onClick={() => updatePaletteColor(pageKey, "")}
+                      title="Reset to default"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+                
+                <div className="space-y-1.5 pt-2 border-t">
+                  <Label className="text-xs">Quick Presets</Label>
+                  <div className="grid grid-cols-6 gap-1.5">
+                    {[
+                      { name: "Light Gray", color: "#f1f5f9" },
+                      { name: "Warm Gray", color: "#f5f5f4" },
+                      { name: "Cool Gray", color: "#f3f4f6" },
+                      { name: "Slate", color: "#e2e8f0" },
+                      { name: "Blue Gray", color: "#e0e7ff" },
+                      { name: "Lavender", color: "#ede9fe" },
+                      { name: "Rose", color: "#fce7f3" },
+                      { name: "Mint", color: "#d1fae5" },
+                      { name: "Amber", color: "#fef3c7" },
+                      { name: "Sky", color: "#e0f2fe" },
+                      { name: "Dark", color: "#1e293b" },
+                      { name: "Charcoal", color: "#27272a" },
+                    ].map((preset) => (
+                      <button
+                        key={preset.name}
+                        type="button"
+                        onClick={() => updatePaletteColor(pageKey, preset.color)}
+                        className="h-6 rounded-md border-2 transition-all border-transparent hover:border-muted-foreground/30"
+                        style={{ backgroundColor: preset.color }}
+                        title={preset.name}
+                      />
+                    ))}
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
+            );
+          })()}
 
           <div 
             className="relative h-24 rounded-lg border overflow-hidden"

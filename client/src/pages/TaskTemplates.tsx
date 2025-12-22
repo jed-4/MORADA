@@ -74,6 +74,7 @@ interface TaskTemplateFormData {
   recurringSchedule: RecurringScheduleItem[];
   estimatedDuration?: number;
   checklist: Array<{ text: string; completed: boolean }>;
+  color?: string; // Hex color for calendar display
 }
 
 const DAYS_OF_WEEK = [
@@ -110,6 +111,7 @@ export default function TaskTemplates() {
     recurringSchedule: [],
     estimatedDuration: undefined,
     checklist: [],
+    color: undefined,
   });
   const [checklistInput, setChecklistInput] = useState("");
 
@@ -341,6 +343,7 @@ export default function TaskTemplates() {
         recurringSchedule: (template.recurringSchedule as RecurringScheduleItem[]) || [],
         estimatedDuration: template.estimatedDuration || undefined,
         checklist: (template.checklist as Array<{ text: string; completed: boolean }>) || [],
+        color: template.color || undefined,
       });
     } else {
       setEditingTemplate(null);
@@ -357,6 +360,7 @@ export default function TaskTemplates() {
         recurringSchedule: [],
         estimatedDuration: undefined,
         checklist: [],
+        color: undefined,
       });
     }
     setChecklistInput("");
@@ -864,21 +868,56 @@ export default function TaskTemplates() {
               </div>
 
               {formData.isRecurringTemplate && (
-                <div className="ml-6 grid gap-2 mt-2">
-                  <Label className="text-xs text-muted-foreground">Select recurring days</Label>
-                  <div className="flex gap-1">
-                    {DAYS_OF_WEEK.map((day) => (
-                      <Button
-                        key={day.value}
-                        type="button"
-                        variant={formData.recurringDays.includes(day.value) ? "default" : "outline"}
-                        size="sm"
-                        className="w-9 h-7 text-xs"
-                        onClick={() => handleToggleDay(day.value)}
-                      >
-                        {day.label}
-                      </Button>
-                    ))}
+                <div className="ml-6 grid gap-3 mt-2">
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Select recurring days</Label>
+                    <div className="flex gap-1 mt-1">
+                      {DAYS_OF_WEEK.map((day) => (
+                        <Button
+                          key={day.value}
+                          type="button"
+                          variant={formData.recurringDays.includes(day.value) ? "default" : "outline"}
+                          size="sm"
+                          className="w-9 h-7 text-xs"
+                          onClick={() => handleToggleDay(day.value)}
+                        >
+                          {day.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Calendar Color</Label>
+                    <div className="flex items-center gap-2 mt-1">
+                      <Input
+                        type="color"
+                        value={formData.color || "#3b82f6"}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, color: e.target.value }))}
+                        className="w-10 h-8 p-1 cursor-pointer"
+                        data-testid="input-template-color"
+                      />
+                      <Input
+                        type="text"
+                        value={formData.color || ""}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, color: e.target.value }))}
+                        className="w-24 h-8 text-xs"
+                        placeholder="#3b82f6"
+                        data-testid="input-template-color-text"
+                      />
+                      {formData.color && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 px-2"
+                          onClick={() => setFormData((prev) => ({ ...prev, color: undefined }))}
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-1">Color used in calendar/diary views</p>
                   </div>
                 </div>
               )}

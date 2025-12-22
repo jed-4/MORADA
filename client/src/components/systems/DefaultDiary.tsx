@@ -6,30 +6,26 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { CalendarDays, Clock, Repeat, User } from "lucide-react";
+import { CalendarDays, Clock, Repeat, User, ListTodo } from "lucide-react";
+import type { TaskTemplate } from "@shared/schema";
 
 const DAYS_OF_WEEK = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const SHORT_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const HOUR_HEIGHT = 48;
 
-interface RecurringTask {
-  id: number;
-  title: string;
-  description?: string;
-  recurringDays: number[];
-  recurringType: string;
-  recurringInterval: number;
-  assigneeId?: string;
-  dueTime?: string;
-  priority?: string;
-  status: string;
-}
-
 interface UserType {
   id: string;
   displayName: string;
+  firstName?: string;
+  lastName?: string;
   profileImageUrl?: string;
   roleId?: string;
+}
+
+interface RecurringScheduleItem {
+  dayOfWeek: number;
+  startTime: string;
+  duration: number;
 }
 
 interface RolePermission {
@@ -71,67 +67,100 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
       queryKey: ["/api/users"],
     });
 
-    const { data: allTasks = [], isLoading: tasksLoading, refetch } = useQuery<any[]>({
-      queryKey: ["/api/tasks"],
+    // Fetch task templates with recurring schedules
+    const { data: taskTemplates = [], isLoading: templatesLoading, refetch } = useQuery<TaskTemplate[]>({
+      queryKey: ["/api/systems/task-templates"],
     });
 
-    // Fetch role permissions to check if current user can view other users
-    const { data: rolePermissions = [] } = useQuery<RolePermission[]>({
-      queryKey: ["/api/role-permissions"],
-      enabled: !!currentUser?.roleId,
+    const { data: userRoles = [] } = useQuery<any[]>({
+      queryKey: ["/api/user-roles"],
     });
 
-    // Check if current user can view team calendars (other users' diaries)
+    // Check if current user is admin or has elevated permissions
     const canViewOtherUsers = useMemo(() => {
-      if (!currentUser?.roleId) return false;
-      const teamCalendarPermission = rolePermissions.find(
-        (rp) => rp.roleId === currentUser.roleId && 
-        (rp.permissionId === "perm-projects-team_calendars" || rp.permissionId === "3276c3cc-4911-4847-84ec-6330e267f163")
-      );
-      return !!teamCalendarPermission;
-    }, [currentUser?.roleId, rolePermissions]);
+      if (!currentUser?.roleId) return true; // Allow by default if no role system
+      const userRole = userRoles.find((r: any) => r.id === currentUser.roleId);
+      return userRole?.name === "Admin" || userRole?.name === "Owner" || userRole?.isAdmin;
+    }, [currentUser?.roleId, userRoles]);
 
-    // Default to current user when loaded
+    // Default to "all" to show all recurring templates
     useEffect(() => {
-      if (currentUser?.id && selectedUserId === null) {
-        setSelectedUserId(currentUser.id);
+      if (selectedUserId === null) {
+        setSelectedUserId("all");
       }
-    }, [currentUser?.id, selectedUserId]);
+    }, [selectedUserId]);
 
     useImperativeHandle(ref, () => ({
       refresh: () => refetch(),
     }));
 
-    const effectiveUserId = selectedUserId || currentUser?.id;
+    const effectiveUserId = selectedUserId || "all";
 
-    const recurringTasks = allTasks.filter((task: any) => 
-      task.isRecurring && 
-      task.status !== "done" && 
-      task.status !== "completed" &&
-      (effectiveUserId === "all" || task.assigneeId === effectiveUserId) &&
-      (searchQuery === "" || task.title?.toLowerCase().includes(searchQuery.toLowerCase()))
-    );
+    // Filter recurring task templates
+    const recurringTemplates = useMemo(() => {
+      return taskTemplates.filter((template) => {
+        // Only show active recurring templates
+        if (!template.isRecurringTemplate || !template.isActive) return false;
+        
+        // Must have at least one recurring day
+        const recurringDays = (template.recurringDays as number[]) || [];
+        if (recurringDays.length === 0) return false;
+        
+        // Filter by user if selected (checks assigneeUserId or default role assignment)
+        if (effectiveUserId !== "all") {
+          // Check direct user assignment
+          if (template.assigneeUserId === effectiveUserId) return true;
+          // Check role-based assignment - see if user has that role
+          if (template.defaultRoleId) {
+            const user = users.find(u => u.id === effectiveUserId);
+            if (user?.roleId === template.defaultRoleId) return true;
+          }
+          return false;
+        }
+        
+        // Search filter
+        if (searchQuery && !template.title.toLowerCase().includes(searchQuery.toLowerCase())) {
+          return false;
+        }
+        
+        return true;
+      });
+    }, [taskTemplates, effectiveUserId, users, searchQuery]);
 
-    const getTasksForDay = (dayIndex: number) => {
-      return recurringTasks.filter((task: any) => {
-        const recurringDays = task.recurringDays || [];
+    // Get templates scheduled for a specific day
+    const getTemplatesForDay = (dayIndex: number) => {
+      return recurringTemplates.filter((template) => {
+        const recurringDays = (template.recurringDays as number[]) || [];
         return recurringDays.includes(dayIndex);
       });
     };
 
-    const getTasksForDayAndHour = (dayIndex: number, hour: number) => {
-      const dayTasks = getTasksForDay(dayIndex);
-      return dayTasks.filter((task: any) => {
-        const startHour = parseTime(task.dueTime);
+    // Get templates for a specific day and hour (uses recurringSchedule for time)
+    const getTemplatesForDayAndHour = (dayIndex: number, hour: number) => {
+      const dayTemplates = getTemplatesForDay(dayIndex);
+      return dayTemplates.filter((template) => {
+        const schedule = (template.recurringSchedule as RecurringScheduleItem[]) || [];
+        const daySchedule = schedule.find(s => s.dayOfWeek === dayIndex);
+        if (!daySchedule) {
+          // Fall back to dueTime if no specific schedule
+          const startHour = parseTime(template.dueTime);
+          if (startHour === null) return false;
+          return Math.floor(startHour) === hour;
+        }
+        const startHour = parseTime(daySchedule.startTime);
         if (startHour === null) return false;
         return Math.floor(startHour) === hour;
       });
     };
 
-    const getAllDayTasks = (dayIndex: number) => {
-      const dayTasks = getTasksForDay(dayIndex);
-      return dayTasks.filter((task: any) => {
-        const startHour = parseTime(task.dueTime);
+    // Get all-day templates (no specific time set)
+    const getAllDayTemplates = (dayIndex: number) => {
+      const dayTemplates = getTemplatesForDay(dayIndex);
+      return dayTemplates.filter((template) => {
+        const schedule = (template.recurringSchedule as RecurringScheduleItem[]) || [];
+        const daySchedule = schedule.find(s => s.dayOfWeek === dayIndex);
+        if (daySchedule) return false; // Has a specific time
+        const startHour = parseTime(template.dueTime);
         return startHour === null;
       });
     };
@@ -145,7 +174,7 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
       }
     };
 
-    const isLoading = usersLoading || tasksLoading;
+    const isLoading = usersLoading || templatesLoading;
     const today = new Date().getDay();
 
     // Get current time for the time indicator
@@ -163,7 +192,7 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
               Default Week
             </h2>
             <Badge variant="secondary" className="text-xs">
-              {recurringTasks.length} recurring {recurringTasks.length === 1 ? 'task' : 'tasks'}
+              {recurringTemplates.length} recurring {recurringTemplates.length === 1 ? 'template' : 'templates'}
             </Badge>
           </div>
           
@@ -218,7 +247,7 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
                 Time
               </div>
               {DAYS_OF_WEEK.map((_, dayIndex) => {
-                const dayTasks = getTasksForDay(dayIndex);
+                const dayTemplates = getTemplatesForDay(dayIndex);
                 const isToday = dayIndex === today;
                 return (
                   <div 
@@ -229,12 +258,12 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
                       <span className={`text-xs font-medium ${isToday ? 'text-primary' : ''}`}>
                         {SHORT_DAYS[dayIndex]}
                       </span>
-                      {dayTasks.length > 0 && (
+                      {dayTemplates.length > 0 && (
                         <Badge 
                           variant={isToday ? "default" : "secondary"} 
                           className="text-[9px] px-1.5 py-0 h-4 min-w-4"
                         >
-                          {dayTasks.length}
+                          {dayTemplates.length}
                         </Badge>
                       )}
                     </div>
@@ -252,7 +281,7 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
                 All Day
               </div>
               {DAYS_OF_WEEK.map((_, dayIndex) => {
-                const allDayTasks = getAllDayTasks(dayIndex);
+                const allDayTemplates = getAllDayTemplates(dayIndex);
                 const isToday = dayIndex === today;
                 return (
                   <div 
@@ -260,18 +289,19 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
                     className={`p-1 border-r last:border-r-0 min-h-[40px] ${isToday ? 'bg-primary/5' : ''}`}
                   >
                     <div className="space-y-0.5">
-                      {allDayTasks.slice(0, 3).map((task: any) => (
+                      {allDayTemplates.slice(0, 3).map((template) => (
                         <div
-                          key={task.id}
-                          className={`text-[9px] px-1 py-0.5 rounded truncate border ${getPriorityColor(task.priority)}`}
-                          title={task.title}
+                          key={template.id}
+                          className={`text-[9px] px-1 py-0.5 rounded truncate border`}
+                          style={template.color ? { backgroundColor: template.color + '20', borderColor: template.color, color: template.color } : {}}
+                          title={template.title}
                         >
-                          {task.title}
+                          {template.title}
                         </div>
                       ))}
-                      {allDayTasks.length > 3 && (
+                      {allDayTemplates.length > 3 && (
                         <div className="text-[9px] text-muted-foreground px-1">
-                          +{allDayTasks.length - 3} more
+                          +{allDayTemplates.length - 3} more
                         </div>
                       )}
                     </div>
@@ -326,101 +356,116 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
                         </div>
                       )}
 
-                      {/* Positioned tasks with collision handling */}
+                      {/* Positioned templates with collision handling */}
                       {(() => {
                         const TASK_HEIGHT = HOUR_HEIGHT - 4;
-                        const timedTasks = getTasksForDay(dayIndex)
-                          .filter((task: any) => parseTime(task.dueTime) !== null)
-                          .map((task: any) => {
-                            const startHour = parseTime(task.dueTime)!;
+                        const dayTemplates = getTemplatesForDay(dayIndex);
+                        
+                        // Get templates with times (from recurringSchedule or dueTime)
+                        const timedTemplates = dayTemplates
+                          .map((template) => {
+                            const schedule = (template.recurringSchedule as RecurringScheduleItem[]) || [];
+                            const daySchedule = schedule.find(s => s.dayOfWeek === dayIndex);
+                            const timeStr = daySchedule?.startTime || template.dueTime;
+                            const startHour = parseTime(timeStr);
+                            if (startHour === null) return null;
+                            
+                            const duration = daySchedule?.duration || template.estimatedDuration || 60;
+                            const heightPx = (duration / 60) * HOUR_HEIGHT;
+                            
                             return {
-                              ...task,
+                              ...template,
                               startHour,
+                              duration,
+                              timeStr,
                               top: startHour * HOUR_HEIGHT + 2,
-                              bottom: startHour * HOUR_HEIGHT + 2 + TASK_HEIGHT,
+                              bottom: startHour * HOUR_HEIGHT + 2 + Math.max(heightPx, TASK_HEIGHT),
+                              heightPx: Math.max(heightPx, TASK_HEIGHT),
                             };
                           })
-                          .sort((a, b) => a.startHour - b.startHour);
+                          .filter(Boolean)
+                          .sort((a, b) => a!.startHour - b!.startHour) as any[];
                         
                         // Detect visual overlaps based on actual pixel positions
                         // Using a greedy column assignment algorithm
-                        const columns: typeof timedTasks[] = [];
+                        const columns: typeof timedTemplates[] = [];
                         
-                        timedTasks.forEach(task => {
-                          // Find the first column where this task doesn't overlap
+                        timedTemplates.forEach(template => {
+                          // Find the first column where this template doesn't overlap
                           let placed = false;
                           for (let colIdx = 0; colIdx < columns.length; colIdx++) {
                             const col = columns[colIdx];
                             const lastInCol = col[col.length - 1];
-                            // Check if task starts after the last item in this column ends
-                            if (task.top >= lastInCol.bottom) {
-                              col.push(task);
+                            // Check if template starts after the last item in this column ends
+                            if (template.top >= lastInCol.bottom) {
+                              col.push(template);
                               placed = true;
                               break;
                             }
                           }
                           // If no existing column works, create a new one
                           if (!placed) {
-                            columns.push([task]);
+                            columns.push([template]);
                           }
                         });
                         
-                        // Assign column index to each task
-                        const taskColumns = new Map<number, { colIdx: number; totalCols: number }>();
+                        // Assign column index to each template
+                        const templateColumns = new Map<string, { colIdx: number; totalCols: number }>();
                         
-                        // For each task, find which column it's in and how many columns overlap with it
-                        timedTasks.forEach(task => {
+                        // For each template, find which column it's in and how many columns overlap with it
+                        timedTemplates.forEach(template => {
                           let colIdx = 0;
                           for (let c = 0; c < columns.length; c++) {
-                            if (columns[c].some(t => t.id === task.id)) {
+                            if (columns[c].some(t => t.id === template.id)) {
                               colIdx = c;
                               break;
                             }
                           }
                           
-                          // Count how many columns have tasks that overlap with this task's time range
+                          // Count how many columns have templates that overlap with this template's time range
                           let overlappingCols = 0;
                           for (let c = 0; c < columns.length; c++) {
                             const hasOverlap = columns[c].some(t => 
-                              !(t.bottom <= task.top || t.top >= task.bottom)
+                              !(t.bottom <= template.top || t.top >= template.bottom)
                             );
                             if (hasOverlap) overlappingCols++;
                           }
                           
-                          taskColumns.set(task.id, { colIdx, totalCols: Math.max(overlappingCols, 1) });
+                          templateColumns.set(template.id, { colIdx, totalCols: Math.max(overlappingCols, 1) });
                         });
 
-                        return timedTasks.map((task: any) => {
-                          const colInfo = taskColumns.get(task.id) || { colIdx: 0, totalCols: 1 };
+                        return timedTemplates.map((template: any) => {
+                          const colInfo = templateColumns.get(template.id) || { colIdx: 0, totalCols: 1 };
                           const widthPercent = 100 / colInfo.totalCols;
                           const leftPercent = colInfo.colIdx * widthPercent;
                           
-                          const assignee = effectiveUserId === "all" 
-                            ? users.find(u => u.id === task.assigneeId) 
-                            : null;
+                          const assigneeName = template.assigneeUserName || template.defaultRoleName;
 
                           return (
                             <div
-                              key={task.id}
-                              className={`absolute rounded text-[9px] px-1 py-0.5 overflow-hidden cursor-pointer hover:opacity-90 hover:z-20 border ${getPriorityColor(task.priority)}`}
+                              key={template.id}
+                              className="absolute rounded text-[9px] px-1 py-0.5 overflow-hidden cursor-pointer hover:opacity-90 hover:z-20 border"
                               style={{ 
-                                top: `${task.top}px`, 
-                                height: `${TASK_HEIGHT}px`,
+                                top: `${template.top}px`, 
+                                height: `${template.heightPx}px`,
                                 left: `calc(${leftPercent}% + 2px)`,
                                 width: `calc(${widthPercent}% - 4px)`,
+                                backgroundColor: template.color ? template.color + '20' : 'hsl(var(--primary) / 0.1)',
+                                borderColor: template.color || 'hsl(var(--primary) / 0.3)',
+                                color: template.color || 'hsl(var(--primary))',
                               }}
-                              title={`${task.title}${task.dueTime ? ` @ ${task.dueTime}` : ''}`}
-                              data-testid={`diary-task-${task.id}`}
+                              title={`${template.title}${template.timeStr ? ` @ ${template.timeStr}` : ''} (${template.duration}min)`}
+                              data-testid={`diary-template-${template.id}`}
                             >
                               <div className="flex items-start gap-0.5">
-                                <Repeat className="h-2 w-2 flex-shrink-0 mt-0.5 opacity-60" />
+                                <ListTodo className="h-2 w-2 flex-shrink-0 mt-0.5 opacity-60" />
                                 <div className="flex-1 min-w-0">
-                                  <div className="font-medium truncate leading-tight">{task.title}</div>
-                                  {colInfo.totalCols === 1 && task.dueTime && (
-                                    <div className="opacity-70 text-[8px]">{task.dueTime}</div>
+                                  <div className="font-medium truncate leading-tight">{template.title}</div>
+                                  {colInfo.totalCols === 1 && template.timeStr && (
+                                    <div className="opacity-70 text-[8px]">{template.timeStr} ({template.duration}min)</div>
                                   )}
-                                  {colInfo.totalCols === 1 && assignee && (
-                                    <div className="opacity-70 truncate text-[8px]">{assignee.displayName?.split(' ')[0]}</div>
+                                  {colInfo.totalCols === 1 && assigneeName && (
+                                    <div className="opacity-70 truncate text-[8px]">{assigneeName}</div>
                                   )}
                                 </div>
                               </div>
@@ -436,15 +481,15 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
           </div>
         )}
 
-        {!isLoading && recurringTasks.length === 0 && (
+        {!isLoading && recurringTemplates.length === 0 && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="text-center bg-background/80 p-6 rounded-lg">
               <CalendarDays className="h-12 w-12 mx-auto mb-3 text-muted-foreground/50" />
-              <h3 className="text-sm font-medium mb-1">No Recurring Tasks</h3>
+              <h3 className="text-sm font-medium mb-1">No Recurring Templates</h3>
               <p className="text-xs text-muted-foreground max-w-xs">
                 {effectiveUserId !== "all" 
-                  ? "No active recurring tasks found. Create recurring tasks from the Task Templates section."
-                  : "No recurring tasks have been set up yet. Create recurring tasks from the Task Templates section."}
+                  ? "No active recurring templates found for this user. Create recurring templates from the Task Templates section."
+                  : "No recurring templates have been set up yet. Create task templates and mark them as recurring to see them here."}
               </p>
             </div>
           </div>

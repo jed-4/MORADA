@@ -439,12 +439,21 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
         <div className="flex items-center justify-between px-6 py-3 border-b bg-muted/30">
           <div className="flex items-center gap-3">
             {task && (
-              <Checkbox
-                checked={isCompleted}
-                onCheckedChange={(checked) => toggleCompleteMutation.mutate(!!checked)}
-                className="h-5 w-5"
-                data-testid="checkbox-complete-task"
-              />
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  checked={isCompleted}
+                  onCheckedChange={(checked) => toggleCompleteMutation.mutate(!!checked)}
+                  className="h-5 w-5"
+                  disabled={task.isRecurring}
+                  data-testid="checkbox-complete-task"
+                />
+                {task.isRecurring && (
+                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                    <RotateCcw className="h-3 w-3" />
+                    Recurring
+                  </span>
+                )}
+              </div>
             )}
             <span className="text-sm font-medium text-muted-foreground">
               {task ? "Edit Task" : "New Task"}
