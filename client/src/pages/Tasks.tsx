@@ -1098,7 +1098,7 @@ export default function Tasks() {
                 isLoading={tasksLoading}
                 onTaskClick={(task: Task) => setEditingTask(task)}
                 projectId={effectiveProjectId}
-                columnConfig={{ order: columnOrder, visibility: columnVisibility }}
+                columnConfig={{ order: columnOrder }}
               />
             </div>
           </TabsContent>
