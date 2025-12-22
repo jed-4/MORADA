@@ -97,10 +97,11 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
       if (!response.ok) throw new Error("Failed to fetch task");
       return response.json();
     },
-    enabled: !!taskId && open && !propTask,
+    enabled: !!taskId && open,
   });
 
-  const task = propTask || fetchedTask;
+  // Use fetched task (which includes checklist) over propTask when available
+  const task = fetchedTask || propTask;
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleValue, setTitleValue] = useState(task?.title || "");
   const [subtaskInput, setSubtaskInput] = useState("");

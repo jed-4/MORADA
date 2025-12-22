@@ -380,7 +380,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
         taskId={selectedTaskId || undefined}
       />
       
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 min-h-0">
         <div className="space-y-2 pr-2">
           {isLoading ? (
             <div className="space-y-1">

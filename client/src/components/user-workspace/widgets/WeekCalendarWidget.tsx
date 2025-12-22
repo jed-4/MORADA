@@ -79,7 +79,7 @@ function DayColumn({
   const hasMore = dayEvents.length > 4;
   
   return (
-    <div className={`flex flex-col min-w-0 border-r last:border-r-0 ${isPastDay ? 'opacity-60' : ''}`}>
+    <div className={`flex flex-col h-full min-w-0 border-r last:border-r-0 ${isPastDay ? 'opacity-60' : ''}`}>
       <div className={`text-center py-1 border-b flex-shrink-0 ${isCurrentDay ? 'bg-[#bba7db]/10' : ''}`}>
         <div className="text-[10px] text-muted-foreground uppercase">
           {format(date, "EEE")}
