@@ -21,11 +21,11 @@ import { WidgetProps } from "@/types/widgets";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { type Task, type Project } from "@shared/schema";
 import TaskModalAsana from "@/components/TaskModalAsana";
-import { format, isToday, isTomorrow, isBefore, startOfDay, addDays, isWithinInterval } from "date-fns";
+import { format, isToday, isTomorrow, isBefore, startOfDay, addDays, addWeeks, addMonths, isWithinInterval, endOfWeek, endOfMonth, startOfWeek, startOfMonth } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 
-type FilterType = 'all' | 'overdue' | 'today' | 'upcoming' | 'high-priority';
+type FilterType = 'all' | 'overdue' | 'today' | 'tomorrow' | 'next-3-days' | 'this-week' | 'next-week' | 'next-2-weeks' | 'this-month' | 'no-date' | 'high-priority';
 type GroupByType = 'none' | 'project' | 'dueDate' | 'priority';
 
 interface WidgetConfig {
