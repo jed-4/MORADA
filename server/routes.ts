@@ -643,8 +643,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Unauthorized - no company context" });
       }
 
-      console.log("[POST /api/tasks] Request body:", JSON.stringify(req.body, null, 2));
-      const validationResult = insertTaskSchema.safeParse(req.body);
+      // Preprocess: convert empty strings to null for date/time fields
+      const body = { ...req.body };
+      if (body.dueDate === "") body.dueDate = null;
+      if (body.startTime === "") body.startTime = null;
+      if (body.endTime === "") body.endTime = null;
+
+      console.log("[POST /api/tasks] Request body:", JSON.stringify(body, null, 2));
+      const validationResult = insertTaskSchema.safeParse(body);
       if (!validationResult.success) {
         console.log("[POST /api/tasks] Validation error:", validationResult.error);
         return res.status(400).json({ 
@@ -684,8 +690,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "Forbidden - task belongs to another company" });
       }
 
+      // Preprocess: convert empty strings to null for date/time fields
+      const body = { ...req.body };
+      if (body.dueDate === "") body.dueDate = null;
+      if (body.startTime === "") body.startTime = null;
+      if (body.endTime === "") body.endTime = null;
+
       const updateSchema = insertTaskSchema.partial();
-      const validationResult = updateSchema.safeParse(req.body);
+      const validationResult = updateSchema.safeParse(body);
       if (!validationResult.success) {
         return res.status(400).json({ 
           error: "Validation failed", 
