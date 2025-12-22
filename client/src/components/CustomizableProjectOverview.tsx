@@ -786,10 +786,6 @@ export default function CustomizableProjectOverview() {
           >
             {currentProject.status === 'active' ? 'Active' : 'Inactive'}
           </Badge>
-        </div>
-
-        {/* Right: Phase chip + Add Widget + Settings gear */}
-        <div className="flex items-center gap-1.5">
           <Badge
             className="text-xs capitalize"
             style={{
@@ -801,6 +797,10 @@ export default function CustomizableProjectOverview() {
           >
             {phaseDisplayName}
           </Badge>
+        </div>
+
+        {/* Right: Add Widget + Settings gear */}
+        <div className="flex items-center gap-1.5">
           <button
             className="h-6 w-6 text-xs border rounded-md flex items-center justify-center hover-elevate active-elevate-2"
             onClick={() => setIsThemeSettingsOpen(true)}
@@ -820,12 +820,47 @@ export default function CustomizableProjectOverview() {
             variant="ghost"
             size="icon"
             className="h-6 w-6"
-            onClick={() => navigate('/project-settings')}
+            onClick={() => navigate(`/projects/${currentProject.id}/settings`)}
             data-testid="button-project-settings"
           >
             <Settings className="h-3.5 w-3.5" />
           </Button>
         </div>
+      </div>
+
+      {/* Row 2 - Navigation Tabs - Underline Style */}
+      <div className="h-10 flex items-center px-4 gap-4 border-b border-border/50 overflow-x-auto flex-shrink-0 bg-background">
+        {PROJECT_TABS.map((tab) => {
+          const Icon = tab.icon;
+          const tabPath = tab.path ? `/projects/${currentProject.id}${tab.path}` : `/projects/${currentProject.id}`;
+          const currentPath = currentLocation.split(`/projects/${currentProject.id}`)[1] || "";
+          const isActive = tab.path === "" 
+            ? currentPath === "" || currentPath === "/" 
+            : currentPath.startsWith(tab.path);
+          
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                navigate(tabPath);
+              }}
+              className={`relative h-full px-1 text-xs flex items-center gap-1.5 flex-shrink-0 transition-colors ${
+                isActive
+                  ? 'text-[#bba7db] font-medium'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+              data-testid={`tab-${tab.id}`}
+            >
+              <Icon className="w-3 h-3" />
+              <span>{tab.label}</span>
+              {isActive && (
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#bba7db] rounded-full" />
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* View Switcher Row - Simplified */}
