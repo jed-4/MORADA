@@ -275,9 +275,9 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
               })}
             </div>
 
-            {/* All-Day Tasks Row */}
-            <div className="grid grid-cols-8 border-b flex-shrink-0">
-              <div className="p-1 text-[10px] text-muted-foreground text-center border-r bg-muted/20 flex items-center justify-center">
+            {/* All-Day Tasks Row - height matches half-hour bar (24px) */}
+            <div className="grid grid-cols-8 border-b flex-shrink-0" style={{ minHeight: `${HOUR_HEIGHT / 2}px` }}>
+              <div className="p-0.5 text-[9px] text-muted-foreground text-center border-r bg-muted/20 flex items-center justify-center">
                 All Day
               </div>
               {DAYS_OF_WEEK.map((_, dayIndex) => {
@@ -286,23 +286,24 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
                 return (
                   <div 
                     key={dayIndex} 
-                    className={`p-1 border-r last:border-r-0 min-h-[40px] ${isToday ? 'bg-primary/5' : ''}`}
+                    className={`px-0.5 py-0.5 border-r last:border-r-0 flex items-center ${isToday ? 'bg-primary/5' : ''}`}
+                    style={{ minHeight: `${HOUR_HEIGHT / 2}px` }}
                   >
-                    <div className="space-y-0.5">
-                      {allDayTemplates.slice(0, 3).map((template) => (
+                    <div className="flex flex-wrap gap-0.5 w-full">
+                      {allDayTemplates.slice(0, 2).map((template) => (
                         <div
                           key={template.id}
-                          className={`text-[9px] px-1 py-0.5 rounded truncate border`}
+                          className="text-[8px] px-1 py-0 rounded truncate border leading-tight max-w-full"
                           style={template.color ? { backgroundColor: template.color + '20', borderColor: template.color, color: template.color } : {}}
                           title={template.title}
                         >
                           {template.title}
                         </div>
                       ))}
-                      {allDayTemplates.length > 3 && (
-                        <div className="text-[9px] text-muted-foreground px-1">
-                          +{allDayTemplates.length - 3} more
-                        </div>
+                      {allDayTemplates.length > 2 && (
+                        <span className="text-[8px] text-muted-foreground">
+                          +{allDayTemplates.length - 2}
+                        </span>
                       )}
                     </div>
                   </div>
