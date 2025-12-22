@@ -456,8 +456,13 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
                     tasks={columnTasks}
                     onAddTask={() => handleAddTaskToColumn(column.status)}
                     onTaskClick={(task) => {
-                      setSelectedTask(task);
-                      setIsTaskModalOpen(true);
+                      // Use passed onTaskClick if provided, otherwise use internal modal
+                      if (onTaskClick) {
+                        onTaskClick(task);
+                      } else {
+                        setSelectedTask(task);
+                        setIsTaskModalOpen(true);
+                      }
                     }}
                     displaySettings={boardDisplaySettings}
                     onDelete={handleDeleteTask}
