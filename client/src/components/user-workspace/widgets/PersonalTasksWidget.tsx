@@ -87,7 +87,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
   const toggleTaskMutation = useMutation({
     mutationFn: async (task: Task) => {
       const newStatus = task.status === 'done' || task.status === 'complete' ? 'todo' : 'done';
-      return apiRequest(`/api/tasks/${task.id}`, "PATCH", { status: newStatus });
+      return apiRequest("PATCH", `/api/tasks/${task.id}`, { status: newStatus });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks", { assigneeId: userId }] });
@@ -420,28 +420,33 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                       )}
                     </button>
                     
-                    {project?.color ? (
-                      <div 
-                        className="w-1.5 h-1.5 rounded-full flex-shrink-0" 
-                        style={{ backgroundColor: project.color }}
-                        title={project.name}
-                      />
-                    ) : (task.scope === 'business' || (!task.scope && !task.projectId)) && (
-                      <div 
-                        className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary" 
-                        title={businessLabel}
-                      />
-                    )}
-                    
                     <span className={`text-[11px] flex-1 truncate ${isCompleted ? 'line-through' : ''}`}>
                       {task.title}
                     </span>
                     
-                    {dueInfo && (
-                      <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${dueInfo.color}`}>
-                        {dueInfo.label}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      {dueInfo && (
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium w-14 text-center ${dueInfo.color}`}>
+                          {dueInfo.label}
+                        </span>
+                      )}
+                      {project && (
+                        <span 
+                          className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground w-20 text-center truncate"
+                          title={project.name}
+                        >
+                          {project.name}
+                        </span>
+                      )}
+                      {(task.scope === 'business' || (!task.scope && !task.projectId)) && (
+                        <span 
+                          className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary w-20 text-center truncate"
+                          title={businessLabel}
+                        >
+                          {businessLabel}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -497,28 +502,34 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                           )}
                         </button>
                         
-                        {groupBy !== 'project' && (project?.color ? (
-                          <div 
-                            className="w-1.5 h-1.5 rounded-full flex-shrink-0" 
-                            style={{ backgroundColor: project.color }}
-                            title={project.name}
-                          />
-                        ) : (task.scope === 'business' || (!task.scope && !task.projectId)) && (
-                          <div 
-                            className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary" 
-                            title={businessLabel}
-                          />
-                        ))}
                         
                         <span className={`text-[11px] flex-1 truncate ${isCompleted ? 'line-through' : ''}`}>
                           {task.title}
                         </span>
                         
-                        {groupBy !== 'dueDate' && dueInfo && (
-                          <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${dueInfo.color}`}>
-                            {dueInfo.label}
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          {groupBy !== 'dueDate' && dueInfo && (
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium w-14 text-center ${dueInfo.color}`}>
+                              {dueInfo.label}
+                            </span>
+                          )}
+                          {groupBy !== 'project' && project && (
+                            <span 
+                              className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground w-20 text-center truncate"
+                              title={project.name}
+                            >
+                              {project.name}
+                            </span>
+                          )}
+                          {groupBy !== 'project' && (task.scope === 'business' || (!task.scope && !task.projectId)) && (
+                            <span 
+                              className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary w-20 text-center truncate"
+                              title={businessLabel}
+                            >
+                              {businessLabel}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     );
                   })}

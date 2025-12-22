@@ -23,7 +23,7 @@ import { WidgetProps } from "@/types/widgets";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { format, isToday, isBefore, startOfDay } from "date-fns";
-import { type Task } from "@shared/schema";
+import { type Task, type Project } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import TaskModalAsana from "@/components/TaskModalAsana";
 import {
@@ -171,6 +171,10 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
     enabled: !!userId,
   });
 
+  const { data: projects = [] } = useQuery<Project[]>({
+    queryKey: ["/api/projects"],
+  });
+
   const { data: scheduleItems = [], isLoading: scheduleLoading } = useQuery<ScheduleItem[]>({
     queryKey: ["/api/schedule-items", { date: format(today, 'yyyy-MM-dd') }],
     queryFn: async () => {
@@ -204,6 +208,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
       return apiRequest("PATCH", `/api/tasks/${task.id}`, { status: newStatus });
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks", { assigneeId: userId }] });
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
     },
   });
@@ -378,23 +383,23 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
             <div className="text-[10px] text-muted-foreground pl-6 py-1">{emptyMessage}</div>
           ) : (
             <>
-              {sectionConfig.id === "schedule" ? (
-                items.map((item: ScheduleItem) => (
-                  <div 
-                    key={item.id}
-                    className="flex items-center gap-2 p-1.5 rounded-md border hover-elevate cursor-pointer ml-4"
-                    onClick={() => item.projectId && setLocation(`/projects/${item.projectId}/schedule`)}
-                    data-testid={`myday-schedule-${item.id}`}
-                  >
-                    <CalendarDays className="h-3.5 w-3.5 text-blue-500 flex-shrink-0" />
-                    <span className="text-xs truncate flex-1">{item.title}</span>
-                    {item.startTime && (
-                      <span className="text-[10px] text-muted-foreground">{item.startTime}</span>
-                    )}
-                  </div>
-                ))
-              ) : (
-                (items as Task[]).slice(0, 5).map((task) => (
+              {sectionConfig.id === "schedule" && items.map((item: ScheduleItem) => (
+                <div 
+                  key={item.id}
+                  className="flex items-center gap-2 p-1.5 rounded-md border hover-elevate cursor-pointer ml-4"
+                  onClick={() => item.projectId && setLocation(`/projects/${item.projectId}/schedule`)}
+                  data-testid={`myday-schedule-${item.id}`}
+                >
+                  <CalendarDays className="h-3.5 w-3.5 text-blue-500 flex-shrink-0" />
+                  <span className="text-xs truncate flex-1">{item.title}</span>
+                  {item.startTime && (
+                    <span className="text-[10px] text-muted-foreground">{item.startTime}</span>
+                  )}
+                </div>
+              ))}
+              {sectionConfig.id !== "schedule" && (items as Task[]).slice(0, 5).map((task) => {
+                const project = task.projectId ? projects.find(p => p.id === task.projectId) : null;
+                return (
                   <div 
                     key={task.id}
                     className={`flex items-center gap-2 p-1.5 rounded-md border hover-elevate cursor-pointer ml-4 ${
@@ -413,14 +418,24 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
                       <Circle className={`h-3.5 w-3.5 ${sectionConfig.id === 'overdue' ? 'text-red-500' : 'text-muted-foreground'}`} />
                     </button>
                     <span className="text-xs truncate flex-1">{task.title}</span>
-                    {task.dueDate && (
-                      <span className="text-[10px] text-muted-foreground">
-                        {format(new Date(task.dueDate), 'MMM d')}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {task.dueDate && (
+                        <span className="text-[10px] text-muted-foreground w-12 text-right">
+                          {format(new Date(task.dueDate), 'MMM d')}
+                        </span>
+                      )}
+                      {project && (
+                        <span 
+                          className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground truncate max-w-[80px]"
+                          title={project.name}
+                        >
+                          {project.name}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                ))
-              )}
+                );
+              })}
               {items.length > 5 && sectionConfig.id !== "schedule" && (
                 <div className="text-[10px] text-muted-foreground pl-6 py-0.5">
                   +{items.length - 5} more

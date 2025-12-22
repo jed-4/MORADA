@@ -1,12 +1,14 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { type Task } from "@shared/schema";
-import { Plus } from "lucide-react";
+import { Plus, Circle, CheckSquare } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useLocation } from "wouter";
 import { useProject } from "@/contexts/ProjectContext";
+import TaskModalAsana from "@/components/TaskModalAsana";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   Dialog,
   DialogContent,
@@ -52,6 +54,17 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
   const [configSortBy, setConfigSortBy] = useState<SortBy>(defaultSortBy);
   const [configSortOrder, setConfigSortOrder] = useState<SortOrder>(defaultSortOrder);
   const [editingTitle, setEditingTitle] = useState(widget.title);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+
+  const toggleTaskMutation = useMutation({
+    mutationFn: async (task: Task) => {
+      const newStatus = task.status === 'done' || task.status === 'complete' ? 'todo' : 'done';
+      return apiRequest("PATCH", `/api/tasks/${task.id}`, { status: newStatus });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks", currentProject?.id] });
+    },
+  });
   
   // Sync config state when widget config changes
   useEffect(() => {
@@ -232,34 +245,54 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
         
         {/* Task List */}
         <div className="space-y-2 flex-1 overflow-auto">
-          {filteredAndSortedTasks.map((task) => (
-            <div 
-              key={task.id} 
-              className="flex items-center justify-between p-2 rounded border hover-elevate cursor-pointer"
-              data-testid={`task-widget-item-${task.id}`}
-              onClick={() => setLocation("/tasks")}
-            >
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm font-medium truncate">{task.title}</span>
-                  <Badge className={`text-xs ${priorityColors[task.priority as "low" | "medium" | "high"]}`}>
-                    {task.priority}
-                  </Badge>
-                  <Badge variant="outline" className="text-xs">
-                    {statusLabels[task.status as keyof typeof statusLabels]}
-                  </Badge>
+          {filteredAndSortedTasks.map((task) => {
+            const isCompleted = task.status === 'done' || task.status === 'complete';
+            return (
+              <div 
+                key={task.id} 
+                className={`flex items-center gap-2 p-2 rounded border hover-elevate cursor-pointer ${isCompleted ? 'opacity-50' : ''}`}
+                data-testid={`task-widget-item-${task.id}`}
+                onClick={() => setSelectedTaskId(task.id)}
+              >
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleTaskMutation.mutate(task);
+                  }}
+                  className="flex-shrink-0"
+                >
+                  {isCompleted ? (
+                    <CheckSquare className="h-4 w-4 text-green-500" />
+                  ) : (
+                    <Circle className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </button>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-sm font-medium truncate ${isCompleted ? 'line-through' : ''}`}>{task.title}</span>
+                    <Badge className={`text-xs ${priorityColors[task.priority as "low" | "medium" | "high"]}`}>
+                      {task.priority}
+                    </Badge>
+                  </div>
+                  <div className="text-xs text-muted-foreground">{formatDueDate(task.dueDate)}</div>
                 </div>
-                <div className="text-xs text-muted-foreground">{formatDueDate(task.dueDate)}</div>
+                
+                {task.assigneeName && (
+                  <Avatar className="h-6 w-6 ml-2">
+                    <AvatarFallback className="text-xs">{getAssigneeInitials(task.assigneeName)}</AvatarFallback>
+                  </Avatar>
+                )}
               </div>
-              
-              {task.assigneeName && (
-                <Avatar className="h-6 w-6 ml-2">
-                  <AvatarFallback className="text-xs">{getAssigneeInitials(task.assigneeName)}</AvatarFallback>
-                </Avatar>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
+        
+        <TaskModalAsana
+          open={!!selectedTaskId}
+          onOpenChange={(open) => !open && setSelectedTaskId(null)}
+          task={allTasks.find(t => t.id === selectedTaskId)}
+          taskId={selectedTaskId || undefined}
+        />
         
         {filteredAndSortedTasks.length === 0 && (
           <div className="text-center py-8 text-sm text-muted-foreground">
