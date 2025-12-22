@@ -416,7 +416,7 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
   };
 
   return (
-    <div className="flex flex-col h-full px-4 pt-2" data-testid="user-overview">
+    <div className="flex flex-col h-full px-4 pt-2" style={getThemeBackground()} data-testid="user-overview">
       {/* Toolbar row - sits on page background */}
       <div className="h-8 flex items-center justify-between mb-2 flex-shrink-0">
         <div className="flex items-center gap-2">
