@@ -220,41 +220,55 @@ export default function DashboardThemeSettings({
             {/* Per-page color pickers */}
             <div className="space-y-3">
               {[
-                { key: "dashboard", label: "Business Dashboard", description: "Main business dashboard" },
+                { key: "dashboard", label: "Business Dashboard", description: "Business dashboard & other pages" },
                 { key: "workspace", label: "User Workspace", description: "Personal workspace/overview" },
                 { key: "project", label: "Project Pages", description: "Individual project dashboards" },
-              ].map((page) => (
-                <div key={page.key} className="flex items-center gap-2 p-2 rounded-md bg-background/50">
-                  <Input
-                    type="color"
-                    value={pageBackgroundPalette[page.key] || "#f1f5f9"}
-                    onChange={(e) => updatePaletteColor(page.key, e.target.value)}
-                    className="w-8 h-8 p-1 cursor-pointer flex-shrink-0"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs font-medium">{page.label}</div>
-                    <div className="text-[10px] text-muted-foreground truncate">{page.description}</div>
+              ].map((page) => {
+                const hasColor = !!pageBackgroundPalette[page.key];
+                return (
+                  <div key={page.key} className={`flex items-center gap-2 p-2 rounded-md ${hasColor ? 'bg-background/50' : 'bg-muted/30 border border-dashed border-muted-foreground/20'}`}>
+                    <div className="relative">
+                      <Input
+                        type="color"
+                        value={pageBackgroundPalette[page.key] || "#e5e7eb"}
+                        onChange={(e) => updatePaletteColor(page.key, e.target.value)}
+                        className={`w-8 h-8 p-1 cursor-pointer flex-shrink-0 ${!hasColor ? 'opacity-40' : ''}`}
+                      />
+                      {!hasColor && (
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          <span className="text-[7px] font-medium text-muted-foreground bg-muted/80 px-0.5 rounded">OFF</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-medium flex items-center gap-1">
+                        {page.label}
+                        {!hasColor && <span className="text-[9px] text-muted-foreground">(default)</span>}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground truncate">{page.description}</div>
+                    </div>
+                    <Input
+                      type="text"
+                      value={pageBackgroundPalette[page.key]}
+                      onChange={(e) => updatePaletteColor(page.key, e.target.value)}
+                      className="w-20 h-7 text-[10px] px-1"
+                      placeholder="default"
+                    />
+                    {hasColor && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        onClick={() => updatePaletteColor(page.key, "")}
+                        title="Reset to default"
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    )}
                   </div>
-                  <Input
-                    type="text"
-                    value={pageBackgroundPalette[page.key]}
-                    onChange={(e) => updatePaletteColor(page.key, e.target.value)}
-                    className="w-20 h-7 text-[10px] px-1"
-                    placeholder="#hex"
-                  />
-                  {pageBackgroundPalette[page.key] && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 w-7 p-0"
-                      onClick={() => updatePaletteColor(page.key, "")}
-                    >
-                      <X className="h-3 w-3" />
-                    </Button>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
             
             <div className="space-y-1.5 pt-2 border-t">

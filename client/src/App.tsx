@@ -392,10 +392,34 @@ function AuthWrapper() {
     "--sidebar-width-icon": "3rem",
   };
   
-  // Get custom page background color from user theme
-  const pageBackgroundStyle = userTheme?.pageBackgroundColor 
-    ? { backgroundColor: userTheme.pageBackgroundColor }
-    : {};
+  // Determine page type from current route for background color
+  const getPageType = (path: string): "dashboard" | "workspace" | "project" => {
+    // Project pages (individual project dashboards)
+    if (path.startsWith("/projects/")) return "project";
+    // User workspace pages (personal workspace/overview)
+    if (path.startsWith("/users/")) return "workspace";
+    // Root redirects to workspace by default
+    if (path === "/" || path === "") return "workspace";
+    // All other pages are business dashboard context
+    return "dashboard";
+  };
+  
+  const pageType = getPageType(location);
+  
+  // Get custom page background color from user theme palette
+  const getPageBackgroundColor = (): string | undefined => {
+    // Try palette first (new per-page colors)
+    const palette = (userTheme as any)?.pageBackgroundPalette as Record<string, string> | null;
+    if (palette && typeof palette === 'object') {
+      const color = palette[pageType];
+      if (color) return color;
+    }
+    // Fallback to legacy single color
+    return userTheme?.pageBackgroundColor || undefined;
+  };
+  
+  const bgColor = getPageBackgroundColor();
+  const pageBackgroundStyle = bgColor ? { backgroundColor: bgColor } : {};
 
   return (
     <TooltipProvider>
