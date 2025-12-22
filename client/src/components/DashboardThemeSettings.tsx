@@ -71,7 +71,11 @@ export default function DashboardThemeSettings({
   const [blurStrength, setBlurStrength] = useState(0);
   const [widgetBackgroundType, setWidgetBackgroundType] = useState<"default" | "frosted" | "transparent">("default");
   const [widgetOpacity, setWidgetOpacity] = useState(100);
-  const [pageBackgroundColor, setPageBackgroundColor] = useState<string>("");
+  const [pageBackgroundPalette, setPageBackgroundPalette] = useState<Record<string, string>>({
+    dashboard: "",
+    workspace: "",
+    project: "",
+  });
 
   useEffect(() => {
     if (theme) {
@@ -85,7 +89,28 @@ export default function DashboardThemeSettings({
       setBlurStrength(theme.blurStrength ?? 0);
       setWidgetBackgroundType((theme.widgetBackgroundType as any) || "default");
       setWidgetOpacity(theme.widgetOpacity ?? 100);
-      setPageBackgroundColor(theme.pageBackgroundColor || "");
+      // Load palette from theme, with fallback to legacy single color
+      const palette = (theme as any).pageBackgroundPalette as Record<string, string> | null;
+      if (palette && typeof palette === 'object') {
+        setPageBackgroundPalette({
+          dashboard: palette.dashboard || "",
+          workspace: palette.workspace || "",
+          project: palette.project || "",
+        });
+      } else if (theme.pageBackgroundColor) {
+        // Migrate legacy single color to all pages
+        setPageBackgroundPalette({
+          dashboard: theme.pageBackgroundColor,
+          workspace: theme.pageBackgroundColor,
+          project: theme.pageBackgroundColor,
+        });
+      } else {
+        setPageBackgroundPalette({
+          dashboard: "",
+          workspace: "",
+          project: "",
+        });
+      }
     }
   }, [theme]);
 
@@ -113,7 +138,7 @@ export default function DashboardThemeSettings({
   });
 
   const handleSave = () => {
-    console.log("[DashboardThemeSettings] handleSave - pageBackgroundColor state:", pageBackgroundColor);
+    console.log("[DashboardThemeSettings] handleSave - pageBackgroundPalette:", pageBackgroundPalette);
     const dataToSave = {
       backgroundType,
       backgroundColor,
@@ -125,10 +150,17 @@ export default function DashboardThemeSettings({
       blurStrength,
       widgetBackgroundType,
       widgetOpacity,
-      pageBackgroundColor: pageBackgroundColor || null,
+      pageBackgroundPalette: Object.values(pageBackgroundPalette).some(c => c) ? pageBackgroundPalette : null,
     };
     console.log("[DashboardThemeSettings] Saving data:", dataToSave);
     saveMutation.mutate(dataToSave);
+  };
+  
+  const updatePaletteColor = (pageKey: string, color: string) => {
+    setPageBackgroundPalette(prev => ({
+      ...prev,
+      [pageKey]: color,
+    }));
   };
 
   const hexToRgba = (hex: string, opacity: number) => {
@@ -175,50 +207,58 @@ export default function DashboardThemeSettings({
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-          {/* Page Background - ENTIRE SCREEN color */}
+          {/* Page Background Colors - Per-page settings */}
           <div className="space-y-3 p-3 rounded-lg border-2 border-primary/20 bg-primary/5">
             <Label className="text-sm font-semibold flex items-center gap-2">
               <div className="h-3 w-3 rounded-full bg-primary" />
-              Page Background (Entire Screen)
+              Page Background Colors
             </Label>
             <p className="text-xs text-muted-foreground">
-              Sets the background color for the entire application screen.
+              Set different background colors for each screen type to help differentiate pages.
             </p>
             
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-2">
-                <Input
-                  type="color"
-                  value={pageBackgroundColor || "#f1f5f9"}
-                  onChange={(e) => {
-                    console.log("[DashboardThemeSettings] Color picker changed to:", e.target.value);
-                    setPageBackgroundColor(e.target.value);
-                  }}
-                  className="w-10 h-8 p-1 cursor-pointer"
-                />
-                <Input
-                  type="text"
-                  value={pageBackgroundColor}
-                  onChange={(e) => setPageBackgroundColor(e.target.value)}
-                  className="flex-1 h-8 text-xs"
-                  placeholder="Default (leave empty)"
-                />
-                {pageBackgroundColor && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 text-xs"
-                    onClick={() => setPageBackgroundColor("")}
-                  >
-                    Reset
-                  </Button>
-                )}
-              </div>
+            {/* Per-page color pickers */}
+            <div className="space-y-3">
+              {[
+                { key: "dashboard", label: "Business Dashboard", description: "Main business dashboard" },
+                { key: "workspace", label: "User Workspace", description: "Personal workspace/overview" },
+                { key: "project", label: "Project Pages", description: "Individual project dashboards" },
+              ].map((page) => (
+                <div key={page.key} className="flex items-center gap-2 p-2 rounded-md bg-background/50">
+                  <Input
+                    type="color"
+                    value={pageBackgroundPalette[page.key] || "#f1f5f9"}
+                    onChange={(e) => updatePaletteColor(page.key, e.target.value)}
+                    className="w-8 h-8 p-1 cursor-pointer flex-shrink-0"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-medium">{page.label}</div>
+                    <div className="text-[10px] text-muted-foreground truncate">{page.description}</div>
+                  </div>
+                  <Input
+                    type="text"
+                    value={pageBackgroundPalette[page.key]}
+                    onChange={(e) => updatePaletteColor(page.key, e.target.value)}
+                    className="w-20 h-7 text-[10px] px-1"
+                    placeholder="#hex"
+                  />
+                  {pageBackgroundPalette[page.key] && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0"
+                      onClick={() => updatePaletteColor(page.key, "")}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  )}
+                </div>
+              ))}
             </div>
             
-            <div className="space-y-1.5">
-              <Label className="text-xs">Quick Presets</Label>
+            <div className="space-y-1.5 pt-2 border-t">
+              <Label className="text-xs">Quick Presets (apply to all)</Label>
               <div className="grid grid-cols-6 gap-1.5">
                 {[
                   { name: "Light Gray", color: "#f1f5f9" },
@@ -238,14 +278,15 @@ export default function DashboardThemeSettings({
                     key={preset.name}
                     type="button"
                     onClick={() => {
-                      console.log("[DashboardThemeSettings] Page BG preset clicked:", preset.color);
-                      setPageBackgroundColor(preset.color);
+                      setPageBackgroundPalette({
+                        dashboard: preset.color,
+                        workspace: preset.color,
+                        project: preset.color,
+                      });
                     }}
-                    className={`h-6 rounded-md border-2 transition-all ${
-                      pageBackgroundColor === preset.color ? "border-primary ring-2 ring-primary/20" : "border-transparent hover:border-muted-foreground/30"
-                    }`}
+                    className="h-6 rounded-md border-2 transition-all border-transparent hover:border-muted-foreground/30"
                     style={{ backgroundColor: preset.color }}
-                    title={preset.name}
+                    title={`${preset.name} (apply to all pages)`}
                   />
                 ))}
               </div>
