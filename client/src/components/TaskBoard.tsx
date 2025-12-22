@@ -154,9 +154,6 @@ function DroppableColumn({
       <div className={`px-3 py-2.5 border-b border-border/30 transition-colors ${isOver ? 'bg-[#bba7db]/5' : ''}`}>
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-bold text-foreground">{column.title}</h3>
-          <Badge variant="secondary" className="text-xs px-2 py-0.5 h-5 rounded-full bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/20 no-default-hover-elevate font-semibold">
-            {tasks.length}
-          </Badge>
         </div>
       </div>
 
