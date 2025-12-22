@@ -6888,6 +6888,37 @@ export class DbStorage implements IStorage {
       throw error;
     }
   }
+
+  async checkUserPermission(userId: string, permissionKey: string, action: string): Promise<boolean> {
+    try {
+      const user = await this.getUser(userId);
+      if (!user || !user.roleId) return false;
+
+      const rolePermissions = await db
+        .select({
+          permission: schema.permissions,
+          rolePermission: schema.rolePermissions,
+        })
+        .from(schema.rolePermissions)
+        .innerJoin(schema.permissions, eq(schema.rolePermissions.permissionId, schema.permissions.id))
+        .where(
+          and(
+            eq(schema.rolePermissions.roleId, user.roleId),
+            eq(schema.permissions.key, permissionKey)
+          )
+        );
+
+      if (rolePermissions.length === 0) return false;
+
+      const rp = rolePermissions[0];
+      const allowedActions = rp.rolePermission.allowedActions || [];
+      return allowedActions.includes(action as PermissionAction);
+    } catch (error) {
+      console.error("Database error in checkUserPermission:", error);
+      return false;
+    }
+  }
+
   async getUserProjectAccess(userId: string): Promise<UserProjectAccess[]> { return []; }
   async createUserProjectAccess(access: InsertUserProjectAccess): Promise<UserProjectAccess> { throw new Error("Not implemented"); }
   async updateUserProjectAccess(id: string, access: Partial<InsertUserProjectAccess>): Promise<UserProjectAccess | undefined> { return undefined; }
