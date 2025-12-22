@@ -605,11 +605,13 @@ export default function TaskListCompact({
   // Update task mutation
   const updateTaskMutation = useMutation({
     mutationFn: async ({ taskId, updates }: { taskId: string; updates: Partial<Task> }) => {
-      const response = await apiRequest(`/api/tasks/${taskId}`, "PATCH", updates);
-      return response.json();
+      return apiRequest(`/api/tasks/${taskId}`, "PATCH", updates);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      // Invalidate all task queries including assignee-scoped ones
+      queryClient.invalidateQueries({ 
+        predicate: (query) => query.queryKey[0] === "/api/tasks"
+      });
     },
     onError: (error) => {
       toast({

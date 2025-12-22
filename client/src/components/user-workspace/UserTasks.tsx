@@ -608,6 +608,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
       <TaskModalAsana
         open={showCreateDialog}
         onOpenChange={setShowCreateDialog}
+        defaultAssigneeId={user.id}
       />
       <TaskModalAsana
         task={editingTask || undefined}

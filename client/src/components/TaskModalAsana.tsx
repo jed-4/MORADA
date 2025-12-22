@@ -87,9 +87,10 @@ interface TaskModalAsanaProps {
   onOpenChange: (open: boolean) => void;
   projectId?: string;
   initialStatus?: string;
+  defaultAssigneeId?: string;
 }
 
-export default function TaskModalAsana({ task: propTask, taskId, open, onOpenChange, projectId, initialStatus }: TaskModalAsanaProps) {
+export default function TaskModalAsana({ task: propTask, taskId, open, onOpenChange, projectId, initialStatus, defaultAssigneeId }: TaskModalAsanaProps) {
   const { data: fetchedTask } = useQuery<Task>({
     queryKey: ["/api/tasks", taskId],
     queryFn: async () => {
@@ -199,7 +200,7 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
       content: task?.content || "",
       status: task?.status || initialStatus || "todo",
       priority: (task?.priority as any) || "medium",
-      assigneeId: task?.assigneeId || undefined,
+      assigneeId: task?.assigneeId || defaultAssigneeId || undefined,
       dueDate: task?.dueDate ? format(new Date(task.dueDate), "yyyy-MM-dd") : undefined,
       startTime: task?.startTime || undefined,
       endTime: task?.endTime || undefined,
@@ -221,7 +222,7 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
         content: task?.content || "",
         status: task?.status || initialStatus || "todo",
         priority: (task?.priority as any) || "medium",
-        assigneeId: task?.assigneeId || undefined,
+        assigneeId: task?.assigneeId || defaultAssigneeId || undefined,
         dueDate: task?.dueDate ? format(new Date(task.dueDate), "yyyy-MM-dd") : undefined,
         startTime: task?.startTime || undefined,
         endTime: task?.endTime || undefined,
@@ -251,7 +252,7 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
       setShowChecklistInput(false);
       setChecklistInput("");
     }
-  }, [task, open, initialStatus, projectId, form]);
+  }, [task, open, initialStatus, projectId, defaultAssigneeId, form]);
 
   useEffect(() => {
     if (isEditingTitle && titleInputRef.current) {
