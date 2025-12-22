@@ -36,6 +36,8 @@ import {
   Star,
   LayoutDashboard,
   MousePointer2,
+  PanelLeftClose,
+  PanelLeft,
 } from "lucide-react";
 
 import {
@@ -505,6 +507,9 @@ export function AppSidebar() {
 
       {/* Settings Section - Collapsible */}
       <SidebarFooter className="border-t">
+        {/* Sidebar Pin Toggle */}
+        <SidebarPinToggle />
+        
         <Collapsible
           open={isSettingsOpen}
           onOpenChange={setIsSettingsOpen}
@@ -549,6 +554,35 @@ export function AppSidebar() {
         <HoverExpandToggle />
       </SidebarFooter>
     </Sidebar>
+  );
+}
+
+// Toggle component for pinning sidebar open
+function SidebarPinToggle() {
+  const { state, open, setOpen } = useSidebar();
+  const isExpanded = state === "expanded";
+  
+  return (
+    <div className="px-3 py-2 border-b">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            onClick={() => setOpen(!open)}
+            className="flex items-center justify-center w-full p-1.5 rounded-md hover-elevate active-elevate-2 text-muted-foreground"
+            data-testid="button-pin-sidebar"
+          >
+            {isExpanded ? (
+              <PanelLeftClose className="h-4 w-4 text-primary" />
+            ) : (
+              <PanelLeft className="h-4 w-4" />
+            )}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="right">
+          <p>{isExpanded ? "Collapse sidebar" : "Keep sidebar open"}</p>
+        </TooltipContent>
+      </Tooltip>
+    </div>
   );
 }
 
