@@ -85,8 +85,7 @@ export function CasvaTaskList({
   // Create task mutation
   const createTaskMutation = useMutation({
     mutationFn: async (taskData: { title: string; projectId?: string }) => {
-      const response = await apiRequest("/api/tasks", "POST", taskData);
-      return response.json();
+      return apiRequest("/api/tasks", "POST", taskData);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
@@ -108,8 +107,7 @@ export function CasvaTaskList({
   // Update task mutation
   const updateTaskMutation = useMutation({
     mutationFn: async ({ taskId, updates }: { taskId: string; updates: Partial<Task> }) => {
-      const response = await apiRequest(`/api/tasks/${taskId}`, "PATCH", updates);
-      return response.json();
+      return apiRequest(`/api/tasks/${taskId}`, "PATCH", updates);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });

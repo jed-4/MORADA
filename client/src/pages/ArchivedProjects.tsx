@@ -40,10 +40,9 @@ export default function ArchivedProjects() {
 
   const restoreMutation = useMutation({
     mutationFn: async (projectId: string) => {
-      const response = await apiRequest('PATCH', `/api/projects/${projectId}`, {
+      return apiRequest(`/api/projects/${projectId}`, 'PATCH', {
         isArchived: false
       });
-      return response.json();
     },
     onSuccess: (_, projectId) => {
       queryClient.invalidateQueries({ queryKey: ['/api/projects'] });
@@ -65,8 +64,7 @@ export default function ArchivedProjects() {
 
   const deleteMutation = useMutation({
     mutationFn: async (projectId: string) => {
-      const response = await apiRequest('DELETE', `/api/projects/${projectId}`);
-      return response;
+      return apiRequest(`/api/projects/${projectId}`, 'DELETE');
     },
     onSuccess: (_, projectId) => {
       queryClient.invalidateQueries({ queryKey: ['/api/projects'] });
