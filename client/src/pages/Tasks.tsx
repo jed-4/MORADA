@@ -45,7 +45,7 @@ import {
 } from "@/components/ui/select";
 import TaskBoard from "@/components/TaskBoard";
 import TaskList from "@/components/TaskList";
-import { CasvaTaskList } from "@/components/tasks/CasvaTaskList";
+import TaskListCompact from "@/components/TaskListCompact";
 import TaskModalAsana from "@/components/TaskModalAsana";
 import FilterPanel, { type FilterState } from "@/components/FilterPanel";
 import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
@@ -1093,18 +1093,12 @@ export default function Tasks() {
           
           <TabsContent value="list" className="h-full m-0 data-[state=active]:flex">
             <div className="flex-1 overflow-auto p-2">
-              <CasvaTaskList
+              <TaskListCompact
                 tasks={effectivelyFilteredTasks}
-                onEditTask={(task: Task) => setEditingTask(task)}
-                onAddTask={() => setIsCreatingInline(true)}
-                showCheckboxes={true}
-                isCreatingInline={isCreatingInline}
-                onCancelInlineCreate={() => setIsCreatingInline(false)}
+                isLoading={tasksLoading}
+                onTaskClick={(task: Task) => setEditingTask(task)}
                 projectId={effectiveProjectId}
-                columnVisibility={columnVisibility}
-                columnOrder={columnOrder}
-                statusOptions={statusOptions}
-                priorityOptions={priorityOptions}
+                columnConfig={{ order: columnOrder, visibility: columnVisibility }}
               />
             </div>
           </TabsContent>
@@ -1152,10 +1146,10 @@ export default function Tasks() {
                   />
                 ) : (
                   <div className="flex-1 overflow-auto">
-                    <CasvaTaskList
+                    <TaskListCompact
                       tasks={viewFilteredTasks}
-                      onEditTask={(task: Task) => setEditingTask(task)}
-                      showCheckboxes={true}
+                      isLoading={tasksLoading}
+                      onTaskClick={(task: Task) => setEditingTask(task)}
                       projectId={effectiveProjectId}
                     />
                   </div>

@@ -21,7 +21,7 @@ import {
   X,
 } from "lucide-react";
 import TaskBoard from "@/components/TaskBoard";
-import { CasvaTaskList } from "@/components/tasks/CasvaTaskList";
+import TaskListCompact from "@/components/TaskListCompact";
 import TaskModalAsana from "@/components/TaskModalAsana";
 import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
 import TaskViewsManager, { type TaskView, type TaskViewFilters } from "@/components/TaskViewsManager";
@@ -570,10 +570,10 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                     <Badge variant="outline" className="text-[10px]">{groupTasks.length}</Badge>
                   </div>
                 )}
-                <CasvaTaskList
+                <TaskListCompact
                   tasks={groupTasks}
-                  onEditTask={(task) => setEditingTask(task)}
-                  showCheckboxes={true}
+                  isLoading={isLoading && groupName === 'All Tasks'}
+                  onTaskClick={(task) => setEditingTask(task)}
                 />
               </div>
             ))}

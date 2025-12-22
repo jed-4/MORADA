@@ -18,7 +18,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import TaskBoard from "@/components/TaskBoard";
-import { CasvaTaskList } from "@/components/tasks/CasvaTaskList";
+import TaskListCompact from "@/components/TaskListCompact";
 import TaskModalAsana from "@/components/TaskModalAsana";
 import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
 import TaskViewsManager, { type TaskView, type TaskViewFilters } from "@/components/TaskViewsManager";
@@ -699,27 +699,15 @@ export default function BusinessTasks() {
         )}
 
         {activeTab === "list" && (
-          <div className="h-full p-4 overflow-auto" data-testid="content-list">
-            {Object.entries(groupedTasks).map(([groupName, groupTasks]) => (
-              <div key={groupName} className="mb-4">
-                {groupBy !== 'none' && (
-                  <div className="flex items-center gap-2 mb-2 px-2">
-                    <span className="text-xs font-medium text-muted-foreground">{groupName}</span>
-                    <Badge variant="outline" className="text-[10px]">{groupTasks.length}</Badge>
-                  </div>
-                )}
-                <CasvaTaskList
-                  tasks={groupTasks}
-                  onEditTask={(task) => {
-                    setEditingTask(task);
-                    setShowCreateTaskDialog(true);
-                  }}
-                  showCheckboxes={true}
-                  statusOptions={statusOptions}
-                  priorityOptions={priorityOptions}
-                />
-              </div>
-            ))}
+          <div className="h-full p-4" data-testid="content-list">
+            <TaskListCompact
+              groupedTasks={groupedTasks}
+              isLoading={tasksLoading}
+              onTaskClick={(task) => {
+                setEditingTask(task);
+                setShowCreateTaskDialog(true);
+              }}
+            />
           </div>
         )}
 
