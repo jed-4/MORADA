@@ -5650,13 +5650,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Unauthorized - no company context" });
       }
       
+      console.log("[dashboard-themes] Received body:", JSON.stringify(req.body, null, 2));
+      
       const themeData = {
         ...req.body,
         userId: user.id,
         companyId,
       };
       
+      console.log("[dashboard-themes] Saving themeData:", JSON.stringify(themeData, null, 2));
+      
       const theme = await storage.saveDashboardTheme(themeData);
+      console.log("[dashboard-themes] Saved theme result:", JSON.stringify(theme, null, 2));
       res.json(theme);
     } catch (error) {
       console.error("Error saving dashboard theme:", error);
