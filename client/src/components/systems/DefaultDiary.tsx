@@ -106,6 +106,11 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
         const recurringDays = (template.recurringDays as number[]) || [];
         if (recurringDays.length === 0) return false;
         
+        // Search filter (applies to all views)
+        if (searchQuery && !template.title.toLowerCase().includes(searchQuery.toLowerCase())) {
+          return false;
+        }
+        
         // Filter by user if selected (checks assigneeUserId or default role assignment)
         if (effectiveUserId !== "all") {
           // Check direct user assignment
@@ -115,11 +120,6 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
             const user = users.find(u => u.id === effectiveUserId);
             if (user?.roleId === template.defaultRoleId) return true;
           }
-          return false;
-        }
-        
-        // Search filter
-        if (searchQuery && !template.title.toLowerCase().includes(searchQuery.toLowerCase())) {
           return false;
         }
         
