@@ -274,15 +274,13 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
 
   return (
     <div className="flex flex-col h-full" data-testid="user-tasks">
-      {/* Row 1 - Title & Actions */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
-        <div className="flex items-center gap-3">
+      {/* Header Panel - 2 rows connected to content */}
+      <div className="border border-border rounded-t-lg bg-card flex-shrink-0">
+        {/* Row 1 - Title & Add Task */}
+        <div className="h-10 flex items-center justify-between px-3 border-b border-border/50">
           <h2 className="text-sm font-semibold" data-testid="text-page-title">
             {isOwnPage ? 'My Tasks' : `${user.firstName}'s Tasks`}
           </h2>
-        </div>
-
-        <div className="flex items-center gap-1.5">
           {isOwnPage && (
             <button
               className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
@@ -294,272 +292,229 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
             </button>
           )}
         </div>
-      </div>
 
-      {/* Row 2 - View Tabs & Saved Views */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
-        {/* Left: View Tabs */}
-        <div className="flex items-center gap-0.5" data-testid="tabs-task-views">
-          <button
-            onClick={() => setActiveView("list")}
-            className={`h-6 w-auto px-2 text-xs border rounded-md ${
-              activeView === "list" 
-                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
-                : 'hover-elevate'
-            } active-elevate-2 flex items-center gap-1`}
-            data-testid="tab-list"
-          >
-            <List className="w-3 h-3" />
-            List
-          </button>
-          <button
-            onClick={() => setActiveView("board")}
-            className={`h-6 w-auto px-2 text-xs border rounded-md ${
-              activeView === "board" 
-                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
-                : 'hover-elevate'
-            } active-elevate-2 flex items-center gap-1`}
-            data-testid="tab-board"
-          >
-            <LayoutGrid className="w-3 h-3" />
-            Board
-          </button>
-          <button
-            onClick={() => setActiveView("calendar")}
-            className={`h-6 w-auto px-2 text-xs border rounded-md ${
-              activeView === "calendar" 
-                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
-                : 'hover-elevate'
-            } active-elevate-2 flex items-center gap-1`}
-            data-testid="tab-calendar"
-          >
-            <Calendar className="w-3 h-3" />
-            Calendar
-          </button>
-        </div>
-
-        {/* Right: Calendar Controls OR Saved Views */}
-        {activeView === "calendar" ? (
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => {
-                const newDate = new Date(calendarDate);
-                if (calendarMode === "day") newDate.setDate(newDate.getDate() - 1);
-                else if (calendarMode === "week") newDate.setDate(newDate.getDate() - 7);
-                else newDate.setMonth(newDate.getMonth() - 1);
-                setCalendarDate(newDate);
-              }}
-              className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-              data-testid="button-calendar-prev"
-            >
-              <ChevronLeft className="w-3 h-3" />
-            </button>
-            <button
-              onClick={() => setCalendarDate(new Date())}
-              className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
-              data-testid="button-calendar-today"
-            >
-              Today
-            </button>
-            <button
-              onClick={() => {
-                const newDate = new Date(calendarDate);
-                if (calendarMode === "day") newDate.setDate(newDate.getDate() + 1);
-                else if (calendarMode === "week") newDate.setDate(newDate.getDate() + 7);
-                else newDate.setMonth(newDate.getMonth() + 1);
-                setCalendarDate(newDate);
-              }}
-              className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-              data-testid="button-calendar-next"
-            >
-              <ChevronRight className="w-3 h-3" />
-            </button>
-
-            <div className="flex items-center gap-0.5 ml-2">
-              {(["day", "week", "month"] as const).map((mode) => (
+        {/* Row 2 - View Tabs + Search & Filters */}
+        <div className="h-10 flex items-center justify-between px-3 gap-3">
+          {/* Left: View Tabs */}
+          <div className="flex items-center gap-1" data-testid="tabs-task-views">
+            {(["list", "board", "calendar"] as const).map((view) => {
+              const Icon = view === "list" ? List : view === "board" ? LayoutGrid : Calendar;
+              const isActive = activeView === view;
+              return (
                 <button
-                  key={mode}
-                  onClick={() => setCalendarMode(mode)}
-                  className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                    calendarMode === mode
-                      ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
-                      : 'hover-elevate'
-                  } active-elevate-2`}
-                  data-testid={`button-view-${mode}`}
+                  key={view}
+                  onClick={() => setActiveView(view)}
+                  className={`relative h-7 px-2 text-xs flex items-center gap-1 transition-colors ${
+                    isActive
+                      ? 'text-[#bba7db] font-medium'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                  data-testid={`tab-${view}`}
                 >
-                  {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                  <Icon className="w-3 h-3" />
+                  <span className="capitalize">{view}</span>
+                  {isActive && (
+                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#bba7db] rounded-full" />
+                  )}
                 </button>
-              ))}
+              );
+            })}
+          </div>
+
+          {/* Right: Search, Filters, and View-specific controls */}
+          <div className="flex items-center gap-1.5 flex-1 justify-end">
+            {/* Calendar Controls (when calendar view) */}
+            {activeView === "calendar" && (
+              <>
+                <button
+                  onClick={() => {
+                    const newDate = new Date(calendarDate);
+                    if (calendarMode === "day") newDate.setDate(newDate.getDate() - 1);
+                    else if (calendarMode === "week") newDate.setDate(newDate.getDate() - 7);
+                    else newDate.setMonth(newDate.getMonth() - 1);
+                    setCalendarDate(newDate);
+                  }}
+                  className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                  data-testid="button-calendar-prev"
+                >
+                  <ChevronLeft className="w-3 h-3" />
+                </button>
+                <button
+                  onClick={() => setCalendarDate(new Date())}
+                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
+                  data-testid="button-calendar-today"
+                >
+                  Today
+                </button>
+                <button
+                  onClick={() => {
+                    const newDate = new Date(calendarDate);
+                    if (calendarMode === "day") newDate.setDate(newDate.getDate() + 1);
+                    else if (calendarMode === "week") newDate.setDate(newDate.getDate() + 7);
+                    else newDate.setMonth(newDate.getMonth() + 1);
+                    setCalendarDate(newDate);
+                  }}
+                  className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                  data-testid="button-calendar-next"
+                >
+                  <ChevronRight className="w-3 h-3" />
+                </button>
+                <div className="flex items-center gap-0.5 ml-1">
+                  {(["day", "week", "month"] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => setCalendarMode(mode)}
+                      className={`h-6 w-auto px-2 text-xs border rounded-md ${
+                        calendarMode === mode
+                          ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
+                          : 'hover-elevate'
+                      } active-elevate-2`}
+                      data-testid={`button-view-${mode}`}
+                    >
+                      {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                    </button>
+                  ))}
+                </div>
+                <div className="w-px h-4 bg-border mx-1" />
+              </>
+            )}
+
+            {/* Search */}
+            <div className="relative w-40">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+              <Input
+                ref={searchInputRef}
+                placeholder="Search..."
+                value={filters.search || ""}
+                onChange={(e) => setFilters({...filters, search: e.target.value || undefined})}
+                className="pl-7 pr-2 py-0 h-6 text-xs border"
+                data-testid="input-search-tasks"
+              />
             </div>
-          </div>
-        ) : (
-          <TaskViewsManager 
-            currentViewType={activeView}
-            currentFilters={filters as TaskViewFilters}
-            currentGroupBy={groupBy === 'project' ? 'none' : groupBy}
-            onViewSelect={(view: TaskView) => {
-              setActiveView(view.viewType);
-              setFilters(view.filters as FilterState);
-              setGroupBy(view.groupBy === 'assignee' ? 'none' : view.groupBy);
-              setSelectedViewId(view.id);
-            }}
-            selectedViewId={selectedViewId}
-          />
-        )}
-      </div>
 
-      {/* Row 3 - Search & Filters */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
-        <div className="flex items-center gap-1.5 flex-1">
-          {/* Search */}
-          <div className="relative w-48">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-            <Input
-              ref={searchInputRef}
-              placeholder="Search tasks..."
-              value={filters.search || ""}
-              onChange={(e) => setFilters({...filters, search: e.target.value || undefined})}
-              className="pl-7 pr-2 py-0 h-6 text-xs border"
-              data-testid="input-search-tasks"
-            />
-          </div>
-
-          {/* Status Filter */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
-                <span>Status</span>
-                {filters.status && filters.status.length > 0 && (
-                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
-                    {filters.status.length}
-                  </Badge>
-                )}
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              {(statusOptions.length > 0 ? statusOptions : [
-                { key: "todo", name: "To Do", color: null },
-                { key: "in-progress", name: "In Progress", color: null },
-                { key: "done", name: "Done", color: null },
-              ]).map(option => (
-                <DropdownMenuItem key={option.key} className="flex items-center" onSelect={(e) => e.preventDefault()}>
-                  <Checkbox
-                    checked={filters.status?.includes(option.key) || false}
-                    onCheckedChange={() => {
-                      const current = filters.status || [];
-                      const next = current.includes(option.key)
-                        ? current.filter(s => s !== option.key)
-                        : [...current, option.key];
-                      setFilters({...filters, status: next.length > 0 ? next : undefined});
-                    }}
-                  />
-                  <span className="ml-2">{option.name}</span>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Priority Filter */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
-                <span>Priority</span>
-                {filters.priority && filters.priority.length > 0 && (
-                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
-                    {filters.priority.length}
-                  </Badge>
-                )}
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              {priorityOptions.map(option => (
-                <DropdownMenuItem key={option.key} className="flex items-center" onSelect={(e) => e.preventDefault()}>
-                  <Checkbox
-                    checked={filters.priority?.includes(option.key) || false}
-                    onCheckedChange={() => {
-                      const current = filters.priority || [];
-                      const next = current.includes(option.key)
-                        ? current.filter(p => p !== option.key)
-                        : [...current, option.key];
-                      setFilters({...filters, priority: next.length > 0 ? next : undefined});
-                    }}
-                  />
-                  <span className="ml-2">{option.name}</span>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Project Filter */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
-                <span>Project</span>
-                {filters.project && filters.project.length > 0 && (
-                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
-                    {filters.project.length}
-                  </Badge>
-                )}
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="max-h-64 overflow-y-auto">
-              {projects.map(project => (
-                <DropdownMenuItem key={project.id} className="flex items-center" onSelect={(e) => e.preventDefault()}>
-                  <Checkbox
-                    checked={filters.project?.includes(project.id) || false}
-                    onCheckedChange={() => {
-                      const current = filters.project || [];
-                      const next = current.includes(project.id)
-                        ? current.filter(p => p !== project.id)
-                        : [...current, project.id];
-                      setFilters({...filters, project: next.length > 0 ? next : undefined});
-                    }}
-                  />
-                  <div className="ml-2 flex items-center gap-1.5">
-                    {project.color && (
-                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: project.color }} />
-                    )}
-                    <span className="truncate max-w-[150px]">{project.name}</span>
-                  </div>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Group By (for list view) */}
-          {activeView === "list" && (
+            {/* Filters */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
-                  <span>Group: {groupBy === 'none' ? 'None' : groupBy.charAt(0).toUpperCase() + groupBy.slice(1)}</span>
+                  <Filter className="w-3 h-3" />
+                  <span>Filter</span>
+                  {hasActiveFilters && (
+                    <Badge variant="destructive" className="ml-1 h-3 min-w-3 p-0 text-[10px] flex items-center justify-center">
+                      {(filters.status?.length || 0) + (filters.priority?.length || 0) + (filters.project?.length || 0)}
+                    </Badge>
+                  )}
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                {(["none", "status", "priority", "project"] as const).map(option => (
-                  <DropdownMenuItem key={option} onClick={() => setGroupBy(option)}>
-                    {option === 'none' ? 'No Grouping' : option.charAt(0).toUpperCase() + option.slice(1)}
+              <DropdownMenuContent align="end" className="w-56">
+                <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Status</div>
+                {(statusOptions.length > 0 ? statusOptions : [
+                  { key: "todo", name: "To Do", color: null },
+                  { key: "in-progress", name: "In Progress", color: null },
+                  { key: "done", name: "Done", color: null },
+                ]).map(option => (
+                  <DropdownMenuItem key={option.key} className="flex items-center" onSelect={(e) => e.preventDefault()}>
+                    <Checkbox
+                      checked={filters.status?.includes(option.key) || false}
+                      onCheckedChange={() => {
+                        const current = filters.status || [];
+                        const next = current.includes(option.key)
+                          ? current.filter(s => s !== option.key)
+                          : [...current, option.key];
+                        setFilters({...filters, status: next.length > 0 ? next : undefined});
+                      }}
+                    />
+                    <span className="ml-2">{option.name}</span>
                   </DropdownMenuItem>
                 ))}
+                <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground border-t mt-1 pt-1.5">Priority</div>
+                {priorityOptions.map(option => (
+                  <DropdownMenuItem key={option.key} className="flex items-center" onSelect={(e) => e.preventDefault()}>
+                    <Checkbox
+                      checked={filters.priority?.includes(option.key) || false}
+                      onCheckedChange={() => {
+                        const current = filters.priority || [];
+                        const next = current.includes(option.key)
+                          ? current.filter(p => p !== option.key)
+                          : [...current, option.key];
+                        setFilters({...filters, priority: next.length > 0 ? next : undefined});
+                      }}
+                    />
+                    <span className="ml-2">{option.name}</span>
+                  </DropdownMenuItem>
+                ))}
+                <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground border-t mt-1 pt-1.5">Project</div>
+                <div className="max-h-32 overflow-y-auto">
+                  {projects.map(project => (
+                    <DropdownMenuItem key={project.id} className="flex items-center" onSelect={(e) => e.preventDefault()}>
+                      <Checkbox
+                        checked={filters.project?.includes(project.id) || false}
+                        onCheckedChange={() => {
+                          const current = filters.project || [];
+                          const next = current.includes(project.id)
+                            ? current.filter(p => p !== project.id)
+                            : [...current, project.id];
+                          setFilters({...filters, project: next.length > 0 ? next : undefined});
+                        }}
+                      />
+                      <div className="ml-2 flex items-center gap-1.5">
+                        {project.color && (
+                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: project.color }} />
+                        )}
+                        <span className="truncate max-w-[150px]">{project.name}</span>
+                      </div>
+                    </DropdownMenuItem>
+                  ))}
+                </div>
+                {hasActiveFilters && (
+                  <div className="border-t mt-1 pt-1">
+                    <DropdownMenuItem onClick={clearAllFilters} className="text-destructive">
+                      <X className="w-3 h-3 mr-2" />
+                      Clear all filters
+                    </DropdownMenuItem>
+                  </div>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
-          )}
 
-          {/* Clear Filters */}
-          {hasActiveFilters && (
-            <button
-              onClick={clearAllFilters}
-              className="h-6 w-auto px-2 py-0 text-xs text-muted-foreground hover:text-foreground flex items-center gap-0.5"
-              data-testid="button-clear-filters"
-            >
-              <X className="w-3 h-3" />
-              Clear
-            </button>
-          )}
+            {/* Group By (list view only) */}
+            {activeView === "list" && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
+                    <span>Group: {groupBy === 'none' ? 'None' : groupBy.charAt(0).toUpperCase() + groupBy.slice(1)}</span>
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {(["none", "status", "priority", "project"] as const).map(option => (
+                    <DropdownMenuItem key={option} onClick={() => setGroupBy(option)}>
+                      {option === 'none' ? 'No Grouping' : option.charAt(0).toUpperCase() + option.slice(1)}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+
+            {/* Saved Views (non-calendar) */}
+            {activeView !== "calendar" && (
+              <TaskViewsManager 
+                currentViewType={activeView}
+                currentFilters={filters as TaskViewFilters}
+                currentGroupBy={groupBy === 'project' ? 'none' : groupBy}
+                onViewSelect={(view: TaskView) => {
+                  setActiveView(view.viewType);
+                  setFilters(view.filters as FilterState);
+                  setGroupBy(view.groupBy === 'assignee' ? 'none' : view.groupBy);
+                  setSelectedViewId(view.id);
+                }}
+                selectedViewId={selectedViewId}
+              />
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-auto">
+      {/* Content - connected to header (no gap, shared border) */}
+      <div className="flex-1 overflow-auto border-x border-b border-border rounded-b-lg bg-card">
         {activeView === "list" ? (
           <div className="p-2">
             {Object.entries(groupedTasks).map(([groupName, groupTasks]) => (
