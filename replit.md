@@ -54,7 +54,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Feature Specifications & System Design
 - **Budget Tracking**: Manages estimates, bills, and variations with a calculation engine.
-- **Task Management**: Kanban, List, and Calendar views with drag-and-drop, including task templates with user-specific or role-based assignments. Task modal includes inline checklist management for viewing/adding/toggling checklist items.
+- **Task Management**: Kanban, List, and Calendar views with drag-and-drop, including task templates with user-specific or role-based assignments. Task modal includes inline checklist management for viewing/adding/toggling checklist items. Task templates support `defaultTaskStatus` field to specify the status tasks should have when created (prevents clogging wrong status views). Due date filtering with relative date presets (Overdue, Today, Tomorrow, This Week, etc.) available in My Tasks page filter panel.
 - **Checklist System**: Templates with group functionality and dashboard widget integration. Dashboard widget features responsive multi-column layout (1/2/3 columns based on width), compact headers, and color-coded status indicators (amber for priority+actionable, green for actionable items).
 - **Cost Code Management**: Merge functionality with company isolation.
 - **Import System**: Flexible CSV/Excel import with column mapping and intelligent cost code matching. Schedule import functionality allows importing Excel/CSV files directly into project schedules using the same column mapping and preview system as schedule templates via `/api/schedule-items/bulk-create`.

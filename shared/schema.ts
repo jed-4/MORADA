@@ -3537,6 +3537,9 @@ export const taskTemplates = pgTable("task_templates", {
   statusName: text("status_name"), // Cached status name for performance (e.g., "Active", "Draft", "Archived")
   isActive: boolean("is_active").default(true),
   
+  // Default task status - the status key that tasks created from this template should have
+  defaultTaskStatus: text("default_task_status").default("todo"), // e.g., "todo", "in-progress", "backlog"
+  
   // Display color for calendar/diary views
   color: text("color"), // Hex color code (e.g., "#3b82f6")
   
@@ -3592,6 +3595,7 @@ export const insertTaskTemplateSchema = createInsertSchema(taskTemplates).omit({
   estimatedDuration: z.number().optional(),
   isActive: z.boolean().optional(),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, "Must be a valid hex color code").nullable().optional(),
+  defaultTaskStatus: z.string().optional(), // Status key for tasks created from this template
 });
 
 export type InsertTaskTemplate = z.infer<typeof insertTaskTemplateSchema>;

@@ -56,6 +56,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useTaskTemplateCategoryOptions } from "@/hooks/useTaskTemplateCategoryOptions";
+import { useTaskStatusOptions } from "@/hooks/useTaskStatusOptions";
 import { UserSelect } from "@/components/UserSelect";
 import type { TaskTemplate, UserRole } from "@shared/schema";
 
@@ -83,6 +84,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
   const [editingTemplate, setEditingTemplate] = useState<TaskTemplate | null>(null);
   const { toast } = useToast();
   const { categoryOptions, getCategoryInfo } = useTaskTemplateCategoryOptions();
+  const { statusOptions: taskStatusOptions } = useTaskStatusOptions();
 
   // Filter state
   const [filterCategory, setFilterCategory] = useState<string>("all");
@@ -116,6 +118,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
     isRecurringTemplate: false,
     recurringDays: [] as number[],
     recurringSchedule: [] as Array<{ dayOfWeek: number; startTime: string; duration: number }>,
+    defaultTaskStatus: "todo", // Default status for tasks created from this template
   });
 
   // Fetch task templates
@@ -319,6 +322,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
       isRecurringTemplate: false,
       recurringDays: [],
       recurringSchedule: [],
+      defaultTaskStatus: "todo",
     });
   };
 
@@ -350,6 +354,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
       isRecurringTemplate: template.isRecurringTemplate || false,
       recurringDays: template.recurringDays ? (Array.isArray(template.recurringDays) ? template.recurringDays : JSON.parse(template.recurringDays as string)) : [],
       recurringSchedule: template.recurringSchedule ? (Array.isArray(template.recurringSchedule) ? template.recurringSchedule : JSON.parse(template.recurringSchedule as string)) : [],
+      defaultTaskStatus: template.defaultTaskStatus || "todo",
     });
     setShowDialog(true);
   };
@@ -1155,6 +1160,29 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                       data-testid="select-assignee-user"
                     />
                   )}
+                </div>
+
+                {/* Default Task Status */}
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">Default Task Status</Label>
+                  <Select
+                    value={templateForm.defaultTaskStatus}
+                    onValueChange={(value) => setTemplateForm({ ...templateForm, defaultTaskStatus: value })}
+                  >
+                    <SelectTrigger className="h-7 text-[11px]" data-testid="select-default-task-status">
+                      <SelectValue placeholder="Select status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {taskStatusOptions.map((option) => (
+                        <SelectItem key={option.key} value={option.key} className="text-[11px]">
+                          {option.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[9px] text-muted-foreground mt-0.5">
+                    Tasks will be created with this status
+                  </p>
                 </div>
 
                 {/* Frequency */}
