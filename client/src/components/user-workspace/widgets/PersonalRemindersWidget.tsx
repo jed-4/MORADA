@@ -134,20 +134,11 @@ export default function PersonalRemindersWidget({ widget, onUpdate, isConfigurin
     );
   }
 
-  // Determine if we need contrasting header (when there are overdue or today reminders)
-  const hasUrgentReminders = activeReminders.some(r => {
-    const triggerDate = new Date(r.triggerAt);
-    return isPast(triggerDate) || isToday(triggerDate);
-  });
-
   return (
     <div className="space-y-2">
-      {/* Header with contrasting color when urgent */}
-      <div className={`flex items-center justify-between px-2 py-1 -mx-2 -mt-1 rounded-t ${
-        hasUrgentReminders ? 'bg-amber-100 dark:bg-amber-900/30' : ''
-      }`}>
-        <div className={`text-xs font-medium ${hasUrgentReminders ? 'text-amber-700 dark:text-amber-300' : 'text-foreground'}`}>
-          Reminders
+      <div className="flex items-center justify-between">
+        <div className="text-xs text-muted-foreground">
+          {activeReminders.length} active
         </div>
         <Button 
           size="sm" 

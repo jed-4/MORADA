@@ -78,49 +78,46 @@ export default function Business() {
   };
 
   return (
-    <div className="flex flex-col h-full px-4 pt-2" data-testid="business-page">
-      {/* Connected header with rounded corners */}
-      <div className="border border-border rounded-t-lg bg-card flex-shrink-0">
-        {/* Row 1 - Title */}
-        <div className="h-8 flex items-center justify-between px-3 border-b border-border/50">
-          <h2 className="text-sm font-semibold" data-testid="text-page-title">
-            {businessLabel}
-          </h2>
-        </div>
-
-        {/* Row 2 - Tabs */}
-        <div className="h-8 flex items-center px-3 gap-4 overflow-x-auto">
-          {BUSINESS_TABS.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  navigate(tab.path);
-                }}
-                className={`relative h-full px-1 text-xs flex items-center gap-1.5 flex-shrink-0 transition-colors ${
-                  isActive
-                    ? 'text-[#bba7db] font-medium'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-                data-testid={`tab-${tab.id}`}
-              >
-                <Icon className="w-3 h-3" />
-                <span>{tab.label}</span>
-                {isActive && (
-                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#bba7db]" />
-                )}
-              </button>
-            );
-          })}
-        </div>
+    <div className="flex flex-col h-full" data-testid="business-page">
+      {/* Row 1 - Title (36px) */}
+      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0 border-b border-border">
+        <h2 className="text-sm font-semibold" data-testid="text-page-title">
+          {businessLabel}
+        </h2>
       </div>
 
-      {/* Content Area - connected with rounded bottom */}
-      <div className="flex-1 overflow-auto border-x border-b border-border rounded-b-lg bg-card">
+      {/* Row 2 - Tabs (36px) - Underline Style */}
+      <div className="h-9 bg-background flex items-center px-2 gap-4 border-b border-border flex-shrink-0 overflow-x-auto">
+        {BUSINESS_TABS.map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                navigate(tab.path);
+              }}
+              className={`relative h-full px-1 text-xs flex items-center gap-1.5 flex-shrink-0 transition-colors ${
+                isActive
+                  ? 'text-[#bba7db] font-medium'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+              data-testid={`tab-${tab.id}`}
+            >
+              <Icon className="w-3 h-3" />
+              <span>{tab.label}</span>
+              {isActive && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#bba7db]" />
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Content Area */}
+      <div className="flex-1 overflow-auto">
         {renderContent()}
       </div>
     </div>
