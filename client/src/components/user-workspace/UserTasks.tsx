@@ -547,14 +547,14 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
             <EnhancedCalendar
               events={calendarEvents}
               currentDate={calendarDate}
-              onDateChange={setCalendarDate}
-              mode={calendarMode}
-              onModeChange={setCalendarMode}
+              onCurrentDateChange={setCalendarDate}
+              view={calendarMode}
+              onViewChange={setCalendarMode}
               onEventComplete={handleEventComplete}
               onEventReschedule={handleEventReschedule}
               onEventResize={handleEventResize}
               onEventClick={handleEventClick}
-              hideHeader={true}
+              hideInternalHeader={true}
             />
           </div>
         )}
