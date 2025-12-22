@@ -600,15 +600,15 @@ export default function BusinessOverview() {
         </div>
       </div>
 
-      {/* Widget Grid with Theme Background */}
+      {/* Widget Grid with Theme Background - rounded corners */}
       <div 
-        className="flex-1 overflow-auto"
+        className="flex-1 overflow-auto border border-border rounded-lg relative"
         style={getBackgroundStyle()}
       >
         {/* Overlay for image backgrounds */}
         {theme?.backgroundType === "image" && theme.overlayEnabled && (
           <div 
-            className="absolute inset-0 pointer-events-none"
+            className="absolute inset-0 pointer-events-none rounded-lg"
             style={{ 
               backgroundColor: hexToRgba(theme.overlayColor || '#000000', theme.overlayOpacity || 40),
               backdropFilter: theme.blurStrength ? `blur(${theme.blurStrength}px)` : undefined,
