@@ -166,7 +166,7 @@ export default function TaskCardCompact({ task, onClick, isDragging = false, dis
           )}
 
           {/* Actions menu on hover */}
-          {showActions && isHovered && onDelete ? (
+          {showActions && isHovered ? (
             <div onClick={(e) => e.stopPropagation()}>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -176,13 +176,22 @@ export default function TaskCardCompact({ task, onClick, isDragging = false, dis
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem
-                    className="text-destructive"
-                    onClick={() => onDelete(task)}
-                    data-testid={`delete-task-${task.id}`}
+                    onClick={() => onClick?.()}
+                    data-testid={`edit-task-${task.id}`}
                   >
-                    <Trash2 className="h-3 w-3 mr-2" />
-                    Delete
+                    <Pencil className="h-3 w-3 mr-2" />
+                    Edit
                   </DropdownMenuItem>
+                  {onDelete && (
+                    <DropdownMenuItem
+                      className="text-destructive"
+                      onClick={() => onDelete(task)}
+                      data-testid={`delete-task-${task.id}`}
+                    >
+                      <Trash2 className="h-3 w-3 mr-2" />
+                      Delete
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
