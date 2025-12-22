@@ -14914,6 +14914,13 @@ export class DbStorage implements IStorage {
             
             // Skip if already exists for this unassigned instance
             if (!existingTaskKeys.has(taskKey)) {
+              // Prepare checklist with fresh IDs for each task (reset completed state)
+              const taskChecklist = instance.checklist?.map((item: any) => ({
+                id: crypto.randomUUID(),
+                text: item.text,
+                completed: false,
+              })) || [];
+              
               const taskData: InsertNote = {
                 title: instance.title,
                 content: instance.content || "",
@@ -14931,6 +14938,7 @@ export class DbStorage implements IStorage {
                 category: instance.category,
                 templateId: instance.templateId,
                 companyId: companyId,
+                checklist: taskChecklist,
               };
 
               await db.insert(schema.notes).values(taskData);
@@ -14945,6 +14953,13 @@ export class DbStorage implements IStorage {
               
               // Skip if already exists for this user+date combination
               if (!existingTaskKeys.has(taskKey)) {
+                // Prepare checklist with fresh IDs for each task (reset completed state)
+                const taskChecklist = instance.checklist?.map((item: any) => ({
+                  id: crypto.randomUUID(),
+                  text: item.text,
+                  completed: false,
+                })) || [];
+                
                 const taskData: InsertNote = {
                   title: instance.title,
                   content: instance.content || "",
@@ -14962,6 +14977,7 @@ export class DbStorage implements IStorage {
                   category: instance.category,
                   templateId: instance.templateId,
                   companyId: companyId,
+                  checklist: taskChecklist,
                 };
 
                 await db.insert(schema.notes).values(taskData);
@@ -15021,6 +15037,13 @@ export class DbStorage implements IStorage {
         
         if (assignees.length === 0) {
           // No role-based assignees - preserve instance assigneeId (for legacy defaultAssigneeId support)
+          // Prepare checklist with fresh IDs for each task (reset completed state)
+          const taskChecklist = instance.checklist?.map((item: any) => ({
+            id: crypto.randomUUID(),
+            text: item.text,
+            completed: false,
+          })) || [];
+          
           const taskData: InsertNote = {
             title: instance.title,
             content: instance.content || "",
@@ -15038,6 +15061,7 @@ export class DbStorage implements IStorage {
             category: instance.category,
             templateId: instance.templateId,
             companyId: companyId,
+            checklist: taskChecklist,
           };
 
           await db.insert(schema.notes).values(taskData);
@@ -15045,6 +15069,13 @@ export class DbStorage implements IStorage {
         } else {
           // Create one task per assignee
           for (const assignee of assignees) {
+            // Prepare checklist with fresh IDs for each task (reset completed state)
+            const taskChecklist = instance.checklist?.map((item: any) => ({
+              id: crypto.randomUUID(),
+              text: item.text,
+              completed: false,
+            })) || [];
+            
             const taskData: InsertNote = {
               title: instance.title,
               content: instance.content || "",
@@ -15062,6 +15093,7 @@ export class DbStorage implements IStorage {
               category: instance.category,
               templateId: instance.templateId,
               companyId: companyId,
+              checklist: taskChecklist,
             };
 
             await db.insert(schema.notes).values(taskData);
@@ -15115,6 +15147,14 @@ export class DbStorage implements IStorage {
       
       if (exists) return null;
       
+      // Prepare checklist from template with fresh IDs (reset completed state)
+      const templateChecklist = (template as any).checklist || [];
+      const taskChecklist = templateChecklist.map((item: any) => ({
+        id: crypto.randomUUID(),
+        text: item.text,
+        completed: false,
+      }));
+      
       // Clone key fields from completed task, use template's default status or "todo"
       const taskData: InsertNote = {
         title: completedTask.title,
@@ -15133,6 +15173,7 @@ export class DbStorage implements IStorage {
         category: completedTask.category,
         templateId: completedTask.templateId,
         companyId: companyId,
+        checklist: taskChecklist,
       };
       
       const [newTask] = await db.insert(schema.notes).values(taskData).returning();

@@ -409,6 +409,7 @@ export const notes: any = pgTable("notes", {
   completedAt: timestamp("completed_at"),
   tags: json("tags").default([]), // string[] for task tags
   labels: json("labels").default([]), // string[] for task labels from field options
+  checklist: json("checklist").default([]), // Array of checklist items [{id, text, completed}] for tasks
   
   // Subtask support
   parentTaskId: varchar("parent_task_id").references(() => notes.id),
@@ -470,6 +471,11 @@ export const insertNoteSchema = createInsertSchema(notes).omit({
   completedAt: z.coerce.date().optional(), // Coerce strings to dates for JSON compatibility
   tags: z.array(z.string()).optional(),
   labels: z.array(z.string()).optional(),
+  checklist: z.array(z.object({
+    id: z.string().optional(),
+    text: z.string(),
+    completed: z.boolean().default(false),
+  })).optional(),
   // Subtask fields
   parentTaskId: z.string().optional(),
   subtaskOrder: z.number().optional(),
