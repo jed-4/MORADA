@@ -6,7 +6,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { type Task, type FieldCategoryWithOptions, type User } from "@shared/schema";
+import { type Task, type FieldCategoryWithOptions, type User, type Project } from "@shared/schema";
 import { GripVertical, Calendar as CalendarIcon, Flag, Pencil, User as UserIcon, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { format } from "date-fns";
 import {
@@ -40,7 +40,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 
-export type TaskColumnKey = 'status' | 'priority' | 'assignee' | 'dueDate';
+export type TaskColumnKey = 'status' | 'priority' | 'assignee' | 'dueDate' | 'project';
 export type SortDirection = 'asc' | 'desc' | null;
 
 export interface TaskColumnConfig {
@@ -55,6 +55,7 @@ const COLUMN_DEFINITIONS: Record<TaskColumnKey, { label: string; width: string }
   priority: { label: 'Priority', width: 'w-20' },
   assignee: { label: 'Assignee', width: 'w-24' },
   dueDate: { label: 'Due Date', width: 'w-20' },
+  project: { label: 'Project', width: 'w-28' },
 };
 
 interface TaskListCompactProps {
@@ -160,6 +161,7 @@ function SortableTaskRow({
   statusOptions,
   priorityOptions,
   users,
+  projects,
   onUpdate,
   columnOrder,
 }: {
@@ -171,6 +173,7 @@ function SortableTaskRow({
   statusOptions: any[];
   priorityOptions: any[];
   users: User[];
+  projects: Project[];
   onUpdate: (field: string, value: any) => void;
   columnOrder: TaskColumnKey[];
 }) {
@@ -425,6 +428,27 @@ function SortableTaskRow({
           );
         }
         
+        if (col === 'project') {
+          const project = projects.find(p => p.id === task.projectId);
+          return (
+            <div key={col} className={`${colDef.width} flex-shrink-0`}>
+              {project ? (
+                <div className="flex items-center gap-1 text-xs truncate">
+                  {project.color && (
+                    <div 
+                      className="w-2 h-2 rounded-full flex-shrink-0" 
+                      style={{ backgroundColor: project.color }}
+                    />
+                  )}
+                  <span className="truncate text-muted-foreground">{project.name}</span>
+                </div>
+              ) : (
+                <div className="text-xs text-muted-foreground/30">—</div>
+              )}
+            </div>
+          );
+        }
+        
         return null;
       })}
     </div>
@@ -470,6 +494,11 @@ export default function TaskListCompact({
   // Fetch users for assignee dropdown
   const { data: users = [] } = useQuery<User[]>({
     queryKey: ["/api/users"],
+  });
+
+  // Fetch projects for project column
+  const { data: projects = [] } = useQuery<Project[]>({
+    queryKey: ["/api/projects"],
   });
 
   const statusCategory = fieldCategories.find((cat) => cat.key === "task.status");
@@ -742,6 +771,7 @@ export default function TaskListCompact({
                     statusOptions={statusCategory?.options || []}
                     priorityOptions={priorityCategory?.options || []}
                     users={users}
+                    projects={projects}
                     onUpdate={(field, value) => handleUpdate(task.id, field, value)}
                     columnOrder={columnOrder}
                   />
@@ -777,6 +807,7 @@ export default function TaskListCompact({
                 statusOptions={statusCategory?.options || []}
                 priorityOptions={priorityCategory?.options || []}
                 users={users}
+                projects={projects}
                 onUpdate={(field, value) => handleUpdate(task.id, field, value)}
                 columnOrder={columnOrder}
               />

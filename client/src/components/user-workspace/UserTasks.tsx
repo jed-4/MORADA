@@ -574,6 +574,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                   tasks={groupTasks}
                   isLoading={isLoading && groupName === 'All Tasks'}
                   onTaskClick={(task) => setEditingTask(task)}
+                  columnConfig={{ order: ['status', 'priority', 'assignee', 'project', 'dueDate'] }}
                 />
               </div>
             ))}
