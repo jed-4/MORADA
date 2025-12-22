@@ -103,7 +103,7 @@ function DayColumn({
                   key={event.id}
                   className="flex items-center gap-0.5 px-1 py-0.5 rounded border text-[10px] cursor-pointer hover-elevate"
                   style={{
-                    backgroundColor: `${eventColor}20`,
+                    backgroundColor: `${eventColor}60`,
                     borderColor: eventColor,
                     borderLeftWidth: '2px',
                   }}

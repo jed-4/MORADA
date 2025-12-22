@@ -205,7 +205,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
   const toggleTaskMutation = useMutation({
     mutationFn: async (task: Task) => {
       const newStatus = task.status === 'done' || task.status === 'complete' ? 'todo' : 'done';
-      return apiRequest("PATCH", `/api/tasks/${task.id}`, { status: newStatus });
+      return apiRequest(`/api/tasks/${task.id}`, "PATCH", { status: newStatus });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks", { assigneeId: userId }] });

@@ -346,7 +346,7 @@ export default function PurchaseOrderDetail() {
 
   const updatePoMutation = useMutation({
     mutationFn: async (data: Partial<PurchaseOrder>) => {
-      return apiRequest("PATCH", `/api/purchase-orders/${poId}`, data);
+      return apiRequest(`/api/purchase-orders/${poId}`, "PATCH", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", poId] });
@@ -365,7 +365,7 @@ export default function PurchaseOrderDetail() {
 
   const updateItemMutation = useMutation({
     mutationFn: async ({ itemId, data }: { itemId: string; data: Partial<PurchaseOrderItem> }) => {
-      return apiRequest("PATCH", `/api/purchase-orders/${poId}/items/${itemId}`, data);
+      return apiRequest(`/api/purchase-orders/${poId}/items/${itemId}`, "PATCH", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", poId, "items"] });
@@ -375,7 +375,7 @@ export default function PurchaseOrderDetail() {
 
   const deleteItemMutation = useMutation({
     mutationFn: async (itemId: string) => {
-      return apiRequest("DELETE", `/api/purchase-orders/${poId}/items/${itemId}`);
+      return apiRequest(`/api/purchase-orders/${poId}/items/${itemId}`, "DELETE");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", poId, "items"] });
@@ -386,7 +386,7 @@ export default function PurchaseOrderDetail() {
 
   const addItemMutation = useMutation({
     mutationFn: async (data: InsertPurchaseOrderItem) => {
-      return apiRequest("POST", `/api/purchase-orders/${poId}/items`, data);
+      return apiRequest(`/api/purchase-orders/${poId}/items`, "POST", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", poId, "items"] });
@@ -397,7 +397,7 @@ export default function PurchaseOrderDetail() {
 
   const reorderItemsMutation = useMutation({
     mutationFn: async (itemIds: string[]) => {
-      return apiRequest("POST", `/api/purchase-orders/${poId}/items/reorder`, { itemIds });
+      return apiRequest(`/api/purchase-orders/${poId}/items/reorder`, "POST", { itemIds });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", poId, "items"] });

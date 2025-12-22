@@ -95,7 +95,7 @@ function TimelineEvent({ event, colorMode }: { event: CalendarItem; colorMode: C
       style={{
         top: `${top}px`,
         height: `${height}px`,
-        backgroundColor: `${eventColor}20`,
+        backgroundColor: `${eventColor}60`,
         borderColor: eventColor,
         borderLeftWidth: '3px',
       }}
@@ -129,7 +129,7 @@ function AllDayEvent({ event, colorMode }: { event: CalendarItem; colorMode: Col
     <div
       className="flex items-center gap-1.5 px-2 py-1 rounded-md border cursor-pointer hover-elevate"
       style={{
-        backgroundColor: `${eventColor}20`,
+        backgroundColor: `${eventColor}60`,
         borderColor: eventColor,
         borderLeftWidth: '3px',
       }}
