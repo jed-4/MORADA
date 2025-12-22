@@ -169,7 +169,11 @@ export function CasvaTaskRow({
   const handleAssigneeChange = async (userId: string) => {
     if (onUpdate) {
       try {
-        await onUpdate(task.id, { assignee: userId });
+        const user = users.find(u => u.id === userId);
+        await onUpdate(task.id, { 
+          assigneeId: userId,
+          assigneeName: user?.name || user?.email || null
+        });
         setAssigneeOpen(false);
       } catch (error) {
         console.error("Failed to update assignee:", error);
@@ -298,7 +302,7 @@ export function CasvaTaskRow({
                         onClick={() => handleAssigneeChange(user.id)}
                         className={cn(
                           "w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 transition-colors",
-                          task.assignee === user.id && "bg-[#bba7db]/10 text-[#bba7db]"
+                          task.assigneeId === user.id && "bg-[#bba7db]/10 text-[#bba7db]"
                         )}
                       >
                         <div className="font-medium">{user.name || user.email}</div>
