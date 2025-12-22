@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Settings, MoreHorizontal, X, Search, ChevronLeft, ChevronRight, LayoutGrid, List, CalendarDays } from "lucide-react";
+import { Plus, Settings, MoreHorizontal, X, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -345,58 +345,45 @@ export default function BusinessTasks() {
   };
 
   return (
-    <div className="flex h-full flex-col gap-1.5" data-testid="business-tasks">
-      {/* Header Panel - matches UserWorkspace style */}
-      <div className="surface-panel flex-shrink-0">
-        {/* Row 1 - View Tabs - Underline Style */}
-        <div className="h-10 flex items-center justify-between px-4">
-          <div className="flex items-center gap-4 h-full" data-testid="tabs-task-views">
-            <button
-              onClick={() => setActiveTab("board")}
-              className={`relative h-full px-1 text-xs flex items-center gap-1.5 transition-colors ${
-                activeTab === "board" 
-                  ? 'text-[#bba7db] font-medium' 
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-              data-testid="tab-board"
-            >
-              <LayoutGrid className="w-3 h-3" />
-              <span>Board</span>
-              {activeTab === "board" && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#bba7db]" />
-              )}
-            </button>
-            <button
-              onClick={() => setActiveTab("list")}
-              className={`relative h-full px-1 text-xs flex items-center gap-1.5 transition-colors ${
-                activeTab === "list" 
-                  ? 'text-[#bba7db] font-medium' 
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-              data-testid="tab-list"
-            >
-              <List className="w-3 h-3" />
-              <span>List</span>
-              {activeTab === "list" && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#bba7db]" />
-              )}
-            </button>
-            <button
-              onClick={() => setActiveTab("calendar")}
-              className={`relative h-full px-1 text-xs flex items-center gap-1.5 transition-colors ${
-                activeTab === "calendar" 
-                  ? 'text-[#bba7db] font-medium' 
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-              data-testid="tab-calendar"
-            >
-              <CalendarDays className="w-3 h-3" />
-              <span>Calendar</span>
-              {activeTab === "calendar" && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#bba7db]" />
-              )}
-            </button>
-          </div>
+    <div className="flex h-full flex-col" data-testid="business-tasks">
+      {/* Row 2 - Views & Options (36px) */}
+      <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+        {/* Left: View Tabs */}
+        <div className="flex items-center gap-0.5" data-testid="tabs-task-views">
+          <button
+            onClick={() => setActiveTab("board")}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${
+              activeTab === "board" 
+                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                : 'hover-elevate'
+            } active-elevate-2 flex items-center gap-1`}
+            data-testid="tab-board"
+          >
+            Board
+          </button>
+          <button
+            onClick={() => setActiveTab("list")}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${
+              activeTab === "list" 
+                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                : 'hover-elevate'
+            } active-elevate-2 flex items-center gap-1`}
+            data-testid="tab-list"
+          >
+            List
+          </button>
+          <button
+            onClick={() => setActiveTab("calendar")}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${
+              activeTab === "calendar" 
+                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                : 'hover-elevate'
+            } active-elevate-2 flex items-center gap-1`}
+            data-testid="tab-calendar"
+          >
+            Calendar
+          </button>
+        </div>
 
         {/* Right: Calendar Controls OR Saved Views */}
         {activeTab === "calendar" ? (
@@ -495,11 +482,10 @@ export default function BusinessTasks() {
             selectedViewId={selectedViewId}
           />
         )}
-        </div>
       </div>
 
-      {/* Row 2 - Search & Filters */}
-      <div className="h-9 bg-muted/30 flex items-center justify-between px-2 gap-1.5 rounded-md flex-shrink-0">
+      {/* Row 3 - Search & Filters (36px) */}
+      <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
         {/* Left: Search + Filter Dropdowns */}
         <div className="flex items-center gap-1.5 flex-1">
           {/* Search */}

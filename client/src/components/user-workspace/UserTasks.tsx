@@ -273,149 +273,143 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
   };
 
   return (
-    <div className="flex flex-col h-full gap-1.5" data-testid="user-tasks">
-      {/* Header Panel - matches UserWorkspace style */}
-      <div className="surface-panel flex-shrink-0">
-        {/* Row 1 - Title & View Tabs */}
-        <div className="h-10 flex items-center justify-between px-4">
-          <div className="flex items-center gap-4 h-full" data-testid="tabs-task-views">
-            <h2 className="text-sm font-semibold" data-testid="text-page-title">
-              {isOwnPage ? 'My Tasks' : `${user.firstName}'s Tasks`}
-            </h2>
-            <div className="h-full border-l border-border/50" />
-            <button
-              onClick={() => setActiveView("list")}
-              className={`relative h-full px-1 text-xs flex items-center gap-1.5 transition-colors ${
-                activeView === "list" 
-                  ? 'text-[#bba7db] font-medium' 
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-              data-testid="tab-list"
-            >
-              <List className="w-3 h-3" />
-              <span>List</span>
-              {activeView === "list" && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#bba7db]" />
-              )}
-            </button>
-            <button
-              onClick={() => setActiveView("board")}
-              className={`relative h-full px-1 text-xs flex items-center gap-1.5 transition-colors ${
-                activeView === "board" 
-                  ? 'text-[#bba7db] font-medium' 
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-              data-testid="tab-board"
-            >
-              <LayoutGrid className="w-3 h-3" />
-              <span>Board</span>
-              {activeView === "board" && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#bba7db]" />
-              )}
-            </button>
-            <button
-              onClick={() => setActiveView("calendar")}
-              className={`relative h-full px-1 text-xs flex items-center gap-1.5 transition-colors ${
-                activeView === "calendar" 
-                  ? 'text-[#bba7db] font-medium' 
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-              data-testid="tab-calendar"
-            >
-              <Calendar className="w-3 h-3" />
-              <span>Calendar</span>
-              {activeView === "calendar" && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#bba7db]" />
-              )}
-            </button>
-          </div>
+    <div className="flex flex-col h-full" data-testid="user-tasks">
+      {/* Row 1 - Title & Actions */}
+      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold" data-testid="text-page-title">
+            {isOwnPage ? 'My Tasks' : `${user.firstName}'s Tasks`}
+          </h2>
+        </div>
 
-          <div className="flex items-center gap-1.5">
-            {isOwnPage && (
-              <button
-                className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
-                onClick={() => setShowCreateDialog(true)}
-                data-testid="button-add-task"
-              >
-                <Plus className="w-3 h-3" />
-                <span>Add Task</span>
-              </button>
-            )}
-
-            {/* Calendar Controls OR Saved Views */}
-            {activeView === "calendar" ? (
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => {
-                    const newDate = new Date(calendarDate);
-                    if (calendarMode === "day") newDate.setDate(newDate.getDate() - 1);
-                    else if (calendarMode === "week") newDate.setDate(newDate.getDate() - 7);
-                    else newDate.setMonth(newDate.getMonth() - 1);
-                    setCalendarDate(newDate);
-                  }}
-                  className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-                  data-testid="button-calendar-prev"
-                >
-                  <ChevronLeft className="w-3 h-3" />
-                </button>
-                <button
-                  onClick={() => setCalendarDate(new Date())}
-                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
-                  data-testid="button-calendar-today"
-                >
-                  Today
-                </button>
-                <button
-                  onClick={() => {
-                    const newDate = new Date(calendarDate);
-                    if (calendarMode === "day") newDate.setDate(newDate.getDate() + 1);
-                    else if (calendarMode === "week") newDate.setDate(newDate.getDate() + 7);
-                    else newDate.setMonth(newDate.getMonth() + 1);
-                    setCalendarDate(newDate);
-                  }}
-                  className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-                  data-testid="button-calendar-next"
-                >
-                  <ChevronRight className="w-3 h-3" />
-                </button>
-
-                <div className="flex items-center gap-0.5 ml-2">
-                  {(["day", "week", "month"] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      onClick={() => setCalendarMode(mode)}
-                      className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                        calendarMode === mode
-                          ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
-                          : 'hover-elevate'
-                      } active-elevate-2`}
-                      data-testid={`button-view-${mode}`}
-                    >
-                      {mode.charAt(0).toUpperCase() + mode.slice(1)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <TaskViewsManager 
-                currentViewType={activeView}
-                currentFilters={filters as TaskViewFilters}
-                currentGroupBy={groupBy === 'project' ? 'none' : groupBy}
-                onViewSelect={(view: TaskView) => {
-                  setActiveView(view.viewType);
-                  setFilters(view.filters as FilterState);
-                  setGroupBy(view.groupBy === 'assignee' ? 'none' : view.groupBy);
-                  setSelectedViewId(view.id);
-                }}
-                selectedViewId={selectedViewId}
-              />
-            )}
-          </div>
+        <div className="flex items-center gap-1.5">
+          {isOwnPage && (
+            <button
+              className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+              onClick={() => setShowCreateDialog(true)}
+              data-testid="button-add-task"
+            >
+              <Plus className="w-3 h-3" />
+              <span>Add Task</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Search & Filters Row */}
-      <div className="h-9 bg-card rounded-md flex items-center justify-between px-3 gap-1.5 flex-shrink-0">
+      {/* Row 2 - View Tabs & Saved Views */}
+      <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+        {/* Left: View Tabs */}
+        <div className="flex items-center gap-0.5" data-testid="tabs-task-views">
+          <button
+            onClick={() => setActiveView("list")}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${
+              activeView === "list" 
+                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                : 'hover-elevate'
+            } active-elevate-2 flex items-center gap-1`}
+            data-testid="tab-list"
+          >
+            <List className="w-3 h-3" />
+            List
+          </button>
+          <button
+            onClick={() => setActiveView("board")}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${
+              activeView === "board" 
+                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                : 'hover-elevate'
+            } active-elevate-2 flex items-center gap-1`}
+            data-testid="tab-board"
+          >
+            <LayoutGrid className="w-3 h-3" />
+            Board
+          </button>
+          <button
+            onClick={() => setActiveView("calendar")}
+            className={`h-6 w-auto px-2 text-xs border rounded-md ${
+              activeView === "calendar" 
+                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                : 'hover-elevate'
+            } active-elevate-2 flex items-center gap-1`}
+            data-testid="tab-calendar"
+          >
+            <Calendar className="w-3 h-3" />
+            Calendar
+          </button>
+        </div>
+
+        {/* Right: Calendar Controls OR Saved Views */}
+        {activeView === "calendar" ? (
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => {
+                const newDate = new Date(calendarDate);
+                if (calendarMode === "day") newDate.setDate(newDate.getDate() - 1);
+                else if (calendarMode === "week") newDate.setDate(newDate.getDate() - 7);
+                else newDate.setMonth(newDate.getMonth() - 1);
+                setCalendarDate(newDate);
+              }}
+              className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+              data-testid="button-calendar-prev"
+            >
+              <ChevronLeft className="w-3 h-3" />
+            </button>
+            <button
+              onClick={() => setCalendarDate(new Date())}
+              className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
+              data-testid="button-calendar-today"
+            >
+              Today
+            </button>
+            <button
+              onClick={() => {
+                const newDate = new Date(calendarDate);
+                if (calendarMode === "day") newDate.setDate(newDate.getDate() + 1);
+                else if (calendarMode === "week") newDate.setDate(newDate.getDate() + 7);
+                else newDate.setMonth(newDate.getMonth() + 1);
+                setCalendarDate(newDate);
+              }}
+              className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+              data-testid="button-calendar-next"
+            >
+              <ChevronRight className="w-3 h-3" />
+            </button>
+
+            <div className="flex items-center gap-0.5 ml-2">
+              {(["day", "week", "month"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setCalendarMode(mode)}
+                  className={`h-6 w-auto px-2 text-xs border rounded-md ${
+                    calendarMode === mode
+                      ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
+                      : 'hover-elevate'
+                  } active-elevate-2`}
+                  data-testid={`button-view-${mode}`}
+                >
+                  {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <TaskViewsManager 
+            currentViewType={activeView}
+            currentFilters={filters as TaskViewFilters}
+            currentGroupBy={groupBy === 'project' ? 'none' : groupBy}
+            onViewSelect={(view: TaskView) => {
+              setActiveView(view.viewType);
+              setFilters(view.filters as FilterState);
+              setGroupBy(view.groupBy === 'assignee' ? 'none' : view.groupBy);
+              setSelectedViewId(view.id);
+            }}
+            selectedViewId={selectedViewId}
+          />
+        )}
+      </div>
+
+      {/* Row 3 - Search & Filters */}
+      <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-1.5 flex-1">
           {/* Search */}
           <div className="relative w-48">

@@ -768,11 +768,9 @@ export default function CustomizableProjectOverview() {
   };
 
   return (
-    <div className="flex flex-col h-full gap-1.5" data-testid="customizable-project-overview">
-      {/* Header Panel - matches UserWorkspace style */}
-      <div className="surface-panel flex-shrink-0">
-        {/* Row 1 - Title & Actions */}
-        <div className="h-10 flex items-center justify-between px-4 gap-4">
+    <div className="flex flex-col h-full" data-testid="customizable-project-overview">
+      {/* Row 1 - Title & Actions (36px / h-9) */}
+      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0 border-b border-border">
         {/* Left: Project Name + Active chip */}
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold flex items-center gap-1.5" data-testid="text-page-title">
@@ -828,10 +826,10 @@ export default function CustomizableProjectOverview() {
             <Settings className="h-3.5 w-3.5" />
           </Button>
         </div>
-        </div>
+      </div>
 
-        {/* Row 2 - Navigation Tabs - Underline Style */}
-        <div className="h-10 flex items-center px-4 gap-4 border-t border-border/50 overflow-x-auto">
+      {/* Row 2 - Navigation Tabs - Underline Style */}
+      <div className="h-10 flex items-center px-4 gap-4 border-b border-border/50 overflow-x-auto flex-shrink-0 bg-background">
         {PROJECT_TABS.map((tab) => {
           const Icon = tab.icon;
           const tabPath = tab.path ? `/projects/${currentProject.id}${tab.path}` : `/projects/${currentProject.id}`;
@@ -863,11 +861,10 @@ export default function CustomizableProjectOverview() {
             </button>
           );
         })}
-        </div>
       </div>
 
       {/* View Switcher Row - Simplified */}
-      <div className="h-8 bg-muted/30 flex items-center justify-between px-2 rounded-md flex-shrink-0">
+      <div className="h-8 bg-muted/30 flex items-center justify-between px-2 border-b border-border flex-shrink-0">
         {/* Left: Current view indicator */}
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">View:</span>
