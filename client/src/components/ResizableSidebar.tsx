@@ -1,6 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { AppSidebar } from "./AppSidebar";
-import { SidebarTrigger } from "./ui/sidebar";
 
 interface ResizableSidebarProps {
   onWidthChange: (width: string) => void;
@@ -54,11 +53,6 @@ export function ResizableSidebar({ onWidthChange, initialWidth }: ResizableSideb
   return (
     <div className="relative">
       <AppSidebar sidebarWidth={currentWidth} />
-      
-      {/* Sidebar Toggle - positioned on the edge */}
-      <div className="absolute top-4 -right-3 z-50 bg-background border border-border rounded-md shadow-sm">
-        <SidebarTrigger data-testid="button-sidebar-toggle" />
-      </div>
       
       {/* Resize handle - more prominent */}
       <div

@@ -300,8 +300,9 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
 
   const toggleCompleteMutation = useMutation({
     mutationFn: async (checked: boolean) => {
+      if (!task?.id) throw new Error("No task to update");
       const newStatus = checked ? (completedOption?.key || "done") : "todo";
-      return await apiRequest(`/api/tasks/${task?.id}`, "PATCH", { status: newStatus });
+      return await apiRequest(`/api/tasks/${task.id}`, "PATCH", { status: newStatus });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });

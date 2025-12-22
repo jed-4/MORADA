@@ -201,7 +201,7 @@ export function CasvaTaskList({
     }
   };
 
-  if (tasks.length === 0) {
+  if (tasks.length === 0 && !isCreatingInline) {
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-4">
         <p className="text-muted-foreground">No tasks found</p>
@@ -215,6 +215,24 @@ export function CasvaTaskList({
             Add your first task
           </button>
         )}
+      </div>
+    );
+  }
+  
+  // When creating inline with no tasks, show just the inline create row
+  if (tasks.length === 0 && isCreatingInline) {
+    return (
+      <div className="border rounded-md bg-card overflow-hidden m-0">
+        <div className="group/header flex items-center gap-3 h-8 px-2 border-b border-border bg-background sticky top-0 z-10">
+          <div className="w-4 flex-shrink-0"></div>
+          {showCheckboxes && <div className="w-5 flex-shrink-0"></div>}
+          <div className="flex-1 text-xs font-medium text-muted-foreground">TASK</div>
+        </div>
+        <CasvaTaskCreateRow
+          onSave={(title) => createTaskMutation.mutate({ title, projectId })}
+          onCancel={onCancelInlineCreate}
+          showCheckbox={showCheckboxes}
+        />
       </div>
     );
   }
