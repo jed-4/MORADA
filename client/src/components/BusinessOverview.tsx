@@ -494,93 +494,115 @@ export default function BusinessOverview() {
   }
 
   return (
-    <div className="flex flex-col h-full" data-testid="business-overview">
-      {/* View Controls Header (36px) */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 border-b border-border flex-shrink-0">
+    <div className="flex flex-col h-full px-4 pt-2" data-testid="business-overview">
+      {/* Toolbar row - matches user dashboard style */}
+      <div className="h-8 flex items-center justify-between mb-2 flex-shrink-0">
         <div className="flex items-center gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-7 gap-1 px-2" data-testid="view-selector">
-                {activeView?.name || "Overview"}
-                <ChevronDown className="h-3 w-3" />
-              </Button>
+              <button 
+                className="h-6 w-auto px-2.5 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1.5"
+                data-testid="view-selector"
+              >
+                <span>{activeView?.name || "Overview"}</span>
+                <ChevronDown className="w-3 h-3" />
+              </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuLabel>Saved Views</DropdownMenuLabel>
+            <DropdownMenuContent align="start" className="w-56">
+              <DropdownMenuLabel className="text-xs">Dashboard Views</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {savedViews.map(view => (
+              {savedViews.map((view) => (
                 <DropdownMenuItem 
-                  key={view.id} 
-                  onClick={() => switchView(view.id)}
-                  className="justify-between"
+                  key={view.id}
+                  className="text-xs flex items-center justify-between gap-2 group"
+                  onSelect={(e) => e.preventDefault()}
                 >
-                  <span className="flex items-center gap-2">
-                    {activeViewId === view.id && <Check className="h-4 w-4" />}
-                    {view.name}
-                    {view.visibility === "private" && <Lock className="h-3 w-3 text-muted-foreground" />}
-                    {view.visibility === "roles" && <Shield className="h-3 w-3 text-muted-foreground" />}
-                    {view.visibility === "users" && <Users className="h-3 w-3 text-muted-foreground" />}
-                  </span>
-                  <div className="flex items-center gap-0.5">
+                  <button
+                    className="flex-1 text-left flex items-center gap-2"
+                    onClick={() => switchView(view.id)}
+                  >
+                    <span className="flex-1 truncate">{view.name}</span>
+                    {view.visibility === "private" && <Lock className="w-3 h-3 text-muted-foreground" />}
+                    {view.visibility === "roles" && <Shield className="w-3 h-3 text-muted-foreground" />}
+                    {view.visibility === "users" && <Users className="w-3 h-3 text-muted-foreground" />}
+                    {activeViewId === view.id && (
+                      <Check className="w-3 h-3 text-[#bba7db] flex-shrink-0" />
+                    )}
+                  </button>
+                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                     {canEditView(view) && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-5 w-5"
+                      <button
                         onClick={(e) => {
                           e.stopPropagation();
                           openEditView(view);
                         }}
+                        className="p-1 hover:bg-accent rounded text-muted-foreground hover:text-foreground"
                         data-testid={`edit-view-${view.id}`}
                       >
-                        <Pencil className="h-3 w-3" />
-                      </Button>
+                        <Pencil className="w-3 h-3" />
+                      </button>
                     )}
                     {!view.isDefault && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-5 w-5"
+                      <button
                         onClick={(e) => {
                           e.stopPropagation();
                           deleteView(view.id);
                         }}
+                        className="p-1 hover:bg-destructive/10 rounded text-muted-foreground hover:text-destructive"
                       >
-                        <Trash2 className="h-3 w-3 text-destructive" />
-                      </Button>
+                        <Trash2 className="w-3 h-3" />
+                      </button>
                     )}
                   </div>
                 </DropdownMenuItem>
               ))}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => setIsCreatingView(true)}>
-                <PlusCircle className="h-4 w-4 mr-2" />
-                Create New View
-              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
 
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => setIsThemeSettingsOpen(true)}
-            data-testid="button-theme-settings"
-          >
-            <Palette className="h-4 w-4" />
-          </Button>
-          <Button size="sm" className="h-7" onClick={() => setIsAddingWidget(true)} data-testid="add-widget-button">
-            <Plus className="h-3 w-3 mr-1" />
-            Add Widget
-          </Button>
+        <div className="flex items-center gap-1.5">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
+                data-testid="add-widget-button"
+              >
+                <Plus className="w-3 h-3" />
+                <span>Add Widget</span>
+                <ChevronDown className="w-3 h-3 ml-0.5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              <DropdownMenuItem 
+                className="text-xs flex items-center gap-2"
+                onClick={() => setIsAddingWidget(true)}
+              >
+                <Plus className="w-3 h-3" />
+                <span>Add Widget</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem 
+                className="text-xs flex items-center gap-2"
+                onClick={() => setIsCreatingView(true)}
+              >
+                <PlusCircle className="w-3 h-3" />
+                <span>New View</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                className="text-xs flex items-center gap-2"
+                onClick={() => setIsThemeSettingsOpen(true)}
+              >
+                <Palette className="w-3 h-3" />
+                <span>Theme Settings</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
       {/* Widget Grid with Theme Background */}
       <div 
-        className="flex-1 overflow-auto relative"
+        className="flex-1 overflow-auto"
         style={getBackgroundStyle()}
       >
         {/* Overlay for image backgrounds */}
