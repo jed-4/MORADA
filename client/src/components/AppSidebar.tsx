@@ -273,19 +273,41 @@ export function AppSidebar() {
     }
   }, [activeProjects, currentProject, setCurrentProject, location]);
   
-  const { state } = useSidebar();
+  const { state, open, setOpen } = useSidebar();
   const isCollapsed = state === "collapsed";
   
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="p-2 border-b">
-        {isCollapsed ? (
-          <div className="flex items-center justify-center py-1">
-            <Building2 className="h-5 w-5 text-primary" />
-          </div>
-        ) : (
-          <ProjectSwitcher />
-        )}
+        <div className="flex items-center gap-2">
+          {isCollapsed ? (
+            <div className="flex items-center justify-center py-1 flex-1">
+              <Building2 className="h-5 w-5 text-primary" />
+            </div>
+          ) : (
+            <div className="flex-1">
+              <ProjectSwitcher />
+            </div>
+          )}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => setOpen(!open)}
+                className="p-1.5 rounded-md hover-elevate active-elevate-2 text-muted-foreground flex-shrink-0"
+                data-testid="button-pin-sidebar"
+              >
+                {!isCollapsed ? (
+                  <PanelLeftClose className="h-4 w-4" />
+                ) : (
+                  <PanelLeft className="h-4 w-4" />
+                )}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              <p>{!isCollapsed ? "Collapse sidebar" : "Expand sidebar"}</p>
+            </TooltipContent>
+          </Tooltip>
+        </div>
       </SidebarHeader>
       
       <SidebarContent>
@@ -507,9 +529,6 @@ export function AppSidebar() {
 
       {/* Settings Section - Collapsible */}
       <SidebarFooter className="border-t">
-        {/* Sidebar Pin Toggle */}
-        <SidebarPinToggle />
-        
         <Collapsible
           open={isSettingsOpen}
           onOpenChange={setIsSettingsOpen}
@@ -554,42 +573,6 @@ export function AppSidebar() {
         <HoverExpandToggle />
       </SidebarFooter>
     </Sidebar>
-  );
-}
-
-// Toggle component for pinning sidebar open
-function SidebarPinToggle() {
-  const { state, open, setOpen } = useSidebar();
-  const isExpanded = state === "expanded";
-  
-  return (
-    <SidebarGroup className="py-1">
-      <SidebarMenu>
-        <SidebarMenuItem>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <SidebarMenuButton
-                onClick={() => setOpen(!open)}
-                tooltip={isExpanded ? "Collapse sidebar" : "Keep sidebar open"}
-                data-testid="button-pin-sidebar"
-              >
-                {isExpanded ? (
-                  <PanelLeftClose className="h-4 w-4 text-primary" />
-                ) : (
-                  <PanelLeft className="h-4 w-4" />
-                )}
-                <span className="group-data-[collapsible=icon]:hidden">
-                  {isExpanded ? "Collapse" : "Expand"}
-                </span>
-              </SidebarMenuButton>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              <p>{isExpanded ? "Collapse sidebar" : "Keep sidebar open"}</p>
-            </TooltipContent>
-          </Tooltip>
-        </SidebarMenuItem>
-      </SidebarMenu>
-    </SidebarGroup>
   );
 }
 
