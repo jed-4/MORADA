@@ -11,7 +11,6 @@ import ComingSoonPage from "./ComingSoonPage";
 import UserOverview from "@/components/user-workspace/UserOverview";
 import UserCalendar from "@/components/user-workspace/UserCalendar";
 import UserTasks from "@/components/user-workspace/UserTasks";
-import UserSchedule from "@/components/user-workspace/UserSchedule";
 import UserTime from "@/components/user-workspace/UserTime";
 import Memos from "@/components/user-workspace/Memos";
 import UserReminders from "@/components/user-workspace/UserReminders";
@@ -22,8 +21,7 @@ const USER_TABS = [
   { id: "overview", label: "Overview", icon: Home, path: "" },
   { id: "calendar", label: "Calendar", icon: CalendarIcon, path: "calendar" },
   { id: "tasks", label: "Tasks", icon: CheckSquare, path: "tasks" },
-  { id: "schedule", label: "Schedule", icon: CalendarIcon, path: "schedule" },
-  { id: "time", label: "Time", icon: Timer, path: "time" },
+  { id: "time", label: "Timesheets", icon: Timer, path: "time" },
   { id: "reminders", label: "Reminders", icon: Bell, path: "reminders" },
   { id: "messages", label: "Messages", icon: MessageSquare, path: "messages" },
   { id: "notes", label: "Memos", icon: FileText, path: "notes" },
@@ -92,8 +90,6 @@ export default function UserWorkspace() {
         return <UserCalendar user={user} isOwnPage={isOwnPage} />;
       case "tasks":
         return <UserTasks user={user} isOwnPage={isOwnPage} />;
-      case "schedule":
-        return <UserSchedule user={user} isOwnPage={isOwnPage} />;
       case "time":
         return <UserTime user={user} isOwnPage={isOwnPage} />;
       case "reminders":

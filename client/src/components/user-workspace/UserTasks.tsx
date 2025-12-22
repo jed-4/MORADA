@@ -277,7 +277,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
       {/* Header Panel - 2 rows connected to content */}
       <div className="border border-border rounded-t-lg bg-card flex-shrink-0">
         {/* Row 1 - Title & Add Task */}
-        <div className="h-10 flex items-center justify-between px-3 border-b border-border/50">
+        <div className="h-8 flex items-center justify-between px-3 border-b border-border/50">
           <h2 className="text-sm font-semibold" data-testid="text-page-title">
             {isOwnPage ? 'My Tasks' : `${user.firstName}'s Tasks`}
           </h2>
@@ -294,7 +294,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
         </div>
 
         {/* Row 2 - View Tabs + Search & Filters */}
-        <div className="h-10 flex items-center justify-between px-3 gap-3">
+        <div className="h-8 flex items-center justify-between px-3 gap-3">
           {/* Left: View Tabs */}
           <div className="flex items-center gap-1" data-testid="tabs-task-views">
             {(["list", "board", "calendar"] as const).map((view) => {
