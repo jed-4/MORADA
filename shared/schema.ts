@@ -206,7 +206,8 @@ export const dashboardThemes = pgTable("dashboard_themes", {
   widgetOpacity: integer("widget_opacity").default(100), // 0-100
   
   // Page background (outer background behind widgets, header, sidebar)
-  pageBackgroundColor: text("page_background_color"), // Hex color for page background
+  pageBackgroundColor: text("page_background_color"), // Hex color for page background (legacy/fallback)
+  pageBackgroundPalette: jsonb("page_background_palette"), // { dashboard: "#hex", workspace: "#hex", project: "#hex" }
   
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
