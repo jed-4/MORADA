@@ -29,7 +29,7 @@ import PersonalActivityWidget from "./PersonalActivityWidget";
 import PersonalAISummaryWidget from "./PersonalAISummaryWidget";
 import DayCalendarWidget from "./DayCalendarWidget";
 import WeekCalendarWidget from "./WeekCalendarWidget";
-import ActionableEstimatesWidget from "./ActionableEstimatesWidget";
+import ActionableItemsWidget from "./ActionableItemsWidget";
 import PinnedItemsWidget from "./PinnedItemsWidget";
 import MyProjectsWidget from "./MyProjectsWidget";
 import PersonalKPIsWidget from "./PersonalKPIsWidget";
@@ -143,12 +143,12 @@ export const personalWidgetRegistry: Record<string, WidgetDefinition> = {
     defaultSize: "lg",
     configurable: true,
   },
-  actionableEstimates: {
-    type: "actionableEstimates",
-    name: "Actionable Estimates",
-    description: "Estimates that need attention: drafts, work in progress, and pending approval",
+  actionableItems: {
+    type: "actionableItems",
+    name: "Actionable Items",
+    description: "Items that need attention: estimates, schedule items, and tasks marked as actionable",
     icon: FileSpreadsheet,
-    component: ActionableEstimatesWidget,
+    component: ActionableItemsWidget,
     defaultSize: "md",
     configurable: true,
   },
