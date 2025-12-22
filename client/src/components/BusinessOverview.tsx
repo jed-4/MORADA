@@ -494,7 +494,7 @@ export default function BusinessOverview() {
   }
 
   return (
-    <div className="flex flex-col h-full px-4 pt-2" data-testid="business-overview">
+    <div className="flex flex-col h-full p-4" data-testid="business-overview">
       {/* Toolbar row - matches user dashboard style */}
       <div className="h-8 flex items-center justify-between mb-2 flex-shrink-0">
         <div className="flex items-center gap-2">
