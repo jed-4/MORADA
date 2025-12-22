@@ -1,5 +1,38 @@
 import { type Task } from "@shared/schema";
-import { type FilterState } from "@/components/FilterPanel";
+import { type FilterState, type DueDatePreset } from "@/components/FilterPanel";
+import { startOfDay, endOfDay, addDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isBefore, addWeeks } from "date-fns";
+
+// Calculate date range from preset
+function getDateRangeFromPreset(preset: DueDatePreset): { from?: Date; to?: Date } | { noDate: true } | null {
+  const today = startOfDay(new Date());
+  
+  switch (preset) {
+    case 'all':
+      return null;
+    case 'overdue':
+      return { to: addDays(today, -1) }; // Before today
+    case 'today':
+      return { from: today, to: endOfDay(today) };
+    case 'tomorrow':
+      const tomorrow = addDays(today, 1);
+      return { from: tomorrow, to: endOfDay(tomorrow) };
+    case 'next-3-days':
+      return { from: today, to: endOfDay(addDays(today, 2)) };
+    case 'this-week':
+      return { from: today, to: endOfWeek(today, { weekStartsOn: 1 }) };
+    case 'next-week':
+      const nextWeekStart = startOfWeek(addWeeks(today, 1), { weekStartsOn: 1 });
+      return { from: nextWeekStart, to: endOfWeek(nextWeekStart, { weekStartsOn: 1 }) };
+    case 'next-2-weeks':
+      return { from: today, to: endOfDay(addDays(today, 13)) };
+    case 'this-month':
+      return { from: today, to: endOfMonth(today) };
+    case 'no-date':
+      return { noDate: true };
+    default:
+      return null;
+  }
+}
 
 export function applyTaskFilters(tasks: Task[], filters: FilterState): Task[] {
   return tasks.filter(task => {
@@ -75,8 +108,22 @@ export function applyTaskFilters(tasks: Task[], filters: FilterState): Task[] {
       }
     }
 
-    // Due date filter
-    if (filters.dueDateFrom || filters.dueDateTo) {
+    // Due date filter (preset takes priority over manual from/to)
+    if (filters.dueDatePreset && filters.dueDatePreset !== 'all') {
+      const range = getDateRangeFromPreset(filters.dueDatePreset);
+      
+      if (range && 'noDate' in range) {
+        // Filter for tasks with no due date
+        if (task.dueDate) return false;
+      } else if (range) {
+        if (!task.dueDate) return false;
+        
+        const taskDueDate = new Date(task.dueDate);
+        
+        if (range.from && taskDueDate < range.from) return false;
+        if (range.to && taskDueDate > range.to) return false;
+      }
+    } else if (filters.dueDateFrom || filters.dueDateTo) {
       if (!task.dueDate) {
         return false; // Exclude tasks without due dates when date filter is active
       }

@@ -29,9 +29,22 @@ import type { User, Task, Project, FieldCategoryWithOptions } from "@shared/sche
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { applyTaskFilters, extractFilterOptions } from "@/utils/taskFilters";
 import { useToast } from "@/hooks/use-toast";
-import { type FilterState } from "@/components/FilterPanel";
+import { type FilterState, type DueDatePreset } from "@/components/FilterPanel";
 import { useTaskPriorityOptions } from "@/hooks/useTaskPriorityOptions";
 import { format, startOfDay, isBefore, isToday, isTomorrow, addDays, isWithinInterval } from "date-fns";
+
+const DUE_DATE_PRESET_OPTIONS: { value: DueDatePreset; label: string }[] = [
+  { value: 'all', label: 'All Due Dates' },
+  { value: 'overdue', label: 'Overdue' },
+  { value: 'today', label: 'Today' },
+  { value: 'tomorrow', label: 'Tomorrow' },
+  { value: 'next-3-days', label: 'Next 3 Days' },
+  { value: 'this-week', label: 'This Week' },
+  { value: 'next-week', label: 'Next Week' },
+  { value: 'next-2-weeks', label: 'Next 2 Weeks' },
+  { value: 'this-month', label: 'This Month' },
+  { value: 'no-date', label: 'No Due Date' },
+];
 
 interface UserTasksProps {
   user: User;
@@ -266,7 +279,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
     }
   };
 
-  const hasActiveFilters = !!(filters.search || filters.status?.length || filters.priority?.length || filters.project?.length);
+  const hasActiveFilters = !!(filters.search || filters.status?.length || filters.priority?.length || filters.project?.length || (filters.dueDatePreset && filters.dueDatePreset !== 'all'));
 
   const clearAllFilters = () => {
     setFilters({});
@@ -400,7 +413,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                   <span>Filter</span>
                   {hasActiveFilters && (
                     <Badge variant="destructive" className="ml-1 h-3 min-w-3 p-0 text-[10px] flex items-center justify-center">
-                      {(filters.status?.length || 0) + (filters.priority?.length || 0) + (filters.project?.length || 0)}
+                      {(filters.status?.length || 0) + (filters.priority?.length || 0) + (filters.project?.length || 0) + (filters.dueDatePreset && filters.dueDatePreset !== 'all' ? 1 : 0)}
                     </Badge>
                   )}
                 </button>
@@ -440,6 +453,21 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                       }}
                     />
                     <span className="ml-2">{option.name}</span>
+                  </DropdownMenuItem>
+                ))}
+                <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground border-t mt-1 pt-1.5">Due Date</div>
+                {DUE_DATE_PRESET_OPTIONS.map(option => (
+                  <DropdownMenuItem 
+                    key={option.value} 
+                    className="flex items-center"
+                    onClick={() => setFilters({...filters, dueDatePreset: option.value === 'all' ? undefined : option.value})}
+                  >
+                    {filters.dueDatePreset === option.value || (option.value === 'all' && !filters.dueDatePreset) ? (
+                      <div className="w-3 h-3 mr-2 rounded-full bg-[#bba7db]" />
+                    ) : (
+                      <div className="w-3 h-3 mr-2 rounded-full border border-muted-foreground/40" />
+                    )}
+                    <span>{option.label}</span>
                   </DropdownMenuItem>
                 ))}
                 <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground border-t mt-1 pt-1.5">Project</div>

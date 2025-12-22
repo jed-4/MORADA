@@ -29,6 +29,8 @@ import {
 import { format } from "date-fns";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 
+export type DueDatePreset = 'all' | 'overdue' | 'today' | 'tomorrow' | 'next-3-days' | 'this-week' | 'next-week' | 'next-2-weeks' | 'this-month' | 'no-date';
+
 export interface FilterState {
   status?: string[];
   priority?: string[];
@@ -38,6 +40,7 @@ export interface FilterState {
   labels?: string[];
   dueDateFrom?: Date;
   dueDateTo?: Date;
+  dueDatePreset?: DueDatePreset;
   search?: string;
 }
 
