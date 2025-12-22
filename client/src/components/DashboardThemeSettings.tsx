@@ -113,7 +113,8 @@ export default function DashboardThemeSettings({
   });
 
   const handleSave = () => {
-    saveMutation.mutate({
+    console.log("[DashboardThemeSettings] handleSave - pageBackgroundColor state:", pageBackgroundColor);
+    const dataToSave = {
       backgroundType,
       backgroundColor,
       backgroundGradient,
@@ -125,7 +126,9 @@ export default function DashboardThemeSettings({
       widgetBackgroundType,
       widgetOpacity,
       pageBackgroundColor: pageBackgroundColor || null,
-    });
+    };
+    console.log("[DashboardThemeSettings] Saving data:", dataToSave);
+    saveMutation.mutate(dataToSave);
   };
 
   const hexToRgba = (hex: string, opacity: number) => {
@@ -496,7 +499,10 @@ export default function DashboardThemeSettings({
                   <button
                     key={preset.name}
                     type="button"
-                    onClick={() => setPageBackgroundColor(preset.color)}
+                    onClick={() => {
+                      console.log("[DashboardThemeSettings] Setting page background color to:", preset.color);
+                      setPageBackgroundColor(preset.color);
+                    }}
                     className={`h-6 rounded-md border-2 transition-all ${
                       pageBackgroundColor === preset.color ? "border-primary ring-2 ring-primary/20" : "border-transparent"
                     }`}
