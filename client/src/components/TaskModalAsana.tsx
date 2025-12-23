@@ -115,6 +115,7 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
   const [checklistItems, setChecklistItems] = useState<Array<{ id?: string; text: string; completed: boolean }>>([]);
   const [checklistInput, setChecklistInput] = useState("");
   const [showChecklistInput, setShowChecklistInput] = useState(false);
+  const [isChecklistMutating, setIsChecklistMutating] = useState(false);
   const [showDriveFilePicker, setShowDriveFilePicker] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -243,20 +244,23 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
       setTitleValue(newDefaults.title);
       setShowAdvanced(newDefaults.isRecurring);
       // Initialize checklist from task - preserve existing IDs, only generate for items without IDs
-      if (task) {
-        const taskChecklist = (task.checklist as Array<{ id?: string; text: string; completed: boolean }>) || [];
-        setChecklistItems(taskChecklist.map(item => ({
-          ...item,
-          id: item.id || crypto.randomUUID(), // Only generate ID if item doesn't have one
-        })));
-      } else {
-        // Clear checklist for new task creation
-        setChecklistItems([]);
+      // Don't reset if we're in the middle of a mutation (to preserve optimistic updates)
+      if (!isChecklistMutating) {
+        if (task) {
+          const taskChecklist = (task.checklist as Array<{ id?: string; text: string; completed: boolean }>) || [];
+          setChecklistItems(taskChecklist.map(item => ({
+            ...item,
+            id: item.id || crypto.randomUUID(), // Only generate ID if item doesn't have one
+          })));
+        } else {
+          // Clear checklist for new task creation
+          setChecklistItems([]);
+        }
       }
       setShowChecklistInput(false);
       setChecklistInput("");
     }
-  }, [task, open, initialStatus, projectId, defaultAssigneeId, form]);
+  }, [task, open, initialStatus, projectId, defaultAssigneeId, form, isChecklistMutating]);
 
   useEffect(() => {
     if (isEditingTitle && titleInputRef.current) {
@@ -319,12 +323,16 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
   const updateChecklistMutation = useMutation({
     mutationFn: async (newChecklist: Array<{ id?: string; text: string; completed: boolean }>) => {
       if (!task?.id) throw new Error("No task to update");
+      setIsChecklistMutating(true);
       return await apiRequest(`/api/tasks/${task.id}`, "PATCH", { checklist: newChecklist });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      // Small delay to allow invalidation to complete before allowing reset
+      setTimeout(() => setIsChecklistMutating(false), 500);
     },
     onError: (error: any) => {
+      setIsChecklistMutating(false);
       toast({
         title: "Failed to update checklist",
         description: error.message,
@@ -451,7 +459,6 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
                   checked={isCompleted}
                   onCheckedChange={(checked) => toggleCompleteMutation.mutate(!!checked)}
                   className="h-5 w-5"
-                  disabled={task.isRecurring}
                   data-testid="checkbox-complete-task"
                 />
                 {task.isRecurring && (
