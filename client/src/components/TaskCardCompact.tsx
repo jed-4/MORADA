@@ -10,7 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Calendar, Flag, Pencil, DollarSign, GripVertical, MoreHorizontal, Trash2 } from "lucide-react";
+import { Calendar, Flag, Pencil, DollarSign, GripVertical, MoreHorizontal, Trash2, FolderKanban } from "lucide-react";
 import { Task, type FieldCategoryWithOptions } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -26,6 +26,7 @@ interface TaskCardCompactProps {
     showAssignee?: boolean;
     showDueDate?: boolean;
     showPriority?: boolean;
+    showProject?: boolean;
   };
   onDelete?: (task: Task) => void;
   showActions?: boolean;
@@ -215,6 +216,18 @@ export default function TaskCardCompact({ task, onClick, isDragging = false, dis
               <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 rounded-full bg-background border-border/50 no-default-hover-elevate no-default-active-elevate">
                 <Calendar className="h-2 w-2 mr-0.5" />
                 {format(new Date(task.dueDate), 'MMM d')}
+              </Badge>
+            )}
+
+            {/* Project chip */}
+            {(task as any).projectName && (displaySettings?.showProject !== false) && (
+              <Badge 
+                variant="outline" 
+                className="text-[10px] px-1.5 py-0 h-4 rounded-full bg-background border-border/50 no-default-hover-elevate no-default-active-elevate max-w-[80px] truncate"
+                style={(task as any).projectColor ? { borderColor: (task as any).projectColor, color: (task as any).projectColor } : undefined}
+              >
+                <FolderKanban className="h-2 w-2 mr-0.5 shrink-0" />
+                <span className="truncate">{(task as any).projectName}</span>
               </Badge>
             )}
           </div>
