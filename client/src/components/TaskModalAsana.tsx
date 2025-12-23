@@ -92,14 +92,17 @@ interface TaskModalAsanaProps {
 }
 
 export default function TaskModalAsana({ task: propTask, taskId, open, onOpenChange, projectId, initialStatus, defaultAssigneeId, defaultScope }: TaskModalAsanaProps) {
+  // Use taskId from prop or from propTask to always fetch fresh data
+  const effectiveTaskId = taskId || propTask?.id;
+  
   const { data: fetchedTask } = useQuery<Task>({
-    queryKey: ["/api/tasks", taskId],
+    queryKey: ["/api/tasks", effectiveTaskId],
     queryFn: async () => {
-      const response = await fetch(`/api/tasks/${taskId}`, { credentials: "include" });
+      const response = await fetch(`/api/tasks/${effectiveTaskId}`, { credentials: "include" });
       if (!response.ok) throw new Error("Failed to fetch task");
       return response.json();
     },
-    enabled: !!taskId && open,
+    enabled: !!effectiveTaskId && open,
   });
 
   // Use fetched task (which includes checklist) over propTask when available
