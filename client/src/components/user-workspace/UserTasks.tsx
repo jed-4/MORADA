@@ -123,6 +123,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
       if (userPreferences.preferences.activeView) setActiveView(userPreferences.preferences.activeView);
       if (userPreferences.preferences.groupBy) setGroupBy(userPreferences.preferences.groupBy);
       if (userPreferences.preferences.filters) setFilters(userPreferences.preferences.filters);
+      if (userPreferences.preferences.selectedViewId) setSelectedViewId(userPreferences.preferences.selectedViewId);
       setPreferencesLoaded(true);
     } else if (userPreferences === null || preferencesError) {
       setPreferencesLoaded(true);
@@ -141,11 +142,11 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
   useEffect(() => {
     if (preferencesLoaded) {
       const timer = setTimeout(() => {
-        savePreferencesMutation.mutate({ activeView, groupBy, filters });
+        savePreferencesMutation.mutate({ activeView, groupBy, filters, selectedViewId });
       }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [activeView, groupBy, filters, preferencesLoaded]);
+  }, [activeView, groupBy, filters, selectedViewId, preferencesLoaded]);
 
   const filteredTasks = useMemo(() => {
     return applyTaskFilters(tasks, filters);
