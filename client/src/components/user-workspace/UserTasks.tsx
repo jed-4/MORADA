@@ -546,14 +546,36 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                     }}
                   >Today</button>
                   <button 
-                    className="text-[10px] px-1.5 py-0.5 rounded border hover-elevate"
+                    className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                      filters.dueDateFrom && filters.dueDateTo && 
+                      format(filters.dueDateFrom, 'yyyy-MM-dd') === format(addDays(startOfDay(new Date()), 1), 'yyyy-MM-dd') &&
+                      format(filters.dueDateTo, 'yyyy-MM-dd') === format(endOfDay(addDays(new Date(), 1)), 'yyyy-MM-dd')
+                        ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
+                    }`}
+                    onClick={() => {
+                      const tomorrow = addDays(startOfDay(new Date()), 1);
+                      setFilters({...filters, dueDateFrom: tomorrow, dueDateTo: endOfDay(tomorrow), dueDatePreset: undefined});
+                    }}
+                  >Tomorrow</button>
+                  <button 
+                    className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                      filters.dueDateFrom && filters.dueDateTo && 
+                      format(filters.dueDateFrom, 'yyyy-MM-dd') === format(startOfDay(new Date()), 'yyyy-MM-dd') &&
+                      format(filters.dueDateTo, 'yyyy-MM-dd') === format(endOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd')
+                        ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
+                    }`}
                     onClick={() => {
                       const today = startOfDay(new Date());
                       setFilters({...filters, dueDateFrom: today, dueDateTo: endOfWeek(today, { weekStartsOn: 1 }), dueDatePreset: undefined});
                     }}
                   >This Week</button>
                   <button 
-                    className="text-[10px] px-1.5 py-0.5 rounded border hover-elevate"
+                    className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                      filters.dueDateFrom && filters.dueDateTo && 
+                      format(filters.dueDateFrom, 'yyyy-MM-dd') === format(startOfDay(new Date()), 'yyyy-MM-dd') &&
+                      format(filters.dueDateTo, 'yyyy-MM-dd') === format(endOfMonth(new Date()), 'yyyy-MM-dd')
+                        ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
+                    }`}
                     onClick={() => {
                       const today = startOfDay(new Date());
                       setFilters({...filters, dueDateFrom: today, dueDateTo: endOfMonth(today), dueDatePreset: undefined});
