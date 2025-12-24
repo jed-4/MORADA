@@ -53,7 +53,7 @@ const createTaskFormSchema = (statusOptions: string[] = ["todo", "in-progress", 
     // Basic Info Tab
     title: z.string().min(1, "Title is required"),
     content: z.string().default(""),
-    priority: z.enum(["low", "medium", "high"]).default("medium"),
+    priority: z.enum(["low", "medium", "high"]).default("low"),
     status: z.enum(validStatuses as [string, ...string[]]).default(validStatuses[0]),
     assigneeId: z.string().optional(),
     dueDate: z.string().optional(), // HTML date input returns string
@@ -146,7 +146,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
       // Basic Info
       title: task?.title || "",
       content: task?.content || "",
-      priority: (task?.priority as "low" | "medium" | "high") || "medium",
+      priority: (task?.priority as "low" | "medium" | "high") || "low",
       status: task?.status || finalStatusKeys[0] || "todo",
       assigneeId: task?.assigneeId || "unassigned",
       dueDate: task?.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : "",
@@ -178,7 +178,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
         // Basic Info
         title: task?.title || "",
         content: task?.content || "",
-        priority: (task?.priority as "low" | "medium" | "high") || "medium",
+        priority: (task?.priority as "low" | "medium" | "high") || "low",
         status: task?.status || finalStatusKeys[0] || "todo",
         assigneeId: task?.assigneeId || "unassigned",
         dueDate: task?.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : "",

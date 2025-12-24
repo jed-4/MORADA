@@ -574,7 +574,7 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(({ searc
         content: data.template.description || "",
         projectId: data.projectId,
         status: "todo",
-        priority: "medium",
+        priority: "low",
         dueDate: data.dueDate ? new Date(data.dueDate).toISOString() : undefined,
         assigneeId: data.assigneeId || undefined,
         tags: data.template.tags || [],

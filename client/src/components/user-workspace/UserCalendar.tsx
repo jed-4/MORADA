@@ -53,7 +53,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
-import type { User as UserType } from "@shared/schema";
+import type { User as UserType, FieldCategoryWithOptions } from "@shared/schema";
 
 // Helper function to normalize filter dates from API responses
 function normalizeFilterDates(filters: CalendarFiltersType): CalendarFiltersType {
@@ -123,6 +123,40 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
   const { data: taskTemplates = [] } = useQuery({
     queryKey: ["/api/task-templates"],
   });
+
+  // Fetch field categories to get completed status option
+  const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
+    queryKey: ["/api/field-categories"],
+  });
+
+  // Get the completed status option for tasks
+  const statusCategory = fieldCategories.find(cat => cat.key === "task.status");
+  const statusOptions = statusCategory?.options || [];
+  const completedOption = statusOptions.find(opt => opt.isCompleted);
+
+  // Task completion mutation
+  const toggleTaskCompleteMutation = useMutation({
+    mutationFn: async ({ taskId, isCompleted }: { taskId: string; isCompleted: boolean }) => {
+      const newStatus = isCompleted ? (completedOption?.key || "done") : "todo";
+      return await apiRequest(`/api/tasks/${taskId}`, "PATCH", { status: newStatus });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      toast({ title: "Task updated" });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to update task",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Handler for task completion from calendar
+  const handleEventComplete = (eventId: string, isCompleted: boolean) => {
+    toggleTaskCompleteMutation.mutate({ taskId: eventId, isCompleted });
+  };
 
   // Fetch schedule items for displayed user
   const { data: scheduleItems = [], isLoading: isLoadingSchedule } = useQuery({
@@ -375,7 +409,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
   };
 
   // Status options for filtering
-  const statusOptions = [
+  const filterStatusOptions = [
     { key: "todo", label: "To Do" },
     { key: "in-progress", label: "In Progress" },
     { key: "completed", label: "Completed" },
@@ -576,7 +610,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
           )}
 
           {/* Status Filter */}
-          {statusOptions.length > 0 && (
+          {filterStatusOptions.length > 0 && (
             <Popover>
               <PopoverTrigger asChild>
                 <button
@@ -605,7 +639,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
                     )}
                   </div>
                   <div className="space-y-1.5">
-                    {statusOptions.map((status: any) => (
+                    {filterStatusOptions.map((status: any) => (
                       <label key={status.key} className="flex items-center gap-2 cursor-pointer">
                         <Checkbox
                           checked={filters.statuses?.includes(status.key) || false}
@@ -833,6 +867,8 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
         <EnhancedCalendar
           events={filteredEvents}
           onEventClick={handleEventClick}
+          onEventComplete={handleEventComplete}
+          showCompletionCheckbox={true}
           currentDate={currentDate}
           onCurrentDateChange={setCurrentDate}
           view={calendarMode as any}

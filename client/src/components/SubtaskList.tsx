@@ -40,7 +40,7 @@ export default function SubtaskList({ parentTask, compact = false }: SubtaskList
       type: "task" as const,
       status: "todo" as const,
       projectId: parentTask.projectId || "default", // Inherit parent's project or use default
-      priority: "medium" as const,
+      priority: "low" as const,
       tags: [],
     };
 
