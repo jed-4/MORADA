@@ -58,7 +58,12 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [groupBy, setGroupBy] = useState<GroupByType>("none");
-  const [filters, setFilters] = useState<FilterState>({});
+  // Default to showing tasks due today
+  const today = startOfDay(new Date());
+  const [filters, setFilters] = useState<FilterState>({
+    dueDateFrom: today,
+    dueDateTo: endOfDay(today),
+  });
   const [selectedViewId, setSelectedViewId] = useState<string | undefined>(undefined);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   
