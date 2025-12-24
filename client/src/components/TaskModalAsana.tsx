@@ -118,6 +118,7 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
   const [isChecklistMutating, setIsChecklistMutating] = useState(false);
   const [showDriveFilePicker, setShowDriveFilePicker] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [optimisticCompleted, setOptimisticCompleted] = useState<boolean | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const { user } = useAuth();
@@ -193,7 +194,8 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
   const statusCategory = fieldCategories.find(cat => cat.key === "task.status");
   const statusOptions = statusCategory?.options || [];
   const completedOption = statusOptions.find(opt => opt.isCompleted);
-  const isCompleted = task?.status === completedOption?.key;
+  // Use optimistic state if set, otherwise derive from task status
+  const isCompleted = optimisticCompleted !== null ? optimisticCompleted : task?.status === completedOption?.key;
   
   const priorityCategory = fieldCategories.find(cat => cat.key === "task.priority");
   const priorityOptions = priorityCategory?.options || [];
@@ -259,6 +261,8 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
       }
       setShowChecklistInput(false);
       setChecklistInput("");
+      // Reset optimistic completion state when modal opens
+      setOptimisticCompleted(null);
     }
   }, [task, open, initialStatus, projectId, defaultAssigneeId, form, isChecklistMutating]);
 
@@ -308,16 +312,40 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
     },
   });
 
+  // Get default status for reverting (from field categories or fallback)
+  const defaultStatusOption = statusOptions.find(opt => opt.isDefault);
+  const defaultStatus = defaultStatusOption?.key || "todo";
+
   const toggleCompleteMutation = useMutation({
     mutationFn: async (checked: boolean) => {
       if (!task?.id) throw new Error("No task to update");
-      const newStatus = checked ? (completedOption?.key || "done") : "todo";
+      // Set optimistic state immediately
+      setOptimisticCompleted(checked);
+      const newStatus = checked ? (completedOption?.key || "done") : defaultStatus;
       return await apiRequest(`/api/tasks/${task.id}`, "PATCH", { status: newStatus });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks", task?.id] });
+      // Don't clear optimistic state here - let the useEffect below handle it
+      // when task data actually reflects the change
+    },
+    onError: () => {
+      // Revert optimistic state on error
+      setOptimisticCompleted(null);
     },
   });
+  
+  // Clear optimistic state when task data catches up with the change
+  useEffect(() => {
+    if (optimisticCompleted !== null && task) {
+      const taskIsCompleted = task.status === completedOption?.key;
+      // If server state now matches optimistic state, clear the optimistic override
+      if (taskIsCompleted === optimisticCompleted) {
+        setOptimisticCompleted(null);
+      }
+    }
+  }, [task?.status, optimisticCompleted, completedOption?.key]);
 
   // Checklist mutations and handlers
   const updateChecklistMutation = useMutation({
@@ -365,13 +393,14 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
     // Auto-complete: if all checklist items are now completed, mark the task as done
     // If unchecking an item and task was completed, revert to default/in-progress status
     const allCompleted = newChecklist.length > 0 && newChecklist.every(item => item.completed);
-    const wasCompleted = isCompleted;
+    // Use isCompleted which already incorporates optimistic state
+    const currentlyCompleted = isCompleted;
     
-    if (allCompleted && !wasCompleted) {
+    if (allCompleted && !currentlyCompleted) {
       // All items checked - auto-complete the task
       toggleCompleteMutation.mutate(true);
-    } else if (!allCompleted && wasCompleted) {
-      // Unchecked an item on a completed task - revert to in-progress
+    } else if (!allCompleted && currentlyCompleted) {
+      // Unchecked an item on a completed task - revert to default status
       toggleCompleteMutation.mutate(false);
     }
   };

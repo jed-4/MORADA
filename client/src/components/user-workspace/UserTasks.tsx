@@ -36,22 +36,11 @@ import type { User, Task, Project, FieldCategoryWithOptions } from "@shared/sche
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { applyTaskFilters, extractFilterOptions } from "@/utils/taskFilters";
 import { useToast } from "@/hooks/use-toast";
-import { type FilterState, type DueDatePreset } from "@/components/FilterPanel";
+import { type FilterState } from "@/components/FilterPanel";
 import { useTaskPriorityOptions } from "@/hooks/useTaskPriorityOptions";
-import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, addDays, addWeeks } from "date-fns";
+import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, addDays } from "date-fns";
 
-const DUE_DATE_PRESET_OPTIONS: { value: DueDatePreset; label: string }[] = [
-  { value: 'all', label: 'All Due Dates' },
-  { value: 'overdue', label: 'Overdue' },
-  { value: 'today', label: 'Today' },
-  { value: 'tomorrow', label: 'Tomorrow' },
-  { value: 'next-3-days', label: 'Next 3 Days' },
-  { value: 'this-week', label: 'This Week' },
-  { value: 'next-week', label: 'Next Week' },
-  { value: 'next-2-weeks', label: 'Next 2 Weeks' },
-  { value: 'this-month', label: 'This Month' },
-  { value: 'no-date', label: 'No Due Date' },
-];
+// Due date presets are now handled via date range pickers with quick preset buttons
 
 interface UserTasksProps {
   user: User;
@@ -287,7 +276,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
     }
   };
 
-  const hasActiveFilters = !!(filters.search || filters.status?.length || filters.priority?.length || filters.project?.length || filters.dueDateFrom || filters.dueDateTo || (filters.dueDatePreset && filters.dueDatePreset !== 'all'));
+  const hasActiveFilters = !!(filters.search || filters.status?.length || filters.priority?.length || filters.project?.length || filters.dueDateFrom || filters.dueDateTo);
 
   const clearAllFilters = () => {
     setFilters({});
@@ -532,41 +521,40 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                 <div className="px-2 pb-2 flex flex-wrap gap-1">
                   <button 
                     className={`text-[10px] px-1.5 py-0.5 rounded border ${
-                      filters.dueDatePreset === 'overdue' ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
+                      !filters.dueDateFrom && filters.dueDateTo && filters.dueDateTo < startOfDay(new Date()) ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
                     }`}
                     onClick={() => {
                       const today = startOfDay(new Date());
-                      setFilters({...filters, dueDateFrom: undefined, dueDateTo: addDays(today, -1), dueDatePreset: 'overdue'});
+                      setFilters({...filters, dueDateFrom: undefined, dueDateTo: addDays(today, -1), dueDatePreset: undefined});
                     }}
                   >Overdue</button>
                   <button 
                     className={`text-[10px] px-1.5 py-0.5 rounded border ${
-                      filters.dueDatePreset === 'today' ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
+                      filters.dueDateFrom && filters.dueDateTo && 
+                      format(filters.dueDateFrom, 'yyyy-MM-dd') === format(startOfDay(new Date()), 'yyyy-MM-dd') &&
+                      format(filters.dueDateTo, 'yyyy-MM-dd') === format(endOfDay(new Date()), 'yyyy-MM-dd')
+                        ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
                     }`}
                     onClick={() => {
                       const today = startOfDay(new Date());
-                      setFilters({...filters, dueDateFrom: today, dueDateTo: endOfDay(today), dueDatePreset: 'today'});
+                      setFilters({...filters, dueDateFrom: today, dueDateTo: endOfDay(today), dueDatePreset: undefined});
                     }}
                   >Today</button>
                   <button 
-                    className={`text-[10px] px-1.5 py-0.5 rounded border ${
-                      filters.dueDatePreset === 'this-week' ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
-                    }`}
+                    className="text-[10px] px-1.5 py-0.5 rounded border hover-elevate"
                     onClick={() => {
                       const today = startOfDay(new Date());
-                      setFilters({...filters, dueDateFrom: today, dueDateTo: endOfWeek(today, { weekStartsOn: 1 }), dueDatePreset: 'this-week'});
+                      setFilters({...filters, dueDateFrom: today, dueDateTo: endOfWeek(today, { weekStartsOn: 1 }), dueDatePreset: undefined});
                     }}
                   >This Week</button>
                   <button 
-                    className={`text-[10px] px-1.5 py-0.5 rounded border ${
-                      filters.dueDatePreset === 'this-month' ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
-                    }`}
+                    className="text-[10px] px-1.5 py-0.5 rounded border hover-elevate"
                     onClick={() => {
                       const today = startOfDay(new Date());
-                      setFilters({...filters, dueDateFrom: today, dueDateTo: endOfMonth(today), dueDatePreset: 'this-month'});
+                      setFilters({...filters, dueDateFrom: today, dueDateTo: endOfMonth(today), dueDatePreset: undefined});
                     }}
                   >This Month</button>
-                  {(filters.dueDateFrom || filters.dueDateTo || filters.dueDatePreset) && (
+                  {(filters.dueDateFrom || filters.dueDateTo) && (
                     <button 
                       className="text-[10px] px-1.5 py-0.5 rounded border text-destructive hover-elevate"
                       onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: undefined})}
