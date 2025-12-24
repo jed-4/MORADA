@@ -10,6 +10,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
+import {
   Plus,
   Search,
   ChevronLeft,
@@ -19,6 +25,7 @@ import {
   List,
   Filter,
   X,
+  CalendarDays,
 } from "lucide-react";
 import TaskBoard from "@/components/TaskBoard";
 import TaskListCompact from "@/components/TaskListCompact";
@@ -31,7 +38,7 @@ import { applyTaskFilters, extractFilterOptions } from "@/utils/taskFilters";
 import { useToast } from "@/hooks/use-toast";
 import { type FilterState, type DueDatePreset } from "@/components/FilterPanel";
 import { useTaskPriorityOptions } from "@/hooks/useTaskPriorityOptions";
-import { format, startOfDay, isBefore, isToday, isTomorrow, addDays, isWithinInterval } from "date-fns";
+import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, addDays, addWeeks } from "date-fns";
 
 const DUE_DATE_PRESET_OPTIONS: { value: DueDatePreset; label: string }[] = [
   { value: 'all', label: 'All Due Dates' },
@@ -280,7 +287,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
     }
   };
 
-  const hasActiveFilters = !!(filters.search || filters.status?.length || filters.priority?.length || filters.project?.length || (filters.dueDatePreset && filters.dueDatePreset !== 'all'));
+  const hasActiveFilters = !!(filters.search || filters.status?.length || filters.priority?.length || filters.project?.length || filters.dueDateFrom || filters.dueDateTo || (filters.dueDatePreset && filters.dueDatePreset !== 'all'));
 
   const clearAllFilters = () => {
     setFilters({});
@@ -456,21 +463,116 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                     <span className="ml-2">{option.name}</span>
                   </DropdownMenuItem>
                 ))}
-                <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground border-t mt-1 pt-1.5">Due Date</div>
-                {DUE_DATE_PRESET_OPTIONS.map(option => (
-                  <DropdownMenuItem 
-                    key={option.value} 
-                    className="flex items-center"
-                    onClick={() => setFilters({...filters, dueDatePreset: option.value === 'all' ? undefined : option.value})}
-                  >
-                    {filters.dueDatePreset === option.value || (option.value === 'all' && !filters.dueDatePreset) ? (
-                      <div className="w-3 h-3 mr-2 rounded-full bg-[#bba7db]" />
-                    ) : (
-                      <div className="w-3 h-3 mr-2 rounded-full border border-muted-foreground/40" />
-                    )}
-                    <span>{option.label}</span>
-                  </DropdownMenuItem>
-                ))}
+                <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground border-t mt-1 pt-1.5">Due Date Range</div>
+                {/* Date Range Inputs */}
+                <div className="px-2 py-1 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground w-12">From:</span>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <button className="flex-1 h-7 px-2 text-xs border rounded-md text-left flex items-center gap-1 hover-elevate">
+                          <CalendarDays className="w-3 h-3 text-muted-foreground" />
+                          {filters.dueDateFrom ? format(new Date(filters.dueDateFrom), 'MMM d, yyyy') : 'Any start'}
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <CalendarComponent
+                          mode="single"
+                          selected={filters.dueDateFrom ? new Date(filters.dueDateFrom) : undefined}
+                          onSelect={(date) => {
+                            setFilters({...filters, dueDateFrom: date || undefined, dueDatePreset: undefined});
+                          }}
+                        />
+                        {filters.dueDateFrom && (
+                          <div className="p-2 border-t">
+                            <button 
+                              className="text-xs text-destructive hover:underline"
+                              onClick={() => setFilters({...filters, dueDateFrom: undefined})}
+                            >
+                              Clear
+                            </button>
+                          </div>
+                        )}
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground w-12">To:</span>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <button className="flex-1 h-7 px-2 text-xs border rounded-md text-left flex items-center gap-1 hover-elevate">
+                          <CalendarDays className="w-3 h-3 text-muted-foreground" />
+                          {filters.dueDateTo ? format(new Date(filters.dueDateTo), 'MMM d, yyyy') : 'Any end'}
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <CalendarComponent
+                          mode="single"
+                          selected={filters.dueDateTo ? new Date(filters.dueDateTo) : undefined}
+                          onSelect={(date) => {
+                            setFilters({...filters, dueDateTo: date || undefined, dueDatePreset: undefined});
+                          }}
+                        />
+                        {filters.dueDateTo && (
+                          <div className="p-2 border-t">
+                            <button 
+                              className="text-xs text-destructive hover:underline"
+                              onClick={() => setFilters({...filters, dueDateTo: undefined})}
+                            >
+                              Clear
+                            </button>
+                          </div>
+                        )}
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                </div>
+                {/* Quick Presets */}
+                <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Quick Presets</div>
+                <div className="px-2 pb-2 flex flex-wrap gap-1">
+                  <button 
+                    className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                      filters.dueDatePreset === 'overdue' ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
+                    }`}
+                    onClick={() => {
+                      const today = startOfDay(new Date());
+                      setFilters({...filters, dueDateFrom: undefined, dueDateTo: addDays(today, -1), dueDatePreset: 'overdue'});
+                    }}
+                  >Overdue</button>
+                  <button 
+                    className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                      filters.dueDatePreset === 'today' ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
+                    }`}
+                    onClick={() => {
+                      const today = startOfDay(new Date());
+                      setFilters({...filters, dueDateFrom: today, dueDateTo: endOfDay(today), dueDatePreset: 'today'});
+                    }}
+                  >Today</button>
+                  <button 
+                    className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                      filters.dueDatePreset === 'this-week' ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
+                    }`}
+                    onClick={() => {
+                      const today = startOfDay(new Date());
+                      setFilters({...filters, dueDateFrom: today, dueDateTo: endOfWeek(today, { weekStartsOn: 1 }), dueDatePreset: 'this-week'});
+                    }}
+                  >This Week</button>
+                  <button 
+                    className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                      filters.dueDatePreset === 'this-month' ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
+                    }`}
+                    onClick={() => {
+                      const today = startOfDay(new Date());
+                      setFilters({...filters, dueDateFrom: today, dueDateTo: endOfMonth(today), dueDatePreset: 'this-month'});
+                    }}
+                  >This Month</button>
+                  {(filters.dueDateFrom || filters.dueDateTo || filters.dueDatePreset) && (
+                    <button 
+                      className="text-[10px] px-1.5 py-0.5 rounded border text-destructive hover-elevate"
+                      onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: undefined})}
+                    >Clear</button>
+                  )}
+                </div>
                 <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground border-t mt-1 pt-1.5">Project</div>
                 <div className="max-h-32 overflow-y-auto">
                   {projects.map(project => (

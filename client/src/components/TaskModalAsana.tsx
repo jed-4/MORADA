@@ -361,6 +361,19 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
     );
     setChecklistItems(newChecklist);
     updateChecklistMutation.mutate(newChecklist);
+    
+    // Auto-complete: if all checklist items are now completed, mark the task as done
+    // If unchecking an item and task was completed, revert to default/in-progress status
+    const allCompleted = newChecklist.length > 0 && newChecklist.every(item => item.completed);
+    const wasCompleted = isCompleted;
+    
+    if (allCompleted && !wasCompleted) {
+      // All items checked - auto-complete the task
+      toggleCompleteMutation.mutate(true);
+    } else if (!allCompleted && wasCompleted) {
+      // Unchecked an item on a completed task - revert to in-progress
+      toggleCompleteMutation.mutate(false);
+    }
   };
 
   const handleRemoveChecklistItem = (itemId: string) => {
