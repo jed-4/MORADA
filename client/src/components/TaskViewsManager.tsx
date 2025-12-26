@@ -230,7 +230,7 @@ export default function TaskViewsManager({
                   <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
                       className="p-1 rounded hover:bg-muted"
-                      onClick={(e) => {
+                      onPointerDown={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
                         setDropdownOpen(false);
@@ -240,6 +240,18 @@ export default function TaskViewsManager({
                           setRenameDialogOpen(true);
                         }, 0);
                       }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setDropdownOpen(false);
+                          setTimeout(() => {
+                            setSelectedView(view);
+                            setViewName(view.name);
+                            setRenameDialogOpen(true);
+                          }, 0);
+                        }
+                      }}
                       title="Rename"
                       data-testid={`button-rename-view-${view.id}`}
                     >
@@ -248,7 +260,7 @@ export default function TaskViewsManager({
                     {!view.isDefault && (
                       <button
                         className="p-1 rounded hover:bg-muted text-destructive"
-                        onClick={(e) => {
+                        onPointerDown={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
                           setDropdownOpen(false);
@@ -256,6 +268,17 @@ export default function TaskViewsManager({
                             setSelectedView(view);
                             setDeleteDialogOpen(true);
                           }, 0);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setDropdownOpen(false);
+                            setTimeout(() => {
+                              setSelectedView(view);
+                              setDeleteDialogOpen(true);
+                            }, 0);
+                          }
                         }}
                         title="Delete"
                         data-testid={`button-delete-view-${view.id}`}
