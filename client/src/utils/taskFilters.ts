@@ -20,6 +20,9 @@ function getDateRangeFromPreset(preset: DueDatePreset): { from?: Date; to?: Date
       return { from: today, to: endOfDay(addDays(today, 2)) };
     case 'this-week':
       return { from: startOfWeek(today, { weekStartsOn: 1 }), to: endOfWeek(today, { weekStartsOn: 1 }) };
+    case 'last-week-to-today':
+      const lastWeekStart = startOfWeek(addWeeks(today, -1), { weekStartsOn: 1 });
+      return { from: lastWeekStart, to: endOfDay(today) };
     case 'next-week':
       const nextWeekStart = startOfWeek(addWeeks(today, 1), { weekStartsOn: 1 });
       return { from: nextWeekStart, to: endOfWeek(nextWeekStart, { weekStartsOn: 1 }) };

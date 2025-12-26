@@ -55,6 +55,9 @@ function getPresetDateRange(preset: DueDatePreset | undefined): { from?: Date; t
       return { from: tomorrow, to: endOfDay(tomorrow), label: 'Tomorrow' };
     case 'this-week':
       return { from: startOfWeek(today, { weekStartsOn: 1 }), to: endOfWeek(today, { weekStartsOn: 1 }), label: 'This Week' };
+    case 'last-week-to-today':
+      const lastWeekStart = startOfWeek(addWeeks(today, -1), { weekStartsOn: 1 });
+      return { from: lastWeekStart, to: endOfDay(today), label: 'Last Week to Today' };
     case 'next-week':
       const nextWeekStart = startOfWeek(addWeeks(today, 1), { weekStartsOn: 1 });
       return { from: nextWeekStart, to: endOfWeek(nextWeekStart, { weekStartsOn: 1 }), label: 'Next Week' };
@@ -616,6 +619,12 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                     }`}
                     onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'this-week'})}
                   >This Week</button>
+                  <button 
+                    className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                      filters.dueDatePreset === 'last-week-to-today' ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
+                    }`}
+                    onClick={() => setFilters({...filters, dueDateFrom: undefined, dueDateTo: undefined, dueDatePreset: 'last-week-to-today'})}
+                  >Last Week+</button>
                   <button 
                     className={`text-[10px] px-1.5 py-0.5 rounded border ${
                       filters.dueDatePreset === 'this-month' ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
