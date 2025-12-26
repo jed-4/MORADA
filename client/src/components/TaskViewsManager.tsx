@@ -5,13 +5,6 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -23,9 +16,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Plus, MoreVertical, Edit, Trash2, Star } from "lucide-react";
+import { ChevronDown, Edit, Trash2, Star, Save, Plus } from "lucide-react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -65,8 +59,9 @@ export default function TaskViewsManager({
   onViewSelect,
   selectedViewId,
 }: TaskViewsManagerProps) {
+  const [dropdownOpen, setDropdownOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedView, setSelectedView] = useState<TaskView | null>(null);
   const [viewName, setViewName] = useState("");
@@ -104,22 +99,18 @@ export default function TaskViewsManager({
   const updateViewMutation = useMutation({
     mutationFn: async (data: { 
       id: string; 
-      name: string; 
-      viewType: string;
-      filters: TaskViewFilters; 
-      groupBy: string;
+      name?: string; 
+      viewType?: string;
+      filters?: TaskViewFilters; 
+      groupBy?: string;
     }) => {
-      return await apiRequest(`/api/task-views/${data.id}`, "PATCH", {
-        name: data.name,
-        viewType: data.viewType,
-        filters: data.filters,
-        groupBy: data.groupBy,
-      });
+      const { id, ...updateData } = data;
+      return await apiRequest(`/api/task-views/${id}`, "PATCH", updateData);
     },
     onSuccess: (updatedView) => {
       queryClient.invalidateQueries({ queryKey: ["/api/task-views"] });
       toast({ title: "View updated successfully" });
-      setEditDialogOpen(false);
+      setRenameDialogOpen(false);
       setViewName("");
       setSelectedView(null);
       onViewSelect(updatedView);
@@ -139,7 +130,7 @@ export default function TaskViewsManager({
       setDeleteDialogOpen(false);
       setSelectedView(null);
       
-      const defaultView = views.find(v => v.isDefault);
+      const defaultView = views.find((v: TaskView) => v.isDefault);
       if (defaultView && defaultView.id !== selectedView?.id) {
         onViewSelect(defaultView);
       }
@@ -165,7 +156,7 @@ export default function TaskViewsManager({
     });
   };
 
-  const handleUpdateView = () => {
+  const handleRenameView = () => {
     if (!selectedView || !viewName.trim()) {
       toast({ title: "Please enter a view name", variant: "destructive" });
       return;
@@ -174,106 +165,133 @@ export default function TaskViewsManager({
     updateViewMutation.mutate({
       id: selectedView.id,
       name: viewName,
+    });
+  };
+
+  const handleQuickUpdate = (view: TaskView) => {
+    updateViewMutation.mutate({
+      id: view.id,
+      name: view.name,
       viewType: currentViewType,
       filters: currentFilters,
       groupBy: currentGroupBy,
     });
   };
 
-  const handleEditClick = (view: TaskView) => {
-    setSelectedView(view);
-    setViewName(view.name);
-    setEditDialogOpen(true);
+  const handleViewSelect = (view: TaskView) => {
+    setDropdownOpen(false);
+    onViewSelect(view);
   };
 
-  const handleDeleteClick = (view: TaskView) => {
-    setSelectedView(view);
-    setDeleteDialogOpen(true);
-  };
-
-  const handleViewChange = (viewId: string) => {
-    const view = views.find(v => v.id === viewId);
-    if (view) {
-      onViewSelect(view);
-    }
-  };
-
-  const currentView = views.find(v => v.id === selectedViewId);
+  const currentView = views.find((v: TaskView) => v.id === selectedViewId);
   const activeFilterCount = Object.keys(currentFilters).filter(key => {
     const value = currentFilters[key as keyof TaskViewFilters];
     return value && (Array.isArray(value) ? value.length > 0 : true);
   }).length;
 
   if (isLoading) {
-    return <div className="text-sm text-muted-foreground">Loading views...</div>;
+    return <div className="text-sm text-muted-foreground">Loading...</div>;
   }
 
   return (
-    <div className="flex items-center gap-1.5">
-      {views.length > 0 && (
-        <>
-          <Select value={selectedViewId} onValueChange={handleViewChange}>
-            <SelectTrigger className="h-6 w-auto min-w-32 text-xs border rounded-md hover-elevate active-elevate-2" data-testid="select-task-view">
-              <SelectValue placeholder="Select a view">
-                <div className="flex items-center gap-1">
-                  {currentView?.isDefault && <Star className="h-3 w-3 fill-current" />}
-                  <span className="text-xs">{currentView?.name || "Select a view"}</span>
-                </div>
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
+    <>
+      <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
+        <DropdownMenuTrigger asChild>
+          <button 
+            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+            data-testid="dropdown-task-views"
+          >
+            {currentView ? (
+              <div className="flex items-center gap-1">
+                {currentView.isDefault && <Star className="h-3 w-3 fill-current text-amber-500" />}
+                <span>{currentView.name}</span>
+              </div>
+            ) : (
+              <span>Views</span>
+            )}
+            <ChevronDown className="h-3 w-3 ml-0.5" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-56">
+          {views.length > 0 && (
+            <>
+              <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Saved Views</div>
               {views.map((view: TaskView) => (
-                <SelectItem key={view.id} value={view.id}>
-                  <div className="flex items-center gap-2">
-                    {view.isDefault && <Star className="h-3 w-3 fill-current" />}
-                    {view.name}
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {currentView && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button 
-                  className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-                  data-testid="button-view-actions"
-                >
-                  <MoreVertical className="h-3 w-3" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => handleEditClick(currentView)} data-testid="button-edit-view">
-                  <Edit className="h-4 w-4 mr-2" />
-                  Update View
-                </DropdownMenuItem>
                 <DropdownMenuItem 
-                  onClick={() => handleDeleteClick(currentView)}
-                  className="text-destructive"
-                  data-testid="button-delete-view"
-                  disabled={currentView.isDefault}
+                  key={view.id} 
+                  className="flex items-center justify-between group cursor-pointer"
+                  onSelect={() => handleViewSelect(view)}
+                  data-testid={`view-item-${view.id}`}
                 >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete View {currentView.isDefault && "(Default)"}
+                  <div className="flex items-center gap-2 flex-1">
+                    {view.isDefault && <Star className="h-3 w-3 fill-current text-amber-500" />}
+                    <span className={selectedViewId === view.id ? "font-medium" : ""}>{view.name}</span>
+                  </div>
+                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      className="p-1 rounded hover:bg-muted"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDropdownOpen(false);
+                        setTimeout(() => {
+                          setSelectedView(view);
+                          setViewName(view.name);
+                          setRenameDialogOpen(true);
+                        }, 0);
+                      }}
+                      title="Rename"
+                      data-testid={`button-rename-view-${view.id}`}
+                    >
+                      <Edit className="h-3 w-3" />
+                    </button>
+                    {!view.isDefault && (
+                      <button
+                        className="p-1 rounded hover:bg-muted text-destructive"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setDropdownOpen(false);
+                          setTimeout(() => {
+                            setSelectedView(view);
+                            setDeleteDialogOpen(true);
+                          }, 0);
+                        }}
+                        title="Delete"
+                        data-testid={`button-delete-view-${view.id}`}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
                 </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+              ))}
+              <DropdownMenuSeparator />
+            </>
           )}
-        </>
-      )}
-
-      <button 
-        className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-        onClick={() => {
-          setViewName("");
-          setCreateDialogOpen(true);
-        }}
-        data-testid="button-create-view"
-      >
-        <Plus className="h-3 w-3" />
-        <span>Save View</span>
-      </button>
+          
+          {currentView && (
+            <DropdownMenuItem 
+              onClick={() => handleQuickUpdate(currentView)}
+              data-testid="button-update-view"
+            >
+              <Save className="h-4 w-4 mr-2" />
+              Update View
+            </DropdownMenuItem>
+          )}
+          
+          <DropdownMenuItem 
+            onClick={() => {
+              setViewName("");
+              setCreateDialogOpen(true);
+            }}
+            data-testid="button-save-new-view"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Save as New View
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
         <DialogContent data-testid="dialog-create-view">
@@ -328,54 +346,40 @@ export default function TaskViewsManager({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent data-testid="dialog-edit-view">
+      <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
+        <DialogContent data-testid="dialog-rename-view">
           <DialogHeader>
-            <DialogTitle>Update View</DialogTitle>
+            <DialogTitle>Rename View</DialogTitle>
             <DialogDescription>
-              Update this view with your current filter settings and grouping.
+              Enter a new name for this view.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="edit-view-name">View Name</Label>
+              <Label htmlFor="rename-view-name">View Name</Label>
               <Input
-                id="edit-view-name"
+                id="rename-view-name"
                 placeholder="e.g., My High Priority Tasks"
                 value={viewName}
                 onChange={(e) => setViewName(e.target.value)}
-                data-testid="input-edit-view-name"
+                data-testid="input-rename-view-name"
               />
-            </div>
-            <div className="space-y-2">
-              <Label>Current Settings</Label>
-              <div className="text-sm text-muted-foreground space-y-1">
-                <div>View Type: <Badge variant="secondary">{currentViewType}</Badge></div>
-                {currentGroupBy !== "none" && (
-                  <div>Group By: <Badge variant="secondary">{currentGroupBy}</Badge></div>
-                )}
-                {activeFilterCount > 0 ? (
-                  <div>Active Filters: <Badge variant="secondary">{activeFilterCount}</Badge></div>
-                ) : (
-                  <div>No filters applied</div>
-                )}
-              </div>
             </div>
           </div>
           <DialogFooter>
             <Button 
               variant="outline" 
-              onClick={() => setEditDialogOpen(false)}
-              data-testid="button-cancel-edit-view"
+              onClick={() => setRenameDialogOpen(false)}
+              data-testid="button-cancel-rename-view"
             >
               Cancel
             </Button>
             <Button 
-              onClick={handleUpdateView}
+              onClick={handleRenameView}
               disabled={updateViewMutation.isPending}
-              data-testid="button-confirm-edit-view"
+              data-testid="button-confirm-rename-view"
             >
-              {updateViewMutation.isPending ? "Updating..." : "Update View"}
+              {updateViewMutation.isPending ? "Renaming..." : "Rename"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -408,6 +412,6 @@ export default function TaskViewsManager({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }
