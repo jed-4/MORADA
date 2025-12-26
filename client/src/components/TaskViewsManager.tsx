@@ -248,16 +248,15 @@ export default function TaskViewsManager({
                   <Edit className="h-4 w-4 mr-2" />
                   Update View
                 </DropdownMenuItem>
-                {!currentView.isDefault && (
-                  <DropdownMenuItem 
-                    onClick={() => handleDeleteClick(currentView)}
-                    className="text-destructive"
-                    data-testid="button-delete-view"
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Delete View
-                  </DropdownMenuItem>
-                )}
+                <DropdownMenuItem 
+                  onClick={() => handleDeleteClick(currentView)}
+                  className="text-destructive"
+                  data-testid="button-delete-view"
+                  disabled={currentView.isDefault}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete View {currentView.isDefault && "(Default)"}
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           )}
