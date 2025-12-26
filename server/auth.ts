@@ -31,13 +31,13 @@ export const sessionMiddleware = (() => {
   return session({
     secret: sessionSecret,
     store: sessionStore,
-    resave: false,
-    saveUninitialized: false,
+    resave: true,
+    saveUninitialized: true,
     rolling: true,
     cookie: {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: true,
+      sameSite: 'none' as const,
       maxAge: sessionTtl,
     },
   });
