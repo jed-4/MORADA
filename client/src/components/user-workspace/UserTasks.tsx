@@ -54,12 +54,12 @@ function getPresetDateRange(preset: DueDatePreset | undefined): { from?: Date; t
       const tomorrow = addDays(today, 1);
       return { from: tomorrow, to: endOfDay(tomorrow), label: 'Tomorrow' };
     case 'this-week':
-      return { from: today, to: endOfWeek(today, { weekStartsOn: 1 }), label: 'This Week' };
+      return { from: startOfWeek(today, { weekStartsOn: 1 }), to: endOfWeek(today, { weekStartsOn: 1 }), label: 'This Week' };
     case 'next-week':
       const nextWeekStart = startOfWeek(addWeeks(today, 1), { weekStartsOn: 1 });
       return { from: nextWeekStart, to: endOfWeek(nextWeekStart, { weekStartsOn: 1 }), label: 'Next Week' };
     case 'this-month':
-      return { from: today, to: endOfMonth(today), label: 'This Month' };
+      return { from: startOfMonth(today), to: endOfMonth(today), label: 'This Month' };
     case 'no-date':
       return { label: 'No Due Date' };
     case 'all':

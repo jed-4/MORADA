@@ -19,14 +19,14 @@ function getDateRangeFromPreset(preset: DueDatePreset): { from?: Date; to?: Date
     case 'next-3-days':
       return { from: today, to: endOfDay(addDays(today, 2)) };
     case 'this-week':
-      return { from: today, to: endOfWeek(today, { weekStartsOn: 1 }) };
+      return { from: startOfWeek(today, { weekStartsOn: 1 }), to: endOfWeek(today, { weekStartsOn: 1 }) };
     case 'next-week':
       const nextWeekStart = startOfWeek(addWeeks(today, 1), { weekStartsOn: 1 });
       return { from: nextWeekStart, to: endOfWeek(nextWeekStart, { weekStartsOn: 1 }) };
     case 'next-2-weeks':
       return { from: today, to: endOfDay(addDays(today, 13)) };
     case 'this-month':
-      return { from: today, to: endOfMonth(today) };
+      return { from: startOfMonth(today), to: endOfMonth(today) };
     case 'no-date':
       return { noDate: true };
     default:
