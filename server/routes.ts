@@ -4348,24 +4348,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // GOOGLE CALENDAR OAUTH ROUTES
   // ============================================================
 
-  // Initialize Google OAuth2 client
-  const getRedirectUri = () => {
+  // Initialize Google OAuth2 client for Google Calendar
+  const getCalendarRedirectUri = () => {
     if (process.env.REPLIT_DOMAINS) {
       // Use the first domain from REPLIT_DOMAINS
       const domain = process.env.REPLIT_DOMAINS.split(',')[0];
-      return `https://${domain}/api/auth/google/callback`;
+      return `https://${domain}/api/google-calendar/callback`;
     }
-    return 'http://localhost:5000/api/auth/google/callback';
+    return 'http://localhost:5000/api/google-calendar/callback';
   };
 
-  const oauth2Client = new google.auth.OAuth2(
+  const calendarOauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
-    getRedirectUri()
+    getCalendarRedirectUri()
   );
 
-  // Initiate Google OAuth flow
-  app.get('/api/auth/google/initiate', async (req: any, res) => {
+  // Initiate Google Calendar OAuth flow
+  app.get('/api/google-calendar/initiate', async (req: any, res) => {
     try {
       const userId = (req.session as any)?.userId;
       if (!userId) {
@@ -4379,7 +4379,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       (req.session as any).googleOAuthUserId = userId;
       (req.session as any).googleOAuthState = state;
 
-      const authUrl = oauth2Client.generateAuthUrl({
+      const authUrl = calendarOauth2Client.generateAuthUrl({
         access_type: 'offline',
         scope: ['https://www.googleapis.com/auth/calendar'],
         prompt: 'consent', // Force consent to get refresh token
@@ -4393,8 +4393,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Handle Google OAuth callback
-  app.get('/api/auth/google/callback', async (req: any, res) => {
+  // Handle Google Calendar OAuth callback
+  app.get('/api/google-calendar/callback', async (req: any, res) => {
     try {
       const { code, state, error: oauthError } = req.query;
       const userId = (req.session as any)?.googleOAuthUserId;
@@ -4431,7 +4431,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Exchange code for tokens
-      const { tokens } = await oauth2Client.getToken(code as string);
+      const { tokens } = await calendarOauth2Client.getToken(code as string);
       
       // Validate tokens received
       if (!tokens.access_token) {
@@ -4441,10 +4441,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.redirect('/profile?error=no_token');
       }
 
-      oauth2Client.setCredentials(tokens);
+      calendarOauth2Client.setCredentials(tokens);
 
       // Get user's Google account email
-      const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
+      const oauth2 = google.oauth2({ version: 'v2', auth: calendarOauth2Client });
       const { data } = await oauth2.userinfo.get();
 
       // Update user with Google Calendar tokens
@@ -4470,8 +4470,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Disconnect Google Calendar
-  app.post('/api/auth/google/disconnect', async (req: any, res) => {
+  // Disconnect Google Calendar (legacy endpoint - use /api/google-calendar/disconnect instead)
+  app.post('/api/google-calendar/legacy-disconnect', async (req: any, res) => {
     try {
       const userId = (req.session as any)?.userId;
       if (!userId) {
@@ -4486,7 +4486,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Revoke Google token if exists
       if (user.googleCalendarAccessToken) {
         try {
-          await oauth2Client.revokeToken(user.googleCalendarAccessToken);
+          await calendarOauth2Client.revokeToken(user.googleCalendarAccessToken);
         } catch (revokeError) {
           console.error("Error revoking Google token:", revokeError);
           // Continue anyway to clear local tokens
