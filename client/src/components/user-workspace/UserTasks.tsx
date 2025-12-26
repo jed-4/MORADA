@@ -34,7 +34,7 @@ import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
 import TaskViewsManager, { type TaskView, type TaskViewFilters } from "@/components/TaskViewsManager";
 import type { User, Task, Project, FieldCategoryWithOptions } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { applyTaskFilters, extractFilterOptions } from "@/utils/taskFilters";
+import { applyTaskFilters, extractFilterOptions, deserializeFilters } from "@/utils/taskFilters";
 import { useToast } from "@/hooks/use-toast";
 import { type FilterState, type DueDatePreset } from "@/components/FilterPanel";
 import { useTaskPriorityOptions } from "@/hooks/useTaskPriorityOptions";
@@ -147,7 +147,16 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
     if (userPreferences?.preferences) {
       if (userPreferences.preferences.activeView) setActiveView(userPreferences.preferences.activeView);
       if (userPreferences.preferences.groupBy) setGroupBy(userPreferences.preferences.groupBy);
-      if (userPreferences.preferences.filters) setFilters(userPreferences.preferences.filters);
+      if (userPreferences.preferences.filters) {
+        // Deserialize filters to properly convert date strings back to Date objects
+        const loadedFilters = deserializeFilters(userPreferences.preferences.filters);
+        // If a preset is active, clear any stale manual dates that might have been saved
+        if (loadedFilters.dueDatePreset) {
+          loadedFilters.dueDateFrom = undefined;
+          loadedFilters.dueDateTo = undefined;
+        }
+        setFilters(loadedFilters);
+      }
       if (userPreferences.preferences.selectedViewId) setSelectedViewId(userPreferences.preferences.selectedViewId);
       setPreferencesLoaded(true);
     } else if (userPreferences === null || preferencesError) {
