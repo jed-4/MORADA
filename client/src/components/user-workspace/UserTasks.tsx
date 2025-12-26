@@ -500,6 +500,22 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                         </button>
                       </PopoverTrigger>
                       <PopoverContent className="w-auto p-0" align="start">
+                        <div className="p-2 border-b flex gap-1">
+                          <button
+                            className={`text-xs px-2 py-1 rounded border ${
+                              filters.dueDateTo && format(new Date(filters.dueDateTo), 'yyyy-MM-dd') === format(endOfDay(new Date()), 'yyyy-MM-dd')
+                                ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
+                            }`}
+                            onClick={() => setFilters({...filters, dueDateTo: endOfDay(new Date()), dueDatePreset: undefined})}
+                          >Today</button>
+                          <button
+                            className={`text-xs px-2 py-1 rounded border ${
+                              filters.dueDateTo && format(new Date(filters.dueDateTo), 'yyyy-MM-dd') === format(endOfDay(addDays(new Date(), 1)), 'yyyy-MM-dd')
+                                ? 'bg-[#bba7db] text-white border-[#bba7db]' : 'hover-elevate'
+                            }`}
+                            onClick={() => setFilters({...filters, dueDateTo: endOfDay(addDays(new Date(), 1)), dueDatePreset: undefined})}
+                          >Tomorrow</button>
+                        </div>
                         <CalendarComponent
                           mode="single"
                           selected={filters.dueDateTo ? new Date(filters.dueDateTo) : undefined}
