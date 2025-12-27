@@ -129,9 +129,14 @@ export default function UserReminders({ user, isOwnPage }: UserRemindersProps) {
 
   const createMutation = useMutation({
     mutationFn: async (data: FormValues) => {
+      // Map form fields to schema fields
       return apiRequest("/api/reminders", "POST", {
-        ...data,
-        triggerAt: new Date(data.triggerAt).toISOString(),
+        title: data.title,
+        description: data.description,
+        linkedItemType: data.reminderType === "custom" ? null : data.reminderType,
+        reminderType: "one_time",
+        dueAt: new Date(data.triggerAt).toISOString(),
+        targetUserId: user.id,
       });
     },
     onSuccess: () => {
@@ -151,9 +156,16 @@ export default function UserReminders({ user, isOwnPage }: UserRemindersProps) {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<FormValues> }) => {
-      const payload = { ...data };
+      // Map form fields to schema fields
+      const payload: Record<string, any> = {
+        title: data.title,
+        description: data.description,
+      };
+      if (data.reminderType) {
+        payload.linkedItemType = data.reminderType === "custom" ? null : data.reminderType;
+      }
       if (data.triggerAt) {
-        (payload as any).triggerAt = new Date(data.triggerAt).toISOString();
+        payload.dueAt = new Date(data.triggerAt).toISOString();
       }
       return apiRequest(`/api/reminders/${id}`, "PATCH", payload);
     },

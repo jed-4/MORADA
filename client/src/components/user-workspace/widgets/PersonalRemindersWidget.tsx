@@ -15,10 +15,9 @@ interface Reminder {
   id: string;
   title: string;
   description?: string;
-  reminderType: string;
-  triggerAt: string;
+  linkedItemType: string;
+  dueAt: string;
   status: string;
-  priority: string;
 }
 
 export default function PersonalRemindersWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId }: WidgetProps) {
@@ -49,21 +48,22 @@ export default function PersonalRemindersWidget({ widget, onUpdate, isConfigurin
   });
 
   const activeReminders = reminders
-    .filter(r => r.status === "pending" || r.status === "sent" || r.status === "snoozed")
-    .sort((a, b) => new Date(a.triggerAt).getTime() - new Date(b.triggerAt).getTime());
+    .filter(r => r.status === "pending" || r.status === "sent" || r.status === "snoozed" || r.status === "active")
+    .sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime());
   
   const displayReminders = activeReminders.slice(0, maxReminders);
 
   const getReminderStatus = (reminder: Reminder) => {
-    const triggerDate = new Date(reminder.triggerAt);
-    if (isPast(triggerDate)) {
+    if (!reminder.dueAt) return { color: 'text-muted-foreground', bgColor: '', label: '' };
+    const dueDate = new Date(reminder.dueAt);
+    if (isPast(dueDate)) {
       return { 
         color: 'text-red-600 dark:text-red-400', 
         bgColor: 'bg-red-50 dark:bg-red-900/20',
         label: 'Overdue'
       };
     }
-    if (isToday(triggerDate)) {
+    if (isToday(dueDate)) {
       return { 
         color: 'text-amber-600 dark:text-amber-400', 
         bgColor: 'bg-amber-50 dark:bg-amber-900/20',
@@ -71,11 +71,6 @@ export default function PersonalRemindersWidget({ widget, onUpdate, isConfigurin
       };
     }
     return { color: 'text-muted-foreground', bgColor: '', label: '' };
-  };
-
-  const getPriorityBadge = (priority: string) => {
-    if (priority === 'high') return <Badge variant="destructive" className="text-[10px] h-4">High</Badge>;
-    return null;
   };
 
   if (isConfiguring) {
@@ -185,9 +180,8 @@ export default function PersonalRemindersWidget({ widget, onUpdate, isConfigurin
                       <p className="text-xs truncate leading-tight font-medium">{reminder.title}</p>
                       <div className="flex items-center gap-2 mt-0.5">
                         <span className={`text-[10px] ${status.color || 'text-muted-foreground'}`}>
-                          {formatDistanceToNow(new Date(reminder.triggerAt), { addSuffix: true })}
+                          {reminder.dueAt ? formatDistanceToNow(new Date(reminder.dueAt), { addSuffix: true }) : 'No date'}
                         </span>
-                        {getPriorityBadge(reminder.priority)}
                       </div>
                     </div>
                   </div>

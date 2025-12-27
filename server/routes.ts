@@ -5310,6 +5310,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Send password reset link to user (manager-initiated)
+  app.post("/api/users/:id/send-password-reset", requireTeamMember, requirePermission("admin.users", "edit"), async (req, res) => {
+    try {
+      const targetUser = await storage.getUser(req.params.id);
+      if (!targetUser || !targetUser.email) {
+        return res.status(404).json({ error: "User not found or has no email" });
+      }
+      
+      // Generate a secure reset token
+      const crypto = require("crypto");
+      const plainToken = crypto.randomBytes(32).toString("hex");
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+      
+      // Hash the token before storing (security best practice)
+      const tokenHash = crypto.createHash("sha256").update(plainToken).digest("hex");
+      
+      // Store the HASHED token in database - must succeed before sending email
+      await storage.createPasswordResetToken({
+        userId: targetUser.id,
+        token: tokenHash, // Store hash, not plain token
+        expiresAt,
+        requestedBy: req.user!.id,
+      });
+      
+      // Send reset email with PLAIN token (user receives unhashed token)
+      const baseUrl = process.env.NODE_ENV === 'production' 
+        ? `https://${req.get('host')}` 
+        : `${req.protocol}://${req.get('host')}`;
+      const resetUrl = `${baseUrl}/reset-password?token=${plainToken}&email=${encodeURIComponent(targetUser.email)}`;
+      
+      try {
+        const { sendEmail } = require("./utils/emailService");
+        await sendEmail({
+          to: targetUser.email,
+          subject: "Reset Your BuildPro Password",
+          html: `
+            <h2>Password Reset Request</h2>
+            <p>Hi ${targetUser.firstName || 'there'},</p>
+            <p>Your team administrator has requested a password reset for your BuildPro account.</p>
+            <p>Click the link below to set a new password:</p>
+            <p><a href="${resetUrl}" style="display: inline-block; padding: 12px 24px; background-color: #bba7db; color: white; text-decoration: none; border-radius: 6px;">Reset Password</a></p>
+            <p>This link will expire in 24 hours.</p>
+            <p>If you did not request this, please ignore this email or contact your administrator.</p>
+            <p>Thanks,<br>The BuildPro Team</p>
+          `,
+          text: `Password Reset Request\n\nYour team administrator has requested a password reset. Visit this link to set a new password: ${resetUrl}\n\nThis link will expire in 24 hours.`,
+        });
+        
+        res.json({ message: "Password reset email sent successfully" });
+      } catch (emailError: any) {
+        console.error("Failed to send password reset email:", emailError);
+        res.status(500).json({ error: "Failed to send reset email. Please check email configuration." });
+      }
+    } catch (error: any) {
+      console.error("Password reset error:", error);
+      res.status(500).json({ error: "Failed to initiate password reset" });
+    }
+  });
+
   // User Column Preferences Routes
   app.get("/api/user-column-preferences/:pageKey", requireAuth, async (req, res) => {
     try {

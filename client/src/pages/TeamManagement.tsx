@@ -26,8 +26,11 @@ import {
   Briefcase,
   Clock,
   Send,
-  XCircle
+  XCircle,
+  KeyRound
 } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import InviteUserDialog from "@/components/InviteUserDialog";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -49,6 +52,8 @@ const userEditSchema = z.object({
   lastName: z.string().min(1, "Last name is required"),
   email: z.string().email("Invalid email address"),
   phone: z.string().optional(),
+  roleId: z.string().optional(),
+  isActive: z.boolean().optional(),
 });
 
 type UserEditFormValues = z.infer<typeof userEditSchema>;
@@ -188,6 +193,22 @@ export default function TeamManagement() {
     },
   });
 
+  const sendPasswordResetMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      return await apiRequest(`/api/users/${userId}/send-password-reset`, "POST");
+    },
+    onSuccess: () => {
+      toast({ title: "Password reset email sent successfully" });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to send password reset", 
+        description: error.message || "Please check email configuration",
+        variant: "destructive" 
+      });
+    },
+  });
+
   const handleEditUser = (user: any) => {
     setEditingUser(user);
     userEditForm.reset({
@@ -195,6 +216,8 @@ export default function TeamManagement() {
       lastName: user.lastName || "",
       email: user.email || "",
       phone: user.phone || "",
+      roleId: user.roleId || "",
+      isActive: user.isActive !== false,
     });
     setIsUserEditDialogOpen(true);
   };
@@ -630,6 +653,73 @@ export default function TeamManagement() {
                   </FormItem>
                 )}
               />
+              <FormField
+                control={userEditForm.control}
+                name="roleId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Role</FormLabel>
+                    <FormControl>
+                      <Select value={field.value || ""} onValueChange={field.onChange}>
+                        <SelectTrigger data-testid="select-user-role">
+                          <SelectValue placeholder="Select a role" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {roles.filter((r: any) => r.isActive !== false).map((role: any) => (
+                            <SelectItem key={role.id} value={role.id}>
+                              {role.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={userEditForm.control}
+                name="isActive"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+                    <div className="space-y-0.5">
+                      <FormLabel>Active Status</FormLabel>
+                      <div className="text-xs text-muted-foreground">
+                        Inactive users cannot log in
+                      </div>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        data-testid="switch-user-active"
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+              
+              {/* Password Reset Section */}
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div className="space-y-0.5">
+                  <div className="text-sm font-medium">Password Reset</div>
+                  <div className="text-xs text-muted-foreground">
+                    Send a password reset link to this user
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => editingUser && sendPasswordResetMutation.mutate(editingUser.id)}
+                  disabled={sendPasswordResetMutation.isPending}
+                  data-testid="button-send-password-reset"
+                >
+                  <KeyRound className="w-3.5 h-3.5 mr-1.5" />
+                  {sendPasswordResetMutation.isPending ? "Sending..." : "Send Reset Link"}
+                </Button>
+              </div>
+              
               <div className="flex justify-end gap-2 pt-4">
                 <Button type="button" variant="outline" onClick={handleCloseUserEditDialog}>
                   Cancel

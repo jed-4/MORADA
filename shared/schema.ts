@@ -154,6 +154,25 @@ export const userInvitations = pgTable("user_invitations", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+// Password reset tokens for manager-initiated password resets
+export const passwordResetTokens = pgTable("password_reset_tokens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  token: text("token").notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+  requestedBy: varchar("requested_by").references(() => users.id), // Manager who requested the reset
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertPasswordResetTokenSchema = createInsertSchema(passwordResetTokens).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertPasswordResetToken = z.infer<typeof insertPasswordResetTokenSchema>;
+export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
+
 // User column preferences for customizing table views
 export const userColumnPreferences = pgTable("user_column_preferences", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

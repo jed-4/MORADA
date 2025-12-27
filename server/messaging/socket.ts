@@ -8,9 +8,7 @@ export function setupMessagingSocket(httpServer: HttpServer, sessionMiddleware: 
   const io = new Server(httpServer, {
     cors: {
       origin: process.env.NODE_ENV === "production" 
-        ? process.env.REPL_SLUG
-          ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`
-          : false
+        ? true // Allow same-origin in production (Replit handles this)
         : "http://localhost:5000",
       credentials: true
     },

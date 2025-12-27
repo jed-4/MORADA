@@ -37,6 +37,8 @@ Preferred communication style: Simple, everyday language.
   - GET `/api/auth/google/callback` - OAuth callback with CSRF validation
   - POST `/api/auth/logout` - Destroy session
   - GET `/api/auth/user` - Get current authenticated user
+- **Password Reset**: Manager-initiated password reset via POST `/api/users/:id/send-password-reset`. Tokens are SHA-256 hashed before storage in `password_reset_tokens` table with 24-hour expiry. Email includes reset link with plain token.
+- **Team Member Management**: Enhanced edit dialog includes role selection dropdown, active status toggle, and send password reset button.
 - **Required Secrets**: SESSION_SECRET (mandatory), GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET.
 
 ### Data Layer

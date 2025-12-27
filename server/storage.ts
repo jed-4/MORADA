@@ -188,6 +188,9 @@ export interface IStorage {
   deleteUserInvitation(id: string): Promise<boolean>;
   acceptInvitation(token: string, userData: Partial<InsertUser>): Promise<{ user: User, invitation: UserInvitation } | undefined>;
   
+  // Password Reset Token operations
+  createPasswordResetToken(data: { userId: string; token: string; expiresAt: Date; requestedBy?: string }): Promise<void>;
+  
   // Notes CRUD operations
   getNotes(projectId?: string | null, companyId?: string, userId?: string, includeArchived?: boolean): Promise<Note[]>;
   getNote(id: string, companyId?: string): Promise<Note | undefined>;
@@ -2531,6 +2534,11 @@ export class MemStorage implements IStorage {
     });
 
     return { user: newUser, invitation: updatedInvitation! };
+  }
+  
+  async createPasswordResetToken(data: { userId: string; token: string; expiresAt: Date; requestedBy?: string }): Promise<void> {
+    // MemStorage doesn't persist tokens, just log for dev purposes
+    console.log(`[MemStorage] Password reset token created for user ${data.userId}`);
   }
 
   // Notes CRUD operations
@@ -7111,6 +7119,21 @@ export class DbStorage implements IStorage {
       throw error;
     }
   }
+  
+  async createPasswordResetToken(data: { userId: string; token: string; expiresAt: Date; requestedBy?: string }): Promise<void> {
+    try {
+      await db.insert(schema.passwordResetTokens).values({
+        userId: data.userId,
+        token: data.token,
+        expiresAt: data.expiresAt,
+        requestedBy: data.requestedBy || null,
+      });
+    } catch (error) {
+      console.error("Database error in createPasswordResetToken:", error);
+      throw error;
+    }
+  }
+  
   async getNotes(projectId?: string | null, companyId?: string, userId?: string): Promise<Note[]> {
     try {
       // Simple query without join - filter by companyId on notes table
