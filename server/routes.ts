@@ -10375,14 +10375,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Activity Feed routes
   app.get("/api/activities", async (req, res) => {
     try {
-      const projectId = req.query.projectId as string;
+      const projectId = req.query.projectId as string | undefined;
+      const userId = req.query.userId as string | undefined;
+      const companyId = req.query.companyId as string | undefined;
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
 
-      if (!projectId) {
-        return res.status(400).json({ error: "projectId is required" });
+      // At least one filter is required
+      if (!projectId && !userId && !companyId) {
+        return res.status(400).json({ error: "At least one of projectId, userId, or companyId is required" });
       }
 
-      const activities = await storage.getActivities(projectId, limit);
+      const activities = await storage.getActivities({ projectId, userId, companyId, limit });
       res.json(activities);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -10391,13 +10394,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/activities", async (req, res) => {
     try {
-      const activityData = insertActivitySchema.parse(req.body);
+      const user = req.user as any;
+      if (!user) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const activityData = insertActivitySchema.parse({
+        ...req.body,
+        userId: user.id,
+        userName: user.firstName && user.lastName 
+          ? `${user.firstName} ${user.lastName}` 
+          : user.email,
+        companyId: req.body.companyId || user.companyId,
+      });
       const activity = await storage.createActivity(activityData);
       res.json(activity);
     } catch (error: any) {
       if (error.name === "ZodError") {
         return res.status(400).json({ error: "Invalid activity data", details: error.errors });
       }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Pin/unpin activity
+  app.patch("/api/activities/:id", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const { pinned } = req.body;
+      
+      const updateData: any = {};
+      if (typeof pinned === "boolean") {
+        updateData.pinned = pinned;
+        updateData.pinnedAt = pinned ? new Date() : null;
+        updateData.pinnedBy = pinned ? user.id : null;
+      }
+
+      const activity = await storage.updateActivity(req.params.id, updateData);
+      if (!activity) {
+        return res.status(404).json({ error: "Activity not found" });
+      }
+      res.json(activity);
+    } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });

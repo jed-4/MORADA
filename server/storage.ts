@@ -659,8 +659,9 @@ export interface IStorage {
   getLatestProposalAcceptance(proposalId: string): Promise<ProposalAcceptance | undefined>;
 
   // Activity Feed CRUD
-  getActivities(projectId: string, limit?: number): Promise<schema.Activity[]>;
+  getActivities(options: { projectId?: string; userId?: string; companyId?: string; limit?: number }): Promise<schema.Activity[]>;
   createActivity(activity: schema.InsertActivity): Promise<schema.Activity>;
+  updateActivity(id: string, activity: Partial<schema.InsertActivity & { pinned?: boolean; pinnedAt?: Date; pinnedBy?: string }>): Promise<schema.Activity | undefined>;
 
   // Site Diary Templates CRUD (company-wide)
   getSiteDiaryTemplates(): Promise<schema.SiteDiaryTemplate[]>;
@@ -4890,11 +4891,15 @@ export class MemStorage implements IStorage {
   }
 
   // Activity Feed CRUD
-  async getActivities(projectId: string, limit?: number): Promise<schema.Activity[]> {
+  async getActivities(options: { projectId?: string; userId?: string; companyId?: string; limit?: number }): Promise<schema.Activity[]> {
     return [];
   }
 
   async createActivity(activity: schema.InsertActivity): Promise<schema.Activity> {
+    throw new Error("Activities not supported in memory storage");
+  }
+
+  async updateActivity(id: string, activity: Partial<schema.InsertActivity & { pinned?: boolean; pinnedAt?: Date; pinnedBy?: string }>): Promise<schema.Activity | undefined> {
     throw new Error("Activities not supported in memory storage");
   }
 
@@ -12253,12 +12258,32 @@ export class DbStorage implements IStorage {
   }
 
   // Activity Feed CRUD
-  async getActivities(projectId: string, limit: number = 50): Promise<schema.Activity[]> {
+  async getActivities(options: { projectId?: string; userId?: string; companyId?: string; limit?: number }): Promise<schema.Activity[]> {
     try {
+      const { projectId, userId, companyId, limit = 50 } = options;
+      const conditions: any[] = [];
+      
+      if (projectId) {
+        conditions.push(eq(schema.activities.projectId, projectId));
+      }
+      
+      if (userId) {
+        conditions.push(eq(schema.activities.userId, userId));
+      }
+      
+      if (companyId) {
+        conditions.push(eq(schema.activities.companyId, companyId));
+      }
+      
+      // Sort by pinned first (desc so pinned=true comes first), then by pinnedAt (most recent pinned first), then by createdAt
       return await db.select()
         .from(schema.activities)
-        .where(eq(schema.activities.projectId, projectId))
-        .orderBy(desc(schema.activities.createdAt))
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(
+          desc(schema.activities.pinned),
+          desc(schema.activities.pinnedAt),
+          desc(schema.activities.createdAt)
+        )
         .limit(limit);
     } catch (error) {
       console.error("Database error in getActivities:", error);
@@ -12279,6 +12304,19 @@ export class DbStorage implements IStorage {
       return result[0];
     } catch (error) {
       console.error("Database error in createActivity:", error);
+      throw error;
+    }
+  }
+
+  async updateActivity(id: string, activity: Partial<schema.InsertActivity & { pinned?: boolean; pinnedAt?: Date; pinnedBy?: string }>): Promise<schema.Activity | undefined> {
+    try {
+      const result = await db.update(schema.activities)
+        .set(activity)
+        .where(eq(schema.activities.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateActivity:", error);
       throw error;
     }
   }
