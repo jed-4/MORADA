@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Settings, ChevronDown, Search, PlusCircle, Check, LayoutGrid, Trash2, Lock, Users, Globe, Eye, Pencil, Star, Palette, Home, MessageSquare, ClipboardList, FileText, Calculator, FileBarChart, File, ListTree, Clock, CheckSquare, ListChecks, FileSearch, HelpCircle, CheckCircle, DollarSign, Receipt, AlertCircle, BookOpen, Timer, FolderOpen } from "lucide-react";
+import { Plus, Settings, ChevronDown, Search, PlusCircle, Check, LayoutGrid, Trash2, Lock, Users, Globe, Eye, Pencil, Star, Palette, Home, MessageSquare, ClipboardList, FileText, Calculator, FileBarChart, File, ListTree, Clock, CheckSquare, ListChecks, FileSearch, HelpCircle, CheckCircle, DollarSign, Receipt, AlertCircle, BookOpen, Timer, FolderOpen, Activity } from "lucide-react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -73,6 +73,7 @@ const PROJECT_TAB_GROUPS = [
     icon: Home,
     items: [
       { id: "overview", label: "Overview", icon: Home, path: "" },
+      { id: "activity", label: "Activity", icon: Activity, path: "/activity" },
       { id: "messages", label: "Messages", icon: MessageSquare, path: "/messages" },
       { id: "notes", label: "Notes", icon: FileText, path: "/notes" },
       { id: "scope", label: "Scope", icon: ListTree, path: "/scope" },

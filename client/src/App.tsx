@@ -106,6 +106,7 @@ import PurchaseOrderDetail from "@/pages/PurchaseOrderDetail";
 import ProjectChecklists from "@/pages/ProjectChecklists";
 import ChecklistInstanceDetail from "@/pages/ChecklistInstanceDetail";
 import ProjectFiles from "@/pages/ProjectFiles";
+import ProjectActivity from "@/pages/ProjectActivity";
 
 function Router() {
   const { user } = useAuth();
@@ -222,6 +223,7 @@ function Router() {
       <Route path="/projects/:projectId/budget" component={Budget} />
       <Route path="/projects/:projectId/files" component={ProjectFiles} />
       <Route path="/projects/:projectId/team" component={ProjectTeam} />
+      <Route path="/projects/:projectId/activity" component={ProjectActivity} />
       <Route path="/projects/:projectId/checklists" component={ProjectChecklists} />
       <Route path="/projects/:projectId/checklists/:checklistId" component={ChecklistInstanceDetail} />
       
