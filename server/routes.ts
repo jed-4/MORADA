@@ -659,13 +659,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Set polymorphic task context based on projectId or explicit context fields
+      let taskContextType = validationResult.data.taskContextType;
+      let taskContextId = validationResult.data.taskContextId;
+      
+      // Auto-derive context if not explicitly provided
+      if (!taskContextType) {
+        if (validationResult.data.projectId) {
+          taskContextType = "project";
+          taskContextId = validationResult.data.projectId;
+        } else {
+          // Default to business context for company-wide tasks
+          taskContextType = "business";
+          taskContextId = user.companyId;
+        }
+      }
+
       const task = await storage.createTask({
         ...validationResult.data,
         companyId: user.companyId,
         ownerId: user.id,
         ownerName: user.email,
         author: user.email,
-        content: validationResult.data.content || ""
+        content: validationResult.data.content || "",
+        taskContextType,
+        taskContextId
       });
       res.status(201).json(task);
     } catch (error) {

@@ -448,6 +448,10 @@ export const notes: any = pgTable("notes", {
   referenceType: text("reference_type"), // e.g., "insurance_expiry_30", "insurance_expiry_7"
   referenceId: varchar("reference_id"), // ID of the referenced entity (e.g., insurance ID)
   
+  // Polymorphic task context - determines if task belongs to a project or the business
+  taskContextType: text("task_context_type"), // "project" | "business" - null for legacy, will be backfilled
+  taskContextId: varchar("task_context_id"), // FK to projects.id or companies.id depending on contextType
+  
   // Grouping support
   groupId: varchar("group_id").references(() => noteGroups.id), // Note group for organization
   
@@ -510,6 +514,9 @@ export const insertNoteSchema = createInsertSchema(notes).omit({
   // Reference fields for system-generated tasks
   referenceType: z.string().optional(),
   referenceId: z.string().optional(),
+  // Polymorphic task context
+  taskContextType: z.enum(["project", "business"]).optional(),
+  taskContextId: z.string().optional(),
   // Grouping support
   groupId: z.string().nullable().optional(),
   // Archive support (server-managed)
@@ -524,8 +531,11 @@ export type Note = typeof notes.$inferSelect;
 export const insertTaskSchema = insertNoteSchema.extend({
   type: z.literal("task"),
   status: z.string().default("todo"),
-  projectId: z.string().optional().nullable(), // Optional - null for business/company-wide tasks
-  scope: z.enum(["personal", "project", "system", "business"]).default("project"), // "business" for company-wide tasks
+  projectId: z.string().optional().nullable(), // Legacy - use taskContextType/taskContextId instead
+  scope: z.enum(["personal", "project", "system", "business"]).default("project"), // Legacy - use taskContextType instead
+  // Polymorphic context - every task should have a context
+  taskContextType: z.enum(["project", "business"]).optional(), // Required for new tasks
+  taskContextId: z.string().optional(), // projects.id or companies.id
 });
 
 export type InsertTask = z.infer<typeof insertTaskSchema>;

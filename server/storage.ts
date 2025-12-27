@@ -3002,9 +3002,17 @@ export class MemStorage implements IStorage {
     let filteredTasks = allTasks;
     
     if (businessTasks) {
-      filteredTasks = filteredTasks.filter(task => !task.projectId);
+      // Business tasks: use new taskContextType='business' or fallback to legacy (null projectId)
+      filteredTasks = filteredTasks.filter(task => 
+        task.taskContextType === "business" || 
+        (!task.taskContextType && !task.projectId)
+      );
     } else if (projectId) {
-      filteredTasks = filteredTasks.filter(task => task.projectId === projectId);
+      // Project tasks: use new taskContextType='project' and matching contextId, or legacy projectId
+      filteredTasks = filteredTasks.filter(task => 
+        (task.taskContextType === "project" && task.taskContextId === projectId) ||
+        (!task.taskContextType && task.projectId === projectId)
+      );
     }
     
     if (assigneeId) {
@@ -3026,9 +3034,23 @@ export class MemStorage implements IStorage {
       .filter(note => note.type === "task") as Task[];
     
     const userTasks = allTasks.filter(task => {
-      if (!task.assignedTo || !task.assignedTo.includes(userId)) return false;
-      if (!task.projectId) return false;
-      const project = this.projects.get(task.projectId);
+      // Check if user is assigned (via assigneeId or assignedTo array)
+      const isAssigned = task.assigneeId === userId || 
+        (Array.isArray(task.assignedTo) && task.assignedTo.includes(userId));
+      if (!isAssigned) return false;
+      
+      // Verify task belongs to the company
+      if (task.companyId !== companyId) return false;
+      
+      // Business-level tasks - always include if assigned
+      if (task.taskContextType === "business" || (!task.taskContextType && !task.projectId)) {
+        return true;
+      }
+      
+      // Project-level tasks - verify project belongs to company
+      const projectId = task.taskContextId || task.projectId;
+      if (!projectId) return false;
+      const project = this.projects.get(projectId);
       return project?.companyId === companyId;
     });
     
@@ -3046,6 +3068,26 @@ export class MemStorage implements IStorage {
   async createTask(insertTask: InsertTask): Promise<Task> {
     const id = randomUUID();
     const now = new Date();
+    
+    // Enforce polymorphic context - derive from projectId if not provided
+    let taskContextType = insertTask.taskContextType;
+    let taskContextId = insertTask.taskContextId;
+    
+    if (!taskContextType) {
+      if (insertTask.projectId) {
+        taskContextType = "project";
+        taskContextId = insertTask.projectId;
+      } else if (insertTask.companyId) {
+        taskContextType = "business";
+        taskContextId = insertTask.companyId;
+      }
+    }
+    
+    // Strict enforcement: reject task creation if context cannot be resolved
+    if (!taskContextType || !taskContextId) {
+      throw new Error('[createTask] Cannot create task without valid context - either projectId or companyId must be provided');
+    }
+    
     const task: Task = { 
       ...insertTask,
       id,
@@ -3056,6 +3098,8 @@ export class MemStorage implements IStorage {
       projectId: insertTask.projectId || null,
       tags: insertTask.tags || [],
       customFields: insertTask.customFields || {},
+      taskContextType,
+      taskContextId,
       createdAt: now, 
       updatedAt: now 
     };
@@ -6400,15 +6444,23 @@ export class DbStorage implements IStorage {
     const conditions = [eq(schema.notes.type, "task")];
     
     if (businessTasks) {
-      // Business tasks: scope is 'business' OR legacy tasks (null scope + null projectId)
+      // Business tasks: use new taskContextType='business' or fallback to legacy (null projectId)
       conditions.push(
         or(
-          eq(schema.notes.scope, "business"),
-          and(isNull(schema.notes.scope), isNull(schema.notes.projectId))
+          eq(schema.notes.taskContextType, "business"),
+          // Legacy fallback for tasks not yet migrated
+          and(isNull(schema.notes.taskContextType), isNull(schema.notes.projectId))
         )!
       );
     } else if (projectId) {
-      conditions.push(eq(schema.notes.projectId, projectId));
+      // Project tasks: use new taskContextType='project' and matching contextId, or legacy projectId
+      conditions.push(
+        or(
+          and(eq(schema.notes.taskContextType, "project"), eq(schema.notes.taskContextId, projectId)),
+          // Legacy fallback
+          and(isNull(schema.notes.taskContextType), eq(schema.notes.projectId, projectId))
+        )!
+      );
     }
     if (status) {
       conditions.push(eq(schema.notes.status, status));
@@ -6424,39 +6476,44 @@ export class DbStorage implements IStorage {
   }
 
   async getTasksByUser(userId: string, companyId: string): Promise<Task[]> {
-    // Get project-based tasks
-    const projectTasks = await db.select()
-      .from(schema.notes)
-      .innerJoin(schema.projects, eq(schema.notes.projectId, schema.projects.id))
-      .where(
-        and(
-          eq(schema.notes.type, "task"),
-          eq(schema.projects.companyId, companyId),
-          eq(schema.notes.assigneeId, userId)
-        )
-      )
-      .orderBy(desc(schema.notes.createdAt));
-    
-    // Get non-project tasks: scope is 'business', 'personal', 'system', or no projectId (legacy)
-    const nonProjectTasks = await db.select()
+    // Get all tasks in this company that are assigned to this user
+    // Check both assigneeId (single user) and assignedTo array (multiple users)
+    const allCompanyTasks = await db.select()
       .from(schema.notes)
       .where(
         and(
           eq(schema.notes.type, "task"),
-          eq(schema.notes.companyId, companyId),
-          eq(schema.notes.assigneeId, userId),
-          isNull(schema.notes.projectId)
+          eq(schema.notes.companyId, companyId)
         )
       )
       .orderBy(desc(schema.notes.createdAt));
     
-    // Combine and sort by createdAt
-    const allTasks = [
-      ...projectTasks.map((row: any) => row.notes),
-      ...nonProjectTasks
-    ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    // Get valid project IDs for this company
+    const projectIds = new Set(
+      (await db.select({ id: schema.projects.id })
+        .from(schema.projects)
+        .where(eq(schema.projects.companyId, companyId))
+      ).map(p => p.id)
+    );
     
-    return allTasks as Task[];
+    const filteredTasks = allCompanyTasks.filter(task => {
+      // Check if user is assigned (via assigneeId or assignedTo array)
+      const isAssigned = task.assigneeId === userId || 
+        (Array.isArray(task.assignedTo) && task.assignedTo.includes(userId));
+      if (!isAssigned) return false;
+      
+      // Business-level tasks - always include if assigned
+      if (task.taskContextType === "business") return true;
+      if (!task.taskContextType && !task.projectId) return true; // Legacy business task
+      
+      // Project-level tasks - verify project belongs to company
+      const taskProjectId = task.taskContextId || task.projectId;
+      if (taskProjectId && projectIds.has(taskProjectId)) return true;
+      
+      return false;
+    });
+    
+    return filteredTasks as Task[];
   }
 
   async getTask(id: string): Promise<Task | undefined> {
@@ -6467,9 +6524,30 @@ export class DbStorage implements IStorage {
   }
 
   async createTask(insertTask: InsertTask): Promise<Task> {
+    // Enforce polymorphic context - derive from projectId if not provided
+    let taskContextType = insertTask.taskContextType;
+    let taskContextId = insertTask.taskContextId;
+    
+    if (!taskContextType) {
+      if (insertTask.projectId) {
+        taskContextType = "project";
+        taskContextId = insertTask.projectId;
+      } else if (insertTask.companyId) {
+        taskContextType = "business";
+        taskContextId = insertTask.companyId;
+      }
+    }
+    
+    // Strict enforcement: reject task creation if context cannot be resolved
+    if (!taskContextType || !taskContextId) {
+      throw new Error('[createTask] Cannot create task without valid context - either projectId or companyId must be provided');
+    }
+    
     const [task] = await db.insert(schema.notes).values({
       ...insertTask,
-      type: "task"
+      type: "task",
+      taskContextType,
+      taskContextId
     }).returning();
     return task as Task;
   }
