@@ -6,12 +6,10 @@ import { z } from "zod";
 import { format, formatDistanceToNow, isPast, isFuture, addMinutes } from "date-fns";
 import { 
   Bell, Plus, Clock, CheckSquare, ClipboardList, Timer, 
-  Wrench, Calendar, Trash2, Pencil, AlarmClockOff, AlarmClock,
-  Filter, ChevronDown, MoreHorizontal, FileText, AlertTriangle
+  Wrench, Trash2, Pencil, AlarmClockOff, AlarmClock, AlertTriangle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { 
   Dialog, 
   DialogContent, 
@@ -326,175 +324,206 @@ export default function UserReminders({ user, isOwnPage }: UserRemindersProps) {
   }
 
   return (
-    <div className="p-4 space-y-4" data-testid="user-reminders-content">
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-2">
-          <h3 className="text-lg font-semibold">My Reminders</h3>
-          <Badge variant="secondary" className="text-xs">
-            {filteredReminders.length}
-          </Badge>
-        </div>
-        <div className="flex items-center gap-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-2" data-testid="filter-status-dropdown">
-                <Filter className="h-3 w-3" />
-                <span>{filterStatus === "all" ? "All" : filterStatus}</span>
-                <ChevronDown className="h-3 w-3" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setFilterStatus("all")}>All Reminders</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setFilterStatus("active")}>Active</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setFilterStatus("snoozed")}>Snoozed</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setFilterStatus("dismissed")}>Dismissed</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Button 
-            onClick={openCreateDialog}
-            className="bg-[#bba7db] text-white hover:bg-[#bba7db]/90"
-            size="sm"
-            data-testid="button-create-reminder"
-          >
-            <Plus className="h-4 w-4 mr-1" />
-            New Reminder
-          </Button>
-        </div>
+    <div className="flex flex-col h-full" data-testid="user-reminders-content">
+      {/* Header with filters and actions */}
+      <div className="px-4 py-2 flex items-center gap-2 border-b bg-background">
+        <h3 className="text-sm font-semibold">Reminders</h3>
+        <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
+          {filteredReminders.length}
+        </Badge>
+        
+        <div className="flex-1" />
+        
+        {/* Toggle filter buttons */}
+        <Button
+          size="sm"
+          variant={filterStatus === "all" ? "default" : "ghost"}
+          className={`h-6 px-2 text-xs ${filterStatus !== "all" ? "hover-elevate active-elevate-2" : ""}`}
+          onClick={() => setFilterStatus("all")}
+          data-testid="filter-all"
+        >
+          All
+        </Button>
+        <Button
+          size="sm"
+          variant={filterStatus === "active" ? "default" : "ghost"}
+          className={`h-6 px-2 text-xs ${filterStatus !== "active" ? "hover-elevate active-elevate-2" : ""}`}
+          onClick={() => setFilterStatus("active")}
+          data-testid="filter-active"
+        >
+          Active
+        </Button>
+        <Button
+          size="sm"
+          variant={filterStatus === "snoozed" ? "default" : "ghost"}
+          className={`h-6 px-2 text-xs gap-1 ${filterStatus !== "snoozed" ? "hover-elevate active-elevate-2" : ""}`}
+          onClick={() => setFilterStatus("snoozed")}
+          data-testid="filter-snoozed"
+        >
+          <AlarmClockOff className="h-3 w-3" />
+          Snoozed
+        </Button>
+        <Button
+          size="sm"
+          variant={filterStatus === "dismissed" ? "default" : "ghost"}
+          className={`h-6 px-2 text-xs ${filterStatus !== "dismissed" ? "hover-elevate active-elevate-2" : ""}`}
+          onClick={() => setFilterStatus("dismissed")}
+          data-testid="filter-dismissed"
+        >
+          Dismissed
+        </Button>
+        
+        <Button 
+          size="sm"
+          onClick={openCreateDialog}
+          className="h-6 px-2 text-xs gap-1"
+          data-testid="button-create-reminder"
+        >
+          <Plus className="h-3 w-3" />
+          New Reminder
+        </Button>
       </div>
 
-      {filteredReminders.length === 0 ? (
-        <div className="flex flex-col items-center justify-center h-64 text-center">
-          <Bell className="h-12 w-12 text-muted-foreground/40 mb-4" />
-          <h3 className="text-lg font-medium text-foreground mb-2">
-            {filterStatus === "all" ? "No reminders yet" : `No ${filterStatus} reminders`}
-          </h3>
-          <p className="text-sm text-muted-foreground mb-4">
-            Create personal reminders to stay on top of your work.
-          </p>
-          {filterStatus === "all" && (
-            <Button 
-              onClick={openCreateDialog}
-              className="bg-[#bba7db] text-white hover:bg-[#bba7db]/90"
-              data-testid="button-create-first-reminder"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Create First Reminder
-            </Button>
-          )}
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {filteredReminders.map((reminder) => {
-            const TypeIcon = REMINDER_TYPE_ICONS[reminder.reminderType || "custom"] || Bell;
-            const timeStatus = getReminderTimeStatus(reminder);
-            const isDismissed = reminder.status === "dismissed";
-            const isSnoozed = reminder.status === "snoozed";
-            
-            return (
-              <div
-                key={reminder.id}
-                className={`flex items-center gap-3 p-3 rounded-lg border bg-card hover-elevate ${
-                  isDismissed ? "opacity-60" : ""
-                }`}
-                data-testid={`reminder-item-${reminder.id}`}
-              >
-                <div className={`flex items-center justify-center w-9 h-9 rounded-lg ${
-                  isDismissed ? "bg-muted" : isSnoozed ? "bg-orange-500/10" : "bg-[#bba7db]/10"
-                }`}>
-                  {isSnoozed ? (
-                    <AlarmClockOff className="h-4 w-4 text-orange-500" />
-                  ) : (
-                    <TypeIcon className={`h-4 w-4 ${isDismissed ? "text-muted-foreground" : "text-[#bba7db]"}`} />
-                  )}
-                </div>
-                
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <span className={`font-medium text-sm truncate ${PRIORITY_COLORS[reminder.priority || "normal"]}`}>
-                      {reminder.title}
-                    </span>
-                    {reminder.priority === "high" && (
-                      <AlertTriangle className="h-3 w-3 text-orange-500 flex-shrink-0" />
-                    )}
-                    {isDismissed && (
-                      <Badge variant="outline" className="text-xs">Dismissed</Badge>
-                    )}
-                    {isSnoozed && (
-                      <Badge variant="outline" className="text-xs text-orange-500 border-orange-500/30">Snoozed</Badge>
-                    )}
+      {/* Reminders Grid */}
+      <div className="flex-1 overflow-auto p-4">
+        {filteredReminders.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground text-sm">
+            {reminders.length === 0 
+              ? "No reminders yet. Create your first reminder to get started!"
+              : `No ${filterStatus} reminders.`}
+          </div>
+        ) : (
+          <div className="grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+            {filteredReminders.map((reminder) => {
+              const TypeIcon = REMINDER_TYPE_ICONS[reminder.reminderType || "custom"] || Bell;
+              const timeStatus = getReminderTimeStatus(reminder);
+              const isDismissed = reminder.status === "dismissed";
+              const isSnoozed = reminder.status === "snoozed";
+              
+              return (
+                <div
+                  key={reminder.id}
+                  className={`group border rounded-md p-3 bg-card hover-elevate transition-all ${
+                    isDismissed ? "opacity-60" : ""
+                  }`}
+                  data-testid={`reminder-item-${reminder.id}`}
+                >
+                  {/* Card Header */}
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className={`flex items-center justify-center w-6 h-6 rounded ${
+                        isDismissed ? "bg-muted" : isSnoozed ? "bg-orange-500/10" : "bg-[#bba7db]/10"
+                      }`}>
+                        {isSnoozed ? (
+                          <AlarmClockOff className="h-3 w-3 text-orange-500" />
+                        ) : (
+                          <TypeIcon className={`h-3 w-3 ${isDismissed ? "text-muted-foreground" : "text-[#bba7db]"}`} />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1">
+                          <span className={`font-semibold text-sm truncate ${PRIORITY_COLORS[reminder.priority || "normal"]}`}>
+                            {reminder.title}
+                          </span>
+                          {reminder.priority === "high" && (
+                            <AlertTriangle className="h-3 w-3 text-orange-500 flex-shrink-0" />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Quick Actions - always visible for touch accessibility */}
+                    <div className="flex items-center gap-0.5">
+                      {!isDismissed && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button size="icon" variant="ghost" className="h-6 w-6" data-testid={`snooze-dropdown-${reminder.id}`}>
+                              <AlarmClock className="h-3 w-3" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem disabled className="text-xs text-muted-foreground">
+                              Snooze for...
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            {SNOOZE_OPTIONS.map((option) => (
+                              <DropdownMenuItem
+                                key={option.value}
+                                onClick={() => snoozeMutation.mutate({ id: reminder.id, minutes: option.value })}
+                              >
+                                {option.label}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-6 w-6"
+                        onClick={() => handleEdit(reminder)}
+                        data-testid={`button-edit-${reminder.id}`}
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-6 w-6"
+                        onClick={() => setDeleteReminder(reminder)}
+                        data-testid={`button-delete-${reminder.id}`}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className={timeStatus.color}>
-                      <Clock className="h-3 w-3 inline mr-1" />
-                      {reminder.triggerAt && format(new Date(reminder.triggerAt), "MMM d, h:mm a")}
-                    </span>
-                    <span className={timeStatus.color}>
+
+                  {/* Time info */}
+                  <div className="text-xs text-muted-foreground mb-1">
+                    <Clock className="h-3 w-3 inline mr-1" />
+                    {reminder.triggerAt && format(new Date(reminder.triggerAt), "MMM d, h:mm a")}
+                    <span className={`ml-1 ${timeStatus.color}`}>
                       ({timeStatus.label})
                     </span>
                   </div>
-                  {reminder.description && (
-                    <p className="text-xs text-muted-foreground mt-1 truncate">{reminder.description}</p>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-1">
-                  {!isDismissed && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button size="icon" variant="ghost" data-testid={`snooze-dropdown-${reminder.id}`}>
-                          <AlarmClock className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem disabled className="text-xs text-muted-foreground">
-                          Snooze for...
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        {SNOOZE_OPTIONS.map((option) => (
-                          <DropdownMenuItem
-                            key={option.value}
-                            onClick={() => snoozeMutation.mutate({ id: reminder.id, minutes: option.value })}
-                          >
-                            {option.label}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
                   
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button size="icon" variant="ghost" data-testid={`actions-dropdown-${reminder.id}`}>
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => handleEdit(reminder)}>
-                        <Pencil className="h-4 w-4 mr-2" />
-                        Edit
-                      </DropdownMenuItem>
-                      {!isDismissed && (
-                        <DropdownMenuItem onClick={() => dismissMutation.mutate(reminder.id)}>
-                          <AlarmClockOff className="h-4 w-4 mr-2" />
-                          Dismiss
-                        </DropdownMenuItem>
-                      )}
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem 
-                        onClick={() => setDeleteReminder(reminder)}
-                        className="text-destructive focus:text-destructive"
+                  {/* Description */}
+                  {reminder.description && (
+                    <p className="text-xs text-muted-foreground line-clamp-2">{reminder.description}</p>
+                  )}
+
+                  {/* Status badges */}
+                  <div className="flex items-center gap-1 mt-2 flex-wrap">
+                    {isDismissed && (
+                      <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
+                        Dismissed
+                      </Badge>
+                    )}
+                    {isSnoozed && (
+                      <Badge variant="outline" className="h-4 px-1.5 text-[10px] text-orange-500 border-orange-500/30">
+                        <AlarmClockOff className="h-2.5 w-2.5 mr-0.5" />
+                        Snoozed
+                      </Badge>
+                    )}
+                    {!isDismissed && !isSnoozed && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-5 px-1.5 text-[10px] text-muted-foreground"
+                        onClick={() => dismissMutation.mutate(reminder.id)}
+                        data-testid={`dismiss-${reminder.id}`}
                       >
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                        <AlarmClockOff className="h-2.5 w-2.5 mr-0.5" />
+                        Dismiss
+                      </Button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-md">
