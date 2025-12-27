@@ -2545,22 +2545,35 @@ export class MemStorage implements IStorage {
   async getNotes(projectId?: string, companyId?: string, userId?: string): Promise<Note[]> {
     const allNotes = Array.from(this.notes.values());
     
-    // Filter by company if specified
-    let filtered = allNotes;
-    if (companyId) {
-      filtered = allNotes.filter(note => {
-        // Include notes assigned to the user regardless of project
-        if (userId && note.assigneeId === userId) return true;
-        if (!note.projectId) return false;
-        const project = this.projects.get(note.projectId);
-        return project?.companyId === companyId;
-      });
-    }
-    
-    // Further filter by specific project if specified
-    if (projectId) {
-      filtered = filtered.filter(note => note.projectId === projectId);
-    }
+    // Filter notes based on criteria
+    let filtered = allNotes.filter(note => {
+      // Filter by company if specified
+      if (companyId) {
+        // Check note's companyId directly if set
+        if (note.companyId && note.companyId !== companyId) return false;
+        // If no companyId on note, check via project
+        if (!note.companyId && note.projectId) {
+          const project = this.projects.get(note.projectId);
+          if (!project || project.companyId !== companyId) return false;
+        }
+      }
+      
+      // Filter by projectId - strict filtering to prevent cross-project leakage
+      if (projectId === null) {
+        // null means business/company-wide notes only
+        return note.projectId === null || note.projectId === undefined;
+      } else if (projectId !== undefined) {
+        // specific project - strictly filter to this project only
+        // Do NOT apply assignee filter here to prevent cross-project leakage
+        return note.projectId === projectId;
+      } else if (userId) {
+        // No project filter specified, but userId is provided
+        // Filter by assignee for user-specific views (dashboard widgets, personal notes)
+        return note.assigneeId === userId;
+      }
+      
+      return true;
+    });
     
     return filtered.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
@@ -7223,35 +7236,26 @@ export class DbStorage implements IStorage {
       }
       
       // Build project filter condition
-      let projectCondition: any = null;
+      // When a specific projectId is provided, ONLY show notes from that project
+      // This prevents cross-project note leakage
       if (projectId === null) {
         // null means business/company-wide notes (projectId IS NULL)
-        projectCondition = isNull(schema.notes.projectId);
+        baseConditions.push(isNull(schema.notes.projectId));
       } else if (projectId !== undefined) {
-        // specific project
-        projectCondition = eq(schema.notes.projectId, projectId);
+        // specific project - strictly filter to this project only
+        // Do NOT apply assignee filter here to prevent cross-project leakage
+        baseConditions.push(eq(schema.notes.projectId, projectId));
+      } else if (userId) {
+        // No project filter specified, but userId is provided
+        // Filter by assignee for user-specific views (dashboard widgets, personal notes)
+        baseConditions.push(eq(schema.notes.assigneeId, userId));
       }
-      
-      // Build assignee condition if userId is provided
-      const assigneeCondition = userId ? eq(schema.notes.assigneeId, userId) : null;
-      
-      // Combine conditions: base conditions AND (project condition OR assignee condition)
-      let finalCondition: any;
-      if (projectCondition && assigneeCondition) {
-        finalCondition = and(...baseConditions, or(projectCondition, assigneeCondition));
-      } else if (projectCondition) {
-        finalCondition = and(...baseConditions, projectCondition);
-      } else if (assigneeCondition) {
-        // No project filter, but include notes assigned to user
-        finalCondition = and(...baseConditions);
-      } else {
-        finalCondition = and(...baseConditions);
-      }
+      // If projectId is undefined and no userId, return all notes for company
       
       const notes = await db
         .select()
         .from(schema.notes)
-        .where(finalCondition)
+        .where(and(...baseConditions))
         .orderBy(desc(schema.notes.createdAt));
       
       return notes as Note[];
