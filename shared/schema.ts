@@ -2256,24 +2256,31 @@ export type ProposalAcceptance = typeof proposalAcceptances.$inferSelect;
 // Activity feed table
 export const activities = pgTable("activities", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }), // Optional for workspace activities
+  companyId: varchar("company_id").references(() => companies.id, { onDelete: "cascade" }), // For workspace activities
   userId: varchar("user_id").references(() => users.id),
   userName: text("user_name"),
-  activityType: text("activity_type").notNull(), // "task", "estimate", "bill", "variation", "invoice", "proposal", etc.
-  action: text("action").notNull(), // "created", "updated", "deleted", "status_changed", "approved", "accepted", etc.
+  activityType: text("activity_type").notNull(), // "task", "estimate", "bill", "variation", "invoice", "proposal", "manual", etc.
+  action: text("action").notNull(), // "created", "updated", "deleted", "status_changed", "approved", "accepted", "note", etc.
   description: text("description").notNull(),
   entityId: varchar("entity_id"), // ID of the related entity (task, estimate, etc.)
   entityName: text("entity_name"), // Name/title of the entity
   metadata: json("metadata"), // Additional data about the activity (e.g., old/new values)
+  pinned: boolean("pinned").notNull().default(false), // Pin activity to top of feed
+  pinnedAt: timestamp("pinned_at"), // When the activity was pinned
+  pinnedBy: varchar("pinned_by").references(() => users.id), // Who pinned the activity
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
 export const insertActivitySchema = createInsertSchema(activities).omit({
   id: true,
   createdAt: true,
+  pinnedAt: true,
+  pinnedBy: true,
 }).extend({
-  activityType: z.enum(["task", "estimate", "bill", "variation", "invoice", "proposal", "project", "site_diary", "schedule", "other"]),
-  action: z.enum(["created", "updated", "completed", "deleted", "status_changed", "approved", "rejected", "accepted", "submitted", "paid", "batch_updated"]),
+  activityType: z.enum(["task", "estimate", "bill", "variation", "invoice", "proposal", "project", "site_diary", "schedule", "manual", "other"]),
+  action: z.enum(["created", "updated", "completed", "deleted", "status_changed", "approved", "rejected", "accepted", "submitted", "paid", "batch_updated", "note"]),
+  pinned: z.boolean().optional(),
 });
 
 export type InsertActivity = z.infer<typeof insertActivitySchema>;
