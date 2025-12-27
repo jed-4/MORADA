@@ -20,13 +20,13 @@ import Messages from "./Messages";
 
 const USER_TABS = [
   { id: "overview", label: "Overview", icon: Home, path: "" },
-  { id: "activity", label: "Activity", icon: Activity, path: "activity" },
   { id: "calendar", label: "Calendar", icon: CalendarIcon, path: "calendar" },
   { id: "tasks", label: "Tasks", icon: CheckSquare, path: "tasks" },
   { id: "time", label: "Timesheets", icon: Timer, path: "time" },
   { id: "reminders", label: "Reminders", icon: Bell, path: "reminders" },
   { id: "messages", label: "Messages", icon: MessageSquare, path: "messages" },
   { id: "notes", label: "Memos", icon: FileText, path: "notes" },
+  { id: "activity", label: "Activity", icon: Activity, path: "activity" },
   { id: "settings", label: "Settings", icon: SettingsIcon, path: "settings" },
 ] as const;
 
