@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useLocation, useParams } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { usePageTitle } from "@/hooks/usePageTitle";
-import { Home, CheckSquare, Calendar as CalendarIcon, Timer, FileText, MessageSquare, Settings as SettingsIcon, Bell } from "lucide-react";
+import { Home, CheckSquare, Calendar as CalendarIcon, Timer, FileText, MessageSquare, Settings as SettingsIcon, Bell, Activity } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import type { User } from "@shared/schema";
 import ComingSoonPage from "./ComingSoonPage";
@@ -15,10 +15,12 @@ import UserTime from "@/components/user-workspace/UserTime";
 import Memos from "@/components/user-workspace/Memos";
 import UserReminders from "@/components/user-workspace/UserReminders";
 import UserSettings from "@/components/user-workspace/UserSettings";
+import UserActivity from "@/components/user-workspace/UserActivity";
 import Messages from "./Messages";
 
 const USER_TABS = [
   { id: "overview", label: "Overview", icon: Home, path: "" },
+  { id: "activity", label: "Activity", icon: Activity, path: "activity" },
   { id: "calendar", label: "Calendar", icon: CalendarIcon, path: "calendar" },
   { id: "tasks", label: "Tasks", icon: CheckSquare, path: "tasks" },
   { id: "time", label: "Timesheets", icon: Timer, path: "time" },
@@ -86,6 +88,8 @@ export default function UserWorkspace() {
     switch (activeTab) {
       case "overview":
         return <UserOverview user={user} isOwnPage={isOwnPage} currentUserId={currentUser?.id ? String(currentUser.id) : undefined} />;
+      case "activity":
+        return <UserActivity user={user} isOwnPage={isOwnPage} />;
       case "calendar":
         return <UserCalendar user={user} isOwnPage={isOwnPage} />;
       case "tasks":
