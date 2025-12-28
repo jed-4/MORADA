@@ -161,7 +161,7 @@ function NoteCard({
       <div className="flex items-start gap-2">
         {note.pinned && (
           <div className="flex-shrink-0 pt-0.5">
-            <Pin className="h-3 w-3 text-[#bba7db]" data-testid={`note-pinned-indicator-${note.id}`} />
+            <Pin className="h-3 w-3 text-primary" data-testid={`note-pinned-indicator-${note.id}`} />
           </div>
         )}
         
@@ -203,7 +203,7 @@ function NoteCard({
           
           {note.assigneeName && (
             <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-              <UserPlus className="h-3 w-3 text-[#bba7db]" />
+              <UserPlus className="h-3 w-3 text-primary" />
               <span data-testid={`note-assignee-${note.id}`}>{note.assigneeName}</span>
             </div>
           )}
@@ -1086,7 +1086,7 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
                   ) : (
                     <ChevronRight className="h-4 w-4 text-muted-foreground" />
                   )}
-                  <Folder className="h-4 w-4 text-[#bba7db]" />
+                  <Folder className="h-4 w-4 text-primary" />
                   {editingGroupId === group.id ? (
                     <Input
                       value={editingGroupName}
