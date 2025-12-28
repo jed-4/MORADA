@@ -811,19 +811,19 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
           const targetAnchor = hoveredAnchor || 'start';
           
           // Map anchor pairs to dependency types:
-          // end -> start = finish-to-start (FS) - most common
-          // start -> start = start-to-start (SS)
-          // end -> end = finish-to-finish (FF)
-          // start -> end = start-to-finish (SF)
-          let dependencyType = 'finish-to-start';
+          // end -> start = FS (Finish-to-Start) - most common
+          // start -> start = SS (Start-to-Start)
+          // end -> end = FF (Finish-to-Finish)
+          // start -> end = SF (Start-to-Finish)
+          let dependencyType = 'FS';
           if (sourceAnchor === 'end' && targetAnchor === 'start') {
-            dependencyType = 'finish-to-start';
+            dependencyType = 'FS';
           } else if (sourceAnchor === 'start' && targetAnchor === 'start') {
-            dependencyType = 'start-to-start';
+            dependencyType = 'SS';
           } else if (sourceAnchor === 'end' && targetAnchor === 'end') {
-            dependencyType = 'finish-to-finish';
+            dependencyType = 'FF';
           } else if (sourceAnchor === 'start' && targetAnchor === 'end') {
-            dependencyType = 'start-to-finish';
+            dependencyType = 'SF';
           }
           
           await createDependencyMutation.mutateAsync({
