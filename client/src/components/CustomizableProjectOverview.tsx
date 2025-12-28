@@ -6,6 +6,21 @@ import { Plus, Settings, ChevronDown, Search, PlusCircle, Check, LayoutGrid, Tra
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+
+// Tab content components
+import ProjectActivity from "@/pages/ProjectActivity";
+import Notes from "@/pages/Notes";
+import Messages from "@/pages/Messages";
+import ProjectScope from "@/pages/ProjectScope";
+import Schedule from "@/pages/Schedule";
+import Tasks from "@/pages/Tasks";
+import Timesheets from "@/pages/Timesheets";
+import ProjectFiles from "@/pages/ProjectFiles";
+import Takeoff from "@/pages/Takeoff";
+import ProjectEstimates from "@/pages/ProjectEstimates";
+import Proposals from "@/pages/Proposals";
+import Bills from "@/pages/Bills";
+import Budget from "@/pages/Budget";
 import {
   Dialog,
   DialogContent,
@@ -155,6 +170,21 @@ export default function CustomizableProjectOverview() {
   const [backgroundId, setBackgroundId] = useState("default");
   const [searchQuery, setSearchQuery] = useState("");
   const [currentLocation, navigate] = useLocation();
+
+  // Determine active tab from URL path
+  const activeTab = useMemo(() => {
+    if (!currentProject) return "overview";
+    const basePath = `/projects/${currentProject.id}`;
+    const currentPath = currentLocation.split(basePath)[1] || "";
+    
+    // Sort tabs by path length (longest first) to match most specific path
+    const sortedTabs = [...PROJECT_TABS].sort((a, b) => b.path.length - a.path.length);
+    const currentTab = sortedTabs.find(tab => {
+      if (tab.path === "") return currentPath === "" || currentPath === "/";
+      return currentPath.startsWith(tab.path);
+    });
+    return currentTab?.id || "overview";
+  }, [currentLocation, currentProject]);
 
   // New View Modal state
   const [isNewViewModalOpen, setIsNewViewModalOpen] = useState(false);
@@ -768,69 +798,112 @@ export default function CustomizableProjectOverview() {
     }
   };
 
+  // Render content for non-overview tabs
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case "activity":
+        return <ProjectActivity />;
+      case "messages":
+        return <Messages />;
+      case "notes":
+        return <Notes projectId={currentProject.id} />;
+      case "scope":
+        return <ProjectScope />;
+      case "schedule":
+        return <Schedule />;
+      case "tasks":
+        return <Tasks />;
+      case "timesheets":
+        return <Timesheets />;
+      case "files":
+        return <ProjectFiles />;
+      case "takeoff":
+        return <Takeoff />;
+      case "estimates":
+        return <ProjectEstimates />;
+      case "proposals":
+        return <Proposals />;
+      case "bills":
+        return <Bills />;
+      case "budget":
+        return <Budget />;
+      default:
+        return null; // overview renders inline below
+    }
+  };
+
+  // Check if we're on the overview tab (renders the widget dashboard)
+  const isOverviewTab = activeTab === "overview";
+
   return (
-    <div className="flex flex-col h-full" data-testid="customizable-project-overview">
-      {/* Row 1 - Title & Actions (36px / h-9) */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0 border-b border-border">
-        {/* Left: Project Name + Active chip */}
-        <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold flex items-center gap-1.5" data-testid="text-page-title">
-            <span className="truncate max-w-[180px]">{currentProject.name}</span>
-          </h2>
-          <Badge
-            variant="secondary"
-            className={`text-xs ${
-              currentProject.status === 'active'
-                ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'
-            }`}
-          >
-            {currentProject.status === 'active' ? 'Active' : 'Inactive'}
-          </Badge>
-          <Badge
-            className="text-xs capitalize"
-            style={{
-              backgroundColor: `${phaseColor}20`,
-              color: phaseColor,
-              borderColor: `${phaseColor}40`
-            }}
-            data-testid="badge-project-phase"
-          >
-            {phaseDisplayName}
-          </Badge>
+    <div className="flex flex-col h-full gap-1.5" data-testid="customizable-project-overview">
+      {/* Header Panel - Rounded like Workspace */}
+      <div className="surface-panel flex-shrink-0">
+        {/* Row 1 - Title & Actions */}
+        <div className="h-10 flex items-center justify-between px-4 gap-4">
+          {/* Left: Project Name + Active chip */}
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold flex items-center gap-1.5" data-testid="text-page-title">
+              <span className="truncate max-w-[180px]">{currentProject.name}</span>
+            </h2>
+            <Badge
+              variant="secondary"
+              className={`text-xs ${
+                currentProject.status === 'active'
+                  ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                  : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'
+              }`}
+            >
+              {currentProject.status === 'active' ? 'Active' : 'Inactive'}
+            </Badge>
+            <Badge
+              className="text-xs capitalize"
+              style={{
+                backgroundColor: `${phaseColor}20`,
+                color: phaseColor,
+                borderColor: `${phaseColor}40`
+              }}
+              data-testid="badge-project-phase"
+            >
+              {phaseDisplayName}
+            </Badge>
+          </div>
+
+          {/* Right: Add Widget + Settings gear - only show on overview tab */}
+          <div className="flex items-center gap-1.5">
+            {isOverviewTab && (
+              <>
+                <button
+                  className="h-6 w-6 text-xs border rounded-md flex items-center justify-center hover-elevate active-elevate-2"
+                  onClick={() => setIsThemeSettingsOpen(true)}
+                  data-testid="button-theme-settings"
+                >
+                  <Palette className="w-3 h-3" />
+                </button>
+                <button
+                  className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
+                  onClick={() => setIsAddingWidget(true)}
+                  data-testid="button-add-widget"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>Add Widget</span>
+                </button>
+              </>
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              onClick={() => navigate(`/projects/${currentProject.id}/settings`)}
+              data-testid="button-project-settings"
+            >
+              <Settings className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         </div>
 
-        {/* Right: Add Widget + Settings gear */}
-        <div className="flex items-center gap-1.5">
-          <button
-            className="h-6 w-6 text-xs border rounded-md flex items-center justify-center hover-elevate active-elevate-2"
-            onClick={() => setIsThemeSettingsOpen(true)}
-            data-testid="button-theme-settings"
-          >
-            <Palette className="w-3 h-3" />
-          </button>
-          <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
-            onClick={() => setIsAddingWidget(true)}
-            data-testid="button-add-widget"
-          >
-            <Plus className="w-3 h-3" />
-            <span>Add Widget</span>
-          </button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6"
-            onClick={() => navigate(`/projects/${currentProject.id}/settings`)}
-            data-testid="button-project-settings"
-          >
-            <Settings className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-      </div>
-
-      {/* Row 2 - Navigation Tabs - Underline Style */}
-      <div className="h-10 flex items-center px-4 gap-4 border-b border-border/50 overflow-x-auto flex-shrink-0 bg-background">
+        {/* Row 2 - Navigation Tabs - Underline Style */}
+        <div className="h-10 flex items-center px-4 gap-4 border-t border-border/50 overflow-x-auto">
         {PROJECT_TABS.map((tab) => {
           const Icon = tab.icon;
           const tabPath = tab.path ? `/projects/${currentProject.id}${tab.path}` : `/projects/${currentProject.id}`;
@@ -862,10 +935,18 @@ export default function CustomizableProjectOverview() {
             </button>
           );
         })}
+        </div>
       </div>
 
-      {/* View Switcher Row - Simplified */}
-      <div className="h-8 bg-muted/30 flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+      {/* Content Area - either tab content or widget dashboard */}
+      {!isOverviewTab ? (
+        <div className="flex-1 overflow-auto">
+          {renderTabContent()}
+        </div>
+      ) : (
+        <>
+          {/* View Switcher Row - Simplified */}
+          <div className="h-8 bg-muted/30 flex items-center justify-between px-2 border-b border-border flex-shrink-0 rounded-lg">
         {/* Left: Current view indicator */}
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">View:</span>
@@ -1035,6 +1116,8 @@ export default function CustomizableProjectOverview() {
         </DndContext>
         </div>
       </div>
+        </>
+      )}
 
       {/* Add Widget Dialog */}
       <Dialog open={isAddingWidget} onOpenChange={setIsAddingWidget}>
