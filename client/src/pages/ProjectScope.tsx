@@ -589,11 +589,11 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
               </div>
             </HoverCardTrigger>
             {item.description && (
-              <HoverCardContent className="w-80 p-3" align="start" side="bottom">
+              <HoverCardContent className="w-80 p-3 z-[9999]" align="start" side="bottom" sideOffset={8}>
                 <div className="space-y-2">
                   <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Description</div>
                   <div 
-                    className="text-sm leading-relaxed"
+                    className="text-sm leading-relaxed [&_*]:!text-foreground [&_*]:!opacity-100"
                     dangerouslySetInnerHTML={{ __html: item.description }}
                   />
                   <div className="pt-2 border-t border-border">
