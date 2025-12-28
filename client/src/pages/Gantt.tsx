@@ -1505,9 +1505,9 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                           data-testid={`resize-right-${parentItem.id}`}
                         />
                         
-                        {/* Dependency connector circle (right side) - larger hit area, positioned well outside bar */}
+                        {/* Dependency connector circle (right side) - stays visible when hovered */}
                         <div
-                          className="absolute -right-6 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center opacity-0 group-hover/bar:opacity-100 cursor-crosshair transition-opacity z-30"
+                          className="absolute -right-6 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center opacity-0 group-hover/bar:opacity-100 hover:!opacity-100 cursor-crosshair transition-opacity z-30"
                           onMouseDown={(e) => {
                             e.stopPropagation();
                             handleBarMouseDown(e, parentItem, 'dependency');
@@ -1515,7 +1515,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                           title="Drag to create dependency"
                           data-testid={`dependency-handle-${parentItem.id}`}
                         >
-                          <div className="w-4 h-4 rounded-full bg-[#bba7db] border-2 border-white shadow-md hover:scale-125 transition-transform" />
+                          <div className="w-2.5 h-2.5 rounded-full bg-[#9b7fc7] hover:scale-150 transition-transform" />
                         </div>
                       </div>
                       {!nameFitsInBar && (
@@ -1584,9 +1584,9 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                               data-testid={`resize-right-${childItem.id}`}
                             />
                             
-                            {/* Dependency connector circle (right side) - larger hit area, positioned well outside bar */}
+                            {/* Dependency connector circle (right side) - stays visible when hovered */}
                             <div
-                              className="absolute -right-6 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center opacity-0 group-hover/bar:opacity-100 cursor-crosshair transition-opacity z-30"
+                              className="absolute -right-6 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center opacity-0 group-hover/bar:opacity-100 hover:!opacity-100 cursor-crosshair transition-opacity z-30"
                               onMouseDown={(e) => {
                                 e.stopPropagation();
                                 handleBarMouseDown(e, childItem, 'dependency');
@@ -1594,7 +1594,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                               title="Drag to create dependency"
                               data-testid={`dependency-handle-${childItem.id}`}
                             >
-                              <div className="w-4 h-4 rounded-full bg-[#bba7db] border-2 border-white shadow-md hover:scale-125 transition-transform" />
+                              <div className="w-2.5 h-2.5 rounded-full bg-[#9b7fc7] hover:scale-150 transition-transform" />
                             </div>
                           </div>
                           {!childNameFits && (
@@ -1688,19 +1688,11 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                     
                     return (
                       <g key={`${item.id}-${dep.id}`}>
-                        {/* Subtle glow/shadow for depth */}
+                        {/* Clean dependency line */}
                         <path
                           d={path}
-                          stroke="rgba(187, 167, 219, 0.3)"
-                          strokeWidth="6"
-                          fill="none"
-                          strokeLinecap="round"
-                        />
-                        {/* Main curved line */}
-                        <path
-                          d={path}
-                          stroke="#bba7db"
-                          strokeWidth="2"
+                          stroke="#9b7fc7"
+                          strokeWidth="1.5"
                           fill="none"
                           strokeLinecap="round"
                           markerEnd="url(#arrow-elegant)"
@@ -1710,38 +1702,44 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                   }).filter(Boolean);
                 })}
                 
-                {/* Elegant arrow marker definitions */}
+                {/* Arrow marker definitions */}
                 <defs>
-                  {/* Modern sleek arrowhead */}
+                  {/* Clean minimal arrowhead */}
                   <marker
                     id="arrow-elegant"
-                    markerWidth="12"
-                    markerHeight="12"
-                    refX="10"
-                    refY="6"
+                    markerWidth="8"
+                    markerHeight="8"
+                    refX="7"
+                    refY="4"
                     orient="auto"
                     markerUnits="userSpaceOnUse"
                   >
                     <path 
-                      d="M 2 2 L 10 6 L 2 10 L 4 6 Z" 
-                      fill="#bba7db"
-                      stroke="none"
+                      d="M 1 1 L 7 4 L 1 7" 
+                      fill="none"
+                      stroke="#9b7fc7"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
                     />
                   </marker>
                   {/* Arrow for drag preview */}
                   <marker
                     id="arrow-drag"
-                    markerWidth="10"
-                    markerHeight="10"
-                    refX="8"
-                    refY="5"
+                    markerWidth="8"
+                    markerHeight="8"
+                    refX="7"
+                    refY="4"
                     orient="auto"
                     markerUnits="userSpaceOnUse"
                   >
                     <path 
-                      d="M 1 1 L 8 5 L 1 9 L 3 5 Z" 
-                      fill="#bba7db"
-                      fillOpacity="0.7"
+                      d="M 1 1 L 7 4 L 1 7" 
+                      fill="none"
+                      stroke="#9b7fc7"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
                     />
                   </marker>
                 </defs>
@@ -1750,9 +1748,9 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                 {dragging?.type === 'dependency' && dragging.currentX && dragging.currentY && (
                   <path
                     d={`M ${dragging.startX} ${dragging.startY} Q ${(dragging.startX + dragging.currentX) / 2 + 20} ${(dragging.startY + dragging.currentY) / 2}, ${dragging.currentX} ${dragging.currentY}`}
-                    stroke="#bba7db"
-                    strokeWidth="2"
-                    strokeDasharray="6,4"
+                    stroke="#9b7fc7"
+                    strokeWidth="1.5"
+                    strokeDasharray="4,3"
                     strokeLinecap="round"
                     fill="none"
                     markerEnd="url(#arrow-drag)"
