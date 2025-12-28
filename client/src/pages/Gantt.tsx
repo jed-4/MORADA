@@ -1523,31 +1523,33 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                   <div key={parentItem.id}>
                     {/* Parent item bar row */}
                     <div className={`h-10 relative group/row`}>
-                      {/* Left dependency dot (for incoming) */}
-                      <div
-                        className="absolute top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30"
-                        style={{ left: `${parentStart - 12}px` }}
-                        title="Drop here for dependency"
-                        data-testid={`dependency-target-${parentItem.id}`}
+                      {/* Bar wrapper for positioning dots relative to bar */}
+                      <div 
+                        className="absolute top-1 h-6"
+                        style={{ left: `${parentStart}px`, width: `${parentWidth}px` }}
                       >
-                        <div className="w-2 h-2 rounded-full bg-[#9b7fc7]" />
-                      </div>
-                      
-                      {/* Main bar */}
-                      <div
-                        className="absolute top-1 h-6 mx-1 rounded-sm flex items-center cursor-move hover:shadow-md transition-all z-10 group/bar overflow-hidden"
-                        style={{
-                          left: `${parentStart}px`,
-                          width: `${parentWidth}px`,
-                          backgroundColor: barColor,
-                          border: isOverdue ? '2px dashed #dc2626' : 'none',
-                        }}
-                        onClick={(e) => handleBarClick(e, parentItem)}
-                        onMouseDown={(e) => handleBarMouseDown(e, parentItem, 'move')}
-                        onMouseEnter={() => setHoveredBar(parentItem.id)}
-                        onMouseLeave={() => setHoveredBar(null)}
-                        data-testid={`bar-parent-${parentItem.id}`}
-                      >
+                        {/* Left dependency dot (for incoming) - centered on bar height */}
+                        <div
+                          className="absolute top-1/2 -translate-y-1/2 -left-4 w-4 h-4 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30"
+                          title="Drop here for dependency"
+                          data-testid={`dependency-target-${parentItem.id}`}
+                        >
+                          <div className="w-2 h-2 rounded-full bg-[#9b7fc7]" />
+                        </div>
+                        
+                        {/* Main bar */}
+                        <div
+                          className="absolute inset-0 rounded-sm flex items-center cursor-move hover:shadow-md transition-all z-10 group/bar overflow-hidden"
+                          style={{
+                            backgroundColor: barColor,
+                            border: isOverdue ? '2px dashed #dc2626' : 'none',
+                          }}
+                          onClick={(e) => handleBarClick(e, parentItem)}
+                          onMouseDown={(e) => handleBarMouseDown(e, parentItem, 'move')}
+                          onMouseEnter={() => setHoveredBar(parentItem.id)}
+                          onMouseLeave={() => setHoveredBar(null)}
+                          data-testid={`bar-parent-${parentItem.id}`}
+                        >
                         {/* Left resize handle */}
                         <div
                           className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-background/30 opacity-0 group-hover/bar:opacity-100 transition-opacity"
@@ -1587,13 +1589,14 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                           className="absolute bottom-0 left-0 right-0 h-2 opacity-0 group-hover/bar:opacity-100 transition-opacity cursor-ew-resize"
                           onMouseDown={(e) => {
                             e.stopPropagation();
+                            e.preventDefault();
                             const barRect = e.currentTarget.parentElement?.getBoundingClientRect();
                             if (!barRect) return;
                             const clickX = e.clientX - barRect.left;
                             const clickPercent = Math.max(0, Math.min(100, Math.round((clickX / barRect.width) * 100)));
-                            // Set progress immediately on click
                             updateProgressMutation.mutate({ id: parentItem.id, progressPercent: clickPercent });
                           }}
+                          onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
                           data-testid={`progress-track-${parentItem.id}`}
                         >
                           {/* Track line */}
@@ -1604,6 +1607,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                             style={{ left: `${parentItem.progressPercent ?? 0}%` }}
                             onMouseDown={(e) => {
                               e.stopPropagation();
+                              e.preventDefault();
                               const barRect = e.currentTarget.parentElement?.parentElement?.getBoundingClientRect();
                               if (!barRect) return;
                               setProgressDrag({
@@ -1613,15 +1617,15 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                                 startProgress: parentItem.progressPercent ?? 0,
                               });
                             }}
+                            onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
                             data-testid={`progress-thumb-${parentItem.id}`}
                           />
                         </div>
                       </div>
                       
-                      {/* Right dependency dot (for outgoing) */}
+                      {/* Right dependency dot (for outgoing) - centered on bar height */}
                       <div
-                        className="absolute top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30"
-                        style={{ left: `${parentStart + parentWidth + 8}px` }}
+                        className="absolute top-1/2 -translate-y-1/2 -right-4 w-4 h-4 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30"
                         onMouseDown={(e) => {
                           e.stopPropagation();
                           handleBarMouseDown(e, parentItem, 'dependency');
@@ -1631,6 +1635,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                       >
                         <div className="w-2 h-2 rounded-full bg-[#9b7fc7] hover:scale-150 transition-transform" />
                       </div>
+                    </div>
                       
                       {!nameFitsInBar && (
                         <div
@@ -1658,113 +1663,118 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
                       return (
                         <div key={childItem.id} className={`h-10 relative group/row`}>
-                          {/* Left dependency dot (for incoming) */}
-                          <div
-                            className="absolute top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30"
-                            style={{ left: `${childStart - 12}px` }}
-                            title="Drop here for dependency"
-                            data-testid={`dependency-target-${childItem.id}`}
+                          {/* Bar wrapper for positioning dots relative to bar */}
+                          <div 
+                            className="absolute top-1 h-6"
+                            style={{ left: `${childStart}px`, width: `${childWidth}px` }}
                           >
-                            <div className="w-2 h-2 rounded-full bg-[#9b7fc7]" />
-                          </div>
-                          
-                          {/* Main bar */}
-                          <div
-                            className="absolute top-1 h-6 mx-1 rounded-sm flex items-center cursor-move hover:shadow-md transition-all z-10 group/bar overflow-hidden"
-                            style={{
-                              left: `${childStart}px`,
-                              width: `${childWidth}px`,
-                              backgroundColor: childColor,
-                              border: '2px dotted rgba(255, 255, 255, 0.6)',
-                            }}
-                            onClick={(e) => handleBarClick(e, childItem)}
-                            onMouseDown={(e) => handleBarMouseDown(e, childItem, 'move')}
-                            onMouseEnter={() => setHoveredBar(childItem.id)}
-                            onMouseLeave={() => setHoveredBar(null)}
-                            data-testid={`bar-child-${childItem.id}`}
-                          >
-                            {/* Left resize handle */}
+                            {/* Left dependency dot (for incoming) - centered on bar height */}
                             <div
-                              className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-background/30 opacity-0 group-hover/bar:opacity-100 transition-opacity"
-                              onMouseDown={(e) => {
-                                e.stopPropagation();
-                                handleBarMouseDown(e, childItem, 'resize-left');
-                              }}
-                              data-testid={`resize-left-${childItem.id}`}
-                            />
-                            
-                            {childNameFits && (
-                              <span className="text-xs font-medium text-white truncate pointer-events-none pl-2">
-                                {childItem.name}
-                              </span>
-                            )}
-                            
-                            {/* Right resize handle */}
-                            <div
-                              className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-background/30 opacity-0 group-hover/bar:opacity-100 transition-opacity"
-                              onMouseDown={(e) => {
-                                e.stopPropagation();
-                                handleBarMouseDown(e, childItem, 'resize-right');
-                              }}
-                              data-testid={`resize-right-${childItem.id}`}
-                            />
-                            
-                            {/* Progress overlay - darkens completed portion */}
-                            <div 
-                              className="absolute inset-0 pointer-events-none rounded-sm"
-                              style={{ 
-                                background: `linear-gradient(to right, rgba(0,0,0,0.25) ${childItem.progressPercent ?? 0}%, transparent ${childItem.progressPercent ?? 0}%)` 
-                              }}
-                            />
-                            
-                            {/* Progress slider handle at bottom - appears on hover */}
-                            <div
-                              className="absolute bottom-0 left-0 right-0 h-2 opacity-0 group-hover/bar:opacity-100 transition-opacity cursor-ew-resize"
-                              onMouseDown={(e) => {
-                                e.stopPropagation();
-                                const barRect = e.currentTarget.parentElement?.getBoundingClientRect();
-                                if (!barRect) return;
-                                const clickX = e.clientX - barRect.left;
-                                const clickPercent = Math.max(0, Math.min(100, Math.round((clickX / barRect.width) * 100)));
-                                // Set progress immediately on click
-                                updateProgressMutation.mutate({ id: childItem.id, progressPercent: clickPercent });
-                              }}
-                              data-testid={`progress-track-${childItem.id}`}
+                              className="absolute top-1/2 -translate-y-1/2 -left-4 w-4 h-4 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30"
+                              title="Drop here for dependency"
+                              data-testid={`dependency-target-${childItem.id}`}
                             >
-                              {/* Track line */}
-                              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white/30" />
-                              {/* Slider thumb */}
-                              <div 
-                                className="absolute bottom-0 w-2 h-2 bg-white rounded-full shadow-md -translate-x-1/2 cursor-ew-resize hover:scale-125 transition-transform"
-                                style={{ left: `${childItem.progressPercent ?? 0}%` }}
+                              <div className="w-2 h-2 rounded-full bg-[#9b7fc7]" />
+                            </div>
+                            
+                            {/* Main bar */}
+                            <div
+                              className="absolute inset-0 rounded-sm flex items-center cursor-move hover:shadow-md transition-all z-10 group/bar overflow-hidden"
+                              style={{
+                                backgroundColor: childColor,
+                                border: '2px dotted rgba(255, 255, 255, 0.6)',
+                              }}
+                              onClick={(e) => handleBarClick(e, childItem)}
+                              onMouseDown={(e) => handleBarMouseDown(e, childItem, 'move')}
+                              onMouseEnter={() => setHoveredBar(childItem.id)}
+                              onMouseLeave={() => setHoveredBar(null)}
+                              data-testid={`bar-child-${childItem.id}`}
+                            >
+                              {/* Left resize handle */}
+                              <div
+                                className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-background/30 opacity-0 group-hover/bar:opacity-100 transition-opacity"
                                 onMouseDown={(e) => {
                                   e.stopPropagation();
-                                  const barRect = e.currentTarget.parentElement?.parentElement?.getBoundingClientRect();
-                                  if (!barRect) return;
-                                  setProgressDrag({
-                                    itemId: childItem.id,
-                                    barWidth: barRect.width,
-                                    startX: e.clientX,
-                                    startProgress: childItem.progressPercent ?? 0,
-                                  });
+                                  handleBarMouseDown(e, childItem, 'resize-left');
                                 }}
-                                data-testid={`progress-thumb-${childItem.id}`}
+                                data-testid={`resize-left-${childItem.id}`}
                               />
+                              
+                              {childNameFits && (
+                                <span className="text-xs font-medium text-white truncate pointer-events-none pl-2">
+                                  {childItem.name}
+                                </span>
+                              )}
+                              
+                              {/* Right resize handle */}
+                              <div
+                                className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-background/30 opacity-0 group-hover/bar:opacity-100 transition-opacity"
+                                onMouseDown={(e) => {
+                                  e.stopPropagation();
+                                  handleBarMouseDown(e, childItem, 'resize-right');
+                                }}
+                                data-testid={`resize-right-${childItem.id}`}
+                              />
+                              
+                              {/* Progress overlay - darkens completed portion */}
+                              <div 
+                                className="absolute inset-0 pointer-events-none rounded-sm"
+                                style={{ 
+                                  background: `linear-gradient(to right, rgba(0,0,0,0.25) ${childItem.progressPercent ?? 0}%, transparent ${childItem.progressPercent ?? 0}%)` 
+                                }}
+                              />
+                              
+                              {/* Progress slider handle at bottom - appears on hover */}
+                              <div
+                                className="absolute bottom-0 left-0 right-0 h-2 opacity-0 group-hover/bar:opacity-100 transition-opacity cursor-ew-resize"
+                                onMouseDown={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  const barRect = e.currentTarget.parentElement?.getBoundingClientRect();
+                                  if (!barRect) return;
+                                  const clickX = e.clientX - barRect.left;
+                                  const clickPercent = Math.max(0, Math.min(100, Math.round((clickX / barRect.width) * 100)));
+                                  updateProgressMutation.mutate({ id: childItem.id, progressPercent: clickPercent });
+                                }}
+                                onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                                data-testid={`progress-track-${childItem.id}`}
+                              >
+                                {/* Track line */}
+                                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white/30" />
+                                {/* Slider thumb */}
+                                <div 
+                                  className="absolute bottom-0 w-2 h-2 bg-white rounded-full shadow-md -translate-x-1/2 cursor-ew-resize hover:scale-125 transition-transform"
+                                  style={{ left: `${childItem.progressPercent ?? 0}%` }}
+                                  onMouseDown={(e) => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                    const barRect = e.currentTarget.parentElement?.parentElement?.getBoundingClientRect();
+                                    if (!barRect) return;
+                                    setProgressDrag({
+                                      itemId: childItem.id,
+                                      barWidth: barRect.width,
+                                      startX: e.clientX,
+                                      startProgress: childItem.progressPercent ?? 0,
+                                    });
+                                  }}
+                                  onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                                  data-testid={`progress-thumb-${childItem.id}`}
+                                />
+                              </div>
                             </div>
-                          </div>
-                          
-                          {/* Right dependency dot (for outgoing) */}
-                          <div
-                            className="absolute top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30"
-                            style={{ left: `${childStart + childWidth + 8}px` }}
-                            onMouseDown={(e) => {
-                              e.stopPropagation();
-                              handleBarMouseDown(e, childItem, 'dependency');
-                            }}
-                            title="Drag to create dependency"
-                            data-testid={`dependency-handle-${childItem.id}`}
-                          >
-                            <div className="w-2 h-2 rounded-full bg-[#9b7fc7] hover:scale-150 transition-transform" />
+                            
+                            {/* Right dependency dot (for outgoing) - centered on bar height */}
+                            <div
+                              className="absolute top-1/2 -translate-y-1/2 -right-4 w-4 h-4 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30"
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                                handleBarMouseDown(e, childItem, 'dependency');
+                              }}
+                              title="Drag to create dependency"
+                              data-testid={`dependency-handle-${childItem.id}`}
+                            >
+                              <div className="w-2 h-2 rounded-full bg-[#9b7fc7] hover:scale-150 transition-transform" />
+                            </div>
                           </div>
                           
                           {!childNameFits && (
