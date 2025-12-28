@@ -1688,43 +1688,74 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                     
                     return (
                       <g key={`${item.id}-${dep.id}`}>
+                        {/* Subtle glow/shadow for depth */}
+                        <path
+                          d={path}
+                          stroke="rgba(187, 167, 219, 0.3)"
+                          strokeWidth="6"
+                          fill="none"
+                          strokeLinecap="round"
+                        />
+                        {/* Main curved line */}
                         <path
                           d={path}
                           stroke="#bba7db"
                           strokeWidth="2"
                           fill="none"
-                          markerEnd="url(#arrowhead)"
+                          strokeLinecap="round"
+                          markerEnd="url(#arrow-elegant)"
                         />
                       </g>
                     );
                   }).filter(Boolean);
                 })}
                 
-                {/* Arrow marker definition */}
+                {/* Elegant arrow marker definitions */}
                 <defs>
+                  {/* Modern sleek arrowhead */}
                   <marker
-                    id="arrowhead"
+                    id="arrow-elegant"
+                    markerWidth="12"
+                    markerHeight="12"
+                    refX="10"
+                    refY="6"
+                    orient="auto"
+                    markerUnits="userSpaceOnUse"
+                  >
+                    <path 
+                      d="M 2 2 L 10 6 L 2 10 L 4 6 Z" 
+                      fill="#bba7db"
+                      stroke="none"
+                    />
+                  </marker>
+                  {/* Arrow for drag preview */}
+                  <marker
+                    id="arrow-drag"
                     markerWidth="10"
                     markerHeight="10"
-                    refX="9"
-                    refY="3"
+                    refX="8"
+                    refY="5"
                     orient="auto"
+                    markerUnits="userSpaceOnUse"
                   >
-                    <polygon points="0 0, 10 3, 0 6" fill="#bba7db" />
+                    <path 
+                      d="M 1 1 L 8 5 L 1 9 L 3 5 Z" 
+                      fill="#bba7db"
+                      fillOpacity="0.7"
+                    />
                   </marker>
                 </defs>
                 
                 {/* Drag-to-create dependency visual feedback */}
                 {dragging?.type === 'dependency' && dragging.currentX && dragging.currentY && (
-                  <line
-                    x1={dragging.startX}
-                    y1={dragging.startY}
-                    x2={dragging.currentX}
-                    y2={dragging.currentY}
+                  <path
+                    d={`M ${dragging.startX} ${dragging.startY} Q ${(dragging.startX + dragging.currentX) / 2 + 20} ${(dragging.startY + dragging.currentY) / 2}, ${dragging.currentX} ${dragging.currentY}`}
                     stroke="#bba7db"
                     strokeWidth="2"
-                    strokeDasharray="5,5"
-                    markerEnd="url(#arrowhead)"
+                    strokeDasharray="6,4"
+                    strokeLinecap="round"
+                    fill="none"
+                    markerEnd="url(#arrow-drag)"
                   />
                 )}
               </svg>
