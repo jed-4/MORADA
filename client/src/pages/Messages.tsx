@@ -582,13 +582,14 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     <div className="h-full flex flex-col">
       {/* Notification Banner */}
       {showNotificationBanner && isNotificationSupported() && notificationPermission === "default" && (
-        <Alert className="rounded-none border-x-0 border-t-0 bg-blue-50 dark:bg-blue-950/20" data-testid="notification-banner">
-          <Bell className="h-4 w-4" />
+        <Alert className="rounded-none border-x-0 border-t-0 bg-[#bba7db]/10" data-testid="notification-banner">
+          <Bell className="h-4 w-4 text-[#bba7db]" />
           <AlertDescription className="flex items-center justify-between gap-4">
             <span className="text-sm">Enable notifications to get alerts for new messages and @mentions</span>
             <div className="flex gap-2">
               <Button
                 size="sm"
+                className="bg-[#bba7db] text-white border-[#bba7db]"
                 onClick={handleRequestNotificationPermission}
                 data-testid="button-enable-notifications"
               >
@@ -607,20 +608,11 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
         </Alert>
       )}
 
-      {/* 2-row header matching ClickUp 2025 pattern */}
+      {/* Channel info header */}
       <div className="shrink-0 border-b bg-background">
-        {/* Row 1: Page title + connection status */}
-        <div className="h-9 px-4 flex items-center justify-between">
-          <h1 className="text-sm font-semibold">Messages</h1>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-gray-400'}`} />
-            <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
-          </div>
-        </div>
-
-        {/* Row 2: Channel info + actions */}
+        {/* Channel info + actions */}
         {selectedChannel && (
-          <div className="h-9 px-4 flex items-center justify-between border-t">
+          <div className="h-9 px-4 flex items-center justify-between">
             <div className="flex items-center gap-2 min-w-0">
               <Hash className="h-4 w-4 text-muted-foreground shrink-0" />
               <span className="text-sm font-medium truncate">{selectedChannel.name}</span>
@@ -799,14 +791,14 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                     >
                       <div className="flex items-center gap-2 min-w-0 flex-1">
                         {isPinned && (
-                          <Pin className="h-3 w-3 shrink-0 text-amber-500 dark:text-amber-400 rotate-45" />
+                          <Pin className="h-3 w-3 shrink-0 text-[#bba7db] rotate-45" />
                         )}
                         {channel.type === "dm" ? (
-                          <User className="h-3.5 w-3.5 shrink-0 text-purple-600 dark:text-purple-400" />
+                          <User className="h-3.5 w-3.5 shrink-0 text-[#bba7db]" />
                         ) : channel.isClientFacing ? (
-                          <Eye className="h-3.5 w-3.5 shrink-0 text-green-600 dark:text-green-400" />
+                          <Eye className="h-3.5 w-3.5 shrink-0 text-primary" />
                         ) : (
-                          <Lock className="h-3.5 w-3.5 shrink-0 text-blue-600 dark:text-blue-400" />
+                          <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                         )}
                         <span className="truncate">{getDmDisplayName(channel)}</span>
                       </div>
@@ -824,7 +816,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                           className={`
                             p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity
                             ${isPinned 
-                              ? 'text-amber-500 hover:bg-amber-500/10' 
+                              ? 'text-[#bba7db] hover:bg-[#bba7db]/10' 
                               : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
                             }
                           `}
@@ -882,7 +874,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                             </Avatar>
                           )}
                           {isBot && (
-                            <div className="h-8 w-8 shrink-0 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+                            <div className="h-8 w-8 shrink-0 rounded-full bg-[#bba7db] flex items-center justify-center">
                               <Sparkles className="h-4 w-4 text-white" />
                             </div>
                           )}
@@ -900,7 +892,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                                 ${isOwn 
                                   ? 'bg-[#bba7db]/10 text-foreground border border-[#bba7db]/20' 
                                   : isBot
-                                    ? 'bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-950/20 dark:to-pink-950/20 text-foreground border border-purple-200 dark:border-purple-800'
+                                    ? 'bg-[#bba7db]/5 text-foreground border border-[#bba7db]/20'
                                     : 'bg-muted/30 text-foreground'
                                 }
                               `}
