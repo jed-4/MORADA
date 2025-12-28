@@ -431,6 +431,30 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
       .filter((item): item is ScheduleItem => item !== undefined);
   }, [allItems, sortableItemIds]);
 
+  // Create global item map and row index map for dependency rendering
+  const { globalItemMap, itemRowIndexMap } = useMemo(() => {
+    const itemMap = new Map<string, ScheduleItem>();
+    const rowIndexMap = new Map<string, number>();
+    
+    allItems.forEach(item => itemMap.set(item.id, item));
+    
+    // Calculate row index for each visible item
+    let rowIndex = 0;
+    parentItems.forEach(parent => {
+      rowIndexMap.set(parent.id, rowIndex);
+      rowIndex++;
+      if (!collapsedItems.has(parent.id)) {
+        const children = childItemsByParent[parent.id] || [];
+        children.forEach(child => {
+          rowIndexMap.set(child.id, rowIndex);
+          rowIndex++;
+        });
+      }
+    });
+    
+    return { globalItemMap: itemMap, itemRowIndexMap: rowIndexMap };
+  }, [allItems, parentItems, childItemsByParent, collapsedItems]);
+
   // Update mutation for schedule items
   const updateItemMutation = useMutation({
     mutationFn: async ({ id, startDate, endDate }: { id: string; startDate: Date; endDate: Date }) => {
@@ -1454,16 +1478,18 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                           data-testid={`resize-right-${parentItem.id}`}
                         />
                         
-                        {/* Dependency connector circle (right side) */}
+                        {/* Dependency connector circle (right side) - larger hit area */}
                         <div
-                          className="absolute -right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-background border-2 border-current opacity-0 group-hover/bar:opacity-100 cursor-crosshair transition-opacity z-20"
+                          className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center opacity-0 group-hover/bar:opacity-100 cursor-crosshair transition-opacity z-30"
                           onMouseDown={(e) => {
                             e.stopPropagation();
                             handleBarMouseDown(e, parentItem, 'dependency');
                           }}
                           title="Drag to create dependency"
                           data-testid={`dependency-handle-${parentItem.id}`}
-                        />
+                        >
+                          <div className="w-4 h-4 rounded-full bg-[#bba7db] border-2 border-white shadow-md hover:scale-125 transition-transform" />
+                        </div>
                       </div>
                       {!nameFitsInBar && (
                         <div
@@ -1531,16 +1557,18 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                               data-testid={`resize-right-${childItem.id}`}
                             />
                             
-                            {/* Dependency connector circle (right side) */}
+                            {/* Dependency connector circle (right side) - larger hit area */}
                             <div
-                              className="absolute -right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-background border-2 border-current opacity-0 group-hover/bar:opacity-100 cursor-crosshair transition-opacity z-20"
+                              className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center opacity-0 group-hover/bar:opacity-100 cursor-crosshair transition-opacity z-30"
                               onMouseDown={(e) => {
                                 e.stopPropagation();
                                 handleBarMouseDown(e, childItem, 'dependency');
                               }}
                               title="Drag to create dependency"
                               data-testid={`dependency-handle-${childItem.id}`}
-                            />
+                            >
+                              <div className="w-4 h-4 rounded-full bg-[#bba7db] border-2 border-white shadow-md hover:scale-125 transition-transform" />
+                            </div>
                           </div>
                           {!childNameFits && (
                             <div
@@ -1564,73 +1592,64 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                 className="absolute top-0 left-0 pointer-events-none z-15"
                 style={{ width: `${timelineWidth}px`, height: '100%' }}
               >
-                {parentItems.flatMap((parentItem, parentIdx) => {
-                  const isCollapsed = collapsedItems.has(parentItem.id);
-                  const childItems = childItemsByParent[parentItem.id] || [];
-                  const allItems = [parentItem, ...(isCollapsed ? [] : childItems)];
+                {/* Render all dependency arrows using global item maps */}
+                {allItems.flatMap((item) => {
+                  if (!item.dependencies || item.dependencies.length === 0) return [];
                   
-                  return allItems.flatMap((item, itemIdx) => {
-                    if (!item.dependencies || item.dependencies.length === 0) return [];
+                  // Get target item's row index
+                  const targetRowIdx = itemRowIndexMap.get(item.id);
+                  if (targetRowIdx === undefined) return []; // Item not visible
+                  
+                  const targetY = targetRowIdx * 40 + 20;
+                  const targetChildItems = childItemsByParent[item.id] || [];
+                  const targetEffective = item.parentId === null && targetChildItems.length > 0 
+                    ? getEffectiveDates(item) 
+                    : null;
+                  const targetStart = targetEffective 
+                    ? getPosition(targetEffective.startDate)
+                    : getPosition(new Date(item.startDate));
+                  
+                  return item.dependencies.map((dep: any) => {
+                    // Find the predecessor item from GLOBAL map
+                    const predItem = globalItemMap.get(dep.id);
+                    if (!predItem) return null;
                     
-                    const targetY = (isCollapsed ? parentIdx : (parentIdx + itemIdx)) * 40 + 20;
-                    const targetEffective = item === parentItem && childItems.length > 0 ? getEffectiveDates(item) : null;
-                    const targetStart = targetEffective 
-                      ? getPosition(targetEffective.startDate)
-                      : getPosition(new Date(item.startDate));
+                    // Get predecessor's row index
+                    const predRowIdx = itemRowIndexMap.get(predItem.id);
+                    if (predRowIdx === undefined) return null; // Predecessor not visible
                     
-                    return item.dependencies.map((dep: any) => {
-                      // Find the predecessor item
-                      const predItem = allItems.find(i => i.id === dep.id);
-                      if (!predItem) return null;
-                      
-                      // Calculate predecessor position
-                      let predIdx = 0;
-                      let predY = 0;
-                      parentItems.forEach((p, pIdx) => {
-                        if (p.id === predItem.id) {
-                          predIdx = pIdx;
-                          predY = pIdx * 40 + 20;
-                        } else if (!collapsedItems.has(p.id)) {
-                          const children = childItemsByParent[p.id] || [];
-                          const childIdx = children.findIndex(c => c.id === predItem.id);
-                          if (childIdx !== -1) {
-                            predIdx = pIdx + childIdx + 1;
-                            predY = (pIdx + childIdx + 1) * 40 + 20;
-                          }
-                        }
-                      });
-                      
-                      const predEffective = predItem.parentId === null && (childItemsByParent[predItem.id]?.length || 0) > 0
-                        ? getEffectiveDates(predItem)
-                        : null;
-                      const predEnd = predEffective
-                        ? getPosition(predEffective.endDate) + (differenceInDays(predEffective.endDate, predEffective.startDate) + 1) * pixelsPerDay
-                        : getPosition(new Date(predItem.endDate)) + (differenceInDays(new Date(predItem.endDate), new Date(predItem.startDate)) + 1) * pixelsPerDay;
-                      
-                      // Create curved arrow path
-                      const startX = predEnd;
-                      const startY = predY;
-                      const endX = targetStart;
-                      const endY = targetY;
-                      
-                      const midX = (startX + endX) / 2;
-                      const controlOffset = Math.min(50, Math.abs(endX - startX) / 3);
-                      
-                      const path = `M ${startX} ${startY} C ${startX + controlOffset} ${startY}, ${endX - controlOffset} ${endY}, ${endX} ${endY}`;
-                      
-                      return (
-                        <g key={`${item.id}-${dep.id}`}>
-                          <path
-                            d={path}
-                            stroke="#6366f1"
-                            strokeWidth="2"
-                            fill="none"
-                            markerEnd="url(#arrowhead)"
-                          />
-                        </g>
-                      );
-                    }).filter(Boolean);
-                  });
+                    const predY = predRowIdx * 40 + 20;
+                    
+                    const predChildItems = childItemsByParent[predItem.id] || [];
+                    const predEffective = predItem.parentId === null && predChildItems.length > 0
+                      ? getEffectiveDates(predItem)
+                      : null;
+                    const predEnd = predEffective
+                      ? getPosition(predEffective.endDate) + (differenceInDays(predEffective.endDate, predEffective.startDate) + 1) * pixelsPerDay
+                      : getPosition(new Date(predItem.endDate)) + (differenceInDays(new Date(predItem.endDate), new Date(predItem.startDate)) + 1) * pixelsPerDay;
+                    
+                    // Create curved arrow path (Finish-to-Start)
+                    const startX = predEnd;
+                    const startY = predY;
+                    const endX = targetStart;
+                    const endY = targetY;
+                    
+                    const controlOffset = Math.min(50, Math.abs(endX - startX) / 3);
+                    
+                    const path = `M ${startX} ${startY} C ${startX + controlOffset} ${startY}, ${endX - controlOffset} ${endY}, ${endX} ${endY}`;
+                    
+                    return (
+                      <g key={`${item.id}-${dep.id}`}>
+                        <path
+                          d={path}
+                          stroke="#bba7db"
+                          strokeWidth="2"
+                          fill="none"
+                          markerEnd="url(#arrowhead)"
+                        />
+                      </g>
+                    );
+                  }).filter(Boolean);
                 })}
                 
                 {/* Arrow marker definition */}
@@ -1643,7 +1662,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                     refY="3"
                     orient="auto"
                   >
-                    <polygon points="0 0, 10 3, 0 6" fill="#6366f1" />
+                    <polygon points="0 0, 10 3, 0 6" fill="#bba7db" />
                   </marker>
                 </defs>
                 
@@ -1654,7 +1673,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                     y1={dragging.startY}
                     x2={dragging.currentX}
                     y2={dragging.currentY}
-                    stroke="#6366f1"
+                    stroke="#bba7db"
                     strokeWidth="2"
                     strokeDasharray="5,5"
                     markerEnd="url(#arrowhead)"
