@@ -166,8 +166,10 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     originalEnd: Date;
     currentX?: number;
     currentY?: number;
+    sourceAnchor?: 'start' | 'end'; // For dependency drag: which end the drag started from
   } | null>(null);
   const [hoveredBar, setHoveredBar] = useState<string | null>(null);
+  const [hoveredAnchor, setHoveredAnchor] = useState<'start' | 'end' | null>(null); // Which anchor is being hovered for drop
   const [ripple, setRipple] = useState<{ x: number; y: number } | null>(null);
   const [selectedTask, setSelectedTask] = useState<ScheduleItem | null>(null);
   const [visibleColumns, setVisibleColumns] = useState({
@@ -504,12 +506,13 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     },
   });
 
-  // Progress drag state
+  // Progress drag state with live visual feedback
   const [progressDrag, setProgressDrag] = useState<{
     itemId: string;
     barWidth: number;
     startX: number;
     startProgress: number;
+    currentProgress: number; // Live visual progress during drag
   } | null>(null);
 
   // Calculate timeline bounds
@@ -693,7 +696,8 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
   const handleBarMouseDown = (
     e: React.MouseEvent,
     item: ScheduleItem,
-    dragType: 'move' | 'resize-left' | 'resize-right' | 'dependency' = 'move'
+    dragType: 'move' | 'resize-left' | 'resize-right' | 'dependency' = 'move',
+    anchor?: 'start' | 'end'
   ) => {
     e.preventDefault();
     e.stopPropagation();
@@ -722,6 +726,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
       originalEnd: new Date(item.endDate),
       currentX: startX,
       currentY: startY,
+      sourceAnchor: anchor,
     });
   };
 
@@ -799,17 +804,38 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
           }
         }
       } else if (dragging.type === 'dependency') {
-        // Handle dependency creation (check if dropped on another bar)
-        if (hoveredBar && hoveredBar !== dragging.id) {
+        // Handle dependency creation (check if dropped on another bar's anchor)
+        if (hoveredBar && hoveredBar !== dragging.id && hoveredAnchor) {
+          // Determine dependency type based on source and target anchors
+          const sourceAnchor = dragging.sourceAnchor || 'end';
+          const targetAnchor = hoveredAnchor || 'start';
+          
+          // Map anchor pairs to dependency types:
+          // end -> start = finish-to-start (FS) - most common
+          // start -> start = start-to-start (SS)
+          // end -> end = finish-to-finish (FF)
+          // start -> end = start-to-finish (SF)
+          let dependencyType = 'finish-to-start';
+          if (sourceAnchor === 'end' && targetAnchor === 'start') {
+            dependencyType = 'finish-to-start';
+          } else if (sourceAnchor === 'start' && targetAnchor === 'start') {
+            dependencyType = 'start-to-start';
+          } else if (sourceAnchor === 'end' && targetAnchor === 'end') {
+            dependencyType = 'finish-to-finish';
+          } else if (sourceAnchor === 'start' && targetAnchor === 'end') {
+            dependencyType = 'start-to-finish';
+          }
+          
           await createDependencyMutation.mutateAsync({
             itemId: hoveredBar,
             predecessorId: dragging.id,
-            type: 'finish-to-start',
+            type: dependencyType,
           });
         }
       }
 
       setDragging(null);
+      setHoveredAnchor(null);
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -819,26 +845,22 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [dragging, pixelsPerDay, updateItemMutation]);
+  }, [dragging, pixelsPerDay, updateItemMutation, hoveredBar, hoveredAnchor, createDependencyMutation]);
 
-  // Progress drag effect
+  // Progress drag effect - with live visual feedback
   useEffect(() => {
     if (!progressDrag) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (!progressDrag) return;
-      
       const deltaX = e.clientX - progressDrag.startX;
       const deltaPercent = (deltaX / progressDrag.barWidth) * 100;
       const newProgress = Math.max(0, Math.min(100, Math.round(progressDrag.startProgress + deltaPercent)));
       
-      // Update local state for immediate feedback (optimistic)
-      // The actual update happens on mouseup
+      // Update currentProgress for immediate visual feedback
+      setProgressDrag(prev => prev ? { ...prev, currentProgress: newProgress } : null);
     };
 
     const handleMouseUp = async (e: MouseEvent) => {
-      if (!progressDrag) return;
-      
       const deltaX = e.clientX - progressDrag.startX;
       const deltaPercent = (deltaX / progressDrag.barWidth) * 100;
       const newProgress = Math.max(0, Math.min(100, Math.round(progressDrag.startProgress + deltaPercent)));
@@ -858,7 +880,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [progressDrag, updateProgressMutation]);
+  }, [progressDrag?.itemId, progressDrag?.startX, progressDrag?.barWidth, progressDrag?.startProgress, updateProgressMutation]);
 
   // Column resize handlers
   const handleColumnDividerMouseDown = (
@@ -1528,13 +1550,19 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                         className="absolute top-1 h-6"
                         style={{ left: `${parentStart}px`, width: `${parentWidth}px` }}
                       >
-                        {/* Left dependency dot (for incoming) - centered on bar height */}
+                        {/* Left dependency dot (start anchor) - can drag or drop */}
                         <div
-                          className="absolute top-1/2 -translate-y-1/2 -left-4 w-4 h-4 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30"
-                          title="Drop here for dependency"
-                          data-testid={`dependency-target-${parentItem.id}`}
+                          className={`absolute top-1/2 -translate-y-1/2 -left-4 w-4 h-4 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30 ${hoveredBar === parentItem.id && hoveredAnchor === 'start' ? 'scale-150' : ''}`}
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            handleBarMouseDown(e, parentItem, 'dependency', 'start');
+                          }}
+                          onMouseEnter={() => { setHoveredBar(parentItem.id); setHoveredAnchor('start'); }}
+                          onMouseLeave={() => { setHoveredBar(null); setHoveredAnchor(null); }}
+                          title="Drag to create dependency from start"
+                          data-testid={`dependency-start-${parentItem.id}`}
                         >
-                          <div className="w-2 h-2 rounded-full bg-[#9b7fc7]" />
+                          <div className="w-2 h-2 rounded-full bg-[#9b7fc7] hover:scale-150 transition-transform" />
                         </div>
                         
                         {/* Main bar */}
@@ -1577,12 +1605,19 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                         />
                         
                         {/* Progress overlay - darkens completed portion */}
-                        <div 
-                          className="absolute inset-0 pointer-events-none rounded-sm"
-                          style={{ 
-                            background: `linear-gradient(to right, rgba(0,0,0,0.25) ${parentItem.progressPercent ?? 0}%, transparent ${parentItem.progressPercent ?? 0}%)` 
-                          }}
-                        />
+                        {(() => {
+                          const displayProgress = progressDrag?.itemId === parentItem.id 
+                            ? progressDrag.currentProgress 
+                            : (parentItem.progressPercent ?? 0);
+                          return (
+                            <div 
+                              className="absolute inset-0 pointer-events-none rounded-sm"
+                              style={{ 
+                                background: `linear-gradient(to right, rgba(0,0,0,0.25) ${displayProgress}%, transparent ${displayProgress}%)` 
+                              }}
+                            />
+                          );
+                        })()}
                         
                         {/* Progress slider handle at bottom - appears on hover */}
                         <div
@@ -1604,7 +1639,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                           {/* Slider thumb */}
                           <div 
                             className="absolute bottom-0 w-2 h-2 bg-white rounded-full shadow-md -translate-x-1/2 cursor-ew-resize hover:scale-125 transition-transform"
-                            style={{ left: `${parentItem.progressPercent ?? 0}%` }}
+                            style={{ left: `${progressDrag?.itemId === parentItem.id ? progressDrag.currentProgress : (parentItem.progressPercent ?? 0)}%` }}
                             onMouseDown={(e) => {
                               e.stopPropagation();
                               e.preventDefault();
@@ -1615,6 +1650,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                                 barWidth: barRect.width,
                                 startX: e.clientX,
                                 startProgress: parentItem.progressPercent ?? 0,
+                                currentProgress: parentItem.progressPercent ?? 0,
                               });
                             }}
                             onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
@@ -1623,15 +1659,17 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                         </div>
                       </div>
                       
-                      {/* Right dependency dot (for outgoing) - centered on bar height */}
+                      {/* Right dependency dot (end anchor) - can drag or drop */}
                       <div
-                        className="absolute top-1/2 -translate-y-1/2 -right-4 w-4 h-4 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30"
+                        className={`absolute top-1/2 -translate-y-1/2 -right-4 w-4 h-4 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30 ${hoveredBar === parentItem.id && hoveredAnchor === 'end' ? 'scale-150' : ''}`}
                         onMouseDown={(e) => {
                           e.stopPropagation();
-                          handleBarMouseDown(e, parentItem, 'dependency');
+                          handleBarMouseDown(e, parentItem, 'dependency', 'end');
                         }}
-                        title="Drag to create dependency"
-                        data-testid={`dependency-handle-${parentItem.id}`}
+                        onMouseEnter={() => { setHoveredBar(parentItem.id); setHoveredAnchor('end'); }}
+                        onMouseLeave={() => { setHoveredBar(null); setHoveredAnchor(null); }}
+                        title="Drag to create dependency from end"
+                        data-testid={`dependency-end-${parentItem.id}`}
                       >
                         <div className="w-2 h-2 rounded-full bg-[#9b7fc7] hover:scale-150 transition-transform" />
                       </div>
@@ -1668,13 +1706,19 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                             className="absolute top-1 h-6"
                             style={{ left: `${childStart}px`, width: `${childWidth}px` }}
                           >
-                            {/* Left dependency dot (for incoming) - centered on bar height */}
+                            {/* Left dependency dot (start anchor) - can drag or drop */}
                             <div
-                              className="absolute top-1/2 -translate-y-1/2 -left-4 w-4 h-4 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30"
-                              title="Drop here for dependency"
-                              data-testid={`dependency-target-${childItem.id}`}
+                              className={`absolute top-1/2 -translate-y-1/2 -left-4 w-4 h-4 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30 ${hoveredBar === childItem.id && hoveredAnchor === 'start' ? 'scale-150' : ''}`}
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                                handleBarMouseDown(e, childItem, 'dependency', 'start');
+                              }}
+                              onMouseEnter={() => { setHoveredBar(childItem.id); setHoveredAnchor('start'); }}
+                              onMouseLeave={() => { setHoveredBar(null); setHoveredAnchor(null); }}
+                              title="Drag to create dependency from start"
+                              data-testid={`dependency-start-${childItem.id}`}
                             >
-                              <div className="w-2 h-2 rounded-full bg-[#9b7fc7]" />
+                              <div className="w-2 h-2 rounded-full bg-[#9b7fc7] hover:scale-150 transition-transform" />
                             </div>
                             
                             {/* Main bar */}
@@ -1717,12 +1761,19 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                               />
                               
                               {/* Progress overlay - darkens completed portion */}
-                              <div 
-                                className="absolute inset-0 pointer-events-none rounded-sm"
-                                style={{ 
-                                  background: `linear-gradient(to right, rgba(0,0,0,0.25) ${childItem.progressPercent ?? 0}%, transparent ${childItem.progressPercent ?? 0}%)` 
-                                }}
-                              />
+                              {(() => {
+                                const displayProgress = progressDrag?.itemId === childItem.id 
+                                  ? progressDrag.currentProgress 
+                                  : (childItem.progressPercent ?? 0);
+                                return (
+                                  <div 
+                                    className="absolute inset-0 pointer-events-none rounded-sm"
+                                    style={{ 
+                                      background: `linear-gradient(to right, rgba(0,0,0,0.25) ${displayProgress}%, transparent ${displayProgress}%)` 
+                                    }}
+                                  />
+                                );
+                              })()}
                               
                               {/* Progress slider handle at bottom - appears on hover */}
                               <div
@@ -1744,7 +1795,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                                 {/* Slider thumb */}
                                 <div 
                                   className="absolute bottom-0 w-2 h-2 bg-white rounded-full shadow-md -translate-x-1/2 cursor-ew-resize hover:scale-125 transition-transform"
-                                  style={{ left: `${childItem.progressPercent ?? 0}%` }}
+                                  style={{ left: `${progressDrag?.itemId === childItem.id ? progressDrag.currentProgress : (childItem.progressPercent ?? 0)}%` }}
                                   onMouseDown={(e) => {
                                     e.stopPropagation();
                                     e.preventDefault();
@@ -1755,6 +1806,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                                       barWidth: barRect.width,
                                       startX: e.clientX,
                                       startProgress: childItem.progressPercent ?? 0,
+                                      currentProgress: childItem.progressPercent ?? 0,
                                     });
                                   }}
                                   onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
@@ -1763,15 +1815,17 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                               </div>
                             </div>
                             
-                            {/* Right dependency dot (for outgoing) - centered on bar height */}
+                            {/* Right dependency dot (end anchor) - can drag or drop */}
                             <div
-                              className="absolute top-1/2 -translate-y-1/2 -right-4 w-4 h-4 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30"
+                              className={`absolute top-1/2 -translate-y-1/2 -right-4 w-4 h-4 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30 ${hoveredBar === childItem.id && hoveredAnchor === 'end' ? 'scale-150' : ''}`}
                               onMouseDown={(e) => {
                                 e.stopPropagation();
-                                handleBarMouseDown(e, childItem, 'dependency');
+                                handleBarMouseDown(e, childItem, 'dependency', 'end');
                               }}
-                              title="Drag to create dependency"
-                              data-testid={`dependency-handle-${childItem.id}`}
+                              onMouseEnter={() => { setHoveredBar(childItem.id); setHoveredAnchor('end'); }}
+                              onMouseLeave={() => { setHoveredBar(null); setHoveredAnchor(null); }}
+                              title="Drag to create dependency from end"
+                              data-testid={`dependency-end-${childItem.id}`}
                             >
                               <div className="w-2 h-2 rounded-full bg-[#9b7fc7] hover:scale-150 transition-transform" />
                             </div>
