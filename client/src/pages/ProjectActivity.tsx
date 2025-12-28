@@ -134,13 +134,13 @@ export default function ProjectActivity() {
       case "task":
         return "text-[#bba7db] bg-[#bba7db]/10";
       case "estimate":
-        return "text-emerald-600 bg-emerald-500/10 dark:text-emerald-400";
+        return "text-primary bg-primary/10";
       case "bill":
-        return "text-amber-600 bg-amber-500/10 dark:text-amber-400";
+        return "text-destructive bg-destructive/10";
       case "variation":
         return "text-[#bba7db] bg-[#bba7db]/10";
       case "invoice":
-        return "text-emerald-600 bg-emerald-500/10 dark:text-emerald-400";
+        return "text-primary bg-primary/10";
       case "schedule":
         return "text-[#bba7db] bg-[#bba7db]/10";
       case "manual":
@@ -172,7 +172,7 @@ export default function ProjectActivity() {
       <div className="flex items-center justify-end">
         <Button 
           onClick={() => setIsAddDialogOpen(true)} 
-          className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+          className="bg-[#bba7db] text-white border-[#bba7db]"
           data-testid="button-add-activity"
         >
           <Plus className="h-4 w-4 mr-2" />
@@ -251,7 +251,7 @@ export default function ProjectActivity() {
             <Button 
               onClick={handleAddActivity}
               disabled={!newActivityDescription.trim() || createActivityMutation.isPending}
-              className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+              className="bg-[#bba7db] text-white border-[#bba7db]"
               data-testid="button-save-activity"
             >
               {createActivityMutation.isPending ? "Adding..." : "Add Note"}
