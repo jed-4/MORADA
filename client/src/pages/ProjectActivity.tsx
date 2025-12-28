@@ -132,21 +132,21 @@ export default function ProjectActivity() {
   const getActivityColor = (type: string) => {
     switch (type) {
       case "task":
-        return "text-blue-600 bg-blue-50 dark:text-blue-400 dark:bg-blue-950";
+        return "text-[#bba7db] bg-[#bba7db]/10";
       case "estimate":
-        return "text-green-600 bg-green-50 dark:text-green-400 dark:bg-green-950";
+        return "text-emerald-600 bg-emerald-500/10 dark:text-emerald-400";
       case "bill":
-        return "text-orange-600 bg-orange-50 dark:text-orange-400 dark:bg-orange-950";
+        return "text-amber-600 bg-amber-500/10 dark:text-amber-400";
       case "variation":
-        return "text-purple-600 bg-purple-50 dark:text-purple-400 dark:bg-purple-950";
+        return "text-[#bba7db] bg-[#bba7db]/10";
       case "invoice":
-        return "text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950";
+        return "text-emerald-600 bg-emerald-500/10 dark:text-emerald-400";
       case "schedule":
-        return "text-cyan-600 bg-cyan-50 dark:text-cyan-400 dark:bg-cyan-950";
+        return "text-[#bba7db] bg-[#bba7db]/10";
       case "manual":
-        return "text-indigo-600 bg-indigo-50 dark:text-indigo-400 dark:bg-indigo-950";
+        return "text-[#bba7db] bg-[#bba7db]/10";
       default:
-        return "text-gray-600 bg-gray-50 dark:text-gray-400 dark:bg-gray-950";
+        return "text-muted-foreground bg-muted";
     }
   };
 
@@ -167,17 +167,16 @@ export default function ProjectActivity() {
   }
 
   return (
-    <div className="p-6 space-y-6" data-testid="project-activity">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Activity Feed</h1>
-          <p className="text-sm text-muted-foreground">
-            Track all updates and add notes for {currentProject.name}
-          </p>
-        </div>
-        <Button onClick={() => setIsAddDialogOpen(true)} data-testid="button-add-activity">
+    <div className="p-4 space-y-4" data-testid="project-activity">
+      {/* Toolbar row */}
+      <div className="flex items-center justify-end">
+        <Button 
+          onClick={() => setIsAddDialogOpen(true)} 
+          className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+          data-testid="button-add-activity"
+        >
           <Plus className="h-4 w-4 mr-2" />
-          Add Activity
+          Add Note
         </Button>
       </div>
 
@@ -198,7 +197,7 @@ export default function ProjectActivity() {
         <div className="space-y-4">
           {pinnedActivities.length > 0 && (
             <div className="space-y-2">
-              <h3 className="text-sm font-medium flex items-center gap-2">
+              <h3 className="text-sm font-medium flex items-center gap-2 text-[#bba7db]">
                 <Pin className="h-4 w-4" />
                 Pinned
               </h3>
@@ -252,9 +251,10 @@ export default function ProjectActivity() {
             <Button 
               onClick={handleAddActivity}
               disabled={!newActivityDescription.trim() || createActivityMutation.isPending}
+              className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
               data-testid="button-save-activity"
             >
-              {createActivityMutation.isPending ? "Adding..." : "Add Activity"}
+              {createActivityMutation.isPending ? "Adding..." : "Add Note"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -275,8 +275,8 @@ function ActivityItem({
   onTogglePin: (pinned: boolean) => void;
 }) {
   return (
-    <Card className={activity.pinned ? "border-primary/50 bg-primary/5" : ""}>
-      <CardContent className="p-4">
+    <Card className={activity.pinned ? "border-[#bba7db]/50 bg-[#bba7db]/5" : ""}>
+      <CardContent className="p-3">
         <div className="flex items-start gap-3">
           <div className={`p-2 rounded-full ${getActivityColor(activity.activityType)}`}>
             {getActivityIcon(activity.activityType)}
@@ -300,7 +300,7 @@ function ActivityItem({
             data-testid={`button-pin-activity-${activity.id}`}
           >
             {activity.pinned ? (
-              <PinOff className="h-4 w-4 text-primary" />
+              <PinOff className="h-4 w-4 text-[#bba7db]" />
             ) : (
               <Pin className="h-4 w-4 text-muted-foreground" />
             )}
