@@ -494,6 +494,24 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     },
   });
 
+  // Update progress mutation
+  const updateProgressMutation = useMutation({
+    mutationFn: async ({ id, progressPercent }: { id: string; progressPercent: number }) => {
+      return apiRequest(`/api/schedule-items/${id}`, "PATCH", { progressPercent });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+    },
+  });
+
+  // Progress drag state
+  const [progressDrag, setProgressDrag] = useState<{
+    itemId: string;
+    barWidth: number;
+    startX: number;
+    startProgress: number;
+  } | null>(null);
+
   // Calculate timeline bounds
   const { timelineStart, timelineEnd, totalDays } = useMemo(() => {
     if (allItems.length === 0) {
@@ -690,8 +708,9 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
       const scrollTop = timelineRef.current.scrollTop;
       
       // Convert to timeline-relative coordinates
+      // Account for the 60px header by NOT subtracting it (the SVG is positioned after the header)
       startX = e.clientX - rect.left + scrollLeft;
-      startY = e.clientY - rect.top + scrollTop;
+      startY = e.clientY - rect.top + scrollTop - 60; // Subtract header height
     }
     
     setDragging({
@@ -723,7 +742,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
         const scrollTop = timelineRef.current.scrollTop;
         
         currentX = e.clientX - rect.left + scrollLeft;
-        currentY = e.clientY - rect.top + scrollTop;
+        currentY = e.clientY - rect.top + scrollTop - 60; // Subtract header height
       }
 
       // Update current position for dependency line drawing
@@ -801,6 +820,45 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
       window.removeEventListener('mouseup', handleMouseUp);
     };
   }, [dragging, pixelsPerDay, updateItemMutation]);
+
+  // Progress drag effect
+  useEffect(() => {
+    if (!progressDrag) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!progressDrag) return;
+      
+      const deltaX = e.clientX - progressDrag.startX;
+      const deltaPercent = (deltaX / progressDrag.barWidth) * 100;
+      const newProgress = Math.max(0, Math.min(100, Math.round(progressDrag.startProgress + deltaPercent)));
+      
+      // Update local state for immediate feedback (optimistic)
+      // The actual update happens on mouseup
+    };
+
+    const handleMouseUp = async (e: MouseEvent) => {
+      if (!progressDrag) return;
+      
+      const deltaX = e.clientX - progressDrag.startX;
+      const deltaPercent = (deltaX / progressDrag.barWidth) * 100;
+      const newProgress = Math.max(0, Math.min(100, Math.round(progressDrag.startProgress + deltaPercent)));
+      
+      await updateProgressMutation.mutateAsync({
+        id: progressDrag.itemId,
+        progressPercent: newProgress,
+      });
+      
+      setProgressDrag(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [progressDrag, updateProgressMutation]);
 
   // Column resize handlers
   const handleColumnDividerMouseDown = (
@@ -1516,13 +1574,48 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                           data-testid={`resize-right-${parentItem.id}`}
                         />
                         
-                        {/* Progress bar at bottom */}
-                        {(parentItem.progressPercent ?? 0) > 0 && (
+                        {/* Progress overlay - darkens completed portion */}
+                        <div 
+                          className="absolute inset-0 pointer-events-none rounded-sm"
+                          style={{ 
+                            background: `linear-gradient(to right, rgba(0,0,0,0.25) ${parentItem.progressPercent ?? 0}%, transparent ${parentItem.progressPercent ?? 0}%)` 
+                          }}
+                        />
+                        
+                        {/* Progress slider handle at bottom - appears on hover */}
+                        <div
+                          className="absolute bottom-0 left-0 right-0 h-2 opacity-0 group-hover/bar:opacity-100 transition-opacity cursor-ew-resize"
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            const barRect = e.currentTarget.parentElement?.getBoundingClientRect();
+                            if (!barRect) return;
+                            const clickX = e.clientX - barRect.left;
+                            const clickPercent = Math.max(0, Math.min(100, Math.round((clickX / barRect.width) * 100)));
+                            // Set progress immediately on click
+                            updateProgressMutation.mutate({ id: parentItem.id, progressPercent: clickPercent });
+                          }}
+                          data-testid={`progress-track-${parentItem.id}`}
+                        >
+                          {/* Track line */}
+                          <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white/30" />
+                          {/* Slider thumb */}
                           <div 
-                            className="absolute bottom-0 left-0 h-1 bg-white/40 rounded-b-sm"
-                            style={{ width: `${parentItem.progressPercent}%` }}
+                            className="absolute bottom-0 w-2 h-2 bg-white rounded-full shadow-md -translate-x-1/2 cursor-ew-resize hover:scale-125 transition-transform"
+                            style={{ left: `${parentItem.progressPercent ?? 0}%` }}
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              const barRect = e.currentTarget.parentElement?.parentElement?.getBoundingClientRect();
+                              if (!barRect) return;
+                              setProgressDrag({
+                                itemId: parentItem.id,
+                                barWidth: barRect.width,
+                                startX: e.clientX,
+                                startProgress: parentItem.progressPercent ?? 0,
+                              });
+                            }}
+                            data-testid={`progress-thumb-${parentItem.id}`}
                           />
-                        )}
+                        </div>
                       </div>
                       
                       {/* Right dependency dot (for outgoing) */}
@@ -1616,13 +1709,48 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                               data-testid={`resize-right-${childItem.id}`}
                             />
                             
-                            {/* Progress bar at bottom */}
-                            {(childItem.progressPercent ?? 0) > 0 && (
+                            {/* Progress overlay - darkens completed portion */}
+                            <div 
+                              className="absolute inset-0 pointer-events-none rounded-sm"
+                              style={{ 
+                                background: `linear-gradient(to right, rgba(0,0,0,0.25) ${childItem.progressPercent ?? 0}%, transparent ${childItem.progressPercent ?? 0}%)` 
+                              }}
+                            />
+                            
+                            {/* Progress slider handle at bottom - appears on hover */}
+                            <div
+                              className="absolute bottom-0 left-0 right-0 h-2 opacity-0 group-hover/bar:opacity-100 transition-opacity cursor-ew-resize"
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                                const barRect = e.currentTarget.parentElement?.getBoundingClientRect();
+                                if (!barRect) return;
+                                const clickX = e.clientX - barRect.left;
+                                const clickPercent = Math.max(0, Math.min(100, Math.round((clickX / barRect.width) * 100)));
+                                // Set progress immediately on click
+                                updateProgressMutation.mutate({ id: childItem.id, progressPercent: clickPercent });
+                              }}
+                              data-testid={`progress-track-${childItem.id}`}
+                            >
+                              {/* Track line */}
+                              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white/30" />
+                              {/* Slider thumb */}
                               <div 
-                                className="absolute bottom-0 left-0 h-1 bg-white/40 rounded-b-sm"
-                                style={{ width: `${childItem.progressPercent}%` }}
+                                className="absolute bottom-0 w-2 h-2 bg-white rounded-full shadow-md -translate-x-1/2 cursor-ew-resize hover:scale-125 transition-transform"
+                                style={{ left: `${childItem.progressPercent ?? 0}%` }}
+                                onMouseDown={(e) => {
+                                  e.stopPropagation();
+                                  const barRect = e.currentTarget.parentElement?.parentElement?.getBoundingClientRect();
+                                  if (!barRect) return;
+                                  setProgressDrag({
+                                    itemId: childItem.id,
+                                    barWidth: barRect.width,
+                                    startX: e.clientX,
+                                    startProgress: childItem.progressPercent ?? 0,
+                                  });
+                                }}
+                                data-testid={`progress-thumb-${childItem.id}`}
                               />
-                            )}
+                            </div>
                           </div>
                           
                           {/* Right dependency dot (for outgoing) */}
