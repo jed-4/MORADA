@@ -593,7 +593,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
                 <div className="space-y-2">
                   <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Description</div>
                   <div 
-                    className="prose prose-sm max-w-none text-sm"
+                    className="prose prose-sm max-w-none text-sm text-foreground [&_*]:text-foreground"
                     dangerouslySetInnerHTML={{ __html: item.description }}
                   />
                   <div className="pt-2 border-t">
