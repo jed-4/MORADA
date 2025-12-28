@@ -589,14 +589,19 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
               </div>
             </HoverCardTrigger>
             {item.description && (
-              <HoverCardContent className="w-80 p-3 z-[9999]" align="start" side="bottom" sideOffset={8}>
+              <HoverCardContent 
+                className="w-80 p-3 z-[9999] bg-white dark:bg-zinc-900 shadow-xl border border-border" 
+                align="start" 
+                side="bottom" 
+                sideOffset={8}
+              >
                 <div className="space-y-2">
-                  <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Description</div>
+                  <div className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">Description</div>
                   <div 
-                    className="text-sm leading-relaxed [&_*]:!text-foreground [&_*]:!opacity-100"
+                    className="text-sm leading-relaxed text-zinc-900 dark:text-zinc-100 [&_*]:!text-inherit [&_*]:!opacity-100"
                     dangerouslySetInnerHTML={{ __html: item.description }}
                   />
-                  <div className="pt-2 border-t border-border">
+                  <div className="pt-2 border-t border-zinc-200 dark:border-zinc-700">
                     <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={() => setIsEditingDescription(true)}>
                       <Pen className="h-3 w-3 mr-1" /> Edit
                     </Button>
