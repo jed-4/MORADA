@@ -21,6 +21,19 @@ import ProjectEstimates from "@/pages/ProjectEstimates";
 import Proposals from "@/pages/Proposals";
 import Bills from "@/pages/Bills";
 import Budget from "@/pages/Budget";
+import Calendar from "@/pages/Calendar";
+import Selections from "@/pages/Selections";
+import RFQs from "@/pages/RFQs";
+import RFIs from "@/pages/RFIs";
+import Allowances from "@/pages/Allowances";
+import Defects from "@/pages/Defects";
+import PurchaseOrders from "@/pages/PurchaseOrders";
+import Variations from "@/pages/Variations";
+import ClientInvoices from "@/pages/ClientInvoices";
+import SiteDiaryEntries from "@/pages/SiteDiaryEntries";
+import ProjectTeam from "@/pages/ProjectTeam";
+import ProjectChecklists from "@/pages/ProjectChecklists";
+import Minutes from "@/pages/Minutes";
 import {
   Dialog,
   DialogContent,
@@ -827,6 +840,34 @@ export default function CustomizableProjectOverview() {
         return <Bills />;
       case "budget":
         return <Budget />;
+      case "calendar":
+        return <Calendar />;
+      case "selections":
+        return <Selections />;
+      case "rfqs":
+        return <RFQs />;
+      case "rfis":
+        return <RFIs />;
+      case "allowances":
+        return <Allowances />;
+      case "defects":
+        return <Defects />;
+      case "purchase-orders":
+        return <PurchaseOrders />;
+      case "variations":
+        return <Variations />;
+      case "client-invoices":
+        return <ClientInvoices />;
+      case "invoices":
+        return <ClientInvoices />;
+      case "site-diary":
+        return <SiteDiaryEntries />;
+      case "team":
+        return <ProjectTeam />;
+      case "checklists":
+        return <ProjectChecklists />;
+      case "minutes":
+        return <Minutes />;
       default:
         return null; // overview renders inline below
     }

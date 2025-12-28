@@ -178,54 +178,56 @@ function Router() {
       <Route path="/business-team/:userId" component={UserProfileView} />
       
       {/* Project-specific routes */}
-      <Route path="/projects/:projectId" component={Dashboard} />
-      <Route path="/projects/:projectId/scope" component={ProjectScope} />
-      <Route path="/projects/:projectId/notes" component={Notes} />
-      <Route path="/projects/:projectId/messages" component={Messages} />
-      <Route path="/projects/:projectId/minutes" component={Minutes} />
+      {/* Detail routes (must come before tab routes) */}
       <Route path="/projects/:projectId/minutes/:id" component={MinuteDetail} />
-      <Route path="/projects/:projectId/tasks" component={Tasks} />
-      <Route path="/projects/:projectId/calendar" component={Calendar} />
-      <Route path="/projects/:projectId/estimates" component={ProjectEstimates} />
       <Route path="/projects/:projectId/estimates/new" component={EstimateDetail} />
       <Route path="/projects/:projectId/estimates/:estimateId" component={EstimateDetail} />
-      <Route path="/projects/:projectId/selections" component={Selections} />
       <Route path="/projects/:projectId/selections/:id" component={SelectionDetail} />
-      <Route path="/projects/:projectId/messages" component={() => <ComingSoonPage section="messages" />} />
-      <Route path="/projects/:projectId/schedule" component={Schedule} />
-      <Route path="/projects/:projectId/takeoff" component={Takeoff} />
-      <Route path="/projects/:projectId/rfqs" component={RFQs} />
       <Route path="/projects/:projectId/rfqs/new" component={CreateRFQ} />
       <Route path="/projects/:projectId/rfqs/:id" component={RFQDetail} />
-      <Route path="/projects/:projectId/rfis" component={RFIs} />
       <Route path="/projects/:projectId/rfis/new" component={CreateRFI} />
       <Route path="/projects/:projectId/rfis/:id" component={RFIDetail} />
-      <Route path="/projects/:projectId/proposals" component={Proposals} />
       <Route path="/projects/:projectId/proposals/new" component={ProposalDetail} />
       <Route path="/projects/:projectId/proposals/:id" component={ProposalDetail} />
       <Route path="/projects/:projectId/allowances/:allowanceId" component={AllowanceDetail} />
-      <Route path="/projects/:projectId/allowances" component={Allowances} />
-      <Route path="/projects/:projectId/defects" component={Defects} />
-      <Route path="/projects/:projectId/purchase-orders" component={PurchaseOrders} />
       <Route path="/projects/:projectId/purchase-orders/new" component={PurchaseOrderDetail} />
       <Route path="/projects/:projectId/purchase-orders/:poId" component={PurchaseOrderDetail} />
-      <Route path="/projects/:projectId/variations" component={Variations} />
       <Route path="/projects/:projectId/variations/new" component={VariationDetail} />
       <Route path="/projects/:projectId/variations/:variationId" component={VariationDetail} />
-      <Route path="/projects/:projectId/bills" component={Bills} />
       <Route path="/projects/:projectId/bills/:id" component={BillDetail} />
-      <Route path="/projects/:projectId/client-invoices" component={ClientInvoices} />
       <Route path="/projects/:projectId/client-invoices/new" component={ClientInvoiceDetail} />
       <Route path="/projects/:projectId/client-invoices/:invoiceId" component={ClientInvoiceDetail} />
-      <Route path="/projects/:projectId/invoices" component={() => <ComingSoonPage section="invoices" />} />
-      <Route path="/projects/:projectId/site-diary" component={SiteDiaryEntries} />
-      <Route path="/projects/:projectId/timesheets" component={Timesheets} />
-      <Route path="/projects/:projectId/budget" component={Budget} />
-      <Route path="/projects/:projectId/files" component={ProjectFiles} />
-      <Route path="/projects/:projectId/team" component={ProjectTeam} />
-      <Route path="/projects/:projectId/activity" component={ProjectActivity} />
-      <Route path="/projects/:projectId/checklists" component={ProjectChecklists} />
       <Route path="/projects/:projectId/checklists/:checklistId" component={ChecklistInstanceDetail} />
+      
+      {/* Tab routes - all render inline within Dashboard/CustomizableProjectOverview */}
+      <Route path="/projects/:projectId" component={Dashboard} />
+      <Route path="/projects/:projectId/scope" component={Dashboard} />
+      <Route path="/projects/:projectId/notes" component={Dashboard} />
+      <Route path="/projects/:projectId/messages" component={Dashboard} />
+      <Route path="/projects/:projectId/minutes" component={Dashboard} />
+      <Route path="/projects/:projectId/tasks" component={Dashboard} />
+      <Route path="/projects/:projectId/calendar" component={Dashboard} />
+      <Route path="/projects/:projectId/estimates" component={Dashboard} />
+      <Route path="/projects/:projectId/selections" component={Dashboard} />
+      <Route path="/projects/:projectId/schedule" component={Dashboard} />
+      <Route path="/projects/:projectId/takeoff" component={Dashboard} />
+      <Route path="/projects/:projectId/rfqs" component={Dashboard} />
+      <Route path="/projects/:projectId/rfis" component={Dashboard} />
+      <Route path="/projects/:projectId/proposals" component={Dashboard} />
+      <Route path="/projects/:projectId/allowances" component={Dashboard} />
+      <Route path="/projects/:projectId/defects" component={Dashboard} />
+      <Route path="/projects/:projectId/purchase-orders" component={Dashboard} />
+      <Route path="/projects/:projectId/variations" component={Dashboard} />
+      <Route path="/projects/:projectId/bills" component={Dashboard} />
+      <Route path="/projects/:projectId/client-invoices" component={Dashboard} />
+      <Route path="/projects/:projectId/invoices" component={Dashboard} />
+      <Route path="/projects/:projectId/site-diary" component={Dashboard} />
+      <Route path="/projects/:projectId/timesheets" component={Dashboard} />
+      <Route path="/projects/:projectId/budget" component={Dashboard} />
+      <Route path="/projects/:projectId/files" component={Dashboard} />
+      <Route path="/projects/:projectId/team" component={Dashboard} />
+      <Route path="/projects/:projectId/activity" component={Dashboard} />
+      <Route path="/projects/:projectId/checklists" component={Dashboard} />
       
       {/* Global Project sections - Coming Soon */}
       <Route path="/messages" component={() => <ComingSoonPage section="messages" />} />
