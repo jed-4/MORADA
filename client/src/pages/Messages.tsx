@@ -80,7 +80,7 @@ function renderMessageWithMentions(content: string, currentUserId?: string) {
         key={match.index}
         className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
           isCurrentUser 
-            ? 'bg-[#bba7db]/20 text-[#bba7db] border border-[#bba7db]/20' 
+            ? 'bg-primary/20 text-primary border border-primary/20' 
             : 'bg-muted/60 text-foreground'
         }`}
         data-testid={`mention-${userId}`}
@@ -582,14 +582,13 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     <div className="h-full flex flex-col">
       {/* Notification Banner */}
       {showNotificationBanner && isNotificationSupported() && notificationPermission === "default" && (
-        <Alert className="rounded-none border-x-0 border-t-0 bg-[#bba7db]/10" data-testid="notification-banner">
-          <Bell className="h-4 w-4 text-[#bba7db]" />
+        <Alert className="rounded-none border-x-0 border-t-0 bg-primary/10" data-testid="notification-banner">
+          <Bell className="h-4 w-4 text-primary" />
           <AlertDescription className="flex items-center justify-between gap-4">
             <span className="text-sm">Enable notifications to get alerts for new messages and @mentions</span>
             <div className="flex gap-2">
               <Button
                 size="sm"
-                className="bg-[#bba7db] text-white border-[#bba7db]"
                 onClick={handleRequestNotificationPermission}
                 data-testid="button-enable-notifications"
               >
@@ -623,7 +622,11 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                 </Badge>
               )}
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-success' : 'bg-muted-foreground/50'}`} />
+                <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
+              </div>
               <NotificationSettingsButton />
               <Button
                 size="sm"
@@ -782,7 +785,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                         group w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md text-sm
                         transition-all cursor-pointer
                         ${isActive 
-                          ? 'bg-[#bba7db]/10 text-[#bba7db] font-medium' 
+                          ? 'bg-primary/10 text-primary font-medium' 
                           : 'hover-elevate text-foreground'
                         }
                       `}
@@ -791,10 +794,10 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                     >
                       <div className="flex items-center gap-2 min-w-0 flex-1">
                         {isPinned && (
-                          <Pin className="h-3 w-3 shrink-0 text-[#bba7db] rotate-45" />
+                          <Pin className="h-3 w-3 shrink-0 text-primary rotate-45" />
                         )}
                         {channel.type === "dm" ? (
-                          <User className="h-3.5 w-3.5 shrink-0 text-[#bba7db]" />
+                          <User className="h-3.5 w-3.5 shrink-0 text-primary" />
                         ) : channel.isClientFacing ? (
                           <Eye className="h-3.5 w-3.5 shrink-0 text-primary" />
                         ) : (
@@ -816,7 +819,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                           className={`
                             p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity
                             ${isPinned 
-                              ? 'text-[#bba7db] hover:bg-[#bba7db]/10' 
+                              ? 'text-primary hover:bg-primary/10' 
                               : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
                             }
                           `}
@@ -874,7 +877,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                             </Avatar>
                           )}
                           {isBot && (
-                            <div className="h-8 w-8 shrink-0 rounded-full bg-[#bba7db] flex items-center justify-center">
+                            <div className="h-8 w-8 shrink-0 rounded-full bg-primary flex items-center justify-center">
                               <Sparkles className="h-4 w-4 text-white" />
                             </div>
                           )}
@@ -890,9 +893,9 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                               className={`
                                 px-3 py-2 rounded-xl text-sm
                                 ${isOwn 
-                                  ? 'bg-[#bba7db]/10 text-foreground border border-[#bba7db]/20' 
+                                  ? 'bg-primary/10 text-foreground border border-primary/20' 
                                   : isBot
-                                    ? 'bg-[#bba7db]/5 text-foreground border border-[#bba7db]/20'
+                                    ? 'bg-primary/5 text-foreground border border-primary/20'
                                     : 'bg-muted/30 text-foreground'
                                 }
                               `}
