@@ -77,8 +77,8 @@ import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
 import { Document, Page, Text, View, StyleSheet, PDFDownloadLink } from '@react-pdf/renderer';
 
-// Casva lilac color
-const CASVA_LILAC = '#bba7db';
+// Primary color variable for inline styles (uses CSS variable fallback)
+const PRIMARY_COLOR = 'hsl(265, 44%, 76%)';
 
 // Helper function to convert Tiptap JSON to plain text for PDF
 const tiptapJsonToText = (jsonOrHtml: string | null | undefined): string => {
@@ -323,7 +323,7 @@ function AddToTemplateDialog({ open, onOpenChange, scopeItem }: AddToTemplateDia
                   onClick={() => setSelectedTemplateId(template.id)}
                   className={`w-full text-left p-3 rounded border transition-all hover-elevate ${
                     selectedTemplateId === template.id
-                      ? 'border-[#bba7db] bg-[#bba7db]/10'
+                      ? 'border-primary bg-primary/10'
                       : 'border-border'
                   }`}
                   data-testid={`button-select-template-${template.id}`}
@@ -516,7 +516,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
       {/* Grid Row - h-10, ultra-compact */}
       <div 
         className={`h-10 grid items-center gap-2 px-2 border-b border-border/50 transition-all hover-elevate group ${
-          isSelected ? 'bg-[#bba7db]/5 border-[#bba7db]/30' : ''
+          isSelected ? 'bg-primary/5 border-primary/30' : ''
         } ${isCompleted ? 'opacity-60' : ''}`}
         style={{ 
           gridTemplateColumns: '24px 40px 24px minmax(200px, 1fr) 100px minmax(150px, 2fr) 80px 100px 120px 24px',
@@ -556,7 +556,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
         <input
           value={item.title}
           onChange={(e) => onUpdate(item.id, { title: e.target.value })}
-          className={`h-7 text-sm font-medium bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-[#bba7db]/30 rounded px-2 ${isCompleted ? 'line-through text-muted-foreground' : ''}`}
+          className={`h-7 text-sm font-medium bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-2 ${isCompleted ? 'line-through text-muted-foreground' : ''}`}
           placeholder="Item name"
           data-testid={`input-scope-title-${item.id}`}
         />
@@ -565,7 +565,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
         <div className="flex items-center">
           {getTypeLabel && (
             <span 
-              className="h-4 px-1.5 text-[10px] font-semibold rounded bg-[#bba7db]/10 text-[#bba7db] border border-[#bba7db]/20 truncate"
+              className="h-4 px-1.5 text-[10px] font-semibold rounded bg-primary/10 text-primary border border-primary/20 truncate"
               data-testid={`badge-type-${item.id}`}
             >
               {getTypeLabel(item.itemType)}
@@ -589,7 +589,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
               </div>
             </HoverCardTrigger>
             {item.description && (
-              <HoverCardContent className="w-80 p-3 bg-popover border border-border shadow-lg" align="start" side="bottom">
+              <HoverCardContent className="w-80 p-3 bg-popover text-popover-foreground border border-border shadow-lg" align="start" side="bottom">
                 <div className="space-y-2">
                   <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Description</div>
                   <div 
@@ -623,7 +623,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
           type="number"
           value={item.quantity || ''}
           onChange={(e) => onUpdate(item.id, { quantity: parseFloat(e.target.value) || null })}
-          className="h-7 text-sm text-right bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-[#bba7db]/30 rounded px-2"
+          className="h-7 text-sm text-right bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-2"
           placeholder="-"
           data-testid={`input-quantity-${item.id}`}
         />
@@ -633,7 +633,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
           type="number"
           value={item.rate || ''}
           onChange={(e) => onUpdate(item.id, { rate: parseFloat(e.target.value) || null })}
-          className="h-7 text-sm text-right bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-[#bba7db]/30 rounded px-2"
+          className="h-7 text-sm text-right bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-2"
           placeholder="-"
           data-testid={`input-rate-${item.id}`}
         />
@@ -682,7 +682,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
 
       {/* Checklist Items - for itemType="checklist" */}
       {item.itemType === 'checklist' && (
-        <div className="ml-16 border-l-2 border-[#bba7db]/20 pl-4 py-2 space-y-1 bg-muted/20">
+        <div className="ml-16 border-l-2 border-primary/20 pl-4 py-2 space-y-1 bg-muted/20">
           {checklistItems.map((ci) => (
             <div key={ci.id} className="flex items-center gap-2 group/ci">
               <Checkbox
@@ -712,7 +712,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
               onChange={(e) => setNewChecklistItemText(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleAddChecklistItem()}
               placeholder="Add checklist item..."
-              className="flex-1 h-7 text-sm bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-[#bba7db]/30 rounded px-2"
+              className="flex-1 h-7 text-sm bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-2"
               data-testid={`input-new-checklist-item-${item.id}`}
             />
             <Button
@@ -1081,7 +1081,7 @@ function DroppableStage({
       >
         <div 
           className={`rounded-xl bg-background border-2 border-border shadow-sm transition-all duration-200 overflow-hidden ${
-            isOver && isDraggingStage ? 'ring-2 ring-[#bba7db]/50 bg-[#bba7db]/10' : ''
+            isOver && isDraggingStage ? 'ring-2 ring-primary/50 bg-primary/10' : ''
           }`}
         >
           {/* Stage Header - h-9, collapsible */}
@@ -1128,7 +1128,7 @@ function DroppableStage({
 
               {/* Item Count Badge */}
               {items.length > 0 && (
-                <span className="h-4 px-1.5 text-[10px] font-semibold rounded bg-[#bba7db]/10 text-[#bba7db] border border-[#bba7db]/20">
+                <span className="h-4 px-1.5 text-[10px] font-semibold rounded bg-primary/10 text-primary border border-primary/20">
                   {items.length}
                 </span>
               )}
@@ -1213,11 +1213,7 @@ function DroppableStage({
             <div ref={setDroppableRef} className="p-2">
               {topLevelItems.length === 0 ? (
                 <div 
-                  className={`text-center text-muted-foreground text-xs border-2 border-dashed rounded-lg transition-all hover:h-32 hover:shadow-md flex items-center justify-center ${isDroppableOver ? 'bg-primary/5 border-primary' : ''}`}
-                  style={{ 
-                    height: '60px',
-                    borderColor: isDroppableOver ? CASVA_LILAC : CASVA_LILAC + '40'
-                  }}
+                  className={`text-center text-muted-foreground text-xs border-2 border-dashed rounded-lg transition-all hover:h-32 hover:shadow-md flex items-center justify-center h-[60px] ${isDroppableOver ? 'bg-primary/5 border-primary' : 'border-primary/40'}`}
                 >
                   <div className="flex flex-col items-center gap-1">
                     <span className="text-2xl opacity-40">↕</span>
@@ -1262,7 +1258,7 @@ function DroppableStage({
                       onClick={() => onViewPO?.(po.id)}
                       data-testid={`linked-po-${po.id}`}
                     >
-                      <Package className="h-4 w-4 text-[#bba7db]" />
+                      <Package className="h-4 w-4 text-primary" />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium">{po.poNumber}</span>
@@ -1306,7 +1302,7 @@ function DroppableStage({
                       onClick={() => onViewScheduleItem?.(item.id)}
                       data-testid={`linked-schedule-item-${item.id}`}
                     >
-                      <CalendarDays className="h-4 w-4 text-[#bba7db]" />
+                      <CalendarDays className="h-4 w-4 text-primary" />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium truncate">{item.name}</span>
@@ -1441,15 +1437,15 @@ const ScopePDF = ({ stage, items, hideClientCosts = false }: { stage: string; it
 
 const pdfStyles = StyleSheet.create({
   page: { padding: 40, fontSize: 11 },
-  header: { marginBottom: 20, borderBottom: '2px solid #bba7db' },
-  title: { fontSize: 24, fontWeight: 'bold', color: '#bba7db', marginBottom: 10 },
+  header: { marginBottom: 20, borderBottom: `2px solid ${PRIMARY_COLOR}` },
+  title: { fontSize: 24, fontWeight: 'bold', color: PRIMARY_COLOR, marginBottom: 10 },
   subtitle: { fontSize: 12, color: '#999', fontStyle: 'italic', marginTop: 4 },
   item: { flexDirection: 'row', marginBottom: 12 },
   itemNumber: { width: 30, fontWeight: 'bold' },
   itemContent: { flex: 1 },
   itemTitle: { fontWeight: 'bold', marginBottom: 4 },
   itemDescription: { color: '#666', fontSize: 10 },
-  itemCostCode: { color: '#bba7db', fontSize: 9, marginTop: 4, fontStyle: 'italic' },
+  itemCostCode: { color: PRIMARY_COLOR, fontSize: 9, marginTop: 4, fontStyle: 'italic' },
 });
 
 // Scope item types
@@ -2373,15 +2369,7 @@ export default function ProjectScope() {
 
   return (
     <div className="flex flex-col h-full bg-background">
-      {/* Row 1: Title */}
-      <div className="h-9 flex items-center px-3 border-b border-border/50 bg-background">
-        <div className="flex items-center gap-2">
-          <ListTree className="h-4 w-4 text-muted-foreground" />
-          <h1 className="text-sm font-semibold" data-testid="text-page-title">{pageTitle}</h1>
-        </div>
-      </div>
-
-      {/* Row 2: Filters & Actions */}
+      {/* Single Row Header - Filters & Actions */}
       <div className="h-9 flex items-center justify-between px-3 border-b border-border/50 bg-background">
         {/* Left: Type Filters */}
         <div className="flex items-center gap-1">
@@ -2393,7 +2381,7 @@ export default function ProjectScope() {
                 onClick={() => toggleTypeFilter(type)}
                 className={`h-6 px-2 text-[10px] font-medium rounded-md border transition-all hover-elevate active-elevate-2 ${
                   isActive 
-                    ? 'bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/20' 
+                    ? 'bg-primary/10 text-primary border-primary/20' 
                     : 'bg-background text-muted-foreground border-border/50'
                 }`}
                 data-testid={`chip-filter-${type}`}
@@ -2798,7 +2786,7 @@ export default function ProjectScope() {
                   {/* Item Drag Overlay */}
                   <DragOverlay>
                     {activeId && scopeItems.find(i => i.id === activeId) ? (
-                      <Card className="opacity-90 border-l-4" style={{ borderLeftColor: CASVA_LILAC }}>
+                      <Card className="opacity-90 border-l-4" style={{ borderLeftColor: PRIMARY_COLOR }}>
                         <CardContent className="py-2 px-3">
                           <div className="font-medium text-sm">
                             {scopeItems.find(i => i.id === activeId)?.title}
@@ -2813,9 +2801,9 @@ export default function ProjectScope() {
               {/* Stage Drag Overlay */}
               <DragOverlay>
                 {activeStageId && scopeStages.find(s => s.id === activeStageId) ? (
-                  <Card className="opacity-90 border-l-4" style={{ borderLeftColor: CASVA_LILAC }}>
+                  <Card className="opacity-90 border-l-4" style={{ borderLeftColor: PRIMARY_COLOR }}>
                     <CardHeader className="py-2 px-4">
-                      <CardTitle className="text-base font-semibold" style={{ color: CASVA_LILAC }}>
+                      <CardTitle className="text-base font-semibold text-primary">
                         {scopeStages.find(s => s.id === activeStageId)?.name}
                       </CardTitle>
                     </CardHeader>
@@ -3144,7 +3132,7 @@ export default function ProjectScope() {
                           <div 
                             key={group.id}
                             className={`flex items-center gap-3 p-3 border-b last:border-b-0 cursor-pointer hover:bg-muted/50 ${
-                              isSelected ? 'bg-[#bba7db]/10' : ''
+                              isSelected ? 'bg-primary/10' : ''
                             }`}
                             onClick={() => toggleGroupForImport(group.id)}
                             data-testid={`import-group-${group.id}`}
