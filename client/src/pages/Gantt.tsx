@@ -1464,9 +1464,20 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                 return (
                   <div key={parentItem.id}>
                     {/* Parent item bar row */}
-                    <div className={`h-10 relative group`}>
+                    <div className={`h-10 relative group/row`}>
+                      {/* Left dependency dot (for incoming) */}
                       <div
-                        className="absolute top-1 h-6 mx-1 rounded-sm flex items-center cursor-move hover:scale-105 hover:shadow-md transition-all z-10 group/bar"
+                        className="absolute top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30"
+                        style={{ left: `${parentStart - 12}px` }}
+                        title="Drop here for dependency"
+                        data-testid={`dependency-target-${parentItem.id}`}
+                      >
+                        <div className="w-2 h-2 rounded-full bg-[#9b7fc7]" />
+                      </div>
+                      
+                      {/* Main bar */}
+                      <div
+                        className="absolute top-1 h-6 mx-1 rounded-sm flex items-center cursor-move hover:shadow-md transition-all z-10 group/bar overflow-hidden"
                         style={{
                           left: `${parentStart}px`,
                           width: `${parentWidth}px`,
@@ -1490,7 +1501,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                         />
                         
                         {nameFitsInBar && (
-                          <span className="text-xs font-medium text-white truncate pointer-events-none">
+                          <span className="text-xs font-medium text-white truncate pointer-events-none pl-2">
                             {parentItem.name}
                           </span>
                         )}
@@ -1505,23 +1516,33 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                           data-testid={`resize-right-${parentItem.id}`}
                         />
                         
-                        {/* Dependency connector circle (right side) - stays visible when hovered */}
-                        <div
-                          className="absolute -right-6 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center opacity-0 group-hover/bar:opacity-100 hover:!opacity-100 cursor-crosshair transition-opacity z-30"
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            handleBarMouseDown(e, parentItem, 'dependency');
-                          }}
-                          title="Drag to create dependency"
-                          data-testid={`dependency-handle-${parentItem.id}`}
-                        >
-                          <div className="w-2.5 h-2.5 rounded-full bg-[#9b7fc7] hover:scale-150 transition-transform" />
-                        </div>
+                        {/* Progress bar at bottom */}
+                        {(parentItem.progressPercent ?? 0) > 0 && (
+                          <div 
+                            className="absolute bottom-0 left-0 h-1 bg-white/40 rounded-b-sm"
+                            style={{ width: `${parentItem.progressPercent}%` }}
+                          />
+                        )}
                       </div>
+                      
+                      {/* Right dependency dot (for outgoing) */}
+                      <div
+                        className="absolute top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30"
+                        style={{ left: `${parentStart + parentWidth + 8}px` }}
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          handleBarMouseDown(e, parentItem, 'dependency');
+                        }}
+                        title="Drag to create dependency"
+                        data-testid={`dependency-handle-${parentItem.id}`}
+                      >
+                        <div className="w-2 h-2 rounded-full bg-[#9b7fc7] hover:scale-150 transition-transform" />
+                      </div>
+                      
                       {!nameFitsInBar && (
                         <div
                           className="absolute top-2 h-6 flex items-center pl-2 z-20"
-                          style={{ left: `${parentStart + parentWidth + 4}px` }}
+                          style={{ left: `${parentStart + parentWidth + 20}px` }}
                         >
                           <span className="text-xs font-medium whitespace-nowrap">
                             {parentItem.name}
@@ -1543,9 +1564,20 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                       const childNameFits = childTextWidth <= childWidth;
 
                       return (
-                        <div key={childItem.id} className={`h-10 relative group`}>
+                        <div key={childItem.id} className={`h-10 relative group/row`}>
+                          {/* Left dependency dot (for incoming) */}
                           <div
-                            className="absolute top-1 h-6 mx-1 rounded-sm flex items-center cursor-move hover:scale-105 hover:shadow-md transition-all z-10 group/bar"
+                            className="absolute top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30"
+                            style={{ left: `${childStart - 12}px` }}
+                            title="Drop here for dependency"
+                            data-testid={`dependency-target-${childItem.id}`}
+                          >
+                            <div className="w-2 h-2 rounded-full bg-[#9b7fc7]" />
+                          </div>
+                          
+                          {/* Main bar */}
+                          <div
+                            className="absolute top-1 h-6 mx-1 rounded-sm flex items-center cursor-move hover:shadow-md transition-all z-10 group/bar overflow-hidden"
                             style={{
                               left: `${childStart}px`,
                               width: `${childWidth}px`,
@@ -1569,7 +1601,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                             />
                             
                             {childNameFits && (
-                              <span className="text-xs font-medium text-white truncate pointer-events-none">
+                              <span className="text-xs font-medium text-white truncate pointer-events-none pl-2">
                                 {childItem.name}
                               </span>
                             )}
@@ -1584,23 +1616,33 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                               data-testid={`resize-right-${childItem.id}`}
                             />
                             
-                            {/* Dependency connector circle (right side) - stays visible when hovered */}
-                            <div
-                              className="absolute -right-6 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center opacity-0 group-hover/bar:opacity-100 hover:!opacity-100 cursor-crosshair transition-opacity z-30"
-                              onMouseDown={(e) => {
-                                e.stopPropagation();
-                                handleBarMouseDown(e, childItem, 'dependency');
-                              }}
-                              title="Drag to create dependency"
-                              data-testid={`dependency-handle-${childItem.id}`}
-                            >
-                              <div className="w-2.5 h-2.5 rounded-full bg-[#9b7fc7] hover:scale-150 transition-transform" />
-                            </div>
+                            {/* Progress bar at bottom */}
+                            {(childItem.progressPercent ?? 0) > 0 && (
+                              <div 
+                                className="absolute bottom-0 left-0 h-1 bg-white/40 rounded-b-sm"
+                                style={{ width: `${childItem.progressPercent}%` }}
+                              />
+                            )}
                           </div>
+                          
+                          {/* Right dependency dot (for outgoing) */}
+                          <div
+                            className="absolute top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30"
+                            style={{ left: `${childStart + childWidth + 8}px` }}
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              handleBarMouseDown(e, childItem, 'dependency');
+                            }}
+                            title="Drag to create dependency"
+                            data-testid={`dependency-handle-${childItem.id}`}
+                          >
+                            <div className="w-2 h-2 rounded-full bg-[#9b7fc7] hover:scale-150 transition-transform" />
+                          </div>
+                          
                           {!childNameFits && (
                             <div
                               className="absolute top-2 h-6 flex items-center pl-2 z-20"
-                              style={{ left: `${childStart + childWidth + 4}px` }}
+                              style={{ left: `${childStart + childWidth + 20}px` }}
                             >
                               <span className="text-xs font-medium whitespace-nowrap">
                                 {childItem.name}
