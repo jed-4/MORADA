@@ -680,15 +680,29 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     e.preventDefault();
     e.stopPropagation();
     
+    // For dependency drag, calculate timeline-relative coordinates
+    let startX = e.clientX;
+    let startY = e.clientY;
+    
+    if (dragType === 'dependency' && timelineRef.current) {
+      const rect = timelineRef.current.getBoundingClientRect();
+      const scrollLeft = timelineRef.current.scrollLeft;
+      const scrollTop = timelineRef.current.scrollTop;
+      
+      // Convert to timeline-relative coordinates
+      startX = e.clientX - rect.left + scrollLeft;
+      startY = e.clientY - rect.top + scrollTop;
+    }
+    
     setDragging({
       id: item.id,
       type: dragType,
-      startX: e.clientX,
-      startY: e.clientY,
+      startX,
+      startY,
       originalStart: new Date(item.startDate),
       originalEnd: new Date(item.endDate),
-      currentX: e.clientX,
-      currentY: e.clientY,
+      currentX: startX,
+      currentY: startY,
     });
   };
 
@@ -699,8 +713,21 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     const handleMouseMove = (e: MouseEvent) => {
       if (!dragging) return;
 
+      // For dependency drag, convert to timeline-relative coordinates
+      let currentX = e.clientX;
+      let currentY = e.clientY;
+      
+      if (dragging.type === 'dependency' && timelineRef.current) {
+        const rect = timelineRef.current.getBoundingClientRect();
+        const scrollLeft = timelineRef.current.scrollLeft;
+        const scrollTop = timelineRef.current.scrollTop;
+        
+        currentX = e.clientX - rect.left + scrollLeft;
+        currentY = e.clientY - rect.top + scrollTop;
+      }
+
       // Update current position for dependency line drawing
-      setDragging(prev => prev ? { ...prev, currentX: e.clientX, currentY: e.clientY } : null);
+      setDragging(prev => prev ? { ...prev, currentX, currentY } : null);
     };
 
     const handleMouseUp = async (e: MouseEvent) => {
@@ -1478,9 +1505,9 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                           data-testid={`resize-right-${parentItem.id}`}
                         />
                         
-                        {/* Dependency connector circle (right side) - larger hit area */}
+                        {/* Dependency connector circle (right side) - larger hit area, positioned well outside bar */}
                         <div
-                          className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center opacity-0 group-hover/bar:opacity-100 cursor-crosshair transition-opacity z-30"
+                          className="absolute -right-6 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center opacity-0 group-hover/bar:opacity-100 cursor-crosshair transition-opacity z-30"
                           onMouseDown={(e) => {
                             e.stopPropagation();
                             handleBarMouseDown(e, parentItem, 'dependency');
@@ -1557,9 +1584,9 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                               data-testid={`resize-right-${childItem.id}`}
                             />
                             
-                            {/* Dependency connector circle (right side) - larger hit area */}
+                            {/* Dependency connector circle (right side) - larger hit area, positioned well outside bar */}
                             <div
-                              className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center opacity-0 group-hover/bar:opacity-100 cursor-crosshair transition-opacity z-30"
+                              className="absolute -right-6 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center opacity-0 group-hover/bar:opacity-100 cursor-crosshair transition-opacity z-30"
                               onMouseDown={(e) => {
                                 e.stopPropagation();
                                 handleBarMouseDown(e, childItem, 'dependency');
@@ -1628,15 +1655,36 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                       ? getPosition(predEffective.endDate) + (differenceInDays(predEffective.endDate, predEffective.startDate) + 1) * pixelsPerDay
                       : getPosition(new Date(predItem.endDate)) + (differenceInDays(new Date(predItem.endDate), new Date(predItem.startDate)) + 1) * pixelsPerDay;
                     
-                    // Create curved arrow path (Finish-to-Start)
+                    // Create curved arrow path (Finish-to-Start) with orientation-aware control points
                     const startX = predEnd;
                     const startY = predY;
                     const endX = targetStart;
                     const endY = targetY;
                     
-                    const controlOffset = Math.min(50, Math.abs(endX - startX) / 3);
+                    const deltaX = endX - startX;
+                    const deltaY = endY - startY;
                     
-                    const path = `M ${startX} ${startY} C ${startX + controlOffset} ${startY}, ${endX - controlOffset} ${endY}, ${endX} ${endY}`;
+                    // Minimum horizontal offset for curves (prevents ugly straight lines)
+                    const minHorizOffset = 24;
+                    const horizOffset = Math.max(minHorizOffset, Math.abs(deltaX) / 3);
+                    
+                    // Add vertical bias based on row direction (above/below)
+                    const vertBias = Math.max(16, Math.abs(deltaY) / 4);
+                    
+                    let path: string;
+                    if (deltaX >= 0) {
+                      // Forward dependency (normal case: predecessor ends before successor starts)
+                      const ctrl1X = startX + horizOffset;
+                      const ctrl1Y = startY + (deltaY > 0 ? vertBias : deltaY < 0 ? -vertBias : 0);
+                      const ctrl2X = endX - horizOffset;
+                      const ctrl2Y = endY + (deltaY > 0 ? -vertBias : deltaY < 0 ? vertBias : 0);
+                      path = `M ${startX} ${startY} C ${ctrl1X} ${ctrl1Y}, ${ctrl2X} ${ctrl2Y}, ${endX} ${endY}`;
+                    } else {
+                      // Backward dependency (predecessor ends after successor starts - loop around)
+                      const loopOffset = Math.max(40, Math.abs(deltaX) / 2);
+                      const midY = (startY + endY) / 2 + (deltaY >= 0 ? loopOffset : -loopOffset);
+                      path = `M ${startX} ${startY} Q ${startX + loopOffset} ${startY}, ${startX + loopOffset} ${midY} T ${endX} ${endY}`;
+                    }
                     
                     return (
                       <g key={`${item.id}-${dep.id}`}>
