@@ -607,50 +607,6 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
         </Alert>
       )}
 
-      {/* Channel info header */}
-      <div className="shrink-0 border-b bg-background">
-        {/* Channel info + actions */}
-        {selectedChannel && (
-          <div className="h-9 px-4 flex items-center justify-between">
-            <div className="flex items-center gap-2 min-w-0">
-              <Hash className="h-4 w-4 text-muted-foreground shrink-0" />
-              <span className="text-sm font-medium truncate">{selectedChannel.name}</span>
-              {selectedChannel.isClientFacing && (
-                <Badge variant="secondary" className="h-4 text-[10px] shrink-0">
-                  <Eye className="h-3 w-3 mr-1" />
-                  Client
-                </Badge>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-success' : 'bg-muted-foreground/50'}`} />
-                <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
-              </div>
-              <NotificationSettingsButton />
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7"
-                onClick={() => setIsAddPeopleOpen(true)}
-                data-testid="button-add-people"
-              >
-                <UserPlus className="h-4 w-4" />
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7"
-                onClick={() => setIsChannelSettingsOpen(true)}
-                data-testid="button-channel-settings"
-              >
-                <Settings className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        )}
-      </div>
-
       <div className="flex-1 flex min-h-0">
         {/* Left Sidebar - Channels List */}
         <div className="w-60 border-r flex flex-col bg-muted/20">
@@ -785,7 +741,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                         group w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md text-sm
                         transition-all cursor-pointer
                         ${isActive 
-                          ? 'bg-primary/10 text-primary font-medium' 
+                          ? 'bg-primary/20 text-primary font-semibold ring-1 ring-primary/50' 
                           : 'hover-elevate text-foreground'
                         }
                       `}
@@ -845,6 +801,44 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
         <div className="flex-1 flex flex-col">
           {selectedChannel ? (
             <>
+              {/* Channel Header - aligned with conversation panel */}
+              <div className="shrink-0 h-11 px-4 flex items-center justify-between border-b bg-background">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Hash className="h-4 w-4 text-primary shrink-0" />
+                  <span className="text-base font-semibold truncate">{selectedChannel.name}</span>
+                  {selectedChannel.isClientFacing && (
+                    <Badge variant="secondary" className="h-5 text-[10px] shrink-0">
+                      <Eye className="h-3 w-3 mr-1" />
+                      Client
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-success' : 'bg-muted-foreground/50'}`} />
+                    <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
+                  </div>
+                  <NotificationSettingsButton />
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7"
+                    onClick={() => setIsAddPeopleOpen(true)}
+                    data-testid="button-add-people"
+                  >
+                    <UserPlus className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7"
+                    onClick={() => setIsChannelSettingsOpen(true)}
+                    data-testid="button-channel-settings"
+                  >
+                    <Settings className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
               {/* Messages Area */}
               <ScrollArea className="flex-1 p-4">
                 <div className="space-y-4 max-w-4xl">
