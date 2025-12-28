@@ -959,7 +959,7 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
   return (
     <div className="flex flex-col h-full" data-testid="notes-page">
       {/* Single Row Header - Controls & Filters */}
-      <div className="h-9 px-4 flex items-center gap-2 border-b bg-background">
+      <div className="h-9 mx-4 mt-2 px-3 flex items-center gap-2 rounded-md border bg-muted/30">
         {/* Search */}
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
