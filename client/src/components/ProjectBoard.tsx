@@ -677,19 +677,21 @@ export function ProjectBoard({
   // Move project to different column (simple move without phase transition)
   // Uses optimistic updates like Estimate drag-and-drop to prevent snap-back
   const moveProjectMutation = useMutation({
-    mutationFn: async ({ projectId, newStatus, newSubStatus }: { 
+    mutationFn: async ({ projectId, newStatus, newSubStatus, newSystemPhase }: { 
       projectId: string; 
       newStatus?: string;
       newSubStatus?: string;
+      newSystemPhase?: string;
     }) => {
       // When moving by phase, update both projectStatus and currentSystemPhase for consistency
+      // When moving by sub-status, the backend will auto-update currentSystemPhase
       const updateData = preferences.groupBy === "phase" 
         ? { projectStatus: newStatus, currentSystemPhase: newStatus }
         : { projectSubStatus: newSubStatus };
       
       await apiRequest(`/api/projects/${projectId}`, "PATCH", updateData);
     },
-    onMutate: async ({ projectId, newStatus, newSubStatus }) => {
+    onMutate: async ({ projectId, newStatus, newSubStatus, newSystemPhase }) => {
       // Cancel outgoing refetches to prevent snap-back
       await queryClient.cancelQueries({ queryKey: ["/api/projects"] });
       
@@ -705,9 +707,13 @@ export function ProjectBoard({
             if (project.id === projectId) {
               return {
                 ...project,
-                // When moving by phase, also update currentSystemPhase for consistency
+                // When moving by phase, update both projectStatus and currentSystemPhase
                 ...(newStatus ? { projectStatus: newStatus, currentSystemPhase: newStatus } : {}),
-                ...(newSubStatus ? { projectSubStatus: newSubStatus } : {}),
+                // When moving by sub-status, also update currentSystemPhase to match the target column's phase
+                ...(newSubStatus ? { 
+                  projectSubStatus: newSubStatus,
+                  ...(newSystemPhase ? { currentSystemPhase: newSystemPhase } : {})
+                } : {}),
               };
             }
             return project;
@@ -750,13 +756,15 @@ export function ProjectBoard({
         newStatusKey: newSubStatus,
       });
     } else {
-      // Simple move without phase transition
+      // Simple move without phase transition - but still update phase for consistency
+      const targetPhase = getSystemPhaseFromStatus(newSubStatus);
       moveProjectMutation.mutate({
         projectId: project.id,
         newSubStatus,
+        newSystemPhase: targetPhase || undefined,
       });
     }
-  }, [checkPhaseTransition, moveProjectMutation]);
+  }, [checkPhaseTransition, moveProjectMutation, getSystemPhaseFromStatus]);
 
   // Handle explicit phase transition from context menu
   const handlePhaseTransition = useCallback((project: Project, toPhaseKey: string) => {
@@ -938,13 +946,30 @@ export function ProjectBoard({
           }
         }
       } else {
-        // Sub-status grouping - block cross-phase moves
+        // Sub-status grouping - check for cross-phase moves
         if (draggedProject.projectSubStatus !== columnId) {
-          if (checkAndBlockCrossPhase(columnId)) return;
-          moveProjectMutation.mutate({
-            projectId: activeProjectId,
-            newSubStatus: columnId,
-          });
+          // Get the target column's systemPhase
+          const targetColumn = columns.find(c => c.id === columnId);
+          const targetPhase = targetColumn?.systemPhase;
+          const sourcePhase = getProjectPhase(draggedProject);
+          
+          // If moving to a different phase, show the phase transition dialog
+          if (sourcePhase && targetPhase && sourcePhase !== targetPhase) {
+            setPhaseTransitionData({
+              open: true,
+              project: draggedProject,
+              fromPhase: sourcePhase as SystemPhase,
+              toPhase: targetPhase as SystemPhase,
+              newStatusKey: columnId,
+            });
+          } else {
+            // Same phase, just update sub-status and phase for consistency
+            moveProjectMutation.mutate({
+              projectId: activeProjectId,
+              newSubStatus: columnId,
+              newSystemPhase: targetPhase,
+            });
+          }
         }
       }
     }
@@ -979,15 +1004,31 @@ export function ProjectBoard({
           }
         }
       } else {
-        // Sub-status grouping - block cross-phase moves
+        // Sub-status grouping - check for cross-phase moves
         if (draggedProject.projectSubStatus !== overProject.projectSubStatus) {
-          // Find the target column to check phase
+          // Find the target column to get its systemPhase
           const targetStatusKey = overProject.projectSubStatus;
-          if (checkAndBlockCrossPhase(targetStatusKey)) return;
-          moveProjectMutation.mutate({
-            projectId: activeProjectId,
-            newSubStatus: targetStatusKey,
-          });
+          const targetColumn = columns.find(c => c.id === targetStatusKey);
+          const targetPhase = targetColumn?.systemPhase;
+          const sourcePhase = getProjectPhase(draggedProject);
+          
+          // If moving to a different phase, show the phase transition dialog
+          if (sourcePhase && targetPhase && sourcePhase !== targetPhase) {
+            setPhaseTransitionData({
+              open: true,
+              project: draggedProject,
+              fromPhase: sourcePhase as SystemPhase,
+              toPhase: targetPhase as SystemPhase,
+              newStatusKey: targetStatusKey || "",
+            });
+          } else {
+            // Same phase, just update sub-status and phase for consistency
+            moveProjectMutation.mutate({
+              projectId: activeProjectId,
+              newSubStatus: targetStatusKey,
+              newSystemPhase: targetPhase,
+            });
+          }
         }
       }
     }
