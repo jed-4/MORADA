@@ -166,6 +166,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     originalEnd: Date;
     currentX?: number;
     currentY?: number;
+    currentDeltaX?: number; // For visual feedback during bar move/resize
     sourceAnchor?: 'start' | 'end'; // For dependency drag: which end the drag started from
   } | null>(null);
   const [hoveredBar, setHoveredBar] = useState<string | null>(null);
@@ -750,8 +751,11 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
         currentY = e.clientY - rect.top + scrollTop - 60; // Subtract header height
       }
 
-      // Update current position for dependency line drawing
-      setDragging(prev => prev ? { ...prev, currentX, currentY } : null);
+      // Calculate deltaX for visual bar movement feedback
+      const currentDeltaX = e.clientX - dragging.startX;
+
+      // Update current position for dependency line drawing and bar movement
+      setDragging(prev => prev ? { ...prev, currentX, currentY, currentDeltaX } : null);
     };
 
     const handleMouseUp = async (e: MouseEvent) => {
@@ -769,11 +773,29 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
           const newStart = addDays(dragging.originalStart, deltaDays);
           const newEnd = addDays(dragging.originalEnd, deltaDays);
 
+          // Move the main item
           await updateItemMutation.mutateAsync({
             id: dragging.id,
             startDate: newStart,
             endDate: newEnd,
           });
+          
+          // Find and move all dependent items (successors) by the same delta
+          // These are items that have this item as a dependency (predecessor)
+          const dependentItems = allItems.filter(item => 
+            item.dependencies?.some((dep: any) => dep.id === dragging.id)
+          );
+          
+          // Move all dependents by the same delta
+          for (const depItem of dependentItems) {
+            const depNewStart = addDays(new Date(depItem.startDate), deltaDays);
+            const depNewEnd = addDays(new Date(depItem.endDate), deltaDays);
+            await updateItemMutation.mutateAsync({
+              id: depItem.id,
+              startDate: depNewStart,
+              endDate: depNewEnd,
+            });
+          }
         }
       } else if (dragging.type === 'resize-left') {
         // Resize from the left (change start date)
@@ -1548,7 +1570,15 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                       {/* Bar wrapper for positioning dots relative to bar */}
                       <div 
                         className="absolute top-1 h-6"
-                        style={{ left: `${parentStart}px`, width: `${parentWidth}px` }}
+                        style={{ 
+                          left: `${parentStart + (dragging?.id === parentItem.id && dragging?.type === 'move' ? (dragging.currentDeltaX || 0) : 
+                            // Also show visual feedback if this item is a dependent of the item being dragged
+                            (dragging?.type === 'move' && parentItem.dependencies?.some((dep: any) => dep.id === dragging?.id) ? (dragging.currentDeltaX || 0) : 0))}px`, 
+                          width: `${parentWidth}px`,
+                          opacity: (dragging?.id === parentItem.id && dragging?.type === 'move') || 
+                            (dragging?.type === 'move' && parentItem.dependencies?.some((dep: any) => dep.id === dragging?.id)) ? 0.8 : 1,
+                          transition: dragging?.id === parentItem.id || (dragging?.type === 'move' && parentItem.dependencies?.some((dep: any) => dep.id === dragging?.id)) ? 'none' : 'opacity 0.2s',
+                        }}
                       >
                         {/* Left dependency dot (start anchor) - can drag or drop */}
                         <div
@@ -1704,7 +1734,15 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                           {/* Bar wrapper for positioning dots relative to bar */}
                           <div 
                             className="absolute top-1 h-6"
-                            style={{ left: `${childStart}px`, width: `${childWidth}px` }}
+                            style={{ 
+                              left: `${childStart + (dragging?.id === childItem.id && dragging?.type === 'move' ? (dragging.currentDeltaX || 0) : 
+                                // Also show visual feedback if this item is a dependent of the item being dragged
+                                (dragging?.type === 'move' && childItem.dependencies?.some((dep: any) => dep.id === dragging?.id) ? (dragging.currentDeltaX || 0) : 0))}px`, 
+                              width: `${childWidth}px`,
+                              opacity: (dragging?.id === childItem.id && dragging?.type === 'move') || 
+                                (dragging?.type === 'move' && childItem.dependencies?.some((dep: any) => dep.id === dragging?.id)) ? 0.8 : 1,
+                              transition: dragging?.id === childItem.id || (dragging?.type === 'move' && childItem.dependencies?.some((dep: any) => dep.id === dragging?.id)) ? 'none' : 'opacity 0.2s',
+                            }}
                           >
                             {/* Left dependency dot (start anchor) - can drag or drop */}
                             <div
@@ -1885,14 +1923,39 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                     const predEffective = predItem.parentId === null && predChildItems.length > 0
                       ? getEffectiveDates(predItem)
                       : null;
+                    const predStart = predEffective
+                      ? getPosition(predEffective.startDate)
+                      : getPosition(new Date(predItem.startDate));
                     const predEnd = predEffective
                       ? getPosition(predEffective.endDate) + (differenceInDays(predEffective.endDate, predEffective.startDate) + 1) * pixelsPerDay
                       : getPosition(new Date(predItem.endDate)) + (differenceInDays(new Date(predItem.endDate), new Date(predItem.startDate)) + 1) * pixelsPerDay;
                     
-                    // Create curved arrow path (Finish-to-Start) with orientation-aware control points
-                    const startX = predEnd;
+                    // Get target end position for FF and SF dependencies
+                    const targetEnd = targetEffective
+                      ? getPosition(targetEffective.endDate) + (differenceInDays(targetEffective.endDate, targetEffective.startDate) + 1) * pixelsPerDay
+                      : getPosition(new Date(item.endDate)) + (differenceInDays(new Date(item.endDate), new Date(item.startDate)) + 1) * pixelsPerDay;
+                    
+                    // Determine start/end positions based on dependency type
+                    // FS = Finish-to-Start, SS = Start-to-Start, FF = Finish-to-Finish, SF = Start-to-Finish
+                    const depType = dep.type || 'FS';
+                    let startX: number, endX: number;
+                    if (depType === 'FS') {
+                      startX = predEnd;
+                      endX = targetStart;
+                    } else if (depType === 'SS') {
+                      startX = predStart;
+                      endX = targetStart;
+                    } else if (depType === 'FF') {
+                      startX = predEnd;
+                      endX = targetEnd;
+                    } else if (depType === 'SF') {
+                      startX = predStart;
+                      endX = targetEnd;
+                    } else {
+                      startX = predEnd;
+                      endX = targetStart;
+                    }
                     const startY = predY;
-                    const endX = targetStart;
                     const endY = targetY;
                     
                     const deltaX = endX - startX;
@@ -1979,17 +2042,42 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                 </defs>
                 
                 {/* Drag-to-create dependency visual feedback */}
-                {dragging?.type === 'dependency' && dragging.currentX && dragging.currentY && (
-                  <path
-                    d={`M ${dragging.startX} ${dragging.startY} Q ${(dragging.startX + dragging.currentX) / 2 + 20} ${(dragging.startY + dragging.currentY) / 2}, ${dragging.currentX} ${dragging.currentY}`}
-                    stroke="#9b7fc7"
-                    strokeWidth="1.5"
-                    strokeDasharray="4,3"
-                    strokeLinecap="round"
-                    fill="none"
-                    markerEnd="url(#arrow-drag)"
-                  />
-                )}
+                {dragging?.type === 'dependency' && dragging.currentX && dragging.currentY && (() => {
+                  // Calculate the actual anchor position for the source item
+                  const sourceItem = globalItemMap.get(dragging.id);
+                  if (!sourceItem) return null;
+                  
+                  const sourceRowIdx = itemRowIndexMap.get(sourceItem.id);
+                  if (sourceRowIdx === undefined) return null;
+                  
+                  const sourceY = sourceRowIdx * 40 + 20;
+                  const sourceChildItems = childItemsByParent[sourceItem.id] || [];
+                  const sourceEffective = sourceItem.parentId === null && sourceChildItems.length > 0
+                    ? getEffectiveDates(sourceItem)
+                    : null;
+                  const sourceStart = sourceEffective
+                    ? getPosition(sourceEffective.startDate)
+                    : getPosition(new Date(sourceItem.startDate));
+                  const sourceEnd = sourceEffective
+                    ? getPosition(sourceEffective.endDate) + (differenceInDays(sourceEffective.endDate, sourceEffective.startDate) + 1) * pixelsPerDay
+                    : getPosition(new Date(sourceItem.endDate)) + (differenceInDays(new Date(sourceItem.endDate), new Date(sourceItem.startDate)) + 1) * pixelsPerDay;
+                  
+                  // Determine start position based on sourceAnchor
+                  const startX = dragging.sourceAnchor === 'start' ? sourceStart : sourceEnd;
+                  const startY = sourceY;
+                  
+                  return (
+                    <path
+                      d={`M ${startX} ${startY} Q ${(startX + dragging.currentX) / 2 + 20} ${(startY + dragging.currentY) / 2}, ${dragging.currentX} ${dragging.currentY}`}
+                      stroke="#9b7fc7"
+                      strokeWidth="1.5"
+                      strokeDasharray="4,3"
+                      strokeLinecap="round"
+                      fill="none"
+                      markerEnd="url(#arrow-drag)"
+                    />
+                  );
+                })()}
               </svg>
 
               {/* Today line */}
