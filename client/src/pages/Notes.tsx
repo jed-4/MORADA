@@ -154,7 +154,7 @@ function NoteCard({
 }: NoteCardProps) {
   return (
     <div 
-      className={`group border rounded-md p-2 bg-card hover-elevate transition-all cursor-pointer ${indented ? 'ml-6' : ''}`}
+      className={`group border rounded-md p-2 bg-card hover-elevate transition-all cursor-pointer ${indented ? 'ml-6' : ''} ${note.pinned ? 'ring-1 ring-primary/40 bg-primary/5' : ''}`}
       data-testid={`note-card-${note.id}`}
       onDoubleClick={() => onEdit(note)}
     >
@@ -958,83 +958,73 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
 
   return (
     <div className="flex flex-col h-full" data-testid="notes-page">
-      {/* 2-Row Header - ClickUp 2025 Pattern */}
-      <div className="border-b bg-background">
-        {/* Row 1: Title */}
-        <div className="h-9 px-4 flex items-center">
-          <h2 className="text-sm font-semibold">
-            {pageTitle}
-          </h2>
+      {/* Single Row Header - Controls & Filters */}
+      <div className="h-9 px-4 flex items-center gap-2 border-b bg-background">
+        {/* Search */}
+        <div className="relative flex-1 max-w-xs">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input
+            placeholder="Search notes..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="h-6 pl-7 text-xs"
+            data-testid="notes-search-input"
+          />
         </div>
 
-        {/* Row 2: Controls & Filters */}
-        <div className="h-9 px-4 flex items-center gap-2">
-          {/* Search */}
-          <div className="relative flex-1 max-w-xs">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              placeholder="Search notes..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="h-6 pl-7 text-xs"
-              data-testid="notes-search-input"
-            />
-          </div>
+        {/* Category Filter */}
+        <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+          <SelectTrigger className="h-6 w-40 text-xs gap-1" data-testid="notes-category-filter">
+            <Filter className="h-3 w-3" />
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="All">All Categories</SelectItem>
+            {Array.from(new Set(notes.map(note => note.category))).map((category) => (
+              <SelectItem key={category} value={category}>
+                {category}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
-          {/* Category Filter */}
-          <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-            <SelectTrigger className="h-6 w-40 text-xs gap-1" data-testid="notes-category-filter">
-              <Filter className="h-3 w-3" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="All">All Categories</SelectItem>
-              {Array.from(new Set(notes.map(note => note.category))).map((category) => (
-                <SelectItem key={category} value={category}>
-                  {category}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        {/* Sort */}
+        <Select value={sortBy} onValueChange={setSortBy}>
+          <SelectTrigger className="h-6 w-36 text-xs gap-1" data-testid="notes-sort-filter">
+            <ArrowUpDown className="h-3 w-3" />
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="newest">Newest First</SelectItem>
+            <SelectItem value="oldest">Oldest First</SelectItem>
+            <SelectItem value="alphabetical">Alphabetical</SelectItem>
+          </SelectContent>
+        </Select>
 
-          {/* Sort */}
-          <Select value={sortBy} onValueChange={setSortBy}>
-            <SelectTrigger className="h-6 w-36 text-xs gap-1" data-testid="notes-sort-filter">
-              <ArrowUpDown className="h-3 w-3" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="newest">Newest First</SelectItem>
-              <SelectItem value="oldest">Oldest First</SelectItem>
-              <SelectItem value="alphabetical">Alphabetical</SelectItem>
-            </SelectContent>
-          </Select>
+        <div className="flex-1" />
 
-          <div className="flex-1" />
+        {/* Create Group Button */}
+        <Button 
+          variant="outline"
+          size="sm"
+          onClick={() => setIsCreateGroupOpen(true)} 
+          className="h-7 px-2 text-xs gap-1"
+          data-testid="create-group-button"
+        >
+          <FolderPlus className="h-3.5 w-3.5" />
+          New Group
+        </Button>
 
-          {/* Create Group Button */}
-          <Button 
-            variant="outline"
-            size="sm"
-            onClick={() => setIsCreateGroupOpen(true)} 
-            className="h-6 px-2 text-xs gap-1"
-            data-testid="create-group-button"
-          >
-            <FolderPlus className="h-3 w-3" />
-            New Group
-          </Button>
-
-          {/* Add Note Button */}
-          <Button 
-            size="sm"
-            onClick={() => setIsAddingNote(true)} 
-            className="h-6 px-2 text-xs gap-1"
-            data-testid="add-note-button"
-          >
-            <Plus className="h-3 w-3" />
-            Add Note
-          </Button>
-        </div>
+        {/* Add Note Button */}
+        <Button 
+          size="sm"
+          onClick={() => setIsAddingNote(true)} 
+          className="h-7 px-2 text-xs gap-1"
+          data-testid="add-note-button"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Add Note
+        </Button>
       </div>
 
       {/* Notes Display */}
@@ -1059,10 +1049,10 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
             <Button 
               size="sm"
               onClick={() => setIsAddingNote(true)} 
-              className="h-6 px-2 text-xs gap-1"
+              className="h-7 px-2 text-xs gap-1"
               data-testid="add-first-note-button"
             >
-              <Plus className="h-3 w-3" />
+              <Plus className="h-3.5 w-3.5" />
               Add Your First Note
             </Button>
           )}
@@ -1075,16 +1065,16 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
             const isExpanded = expandedGroups.has(group.id);
             
             return (
-              <div key={group.id} className="border rounded-md bg-muted/30" data-testid={`note-group-${group.id}`}>
+              <div key={group.id} className="border rounded-md bg-muted/20" data-testid={`note-group-${group.id}`}>
                 {/* Group Header */}
                 <div 
                   className="flex items-center gap-2 p-2 cursor-pointer hover-elevate"
                   onClick={() => toggleGroupExpanded(group.id)}
                 >
                   {isExpanded ? (
-                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                    <ChevronDown className="h-4 w-4 text-primary" />
                   ) : (
-                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                    <ChevronRight className="h-4 w-4 text-primary" />
                   )}
                   <Folder className="h-4 w-4 text-primary" />
                   {editingGroupId === group.id ? (
@@ -1110,7 +1100,7 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
                       onClick={(e) => e.stopPropagation()}
                     />
                   ) : (
-                    <span className="font-medium text-sm">{group.name}</span>
+                    <span className="font-medium text-sm text-foreground">{group.name}</span>
                   )}
                   <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
                     {groupNotesArr.length}
