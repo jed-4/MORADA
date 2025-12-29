@@ -182,6 +182,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
   const [selectedTask, setSelectedTask] = useState<ScheduleItem | null>(null);
   const [scrollVersion, setScrollVersion] = useState(0); // Force re-render on scroll during dependency drag
   const lastCursorPosition = useRef<{ x: number; y: number } | null>(null); // Track last cursor for scroll updates
+  const dragHappened = useRef<boolean>(false); // Track if actual drag occurred (to distinguish from clicks)
   
   // Infinite scroll: track extra buffer days beyond data bounds
   const [timelineBuffer, setTimelineBuffer] = useState({ before: 14, after: 28 });
@@ -749,10 +750,16 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     return '#9ca3af'; // neutral gray
   };
 
-  // Bar click handler - open modal or start drag
+  // Bar click handler - open modal (but not if a drag just happened)
   const handleBarClick = (e: React.MouseEvent, item: ScheduleItem) => {
     e.preventDefault();
     e.stopPropagation();
+    
+    // Skip if a drag just occurred - don't open modal after dragging
+    // The flag is reset in handleMouseUp after a short delay to allow click event to be suppressed
+    if (dragHappened.current) {
+      return;
+    }
     
     setSelectedTask(item);
 
@@ -770,6 +777,9 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
   ) => {
     e.preventDefault();
     e.stopPropagation();
+    
+    // Reset drag flag at start of new drag interaction
+    dragHappened.current = false;
     
     // Store viewport coordinates for all drag types
     // For dependency drags, we'll convert to timeline-relative on each mouse move
@@ -799,6 +809,13 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
     const handleMouseMove = (e: MouseEvent) => {
       if (!dragging) return;
+
+      // Mark that actual drag movement happened (to distinguish from clicks)
+      const deltaX = Math.abs(e.clientX - dragging.startX);
+      const deltaY = Math.abs(e.clientY - dragging.startY);
+      if (deltaX > 3 || deltaY > 3) {
+        dragHappened.current = true;
+      }
 
       // Edge scrolling - auto-scroll timeline when dragging near viewport edges
       if (timelineRef.current && (dragging.type === 'move' || dragging.type === 'resize-left' || dragging.type === 'resize-right')) {
@@ -840,6 +857,19 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
       const deltaX = e.clientX - dragging.startX;
       const deltaDays = Math.round(deltaX / pixelsPerDay);
+      const cacheKey = `/api/projects/${projectId}/schedule-items`;
+
+      // Helper to optimistically update cache for instant dependency line updates
+      const updateCacheOptimistically = (itemId: number, newStart: Date, newEnd: Date) => {
+        queryClient.setQueryData<ScheduleItem[]>([cacheKey], (oldData) => {
+          if (!oldData) return oldData;
+          return oldData.map(item => 
+            item.id === itemId 
+              ? { ...item, startDate: newStart, endDate: newEnd }
+              : item
+          );
+        });
+      };
 
       if (dragging.type === 'move') {
         // Move the entire bar (reschedule)
@@ -847,24 +877,33 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
           const newStart = addDays(dragging.originalStart, deltaDays);
           const newEnd = addDays(dragging.originalEnd, deltaDays);
 
-          // Move the main item
-          await updateItemMutation.mutateAsync({
+          // Find dependent items BEFORE optimistic update
+          const dependentItems = allItems.filter(item => 
+            item.dependencies?.some((dep: any) => dep.id === dragging.id)
+          );
+
+          // Optimistically update cache for main item - dependency lines update instantly
+          updateCacheOptimistically(dragging.id, newStart, newEnd);
+          
+          // Optimistically update cache for all dependents
+          for (const depItem of dependentItems) {
+            const depNewStart = addDays(new Date(depItem.startDate), deltaDays);
+            const depNewEnd = addDays(new Date(depItem.endDate), deltaDays);
+            updateCacheOptimistically(depItem.id, depNewStart, depNewEnd);
+          }
+
+          // Now fire mutations (they will invalidate cache on completion for server truth)
+          updateItemMutation.mutate({
             id: dragging.id,
             startDate: newStart,
             endDate: newEnd,
           });
           
-          // Find and move all dependent items (successors) by the same delta
-          // These are items that have this item as a dependency (predecessor)
-          const dependentItems = allItems.filter(item => 
-            item.dependencies?.some((dep: any) => dep.id === dragging.id)
-          );
-          
           // Move all dependents by the same delta
           for (const depItem of dependentItems) {
             const depNewStart = addDays(new Date(depItem.startDate), deltaDays);
             const depNewEnd = addDays(new Date(depItem.endDate), deltaDays);
-            await updateItemMutation.mutateAsync({
+            updateItemMutation.mutate({
               id: depItem.id,
               startDate: depNewStart,
               endDate: depNewEnd,
@@ -878,7 +917,10 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
           
           // Ensure start is before end (minimum 1 day duration)
           if (newStart < dragging.originalEnd) {
-            await updateItemMutation.mutateAsync({
+            // Optimistic update for instant line update
+            updateCacheOptimistically(dragging.id, newStart, dragging.originalEnd);
+            
+            updateItemMutation.mutate({
               id: dragging.id,
               startDate: newStart,
               endDate: dragging.originalEnd,
@@ -892,7 +934,10 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
           
           // Ensure end is after start (minimum 1 day duration)
           if (newEnd > dragging.originalStart) {
-            await updateItemMutation.mutateAsync({
+            // Optimistic update for instant line update
+            updateCacheOptimistically(dragging.id, dragging.originalStart, newEnd);
+            
+            updateItemMutation.mutate({
               id: dragging.id,
               startDate: dragging.originalStart,
               endDate: newEnd,
@@ -932,6 +977,12 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
       setDragging(null);
       setHoveredAnchor(null);
+      
+      // Reset drag flag after a short delay to allow the click event to be suppressed first
+      // Click events fire immediately after mouseup, so we delay the reset
+      setTimeout(() => {
+        dragHappened.current = false;
+      }, 50);
     };
 
     window.addEventListener('mousemove', handleMouseMove);
