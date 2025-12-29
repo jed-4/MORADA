@@ -54,6 +54,7 @@ import {
   Circle,
   CheckCircle2,
   X,
+  AlignLeft,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
@@ -391,9 +392,10 @@ interface SortableScopeItemProps {
   onToggleCollapse?: (itemId: string) => void; // Scope 2.0: toggle function
   getTypeLabel?: (type: string | null | undefined) => string; // Scope 2.0: type label helper
   collapsedItems?: Set<string>; // Scope 2.0: full collapsed items set
+  showDescriptionInline?: boolean; // Show full description inline instead of hover
 }
 
-function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelected, level = 0, children = [], allItems = [], selectedItems = new Set(), isCollapsed = false, onToggleCollapse, getTypeLabel, collapsedItems }: SortableScopeItemProps) {
+function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelected, level = 0, children = [], allItems = [], selectedItems = new Set(), isCollapsed = false, onToggleCollapse, getTypeLabel, collapsedItems, showDescriptionInline = false }: SortableScopeItemProps) {
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [showGearList, setShowGearList] = useState(false);
   const [showAddToTemplate, setShowAddToTemplate] = useState(false);
@@ -575,41 +577,57 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
 
         {/* Description - minmax(150px, 2fr) */}
         <div className="flex items-center gap-1">
-          <HoverCard openDelay={200} closeDelay={100}>
-            <HoverCardTrigger asChild>
-              <div 
-                className="text-xs text-muted-foreground truncate cursor-pointer hover:text-foreground flex-1"
-                onClick={() => setIsEditingDescription(true)}
-              >
-                {item.description ? (
-                  <span className="line-clamp-1">{item.description.replace(/<[^>]*>/g, '')}</span>
-                ) : (
-                  <span className="italic">-</span>
-                )}
-              </div>
-            </HoverCardTrigger>
-            {item.description && (
-              <HoverCardContent 
-                className="w-80 p-3 z-[9999] bg-white dark:bg-zinc-900 shadow-xl border border-border" 
-                align="start" 
-                side="bottom" 
-                sideOffset={8}
-              >
-                <div className="space-y-2">
-                  <div className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">Description</div>
-                  <div 
-                    className="text-sm leading-relaxed text-zinc-900 dark:text-zinc-100 [&_*]:!text-inherit [&_*]:!opacity-100"
-                    dangerouslySetInnerHTML={{ __html: item.description }}
-                  />
-                  <div className="pt-2 border-t border-zinc-200 dark:border-zinc-700">
-                    <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={() => setIsEditingDescription(true)}>
-                      <Pen className="h-3 w-3 mr-1" /> Edit
-                    </Button>
-                  </div>
+          {showDescriptionInline ? (
+            <div 
+              className="text-xs text-muted-foreground cursor-pointer hover:text-foreground flex-1"
+              onClick={() => setIsEditingDescription(true)}
+            >
+              {item.description ? (
+                <div 
+                  className="text-xs leading-relaxed [&_*]:!text-inherit [&_*]:!text-xs"
+                  dangerouslySetInnerHTML={{ __html: item.description }}
+                />
+              ) : (
+                <span className="italic">-</span>
+              )}
+            </div>
+          ) : (
+            <HoverCard openDelay={200} closeDelay={100}>
+              <HoverCardTrigger asChild>
+                <div 
+                  className="text-xs text-muted-foreground truncate cursor-pointer hover:text-foreground flex-1"
+                  onClick={() => setIsEditingDescription(true)}
+                >
+                  {item.description ? (
+                    <span className="line-clamp-1">{item.description.replace(/<[^>]*>/g, '')}</span>
+                  ) : (
+                    <span className="italic">-</span>
+                  )}
                 </div>
-              </HoverCardContent>
-            )}
-          </HoverCard>
+              </HoverCardTrigger>
+              {item.description && (
+                <HoverCardContent 
+                  className="w-80 p-3 z-[9999] bg-white dark:bg-zinc-900 shadow-xl border border-border" 
+                  align="start" 
+                  side="bottom" 
+                  sideOffset={8}
+                >
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">Description</div>
+                    <div 
+                      className="text-sm leading-relaxed text-zinc-900 dark:text-zinc-100 [&_*]:!text-inherit [&_*]:!opacity-100"
+                      dangerouslySetInnerHTML={{ __html: item.description }}
+                    />
+                    <div className="pt-2 border-t border-zinc-200 dark:border-zinc-700">
+                      <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={() => setIsEditingDescription(true)}>
+                        <Pen className="h-3 w-3 mr-1" /> Edit
+                      </Button>
+                    </div>
+                  </div>
+                </HoverCardContent>
+              )}
+            </HoverCard>
+          )}
           {gearList.length > 0 && (
             <button
               onClick={() => setShowGearList(true)}
@@ -908,6 +926,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
                 onToggleCollapse={onToggleCollapse}
                 getTypeLabel={getTypeLabel}
                 collapsedItems={collapsedItems}
+                showDescriptionInline={showDescriptionInline}
               />
             );
           })}
@@ -972,6 +991,7 @@ interface DroppableStageProps {
   onViewPO?: (poId: string) => void; // Handler to view PO details
   linkedScheduleItems?: LinkedScheduleItemForStage[]; // Linked Schedule Items
   onViewScheduleItem?: (itemId: string) => void; // Handler to view schedule item details
+  showDescriptionInline?: boolean; // Show descriptions inline instead of hover
   }
 
 function DroppableStage({ 
@@ -1000,6 +1020,7 @@ function DroppableStage({
   collapsedItems = new Set(), // Scope 2.0
   onToggleItemCollapse, // Scope 2.0
   getTypeLabel, // Scope 2.0
+  showDescriptionInline = false, // Show descriptions inline
   linkedPOs = [], // Linked Purchase Orders
   onViewPO, // Handler to view PO details
   linkedScheduleItems = [], // Linked Schedule Items
@@ -1245,6 +1266,7 @@ function DroppableStage({
                       onToggleCollapse={onToggleItemCollapse} // Scope 2.0
                       getTypeLabel={getTypeLabel} // Scope 2.0
                       collapsedItems={collapsedItems} // Scope 2.0: pass down collapsed items set
+                      showDescriptionInline={showDescriptionInline}
                     />
                   ))}
                 </SortableContext>
@@ -1376,6 +1398,7 @@ function DroppableStage({
                 onViewPO={onViewPO}
                 linkedScheduleItems={[]} // Child stages don't have access to full schedule item map yet
                 onViewScheduleItem={onViewScheduleItem}
+                showDescriptionInline={showDescriptionInline}
               />
             );
           })}
@@ -1494,6 +1517,7 @@ export default function ProjectScope() {
   // Scope 2.0: Type filtering
   const [activeTypeFilters, setActiveTypeFilters] = useState<Set<ScopeItemType>>(new Set(SCOPE_TYPES));
   const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set()); // Minimize/expand
+  const [showDescriptionInline, setShowDescriptionInline] = useState(false); // Show description inline instead of on hover
   
   // Stage editing state
   const [editingStageId, setEditingStageId] = useState<string | null>(null);
@@ -1810,10 +1834,13 @@ export default function ProjectScope() {
     mutationFn: async (templateId: string) => {
       return apiRequest(`/api/scope-templates/${templateId}/apply`, 'POST', { projectId });
     },
-    onSuccess: () => {
+    onSuccess: (result: any) => {
+      // Invalidate both scope items and stages queries
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope-stages`] });
       setIsTemplateDialogOpen(false);
-      toast({ title: "Template applied successfully - 12 items added!" });
+      const itemCount = Array.isArray(result) ? result.length : 0;
+      toast({ title: `Template applied successfully${itemCount > 0 ? ` - ${itemCount} items added!` : ''}` });
     },
   });
 
@@ -2419,6 +2446,27 @@ export default function ProjectScope() {
             </Tooltip>
           )}
 
+          {/* Toggle Description Display */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => setShowDescriptionInline(!showDescriptionInline)}
+                className={`h-6 px-2 flex items-center gap-1 rounded-md border transition-all hover-elevate active-elevate-2 ${
+                  showDescriptionInline 
+                    ? 'bg-primary/10 text-primary border-primary/20' 
+                    : 'border-border/50 text-muted-foreground'
+                }`}
+                data-testid="button-toggle-description-inline"
+              >
+                <AlignLeft className="h-3 w-3" />
+                <span className="text-[10px] font-medium">Desc</span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{showDescriptionInline ? 'Show descriptions on hover' : 'Show descriptions inline'}</p>
+            </TooltipContent>
+          </Tooltip>
+
           {/* Add Stage */}
           <Dialog open={isAddStageDialogOpen} onOpenChange={setIsAddStageDialogOpen}>
             <Tooltip>
@@ -2783,6 +2831,7 @@ export default function ProjectScope() {
                         onViewPO={handleViewPO}
                         linkedScheduleItems={scheduleItemsByStage[stage.id] || []}
                         onViewScheduleItem={handleViewScheduleItem}
+                        showDescriptionInline={showDescriptionInline}
                       />
                     ))}
 

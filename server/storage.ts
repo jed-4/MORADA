@@ -9529,15 +9529,93 @@ export class DbStorage implements IStorage {
         throw new Error("Template not found");
       }
 
-      // Parse template data and create scope items
-      const templateData = template.templateData as any[];
-      const itemsToCreate = templateData.map((data: any) => ({
-        ...data,
-        projectId,
-        id: undefined, // Let database generate new IDs
-        createdAt: undefined,
-        updatedAt: undefined,
-      }));
+      // Get project to get companyId
+      const project = await this.getProject(projectId);
+      if (!project) {
+        throw new Error("Project not found");
+      }
+      const companyId = project.companyId;
+
+      // Get existing stages for this project
+      const existingStages = await this.getScopeStages(projectId);
+      const existingStageNames = new Set(existingStages.map(s => s.name.toLowerCase().trim()));
+
+      // Determine template format and extract stages/items
+      const rawData = template.templateData as any;
+      let templateStages: Array<{ name: string; sortOrder: number }> = [];
+      let templateItems: any[] = [];
+
+      if (Array.isArray(rawData)) {
+        // Legacy format: array of items - extract unique stages from items
+        templateItems = rawData;
+        const stageNames = new Set<string>();
+        rawData.forEach((item: any) => {
+          if (item.stage) stageNames.add(item.stage);
+        });
+        templateStages = Array.from(stageNames).map((name, index) => ({
+          name,
+          sortOrder: index,
+        }));
+      } else if (rawData && typeof rawData === 'object') {
+        // New format: object with stages and items
+        templateStages = rawData.stages || [];
+        templateItems = rawData.items || [];
+      }
+
+      // Create stages that don't already exist
+      const maxExistingOrder = existingStages.length > 0 
+        ? Math.max(...existingStages.map(s => s.displayOrder)) + 1 
+        : 0;
+
+      const createdStageMap: Record<string, string> = {}; // templateStageName -> actualStageName
+      
+      for (let i = 0; i < templateStages.length; i++) {
+        const stageData = templateStages[i];
+        const normalizedName = stageData.name.toLowerCase().trim();
+        
+        if (!existingStageNames.has(normalizedName)) {
+          // Create new stage
+          const newStage = await this.createScopeStage({
+            projectId,
+            companyId,
+            name: stageData.name,
+            displayOrder: maxExistingOrder + i,
+          });
+          createdStageMap[stageData.name] = newStage.name;
+          existingStageNames.add(normalizedName);
+        } else {
+          // Stage already exists - map to existing name
+          const existing = existingStages.find(s => s.name.toLowerCase().trim() === normalizedName);
+          if (existing) {
+            createdStageMap[stageData.name] = existing.name;
+          }
+        }
+      }
+
+      // Create scope items
+      const itemsToCreate = templateItems.map((data: any, index: number) => {
+        // Map stage name to actual stage (use original if mapping doesn't exist)
+        const stageName = createdStageMap[data.stage] || data.stage;
+        
+        return {
+          companyId,
+          projectId,
+          title: data.title || 'Untitled',
+          description: data.description || null,
+          stage: stageName,
+          itemType: data.itemType || 'scope',
+          contentType: data.contentType || 'text',
+          quantity: data.quantity || null,
+          rate: data.rate || null,
+          gearList: data.gearList || data.gearChecklist || [],
+          checklistItems: data.checklistItems || [],
+          displayOrder: index,
+        };
+      });
+
+      if (itemsToCreate.length === 0) {
+        return [];
+      }
 
       return await this.bulkCreateScopeItems(itemsToCreate);
     } catch (error) {
