@@ -168,11 +168,16 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     currentY?: number;
     currentDeltaX?: number; // For visual feedback during bar move/resize
     sourceAnchor?: 'start' | 'end'; // For dependency drag: which end the drag started from
+    // For dependency drags: store original viewport coordinates for recalculation on scroll
+    viewportStartX?: number;
+    viewportStartY?: number;
   } | null>(null);
   const [hoveredBar, setHoveredBar] = useState<string | null>(null);
   const [hoveredAnchor, setHoveredAnchor] = useState<'start' | 'end' | null>(null); // Which anchor is being hovered for drop
   const [ripple, setRipple] = useState<{ x: number; y: number } | null>(null);
   const [selectedTask, setSelectedTask] = useState<ScheduleItem | null>(null);
+  const [scrollVersion, setScrollVersion] = useState(0); // Force re-render on scroll during dependency drag
+  const lastCursorPosition = useRef<{ x: number; y: number } | null>(null); // Track last cursor for scroll updates
   const [visibleColumns, setVisibleColumns] = useState({
     assignee: true,
     status: true,
@@ -205,6 +210,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
   // Local session order state - resets on page refresh
   const [sessionItemOrder, setSessionItemOrder] = useState<string[]>([]);
+  const [orderInitialized, setOrderInitialized] = useState(false);
 
   // Handle row drag end for reordering tasks (temporary, session-only)
   const handleRowDragEnd = (event: DragEndEvent) => {
@@ -434,6 +440,14 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
       .filter((item): item is ScheduleItem => item !== undefined);
   }, [allItems, sortableItemIds]);
 
+  // Initialize session order once items are loaded (freeze initial order for the session)
+  useEffect(() => {
+    if (!orderInitialized && defaultItemIds.length > 0) {
+      setSessionItemOrder([...defaultItemIds]);
+      setOrderInitialized(true);
+    }
+  }, [defaultItemIds, orderInitialized]);
+
   // Build ordered parent items list for rendering (respects session order)
   const orderedParentItems = useMemo(() => {
     if (sessionItemOrder.length === 0) return parentItems;
@@ -596,6 +610,13 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     }
   }, [timelineStart, timelineEnd, zoomLevel]);
 
+  // Calculate project start date for relative week numbering
+  const projectStartDate = useMemo(() => {
+    if (allItems.length === 0) return timelineStart;
+    const allStartDates = allItems.map(item => new Date(item.startDate).getTime());
+    return startOfWeek(new Date(Math.min(...allStartDates)), { weekStartsOn: 1 });
+  }, [allItems, timelineStart]);
+
   // Create week-grouped headers for double-row display (ClickUp style)
   const groupedTimelineHeaders = useMemo(() => {
     if (zoomLevel !== 'day') return null; // Only for day view
@@ -610,6 +631,12 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     let currentWeekStart = startOfWeek(days[0], { weekStartsOn: 1 }); // Monday
     let currentWeekDays: Array<{ date: Date; label: string; widthPx: number; isWeekend: boolean }> = [];
     
+    // Calculate week number relative to project start
+    const getProjectWeekNumber = (weekStart: Date) => {
+      const weeksFromStart = Math.floor(differenceInDays(weekStart, projectStartDate) / 7);
+      return weeksFromStart + 1; // Week 1 is the first week
+    };
+    
     days.forEach((day, idx) => {
       const weekStart = startOfWeek(day, { weekStartsOn: 1 });
       const dayOfWeek = getDay(day);
@@ -617,7 +644,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
       
       // If we've moved to a new week, save the previous week
       if (weekStart.getTime() !== currentWeekStart.getTime() && currentWeekDays.length > 0) {
-        const weekNumber = getISOWeek(currentWeekStart);
+        const weekNumber = getProjectWeekNumber(currentWeekStart);
         weeks.push({
           weekLabel: `Week ${weekNumber}`,
           widthPx: currentWeekDays.length * 40,
@@ -637,7 +664,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     
     // Add the last week
     if (currentWeekDays.length > 0) {
-      const weekNumber = getISOWeek(currentWeekStart);
+      const weekNumber = getProjectWeekNumber(currentWeekStart);
       weeks.push({
         weekLabel: `Week ${weekNumber}`,
         widthPx: currentWeekDays.length * 40,
@@ -646,7 +673,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     }
     
     return weeks;
-  }, [timelineStart, timelineEnd, zoomLevel]);
+  }, [timelineStart, timelineEnd, zoomLevel, projectStartDate]);
 
   // Calculate pixels per day based on zoom level
   const pixelsPerDay = useMemo(() => {
@@ -725,20 +752,11 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     e.preventDefault();
     e.stopPropagation();
     
-    // For dependency drag, calculate timeline-relative coordinates
-    let startX = e.clientX;
-    let startY = e.clientY;
-    
-    if (dragType === 'dependency' && timelineRef.current) {
-      const rect = timelineRef.current.getBoundingClientRect();
-      const scrollLeft = timelineRef.current.scrollLeft;
-      const scrollTop = timelineRef.current.scrollTop;
-      
-      // Convert to timeline-relative coordinates
-      // Account for the 60px header by NOT subtracting it (the SVG is positioned after the header)
-      startX = e.clientX - rect.left + scrollLeft;
-      startY = e.clientY - rect.top + scrollTop - 60; // Subtract header height
-    }
+    // Store viewport coordinates for all drag types
+    // For dependency drags, we'll convert to timeline-relative on each mouse move
+    // using the SAME scroll offset for both start and current positions
+    const startX = e.clientX;
+    const startY = e.clientY;
     
     setDragging({
       id: item.id,
@@ -750,6 +768,9 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
       currentX: startX,
       currentY: startY,
       sourceAnchor: anchor,
+      // For dependency drags, store original viewport coordinates for recalculation
+      viewportStartX: dragType === 'dependency' ? startX : undefined,
+      viewportStartY: dragType === 'dependency' ? startY : undefined,
     });
   };
 
@@ -760,23 +781,35 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     const handleMouseMove = (e: MouseEvent) => {
       if (!dragging) return;
 
-      // For dependency drag, convert to timeline-relative coordinates
+      // Edge scrolling - auto-scroll timeline when dragging near viewport edges
+      if (timelineRef.current && (dragging.type === 'move' || dragging.type === 'resize-left' || dragging.type === 'resize-right')) {
+        const rect = timelineRef.current.getBoundingClientRect();
+        const edgeZone = 60; // pixels from edge to trigger scroll
+        const scrollSpeed = 8; // pixels per frame
+        
+        if (e.clientX < rect.left + edgeZone) {
+          // Near left edge - scroll left
+          timelineRef.current.scrollLeft -= scrollSpeed;
+        } else if (e.clientX > rect.right - edgeZone) {
+          // Near right edge - scroll right
+          timelineRef.current.scrollLeft += scrollSpeed;
+        }
+      }
+
+      // For dependency drag, store VIEWPORT coordinates in state
+      // The timeline-relative conversion will happen during render using live scroll offset
       let currentX = e.clientX;
       let currentY = e.clientY;
       
-      if (dragging.type === 'dependency' && timelineRef.current) {
-        const rect = timelineRef.current.getBoundingClientRect();
-        const scrollLeft = timelineRef.current.scrollLeft;
-        const scrollTop = timelineRef.current.scrollTop;
-        
-        currentX = e.clientX - rect.left + scrollLeft;
-        currentY = e.clientY - rect.top + scrollTop - 60; // Subtract header height
-      }
+      // Store cursor position in ref for scroll updates
+      lastCursorPosition.current = { x: currentX, y: currentY };
 
       // Calculate deltaX for visual bar movement feedback
       const currentDeltaX = e.clientX - dragging.startX;
 
       // Update current position for dependency line drawing and bar movement
+      // NEVER mutate startX/startY - they're needed for move/resize delta calculations
+      // For dependency drags, the line rendering will use viewportStartX/viewportStartY + scroll offset
       setDragging(prev => prev ? { ...prev, currentX, currentY, currentDeltaX } : null);
     };
 
@@ -885,9 +918,25 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
     
+    // For dependency drags, add scroll listener to update coordinates when scrolling
+    // This ensures the dependency line follows the cursor correctly during manual scroll
+    let handleScroll: (() => void) | null = null;
+    const timeline = timelineRef.current; // Capture ref for cleanup
+    if (dragging.type === 'dependency' && timeline) {
+      handleScroll = () => {
+        // Force re-render even if cursor coordinates haven't changed
+        // The render will recompute timeline-relative position with new scroll offset
+        setScrollVersion(v => v + 1);
+      };
+      timeline.addEventListener('scroll', handleScroll);
+    }
+    
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+      if (handleScroll && timeline) {
+        timeline.removeEventListener('scroll', handleScroll);
+      }
     };
   }, [dragging, pixelsPerDay, updateItemMutation, hoveredBar, hoveredAnchor, createDependencyMutation]);
 
@@ -1026,6 +1075,44 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
       leftPanelRef.current.scrollTop = e.currentTarget.scrollTop;
     }
     requestAnimationFrame(() => { isScrollSyncing.current = false; });
+  };
+
+  // Scroll timeline to show a specific item's bar
+  const scrollToItem = (item: ScheduleItem) => {
+    if (!timelineRef.current) return;
+    
+    const startDate = new Date(item.startDate);
+    const barPosition = getPosition(startDate);
+    const viewportWidth = timelineRef.current.clientWidth;
+    
+    // Scroll to show bar with some left margin (100px from left edge)
+    const targetScroll = Math.max(0, barPosition - 100);
+    
+    timelineRef.current.scrollTo({
+      left: targetScroll,
+      behavior: 'smooth'
+    });
+  };
+
+  // Handle row click to scroll timeline to corresponding bar
+  const handleRowClick = (e: React.MouseEvent, item: ScheduleItem) => {
+    // Don't scroll if clicking on buttons, badges, interactive elements, or any focusable/clickable children
+    const target = e.target as HTMLElement;
+    const interactiveSelectors = [
+      'button', 
+      '[data-drag-handle]', 
+      '.badge', 
+      'input', 
+      'select', 
+      'a', 
+      '[role="button"]',
+      '[data-testid*="toggle"]',
+      '[data-testid*="button"]'
+    ];
+    if (interactiveSelectors.some(sel => target.closest(sel))) {
+      return;
+    }
+    scrollToItem(item);
   };
 
   // Menu action handlers
@@ -1292,6 +1379,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                   {({ attributes, listeners }) => (
                   <div
                     className={`h-10 flex items-center px-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer group border-b border-border`}
+                    onClick={(e) => handleRowClick(e, item)}
                     data-testid={`row-${isParent ? 'parent' : 'child'}-${item.id}`}
                   >
                     {/* Task name column */}
@@ -2064,7 +2152,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                 </defs>
                 
                 {/* Drag-to-create dependency visual feedback */}
-                {dragging?.type === 'dependency' && dragging.currentX && dragging.currentY && (() => {
+                {dragging?.type === 'dependency' && dragging.currentX && dragging.currentY && timelineRef.current && (() => {
                   // Calculate the actual anchor position for the source item
                   const sourceItem = globalItemMap.get(dragging.id);
                   if (!sourceItem) return null;
@@ -2084,13 +2172,21 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                     ? getPosition(sourceEffective.endDate) + (differenceInDays(sourceEffective.endDate, sourceEffective.startDate) + 1) * pixelsPerDay
                     : getPosition(new Date(sourceItem.endDate)) + (differenceInDays(new Date(sourceItem.endDate), new Date(sourceItem.startDate)) + 1) * pixelsPerDay;
                   
-                  // Determine start position based on sourceAnchor
+                  // Determine start position based on sourceAnchor (already in timeline-relative coords)
                   const startX = dragging.sourceAnchor === 'start' ? sourceStart : sourceEnd;
                   const startY = sourceY;
                   
+                  // Convert viewport cursor coordinates to timeline-relative using LIVE scroll offset
+                  // This ensures the line updates correctly even when the user scrolls manually
+                  const rect = timelineRef.current!.getBoundingClientRect();
+                  const scrollLeft = timelineRef.current!.scrollLeft;
+                  const scrollTop = timelineRef.current!.scrollTop;
+                  const cursorX = dragging.currentX - rect.left + scrollLeft;
+                  const cursorY = dragging.currentY - rect.top + scrollTop - 60;
+                  
                   return (
                     <path
-                      d={`M ${startX} ${startY} Q ${(startX + dragging.currentX) / 2 + 20} ${(startY + dragging.currentY) / 2}, ${dragging.currentX} ${dragging.currentY}`}
+                      d={`M ${startX} ${startY} Q ${(startX + cursorX) / 2 + 20} ${(startY + cursorY) / 2}, ${cursorX} ${cursorY}`}
                       stroke="#9b7fc7"
                       strokeWidth="1.5"
                       strokeDasharray="4,3"
