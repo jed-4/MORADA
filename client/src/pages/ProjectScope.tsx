@@ -1195,7 +1195,7 @@ function DroppableStage({
                     data-testid={`menu-add-stage-after-${stageData.id}`}
                   >
                     <Plus className="h-4 w-4 mr-2" />
-                    Add Stage
+                    Add Stage Below
                   </DropdownMenuItem>
                   <DropdownMenuItem 
                     onClick={(e) => {
@@ -1987,10 +1987,8 @@ export default function ProjectScope() {
     }
   };
 
-  // Initialize default stages on first load
-  if (!isLoadingStages && scopeStages.length === 0 && projectId && !initializeStagesMutation.isPending) {
-    initializeStagesMutation.mutate();
-  }
+  // Note: We no longer auto-initialize stages - projects can start with empty scope
+  // Users can manually add stages or apply a template if needed
 
   // Initialize stage expanded state when stages load
   if (scopeStages.length > 0 && Object.keys(stageExpanded).length === 0) {
