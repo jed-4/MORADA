@@ -16,6 +16,7 @@ import { useState, useRef, useMemo, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -180,6 +181,15 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
   const [hoveredAnchor, setHoveredAnchor] = useState<'start' | 'end' | null>(null); // Which anchor is being hovered for drop
   const [ripple, setRipple] = useState<{ x: number; y: number } | null>(null);
   const [selectedTask, setSelectedTask] = useState<ScheduleItem | null>(null);
+  const [hoveredDependency, setHoveredDependency] = useState<string | null>(null); // "itemId-predId" format
+  const [selectedDependency, setSelectedDependency] = useState<{
+    itemId: string;
+    itemName: string;
+    predecessorId: string;
+    predecessorName: string;
+    type: string;
+    lag: number;
+  } | null>(null);
   const [scrollVersion, setScrollVersion] = useState(0); // Force re-render on scroll during dependency drag
   const lastCursorPosition = useRef<{ x: number; y: number } | null>(null); // Track last cursor for scroll updates
   const dragHappened = useRef<boolean>(false); // Track if actual drag occurred (to distinguish from clicks)
@@ -538,6 +548,25 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
       toast({ title: "Dependency removed" });
+      setSelectedDependency(null);
+    },
+  });
+
+  const updateDependencyMutation = useMutation({
+    mutationFn: async ({ itemId, predecessorId, type, lag }: { itemId: string; predecessorId: string; type?: string; lag?: number }) => {
+      return apiRequest(`/api/schedule-items/${itemId}/dependencies/${predecessorId}`, "PATCH", { type, lag });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      toast({ title: "Dependency updated" });
+      setSelectedDependency(null);
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to update dependency", 
+        description: error?.message || "Unknown error",
+        variant: "destructive" 
+      });
     },
   });
 
@@ -2114,7 +2143,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
               {/* Dependency arrows SVG overlay */}
               <svg
-                className="absolute top-0 left-0 pointer-events-none z-15"
+                className="absolute top-0 left-0 z-15"
                 style={{ width: `${timelineWidth}px`, height: '100%' }}
               >
                 {/* Render all dependency arrows using global item maps */}
@@ -2209,17 +2238,69 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                       path = `M ${startX} ${startY} Q ${startX + loopOffset} ${startY}, ${startX + loopOffset} ${midY} T ${endX} ${endY}`;
                     }
                     
+                    const depKey = `${item.id}-${dep.id}`;
+                    const isHovered = hoveredDependency === depKey;
+                    const isSelected = selectedDependency?.itemId === item.id && selectedDependency?.predecessorId === dep.id;
+                    
                     return (
-                      <g key={`${item.id}-${dep.id}`}>
-                        {/* Clean dependency line */}
+                      <g key={depKey}>
+                        {/* Invisible hitbox for click/hover - thicker for easier clicking */}
                         <path
                           d={path}
-                          stroke="#9b7fc7"
-                          strokeWidth="1.5"
+                          stroke="transparent"
+                          strokeWidth="12"
+                          fill="none"
+                          style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
+                          onMouseEnter={() => setHoveredDependency(depKey)}
+                          onMouseLeave={() => setHoveredDependency(null)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedDependency({
+                              itemId: item.id,
+                              itemName: item.name,
+                              predecessorId: dep.id,
+                              predecessorName: predItem.name,
+                              type: dep.type || 'FS',
+                              lag: dep.lag || 0,
+                            });
+                          }}
+                          data-testid={`dependency-line-${depKey}`}
+                        />
+                        {/* Visible dependency line */}
+                        <path
+                          d={path}
+                          stroke={isHovered || isSelected ? '#7c5fb3' : '#9b7fc7'}
+                          strokeWidth={isHovered || isSelected ? 2.5 : 1.5}
                           fill="none"
                           strokeLinecap="round"
                           markerEnd="url(#arrow-elegant)"
+                          style={{ pointerEvents: 'none', transition: 'stroke-width 0.15s, stroke 0.15s' }}
                         />
+                        {/* Lag indicator badge - show if lag is non-zero */}
+                        {dep.lag !== 0 && dep.lag !== undefined && (
+                          <g transform={`translate(${(startX + endX) / 2}, ${(startY + endY) / 2 - 8})`}>
+                            <rect
+                              x="-12"
+                              y="-8"
+                              width="24"
+                              height="16"
+                              rx="4"
+                              fill={isHovered || isSelected ? '#7c5fb3' : '#9b7fc7'}
+                              style={{ pointerEvents: 'none' }}
+                            />
+                            <text
+                              x="0"
+                              y="4"
+                              textAnchor="middle"
+                              fontSize="9"
+                              fill="white"
+                              fontWeight="500"
+                              style={{ pointerEvents: 'none' }}
+                            >
+                              {dep.lag > 0 ? `+${dep.lag}d` : `${dep.lag}d`}
+                            </text>
+                          </g>
+                        )}
                       </g>
                     );
                   }).filter(Boolean);
@@ -2410,6 +2491,120 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
               </div>
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dependency Edit Modal */}
+      <Dialog open={!!selectedDependency} onOpenChange={() => setSelectedDependency(null)}>
+        <DialogContent className="max-w-md" data-testid="dialog-dependency-edit">
+          <DialogHeader>
+            <DialogTitle>Edit Dependency</DialogTitle>
+            <DialogDescription>
+              Modify or remove this dependency relationship.
+            </DialogDescription>
+          </DialogHeader>
+          {selectedDependency && (
+            <div className="space-y-4 mt-2">
+              {/* Dependency Info */}
+              <div className="bg-muted/50 rounded-lg p-3 space-y-2">
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-muted-foreground">Predecessor:</span>
+                  <span className="font-medium">{selectedDependency.predecessorName}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-muted-foreground">Successor:</span>
+                  <span className="font-medium">{selectedDependency.itemName}</span>
+                </div>
+              </div>
+
+              {/* Dependency Type */}
+              <div>
+                <Label className="text-sm font-medium">Dependency Type</Label>
+                <Select 
+                  value={selectedDependency.type} 
+                  onValueChange={(value) => setSelectedDependency({ ...selectedDependency, type: value })}
+                >
+                  <SelectTrigger className="mt-1" data-testid="select-dependency-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="FS">Finish-to-Start (FS)</SelectItem>
+                    <SelectItem value="SS">Start-to-Start (SS)</SelectItem>
+                    <SelectItem value="FF">Finish-to-Finish (FF)</SelectItem>
+                    <SelectItem value="SF">Start-to-Finish (SF)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {selectedDependency.type === 'FS' && 'Successor starts after predecessor finishes'}
+                  {selectedDependency.type === 'SS' && 'Both tasks start at the same time'}
+                  {selectedDependency.type === 'FF' && 'Both tasks finish at the same time'}
+                  {selectedDependency.type === 'SF' && 'Predecessor starts after successor finishes'}
+                </p>
+              </div>
+
+              {/* Lag Days */}
+              <div>
+                <Label className="text-sm font-medium">Lag Days</Label>
+                <div className="flex items-center gap-2 mt-1">
+                  <Input
+                    type="number"
+                    value={selectedDependency.lag}
+                    onChange={(e) => setSelectedDependency({ ...selectedDependency, lag: parseInt(e.target.value) || 0 })}
+                    className="w-24"
+                    data-testid="input-dependency-lag"
+                  />
+                  <span className="text-sm text-muted-foreground">days</span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Positive = delay after predecessor, Negative = overlap with predecessor
+                </p>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-between pt-2 border-t">
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => {
+                    deleteDependencyMutation.mutate({
+                      itemId: selectedDependency.itemId,
+                      predecessorId: selectedDependency.predecessorId,
+                    });
+                  }}
+                  disabled={deleteDependencyMutation.isPending}
+                  data-testid="button-delete-dependency"
+                >
+                  <Trash2 className="w-4 h-4 mr-1" />
+                  Delete
+                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSelectedDependency(null)}
+                    data-testid="button-cancel-dependency"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      updateDependencyMutation.mutate({
+                        itemId: selectedDependency.itemId,
+                        predecessorId: selectedDependency.predecessorId,
+                        type: selectedDependency.type,
+                        lag: selectedDependency.lag,
+                      });
+                    }}
+                    disabled={updateDependencyMutation.isPending}
+                    data-testid="button-save-dependency"
+                  >
+                    Save Changes
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

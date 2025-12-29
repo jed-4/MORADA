@@ -2905,6 +2905,7 @@ export const insertScheduleItemSchema = createInsertSchema(scheduleItems).omit({
   dependencies: z.array(z.object({
     id: z.string(), // ID of the predecessor item
     type: z.enum(["FS", "SS", "FF", "SF"]).default("FS"), // Dependency type
+    lag: z.number().int().default(0), // Lag days (positive = delay, negative = lead)
   })).optional(),
   predecessorIds: z.array(z.string()).optional(),
   checklistIds: z.array(z.string()).optional(),

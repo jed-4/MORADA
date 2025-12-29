@@ -13428,7 +13428,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Schedule item dependency management
   app.post("/api/schedule-items/:id/dependencies", async (req, res) => {
     try {
-      const { predecessorId, type = "FS" } = req.body;
+      const { predecessorId, type = "FS", lag = 0 } = req.body;
       
       if (!predecessorId) {
         return res.status(400).json({ error: "predecessorId is required" });
@@ -13481,8 +13481,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "This would create a circular dependency" });
       }
 
-      // Add dependency
-      const updatedDependencies = [...dependencies, { id: predecessorId, type }];
+      // Add dependency with lag
+      const updatedDependencies = [...dependencies, { id: predecessorId, type, lag: parseInt(lag) || 0 }];
       const updatedItem = await storage.updateScheduleItem(req.params.id, {
         dependencies: updatedDependencies
       });
@@ -13491,6 +13491,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to add dependency",
+        details: error.message 
+      });
+    }
+  });
+
+  // Update a specific dependency (type, lag)
+  app.patch("/api/schedule-items/:id/dependencies/:predecessorId", async (req, res) => {
+    try {
+      const { type, lag } = req.body;
+      
+      const item = await storage.getScheduleItem(req.params.id);
+      if (!item) {
+        return res.status(404).json({ error: "Schedule item not found" });
+      }
+
+      const dependencies = (item.dependencies as any[]) || [];
+      const depIndex = dependencies.findIndex(d => d.id === req.params.predecessorId);
+      
+      if (depIndex === -1) {
+        return res.status(404).json({ error: "Dependency not found" });
+      }
+
+      // Validate type if provided
+      if (type !== undefined && !["FS", "SS", "FF", "SF"].includes(type)) {
+        return res.status(400).json({ error: "Invalid dependency type. Must be FS, SS, FF, or SF" });
+      }
+
+      // Update the dependency
+      const updatedDep = { ...dependencies[depIndex] };
+      if (type !== undefined) updatedDep.type = type;
+      if (lag !== undefined) updatedDep.lag = parseInt(lag) || 0;
+      
+      const updatedDependencies = [...dependencies];
+      updatedDependencies[depIndex] = updatedDep;
+
+      const updatedItem = await storage.updateScheduleItem(req.params.id, {
+        dependencies: updatedDependencies
+      });
+
+      res.json(updatedItem);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to update dependency",
         details: error.message 
       });
     }
