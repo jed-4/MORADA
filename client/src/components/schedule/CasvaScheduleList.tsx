@@ -4,17 +4,28 @@ import { Table, TableHeader, TableRow, TableHead, TableBody } from "@/components
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useState, Fragment } from "react";
 
+interface StatusOption {
+  id: string;
+  value: string;
+  label: string;
+  color?: string;
+}
+
 export interface CasvaScheduleListProps {
   items: ScheduleItem[];
   noteCounts?: Record<string, number>;
   onEditItem: (item: ScheduleItem) => void;
+  onStatusChange?: (itemId: string, newStatus: string) => void;
+  statusOptions?: StatusOption[];
   maxHeight?: string;
 }
 
 export function CasvaScheduleList({ 
   items, 
   noteCounts = {},
-  onEditItem, 
+  onEditItem,
+  onStatusChange,
+  statusOptions = [],
   maxHeight = "calc(100vh - 280px)"
 }: CasvaScheduleListProps) {
   const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set());
@@ -124,7 +135,7 @@ export function CasvaScheduleList({
                   {/* Parent Row */}
                   <TableRow 
                     key={item.id} 
-                    className="group casva-row h-8 transition-colors border-b cursor-pointer relative overflow-hidden hover:bg-gray-50"
+                    className="group h-8 transition-colors border-b cursor-pointer relative overflow-hidden hover-elevate"
                     data-testid={`schedule-row-${item.id}`}
                     onClick={(e) => handleRowClick(e, item.id)}
                     onTouchStart={(e) => handleTouchStart(e, item)}
@@ -135,6 +146,8 @@ export function CasvaScheduleList({
                       item={item}
                       noteCount={noteCounts[item.id] || 0}
                       onEdit={() => onEditItem(item)}
+                      onStatusChange={onStatusChange ? (status) => onStatusChange(item.id, status) : undefined}
+                      statusOptions={statusOptions}
                       isDraggable={true}
                       isParent={hasSubtasks}
                       isCollapsed={isCollapsed}
@@ -146,7 +159,7 @@ export function CasvaScheduleList({
                     {ripples.filter(r => r.id.startsWith(item.id)).map((ripple) => (
                       <span
                         key={ripple.id}
-                        className="absolute rounded-full bg-[#bba7db] opacity-30 animate-ripple pointer-events-none"
+                        className="absolute rounded-full bg-primary opacity-30 animate-ripple pointer-events-none"
                         style={{
                           left: ripple.x,
                           top: ripple.y,
@@ -162,7 +175,7 @@ export function CasvaScheduleList({
                   {!isCollapsed && subtasks.map((subtask) => (
                     <TableRow 
                       key={subtask.id} 
-                      className="group casva-row h-8 transition-colors border-b cursor-pointer relative overflow-hidden hover:bg-gray-50 bg-gray-50"
+                      className="group h-8 transition-colors border-b cursor-pointer relative overflow-hidden bg-muted/30 hover-elevate"
                       data-testid={`schedule-subtask-row-${subtask.id}`}
                       onClick={(e) => handleRowClick(e, subtask.id)}
                       onTouchStart={(e) => handleTouchStart(e, subtask)}
@@ -173,6 +186,8 @@ export function CasvaScheduleList({
                         item={subtask}
                         noteCount={noteCounts[subtask.id] || 0}
                         onEdit={() => onEditItem(subtask)}
+                        onStatusChange={onStatusChange ? (status) => onStatusChange(subtask.id, status) : undefined}
+                        statusOptions={statusOptions}
                         isSubtask={true}
                       />
                       
@@ -180,7 +195,7 @@ export function CasvaScheduleList({
                       {ripples.filter(r => r.id.startsWith(subtask.id)).map((ripple) => (
                         <span
                           key={ripple.id}
-                          className="absolute rounded-full bg-[#bba7db] opacity-30 animate-ripple pointer-events-none"
+                          className="absolute rounded-full bg-primary opacity-30 animate-ripple pointer-events-none"
                           style={{
                             left: ripple.x,
                             top: ripple.y,

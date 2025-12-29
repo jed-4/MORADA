@@ -292,6 +292,30 @@ export default function Schedule() {
     },
   });
 
+  // Quick inline status update mutation
+  const updateStatusMutationInline = useMutation({
+    mutationFn: async ({ itemId, status }: { itemId: string; status: string }) => {
+      const response = await fetch(`/api/schedule-items/${itemId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ status }),
+      });
+      if (!response.ok) throw new Error("Failed to update status");
+      return response.json() as Promise<ScheduleItem>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to update status",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   // Fetch schedule templates
   const { data: scheduleTemplates = [] } = useQuery({
     queryKey: ["/api/schedule-templates"],
@@ -471,6 +495,15 @@ export default function Schedule() {
   // Memoize filtered items computation
   const filteredItems = useMemo(() => {
     return scheduleItems.filter((item) => {
+      // Search query filter
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        const nameMatch = (item.name || '').toLowerCase().includes(query);
+        const descMatch = (item.description || '').toLowerCase().includes(query);
+        const assigneeMatch = (item.assignedToName || '').toLowerCase().includes(query);
+        if (!nameMatch && !descMatch && !assigneeMatch) return false;
+      }
+      
       if (filters.status !== "all" && item.status !== filters.status) return false;
       if (filters.assignee !== "all" && item.assignedToId !== filters.assignee) return false;
       if (filters.type !== "all" && item.type !== filters.type) return false;
@@ -509,7 +542,7 @@ export default function Schedule() {
       
       return true;
     });
-  }, [scheduleItems, filters]);
+  }, [scheduleItems, filters, searchQuery]);
 
   // Calculate Gantt timeline boundaries (memoized for performance)
   const ganttTimeline = useMemo(() => {
@@ -836,11 +869,21 @@ export default function Schedule() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Statuses</SelectItem>
-                <SelectItem value="not_started">Not Started</SelectItem>
-                <SelectItem value="in_progress">In Progress</SelectItem>
-                <SelectItem value="completed">Completed</SelectItem>
-                <SelectItem value="on_hold">On Hold</SelectItem>
-                <SelectItem value="cancelled">Cancelled</SelectItem>
+                {statusOptions.length > 0 ? (
+                  statusOptions.map((opt: any) => (
+                    <SelectItem key={opt.id} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))
+                ) : (
+                  <>
+                    <SelectItem value="not_started">Not Started</SelectItem>
+                    <SelectItem value="in_progress">In Progress</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="on_hold">On Hold</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                  </>
+                )}
               </SelectContent>
             </Select>
 
@@ -964,6 +1007,10 @@ export default function Schedule() {
               <CasvaScheduleList
                 items={filteredItems}
                 noteCounts={noteCounts}
+                statusOptions={statusOptions}
+                onStatusChange={(itemId, status) => {
+                  updateStatusMutationInline.mutate({ itemId, status });
+                }}
                 onEditItem={(item) => {
                   setEditingItem(item);
                   setShowItemDialog(true);
