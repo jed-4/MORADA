@@ -68,6 +68,42 @@ export default function ActivityWidget({ widget, onUpdate, isConfiguring, onClos
     return result.slice(0, maxItems);
   }, [activities, companySettings?.activityTypesVisible, widget.config?.maxItems]);
 
+  // Group consecutive schedule activities when more than 5 in a row
+  const groupedActivities = useMemo(() => {
+    const result: Array<Activity | { type: 'group'; activities: Activity[]; count: number }> = [];
+    let scheduleBuffer: Activity[] = [];
+    
+    const flushScheduleBuffer = () => {
+      if (scheduleBuffer.length > 5) {
+        // Group them
+        result.push({ type: 'group', activities: scheduleBuffer, count: scheduleBuffer.length });
+      } else {
+        // Add individually
+        scheduleBuffer.forEach(a => result.push(a));
+      }
+      scheduleBuffer = [];
+    };
+    
+    filteredActivities.forEach(activity => {
+      if (activity.activityType === 'schedule') {
+        scheduleBuffer.push(activity);
+      } else {
+        // Flush any pending schedule activities
+        if (scheduleBuffer.length > 0) {
+          flushScheduleBuffer();
+        }
+        result.push(activity);
+      }
+    });
+    
+    // Flush remaining schedule activities
+    if (scheduleBuffer.length > 0) {
+      flushScheduleBuffer();
+    }
+    
+    return result;
+  }, [filteredActivities]);
+
   const getActivityIcon = (type: string) => {
     switch (type) {
       case "task":
@@ -195,6 +231,71 @@ export default function ActivityWidget({ widget, onUpdate, isConfiguring, onClos
     );
   }
 
+  // Track expanded schedule groups
+  const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
+
+  const toggleGroup = (index: number) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  };
+
+  // Render individual activity item
+  const renderActivityItem = (activity: Activity) => {
+    const metadata = activity.metadata as { changes?: Array<{ name: string; change: string }> } | null;
+    const hasSubItems = metadata?.changes && metadata.changes.length > 0;
+    
+    return (
+      <div
+        key={activity.id}
+        className="flex gap-3"
+        data-testid={`activity-item-${activity.id}`}
+      >
+        <div
+          className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${getActivityColor(
+            activity.activityType
+          )}`}
+        >
+          {getActivityIcon(activity.activityType)}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm">
+            <span className="font-medium">{activity.userName || "Someone"}</span>{" "}
+            <span className="text-muted-foreground">{activity.description}</span>
+          </p>
+          {hasSubItems ? (
+            <ul className="mt-1 space-y-0.5 text-sm text-muted-foreground">
+              {metadata!.changes!.map((item, idx) => (
+                <li key={idx} className="flex items-start gap-1">
+                  <span className="text-muted-foreground/60">-</span>
+                  <span>
+                    <span className="font-medium text-foreground/80">{item.name}</span>
+                    {item.change && <span className="text-muted-foreground"> {item.change}</span>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : activity.entityName ? (
+            <p className="text-sm text-muted-foreground truncate">
+              {activity.entityName}
+            </p>
+          ) : null}
+          <p className="text-xs text-muted-foreground mt-1">
+            {formatDistanceToNow(new Date(activity.createdAt), {
+              addSuffix: true,
+            })}
+          </p>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="flex flex-col h-full">
       <div className="text-sm font-semibold mb-3">
@@ -202,53 +303,44 @@ export default function ActivityWidget({ widget, onUpdate, isConfiguring, onClos
       </div>
 
       <div className="space-y-3 flex-1 overflow-auto">
-        {filteredActivities.map((activity) => {
-          const metadata = activity.metadata as { changes?: Array<{ name: string; change: string }> } | null;
-          const hasSubItems = metadata?.changes && metadata.changes.length > 0;
-          
-          return (
-            <div
-              key={activity.id}
-              className="flex gap-3"
-              data-testid={`activity-item-${activity.id}`}
-            >
-              <div
-                className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${getActivityColor(
-                  activity.activityType
-                )}`}
-              >
-                {getActivityIcon(activity.activityType)}
+        {groupedActivities.map((item, index) => {
+          // Check if this is a group or individual activity
+          if ('type' in item && item.type === 'group') {
+            const isExpanded = expandedGroups.has(index);
+            return (
+              <div key={`group-${index}`} className="space-y-2">
+                <button
+                  onClick={() => toggleGroup(index)}
+                  className="flex gap-3 w-full text-left hover-elevate rounded-md p-1 -m-1"
+                  data-testid={`activity-group-${index}`}
+                >
+                  <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${getActivityColor('schedule')}`}>
+                    <Calendar className="h-4 w-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm">
+                      <span className="font-medium">{item.count} schedule updates</span>
+                      <span className="text-muted-foreground ml-1">
+                        {isExpanded ? '(click to collapse)' : '(click to expand)'}
+                      </span>
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {formatDistanceToNow(new Date(item.activities[0].createdAt), {
+                        addSuffix: true,
+                      })}
+                    </p>
+                  </div>
+                </button>
+                {isExpanded && (
+                  <div className="ml-4 pl-4 border-l border-border space-y-3">
+                    {item.activities.map(activity => renderActivityItem(activity))}
+                  </div>
+                )}
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm">
-                  <span className="font-medium">{activity.userName || "Someone"}</span>{" "}
-                  <span className="text-muted-foreground">{activity.description}</span>
-                </p>
-                {hasSubItems ? (
-                  <ul className="mt-1 space-y-0.5 text-sm text-muted-foreground">
-                    {metadata!.changes!.map((item, idx) => (
-                      <li key={idx} className="flex items-start gap-1">
-                        <span className="text-muted-foreground/60">-</span>
-                        <span>
-                          <span className="font-medium text-foreground/80">{item.name}</span>
-                          {item.change && <span className="text-muted-foreground"> {item.change}</span>}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : activity.entityName ? (
-                  <p className="text-sm text-muted-foreground truncate">
-                    {activity.entityName}
-                  </p>
-                ) : null}
-                <p className="text-xs text-muted-foreground mt-1">
-                  {formatDistanceToNow(new Date(activity.createdAt), {
-                    addSuffix: true,
-                  })}
-                </p>
-              </div>
-            </div>
-          );
+            );
+          } else {
+            return renderActivityItem(item as Activity);
+          }
         })}
       </div>
     </div>

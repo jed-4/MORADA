@@ -434,6 +434,28 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
       .filter((item): item is ScheduleItem => item !== undefined);
   }, [allItems, sortableItemIds]);
 
+  // Build ordered parent items list for rendering (respects session order)
+  const orderedParentItems = useMemo(() => {
+    if (sessionItemOrder.length === 0) return parentItems;
+    
+    // Create a map for quick lookup
+    const parentMap = new Map<string, ScheduleItem>();
+    parentItems.forEach(p => parentMap.set(p.id, p));
+    
+    // Get parent IDs from session order (filter to only parent items)
+    const orderedIds = sessionItemOrder.filter(id => parentMap.has(id));
+    
+    // Add any parent items not in session order at the end
+    const sessionSet = new Set(orderedIds);
+    parentItems.forEach(p => {
+      if (!sessionSet.has(p.id)) {
+        orderedIds.push(p.id);
+      }
+    });
+    
+    return orderedIds.map(id => parentMap.get(id)!);
+  }, [parentItems, sessionItemOrder]);
+
   // Create global item map and row index map for dependency rendering
   const { globalItemMap, itemRowIndexMap } = useMemo(() => {
     const itemMap = new Map<string, ScheduleItem>();
@@ -441,9 +463,9 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     
     allItems.forEach(item => itemMap.set(item.id, item));
     
-    // Calculate row index for each visible item
+    // Calculate row index for each visible item (using orderedParentItems for correct order)
     let rowIndex = 0;
-    parentItems.forEach(parent => {
+    orderedParentItems.forEach(parent => {
       rowIndexMap.set(parent.id, rowIndex);
       rowIndex++;
       if (!collapsedItems.has(parent.id)) {
@@ -456,7 +478,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     });
     
     return { globalItemMap: itemMap, itemRowIndexMap: rowIndexMap };
-  }, [allItems, parentItems, childItemsByParent, collapsedItems]);
+  }, [allItems, orderedParentItems, childItemsByParent, collapsedItems]);
 
   // Update mutation for schedule items
   const updateItemMutation = useMutation({
@@ -1547,7 +1569,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                 }}
               />
               
-              {parentItems.map((parentItem, parentIdx) => {
+              {orderedParentItems.map((parentItem, parentIdx) => {
                 const isCollapsed = collapsedItems.has(parentItem.id);
                 const childItems = childItemsByParent[parentItem.id] || [];
                 
