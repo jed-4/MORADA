@@ -123,8 +123,12 @@ function SortableTaskRow({
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1,
+    opacity: isDragging ? 0.7 : 1,
     zIndex: isDragging ? 50 : 'auto',
+    boxShadow: isDragging ? '0 8px 24px rgba(187, 167, 219, 0.4)' : 'none',
+    outline: isDragging ? '2px solid #bba7db' : 'none',
+    borderRadius: isDragging ? '4px' : '0',
+    background: isDragging ? 'var(--background)' : 'transparent',
   };
   
   return (
@@ -178,6 +182,9 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
   const [selectedTask, setSelectedTask] = useState<ScheduleItem | null>(null);
   const [scrollVersion, setScrollVersion] = useState(0); // Force re-render on scroll during dependency drag
   const lastCursorPosition = useRef<{ x: number; y: number } | null>(null); // Track last cursor for scroll updates
+  
+  // Infinite scroll: track extra buffer days beyond data bounds
+  const [timelineBuffer, setTimelineBuffer] = useState({ before: 14, after: 28 });
   const [visibleColumns, setVisibleColumns] = useState({
     assignee: true,
     status: true,
@@ -552,12 +559,20 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     currentProgress: number; // Live visual progress during drag
   } | null>(null);
 
-  // Calculate timeline bounds
-  const { timelineStart, timelineEnd, totalDays } = useMemo(() => {
+  // Calculate timeline bounds with dynamic buffer for infinite scroll
+  const { timelineStart, timelineEnd, totalDays, dataStart, dataEnd } = useMemo(() => {
     if (allItems.length === 0) {
-      const start = startOfWeek(new Date());
-      const end = addDays(start, 90);
-      return { timelineStart: start, timelineEnd: end, totalDays: 90 };
+      const dataStartDate = startOfWeek(new Date());
+      const dataEndDate = addDays(dataStartDate, 60);
+      const start = addDays(dataStartDate, -timelineBuffer.before);
+      const end = addDays(dataEndDate, timelineBuffer.after);
+      return { 
+        timelineStart: start, 
+        timelineEnd: end, 
+        totalDays: differenceInDays(end, start) + 1,
+        dataStart: dataStartDate,
+        dataEnd: dataEndDate
+      };
     }
 
     const allDates = allItems.flatMap(item => [
@@ -565,12 +580,16 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
       new Date(item.endDate)
     ]);
 
-    const start = startOfWeek(new Date(Math.min(...allDates.map(d => d.getTime()))));
-    const end = addDays(new Date(Math.max(...allDates.map(d => d.getTime()))), 14);
+    const dataStartDate = startOfWeek(new Date(Math.min(...allDates.map(d => d.getTime()))));
+    const dataEndDate = new Date(Math.max(...allDates.map(d => d.getTime())));
+    
+    // Apply buffer to extend timeline beyond data bounds
+    const start = addDays(dataStartDate, -timelineBuffer.before);
+    const end = addDays(dataEndDate, timelineBuffer.after);
     const days = differenceInDays(end, start) + 1;
 
-    return { timelineStart: start, timelineEnd: end, totalDays: days };
-  }, [allItems]);
+    return { timelineStart: start, timelineEnd: end, totalDays: days, dataStart: dataStartDate, dataEnd: dataEndDate };
+  }, [allItems, timelineBuffer]);
 
   // Generate timeline headers based on zoom level
   const timelineHeaders = useMemo(() => {
@@ -1068,6 +1087,20 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     requestAnimationFrame(() => { isScrollSyncing.current = false; });
   };
 
+  // Ref to track pending scroll adjustment after extending left (accumulated)
+  const pendingScrollAdjust = useRef<number>(0);
+  const lastExtensionDirection = useRef<'left' | 'right' | null>(null);
+  
+  // Effect to adjust scroll position after extending left
+  useEffect(() => {
+    if (pendingScrollAdjust.current > 0 && timelineRef.current) {
+      // Add the accumulated pixels for all new days added on the left
+      timelineRef.current.scrollLeft += pendingScrollAdjust.current;
+      pendingScrollAdjust.current = 0;
+      lastExtensionDirection.current = null;
+    }
+  }, [timelineBuffer.before]);
+  
   const handleTimelineScroll = (e: React.UIEvent<HTMLDivElement>) => {
     if (isScrollSyncing.current) return;
     isScrollSyncing.current = true;
@@ -1075,6 +1108,34 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
       leftPanelRef.current.scrollTop = e.currentTarget.scrollTop;
     }
     requestAnimationFrame(() => { isScrollSyncing.current = false; });
+    
+    // Infinite scroll: extend timeline when near edges
+    const target = e.currentTarget;
+    const scrollLeft = target.scrollLeft;
+    const scrollWidth = target.scrollWidth;
+    const clientWidth = target.clientWidth;
+    const edgeThreshold = 200; // Pixels from edge to trigger extension
+    const extensionDays = 14; // Days to add when extending
+    
+    // Near left edge - extend timeline backward (guard against repeated triggers)
+    if (scrollLeft < edgeThreshold && lastExtensionDirection.current !== 'left') {
+      // Accumulate pixels to add based on current zoom level
+      const pixelsToAdd = extensionDays * pixelsPerDay;
+      pendingScrollAdjust.current += pixelsToAdd;
+      lastExtensionDirection.current = 'left';
+      setTimelineBuffer(prev => ({ ...prev, before: prev.before + extensionDays }));
+    }
+    
+    // Near right edge - extend timeline forward (guard against repeated triggers)
+    if (scrollWidth - scrollLeft - clientWidth < edgeThreshold && lastExtensionDirection.current !== 'right') {
+      lastExtensionDirection.current = 'right';
+      setTimelineBuffer(prev => ({ ...prev, after: prev.after + extensionDays }));
+    }
+    
+    // Reset guard when not near edges
+    if (scrollLeft >= edgeThreshold && scrollWidth - scrollLeft - clientWidth >= edgeThreshold) {
+      lastExtensionDirection.current = null;
+    }
   };
 
   // Scroll timeline to show a specific item's bar
@@ -1707,7 +1768,9 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                         
                         {/* Main bar */}
                         <div
-                          className="absolute inset-0 rounded-sm flex items-center cursor-move hover:shadow-md transition-all z-10 group/bar overflow-hidden"
+                          className={`absolute inset-0 rounded-sm flex items-center cursor-move transition-shadow z-10 group/bar overflow-hidden
+                            ${dragging?.id === parentItem.id ? 'shadow-lg ring-2 ring-[#bba7db]' : 'hover:shadow-md'}
+                          `}
                           style={{
                             backgroundColor: barColor,
                             border: isOverdue ? '2px dashed #dc2626' : 'none',
@@ -1871,7 +1934,9 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                             
                             {/* Main bar */}
                             <div
-                              className="absolute inset-0 rounded-sm flex items-center cursor-move hover:shadow-md transition-all z-10 group/bar overflow-hidden"
+                              className={`absolute inset-0 rounded-sm flex items-center cursor-move transition-shadow z-10 group/bar overflow-hidden
+                                ${dragging?.id === childItem.id ? 'shadow-lg ring-2 ring-[#bba7db]' : 'hover:shadow-md'}
+                              `}
                               style={{
                                 backgroundColor: childColor,
                                 border: '2px dotted rgba(255, 255, 255, 0.6)',
