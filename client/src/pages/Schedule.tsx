@@ -63,12 +63,14 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
+  Columns3,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CasvaScheduleList } from "@/components/schedule/CasvaScheduleList";
 import { ContactSelect } from "@/components/ContactSelect";
 import Gantt from "./Gantt";
 import { ImportScheduleDialog } from "@/components/schedule/ImportScheduleDialog";
+import { useScheduleItemStatusOptions } from "@/hooks/useScheduleItemStatusOptions";
 
 interface ScheduleParams {
   projectId: string;
@@ -154,17 +156,18 @@ export default function Schedule() {
     queryKey: ["/api/contacts"],
   });
 
-  // Fetch schedule item status options from Field Settings
-  const { data: statusOptions = [] } = useQuery({
-    queryKey: ["/api/field-options", "schedule_item.status"],
-    queryFn: async () => {
-      const categories = await fetch("/api/field-categories").then(r => r.json());
-      const statusCategory = categories.find((c: any) => c.key === "schedule_item.status");
-      if (!statusCategory) return [];
-      const options = await fetch(`/api/field-categories/${statusCategory.id}/options`).then(r => r.json());
-      return options.filter((opt: any) => opt.isActive);
-    },
-  });
+  // Fetch schedule item status options from Field Settings using hook
+  const { statusOptions: rawStatusOptions } = useScheduleItemStatusOptions();
+  
+  // Transform status options to match CasvaScheduleList interface
+  const statusOptions = useMemo(() => {
+    return rawStatusOptions.map((opt: any) => ({
+      id: opt.id || opt.key,
+      value: opt.key || opt.value,
+      label: opt.name || opt.label,
+      color: opt.color
+    }));
+  }, [rawStatusOptions]);
 
   // Create schedule if it doesn't exist
   const createScheduleMutation = useMutation({
@@ -653,7 +656,7 @@ export default function Schedule() {
         setEditingItem,
       }}
     >
-      <div className="flex flex-col h-full bg-background">
+      <div className="flex flex-col h-full bg-background rounded-lg border overflow-hidden">
         {/* UNIFIED 3-ROW HEADER FOR ALL VIEWS */}
         
         {/* Row 1 - Project Controls (36px) */}
@@ -689,7 +692,7 @@ export default function Schedule() {
           {/* Right: Action Buttons */}
           <div className="flex items-center gap-1.5">
             <button
-              className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2"
+              className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-primary-foreground border-primary/20 hover:bg-primary/90 active-elevate-2"
               onClick={() => setShowItemDialog(true)}
               disabled={schedule?.status === "locked"}
               data-testid="button-add-item"
@@ -730,127 +733,59 @@ export default function Schedule() {
           </div>
         </div>
 
-        {/* Row 2 - Views & Timeline Scale (36px) */}
-        <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
-          {/* Left: View Buttons */}
-          <div className="flex items-center gap-0.5">
-            <button
-              onClick={() => setActiveView('gantt')}
-              className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'gantt' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2`}
-              data-testid="button-view-gantt"
-            >
-              <GanttChart className="w-3 h-3 inline mr-0.5" />
-              Gantt
-            </button>
-            <button
-              onClick={() => setActiveView('calendar')}
-              className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'calendar' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2`}
-              data-testid="button-view-calendar"
-            >
-              <CalendarIcon className="w-3 h-3 inline mr-0.5" />
-              Calendar
-            </button>
-            <button
-              onClick={() => setActiveView('list')}
-              className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'list' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2`}
-              data-testid="button-view-list"
-            >
-              <ListIcon className="w-3 h-3 inline mr-0.5" />
-              List
-            </button>
-          </div>
-
-          {/* Right: Timeline Scale Buttons (Gantt zoom) OR Calendar View Buttons */}
-          <div className="flex items-center gap-0.5">
-            <button
-              onClick={() => {
-                if (activeView === 'calendar') {
-                  setCalendarView('day');
-                } else {
-                  setZoomLevel('day');
-                }
-              }}
-              className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                (activeView === 'calendar' && calendarView === 'day') || (activeView !== 'calendar' && zoomLevel === 'day')
-                  ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
-                  : 'hover-elevate'
-              } active-elevate-2`}
-              data-testid="button-zoom-day"
-            >
-              Day
-            </button>
-            <button
-              onClick={() => {
-                if (activeView === 'calendar') {
-                  setCalendarView('week');
-                } else {
-                  setZoomLevel('week');
-                }
-              }}
-              className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                (activeView === 'calendar' && calendarView === 'week') || (activeView !== 'calendar' && zoomLevel === 'week')
-                  ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
-                  : 'hover-elevate'
-              } active-elevate-2`}
-              data-testid="button-zoom-week"
-            >
-              Week
-            </button>
-            <button
-              onClick={() => {
-                if (activeView === 'calendar') {
-                  setCalendarView('month');
-                } else {
-                  setZoomLevel('month');
-                }
-              }}
-              className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                (activeView === 'calendar' && calendarView === 'month') || (activeView !== 'calendar' && zoomLevel === 'month')
-                  ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
-                  : 'hover-elevate'
-              } active-elevate-2`}
-              data-testid="button-zoom-month"
-            >
-              Month
-            </button>
-            {activeView === 'calendar' && (
-              <button
-                onClick={() => setCalendarView('agenda')}
-                className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                  calendarView === 'agenda'
-                    ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
-                    : 'hover-elevate'
-                } active-elevate-2`}
-                data-testid="button-zoom-agenda"
-              >
-                Agenda
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Row 3 - Search, Filters & Columns (36px) */}
-        <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
-          {/* Left: Search + Filter Dropdowns */}
+        {/* Row 2 - Views, Filters & Timeline Scale (consolidated) */}
+        <div className="h-9 bg-background flex items-center justify-between px-2 gap-2 border-b border-border flex-shrink-0">
+          {/* Left: View Buttons + Separator + Filter Pills */}
           <div className="flex items-center gap-1.5 flex-1">
-            {/* Search bar - hidden in Gantt view (it's in the Gantt left panel) */}
+            {/* View Toggle Buttons */}
+            <div className="flex items-center gap-0.5">
+              <button
+                onClick={() => setActiveView('gantt')}
+                className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'gantt' ? 'bg-primary text-primary-foreground border-primary/20' : 'hover-elevate'} active-elevate-2`}
+                data-testid="button-view-gantt"
+              >
+                <GanttChart className="w-3 h-3 inline mr-0.5" />
+                Gantt
+              </button>
+              <button
+                onClick={() => setActiveView('calendar')}
+                className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'calendar' ? 'bg-primary text-primary-foreground border-primary/20' : 'hover-elevate'} active-elevate-2`}
+                data-testid="button-view-calendar"
+              >
+                <CalendarIcon className="w-3 h-3 inline mr-0.5" />
+                Calendar
+              </button>
+              <button
+                onClick={() => setActiveView('list')}
+                className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'list' ? 'bg-primary text-primary-foreground border-primary/20' : 'hover-elevate'} active-elevate-2`}
+                data-testid="button-view-list"
+              >
+                <ListIcon className="w-3 h-3 inline mr-0.5" />
+                List
+              </button>
+            </div>
+
+            {/* Separator */}
+            <div className="w-px h-4 bg-border" />
+
+            {/* Search bar - only show for List/Calendar views */}
             {activeView !== 'gantt' && (
-              <div className="relative w-48">
+              <div className="relative w-40">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
                 <Input
                   placeholder="Search..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-7 pr-2 py-0 h-6 text-xs border"
+                  className="pl-7 pr-2 py-0 h-6 text-xs border rounded-md"
                   data-testid="input-search-items"
                 />
               </div>
             )}
 
-            {/* Assignee Filter */}
+            {/* Filter Pills - distinct pill style */}
             <Select value={filters.assignee} onValueChange={(value) => setFilters({ ...filters, assignee: value })}>
-              <SelectTrigger className="h-6 w-auto px-2 py-0 text-xs border [&>svg]:hidden" data-testid="select-filter-assignee">
-                <span>Assignee</span>
+              <SelectTrigger className={`h-6 w-auto px-3 py-0 text-xs rounded-full border-dashed ${filters.assignee !== 'all' ? 'bg-muted border-solid' : ''} [&>svg]:hidden`} data-testid="select-filter-assignee">
+                <span>{filters.assignee !== 'all' ? contacts.find(c => c.id === filters.assignee)?.name || 'Assignee' : 'Assignee'}</span>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Assignees</SelectItem>
@@ -862,10 +797,9 @@ export default function Schedule() {
               </SelectContent>
             </Select>
 
-            {/* Status Filter */}
             <Select value={filters.status} onValueChange={(value) => setFilters({ ...filters, status: value })}>
-              <SelectTrigger className="h-6 w-auto px-2 py-0 text-xs border [&>svg]:hidden" data-testid="select-filter-status">
-                <span>Status</span>
+              <SelectTrigger className={`h-6 w-auto px-3 py-0 text-xs rounded-full border-dashed ${filters.status !== 'all' ? 'bg-muted border-solid' : ''} [&>svg]:hidden`} data-testid="select-filter-status">
+                <span>{filters.status !== 'all' ? statusOptions.find(o => o.value === filters.status)?.label || filters.status : 'Status'}</span>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Statuses</SelectItem>
@@ -887,10 +821,9 @@ export default function Schedule() {
               </SelectContent>
             </Select>
 
-            {/* Type Filter */}
             <Select value={filters.type} onValueChange={(value) => setFilters({ ...filters, type: value })}>
-              <SelectTrigger className="h-6 w-auto px-2 py-0 text-xs border [&>svg]:hidden" data-testid="select-filter-type">
-                <span>Type</span>
+              <SelectTrigger className={`h-6 w-auto px-3 py-0 text-xs rounded-full border-dashed ${filters.type !== 'all' ? 'bg-muted border-solid' : ''} [&>svg]:hidden`} data-testid="select-filter-type">
+                <span>{filters.type !== 'all' ? filters.type.charAt(0).toUpperCase() + filters.type.slice(1) : 'Type'}</span>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Types</SelectItem>
@@ -902,10 +835,9 @@ export default function Schedule() {
               </SelectContent>
             </Select>
 
-            {/* Date Range Filter */}
             <Select value={filters.dateRange} onValueChange={(value) => setFilters({ ...filters, dateRange: value })}>
-              <SelectTrigger className="h-6 w-auto px-2 py-0 text-xs border [&>svg]:hidden" data-testid="select-filter-date-range">
-                <span>Date</span>
+              <SelectTrigger className={`h-6 w-auto px-3 py-0 text-xs rounded-full border-dashed ${filters.dateRange !== 'all' ? 'bg-muted border-solid' : ''} [&>svg]:hidden`} data-testid="select-filter-date-range">
+                <span>{filters.dateRange !== 'all' ? filters.dateRange.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) : 'Date'}</span>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Dates</SelectItem>
@@ -917,72 +849,146 @@ export default function Schedule() {
             </Select>
           </div>
 
-          {/* Center: Calendar Navigation - only show for Calendar */}
-          {activeView === 'calendar' && (
-            <div className="flex items-center gap-1">
+          {/* Right: Today + Columns + Day/Week/Month */}
+          <div className="flex items-center gap-1.5">
+            {/* Calendar Navigation - only show for Calendar */}
+            {activeView === 'calendar' && (
+              <div className="flex items-center gap-0.5">
+                <button
+                  onClick={() => {
+                    const newDate = new Date(calendarDate);
+                    if (calendarView === 'day') {
+                      newDate.setDate(newDate.getDate() - 1);
+                    } else if (calendarView === 'week') {
+                      newDate.setDate(newDate.getDate() - 7);
+                    } else if (calendarView === 'month') {
+                      newDate.setMonth(newDate.getMonth() - 1);
+                    }
+                    setCalendarDate(newDate);
+                  }}
+                  className="h-6 w-6 flex items-center justify-center text-xs border rounded-md hover-elevate active-elevate-2"
+                  data-testid="button-calendar-prev"
+                >
+                  <ChevronLeft className="w-3 h-3" />
+                </button>
+                <button
+                  onClick={() => setCalendarDate(new Date())}
+                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
+                  data-testid="button-scroll-to-today"
+                >
+                  Today
+                </button>
+                <button
+                  onClick={() => {
+                    const newDate = new Date(calendarDate);
+                    if (calendarView === 'day') {
+                      newDate.setDate(newDate.getDate() + 1);
+                    } else if (calendarView === 'week') {
+                      newDate.setDate(newDate.getDate() + 7);
+                    } else if (calendarView === 'month') {
+                      newDate.setMonth(newDate.getMonth() + 1);
+                    }
+                    setCalendarDate(newDate);
+                  }}
+                  className="h-6 w-6 flex items-center justify-center text-xs border rounded-md hover-elevate active-elevate-2"
+                  data-testid="button-calendar-next"
+                >
+                  <ChevronRight className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+
+            {/* Today Button - only show for Gantt/List */}
+            {activeView !== 'calendar' && (
               <button
-                onClick={() => {
-                  const newDate = new Date(calendarDate);
-                  if (calendarView === 'day') {
-                    newDate.setDate(newDate.getDate() - 1);
-                  } else if (calendarView === 'week') {
-                    newDate.setDate(newDate.getDate() - 7);
-                  } else if (calendarView === 'month') {
-                    newDate.setMonth(newDate.getMonth() - 1);
-                  }
-                  setCalendarDate(newDate);
-                }}
-                className="h-6 w-6 flex items-center justify-center text-xs border rounded-md hover-elevate active-elevate-2"
-                data-testid="button-calendar-prev"
-              >
-                <ChevronLeft className="w-3 h-3" />
-              </button>
-              <button
-                onClick={() => setCalendarDate(new Date())}
                 className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
                 data-testid="button-scroll-to-today"
               >
                 Today
               </button>
+            )}
+
+            {/* Columns Icon Button - only show for Gantt/List */}
+            {(activeView === 'gantt' || activeView === 'list') && (
+              <button 
+                className="h-6 w-6 flex items-center justify-center text-xs border rounded-md hover-elevate active-elevate-2"
+                data-testid="button-column-config"
+              >
+                <Columns3 className="w-3.5 h-3.5" />
+              </button>
+            )}
+
+            {/* Separator */}
+            <div className="w-px h-4 bg-border" />
+
+            {/* Timeline Scale Buttons */}
+            <div className="flex items-center gap-0.5">
               <button
                 onClick={() => {
-                  const newDate = new Date(calendarDate);
-                  if (calendarView === 'day') {
-                    newDate.setDate(newDate.getDate() + 1);
-                  } else if (calendarView === 'week') {
-                    newDate.setDate(newDate.getDate() + 7);
-                  } else if (calendarView === 'month') {
-                    newDate.setMonth(newDate.getMonth() + 1);
+                  if (activeView === 'calendar') {
+                    setCalendarView('day');
+                  } else {
+                    setZoomLevel('day');
                   }
-                  setCalendarDate(newDate);
                 }}
-                className="h-6 w-6 flex items-center justify-center text-xs border rounded-md hover-elevate active-elevate-2"
-                data-testid="button-calendar-next"
+                className={`h-6 w-auto px-2 text-xs border rounded-md ${
+                  (activeView === 'calendar' && calendarView === 'day') || (activeView !== 'calendar' && zoomLevel === 'day')
+                    ? 'bg-primary text-primary-foreground border-primary/20'
+                    : 'hover-elevate'
+                } active-elevate-2`}
+                data-testid="button-zoom-day"
               >
-                <ChevronRight className="w-3 h-3" />
+                Day
               </button>
+              <button
+                onClick={() => {
+                  if (activeView === 'calendar') {
+                    setCalendarView('week');
+                  } else {
+                    setZoomLevel('week');
+                  }
+                }}
+                className={`h-6 w-auto px-2 text-xs border rounded-md ${
+                  (activeView === 'calendar' && calendarView === 'week') || (activeView !== 'calendar' && zoomLevel === 'week')
+                    ? 'bg-primary text-primary-foreground border-primary/20'
+                    : 'hover-elevate'
+                } active-elevate-2`}
+                data-testid="button-zoom-week"
+              >
+                Week
+              </button>
+              <button
+                onClick={() => {
+                  if (activeView === 'calendar') {
+                    setCalendarView('month');
+                  } else {
+                    setZoomLevel('month');
+                  }
+                }}
+                className={`h-6 w-auto px-2 text-xs border rounded-md ${
+                  (activeView === 'calendar' && calendarView === 'month') || (activeView !== 'calendar' && zoomLevel === 'month')
+                    ? 'bg-primary text-primary-foreground border-primary/20'
+                    : 'hover-elevate'
+                } active-elevate-2`}
+                data-testid="button-zoom-month"
+              >
+                Month
+              </button>
+              {activeView === 'calendar' && (
+                <button
+                  onClick={() => setCalendarView('agenda')}
+                  className={`h-6 w-auto px-2 text-xs border rounded-md ${
+                    calendarView === 'agenda'
+                      ? 'bg-primary text-primary-foreground border-primary/20'
+                      : 'hover-elevate'
+                  } active-elevate-2`}
+                  data-testid="button-zoom-agenda"
+                >
+                  Agenda
+                </button>
+              )}
             </div>
-          )}
-
-          {/* Today Button - only show for Gantt */}
-          {activeView === 'gantt' && (
-            <button
-              className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
-              data-testid="button-scroll-to-today"
-            >
-              Today
-            </button>
-          )}
-
-          {/* Columns Button - only show for Gantt/List */}
-          {(activeView === 'gantt' || activeView === 'list') && (
-            <button 
-              className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
-              data-testid="button-column-config"
-            >
-              Columns
-            </button>
-          )}
+          </div>
         </div>
 
         {/* Content - conditional rendering based on activeView */}
