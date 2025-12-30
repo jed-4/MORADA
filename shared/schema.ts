@@ -2893,7 +2893,7 @@ export const insertScheduleItemSchema = createInsertSchema(scheduleItems).omit({
   updatedAt: true,
 }).extend({
   type: z.enum(["task", "milestone", "inspection", "delivery", "meeting"]).default("task"),
-  status: z.enum(["not_started", "in_progress", "completed", "on_hold", "cancelled"]).default("not_started"),
+  status: z.string().default("not_started"),
   priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
   startDate: z.coerce.date(),
   endDate: z.coerce.date(),

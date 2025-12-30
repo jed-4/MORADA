@@ -1455,7 +1455,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                     <Columns className="w-3.5 h-3.5" />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent align="start" className="w-56 p-2" data-testid="popover-columns">
+                <PopoverContent align="start" className="w-56 p-2 z-[100]" data-testid="popover-columns">
                   <div className="text-xs font-medium text-muted-foreground mb-2 px-2">Show & Reorder Columns</div>
                   <DndContext
                     sensors={sensors}
