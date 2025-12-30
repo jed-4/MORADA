@@ -372,7 +372,11 @@ export default function EstimateTemplateDetail() {
 
   const confirmDeleteItem = () => {
     if (!deleteConfirmItem) return;
+    console.log('[DEBUG] confirmDeleteItem called');
+    console.log('[DEBUG] deleteConfirmItem:', deleteConfirmItem);
+    console.log('[DEBUG] items before filter:', items.length, items.map(i => ({ id: i.id, name: i.name })));
     const updatedItems = items.filter(item => item.id !== deleteConfirmItem.id);
+    console.log('[DEBUG] updatedItems after filter:', updatedItems.length, updatedItems.map(i => ({ id: i.id, name: i.name })));
     updateMutation.mutate({ templateData: updatedItems });
     setDeleteConfirmItem(null);
   };
