@@ -13056,7 +13056,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      const item = await storage.createScheduleItem(validationResult.data);
+      // Handle business assignee (company:xxx format)
+      const createData = { ...validationResult.data };
+      if (createData.assignedToId && createData.assignedToId.startsWith('company:')) {
+        const companyId = createData.assignedToId.replace('company:', '');
+        const company = await storage.getCompany(companyId);
+        if (company) {
+          createData.assignedToName = company.nickname || company.name;
+        }
+      }
+      
+      const item = await storage.createScheduleItem(createData);
       
       // Log activity for schedule item creation
       try {
@@ -13104,7 +13114,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get original item to track changes
       const originalItem = await storage.getScheduleItem(req.params.id);
       
-      const item = await storage.updateScheduleItem(req.params.id, validationResult.data);
+      // Handle business assignee (company:xxx format)
+      const updateData = { ...validationResult.data };
+      if (updateData.assignedToId && updateData.assignedToId.startsWith('company:')) {
+        const companyId = updateData.assignedToId.replace('company:', '');
+        const company = await storage.getCompany(companyId);
+        if (company) {
+          updateData.assignedToName = company.nickname || company.name;
+        }
+      }
+      
+      const item = await storage.updateScheduleItem(req.params.id, updateData);
       if (!item) {
         return res.status(404).json({ error: "Schedule item not found" });
       }

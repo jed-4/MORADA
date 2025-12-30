@@ -1124,7 +1124,7 @@ function DroppableStage({
               <div 
                 {...attributes} 
                 {...listeners} 
-                className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity"
+                className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity p-1 -ml-1 rounded hover:bg-accent/50"
                 onClick={(e) => e.stopPropagation()}
                 data-testid={`drag-handle-stage-${stageData.id}`}
               >
@@ -1901,21 +1901,11 @@ export default function ProjectScope() {
     },
   });
 
-  // DnD sensors for items with activation constraint for better UX
+  // Unified DnD sensors for both stages and items
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 3, // 3px movement before drag starts - matches estimate drag behavior
-      },
-    }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-  );
-
-  // Separate DnD sensors for stages with same activation constraint
-  const stageSensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 3, // 3px movement before drag starts - matches estimate drag behavior
+        distance: 5, // 5px movement before drag starts for better precision
       },
     }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -1925,22 +1915,34 @@ export default function ProjectScope() {
   const [activeStageId, setActiveStageId] = useState<string | null>(null);
   const [overStageId, setOverStageId] = useState<string | null>(null);
 
-  // Item drag handlers
-  const handleDragStart = (event: DragStartEvent) => {
-    setActiveId(event.active.id as string);
+  // Helper: check if ID is a stage (stages have UUIDs that are in scopeStages)
+  const isStageId = useCallback((id: string) => {
+    return scopeStages.some(s => s.id === id);
+  }, [scopeStages]);
+
+  // Unified drag handlers that distinguish between stages and items
+  const handleUnifiedDragStart = (event: DragStartEvent) => {
+    const id = event.active.id as string;
+    if (isStageId(id)) {
+      setActiveStageId(id);
+      setActiveId(null);
+    } else {
+      setActiveId(id);
+      setActiveStageId(null);
+    }
   };
 
-  const handleDragOver = (event: DragOverEvent) => {
-    setOverId(event.over?.id as string || null);
-  };
-
-  // Stage drag handlers
-  const handleStageDragStart = (event: DragStartEvent) => {
-    setActiveStageId(event.active.id as string);
-  };
-
-  const handleStageDragOver = (event: DragOverEvent) => {
-    setOverStageId(event.over?.id as string || null);
+  const handleUnifiedDragOver = (event: DragOverEvent) => {
+    const activeId = event.active.id as string;
+    const overId = event.over?.id as string || null;
+    
+    if (isStageId(activeId)) {
+      setOverStageId(overId);
+      setOverId(null);
+    } else {
+      setOverId(overId);
+      setOverStageId(null);
+    }
   };
 
   // Helper function to check if a stage is a descendant of another
@@ -1952,65 +1954,137 @@ export default function ProjectScope() {
     return isStageDescendant(parent, ancestor);
   };
 
-  const handleStageDragEnd = (event: DragEndEvent) => {
+  // Unified drag end handler for both stages and items
+  const handleUnifiedDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
+    const activeIdStr = active.id as string;
+    
+    // Clear all drag states
     setActiveStageId(null);
     setOverStageId(null);
+    setActiveId(null);
+    setOverId(null);
     
     if (!over || active.id === over.id) return;
 
-    const activeStage = scopeStages.find(s => s.id === active.id);
-    const overStage = scopeStages.find(s => s.id === over.id);
-    
-    if (!activeStage || !overStage) return;
+    // Determine if we're dragging a stage or item
+    if (isStageId(activeIdStr)) {
+      // Handle stage drag end
+      const activeStage = scopeStages.find(s => s.id === activeIdStr);
+      const overStage = scopeStages.find(s => s.id === over.id);
+      
+      if (!activeStage || !overStage) return;
 
-    // Prevent nesting cycles
-    if (isStageDescendant(overStage, activeStage)) {
-      toast({ 
-        title: "Cannot nest stage", 
-        description: "Cannot nest a parent stage under its own child",
-        variant: "destructive" 
-      });
+      // Prevent nesting cycles
+      if (isStageDescendant(overStage, activeStage)) {
+        toast({ 
+          title: "Cannot nest stage", 
+          description: "Cannot nest a parent stage under its own child",
+          variant: "destructive" 
+        });
+        return;
+      }
+
+      // Determine if this is a reorder or a nest operation
+      const isSameParent = activeStage.parentId === overStage.parentId;
+      
+      if (isSameParent) {
+        // Reorder within same parent level
+        const siblingStages = scopeStages.filter(s => s.parentId === activeStage.parentId);
+        const oldIndex = siblingStages.findIndex(s => s.id === active.id);
+        const newIndex = siblingStages.findIndex(s => s.id === over.id);
+        
+        if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
+          const reordered = arrayMove(siblingStages, oldIndex, newIndex);
+          const updates = reordered.map((stage, index) => ({
+            id: stage.id,
+            displayOrder: index,
+            parentId: stage.parentId || null,
+          }));
+          
+          reorderStagesMutation.mutate(updates);
+          toast({ title: "Stages reordered" });
+        }
+      } else {
+        // Nest active stage under over stage
+        const targetSiblings = scopeStages.filter(s => s.parentId === overStage.id);
+        const newDisplayOrder = targetSiblings.length;
+        
+        const updates = [{
+          id: activeStage.id,
+          displayOrder: newDisplayOrder,
+          parentId: overStage.id,
+        }];
+        
+        reorderStagesMutation.mutate(updates);
+        toast({ title: `"${activeStage.name}" nested under "${overStage.name}"` });
+      }
+    } else {
+      // Handle item drag end (existing logic)
+      handleItemDragEnd(event);
+    }
+  };
+  
+  // Item-specific drag end logic (extracted from original handleDragEnd)
+  const handleItemDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over) return;
+
+    const overId = over.id as string;
+    const activeItem = scopeItems.find(i => i.id === active.id);
+    if (!activeItem) return;
+    
+    // Check if dragged over a stage
+    if (overId.startsWith('stage-')) {
+      const targetStage = overId.replace('stage-', '');
+      if (activeItem.stage !== targetStage) {
+        handleUpdateItem(activeItem.id, {
+          stage: targetStage,
+          parentId: null,
+          displayOrder: getItemsByStage(targetStage).length
+        });
+        toast({ title: `Item moved to "${targetStage}"` });
+      }
       return;
     }
 
-    // Determine if this is a reorder or a nest operation
-    // If both stages have the same parent, it's a reorder
-    // Otherwise, nest the active under the over
-    const isSameParent = activeStage.parentId === overStage.parentId;
+    // Dragged over another item
+    const overItem = scopeItems.find(i => i.id === overId);
+    if (!overItem) return;
     
-    if (isSameParent) {
-      // Reorder within same parent level
-      const siblingStages = scopeStages.filter(s => s.parentId === activeStage.parentId);
-      const oldIndex = siblingStages.findIndex(s => s.id === active.id);
-      const newIndex = siblingStages.findIndex(s => s.id === over.id);
+    // If both items are in the same stage, it's a reorder
+    if (activeItem.stage === overItem.stage) {
+      const stageItems = getItemsByStage(activeItem.stage || '');
+      const oldIndex = stageItems.findIndex(i => i.id === active.id);
+      const newIndex = stageItems.findIndex(i => i.id === overId);
       
       if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
-        const reordered = arrayMove(siblingStages, oldIndex, newIndex);
-        const updates = reordered.map((stage, index) => ({
-          id: stage.id,
-          displayOrder: index,
-          parentId: stage.parentId || null,
-        }));
+        const reordered = arrayMove(stageItems, oldIndex, newIndex);
         
-        reorderStagesMutation.mutate(updates);
-        toast({ title: "Stages reordered" });
+        // Optimistic update
+        const newItems = scopeItems.map(item => {
+          const idx = reordered.findIndex(r => r.id === item.id);
+          if (idx !== -1) {
+            return { ...item, displayOrder: idx };
+          }
+          return item;
+        });
+        queryClient.setQueryData(['/api/scope', projectId], newItems);
+        
+        // Send updates
+        reorderMutation.mutate(reordered.map((item, index) => ({
+          id: item.id,
+          displayOrder: index
+        })));
       }
     } else {
-      // Nest active stage under over stage
-      // Get all stages at the same level as the target
-      const targetSiblings = scopeStages.filter(s => s.parentId === overStage.id);
-      const newDisplayOrder = targetSiblings.length;
-      
-      // Update the dragged stage to be a child of the target
-      const updates = [{
-        id: activeStage.id,
-        displayOrder: newDisplayOrder,
-        parentId: overStage.id,
-      }];
-      
-      reorderStagesMutation.mutate(updates);
-      toast({ title: `"${activeStage.name}" nested under "${overStage.name}"` });
+      // Moving to different stage (take stage from target item)
+      handleUpdateItem(activeItem.id, {
+        stage: overItem.stage,
+        parentId: overItem.parentId,
+        displayOrder: (overItem.displayOrder || 0) + 1
+      });
+      toast({ title: `Item moved to "${overItem.stage}"` });
     }
   };
 
@@ -2030,89 +2104,6 @@ export default function ProjectScope() {
       setPdfStage(scopeStages[0].name);
     }
   }
-
-  // Helper function to check if an item is a descendant of another
-  const isDescendant = (potentialDescendant: ScopeItem, ancestor: ScopeItem): boolean => {
-    if (!potentialDescendant.parentId) return false;
-    if (potentialDescendant.parentId === ancestor.id) return true;
-    const parent = scopeItems.find(i => i.id === potentialDescendant.parentId);
-    if (!parent) return false;
-    return isDescendant(parent, ancestor);
-  };
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    setActiveId(null);
-    setOverId(null);
-    
-    if (!over) return;
-
-    const overId = over.id as string;
-    const activeItem = scopeItems.find(i => i.id === active.id);
-    if (!activeItem) return;
-    
-    // Check if dragged over a stage
-    if (overId.startsWith('stage-')) {
-      const targetStage = overId.replace('stage-', '');
-      if (activeItem.stage !== targetStage) {
-        updateItemMutation.mutate({ 
-          id: activeItem.id, 
-          data: { stage: targetStage, parentId: null } 
-        });
-        toast({ title: `Moved to ${targetStage}` });
-      }
-      return;
-    }
-
-    // Check if dragged over another item (nest it)
-    const overItem = scopeItems.find(i => i.id === overId);
-    if (overItem && overItem.id !== activeItem.id && overItem.id !== activeItem.parentId) {
-      // Prevent creating cycles - don't allow dragging a parent onto its descendant
-      if (isDescendant(overItem, activeItem)) {
-        toast({ 
-          title: "Cannot nest item", 
-          description: "Cannot nest a parent under its own child",
-          variant: "destructive" 
-        });
-        return;
-      }
-      
-      // Nest the active item under the over item
-      updateItemMutation.mutate({
-        id: activeItem.id,
-        data: { 
-          parentId: overItem.id,
-          stage: overItem.stage // Inherit parent's stage
-        }
-      });
-      toast({ title: `Nested under ${overItem.title}` });
-      return;
-    }
-
-    // Reorder within same stage and parent level
-    if (activeItem && overItem && activeItem.stage === overItem.stage && activeItem.parentId === overItem.parentId) {
-      const siblingItems = scopeItems.filter(i => 
-        i.stage === activeItem.stage && i.parentId === activeItem.parentId
-      );
-      const oldIndex = siblingItems.findIndex(i => i.id === active.id);
-      const newIndex = siblingItems.findIndex(i => i.id === overId);
-      
-      if (oldIndex !== -1 && newIndex !== -1) {
-        const reordered = arrayMove(siblingItems, oldIndex, newIndex);
-        const updates = reordered.map((item, index) => ({
-          id: item.id,
-          displayOrder: index,
-          parentId: item.parentId || null,
-        }));
-        
-        apiRequest('/api/scope/reorder', 'POST', { updates }).then(() => {
-          queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope`] });
-        }).catch((error) => {
-          toast({ title: "Failed to reorder", variant: "destructive" });
-        });
-      }
-    }
-  };
 
   const handleUpdateItem = (id: string, data: Partial<ScopeItem>) => {
     updateItemMutation.mutate({ id, data });
@@ -2777,88 +2768,74 @@ export default function ProjectScope() {
               </div>
             </Card>
           ) : (
-            // Stage DnD Context (separate from item DnD)
+            // Unified DnD Context for both stages and items
             <DndContext
-              sensors={stageSensors}
+              sensors={sensors}
               collisionDetection={closestCenter}
-              onDragStart={handleStageDragStart}
-              onDragOver={handleStageDragOver}
-              onDragEnd={handleStageDragEnd}
+              onDragStart={handleUnifiedDragStart}
+              onDragOver={handleUnifiedDragOver}
+              onDragEnd={handleUnifiedDragEnd}
             >
               <SortableContext
-                items={scopeStages.map(s => s.id)}
+                items={[...scopeStages.map(s => s.id), ...scopeItems.map(i => i.id)]}
                 strategy={verticalListSortingStrategy}
               >
-                {/* Item DnD Context (nested inside stage DnD) */}
-                <DndContext
-                  sensors={sensors}
-                  collisionDetection={closestCenter}
-                  onDragStart={handleDragStart}
-                  onDragOver={handleDragOver}
-                  onDragEnd={handleDragEnd}
-                >
-                  {scopeStages
-                    .filter(stage => !stage.parentId) // Only show top-level stages
-                    .sort((a, b) => a.displayOrder - b.displayOrder)
-                    .map((stage) => (
-                      <DroppableStage
-                        key={stage.id}
-                        stageData={stage}
-                        items={getItemsByStage(stage.name)}
-                        isExpanded={stageExpanded[stage.name] ?? true}
-                        onToggleExpand={() => toggleStage(stage.name)}
-                        onUpdate={handleUpdateItem}
-                        onDelete={handleDeleteItem}
-                        onToggleSelect={handleToggleSelect}
-                        onAddItem={handleAddItem}
-                        onEditStage={handleEditStage}
-                        onDeleteStage={handleDeleteStage}
-                        onAddNewStage={handleAddNewStage}
-                        selectedItems={selectedItems}
-                        isOver={overStageId === stage.id}
-                        isDraggingStage={!!activeStageId}
-                        allItems={scopeItems}
-                        editingStageId={editingStageId}
-                        editingStageName={editingStageName}
-                        setEditingStageId={setEditingStageId}
-                        setEditingStageName={setEditingStageName}
-                        children={scopeStages.filter(s => s.parentId === stage.id)}
-                        allStages={scopeStages}
-                        collapsedItems={collapsedItems} // Scope 2.0
-                        onToggleItemCollapse={toggleItemCollapse} // Scope 2.0
-                        getTypeLabel={getTypeLabel} // Scope 2.0
-                        linkedPOs={posByStage[stage.id] || []}
-                        onViewPO={handleViewPO}
-                        linkedScheduleItems={scheduleItemsByStage[stage.id] || []}
-                        onViewScheduleItem={handleViewScheduleItem}
-                        showDescriptionInline={showDescriptionInline}
-                      />
-                    ))}
-
-                  {/* Item Drag Overlay */}
-                  <DragOverlay>
-                    {activeId && scopeItems.find(i => i.id === activeId) ? (
-                      <Card className="opacity-90 border-l-4" style={{ borderLeftColor: PRIMARY_COLOR }}>
-                        <CardContent className="py-2 px-3">
-                          <div className="font-medium text-sm">
-                            {scopeItems.find(i => i.id === activeId)?.title}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ) : null}
-                  </DragOverlay>
-                </DndContext>
+                {scopeStages
+                  .filter(stage => !stage.parentId) // Only show top-level stages
+                  .sort((a, b) => a.displayOrder - b.displayOrder)
+                  .map((stage) => (
+                    <DroppableStage
+                      key={stage.id}
+                      stageData={stage}
+                      items={getItemsByStage(stage.name)}
+                      isExpanded={stageExpanded[stage.name] ?? true}
+                      onToggleExpand={() => toggleStage(stage.name)}
+                      onUpdate={handleUpdateItem}
+                      onDelete={handleDeleteItem}
+                      onToggleSelect={handleToggleSelect}
+                      onAddItem={handleAddItem}
+                      onEditStage={handleEditStage}
+                      onDeleteStage={handleDeleteStage}
+                      onAddNewStage={handleAddNewStage}
+                      selectedItems={selectedItems}
+                      isOver={overStageId === stage.id}
+                      isDraggingStage={!!activeStageId}
+                      allItems={scopeItems}
+                      editingStageId={editingStageId}
+                      editingStageName={editingStageName}
+                      setEditingStageId={setEditingStageId}
+                      setEditingStageName={setEditingStageName}
+                      children={scopeStages.filter(s => s.parentId === stage.id)}
+                      allStages={scopeStages}
+                      collapsedItems={collapsedItems} // Scope 2.0
+                      onToggleItemCollapse={toggleItemCollapse} // Scope 2.0
+                      getTypeLabel={getTypeLabel} // Scope 2.0
+                      linkedPOs={posByStage[stage.id] || []}
+                      onViewPO={handleViewPO}
+                      linkedScheduleItems={scheduleItemsByStage[stage.id] || []}
+                      onViewScheduleItem={handleViewScheduleItem}
+                      showDescriptionInline={showDescriptionInline}
+                    />
+                  ))}
               </SortableContext>
 
-              {/* Stage Drag Overlay */}
+              {/* Unified Drag Overlay - shows either stage or item */}
               <DragOverlay>
                 {activeStageId && scopeStages.find(s => s.id === activeStageId) ? (
-                  <Card className="opacity-90 border-l-4" style={{ borderLeftColor: PRIMARY_COLOR }}>
+                  <Card className="opacity-90 border-l-4 shadow-lg" style={{ borderLeftColor: PRIMARY_COLOR }}>
                     <CardHeader className="py-2 px-4">
                       <CardTitle className="text-base font-semibold text-primary">
                         {scopeStages.find(s => s.id === activeStageId)?.name}
                       </CardTitle>
                     </CardHeader>
+                  </Card>
+                ) : activeId && scopeItems.find(i => i.id === activeId) ? (
+                  <Card className="opacity-90 border-l-4 shadow-lg" style={{ borderLeftColor: PRIMARY_COLOR }}>
+                    <CardContent className="py-2 px-3">
+                      <div className="font-medium text-sm">
+                        {scopeItems.find(i => i.id === activeId)?.title}
+                      </div>
+                    </CardContent>
                   </Card>
                 ) : null}
               </DragOverlay>

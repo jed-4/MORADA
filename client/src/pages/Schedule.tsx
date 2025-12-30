@@ -1242,6 +1242,7 @@ export default function Schedule() {
                   value={formData.assignedToId || ""}
                   onValueChange={(value) => setFormData({ ...formData, assignedToId: value || "" })}
                   placeholder="None"
+                  allowBusiness={true}
                   data-testid="select-item-assignee"
                 />
               </div>

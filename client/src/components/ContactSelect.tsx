@@ -1,7 +1,8 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { SearchableSelect, SearchableSelectOption } from "@/components/ui/searchable-select";
-import type { Contact } from "@shared/schema";
+import { Building2 } from "lucide-react";
+import type { Contact, User } from "@shared/schema";
 
 interface ContactSelectProps {
   value?: string;
@@ -10,6 +11,7 @@ interface ContactSelectProps {
   disabled?: boolean;
   allowClear?: boolean;
   allowNone?: boolean;
+  allowBusiness?: boolean;
   contactType?: "client" | "subcontractor" | "supplier" | "consultant" | "other";
   className?: string;
   "data-testid"?: string;
@@ -22,12 +24,17 @@ export function ContactSelect({
   disabled = false,
   allowClear = false,
   allowNone = true,
+  allowBusiness = false,
   contactType,
   className,
   "data-testid": testId,
 }: ContactSelectProps) {
   const { data: allContacts = [], isLoading } = useQuery<Contact[]>({
     queryKey: ["/api/contacts"],
+  });
+
+  const { data: user } = useQuery<User & { companyNickname?: string }>({
+    queryKey: ["/api/auth/user"],
   });
 
   const contacts = useMemo(() => {
@@ -45,6 +52,16 @@ export function ContactSelect({
       });
     }
     
+    if (allowBusiness && user?.companyId) {
+      const businessName = (user as any)?.companyNickname || "The Business";
+      opts.push({
+        value: `company:${user.companyId}`,
+        label: businessName,
+        description: "Assign to your business",
+        group: "Business",
+      });
+    }
+    
     contacts.forEach((contact) => {
       const displayName = contact.company 
         ? `${contact.company}${contact.name ? ` - ${contact.name}` : ''}`
@@ -59,7 +76,7 @@ export function ContactSelect({
     });
     
     return opts;
-  }, [contacts, allowNone]);
+  }, [contacts, allowNone, allowBusiness, user]);
 
   const handleValueChange = (newValue: string) => {
     if (newValue === "none") {
