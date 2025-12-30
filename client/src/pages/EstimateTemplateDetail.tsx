@@ -22,6 +22,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -68,7 +78,7 @@ interface TemplateItem {
 interface SortableItemProps {
   item: TemplateItem;
   onEdit: (item: TemplateItem) => void;
-  onDelete: (id: string) => void;
+  onDelete: (item: TemplateItem) => void;
 }
 
 function SortableItem({ item, onEdit, onDelete }: SortableItemProps) {
@@ -163,7 +173,7 @@ function SortableItem({ item, onEdit, onDelete }: SortableItemProps) {
             Edit
           </DropdownMenuItem>
           <DropdownMenuItem 
-            onClick={() => onDelete(item.id)} 
+            onClick={() => onDelete(item)} 
             className="text-destructive"
             data-testid={`menu-delete-${item.id}`}
           >
@@ -186,6 +196,7 @@ export default function EstimateTemplateDetail() {
   const [editingItem, setEditingItem] = useState<TemplateItem | null>(null);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['ungrouped']));
+  const [deleteConfirmItem, setDeleteConfirmItem] = useState<TemplateItem | null>(null);
   
   const [newItem, setNewItem] = useState<Partial<TemplateItem>>({
     name: "",
@@ -355,9 +366,15 @@ export default function EstimateTemplateDetail() {
     setEditingItem(null);
   };
 
-  const handleDeleteItem = (itemId: string) => {
-    const updatedItems = items.filter(item => item.id !== itemId);
+  const handleDeleteItem = (item: TemplateItem) => {
+    setDeleteConfirmItem(item);
+  };
+
+  const confirmDeleteItem = () => {
+    if (!deleteConfirmItem) return;
+    const updatedItems = items.filter(item => item.id !== deleteConfirmItem.id);
     updateMutation.mutate({ templateData: updatedItems });
+    setDeleteConfirmItem(null);
   };
 
   const toggleGroup = (group: string) => {
@@ -811,6 +828,28 @@ export default function EstimateTemplateDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!deleteConfirmItem} onOpenChange={(open) => !open && setDeleteConfirmItem(null)}>
+        <AlertDialogContent data-testid="dialog-delete-confirm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Item</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{deleteConfirmItem?.name}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteItem}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
