@@ -446,6 +446,7 @@ export default function EstimateTemplates() {
         const costCodeMatch = matchCostCode(row.costCode ? String(row.costCode) : undefined);
         
         return {
+          id: crypto.randomUUID(), // CRITICAL: Generate unique ID for each item
           groupName: row.groupName ? String(row.groupName).trim() : undefined,
           name: String(row.name).trim(),
           description: row.description ? String(row.description).trim() : undefined,

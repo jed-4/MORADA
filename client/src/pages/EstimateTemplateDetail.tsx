@@ -269,11 +269,17 @@ export default function EstimateTemplateDetail() {
   });
 
   // Preserve existing IDs from template data - use useMemo for stability
+  // IMPORTANT: Ensure each item has a unique ID to prevent React key issues and delete bugs
   const items: TemplateItem[] = useMemo(() => {
-    return ((template?.templateData as TemplateItem[]) || []).map((item, idx) => ({
-      ...item,
-      sortOrder: item.sortOrder ?? idx,
-    }));
+    return ((template?.templateData as TemplateItem[]) || []).map((item, idx) => {
+      // Generate stable fallback ID based on content if missing
+      const fallbackId = item.id || `fallback-${idx}-${item.name || ''}-${item.sortOrder ?? idx}`;
+      return {
+        ...item,
+        id: fallbackId,
+        sortOrder: item.sortOrder ?? idx,
+      };
+    });
   }, [template?.templateData]);
 
   const groups = [...new Set(items.map(item => item.groupName || 'ungrouped'))];
@@ -372,11 +378,7 @@ export default function EstimateTemplateDetail() {
 
   const confirmDeleteItem = () => {
     if (!deleteConfirmItem) return;
-    console.log('[DEBUG] confirmDeleteItem called');
-    console.log('[DEBUG] deleteConfirmItem:', deleteConfirmItem);
-    console.log('[DEBUG] items before filter:', items.length, items.map(i => ({ id: i.id, name: i.name })));
     const updatedItems = items.filter(item => item.id !== deleteConfirmItem.id);
-    console.log('[DEBUG] updatedItems after filter:', updatedItems.length, updatedItems.map(i => ({ id: i.id, name: i.name })));
     updateMutation.mutate({ templateData: updatedItems });
     setDeleteConfirmItem(null);
   };
