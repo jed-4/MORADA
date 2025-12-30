@@ -21,6 +21,7 @@ export default function ActivityWidget({ widget, onUpdate, isConfiguring, onClos
   const { currentProject } = useProject();
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const [configMaxItems, setConfigMaxItems] = useState(widget.config?.maxItems || 20);
+  const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
   
   useEffect(() => {
     setEditingTitle(widget.title);
@@ -230,9 +231,6 @@ export default function ActivityWidget({ widget, onUpdate, isConfiguring, onClos
       </div>
     );
   }
-
-  // Track expanded schedule groups
-  const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
 
   const toggleGroup = (index: number) => {
     setExpandedGroups(prev => {
