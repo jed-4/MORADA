@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect, CSSProperties } from "react";
 import { useParams } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -408,8 +408,8 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
   const { toast } = useToast();
   
   // Height preservation refs for smooth drag placeholder
-  const lastHeightRef = React.useRef<number>(40);
-  const rowRef = React.useRef<HTMLDivElement>(null);
+  const lastHeightRef = useRef<number>(40);
+  const rowRef = useRef<HTMLDivElement>(null);
   
   // Checklist items for checklist-type scope items
   const checklistItems = (item.checklistItems as ChecklistItem[] || []);
@@ -450,7 +450,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
   });
   
   // Measure height synchronously before drag state changes
-  React.useLayoutEffect(() => {
+  useLayoutEffect(() => {
     if (rowRef.current && !isDragging) {
       const height = rowRef.current.offsetHeight;
       if (height > 0) {
@@ -460,13 +460,13 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
   });
   
   // Combine refs for measurement and sortable
-  const combinedRef = React.useCallback((node: HTMLDivElement | null) => {
-    (rowRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
+  const combinedRef = useCallback((node: HTMLDivElement | null) => {
+    (rowRef as { current: HTMLDivElement | null }).current = node;
     setNodeRef(node);
   }, [setNodeRef]);
 
   // Smooth Y-axis only transform with CSS transition
-  const style: React.CSSProperties = {
+  const style: CSSProperties = {
     transform: transform ? `translateY(${Math.round(transform.y)}px)` : undefined,
     transition: transition || 'transform 150ms ease',
   };
@@ -1873,6 +1873,44 @@ export default function ProjectScope() {
     },
   });
 
+  // Reorder items mutation with optimistic updates
+  const reorderMutation = useMutation({
+    mutationFn: async (updates: { id: string; displayOrder: number }[]) => {
+      return apiRequest('/api/scope/reorder', 'POST', { updates });
+    },
+    onMutate: async (updates) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: [`/api/projects/${projectId}/scope`] });
+      
+      // Snapshot the previous value
+      const previousItems = queryClient.getQueryData<ScopeItem[]>([`/api/projects/${projectId}/scope`]);
+      
+      // Optimistically update the cache
+      queryClient.setQueryData<ScopeItem[]>([`/api/projects/${projectId}/scope`], (old) => {
+        if (!old) return old;
+        return old.map(item => {
+          const update = updates.find(u => u.id === item.id);
+          if (update) {
+            return { ...item, displayOrder: update.displayOrder };
+          }
+          return item;
+        });
+      });
+      
+      return { previousItems };
+    },
+    onError: (err, variables, context) => {
+      // Rollback on error
+      if (context?.previousItems) {
+        queryClient.setQueryData([`/api/projects/${projectId}/scope`], context.previousItems);
+      }
+      toast({ title: "Failed to reorder items", variant: "destructive" });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/scope`] });
+    },
+  });
+
   // Delete mutation
   const deleteItemMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -2230,17 +2268,7 @@ export default function ProjectScope() {
       if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
         const reordered = arrayMove(stageItems, oldIndex, newIndex);
         
-        // Optimistic update
-        const newItems = scopeItems.map(item => {
-          const idx = reordered.findIndex(r => r.id === item.id);
-          if (idx !== -1) {
-            return { ...item, displayOrder: idx };
-          }
-          return item;
-        });
-        queryClient.setQueryData(['/api/scope', projectId], newItems);
-        
-        // Send updates
+        // Send updates - reorderMutation handles optimistic updates
         reorderMutation.mutate(reordered.map((item, index) => ({
           id: item.id,
           displayOrder: index
