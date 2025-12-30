@@ -393,9 +393,11 @@ interface SortableScopeItemProps {
   getTypeLabel?: (type: string | null | undefined) => string; // Scope 2.0: type label helper
   collapsedItems?: Set<string>; // Scope 2.0: full collapsed items set
   showDescriptionInline?: boolean; // Show full description inline instead of hover
+  dropIndicator?: 'above' | 'below' | null; // Drop indicator position
+  dropTarget?: { id: string; position: 'above' | 'below' } | null; // Drop target for nested items
 }
 
-function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelected, level = 0, children = [], allItems = [], selectedItems = new Set(), isCollapsed = false, onToggleCollapse, getTypeLabel, collapsedItems, showDescriptionInline = false }: SortableScopeItemProps) {
+function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelected, level = 0, children = [], allItems = [], selectedItems = new Set(), isCollapsed = false, onToggleCollapse, getTypeLabel, collapsedItems, showDescriptionInline = false, dropIndicator, dropTarget }: SortableScopeItemProps) {
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [showGearList, setShowGearList] = useState(false);
   const [showAddToTemplate, setShowAddToTemplate] = useState(false);
@@ -404,6 +406,10 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
   const [newChecklistItemText, setNewChecklistItemText] = useState("");
   const [showChecklistItems, setShowChecklistItems] = useState(item.itemType === 'checklist');
   const { toast } = useToast();
+  
+  // Height preservation refs for smooth drag placeholder
+  const lastHeightRef = React.useRef<number>(40);
+  const rowRef = React.useRef<HTMLDivElement>(null);
   
   // Checklist items for checklist-type scope items
   const checklistItems = (item.checklistItems as ChecklistItem[] || []);
@@ -438,12 +444,31 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: item.id });
+  } = useSortable({ 
+    id: item.id,
+    animateLayoutChanges: () => false, // Disable jank, use CSS transitions
+  });
+  
+  // Measure height synchronously before drag state changes
+  React.useLayoutEffect(() => {
+    if (rowRef.current && !isDragging) {
+      const height = rowRef.current.offsetHeight;
+      if (height > 0) {
+        lastHeightRef.current = height;
+      }
+    }
+  });
+  
+  // Combine refs for measurement and sortable
+  const combinedRef = React.useCallback((node: HTMLDivElement | null) => {
+    (rowRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
+    setNodeRef(node);
+  }, [setNodeRef]);
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
+  // Smooth Y-axis only transform with CSS transition
+  const style: React.CSSProperties = {
+    transform: transform ? `translateY(${Math.round(transform.y)}px)` : undefined,
+    transition: transition || 'transform 150ms ease',
   };
 
   const editor = useEditor({
@@ -513,8 +538,35 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
     });
   };
   
+  // When dragging, render a placeholder that maintains height
+  if (isDragging) {
+    return (
+      <div 
+        ref={combinedRef}
+        style={{ height: lastHeightRef.current, minHeight: lastHeightRef.current }}
+        className={`${level > 0 ? 'ml-8' : ''} relative bg-muted/50 border-b border-border rounded`}
+        data-testid={`scope-item-placeholder-${item.id}`}
+      >
+        <div className="absolute inset-1 rounded border-2 border-dashed border-muted-foreground/30 pointer-events-none" />
+      </div>
+    );
+  }
+  
   return (
-    <div ref={setNodeRef} style={style} className={`${level > 0 ? 'ml-8' : ''}`}>
+    <div 
+      ref={combinedRef} 
+      style={style} 
+      className={`${level > 0 ? 'ml-8' : ''} relative`}
+      data-sortable-id={item.id}
+    >
+      {/* Drop indicator line - shows above or below based on position */}
+      {dropIndicator === 'above' && (
+        <div className="absolute -top-[2px] left-0 right-0 h-1 bg-blue-500 z-50 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.6)]" />
+      )}
+      {dropIndicator === 'below' && (
+        <div className="absolute -bottom-[2px] left-0 right-0 h-1 bg-blue-500 z-50 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.6)]" />
+      )}
+      
       {/* Grid Row - h-10, ultra-compact */}
       <div 
         className={`h-10 grid items-center gap-2 px-2 border-b border-border/50 transition-all hover-elevate group ${
@@ -550,7 +602,7 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
         </div>
 
         {/* Drag - 24px */}
-        <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing flex items-center justify-center">
+        <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
           <GripVertical className="h-3 w-3 text-muted-foreground" />
         </div>
 
@@ -927,6 +979,8 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
                 getTypeLabel={getTypeLabel}
                 collapsedItems={collapsedItems}
                 showDescriptionInline={showDescriptionInline}
+                dropIndicator={dropTarget?.id === child.id ? dropTarget.position : null}
+                dropTarget={dropTarget}
               />
             );
           })}
@@ -992,6 +1046,7 @@ interface DroppableStageProps {
   linkedScheduleItems?: LinkedScheduleItemForStage[]; // Linked Schedule Items
   onViewScheduleItem?: (itemId: string) => void; // Handler to view schedule item details
   showDescriptionInline?: boolean; // Show descriptions inline instead of hover
+  dropTarget?: { id: string; position: 'above' | 'below' } | null; // Drop indicator target
   }
 
 function DroppableStage({ 
@@ -1025,6 +1080,7 @@ function DroppableStage({
   onViewPO, // Handler to view PO details
   linkedScheduleItems = [], // Linked Schedule Items
   onViewScheduleItem, // Handler to view schedule item details
+  dropTarget, // Drop indicator target
 }: DroppableStageProps) {
   const {
     attributes,
@@ -1267,6 +1323,8 @@ function DroppableStage({
                       getTypeLabel={getTypeLabel} // Scope 2.0
                       collapsedItems={collapsedItems} // Scope 2.0: pass down collapsed items set
                       showDescriptionInline={showDescriptionInline}
+                      dropIndicator={dropTarget?.id === item.id ? dropTarget.position : null}
+                      dropTarget={dropTarget}
                     />
                   ))}
                 </SortableContext>
@@ -1399,6 +1457,7 @@ function DroppableStage({
                 linkedScheduleItems={[]} // Child stages don't have access to full schedule item map yet
                 onViewScheduleItem={onViewScheduleItem}
                 showDescriptionInline={showDescriptionInline}
+                dropTarget={dropTarget}
               />
             );
           })}
@@ -1497,6 +1556,7 @@ export default function ProjectScope() {
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ id: string; position: 'above' | 'below' } | null>(null);
   const [isTemplateDialogOpen, setIsTemplateDialogOpen] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<string>("");
   const [isPushDialogOpen, setIsPushDialogOpen] = useState(false);
@@ -1923,6 +1983,7 @@ export default function ProjectScope() {
   // Unified drag handlers that distinguish between stages and items
   const handleUnifiedDragStart = (event: DragStartEvent) => {
     const id = event.active.id as string;
+    setDropTarget(null); // Clear drop indicator
     if (isStageId(id)) {
       setActiveStageId(id);
       setActiveId(null);
@@ -1944,6 +2005,113 @@ export default function ProjectScope() {
       setOverStageId(null);
     }
   };
+  
+  // Handle drag move - track position for visual drop indicator
+  const handleDragMove = (event: any) => {
+    const { over, active, delta } = event;
+    
+    // Reset when cursor leaves any sortable row
+    if (!over) {
+      setDropTarget(null);
+      return;
+    }
+    
+    if (!active) {
+      setDropTarget(null);
+      return;
+    }
+    
+    const activeIdStr = String(active.id);
+    
+    // Skip if dragging a stage (stages have their own visual feedback)
+    if (isStageId(activeIdStr)) {
+      setDropTarget(null);
+      return;
+    }
+    
+    // Find the stage of the active item to scope queries
+    const activeItem = scopeItems.find(item => item.id === activeIdStr);
+    const activeStage = activeItem?.stage;
+    if (!activeStage) {
+      setDropTarget(null);
+      return;
+    }
+    
+    // Get cursor Y position from dragged element
+    const activeInitialRect = active.rect?.current?.initial;
+    if (!activeInitialRect || !delta) {
+      setDropTarget(null);
+      return;
+    }
+    
+    // Calculate cursor position (center of dragged element)
+    const cursorY = activeInitialRect.top + activeInitialRect.height / 2 + delta.y;
+    
+    // Find all sortable item rows in the DOM
+    const allRows = document.querySelectorAll('[data-sortable-id]');
+    if (allRows.length === 0) {
+      setDropTarget(null);
+      return;
+    }
+    
+    // Get IDs of items in the same stage as the active item
+    const sameStageItemIds = new Set(
+      scopeItems.filter(item => item.stage === activeStage).map(item => item.id)
+    );
+    
+    // Build array of row positions, only items in the same stage
+    const rowPositions: { id: string; top: number; bottom: number; midpoint: number }[] = [];
+    allRows.forEach((row) => {
+      const id = row.getAttribute('data-sortable-id');
+      if (!id || id === activeIdStr || isStageId(id)) return;
+      // Only include items from the same stage
+      if (!sameStageItemIds.has(id)) return;
+      
+      const rect = row.getBoundingClientRect();
+      rowPositions.push({
+        id,
+        top: rect.top,
+        bottom: rect.bottom,
+        midpoint: rect.top + rect.height / 2,
+      });
+    });
+    
+    if (rowPositions.length === 0) {
+      setDropTarget(null);
+      return;
+    }
+    
+    // Sort by visual position (top to bottom)
+    rowPositions.sort((a, b) => a.top - b.top);
+    
+    // Find where cursor is relative to all rows
+    if (cursorY < rowPositions[0].midpoint) {
+      setDropTarget({ id: rowPositions[0].id, position: 'above' });
+      return;
+    }
+    
+    const lastRow = rowPositions[rowPositions.length - 1];
+    if (cursorY > lastRow.midpoint) {
+      setDropTarget({ id: lastRow.id, position: 'below' });
+      return;
+    }
+    
+    // Find the gap between rows where cursor is
+    for (let i = 0; i < rowPositions.length; i++) {
+      const current = rowPositions[i];
+      const next = rowPositions[i + 1];
+      
+      if (cursorY <= current.midpoint) {
+        setDropTarget({ id: current.id, position: 'above' });
+        return;
+      } else if (!next || cursorY <= next.midpoint) {
+        setDropTarget({ id: current.id, position: 'below' });
+        return;
+      }
+    }
+    
+    setDropTarget(null);
+  };
 
   // Helper function to check if a stage is a descendant of another
   const isStageDescendant = (potentialDescendant: ScopeStage, ancestor: ScopeStage): boolean => {
@@ -1964,6 +2132,7 @@ export default function ProjectScope() {
     setOverStageId(null);
     setActiveId(null);
     setOverId(null);
+    setDropTarget(null); // Clear drop indicator
     
     if (!over || active.id === over.id) return;
 
@@ -2774,6 +2943,7 @@ export default function ProjectScope() {
               collisionDetection={closestCenter}
               onDragStart={handleUnifiedDragStart}
               onDragOver={handleUnifiedDragOver}
+              onDragMove={handleDragMove}
               onDragEnd={handleUnifiedDragEnd}
             >
               <SortableContext
@@ -2815,6 +2985,7 @@ export default function ProjectScope() {
                       linkedScheduleItems={scheduleItemsByStage[stage.id] || []}
                       onViewScheduleItem={handleViewScheduleItem}
                       showDescriptionInline={showDescriptionInline}
+                      dropTarget={dropTarget}
                     />
                   ))}
               </SortableContext>
