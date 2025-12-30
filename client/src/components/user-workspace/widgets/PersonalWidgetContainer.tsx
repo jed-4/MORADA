@@ -162,7 +162,7 @@ export default function PersonalWidgetContainer({
 
   return (
     <div 
-      className={`group relative h-full flex flex-col overflow-hidden surface-widget widget-animate-in ${externalIsResizing ? 'select-none z-50' : ''} ${themeClassName || ''}`} 
+      className={`group relative flex flex-col min-h-0 overflow-hidden surface-widget widget-animate-in ${externalIsResizing ? 'select-none z-50' : ''} ${themeClassName || ''}`} 
       style={{ height: heightStyle, ...themeStyleOverride }}
       data-testid={`personal-widget-${title.toLowerCase().replace(/\s+/g, '-')}`}
     >
@@ -205,7 +205,7 @@ export default function PersonalWidgetContainer({
         </DropdownMenu>
       </div>
       
-      <div className="flex-1 overflow-auto p-3">
+      <div className="flex-1 min-h-0 overflow-auto p-3">
         {children}
       </div>
 
