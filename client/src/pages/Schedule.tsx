@@ -652,6 +652,7 @@ export default function Schedule() {
         setSearchQuery,
         contacts,
         updateStatusMutation,
+        updateItemStatusMutation: updateStatusMutationInline,
         setShowItemDialog,
         setEditingItem,
       }}

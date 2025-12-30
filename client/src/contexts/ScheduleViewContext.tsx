@@ -19,6 +19,7 @@ interface ScheduleViewContextType {
   setSearchQuery: (query: string) => void;
   contacts: Contact[];
   updateStatusMutation: UseMutationResult<void, Error, "offline" | "online" | "locked", unknown>;
+  updateItemStatusMutation: UseMutationResult<ScheduleItem, Error, { itemId: string; status: string }, unknown>;
   setShowItemDialog: (show: boolean) => void;
   setEditingItem: (item: ScheduleItem | null) => void;
 }

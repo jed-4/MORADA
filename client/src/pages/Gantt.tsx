@@ -152,7 +152,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     searchQuery,
     setSearchQuery,
     contacts,
-    updateStatusMutation,
+    updateItemStatusMutation,
     setShowItemDialog,
     setEditingItem: setEditingItemContext,
   } = useScheduleView();
@@ -1638,7 +1638,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       if (opt.key !== item.status) {
-                                        updateStatusMutation.mutate({ itemId: item.id, status: opt.key });
+                                        updateItemStatusMutation.mutate({ itemId: item.id, status: opt.key });
                                       }
                                     }}
                                     className={opt.key === item.status ? "bg-accent" : ""}
