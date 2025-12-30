@@ -142,7 +142,7 @@ function SortableTaskRow({
 export default function Gantt({ onEditItem }: GanttProps = {}) {
   const { projectId } = useParams();
   const { toast } = useToast();
-  const { getStatusInfo } = useScheduleItemStatusOptions();
+  const { getStatusInfo, statusOptions } = useScheduleItemStatusOptions();
   const {
     schedule,
     activeView,
@@ -370,18 +370,74 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     enabled: allItems.length > 0,
   });
 
-  // Separate items into parent items and child items, with search filtering
+  // Separate items into parent items and child items, with search and filter applied
   const { parentItems, childItemsByParent } = useMemo(() => {
     const parents: ScheduleItem[] = [];
     const children: Record<string, ScheduleItem[]> = {};
 
-    // Apply search filter
-    const filteredItems = searchQuery
-      ? allItems.filter(item =>
-          item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          item.description?.toLowerCase().includes(searchQuery.toLowerCase())
-        )
-      : allItems;
+    // Apply all filters
+    let filteredItems = allItems;
+
+    // Search filter
+    if (searchQuery) {
+      filteredItems = filteredItems.filter(item =>
+        item.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.description?.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+
+    // Status filter
+    if (filters.status && filters.status !== 'all') {
+      filteredItems = filteredItems.filter(item => item.status === filters.status);
+    }
+
+    // Type filter
+    if (filters.type && filters.type !== 'all') {
+      filteredItems = filteredItems.filter(item => item.type === filters.type);
+    }
+
+    // Assignee filter
+    if (filters.assignee && filters.assignee !== 'all') {
+      filteredItems = filteredItems.filter(item => item.assignedTo === filters.assignee);
+    }
+
+    // Date range filter
+    if (filters.dateRange && filters.dateRange !== 'all') {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayEnd = new Date(today);
+      todayEnd.setHours(23, 59, 59, 999);
+      
+      filteredItems = filteredItems.filter(item => {
+        if (!item.startDate && !item.endDate) return false;
+        const itemStart = item.startDate ? new Date(item.startDate) : null;
+        const itemEnd = item.endDate ? new Date(item.endDate) : null;
+
+        switch (filters.dateRange) {
+          case 'today':
+            return (itemStart && itemStart <= todayEnd && itemEnd && itemEnd >= today) ||
+                   (itemStart && itemStart.toDateString() === today.toDateString()) ||
+                   (itemEnd && itemEnd.toDateString() === today.toDateString());
+          case 'this_week': {
+            const weekStart = new Date(today);
+            weekStart.setDate(today.getDate() - today.getDay());
+            const weekEnd = new Date(weekStart);
+            weekEnd.setDate(weekStart.getDate() + 6);
+            weekEnd.setHours(23, 59, 59, 999);
+            return (itemStart && itemStart <= weekEnd) && (itemEnd && itemEnd >= weekStart);
+          }
+          case 'this_month': {
+            const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+            const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
+            return (itemStart && itemStart <= monthEnd) && (itemEnd && itemEnd >= monthStart);
+          }
+          case 'overdue':
+            return itemEnd && itemEnd < today && item.status !== 'completed';
+          default:
+            return true;
+        }
+      });
+    }
 
     filteredItems.forEach(item => {
       if (item.parentItemId) {
@@ -414,7 +470,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     });
 
     return { parentItems: parents, childItemsByParent: children };
-  }, [allItems, searchQuery]);
+  }, [allItems, searchQuery, filters]);
 
   // Create flattened list of item IDs for SortableContext (sorted by date initially)
   const defaultItemIds = useMemo(() => {
@@ -1550,23 +1606,70 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                       <span className={`text-sm truncate ${isParent ? 'font-medium' : 'text-muted-foreground ml-1'}`}>{item.name}</span>
                     </div>
 
-                    {/* Status column */}
+                    {/* Status column - clickable dropdown */}
                     {visibleColumns.status && (
-                      <div style={{ width: columnWidths.status }} className="flex items-center justify-center flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
-                        {item.status && (() => {
-                          const statusInfo = getStatusInfo(item.status);
-                          return (
-                            <Badge 
-                              className="text-xs px-1.5 h-5 border-0"
-                              style={{
-                                backgroundColor: statusInfo.color,
-                                color: '#ffffff'
-                              }}
-                            >
-                              {statusInfo.name}
-                            </Badge>
-                          );
-                        })()}
+                      <div style={{ width: columnWidths.status }} className="flex items-center justify-center flex-shrink-0 px-1">
+                        {item.status && statusOptions.length > 0 ? (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                              <button className="cursor-pointer hover-elevate rounded" data-testid={`status-dropdown-${item.id}`}>
+                                {(() => {
+                                  const statusInfo = getStatusInfo(item.status);
+                                  return (
+                                    <Badge 
+                                      className="text-xs px-1.5 h-5 border-0"
+                                      style={{
+                                        backgroundColor: statusInfo.color,
+                                        color: '#ffffff'
+                                      }}
+                                    >
+                                      {statusInfo.name}
+                                    </Badge>
+                                  );
+                                })()}
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="center" className="min-w-[140px]">
+                              {statusOptions.map((opt) => {
+                                const optInfo = getStatusInfo(opt.key);
+                                return (
+                                  <DropdownMenuItem
+                                    key={opt.key}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (opt.key !== item.status) {
+                                        updateStatusMutation.mutate({ itemId: item.id, status: opt.key });
+                                      }
+                                    }}
+                                    className={opt.key === item.status ? "bg-accent" : ""}
+                                    data-testid={`status-option-${opt.key}`}
+                                  >
+                                    <div 
+                                      className="w-3 h-3 rounded-full mr-2 flex-shrink-0" 
+                                      style={{ backgroundColor: optInfo.color }} 
+                                    />
+                                    <span className="text-xs">{opt.name}</span>
+                                  </DropdownMenuItem>
+                                );
+                              })}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        ) : item.status ? (
+                          (() => {
+                            const statusInfo = getStatusInfo(item.status);
+                            return (
+                              <Badge 
+                                className="text-xs px-1.5 h-5 border-0"
+                                style={{
+                                  backgroundColor: statusInfo.color,
+                                  color: '#ffffff'
+                                }}
+                              >
+                                {statusInfo.name}
+                              </Badge>
+                            );
+                          })()
+                        ) : null}
                       </div>
                     )}
 

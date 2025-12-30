@@ -784,7 +784,7 @@ export default function Schedule() {
 
             {/* Filter Pills - distinct pill style */}
             <Select value={filters.assignee} onValueChange={(value) => setFilters({ ...filters, assignee: value })}>
-              <SelectTrigger className={`h-6 w-auto px-3 py-0 text-xs rounded-full border-dashed ${filters.assignee !== 'all' ? 'bg-muted border-solid' : ''} [&>svg]:hidden`} data-testid="select-filter-assignee">
+              <SelectTrigger className={`h-6 w-auto px-3 py-0 text-xs rounded-full border ${filters.assignee !== 'all' ? 'bg-primary/10 border-primary/30' : 'border-border'} [&>svg]:hidden`} data-testid="select-filter-assignee">
                 <span>{filters.assignee !== 'all' ? contacts.find(c => c.id === filters.assignee)?.name || 'Assignee' : 'Assignee'}</span>
               </SelectTrigger>
               <SelectContent>
@@ -798,7 +798,7 @@ export default function Schedule() {
             </Select>
 
             <Select value={filters.status} onValueChange={(value) => setFilters({ ...filters, status: value })}>
-              <SelectTrigger className={`h-6 w-auto px-3 py-0 text-xs rounded-full border-dashed ${filters.status !== 'all' ? 'bg-muted border-solid' : ''} [&>svg]:hidden`} data-testid="select-filter-status">
+              <SelectTrigger className={`h-6 w-auto px-3 py-0 text-xs rounded-full border ${filters.status !== 'all' ? 'bg-primary/10 border-primary/30' : 'border-border'} [&>svg]:hidden`} data-testid="select-filter-status">
                 <span>{filters.status !== 'all' ? statusOptions.find(o => o.value === filters.status)?.label || filters.status : 'Status'}</span>
               </SelectTrigger>
               <SelectContent>
@@ -822,7 +822,7 @@ export default function Schedule() {
             </Select>
 
             <Select value={filters.type} onValueChange={(value) => setFilters({ ...filters, type: value })}>
-              <SelectTrigger className={`h-6 w-auto px-3 py-0 text-xs rounded-full border-dashed ${filters.type !== 'all' ? 'bg-muted border-solid' : ''} [&>svg]:hidden`} data-testid="select-filter-type">
+              <SelectTrigger className={`h-6 w-auto px-3 py-0 text-xs rounded-full border ${filters.type !== 'all' ? 'bg-primary/10 border-primary/30' : 'border-border'} [&>svg]:hidden`} data-testid="select-filter-type">
                 <span>{filters.type !== 'all' ? filters.type.charAt(0).toUpperCase() + filters.type.slice(1) : 'Type'}</span>
               </SelectTrigger>
               <SelectContent>
@@ -836,7 +836,7 @@ export default function Schedule() {
             </Select>
 
             <Select value={filters.dateRange} onValueChange={(value) => setFilters({ ...filters, dateRange: value })}>
-              <SelectTrigger className={`h-6 w-auto px-3 py-0 text-xs rounded-full border-dashed ${filters.dateRange !== 'all' ? 'bg-muted border-solid' : ''} [&>svg]:hidden`} data-testid="select-filter-date-range">
+              <SelectTrigger className={`h-6 w-auto px-3 py-0 text-xs rounded-full border ${filters.dateRange !== 'all' ? 'bg-primary/10 border-primary/30' : 'border-border'} [&>svg]:hidden`} data-testid="select-filter-date-range">
                 <span>{filters.dateRange !== 'all' ? filters.dateRange.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) : 'Date'}</span>
               </SelectTrigger>
               <SelectContent>
