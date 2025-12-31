@@ -2,7 +2,8 @@ import { ScheduleItem } from "@shared/schema";
 import { CasvaScheduleRow } from "./CasvaScheduleRow";
 import { Table, TableHeader, TableRow, TableHead, TableBody } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useState, Fragment } from "react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useState, Fragment, useEffect } from "react";
 
 interface StatusOption {
   id: string;
@@ -28,6 +29,9 @@ export interface CasvaScheduleListProps {
   statusOptions?: StatusOption[];
   maxHeight?: string;
   visibleColumns?: VisibleColumns;
+  selectedItems?: Set<string>;
+  onSelectionChange?: (selectedIds: Set<string>) => void;
+  onNestItem?: (itemId: string, newParentId: string | null) => void;
 }
 
 export function CasvaScheduleList({ 
@@ -38,12 +42,61 @@ export function CasvaScheduleList({
   onCompletionToggle,
   statusOptions = [],
   maxHeight = "calc(100vh - 280px)",
-  visibleColumns = { item: true, assignee: true, dueDate: true, status: true, completion: true }
+  visibleColumns = { item: true, assignee: true, dueDate: true, status: true, completion: true },
+  selectedItems = new Set(),
+  onSelectionChange,
+  onNestItem
 }: CasvaScheduleListProps) {
   const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set());
   const [ripples, setRipples] = useState<{id: string, x: number, y: number}[]>([]);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [touchStartY, setTouchStartY] = useState<number | null>(null);
+  const [dragOverItem, setDragOverItem] = useState<string | null>(null);
+
+  const toggleSelection = (itemId: string, e?: React.MouseEvent) => {
+    if (!onSelectionChange) return;
+    e?.stopPropagation();
+    const newSelection = new Set(selectedItems);
+    if (newSelection.has(itemId)) {
+      newSelection.delete(itemId);
+    } else {
+      newSelection.add(itemId);
+    }
+    onSelectionChange(newSelection);
+  };
+
+  const toggleSelectAll = () => {
+    if (!onSelectionChange) return;
+    if (selectedItems.size === items.length) {
+      onSelectionChange(new Set());
+    } else {
+      onSelectionChange(new Set(items.map(i => i.id)));
+    }
+  };
+
+  const handleDragStart = (e: React.DragEvent, itemId: string) => {
+    e.dataTransfer.setData("scheduleItemId", itemId);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragOver = (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverItem(targetId);
+  };
+
+  const handleDragLeave = () => {
+    setDragOverItem(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    setDragOverItem(null);
+    const sourceId = e.dataTransfer.getData("scheduleItemId");
+    if (sourceId && sourceId !== targetId && onNestItem) {
+      onNestItem(sourceId, targetId);
+    }
+  };
 
   if (items.length === 0) {
     return (
@@ -123,12 +176,28 @@ export function CasvaScheduleList({
     return acc;
   }, {} as Record<string, ScheduleItem[]>);
 
+  const isAllSelected = items.length > 0 && selectedItems.size === items.length;
+  const isSomeSelected = selectedItems.size > 0 && selectedItems.size < items.length;
+
   return (
     <div className="border rounded-lg bg-card overflow-hidden">
       <ScrollArea style={{ maxHeight }} className="w-full">
         <Table>
           <TableHeader className="sticky top-0 bg-background z-10">
             <TableRow className="hover:bg-transparent border-b h-8">
+              {onSelectionChange && (
+                <TableHead className="w-8 h-8 py-0 pl-2">
+                  <Checkbox
+                    checked={isAllSelected}
+                    ref={(el) => {
+                      if (el) (el as any).indeterminate = isSomeSelected;
+                    }}
+                    onCheckedChange={toggleSelectAll}
+                    className="h-3.5 w-3.5"
+                    data-testid="checkbox-select-all"
+                  />
+                </TableHead>
+              )}
               {visibleColumns.item && <TableHead className="font-semibold h-8 py-0 text-xs">Item</TableHead>}
               {visibleColumns.assignee && <TableHead className="font-semibold w-48 h-8 py-0 text-xs">Assignee & Role</TableHead>}
               {visibleColumns.dueDate && <TableHead className="font-semibold w-40 h-8 py-0 text-xs">Due Date & Duration</TableHead>}
@@ -142,19 +211,38 @@ export function CasvaScheduleList({
               const subtasks = subtasksByParent[item.id] || [];
               const isCollapsed = collapsedItems.has(item.id);
               const hasSubtasks = subtasks.length > 0;
+              const isDragTarget = dragOverItem === item.id;
 
               return (
                 <Fragment key={item.id}>
                   {/* Parent Row */}
                   <TableRow 
                     key={item.id} 
-                    className="group h-8 transition-colors border-b cursor-pointer relative overflow-hidden hover-elevate"
+                    className={`group h-8 transition-colors border-b cursor-pointer relative overflow-visible hover-elevate ${
+                      selectedItems.has(item.id) ? 'bg-accent/30' : ''
+                    } ${isDragTarget ? 'ring-2 ring-primary ring-inset bg-primary/10' : ''}`}
                     data-testid={`schedule-row-${item.id}`}
                     onClick={(e) => handleRowClick(e, item.id)}
                     onTouchStart={(e) => handleTouchStart(e, item)}
                     onTouchMove={handleTouchMove}
                     onTouchEnd={(e) => handleTouchEnd(e, item)}
+                    draggable={!!onNestItem}
+                    onDragStart={(e) => handleDragStart(e, item.id)}
+                    onDragOver={(e) => handleDragOver(e, item.id)}
+                    onDragLeave={handleDragLeave}
+                    onDrop={(e) => handleDrop(e, item.id)}
                   >
+                    {onSelectionChange && (
+                      <td className="w-8 h-8 py-0 pl-2">
+                        <Checkbox
+                          checked={selectedItems.has(item.id)}
+                          onCheckedChange={() => toggleSelection(item.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="h-3.5 w-3.5"
+                          data-testid={`checkbox-${item.id}`}
+                        />
+                      </td>
+                    )}
                     <CasvaScheduleRow
                       item={item}
                       noteCount={noteCounts[item.id] || 0}
@@ -190,13 +278,28 @@ export function CasvaScheduleList({
                   {!isCollapsed && subtasks.map((subtask) => (
                     <TableRow 
                       key={subtask.id} 
-                      className="group h-8 transition-colors border-b cursor-pointer relative overflow-hidden bg-muted/30 hover-elevate"
+                      className={`group h-8 transition-colors border-b cursor-pointer relative overflow-visible bg-muted/30 hover-elevate ${
+                        selectedItems.has(subtask.id) ? 'bg-accent/30' : ''
+                      }`}
                       data-testid={`schedule-subtask-row-${subtask.id}`}
                       onClick={(e) => handleRowClick(e, subtask.id)}
                       onTouchStart={(e) => handleTouchStart(e, subtask)}
                       onTouchMove={handleTouchMove}
                       onTouchEnd={(e) => handleTouchEnd(e, subtask)}
+                      draggable={!!onNestItem}
+                      onDragStart={(e) => handleDragStart(e, subtask.id)}
                     >
+                      {onSelectionChange && (
+                        <td className="w-8 h-8 py-0 pl-2">
+                          <Checkbox
+                            checked={selectedItems.has(subtask.id)}
+                            onCheckedChange={() => toggleSelection(subtask.id)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="h-3.5 w-3.5"
+                            data-testid={`checkbox-${subtask.id}`}
+                          />
+                        </td>
+                      )}
                       <CasvaScheduleRow
                         item={subtask}
                         noteCount={noteCounts[subtask.id] || 0}
@@ -233,7 +336,12 @@ export function CasvaScheduleList({
       
       {/* Item Count Footer */}
       <div className="px-2 h-8 border-t bg-background text-[10px] text-muted-foreground flex items-center justify-between">
-        <span>{items.length} {items.length === 1 ? 'item' : 'items'}</span>
+        <span>
+          {selectedItems.size > 0 
+            ? `${selectedItems.size} of ${items.length} selected`
+            : `${items.length} ${items.length === 1 ? 'item' : 'items'}`
+          }
+        </span>
       </div>
     </div>
   );

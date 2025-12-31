@@ -100,6 +100,7 @@ export default function Schedule() {
   const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [descriptionExpanded, setDescriptionExpanded] = useState(true);
   const [notesExpanded, setNotesExpanded] = useState(true);
   const [showSaveTemplateDialog, setShowSaveTemplateDialog] = useState(false);
@@ -366,6 +367,63 @@ export default function Schedule() {
     onError: (error: Error) => {
       toast({
         title: "Failed to update completion",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Bulk delete mutation
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (itemIds: string[]) => {
+      const response = await fetch("/api/schedule-items/bulk-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ itemIds }),
+      });
+      if (!response.ok) throw new Error("Failed to delete items");
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      setSelectedItems(new Set());
+      toast({
+        title: "Items deleted",
+        description: `Successfully deleted ${data.deleted} items.`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to delete items",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Nest item mutation (set parentId)
+  const nestItemMutation = useMutation({
+    mutationFn: async ({ itemId, parentId }: { itemId: string; parentId: string | null }) => {
+      const response = await fetch(`/api/schedule-items/${itemId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ parentId }),
+      });
+      if (!response.ok) throw new Error("Failed to nest item");
+      return response.json() as Promise<ScheduleItem>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      toast({
+        title: "Item nested",
+        description: "The item has been nested under the parent.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to nest item",
         description: error.message,
         variant: "destructive",
       });
@@ -1112,22 +1170,59 @@ export default function Schedule() {
                 )}
               </Card>
             ) : (
-              <CasvaScheduleList
-                items={filteredItems}
-                noteCounts={noteCounts}
-                statusOptions={statusOptions}
-                visibleColumns={visibleColumns}
-                onStatusChange={(itemId, status) => {
-                  updateStatusMutationInline.mutate({ itemId, status });
-                }}
-                onCompletionToggle={(itemId, currentPercent) => {
-                  updateCompletionMutation.mutate({ itemId, currentPercent });
-                }}
-                onEditItem={(item) => {
-                  setEditingItem(item);
-                  setShowItemDialog(true);
-                }}
-              />
+              <>
+                {/* Bulk Actions Bar */}
+                {selectedItems.size > 0 && (
+                  <div className="flex items-center gap-2 p-2 mb-2 bg-muted/50 rounded-lg border">
+                    <span className="text-xs text-muted-foreground">
+                      {selectedItems.size} selected
+                    </span>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => {
+                        if (confirm(`Delete ${selectedItems.size} items? This cannot be undone.`)) {
+                          bulkDeleteMutation.mutate(Array.from(selectedItems));
+                        }
+                      }}
+                      disabled={bulkDeleteMutation.isPending}
+                      data-testid="button-bulk-delete"
+                    >
+                      <Trash2 className="w-3 h-3 mr-1" />
+                      {bulkDeleteMutation.isPending ? "Deleting..." : "Delete"}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSelectedItems(new Set())}
+                      data-testid="button-clear-selection"
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                )}
+                <CasvaScheduleList
+                  items={filteredItems}
+                  noteCounts={noteCounts}
+                  statusOptions={statusOptions}
+                  visibleColumns={visibleColumns}
+                  selectedItems={selectedItems}
+                  onSelectionChange={setSelectedItems}
+                  onNestItem={(itemId, parentId) => {
+                    nestItemMutation.mutate({ itemId, parentId });
+                  }}
+                  onStatusChange={(itemId, status) => {
+                    updateStatusMutationInline.mutate({ itemId, status });
+                  }}
+                  onCompletionToggle={(itemId, currentPercent) => {
+                    updateCompletionMutation.mutate({ itemId, currentPercent });
+                  }}
+                  onEditItem={(item) => {
+                    setEditingItem(item);
+                    setShowItemDialog(true);
+                  }}
+                />
+              </>
             )}
           </div>
         )}

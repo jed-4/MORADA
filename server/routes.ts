@@ -13461,6 +13461,73 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Bulk delete schedule items
+  app.post("/api/schedule-items/bulk-delete", requireAuth, async (req, res) => {
+    try {
+      const { itemIds } = req.body;
+      
+      if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0) {
+        return res.status(400).json({ error: "itemIds array is required" });
+      }
+
+      // Get items info before deletion for activity logging
+      const items: any[] = [];
+      let projectId: string | null = null;
+      
+      for (const id of itemIds) {
+        const item = await storage.getScheduleItem(id);
+        if (item) {
+          items.push(item);
+          if (!projectId) {
+            const schedule = await storage.getScheduleById(item.scheduleId);
+            if (schedule) projectId = schedule.projectId;
+          }
+        }
+      }
+
+      // Delete all items
+      let deletedCount = 0;
+      for (const id of itemIds) {
+        const success = await storage.deleteScheduleItem(id);
+        if (success) deletedCount++;
+      }
+
+      // Log activity for bulk deletion
+      try {
+        if (projectId && req.user && items.length > 0) {
+          const userName = req.user.firstName && req.user.lastName 
+            ? `${req.user.firstName} ${req.user.lastName}`
+            : req.user.username || req.user.email || "User";
+          
+          await storage.createActivity({
+            projectId,
+            userId: req.user.id,
+            userName,
+            activityType: "schedule",
+            action: "deleted",
+            description: `removed ${deletedCount} schedule items`,
+            entityId: null,
+            entityName: null,
+            metadata: { 
+              changes: items.map(item => ({ name: item.name, change: "removed" })),
+              bulkDelete: true,
+              count: deletedCount
+            }
+          });
+        }
+      } catch (activityError) {
+        console.error("Failed to log bulk delete activity:", activityError);
+      }
+
+      res.json({ deleted: deletedCount, requested: itemIds.length });
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to bulk delete schedule items",
+        details: error.message 
+      });
+    }
+  });
+
   // Schedule item dependency management
   app.post("/api/schedule-items/:id/dependencies", async (req, res) => {
     try {
