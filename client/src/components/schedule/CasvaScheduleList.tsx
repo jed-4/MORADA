@@ -56,7 +56,7 @@ export function CasvaScheduleList({
   const toggleSelection = (itemId: string, e?: React.MouseEvent) => {
     if (!onSelectionChange) return;
     e?.stopPropagation();
-    const newSelection = new Set(selectedItems);
+    const newSelection = new Set(Array.from(selectedItems));
     if (newSelection.has(itemId)) {
       newSelection.delete(itemId);
     } else {
@@ -68,19 +68,43 @@ export function CasvaScheduleList({
   const toggleSelectAll = () => {
     if (!onSelectionChange) return;
     if (selectedItems.size === items.length) {
-      onSelectionChange(new Set());
+      onSelectionChange(new Set<string>());
     } else {
-      onSelectionChange(new Set(items.map(i => i.id)));
+      onSelectionChange(new Set<string>(items.map(i => i.id)));
     }
   };
+
+  // Check if targetId is a descendant of sourceId (would create a cycle)
+  const isDescendant = (sourceId: string, targetId: string): boolean => {
+    const target = items.find(i => i.id === targetId);
+    if (!target) return false;
+    if (target.parentId === sourceId) return true;
+    if (target.parentId) {
+      return isDescendant(sourceId, target.parentId);
+    }
+    return false;
+  };
+
+  const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
 
   const handleDragStart = (e: React.DragEvent, itemId: string) => {
     e.dataTransfer.setData("scheduleItemId", itemId);
     e.dataTransfer.effectAllowed = "move";
+    setDraggingItemId(itemId);
+  };
+
+  const handleDragEnd = () => {
+    setDraggingItemId(null);
+    setDragOverItem(null);
   };
 
   const handleDragOver = (e: React.DragEvent, targetId: string) => {
     e.preventDefault();
+    // Prevent dropping on self or descendants
+    if (draggingItemId && (draggingItemId === targetId || isDescendant(draggingItemId, targetId))) {
+      e.dataTransfer.dropEffect = "none";
+      return;
+    }
     e.dataTransfer.dropEffect = "move";
     setDragOverItem(targetId);
   };
@@ -92,8 +116,10 @@ export function CasvaScheduleList({
   const handleDrop = (e: React.DragEvent, targetId: string) => {
     e.preventDefault();
     setDragOverItem(null);
+    setDraggingItemId(null);
     const sourceId = e.dataTransfer.getData("scheduleItemId");
-    if (sourceId && sourceId !== targetId && onNestItem) {
+    // Don't allow dropping on self or descendants
+    if (sourceId && sourceId !== targetId && !isDescendant(sourceId, targetId) && onNestItem) {
       onNestItem(sourceId, targetId);
     }
   };
@@ -228,6 +254,7 @@ export function CasvaScheduleList({
                     onTouchEnd={(e) => handleTouchEnd(e, item)}
                     draggable={!!onNestItem}
                     onDragStart={(e) => handleDragStart(e, item.id)}
+                    onDragEnd={handleDragEnd}
                     onDragOver={(e) => handleDragOver(e, item.id)}
                     onDragLeave={handleDragLeave}
                     onDrop={(e) => handleDrop(e, item.id)}
@@ -288,6 +315,7 @@ export function CasvaScheduleList({
                       onTouchEnd={(e) => handleTouchEnd(e, subtask)}
                       draggable={!!onNestItem}
                       onDragStart={(e) => handleDragStart(e, subtask.id)}
+                      onDragEnd={handleDragEnd}
                     >
                       {onSelectionChange && (
                         <td className="w-8 h-8 py-0 pl-2">

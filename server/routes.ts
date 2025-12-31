@@ -13140,6 +13140,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
+      // Prevent circular parent-child relationships
+      if (updateData.parentId !== undefined && updateData.parentId !== null) {
+        const parentId = updateData.parentId;
+        const itemId = req.params.id;
+        
+        // Can't set self as parent
+        if (parentId === itemId) {
+          return res.status(400).json({ error: "Item cannot be its own parent" });
+        }
+        
+        // Check if proposed parent is a descendant of this item (would create cycle)
+        const isDescendant = async (ancestorId: string, potentialDescendantId: string): Promise<boolean> => {
+          const descendant = await storage.getScheduleItem(potentialDescendantId);
+          if (!descendant) return false;
+          if (descendant.parentId === ancestorId) return true;
+          if (descendant.parentId) {
+            return isDescendant(ancestorId, descendant.parentId);
+          }
+          return false;
+        };
+        
+        if (await isDescendant(itemId, parentId)) {
+          return res.status(400).json({ error: "Cannot nest under a descendant item (would create cycle)" });
+        }
+      }
+      
       const item = await storage.updateScheduleItem(req.params.id, updateData);
       if (!item) {
         return res.status(404).json({ error: "Schedule item not found" });
@@ -13464,43 +13490,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Bulk delete schedule items
   app.post("/api/schedule-items/bulk-delete", requireAuth, async (req, res) => {
     try {
-      const { itemIds } = req.body;
+      const { itemIds, projectId: requestedProjectId } = req.body;
       
       if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0) {
         return res.status(400).json({ error: "itemIds array is required" });
       }
 
-      // Get items info before deletion for activity logging
+      if (!requestedProjectId || typeof requestedProjectId !== 'string' || requestedProjectId.trim() === '') {
+        return res.status(400).json({ error: "Valid projectId is required" });
+      }
+
+      // Verify project exists and user has access
+      const project = await storage.getProject(requestedProjectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      
+      // Verify user belongs to the project's company
+      if (req.user && project.companyId) {
+        const membership = await storage.getTeamMemberByUserAndCompany(req.user.id, project.companyId);
+        if (!membership) {
+          return res.status(403).json({ error: "Access denied to this project" });
+        }
+      }
+
+      // Get items info before deletion and verify they belong to the project
       const items: any[] = [];
-      let projectId: string | null = null;
+      const validItemIds: string[] = [];
       
       for (const id of itemIds) {
         const item = await storage.getScheduleItem(id);
         if (item) {
-          items.push(item);
-          if (!projectId) {
-            const schedule = await storage.getScheduleById(item.scheduleId);
-            if (schedule) projectId = schedule.projectId;
+          const schedule = await storage.getScheduleById(item.scheduleId);
+          if (schedule && schedule.projectId === requestedProjectId) {
+            items.push(item);
+            validItemIds.push(id);
           }
         }
       }
 
-      // Delete all items
+      if (validItemIds.length === 0) {
+        return res.status(404).json({ error: "No valid items found for this project" });
+      }
+
+      // Delete only validated items
       let deletedCount = 0;
-      for (const id of itemIds) {
+      for (const id of validItemIds) {
         const success = await storage.deleteScheduleItem(id);
         if (success) deletedCount++;
       }
 
       // Log activity for bulk deletion
       try {
-        if (projectId && req.user && items.length > 0) {
+        if (requestedProjectId && req.user && items.length > 0) {
           const userName = req.user.firstName && req.user.lastName 
             ? `${req.user.firstName} ${req.user.lastName}`
             : req.user.username || req.user.email || "User";
           
           await storage.createActivity({
-            projectId,
+            projectId: requestedProjectId,
             userId: req.user.id,
             userName,
             activityType: "schedule",

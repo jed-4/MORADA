@@ -380,9 +380,12 @@ export default function Schedule() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ itemIds }),
+        body: JSON.stringify({ itemIds, projectId }),
       });
-      if (!response.ok) throw new Error("Failed to delete items");
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to delete items");
+      }
       return response.json();
     },
     onSuccess: (data) => {
@@ -1181,11 +1184,19 @@ export default function Schedule() {
                       variant="destructive"
                       size="sm"
                       onClick={() => {
+                        if (!projectId) {
+                          toast({
+                            title: "Error",
+                            description: "No project selected",
+                            variant: "destructive",
+                          });
+                          return;
+                        }
                         if (confirm(`Delete ${selectedItems.size} items? This cannot be undone.`)) {
                           bulkDeleteMutation.mutate(Array.from(selectedItems));
                         }
                       }}
-                      disabled={bulkDeleteMutation.isPending}
+                      disabled={bulkDeleteMutation.isPending || !projectId}
                       data-testid="button-bulk-delete"
                     >
                       <Trash2 className="w-3 h-3 mr-1" />
