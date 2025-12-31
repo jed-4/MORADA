@@ -274,7 +274,7 @@ export default function Header() {
               <Kanban className="h-3.5 w-3.5" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-56 p-0 overflow-hidden">
+          <DropdownMenuContent align="start" className="w-56 p-0">
             {/* Phase selector row with search toggle */}
             <div className="flex items-center px-2 py-1.5 border-b">
               <div className="flex-1 flex items-center justify-center gap-1">
@@ -333,7 +333,7 @@ export default function Header() {
             )}
 
             {/* Project list */}
-            <ScrollArea className="max-h-[220px]">
+            <div className="max-h-[220px] overflow-y-auto">
               <div className="p-1">
                 {filteredProjects.length === 0 ? (
                   <div className="px-2 py-4 text-center text-xs text-muted-foreground">
@@ -393,7 +393,7 @@ export default function Header() {
                   })
                 )}
               </div>
-            </ScrollArea>
+            </div>
 
             {/* Footer actions */}
             <div className="border-t p-1">
