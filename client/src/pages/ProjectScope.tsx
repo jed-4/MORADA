@@ -1310,7 +1310,7 @@ function DroppableStage({
             <div ref={setDroppableRef} className="p-2">
               {topLevelItems.length === 0 ? (
                 <div 
-                  className={`text-center text-muted-foreground text-xs border-2 border-dashed rounded-lg transition-all hover:h-32 hover:shadow-md flex items-center justify-center h-[60px] ${isDroppableOver ? 'bg-primary/5 border-primary' : 'border-primary/40'}`}
+                  className={`text-center text-muted-foreground text-xs border-2 border-dashed rounded-lg transition-all flex items-center justify-center h-[60px] ${isDroppableOver ? 'bg-primary/5 border-primary shadow-md' : 'border-primary/40'}`}
                 >
                   <div className="flex flex-col items-center gap-1">
                     <span className="text-2xl opacity-40">↕</span>

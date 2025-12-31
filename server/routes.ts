@@ -3747,9 +3747,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const companyId = req.user!.companyId!;
+      const projectId = req.params.projectId;
+      
+      // Check for duplicate stage name in the same project
+      const existingStages = await storage.getScopeStages(projectId);
+      const normalizedName = validationResult.data.name?.toLowerCase().trim();
+      const isDuplicate = existingStages.some(s => 
+        s.name.toLowerCase().trim() === normalizedName
+      );
+      
+      if (isDuplicate) {
+        return res.status(409).json({ 
+          error: "Duplicate stage name", 
+          details: `A stage named "${validationResult.data.name}" already exists in this project`
+        });
+      }
+      
       const newStage = await storage.createScopeStage({
         ...validationResult.data,
-        projectId: req.params.projectId,
+        projectId,
         companyId,
       });
 

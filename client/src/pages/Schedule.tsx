@@ -973,48 +973,48 @@ export default function Schedule() {
                     <Columns3 className="w-3.5 h-3.5" />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuLabel className="text-xs text-muted-foreground">Visible Columns</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
+                <DropdownMenuContent align="end" className="w-44 p-1 border-2">
+                  <DropdownMenuLabel className="text-xs text-muted-foreground font-medium px-2 py-1">Visible Columns</DropdownMenuLabel>
+                  <DropdownMenuSeparator className="my-1" />
                   <DropdownMenuItem 
                     onClick={() => toggleColumn('item')}
-                    className="flex items-center gap-2"
+                    className="flex items-center gap-2 px-2 py-1.5 text-xs"
                     data-testid="checkbox-column-item"
                   >
-                    <Checkbox checked={visibleColumns.item} className="pointer-events-none" />
-                    <span className="text-sm">Item</span>
+                    <Checkbox checked={visibleColumns.item} className="pointer-events-none h-3.5 w-3.5" />
+                    <span>Item</span>
                   </DropdownMenuItem>
                   <DropdownMenuItem 
                     onClick={() => toggleColumn('assignee')}
-                    className="flex items-center gap-2"
+                    className="flex items-center gap-2 px-2 py-1.5 text-xs"
                     data-testid="checkbox-column-assignee"
                   >
-                    <Checkbox checked={visibleColumns.assignee} className="pointer-events-none" />
-                    <span className="text-sm">Assignee & Role</span>
+                    <Checkbox checked={visibleColumns.assignee} className="pointer-events-none h-3.5 w-3.5" />
+                    <span>Assignee & Role</span>
                   </DropdownMenuItem>
                   <DropdownMenuItem 
                     onClick={() => toggleColumn('dueDate')}
-                    className="flex items-center gap-2"
+                    className="flex items-center gap-2 px-2 py-1.5 text-xs"
                     data-testid="checkbox-column-duedate"
                   >
-                    <Checkbox checked={visibleColumns.dueDate} className="pointer-events-none" />
-                    <span className="text-sm">Due Date & Duration</span>
+                    <Checkbox checked={visibleColumns.dueDate} className="pointer-events-none h-3.5 w-3.5" />
+                    <span>Due Date & Duration</span>
                   </DropdownMenuItem>
                   <DropdownMenuItem 
                     onClick={() => toggleColumn('status')}
-                    className="flex items-center gap-2"
+                    className="flex items-center gap-2 px-2 py-1.5 text-xs"
                     data-testid="checkbox-column-status"
                   >
-                    <Checkbox checked={visibleColumns.status} className="pointer-events-none" />
-                    <span className="text-sm">Status</span>
+                    <Checkbox checked={visibleColumns.status} className="pointer-events-none h-3.5 w-3.5" />
+                    <span>Status</span>
                   </DropdownMenuItem>
                   <DropdownMenuItem 
                     onClick={() => toggleColumn('completion')}
-                    className="flex items-center gap-2"
+                    className="flex items-center gap-2 px-2 py-1.5 text-xs"
                     data-testid="checkbox-column-completion"
                   >
-                    <Checkbox checked={visibleColumns.completion} className="pointer-events-none" />
-                    <span className="text-sm">Completion %</span>
+                    <Checkbox checked={visibleColumns.completion} className="pointer-events-none h-3.5 w-3.5" />
+                    <span>Completion %</span>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
