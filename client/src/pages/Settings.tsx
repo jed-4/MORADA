@@ -178,6 +178,14 @@ const SETTINGS_CATEGORIES = [
     icon: Bell,
     description: "Control which items appear in the activity feed",
     group: "activity"
+  },
+  // Maintenance section
+  {
+    id: "maintenance",
+    label: "Data Maintenance",
+    icon: Database,
+    description: "Fix data issues and run maintenance tasks",
+    group: "maintenance"
   }
 ];
 
@@ -979,7 +987,8 @@ export default function Settings() {
     { key: "templates", label: "Templates" },
     { key: "integrations", label: "Integrations" },
     { key: "documents", label: "Documents" },
-    { key: "activity", label: "Activity" }
+    { key: "activity", label: "Activity" },
+    { key: "maintenance", label: "Maintenance" }
   ];
 
   return (
@@ -1096,9 +1105,10 @@ export default function Settings() {
             {activeSection === "default-values" && <DefaultValuesSection />}
             {activeSection === "terms-conditions" && <TermsConditionsSection />}
             {activeSection === "activity" && <ActivitySection />}
+            {activeSection === "maintenance" && <MaintenanceSection />}
             
             {/* Coming Soon placeholder for unimplemented sections */}
-            {!["branding", "field-settings", "integrations", "schedule-settings", "default-values", "terms-conditions", "activity"].includes(activeSection) && (
+            {!["branding", "field-settings", "integrations", "schedule-settings", "default-values", "terms-conditions", "activity", "maintenance"].includes(activeSection) && (
               <Card className="border-2">
                 <CardContent className="text-center py-16">
                   <div className="mx-auto w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
@@ -2128,6 +2138,99 @@ function ActivitySection() {
               <p className="text-sm text-muted-foreground mt-1">
                 Changes take effect immediately. Disabled activity types will be hidden from the activity feed 
                 across all projects. This setting applies company-wide.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// Data Maintenance Section Component
+function MaintenanceSection() {
+  const { toast } = useToast();
+  const [isFixingPhases, setIsFixingPhases] = useState(false);
+
+  const fixPhasesMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("/api/projects/fix-phases", "POST", {});
+      return response.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      toast({ 
+        title: "Project phases updated",
+        description: `Updated ${data.updatedCount || 0} projects to match their status.`
+      });
+      setIsFixingPhases(false);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to update phases",
+        description: error.message,
+        variant: "destructive",
+      });
+      setIsFixingPhases(false);
+    },
+  });
+
+  const handleFixPhases = () => {
+    setIsFixingPhases(true);
+    fixPhasesMutation.mutate();
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card className="border-2">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-base font-semibold">Data Maintenance</CardTitle>
+          <p className="text-sm text-muted-foreground mt-1">
+            Run maintenance tasks to fix data issues or sync values across your projects.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between p-4 rounded-lg border bg-background">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-md flex items-center justify-center bg-[#bba7db]/15">
+                <Folder className="h-5 w-5 text-[#bba7db]" />
+              </div>
+              <div>
+                <p className="text-sm font-medium">Fix Project Phases</p>
+                <p className="text-xs text-muted-foreground">
+                  Updates all projects' system phase to match their current status. 
+                  Run this if projects appear in the wrong phase in the project dropdown.
+                </p>
+              </div>
+            </div>
+            <Button 
+              variant="outline"
+              onClick={handleFixPhases}
+              disabled={fixPhasesMutation.isPending || isFixingPhases}
+              data-testid="button-fix-phases"
+            >
+              {fixPhasesMutation.isPending ? (
+                <>
+                  <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full mr-2" />
+                  Fixing...
+                </>
+              ) : (
+                "Run Fix"
+              )}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-2 bg-muted/20">
+        <CardContent className="py-4">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="h-5 w-5 text-muted-foreground mt-0.5" />
+            <div>
+              <p className="text-sm font-medium">About Data Maintenance</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                These maintenance tasks help keep your data in sync. They are safe to run 
+                and will not delete any data. Changes take effect immediately.
               </p>
             </div>
           </div>
