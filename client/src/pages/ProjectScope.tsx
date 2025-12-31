@@ -2484,7 +2484,7 @@ export default function ProjectScope() {
     setIsAddStageDialogOpen(true);
   };
 
-  const handleCreateNewStage = () => {
+  const handleCreateNewStage = async () => {
     const trimmedName = newStageName.trim();
     if (!trimmedName || !addStageAfterId) return;
     
@@ -2503,8 +2503,44 @@ export default function ProjectScope() {
     const afterStage = scopeStages.find(s => s.id === addStageAfterId);
     if (!afterStage) return;
     
+    // Find all sibling stages at the same level (same parentId) sorted by displayOrder
+    const siblingStages = scopeStages
+      .filter(s => s.parentId === afterStage.parentId)
+      .sort((a, b) => a.displayOrder - b.displayOrder);
+    
+    // Find the index of afterStage in siblings
+    const afterStageIndex = siblingStages.findIndex(s => s.id === addStageAfterId);
+    
+    // The new stage's displayOrder will always be afterStage.displayOrder + 1
     const displayOrder = afterStage.displayOrder + 1;
     
+    // Check if we need to shift subsequent siblings
+    const subsequentSiblings = siblingStages.slice(afterStageIndex + 1);
+    const stagesToShift = subsequentSiblings.filter(s => s.displayOrder >= displayOrder);
+    
+    if (stagesToShift.length > 0) {
+      // Shift all subsequent stages up by 1 to make room
+      const updates = stagesToShift.map(s => ({
+        id: s.id,
+        displayOrder: s.displayOrder + 1,
+        parentId: s.parentId || null,
+      }));
+      
+      // Use the existing reorder mutation with mutateAsync to await completion
+      try {
+        await reorderStagesMutation.mutateAsync(updates);
+      } catch (error) {
+        console.error('Failed to shift stages:', error);
+        toast({ 
+          title: "Failed to add stage", 
+          description: "Could not make room for new stage",
+          variant: "destructive" 
+        });
+        return;
+      }
+    }
+    
+    // Now create the new stage after reordering is complete
     createStageMutation.mutate({
       name: trimmedName,
       displayOrder,
@@ -3033,8 +3069,8 @@ export default function ProjectScope() {
                   ))}
               </SortableContext>
 
-              {/* Unified Drag Overlay - shows either stage or item */}
-              <DragOverlay>
+              {/* Unified Drag Overlay - shows either stage or item - dropAnimation null to prevent bounce-back */}
+              <DragOverlay dropAnimation={null}>
                 {activeStageId && scopeStages.find(s => s.id === activeStageId) ? (
                   <Card className="opacity-90 border-l-4 shadow-lg" style={{ borderLeftColor: PRIMARY_COLOR }}>
                     <CardHeader className="py-2 px-4">

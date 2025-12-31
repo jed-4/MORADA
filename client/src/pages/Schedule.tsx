@@ -962,8 +962,8 @@ export default function Schedule() {
               </button>
             )}
 
-            {/* Columns Icon Button - only show for Gantt/List */}
-            {(activeView === 'gantt' || activeView === 'list') && (
+            {/* Columns Icon Button - only show for List view (Gantt has its own column config) */}
+            {activeView === 'list' && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button 
