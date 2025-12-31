@@ -405,7 +405,12 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
   const [uploadingGearIndex, setUploadingGearIndex] = useState<number | null>(null);
   const [newChecklistItemText, setNewChecklistItemText] = useState("");
   const [showChecklistItems, setShowChecklistItems] = useState(item.itemType === 'checklist');
+  const [localTitle, setLocalTitle] = useState(item.title);
   const { toast } = useToast();
+  
+  useEffect(() => {
+    setLocalTitle(item.title);
+  }, [item.title]);
   
   // Height preservation refs for smooth drag placeholder
   const lastHeightRef = useRef<number>(40);
@@ -608,8 +613,18 @@ function SortableScopeItem({ item, onUpdate, onDelete, onToggleSelect, isSelecte
 
         {/* Item Name - minmax(200px, 1fr) */}
         <input
-          value={item.title}
-          onChange={(e) => onUpdate(item.id, { title: e.target.value })}
+          value={localTitle}
+          onChange={(e) => setLocalTitle(e.target.value)}
+          onBlur={() => {
+            if (localTitle !== item.title) {
+              onUpdate(item.id, { title: localTitle });
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.currentTarget.blur();
+            }
+          }}
           className={`h-7 text-sm font-medium bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-2 ${isCompleted ? 'line-through text-muted-foreground' : ''}`}
           placeholder="Item name"
           data-testid={`input-scope-title-${item.id}`}
