@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useLocation, useParams } from "wouter";
 import { useProject } from "@/contexts/ProjectContext";
 import { useQuery } from "@tanstack/react-query";
@@ -10,7 +11,9 @@ interface PageTitleOptions {
 
 /**
  * Hook to generate consistent page titles across the application
- * Format: "Context · Page Name"
+ * Format: "Context · Page Name | BuildPro"
+ * 
+ * Also automatically sets document.title for browser tab
  * 
  * Examples:
  * - "26 Ocean · Minutes" (project page)
@@ -26,30 +29,39 @@ export function usePageTitle({ pageName, overrideContext }: PageTitleOptions): s
     queryKey: ["/api/auth/user"],
   });
 
+  let title: string;
+
   // Allow manual override
   if (overrideContext) {
-    return `${overrideContext} · ${pageName}`;
+    title = `${overrideContext} · ${pageName}`;
   }
-
   // Determine context based on current route
-  const pathSegments = location.split('/').filter(Boolean);
+  else {
+    const pathSegments = location.split('/').filter(Boolean);
 
-  // Project-specific pages: /projects/:projectId/*
-  if (pathSegments[0] === 'projects' && params.projectId && currentProject) {
-    return `${currentProject.name} · ${pageName}`;
+    // Project-specific pages: /projects/:projectId/*
+    if (pathSegments[0] === 'projects' && params.projectId && currentProject) {
+      title = `${currentProject.name} · ${pageName}`;
+    }
+    // Business pages: /business/*
+    else if (pathSegments[0] === 'business') {
+      const companyName = user?.companyNickname || 'Business';
+      title = `${companyName} · ${pageName}`;
+    }
+    // User workspace pages: /workspace/* or /users/*
+    else if (pathSegments[0] === 'workspace' || pathSegments[0] === 'users') {
+      title = `My · ${pageName}`;
+    }
+    // Default: All Projects view
+    else {
+      title = `All Projects · ${pageName}`;
+    }
   }
 
-  // Business pages: /business/*
-  if (pathSegments[0] === 'business') {
-    const companyName = user?.companyNickname || 'Business';
-    return `${companyName} · ${pageName}`;
-  }
+  // Set document.title for browser tab
+  useEffect(() => {
+    document.title = `${title} | BuildPro`;
+  }, [title]);
 
-  // User workspace pages: /workspace/* or /users/*
-  if (pathSegments[0] === 'workspace' || pathSegments[0] === 'users') {
-    return `My · ${pageName}`;
-  }
-
-  // Default: All Projects view
-  return `All Projects · ${pageName}`;
+  return title;
 }

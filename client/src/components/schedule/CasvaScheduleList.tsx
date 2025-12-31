@@ -16,6 +16,7 @@ interface VisibleColumns {
   assignee: boolean;
   dueDate: boolean;
   status: boolean;
+  completion: boolean;
 }
 
 export interface CasvaScheduleListProps {
@@ -23,6 +24,7 @@ export interface CasvaScheduleListProps {
   noteCounts?: Record<string, number>;
   onEditItem: (item: ScheduleItem) => void;
   onStatusChange?: (itemId: string, newStatus: string) => void;
+  onCompletionToggle?: (itemId: string, currentPercent: number) => void;
   statusOptions?: StatusOption[];
   maxHeight?: string;
   visibleColumns?: VisibleColumns;
@@ -33,9 +35,10 @@ export function CasvaScheduleList({
   noteCounts = {},
   onEditItem,
   onStatusChange,
+  onCompletionToggle,
   statusOptions = [],
   maxHeight = "calc(100vh - 280px)",
-  visibleColumns = { item: true, assignee: true, dueDate: true, status: true }
+  visibleColumns = { item: true, assignee: true, dueDate: true, status: true, completion: true }
 }: CasvaScheduleListProps) {
   const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set());
   const [ripples, setRipples] = useState<{id: string, x: number, y: number}[]>([]);
@@ -130,6 +133,7 @@ export function CasvaScheduleList({
               {visibleColumns.assignee && <TableHead className="font-semibold w-48 h-8 py-0 text-xs">Assignee & Role</TableHead>}
               {visibleColumns.dueDate && <TableHead className="font-semibold w-40 h-8 py-0 text-xs">Due Date & Duration</TableHead>}
               {visibleColumns.status && <TableHead className="font-semibold w-32 h-8 py-0 text-xs">Status</TableHead>}
+              {visibleColumns.completion && <TableHead className="font-semibold w-20 h-8 py-0 text-xs text-center">%</TableHead>}
               <TableHead className="w-12 h-8 py-0"></TableHead>
             </TableRow>
           </TableHeader>
@@ -156,6 +160,7 @@ export function CasvaScheduleList({
                       noteCount={noteCounts[item.id] || 0}
                       onEdit={() => onEditItem(item)}
                       onStatusChange={onStatusChange ? (status) => onStatusChange(item.id, status) : undefined}
+                      onCompletionToggle={onCompletionToggle ? () => onCompletionToggle(item.id, item.progressPercent || 0) : undefined}
                       statusOptions={statusOptions}
                       visibleColumns={visibleColumns}
                       isDraggable={true}
@@ -197,6 +202,7 @@ export function CasvaScheduleList({
                         noteCount={noteCounts[subtask.id] || 0}
                         onEdit={() => onEditItem(subtask)}
                         onStatusChange={onStatusChange ? (status) => onStatusChange(subtask.id, status) : undefined}
+                        onCompletionToggle={onCompletionToggle ? () => onCompletionToggle(subtask.id, subtask.progressPercent || 0) : undefined}
                         statusOptions={statusOptions}
                         visibleColumns={visibleColumns}
                         isSubtask={true}

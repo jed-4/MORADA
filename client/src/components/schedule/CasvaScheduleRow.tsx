@@ -2,7 +2,7 @@ import { ScheduleItem } from "@shared/schema";
 import { ColorChip } from "@/components/ui/color-chip";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Pencil, GripVertical, ChevronRight, ChevronDown } from "lucide-react";
+import { Pencil, GripVertical, ChevronRight, ChevronDown, Check } from "lucide-react";
 import { format, differenceInDays } from "date-fns";
 import { cn } from "@/lib/utils";
 import { TableCell } from "@/components/ui/table";
@@ -26,6 +26,7 @@ interface VisibleColumns {
   assignee: boolean;
   dueDate: boolean;
   status: boolean;
+  completion: boolean;
 }
 
 export interface CasvaScheduleRowProps {
@@ -33,6 +34,7 @@ export interface CasvaScheduleRowProps {
   noteCount?: number;
   onEdit: () => void;
   onStatusChange?: (newStatus: string) => void;
+  onCompletionToggle?: () => void;
   statusOptions?: StatusOption[];
   visibleColumns?: VisibleColumns;
   isDraggable?: boolean;
@@ -50,8 +52,9 @@ export function CasvaScheduleRow({
   noteCount = 0,
   onEdit,
   onStatusChange,
+  onCompletionToggle,
   statusOptions = [],
-  visibleColumns = { item: true, assignee: true, dueDate: true, status: true },
+  visibleColumns = { item: true, assignee: true, dueDate: true, status: true, completion: true },
   isDraggable = false,
   dragAttributes,
   dragListeners,
@@ -185,6 +188,31 @@ export function CasvaScheduleRow({
               externalNoteCount={noteCount}
             />
           </div>
+        </TableCell>
+      )}
+
+      {/* Completion Percentage Column */}
+      {visibleColumns.completion && (
+        <TableCell className="w-20 h-8 py-0 text-center">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onCompletionToggle?.();
+            }}
+            className={cn(
+              "inline-flex items-center justify-center w-8 h-6 rounded text-[10px] font-medium transition-colors cursor-pointer",
+              (item.progressPercent || 0) === 100
+                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                : "bg-muted text-muted-foreground hover:bg-muted/80"
+            )}
+            data-testid={`completion-toggle-${item.id}`}
+          >
+            {(item.progressPercent || 0) === 100 ? (
+              <Check className="w-3 h-3" />
+            ) : (
+              `${item.progressPercent || 0}%`
+            )}
+          </button>
         </TableCell>
       )}
 

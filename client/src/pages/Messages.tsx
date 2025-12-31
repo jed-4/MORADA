@@ -110,6 +110,9 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   
   useEffect(() => {
     document.title = "Messages | BuildPro";
+    return () => {
+      document.title = "BuildPro";
+    };
   }, []);
   
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);

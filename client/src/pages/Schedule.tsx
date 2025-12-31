@@ -137,6 +137,7 @@ export default function Schedule() {
       assignee: true,
       dueDate: true,
       status: true,
+      completion: true,
     };
   });
 
@@ -340,6 +341,31 @@ export default function Schedule() {
     onError: (error: Error) => {
       toast({
         title: "Failed to update status",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Quick inline completion toggle mutation (toggles between 0% and 100%)
+  const updateCompletionMutation = useMutation({
+    mutationFn: async ({ itemId, currentPercent }: { itemId: string; currentPercent: number }) => {
+      const newPercent = currentPercent === 100 ? 0 : 100;
+      const response = await fetch(`/api/schedule-items/${itemId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ progressPercent: newPercent }),
+      });
+      if (!response.ok) throw new Error("Failed to update completion");
+      return response.json() as Promise<ScheduleItem>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to update completion",
         description: error.message,
         variant: "destructive",
       });
@@ -938,55 +964,60 @@ export default function Schedule() {
 
             {/* Columns Icon Button - only show for Gantt/List */}
             {(activeView === 'gantt' || activeView === 'list') && (
-              <Popover>
-                <PopoverTrigger asChild>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
                   <button 
                     className="h-6 w-6 flex items-center justify-center text-xs border rounded-md hover-elevate active-elevate-2"
                     data-testid="button-column-config"
                   >
                     <Columns3 className="w-3.5 h-3.5" />
                   </button>
-                </PopoverTrigger>
-                <PopoverContent className="w-48 p-2" align="end">
-                  <div className="space-y-2">
-                    <div className="text-xs font-semibold text-muted-foreground px-1">Visible Columns</div>
-                    <div className="space-y-1">
-                      <label className="flex items-center gap-2 px-1 py-1 rounded hover:bg-muted cursor-pointer">
-                        <Checkbox 
-                          checked={visibleColumns.item} 
-                          onCheckedChange={() => toggleColumn('item')}
-                          data-testid="checkbox-column-item"
-                        />
-                        <span className="text-sm">Item</span>
-                      </label>
-                      <label className="flex items-center gap-2 px-1 py-1 rounded hover:bg-muted cursor-pointer">
-                        <Checkbox 
-                          checked={visibleColumns.assignee} 
-                          onCheckedChange={() => toggleColumn('assignee')}
-                          data-testid="checkbox-column-assignee"
-                        />
-                        <span className="text-sm">Assignee & Role</span>
-                      </label>
-                      <label className="flex items-center gap-2 px-1 py-1 rounded hover:bg-muted cursor-pointer">
-                        <Checkbox 
-                          checked={visibleColumns.dueDate} 
-                          onCheckedChange={() => toggleColumn('dueDate')}
-                          data-testid="checkbox-column-duedate"
-                        />
-                        <span className="text-sm">Due Date & Duration</span>
-                      </label>
-                      <label className="flex items-center gap-2 px-1 py-1 rounded hover:bg-muted cursor-pointer">
-                        <Checkbox 
-                          checked={visibleColumns.status} 
-                          onCheckedChange={() => toggleColumn('status')}
-                          data-testid="checkbox-column-status"
-                        />
-                        <span className="text-sm">Status</span>
-                      </label>
-                    </div>
-                  </div>
-                </PopoverContent>
-              </Popover>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuLabel className="text-xs text-muted-foreground">Visible Columns</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem 
+                    onClick={() => toggleColumn('item')}
+                    className="flex items-center gap-2"
+                    data-testid="checkbox-column-item"
+                  >
+                    <Checkbox checked={visibleColumns.item} className="pointer-events-none" />
+                    <span className="text-sm">Item</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    onClick={() => toggleColumn('assignee')}
+                    className="flex items-center gap-2"
+                    data-testid="checkbox-column-assignee"
+                  >
+                    <Checkbox checked={visibleColumns.assignee} className="pointer-events-none" />
+                    <span className="text-sm">Assignee & Role</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    onClick={() => toggleColumn('dueDate')}
+                    className="flex items-center gap-2"
+                    data-testid="checkbox-column-duedate"
+                  >
+                    <Checkbox checked={visibleColumns.dueDate} className="pointer-events-none" />
+                    <span className="text-sm">Due Date & Duration</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    onClick={() => toggleColumn('status')}
+                    className="flex items-center gap-2"
+                    data-testid="checkbox-column-status"
+                  >
+                    <Checkbox checked={visibleColumns.status} className="pointer-events-none" />
+                    <span className="text-sm">Status</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    onClick={() => toggleColumn('completion')}
+                    className="flex items-center gap-2"
+                    data-testid="checkbox-column-completion"
+                  >
+                    <Checkbox checked={visibleColumns.completion} className="pointer-events-none" />
+                    <span className="text-sm">Completion %</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
 
             {/* Separator */}
@@ -1088,6 +1119,9 @@ export default function Schedule() {
                 visibleColumns={visibleColumns}
                 onStatusChange={(itemId, status) => {
                   updateStatusMutationInline.mutate({ itemId, status });
+                }}
+                onCompletionToggle={(itemId, currentPercent) => {
+                  updateCompletionMutation.mutate({ itemId, currentPercent });
                 }}
                 onEditItem={(item) => {
                   setEditingItem(item);
