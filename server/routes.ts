@@ -2083,29 +2083,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
           statusToPhaseMap.set(opt.key, opt.systemPhase);
         }
       }
+      
+      console.log(`[fix-phases] Found ${statusToPhaseMap.size} status->phase mappings`);
+      
+      // If no mappings, return early with helpful message
+      if (statusToPhaseMap.size === 0) {
+        return res.status(400).json({ 
+          error: "No systemPhase mappings configured",
+          details: "Go to Settings > Field Settings > Project Status and ensure each status has a System Phase assigned."
+        });
+      }
 
       // Get all projects for this company
       const projects = await storage.getProjects(user.companyId);
       let updatedCount = 0;
+      let skippedCount = 0;
+      let noMappingCount = 0;
       const errors: string[] = [];
 
       // Process in batches using direct SQL to bypass duplicate name validation
       for (const project of projects) {
         if (project.projectSubStatus) {
           const expectedPhase = statusToPhaseMap.get(project.projectSubStatus);
-          if (expectedPhase && project.currentSystemPhase !== expectedPhase) {
-            try {
-              // Direct SQL update bypasses storage.updateProject validation
-              await pool.query(
-                `UPDATE projects SET current_system_phase = $1 WHERE id = $2`,
-                [expectedPhase, project.id]
-              );
-              updatedCount++;
-              console.log(`[fix-phases] Updated project "${project.name}" from ${project.currentSystemPhase} to ${expectedPhase}`);
-            } catch (updateError: any) {
-              errors.push(`Failed to update project "${project.name}": ${updateError.message}`);
-              console.error(`[fix-phases] Error updating project "${project.name}":`, updateError);
+          if (expectedPhase) {
+            if (project.currentSystemPhase !== expectedPhase) {
+              try {
+                // Direct SQL update bypasses storage.updateProject validation
+                await pool.query(
+                  `UPDATE projects SET current_system_phase = $1 WHERE id = $2`,
+                  [expectedPhase, project.id]
+                );
+                updatedCount++;
+                console.log(`[fix-phases] Updated project "${project.name}" from ${project.currentSystemPhase} to ${expectedPhase}`);
+              } catch (updateError: any) {
+                errors.push(`Failed to update project "${project.name}": ${updateError.message}`);
+                console.error(`[fix-phases] Error updating project "${project.name}":`, updateError);
+              }
+            } else {
+              skippedCount++;
             }
+          } else {
+            noMappingCount++;
+            console.log(`[fix-phases] No mapping for status "${project.projectSubStatus}" on project "${project.name}"`);
           }
         }
       }
@@ -2114,6 +2133,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: `Fixed ${updatedCount} projects`,
         totalProjects: projects.length,
         updatedProjects: updatedCount,
+        alreadyCorrect: skippedCount,
+        noMapping: noMappingCount,
         errors: errors.length > 0 ? errors : undefined
       });
     } catch (error: any) {

@@ -2161,7 +2161,7 @@ function MaintenanceSection() {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       toast({ 
         title: "Project phases updated",
-        description: `Updated ${data.updatedCount || 0} projects to match their status.`
+        description: data.message || `Updated ${data.updatedProjects || 0} of ${data.totalProjects || 0} projects.`
       });
       setIsFixingPhases(false);
     },
