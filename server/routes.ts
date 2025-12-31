@@ -2082,14 +2082,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         optionsById.set(opt.id, opt);
       }
       
-      // Helper to get systemPhase - first check the option itself, then check parent
+      // Derive systemPhase from option key name
+      const derivePhaseFromKey = (key: string): string | null => {
+        const k = key.toLowerCase();
+        if (k === 'lead' || k.startsWith('lead_')) return 'lead';
+        if (k === 'pre_construction' || k === 'pre-construction' || k.startsWith('precon_') || k.startsWith('pre-con') || k.startsWith('awaiting_') || k === 'fdp' || k === 'fdp_review' || k === 'contract_preparation' || k === 'scheduling') return 'pre_construction';
+        if (k === 'construction' || k.startsWith('const_') || k.startsWith('construction_')) return 'construction';
+        if (k === 'post_construction' || k === 'post-construction' || k.startsWith('postcon_')) return 'post_construction';
+        return null;
+      };
+      
+      // Helper to get systemPhase - check option, parent, or derive from key
       const getSystemPhase = (opt: any): string | null => {
         if (opt.systemPhase) return opt.systemPhase;
         if (opt.parentId) {
           const parent = optionsById.get(opt.parentId);
           if (parent?.systemPhase) return parent.systemPhase;
+          // Try deriving from parent's key
+          if (parent?.key) {
+            const derived = derivePhaseFromKey(parent.key);
+            if (derived) return derived;
+          }
         }
-        return null;
+        // Try deriving from this option's key
+        return derivePhaseFromKey(opt.key);
       };
       
       // Create a map of status key -> systemPhase (including inherited from parent)
