@@ -1761,6 +1761,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const allProjects = await storage.getProjects();
       const companyProjects = allProjects.filter(p => p.companyId === user.companyId);
       
+      // Debug: Log phase distribution
+      const phaseDistribution = companyProjects.reduce((acc, p) => {
+        const phase = p.currentSystemPhase || 'null';
+        acc[phase] = (acc[phase] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+      console.log(`[GET /api/projects] Phase distribution for company ${user.companyId}:`, phaseDistribution);
+      
       // Prevent caching to ensure fresh data after updates
       res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
       res.set('Pragma', 'no-cache');
