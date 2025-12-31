@@ -11,6 +11,13 @@ interface StatusOption {
   color?: string;
 }
 
+interface VisibleColumns {
+  item: boolean;
+  assignee: boolean;
+  dueDate: boolean;
+  status: boolean;
+}
+
 export interface CasvaScheduleListProps {
   items: ScheduleItem[];
   noteCounts?: Record<string, number>;
@@ -18,6 +25,7 @@ export interface CasvaScheduleListProps {
   onStatusChange?: (itemId: string, newStatus: string) => void;
   statusOptions?: StatusOption[];
   maxHeight?: string;
+  visibleColumns?: VisibleColumns;
 }
 
 export function CasvaScheduleList({ 
@@ -26,7 +34,8 @@ export function CasvaScheduleList({
   onEditItem,
   onStatusChange,
   statusOptions = [],
-  maxHeight = "calc(100vh - 280px)"
+  maxHeight = "calc(100vh - 280px)",
+  visibleColumns = { item: true, assignee: true, dueDate: true, status: true }
 }: CasvaScheduleListProps) {
   const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set());
   const [ripples, setRipples] = useState<{id: string, x: number, y: number}[]>([]);
@@ -117,10 +126,10 @@ export function CasvaScheduleList({
         <Table>
           <TableHeader className="sticky top-0 bg-background z-10">
             <TableRow className="hover:bg-transparent border-b h-8">
-              <TableHead className="font-semibold h-8 py-0 text-xs">Item</TableHead>
-              <TableHead className="font-semibold w-48 h-8 py-0 text-xs">Assignee & Role</TableHead>
-              <TableHead className="font-semibold w-40 h-8 py-0 text-xs">Due Date & Duration</TableHead>
-              <TableHead className="font-semibold w-32 h-8 py-0 text-xs">Status</TableHead>
+              {visibleColumns.item && <TableHead className="font-semibold h-8 py-0 text-xs">Item</TableHead>}
+              {visibleColumns.assignee && <TableHead className="font-semibold w-48 h-8 py-0 text-xs">Assignee & Role</TableHead>}
+              {visibleColumns.dueDate && <TableHead className="font-semibold w-40 h-8 py-0 text-xs">Due Date & Duration</TableHead>}
+              {visibleColumns.status && <TableHead className="font-semibold w-32 h-8 py-0 text-xs">Status</TableHead>}
               <TableHead className="w-12 h-8 py-0"></TableHead>
             </TableRow>
           </TableHeader>
@@ -148,6 +157,7 @@ export function CasvaScheduleList({
                       onEdit={() => onEditItem(item)}
                       onStatusChange={onStatusChange ? (status) => onStatusChange(item.id, status) : undefined}
                       statusOptions={statusOptions}
+                      visibleColumns={visibleColumns}
                       isDraggable={true}
                       isParent={hasSubtasks}
                       isCollapsed={isCollapsed}
@@ -188,6 +198,7 @@ export function CasvaScheduleList({
                         onEdit={() => onEditItem(subtask)}
                         onStatusChange={onStatusChange ? (status) => onStatusChange(subtask.id, status) : undefined}
                         statusOptions={statusOptions}
+                        visibleColumns={visibleColumns}
                         isSubtask={true}
                       />
                       

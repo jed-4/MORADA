@@ -33,6 +33,12 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -123,6 +129,27 @@ export default function Schedule() {
     type: "all",
     dateRange: "all",
   });
+  
+  const [visibleColumns, setVisibleColumns] = useState(() => {
+    const saved = localStorage.getItem('schedule-visible-columns');
+    return saved ? JSON.parse(saved) : {
+      item: true,
+      assignee: true,
+      dueDate: true,
+      status: true,
+    };
+  });
+
+  useEffect(() => {
+    localStorage.setItem('schedule-visible-columns', JSON.stringify(visibleColumns));
+  }, [visibleColumns]);
+
+  const toggleColumn = (columnKey: string) => {
+    setVisibleColumns((prev: Record<string, boolean>) => ({
+      ...prev,
+      [columnKey]: !prev[columnKey],
+    }));
+  };
 
   // Fetch schedule for project
   const { data: schedule, isLoading: scheduleLoading } = useQuery<ScheduleType>({
@@ -911,12 +938,55 @@ export default function Schedule() {
 
             {/* Columns Icon Button - only show for Gantt/List */}
             {(activeView === 'gantt' || activeView === 'list') && (
-              <button 
-                className="h-6 w-6 flex items-center justify-center text-xs border rounded-md hover-elevate active-elevate-2"
-                data-testid="button-column-config"
-              >
-                <Columns3 className="w-3.5 h-3.5" />
-              </button>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button 
+                    className="h-6 w-6 flex items-center justify-center text-xs border rounded-md hover-elevate active-elevate-2"
+                    data-testid="button-column-config"
+                  >
+                    <Columns3 className="w-3.5 h-3.5" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-48 p-2" align="end">
+                  <div className="space-y-2">
+                    <div className="text-xs font-semibold text-muted-foreground px-1">Visible Columns</div>
+                    <div className="space-y-1">
+                      <label className="flex items-center gap-2 px-1 py-1 rounded hover:bg-muted cursor-pointer">
+                        <Checkbox 
+                          checked={visibleColumns.item} 
+                          onCheckedChange={() => toggleColumn('item')}
+                          data-testid="checkbox-column-item"
+                        />
+                        <span className="text-sm">Item</span>
+                      </label>
+                      <label className="flex items-center gap-2 px-1 py-1 rounded hover:bg-muted cursor-pointer">
+                        <Checkbox 
+                          checked={visibleColumns.assignee} 
+                          onCheckedChange={() => toggleColumn('assignee')}
+                          data-testid="checkbox-column-assignee"
+                        />
+                        <span className="text-sm">Assignee & Role</span>
+                      </label>
+                      <label className="flex items-center gap-2 px-1 py-1 rounded hover:bg-muted cursor-pointer">
+                        <Checkbox 
+                          checked={visibleColumns.dueDate} 
+                          onCheckedChange={() => toggleColumn('dueDate')}
+                          data-testid="checkbox-column-duedate"
+                        />
+                        <span className="text-sm">Due Date & Duration</span>
+                      </label>
+                      <label className="flex items-center gap-2 px-1 py-1 rounded hover:bg-muted cursor-pointer">
+                        <Checkbox 
+                          checked={visibleColumns.status} 
+                          onCheckedChange={() => toggleColumn('status')}
+                          data-testid="checkbox-column-status"
+                        />
+                        <span className="text-sm">Status</span>
+                      </label>
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
             )}
 
             {/* Separator */}
@@ -1015,6 +1085,7 @@ export default function Schedule() {
                 items={filteredItems}
                 noteCounts={noteCounts}
                 statusOptions={statusOptions}
+                visibleColumns={visibleColumns}
                 onStatusChange={(itemId, status) => {
                   updateStatusMutationInline.mutate({ itemId, status });
                 }}
