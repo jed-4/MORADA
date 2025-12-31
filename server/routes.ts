@@ -2076,27 +2076,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(500).json({ error: "Could not load status options" });
       }
 
-      // Create a map of status key -> systemPhase
+      // Build a lookup map for options by id
+      const optionsById = new Map<string, any>();
+      for (const opt of statusCategory.options) {
+        optionsById.set(opt.id, opt);
+      }
+      
+      // Helper to get systemPhase - first check the option itself, then check parent
+      const getSystemPhase = (opt: any): string | null => {
+        if (opt.systemPhase) return opt.systemPhase;
+        if (opt.parentId) {
+          const parent = optionsById.get(opt.parentId);
+          if (parent?.systemPhase) return parent.systemPhase;
+        }
+        return null;
+      };
+      
+      // Create a map of status key -> systemPhase (including inherited from parent)
       const statusToPhaseMap = new Map<string, string>();
       for (const opt of statusCategory.options) {
-        if (opt.key && opt.systemPhase) {
-          statusToPhaseMap.set(opt.key, opt.systemPhase);
+        const phase = getSystemPhase(opt);
+        if (opt.key && phase) {
+          statusToPhaseMap.set(opt.key, phase);
         }
       }
       
       console.log(`[fix-phases] Found ${statusToPhaseMap.size} status->phase mappings out of ${statusCategory.options.length} total options`);
       
       // Log all options for debugging
-      const optionsWithPhase = statusCategory.options.filter((opt: any) => opt.systemPhase);
-      const optionsWithoutPhase = statusCategory.options.filter((opt: any) => !opt.systemPhase);
-      console.log(`[fix-phases] Options with systemPhase:`, optionsWithPhase.map((o: any) => `${o.key}=${o.systemPhase}`));
+      const optionsWithPhase = statusCategory.options.filter((opt: any) => getSystemPhase(opt));
+      const optionsWithoutPhase = statusCategory.options.filter((opt: any) => !getSystemPhase(opt));
+      console.log(`[fix-phases] Options with systemPhase (direct or inherited):`, optionsWithPhase.map((o: any) => `${o.key}=${getSystemPhase(o)}`));
       console.log(`[fix-phases] Options WITHOUT systemPhase:`, optionsWithoutPhase.map((o: any) => o.key));
       
       // If no mappings, return early with helpful message
       if (statusToPhaseMap.size === 0) {
         return res.status(400).json({ 
           error: "No systemPhase mappings configured",
-          details: "Go to Settings > Field Settings > Project Status and ensure each status has a System Phase assigned.",
+          details: "Go to Settings > Field Settings > Project Status and ensure parent status options (Lead, Pre-Construction, Construction, Post-Construction) have a System Phase assigned.",
           totalOptions: statusCategory.options.length,
           optionKeys: statusCategory.options.map((o: any) => o.key)
         });
