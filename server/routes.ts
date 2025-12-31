@@ -2170,13 +2170,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // Log project details for debugging
+      const projectDetails = projects.map(p => ({
+        name: p.name,
+        status: p.projectSubStatus,
+        currentPhase: p.currentSystemPhase,
+        expectedPhase: p.projectSubStatus ? statusToPhaseMap.get(p.projectSubStatus) : null
+      }));
+      console.log(`[fix-phases] Project details:`, JSON.stringify(projectDetails, null, 2));
+
       res.json({ 
         message: `Fixed ${updatedCount} projects`,
         totalProjects: projects.length,
         updatedProjects: updatedCount,
         alreadyCorrect: skippedCount,
         noMapping: noMappingCount,
-        errors: errors.length > 0 ? errors : undefined
+        errors: errors.length > 0 ? errors : undefined,
+        projectDetails: projectDetails // Include in response for debugging
       });
     } catch (error: any) {
       console.error("Error fixing project phases:", error);
