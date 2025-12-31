@@ -1,10 +1,17 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import {
   Select,
   SelectContent,
@@ -46,7 +53,20 @@ import {
   Trash2,
   AlertTriangle,
   Loader2,
+  Pencil,
+  KeyRound,
 } from "lucide-react";
+
+const userEditSchema = z.object({
+  firstName: z.string().min(1, "First name is required"),
+  lastName: z.string().min(1, "Last name is required"),
+  email: z.string().email("Invalid email address"),
+  phone: z.string().optional(),
+  roleId: z.string().optional(),
+  isActive: z.boolean().optional(),
+});
+
+type UserEditFormValues = z.infer<typeof userEditSchema>;
 
 export default function UserProfileView() {
   const { userId } = useParams();
@@ -55,6 +75,19 @@ export default function UserProfileView() {
   const { user: currentUser } = useAuth();
   const [showDisableDialog, setShowDisableDialog] = useState(false);
   const [showRemoveDialog, setShowRemoveDialog] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+
+  const editForm = useForm<UserEditFormValues>({
+    resolver: zodResolver(userEditSchema),
+    defaultValues: {
+      firstName: "",
+      lastName: "",
+      email: "",
+      phone: "",
+      roleId: "",
+      isActive: true,
+    },
+  });
 
   // Fetch user details
   const { data: user, isLoading: userLoading } = useQuery<UserWithRole>({
@@ -157,6 +190,68 @@ export default function UserProfileView() {
     },
   });
 
+  // Update user mutation
+  const updateUserMutation = useMutation({
+    mutationFn: async (data: Partial<UserEditFormValues>) => {
+      return await apiRequest(`/api/users/${userId}`, "PATCH", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users", userId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      setIsEditDialogOpen(false);
+      toast({
+        title: "User updated",
+        description: "User details have been updated successfully.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update user.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Send password reset mutation
+  const sendPasswordResetMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest(`/api/users/${userId}/send-password-reset`, "POST");
+    },
+    onSuccess: () => {
+      toast({
+        title: "Password reset email sent",
+        description: "A password reset link has been sent to the user.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to send password reset",
+        description: error.message || "Please check email configuration.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleOpenEditDialog = () => {
+    if (user) {
+      editForm.reset({
+        firstName: user.firstName || "",
+        lastName: user.lastName || "",
+        email: user.email || "",
+        phone: user.phone || "",
+        roleId: user.roleId || "",
+        isActive: user.isActive !== false,
+      });
+      setIsEditDialogOpen(true);
+    }
+  };
+
+  const onEditSubmit = (data: UserEditFormValues) => {
+    const { email, ...editableFields } = data;
+    updateUserMutation.mutate(editableFields);
+  };
+
   if (userLoading || accessLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -190,20 +285,32 @@ export default function UserProfileView() {
 
   return (
     <div className="p-6 space-y-6">
-      {/* Header with back button */}
-      <div className="flex items-center gap-4">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => navigate("/business-team")}
-          data-testid="button-back"
-        >
-          <ChevronLeft className="h-5 w-5" />
-        </Button>
-        <div>
-          <h1 className="text-2xl font-semibold">{getUserDisplayName(user)}</h1>
-          <p className="text-sm text-muted-foreground">User Profile</p>
+      {/* Header with back button and edit */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate("/business-team")}
+            data-testid="button-back"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </Button>
+          <div>
+            <h1 className="text-2xl font-semibold">{getUserDisplayName(user)}</h1>
+            <p className="text-sm text-muted-foreground">User Profile</p>
+          </div>
         </div>
+        {isAdmin && !isCurrentUser && (
+          <Button
+            variant="outline"
+            onClick={handleOpenEditDialog}
+            data-testid="button-edit-user"
+          >
+            <Pencil className="h-4 w-4 mr-2" />
+            Edit
+          </Button>
+        )}
       </div>
 
       <div className="grid gap-6">
@@ -446,6 +553,168 @@ export default function UserProfileView() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Edit User Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Edit Team Member</DialogTitle>
+            <DialogDescription>
+              Update team member details
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...editForm}>
+            <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={editForm.control}
+                  name="firstName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>First Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="First name" {...field} data-testid="input-user-firstname" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={editForm.control}
+                  name="lastName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Last Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Last name" {...field} data-testid="input-user-lastname" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <FormField
+                control={editForm.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email</FormLabel>
+                    <FormControl>
+                      <Input 
+                        placeholder="Email address" 
+                        type="email" 
+                        {...field} 
+                        disabled 
+                        className="bg-muted"
+                        data-testid="input-user-email" 
+                      />
+                    </FormControl>
+                    <div className="text-xs text-muted-foreground">Email cannot be changed</div>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={editForm.control}
+                name="phone"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Phone (Optional)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Phone number" {...field} data-testid="input-user-phone" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={editForm.control}
+                name="roleId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Role</FormLabel>
+                    <FormControl>
+                      <Select value={field.value || ""} onValueChange={field.onChange}>
+                        <SelectTrigger data-testid="select-user-role-edit">
+                          <SelectValue placeholder="Select a role" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {roles.filter((r: any) => r.isActive !== false).map((role: any) => (
+                            <SelectItem key={role.id} value={role.id}>
+                              {role.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={editForm.control}
+                name="isActive"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+                    <div className="space-y-0.5">
+                      <FormLabel>Active Status</FormLabel>
+                      <div className="text-xs text-muted-foreground">
+                        Inactive users cannot log in
+                      </div>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        data-testid="switch-user-active"
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+              
+              {/* Password Reset Section */}
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div className="space-y-0.5">
+                  <div className="text-sm font-medium">Password Reset</div>
+                  <div className="text-xs text-muted-foreground">
+                    Send a password reset link to this user
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => sendPasswordResetMutation.mutate()}
+                  disabled={sendPasswordResetMutation.isPending}
+                  data-testid="button-send-password-reset"
+                >
+                  <KeyRound className="w-3.5 h-3.5 mr-1.5" />
+                  {sendPasswordResetMutation.isPending ? "Sending..." : "Send Reset Link"}
+                </Button>
+              </div>
+              
+              <div className="flex justify-end gap-2 pt-4">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => setIsEditDialogOpen(false)}
+                  data-testid="button-cancel-edit"
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  type="submit" 
+                  className="bg-[#bba7db] hover:bg-[#bba7db]/90"
+                  disabled={updateUserMutation.isPending}
+                  data-testid="button-save-user"
+                >
+                  {updateUserMutation.isPending ? "Saving..." : "Save Changes"}
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
