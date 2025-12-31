@@ -935,7 +935,7 @@ export default function CustomizableProjectOverview() {
               variant="ghost"
               size="icon"
               className="h-6 w-6"
-              onClick={() => navigate(`/projects/${currentProject.id}/settings`)}
+              onClick={() => navigate('/project-settings')}
               data-testid="button-project-settings"
             >
               <Settings className="h-3.5 w-3.5" />
