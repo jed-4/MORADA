@@ -2084,13 +2084,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
-      console.log(`[fix-phases] Found ${statusToPhaseMap.size} status->phase mappings`);
+      console.log(`[fix-phases] Found ${statusToPhaseMap.size} status->phase mappings out of ${statusCategory.options.length} total options`);
+      
+      // Log all options for debugging
+      const optionsWithPhase = statusCategory.options.filter((opt: any) => opt.systemPhase);
+      const optionsWithoutPhase = statusCategory.options.filter((opt: any) => !opt.systemPhase);
+      console.log(`[fix-phases] Options with systemPhase:`, optionsWithPhase.map((o: any) => `${o.key}=${o.systemPhase}`));
+      console.log(`[fix-phases] Options WITHOUT systemPhase:`, optionsWithoutPhase.map((o: any) => o.key));
       
       // If no mappings, return early with helpful message
       if (statusToPhaseMap.size === 0) {
         return res.status(400).json({ 
           error: "No systemPhase mappings configured",
-          details: "Go to Settings > Field Settings > Project Status and ensure each status has a System Phase assigned."
+          details: "Go to Settings > Field Settings > Project Status and ensure each status has a System Phase assigned.",
+          totalOptions: statusCategory.options.length,
+          optionKeys: statusCategory.options.map((o: any) => o.key)
         });
       }
 
