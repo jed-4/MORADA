@@ -1761,6 +1761,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const allProjects = await storage.getProjects();
       const companyProjects = allProjects.filter(p => p.companyId === user.companyId);
       
+      // Prevent caching to ensure fresh data after updates
+      res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+      res.set('Pragma', 'no-cache');
       res.json(companyProjects);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch projects" });
