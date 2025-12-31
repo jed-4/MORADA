@@ -2154,8 +2154,7 @@ function MaintenanceSection() {
 
   const fixPhasesMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest("/api/projects/fix-phases", "POST", {});
-      return response.json();
+      return await apiRequest("/api/projects/fix-phases", "POST", {});
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
