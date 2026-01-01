@@ -378,10 +378,12 @@ function DroppableColumn({
             </Badge>
           )}
         </div>
-        {/* Row 2: Total value (always reserve space for consistency) */}
-        <div className="text-xs text-muted-foreground font-medium h-4">
-          {totalValue > 0 ? formatCurrency(totalValue) : ''}
-        </div>
+        {/* Row 2: Total value (only show when budget field is visible) */}
+        {visibleFields.budget && (
+          <div className="text-xs text-muted-foreground font-medium h-4">
+            {totalValue > 0 ? formatCurrency(totalValue) : ''}
+          </div>
+        )}
       </div>
 
       {/* Cards Container - max height with scroll */}
