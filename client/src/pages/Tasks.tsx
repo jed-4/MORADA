@@ -629,41 +629,54 @@ export default function Tasks() {
       <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
         {/* Left: View Tabs */}
         <div className="flex items-center gap-0.5" data-testid="tabs-task-views">
-          {allViews.map((view) => {
-            const canDelete = isCustomView(view);
-            return (
-              <div key={view.id} className="relative group">
-                <button
-                  onClick={() => setActiveTab(view.id)}
-                  className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                    activeTab === view.id 
-                      ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
-                      : 'hover-elevate'
-                  } active-elevate-2 flex items-center gap-1`}
-                  data-testid={`tab-${view.id}`}
-                >
-                  {view.name}
-                  {view.viewType === "list" && view.id !== "list" && (
-                    <Badge variant="outline" className="ml-1 text-xs px-1 py-0 h-4">
-                      NEW
-                    </Badge>
-                  )}
-                </button>
-                {canDelete && (
-                  <button
-                    className="absolute -right-1 -top-1 h-4 w-4 rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteView(view);
-                    }}
-                    data-testid={`button-delete-${view.id}`}
-                  >
-                    <X className="h-2 w-2" />
-                  </button>
-                )}
-              </div>
-            );
-          })}
+          {/* Default View Mode Tabs */}
+          {defaultViews.map((view) => (
+            <button
+              key={view.id}
+              onClick={() => setActiveTab(view.id)}
+              className={`h-6 w-auto px-2 text-xs border rounded-md ${
+                activeTab === view.id 
+                  ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                  : 'hover-elevate'
+              } active-elevate-2 flex items-center gap-1`}
+              data-testid={`tab-${view.id}`}
+            >
+              {view.name}
+            </button>
+          ))}
+          
+          {/* Separator between default views and saved views */}
+          {taskViews.length > 0 && (
+            <div className="h-4 w-px bg-border mx-1" />
+          )}
+          
+          {/* Saved/Custom Views */}
+          {taskViews.map((view) => (
+            <div key={view.id} className="relative group">
+              <button
+                onClick={() => setActiveTab(view.id)}
+                className={`h-6 w-auto px-2 text-xs border rounded-md ${
+                  activeTab === view.id 
+                    ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                    : 'hover-elevate'
+                } active-elevate-2 flex items-center gap-1`}
+                data-testid={`tab-${view.id}`}
+              >
+                {view.name}
+              </button>
+              <button
+                className="absolute -right-1 -top-1 h-4 w-4 rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDeleteView(view);
+                }}
+                data-testid={`button-delete-${view.id}`}
+              >
+                <X className="h-2 w-2" />
+              </button>
+            </div>
+          ))}
+          
           <button
             className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
             onClick={() => setShowCreateViewDialog(true)}
