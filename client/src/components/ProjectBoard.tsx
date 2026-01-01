@@ -345,13 +345,13 @@ function DroppableColumn({
     return sum + value;
   }, 0);
 
-  const formatCurrency = (cents: number) => {
-    if (!cents) return "$0";
+  const formatCurrency = (dollars: number) => {
+    if (!dollars) return "$0";
     return new Intl.NumberFormat('en-AU', {
       style: 'currency',
       currency: 'AUD',
       minimumFractionDigits: 0,
-    }).format(cents / 100);
+    }).format(dollars);
   };
 
   return (
