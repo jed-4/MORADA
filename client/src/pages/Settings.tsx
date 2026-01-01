@@ -2161,7 +2161,8 @@ function MaintenanceSection() {
       const details = [
         `Fixed: ${data.updatedProjects || 0}`,
         `Already correct: ${data.alreadyCorrect || 0}`,
-        `No status mapping: ${data.noMapping || 0}`,
+        `No status: ${data.noStatus || 0}`,
+        `No mapping: ${data.noMapping || 0}`,
         `Total: ${data.totalProjects || 0}`
       ].join(' | ');
       toast({ 

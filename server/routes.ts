@@ -2151,6 +2151,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let updatedCount = 0;
       let skippedCount = 0;
       let noMappingCount = 0;
+      let noStatusCount = 0;
       const errors: string[] = [];
 
       // Process in batches using direct SQL to bypass duplicate name validation
@@ -2178,8 +2179,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
             noMappingCount++;
             console.log(`[fix-phases] No mapping for status "${project.projectSubStatus}" on project "${project.name}"`);
           }
+        } else {
+          noStatusCount++;
+          console.log(`[fix-phases] Project "${project.name}" has no projectSubStatus assigned`);
         }
       }
+      
+      console.log(`[fix-phases] Summary: ${updatedCount} updated, ${skippedCount} already correct, ${noMappingCount} no mapping, ${noStatusCount} no status assigned`);
 
       // Log project details for debugging
       const projectDetails = projects.map(p => ({
@@ -2196,6 +2202,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         updatedProjects: updatedCount,
         alreadyCorrect: skippedCount,
         noMapping: noMappingCount,
+        noStatus: noStatusCount,
         errors: errors.length > 0 ? errors : undefined,
         projectDetails: projectDetails // Include in response for debugging
       });

@@ -1,0 +1,136 @@
+2026-01-02 08:56:54.39
+6a9f92a0
+User
+User connected: 44689844
+2026-01-02 08:56:54.63
+6a9f92a0
+User
+9:56:54 PM [express] GET /api/timesheets/active 401 in 69ms :: {"error":"User not found in database"}
+2026-01-02 08:56:54.63
+6a9f92a0
+User
+9:56:54 PM [express] GET /api/milestones 304 in 70ms
+2026-01-02 08:56:54.63
+6a9f92a0
+User
+9:56:54 PM [express] GET /api/memos 304 in 69ms
+2026-01-02 08:56:54.64
+6a9f92a0
+User
+9:56:54 PM [express] GET /api/schedule-items 304 in 73ms
+2026-01-02 08:56:54.64
+6a9f92a0
+User
+9:56:54 PM [express] GET /api/activities 400 in 63ms :: {"error":"At least one of projectId, userId,…
+2026-01-02 08:56:54.66
+6a9f92a0
+User
+9:56:54 PM [express] GET /api/google-drive/status 304 in 108ms :: {"connected":false,"credentialsCon…
+2026-01-02 08:56:54.67
+6a9f92a0
+User
+9:56:54 PM [express] GET /api/tasks 304 in 109ms :: [{"id":"ef545a81-dccc-4d2d-9c6d-28efe82daf2f","c…
+2026-01-02 08:56:54.68
+6a9f92a0
+User
+9:56:54 PM [express] GET /api/users 304 in 119ms :: [{"id":"40b9df74-acb5-4555-9abd-321d0246f8b5","e…
+2026-01-02 08:56:54.68
+6a9f92a0
+User
+9:56:54 PM [express] GET /api/reminders 304 in 119ms :: []
+2026-01-02 08:56:54.72
+6a9f92a0
+User
+9:56:54 PM [express] GET /api/channels/unread/counts 304 in 685ms :: {"6f7d4813-1cd4-4e65-807a-6ee8d…
+2026-01-02 08:58:55.38
+6a9f92a0
+User
+9:58:55 PM [express] GET /api/notifications/unread-count 304 in 326ms :: {"count":0}
+2026-01-02 08:58:56.57
+6a9f92a0
+User
+9:58:56 PM [express] GET /api/channels/unread/counts 304 in 659ms :: {"6f7d4813-1cd4-4e65-807a-6ee8d…
+2026-01-02 08:58:56.96
+6a9f92a0
+User
+9:58:56 PM [express] GET /api/company-settings 304 in 136ms :: {}
+2026-01-02 08:59:00.92
+6a9f92a0
+User
+[fix-phases] Found 19 status->phase mappings out of 19 total options
+2026-01-02 08:59:00.92
+6a9f92a0
+User
+'awaiting_pre-con_agreement=pre_construction',
+2026-01-02 08:59:00.92
+6a9f92a0
+User
+'lead=lead',
+2026-01-02 08:59:00.92
+6a9f92a0
+User
+'lead_proposal_sent=lead',
+2026-01-02 08:59:00.92
+6a9f92a0
+User
+[fix-phases] Options with systemPhase (direct or inherited): [
+2026-01-02 08:59:00.92
+6a9f92a0
+User
+'pre-con_agreement_signed=pre_construction',
+2026-01-02 08:59:00.92
+6a9f92a0
+User
+'postcon_completed=post_construction',
+2026-01-02 08:59:00.92
+6a9f92a0
+User
+'awaiting_confirmation=pre_construction',
+2026-01-02 08:59:00.92
+6a9f92a0
+User
+'post_construction=post_construction',
+2026-01-02 08:59:00.92
+6a9f92a0
+User
+'pre_construction=pre_construction',
+2026-01-02 08:59:00.92
+6a9f92a0
+User
+'fdp=pre_construction',
+2026-01-02 08:59:00.92
+6a9f92a0
+User
+'lead_new=lead',
+2026-01-02 08:59:00.92
+6a9f92a0
+User
+'awaiting_fdp=pre_construction',
+2026-01-02 08:59:00.92
+6a9f92a0
+User
+'postcon_defects_period=post_construction',
+2026-01-02 08:59:00.92
+6a9f92a0
+User
+]
+2026-01-02 08:59:00.92
+6a9f92a0
+User
+'precon_planning=pre_construction',
+2026-01-02 08:59:00.92
+6a9f92a0
+User
+'lead_contacted=lead',
+2026-01-02 08:59:00.92
+6a9f92a0
+User
+[fix-phases] Options WITHOUT systemPhase: []
+2026-01-02 08:59:00.92
+6a9f92a0
+User
+'scheduling=pre_construction'
+2026-01-02 08:59:00.92
+6a9f92a0
+User
+'construction=construction',
