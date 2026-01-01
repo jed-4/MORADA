@@ -698,10 +698,10 @@ export function ProjectBoard({
       newSystemPhase?: string;
     }) => {
       // When moving by phase, update both projectStatus and currentSystemPhase for consistency
-      // When moving by sub-status, the backend will auto-update currentSystemPhase
+      // When moving by sub-status, also explicitly send currentSystemPhase to ensure it updates
       const updateData = preferences.groupBy === "phase" 
         ? { projectStatus: newStatus, currentSystemPhase: newStatus }
-        : { projectSubStatus: newSubStatus };
+        : { projectSubStatus: newSubStatus, ...(newSystemPhase ? { currentSystemPhase: newSystemPhase } : {}) };
       
       await apiRequest(`/api/projects/${projectId}`, "PATCH", updateData);
     },
