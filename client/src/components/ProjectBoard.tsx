@@ -442,7 +442,19 @@ export function ProjectBoard({
   const [internalPreferences, setInternalPreferences] = useState<ViewPreferences>(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
-      return stored ? { ...DEFAULT_PREFERENCES, ...JSON.parse(stored) } : DEFAULT_PREFERENCES;
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        // Deep merge visibleFields to ensure all fields have values
+        return {
+          ...DEFAULT_PREFERENCES,
+          ...parsed,
+          visibleFields: {
+            ...DEFAULT_PREFERENCES.visibleFields,
+            ...(parsed.visibleFields || {}),
+          },
+        };
+      }
+      return DEFAULT_PREFERENCES;
     } catch {
       return DEFAULT_PREFERENCES;
     }
