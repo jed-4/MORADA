@@ -152,10 +152,7 @@ export default function PinnedItemsWidget({ widget, onUpdate, isConfiguring, onC
 
   const addPinnedItem = useMutation({
     mutationFn: async (data: { itemType: string; itemId: string; itemName: string }) => {
-      return apiRequest("/api/pinned-items", {
-        method: "POST",
-        body: JSON.stringify(data),
-      });
+      return apiRequest("/api/pinned-items", "POST", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/pinned-items"] });
@@ -168,7 +165,7 @@ export default function PinnedItemsWidget({ widget, onUpdate, isConfiguring, onC
 
   const removePinnedItem = useMutation({
     mutationFn: async (id: string) => {
-      return apiRequest(`/api/pinned-items/${id}`, { method: "DELETE" });
+      return apiRequest(`/api/pinned-items/${id}`, "DELETE");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/pinned-items"] });
@@ -178,10 +175,7 @@ export default function PinnedItemsWidget({ widget, onUpdate, isConfiguring, onC
 
   const reorderPinnedItems = useMutation({
     mutationFn: async (items: { id: string; sortOrder: number }[]) => {
-      return apiRequest("/api/pinned-items/reorder", {
-        method: "PUT",
-        body: JSON.stringify({ items }),
-      });
+      return apiRequest("/api/pinned-items/reorder", "PUT", { items });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/pinned-items"] });

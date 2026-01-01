@@ -139,10 +139,7 @@ const AIPriceListReview = forwardRef<AIPriceListReviewHandle, Props>(({ searchQu
 
   const linkMutation = useMutation({
     mutationFn: async ({ lineItemId, priceListItemId }: { lineItemId: string; priceListItemId: string }) => {
-      return apiRequest(`/api/bill-line-items/${lineItemId}/link-price-item`, {
-        method: "PATCH",
-        body: JSON.stringify({ priceListItemId }),
-      });
+      return apiRequest(`/api/bill-line-items/${lineItemId}/link-price-item`, "PATCH", { priceListItemId });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/bill-line-items/unlinked'] });
@@ -154,14 +151,8 @@ const AIPriceListReview = forwardRef<AIPriceListReviewHandle, Props>(({ searchQu
 
   const createAndLinkMutation = useMutation({
     mutationFn: async (data: { lineItemId: string; priceListItem: any }) => {
-      const newItem = await apiRequest('/api/price-list/items', {
-        method: "POST",
-        body: JSON.stringify(data.priceListItem),
-      });
-      await apiRequest(`/api/bill-line-items/${data.lineItemId}/link-price-item`, {
-        method: "PATCH",
-        body: JSON.stringify({ priceListItemId: newItem.id }),
-      });
+      const newItem = await apiRequest('/api/price-list/items', "POST", data.priceListItem);
+      await apiRequest(`/api/bill-line-items/${data.lineItemId}/link-price-item`, "PATCH", { priceListItemId: newItem.id });
       return newItem;
     },
     onSuccess: () => {

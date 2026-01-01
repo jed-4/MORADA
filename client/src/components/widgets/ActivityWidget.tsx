@@ -1,11 +1,14 @@
 import { useState, useEffect, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { type Activity, type CompanySettings } from "@shared/schema";
 import { WidgetProps } from "@/types/widgets";
 import { useProject } from "@/contexts/ProjectContext";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   FileText,
   DollarSign,
@@ -14,14 +17,19 @@ import {
   FileCheck,
   Clock,
   Calendar,
+  Plus,
+  MessageSquare,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
 export default function ActivityWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
   const { currentProject } = useProject();
+  const { toast } = useToast();
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const [configMaxItems, setConfigMaxItems] = useState(widget.config?.maxItems || 20);
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
+  const [isAddingNote, setIsAddingNote] = useState(false);
+  const [newNoteText, setNewNoteText] = useState("");
   
   useEffect(() => {
     setEditingTitle(widget.title);
@@ -49,6 +57,34 @@ export default function ActivityWidget({ widget, onUpdate, isConfiguring, onClos
   // Fetch company settings for activity visibility preferences
   const { data: companySettings } = useQuery<CompanySettings>({
     queryKey: ["/api/company-settings"],
+  });
+
+  // Create activity note mutation
+  const createActivityMutation = useMutation({
+    mutationFn: async (description: string) => {
+      return apiRequest("/api/activities", "POST", {
+        projectId: currentProject?.id,
+        activityType: "manual",
+        action: "note",
+        description,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/activities", currentProject?.id] });
+      setNewNoteText("");
+      setIsAddingNote(false);
+      toast({
+        title: "Note added",
+        description: "Your activity note has been added.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to add note",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
   });
 
   // Filter activities based on company visibility settings and apply maxItems limit
@@ -296,9 +332,61 @@ export default function ActivityWidget({ widget, onUpdate, isConfiguring, onClos
 
   return (
     <div className="flex flex-col h-full">
-      <div className="text-sm font-semibold mb-3">
-        {filteredActivities.length} recent activit{filteredActivities.length === 1 ? "y" : "ies"}
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-sm font-semibold">
+          {filteredActivities.length} recent activit{filteredActivities.length === 1 ? "y" : "ies"}
+        </div>
+        {!isAddingNote && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 text-xs"
+            onClick={() => setIsAddingNote(true)}
+            data-testid="button-add-activity-note"
+          >
+            <Plus className="h-3 w-3 mr-1" />
+            Add Note
+          </Button>
+        )}
       </div>
+
+      {isAddingNote && (
+        <div className="mb-3 p-2 border rounded-md bg-muted/30 space-y-2">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <MessageSquare className="h-3 w-3" />
+            <span>Add activity note</span>
+          </div>
+          <Textarea
+            value={newNoteText}
+            onChange={(e) => setNewNoteText(e.target.value)}
+            placeholder="What's the update?"
+            className="min-h-[60px] text-sm resize-none"
+            data-testid="input-activity-note"
+          />
+          <div className="flex justify-end gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 px-2 text-xs"
+              onClick={() => {
+                setIsAddingNote(false);
+                setNewNoteText("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              className="h-6 px-2 text-xs"
+              disabled={!newNoteText.trim() || createActivityMutation.isPending}
+              onClick={() => createActivityMutation.mutate(newNoteText.trim())}
+              data-testid="button-save-activity-note"
+            >
+              {createActivityMutation.isPending ? "Saving..." : "Save"}
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-3 flex-1 overflow-auto">
         {groupedActivities.map((item, index) => {

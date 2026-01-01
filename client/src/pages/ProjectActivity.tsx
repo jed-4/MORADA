@@ -61,14 +61,11 @@ export default function ProjectActivity() {
 
   const createActivityMutation = useMutation({
     mutationFn: async (data: { description: string }) => {
-      return apiRequest("/api/activities", {
-        method: "POST",
-        body: JSON.stringify({
-          projectId: currentProject?.id,
-          activityType: "manual",
-          action: "note",
-          description: data.description,
-        }),
+      return apiRequest("/api/activities", "POST", {
+        projectId: currentProject?.id,
+        activityType: "manual",
+        action: "note",
+        description: data.description,
       });
     },
     onSuccess: () => {
@@ -91,10 +88,7 @@ export default function ProjectActivity() {
 
   const togglePinMutation = useMutation({
     mutationFn: async ({ id, pinned }: { id: string; pinned: boolean }) => {
-      return apiRequest(`/api/activities/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ pinned }),
-      });
+      return apiRequest(`/api/activities/${id}`, "PATCH", { pinned });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/activities", "project", currentProject?.id] });

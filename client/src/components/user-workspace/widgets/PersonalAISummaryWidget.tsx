@@ -178,12 +178,12 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
         }))
       };
 
-      const response = await apiRequest("POST", "/api/ai/daily-summary", {
+      const response = await apiRequest("/api/ai/daily-summary", "POST", {
         userId,
         taskSummary,
         date: format(new Date(), 'yyyy-MM-dd')
       });
-      return response.json();
+      return response;
     },
     onSuccess: (data) => {
       setSummary(data);

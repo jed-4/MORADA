@@ -65,13 +65,10 @@ export default function UserActivity({ user, isOwnPage }: UserActivityProps) {
 
   const createActivityMutation = useMutation({
     mutationFn: async (data: { description: string }) => {
-      return apiRequest("/api/activities", {
-        method: "POST",
-        body: JSON.stringify({
-          activityType: "manual",
-          action: "note",
-          description: data.description,
-        }),
+      return apiRequest("/api/activities", "POST", {
+        activityType: "manual",
+        action: "note",
+        description: data.description,
       });
     },
     onSuccess: () => {
@@ -94,10 +91,7 @@ export default function UserActivity({ user, isOwnPage }: UserActivityProps) {
 
   const togglePinMutation = useMutation({
     mutationFn: async ({ id, pinned }: { id: string; pinned: boolean }) => {
-      return apiRequest(`/api/activities/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ pinned }),
-      });
+      return apiRequest(`/api/activities/${id}`, "PATCH", { pinned });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/activities", "user", user.id] });

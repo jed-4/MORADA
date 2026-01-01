@@ -56,15 +56,12 @@ export default function NotesWidget({ widget, onUpdate, isConfiguring, onCloseCo
   // Create note mutation
   const createNoteMutation = useMutation({
     mutationFn: async (data: { content: string; visibility: string }) => {
-      return await apiRequest("/api/notes", {
-        method: "POST",
-        body: JSON.stringify({
-          title: "Project Note",
-          content: data.content,
-          visibility: data.visibility,
-          projectId: currentProject?.id,
-          type: "note",
-        }),
+      return await apiRequest("/api/notes", "POST", {
+        title: "Project Note",
+        content: data.content,
+        visibility: data.visibility,
+        projectId: currentProject?.id,
+        type: "note",
       });
     },
     onSuccess: () => {
@@ -89,12 +86,9 @@ export default function NotesWidget({ widget, onUpdate, isConfiguring, onCloseCo
   // Update note mutation
   const updateNoteMutation = useMutation({
     mutationFn: async (data: { id: string; content: string; visibility: string }) => {
-      return await apiRequest(`/api/notes/${data.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          content: data.content,
-          visibility: data.visibility,
-        }),
+      return await apiRequest(`/api/notes/${data.id}`, "PATCH", {
+        content: data.content,
+        visibility: data.visibility,
       });
     },
     onSuccess: () => {
