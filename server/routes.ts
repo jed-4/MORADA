@@ -2146,8 +2146,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Get all projects for this company
-      const projects = await storage.getProjects(user.companyId);
+      // Get all projects for this company (getProjects filters by ownerId, not companyId)
+      const allProjects = await storage.getProjects();
+      const projects = allProjects.filter(p => p.companyId === user.companyId);
       let updatedCount = 0;
       let skippedCount = 0;
       let noMappingCount = 0;

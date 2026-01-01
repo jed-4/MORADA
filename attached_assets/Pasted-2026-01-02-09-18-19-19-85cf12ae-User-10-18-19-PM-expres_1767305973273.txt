@@ -1,0 +1,152 @@
+2026-01-02 09:18:19.19
+85cf12ae
+User
+10:18:19 PM [express] GET /api/auth/user 200 in 92ms :: {"id":"44689844","email":"jed@lighthouseproje…
+2026-01-02 09:18:19.54
+85cf12ae
+User
+10:18:19 PM [express] GET /api/notifications/unread-count 200 in 115ms :: {"count":0}
+2026-01-02 09:18:19.62
+85cf12ae
+User
+[GET /api/projects] Phase distribution for company a23a0e7b-8f73-4b63-957d-5f74ae191294: { lead: 22 }
+2026-01-02 09:18:19.65
+85cf12ae
+User
+10:18:19 PM [express] GET /api/projects 200 in 219ms :: [{"id":"e4a2263e-4e4f-4f59-8f5f-d60cddebc830"…
+2026-01-02 09:18:19.66
+85cf12ae
+User
+10:18:19 PM [express] GET /api/company-settings 304 in 217ms :: {}
+2026-01-02 09:18:19.73
+85cf12ae
+User
+10:18:19 PM [express] GET /api/timesheets/active 401 in 303ms :: {"error":"User not found in database…
+2026-01-02 09:18:19.80
+85cf12ae
+User
+10:18:19 PM [express] GET /api/field-categories 304 in 365ms :: [{"id":"be8c1c43-17bc-43e4-8cb8-21b98…
+2026-01-02 09:18:19.81
+85cf12ae
+User
+10:18:19 PM [express] GET /api/companies/a23a0e7b-8f73-4b63-957d-5f74ae191294 304 in 380ms :: {"id":"…
+2026-01-02 09:18:19.83
+85cf12ae
+User
+10:18:19 PM [express] GET /api/cost-codes 304 in 395ms :: [{"id":"b42a2454-f41b-4d82-9de5-ce7f95f3651…
+2026-01-02 09:18:19.89
+85cf12ae
+User
+User connected: 44689844
+2026-01-02 09:18:19.90
+85cf12ae
+User
+10:18:19 PM [express] GET /api/dashboard-themes/user 304 in 468ms :: {"id":"e986e109-1002-4777-bd1c-f…
+2026-01-02 09:18:20.35
+85cf12ae
+User
+10:18:20 PM [express] GET /api/channels/unread/counts 304 in 919ms :: {"6f7d4813-1cd4-4e65-807a-6ee8d…
+2026-01-02 09:18:29.80
+85cf12ae
+User
+[fix-phases] Found 19 status->phase mappings out of 19 total options
+2026-01-02 09:18:29.81
+85cf12ae
+User
+'fdp_review=pre_construction',
+2026-01-02 09:18:29.81
+85cf12ae
+User
+'lead_new=lead',
+2026-01-02 09:18:29.81
+85cf12ae
+User
+'postcon_defects_period=post_construction',
+2026-01-02 09:18:29.81
+85cf12ae
+User
+'pre-con_agreement_signed=pre_construction',
+2026-01-02 09:18:29.81
+85cf12ae
+User
+'awaiting_fdp=pre_construction',
+2026-01-02 09:18:29.81
+85cf12ae
+User
+'const_foundation=construction',
+2026-01-02 09:18:29.81
+85cf12ae
+User
+[fix-phases] Options with systemPhase (direct or inherited): [
+2026-01-02 09:18:29.81
+85cf12ae
+User
+'precon_planning=pre_construction',
+2026-01-02 09:18:29.81
+85cf12ae
+User
+'contract_preparation=pre_construction',
+2026-01-02 09:18:29.81
+85cf12ae
+User
+'fdp=pre_construction',
+2026-01-02 09:18:29.81
+85cf12ae
+User
+'awaiting_pre-con_agreement=pre_construction',
+2026-01-02 09:18:29.81
+85cf12ae
+User
+'post_construction=post_construction',
+2026-01-02 09:18:29.81
+85cf12ae
+User
+'awaiting_confirmation=pre_construction',
+2026-01-02 09:18:29.81
+85cf12ae
+User
+'postcon_completed=post_construction',
+2026-01-02 09:18:29.81
+85cf12ae
+User
+'lead_proposal_sent=lead',
+2026-01-02 09:18:29.81
+85cf12ae
+User
+[fix-phases] Options WITHOUT systemPhase: []
+2026-01-02 09:18:29.81
+85cf12ae
+User
+]
+2026-01-02 09:18:29.81
+85cf12ae
+User
+'scheduling=pre_construction'
+2026-01-02 09:18:29.81
+85cf12ae
+User
+'pre_construction=pre_construction',
+2026-01-02 09:18:29.81
+85cf12ae
+User
+'lead=lead',
+2026-01-02 09:18:29.81
+85cf12ae
+User
+'lead_contacted=lead',
+2026-01-02 09:18:29.81
+85cf12ae
+User
+'construction=construction',
+2026-01-02 09:18:29.83
+85cf12ae
+User
+[fix-phases] Summary: 0 updated, 0 already correct, 0 no mapping, 0 no status assigned
+2026-01-02 09:18:29.83
+85cf12ae
+User
+[fix-phases] Project details: []
+2026-01-02 09:18:29.85
+85cf12ae
+User
+10:18:29 PM [express] POST /api/projects/fix-phases 200 in 188ms :: {"message":"Fixed 0 projects","to…
