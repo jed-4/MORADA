@@ -305,7 +305,11 @@ export function CasvaTaskRow({
                           task.assigneeId === user.id && "bg-[#bba7db]/10 text-[#bba7db]"
                         )}
                       >
-                        <div className="font-medium">{user.name || user.email}</div>
+                        <div className="font-medium">
+                          {user.firstName || user.lastName 
+                            ? `${user.firstName || ''} ${user.lastName || ''}`.trim() 
+                            : user.email}
+                        </div>
                         <div className="text-xs text-gray-500">{user.email}</div>
                       </button>
                     ))}

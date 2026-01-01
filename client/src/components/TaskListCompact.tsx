@@ -360,9 +360,17 @@ function SortableTaskRow({
                           }}
                         >
                           <Avatar className="h-4 w-4">
-                            <AvatarFallback className="text-[8px]">{getInitials(user.firstName || user.email)}</AvatarFallback>
+                            <AvatarFallback className="text-[8px]">
+                              {getInitials(user.firstName && user.lastName 
+                                ? `${user.firstName} ${user.lastName}` 
+                                : user.firstName || user.email || '')}
+                            </AvatarFallback>
                           </Avatar>
-                          <span>{user.firstName || user.email}</span>
+                          <span>
+                            {user.firstName && user.lastName 
+                              ? `${user.firstName} ${user.lastName}` 
+                              : user.firstName || user.email}
+                          </span>
                         </div>
                       ))}
                     </div>

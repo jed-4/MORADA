@@ -459,6 +459,14 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
 
   const assignee = users.find(u => u.id === form.watch("assigneeId"));
   const selectedProject = projects.find(p => p.id === form.watch("projectId"));
+  
+  const getUserDisplayName = (user: { firstName?: string | null; lastName?: string | null; email?: string | null }) => {
+    if (user.firstName || user.lastName) {
+      return `${user.firstName || ''} ${user.lastName || ''}`.trim();
+    }
+    return user.email || 'Unknown User';
+  };
+  
   const getInitials = (name: string) => name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '?';
 
   const getPriorityColor = (priority: string) => {
@@ -839,10 +847,10 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
                         <div className="flex items-center gap-2">
                           <Avatar className="h-5 w-5">
                             <AvatarFallback className="text-[10px]">
-                              {getInitials(assignee.name || assignee.email)}
+                              {getInitials(getUserDisplayName(assignee))}
                             </AvatarFallback>
                           </Avatar>
-                          <span className="truncate">{assignee.name || assignee.email}</span>
+                          <span className="truncate">{getUserDisplayName(assignee)}</span>
                         </div>
                       ) : (
                         <span className="text-muted-foreground">Unassigned</span>
@@ -860,10 +868,10 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
                       >
                         <Avatar className="h-5 w-5 mr-2">
                           <AvatarFallback className="text-[10px]">
-                            {getInitials(user.name || user.email)}
+                            {getInitials(getUserDisplayName(user))}
                           </AvatarFallback>
                         </Avatar>
-                        {user.name || user.email}
+                        {getUserDisplayName(user)}
                       </DropdownMenuItem>
                     ))}
                   </DropdownMenuContent>
