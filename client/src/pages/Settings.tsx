@@ -2158,10 +2158,17 @@ function MaintenanceSection() {
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      const details = [
+        `Fixed: ${data.updatedProjects || 0}`,
+        `Already correct: ${data.alreadyCorrect || 0}`,
+        `No status mapping: ${data.noMapping || 0}`,
+        `Total: ${data.totalProjects || 0}`
+      ].join(' | ');
       toast({ 
         title: "Project phases updated",
-        description: data.message || `Updated ${data.updatedProjects || 0} of ${data.totalProjects || 0} projects.`
+        description: details
       });
+      console.log("[fix-phases] Full response:", data);
       setIsFixingPhases(false);
     },
     onError: (error: any) => {

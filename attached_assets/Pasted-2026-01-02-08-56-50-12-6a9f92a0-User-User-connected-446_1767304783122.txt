@@ -1,0 +1,128 @@
+2026-01-02 08:56:50.12
+6a9f92a0
+User
+User connected: 44689844
+2026-01-02 08:56:53.33
+6a9f92a0
+User
+User disconnected: 44689844
+2026-01-02 08:56:53.79
+6a9f92a0
+User
+companyNickname: 'Lighthouse Projects'
+2026-01-02 08:56:53.79
+6a9f92a0
+User
+companyId: 'a23a0e7b-8f73-4b63-957d-5f74ae191294',
+2026-01-02 08:56:53.79
+6a9f92a0
+User
+✅ [GET /api/auth/user] Returning user: {
+2026-01-02 08:56:53.79
+6a9f92a0
+User
+}
+2026-01-02 08:56:53.79
+6a9f92a0
+User
+id: '44689844',
+2026-01-02 08:56:53.79
+6a9f92a0
+User
+roleId: 'd6fb935e-88e3-46b0-86cd-96ce7335f7f8',
+2026-01-02 08:56:53.79
+6a9f92a0
+User
+email: 'jed@lighthouseprojects.com.au',
+2026-01-02 08:56:53.82
+6a9f92a0
+User
+9:56:53 PM [express] GET /api/auth/user 200 in 94ms :: {"id":"44689844","email":"jed@lighthouseproje…
+2026-01-02 08:56:54.10
+6a9f92a0
+User
+9:56:54 PM [express] GET /api/timesheets/active 401 in 65ms :: {"error":"User not found in database"}
+2026-01-02 08:56:54.16
+6a9f92a0
+User
+[GET /api/projects] Phase distribution for company a23a0e7b-8f73-4b63-957d-5f74ae191294: { lead: 22 }
+2026-01-02 08:56:54.16
+6a9f92a0
+User
+9:56:54 PM [express] GET /api/notifications/unread-count 304 in 121ms :: {"count":0}
+2026-01-02 08:56:54.17
+6a9f92a0
+User
+9:56:54 PM [express] GET /api/companies/a23a0e7b-8f73-4b63-957d-5f74ae191294 304 in 125ms :: {"id":"…
+2026-01-02 08:56:54.19
+6a9f92a0
+User
+9:56:54 PM [express] GET /api/projects 200 in 140ms :: [{"id":"e4a2263e-4e4f-4f59-8f5f-d60cddebc830"…
+2026-01-02 08:56:54.20
+6a9f92a0
+User
+9:56:54 PM [express] GET /api/cost-codes 304 in 148ms :: [{"id":"b42a2454-f41b-4d82-9de5-ce7f95f3651…
+2026-01-02 08:56:54.24
+6a9f92a0
+User
+9:56:54 PM [express] GET /api/field-categories 304 in 192ms :: [{"id":"be8c1c43-17bc-43e4-8cb8-21b98…
+2026-01-02 08:56:54.25
+6a9f92a0
+User
+9:56:54 PM [express] GET /api/dashboard-themes/user 304 in 197ms :: {"id":"e986e109-1002-4777-bd1c-f…
+2026-01-02 08:56:54.34
+6a9f92a0
+User
+9:56:54 PM [express] GET /api/users/44689844 304 in 288ms :: {"id":"44689844","email":"jed@lighthous…
+2026-01-02 08:56:54.39
+6a9f92a0
+User
+User connected: 44689844
+2026-01-02 08:56:54.63
+6a9f92a0
+User
+9:56:54 PM [express] GET /api/timesheets/active 401 in 69ms :: {"error":"User not found in database"}
+2026-01-02 08:56:54.63
+6a9f92a0
+User
+9:56:54 PM [express] GET /api/milestones 304 in 70ms
+2026-01-02 08:56:54.63
+6a9f92a0
+User
+9:56:54 PM [express] GET /api/memos 304 in 69ms
+2026-01-02 08:56:54.64
+6a9f92a0
+User
+9:56:54 PM [express] GET /api/schedule-items 304 in 73ms
+2026-01-02 08:56:54.64
+6a9f92a0
+User
+9:56:54 PM [express] GET /api/activities 400 in 63ms :: {"error":"At least one of projectId, userId,…
+2026-01-02 08:56:54.66
+6a9f92a0
+User
+9:56:54 PM [express] GET /api/google-drive/status 304 in 108ms :: {"connected":false,"credentialsCon…
+2026-01-02 08:56:54.67
+6a9f92a0
+User
+9:56:54 PM [express] GET /api/tasks 304 in 109ms :: [{"id":"ef545a81-dccc-4d2d-9c6d-28efe82daf2f","c…
+2026-01-02 08:56:54.68
+6a9f92a0
+User
+9:56:54 PM [express] GET /api/users 304 in 119ms :: [{"id":"40b9df74-acb5-4555-9abd-321d0246f8b5","e…
+2026-01-02 08:56:54.68
+6a9f92a0
+User
+9:56:54 PM [express] GET /api/reminders 304 in 119ms :: []
+2026-01-02 08:56:54.72
+6a9f92a0
+User
+9:56:54 PM [express] GET /api/channels/unread/counts 304 in 685ms :: {"6f7d4813-1cd4-4e65-807a-6ee8d…
+2026-01-02 08:58:55.38
+6a9f92a0
+User
+9:58:55 PM [express] GET /api/notifications/unread-count 304 in 326ms :: {"count":0}
+2026-01-02 08:58:56.57
+6a9f92a0
+User
+9:58:56 PM [express] GET /api/channels/unread/counts 304 in 659ms :: {"6f7d4813-1cd4-4e65-807a-6ee8d…
