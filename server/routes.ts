@@ -16229,11 +16229,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
+      
+      // Convert date strings to Date objects for Drizzle
+      const data = { ...validationResult.data };
+      if (data.dueAt && typeof data.dueAt === 'string') {
+        (data as any).dueAt = new Date(data.dueAt);
+      }
+      if (data.snoozedUntil && typeof data.snoozedUntil === 'string') {
+        (data as any).snoozedUntil = new Date(data.snoozedUntil);
+      }
+      
       const reminder = await storage.createReminder({
-        ...validationResult.data,
+        ...data,
         companyId: user.companyId,
         userId: user.id,
-        targetUserId: validationResult.data.targetUserId || user.id,
+        targetUserId: data.targetUserId || user.id,
       });
       res.status(201).json(reminder);
     } catch (error: any) {
@@ -16254,7 +16264,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
-      const reminder = await storage.updateReminder(req.params.id, user.companyId, validationResult.data);
+      
+      // Convert date strings to Date objects for Drizzle
+      const data = { ...validationResult.data };
+      if (data.dueAt && typeof data.dueAt === 'string') {
+        (data as any).dueAt = new Date(data.dueAt);
+      }
+      if (data.snoozedUntil && typeof data.snoozedUntil === 'string') {
+        (data as any).snoozedUntil = new Date(data.snoozedUntil);
+      }
+      
+      const reminder = await storage.updateReminder(req.params.id, user.companyId, data);
       if (!reminder) {
         return res.status(404).json({ error: "Reminder not found" });
       }
