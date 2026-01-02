@@ -284,6 +284,26 @@ export default function Tasks() {
     updateTaskMutation.mutate({ taskId, updates: { dueDate } });
   };
 
+  // Handle saved view selection with toggle behavior
+  const handleSelectSavedView = (view: TaskView) => {
+    // Toggle behavior: if clicking the already selected view, deselect it
+    if (selectedViewId === view.id) {
+      setSelectedViewId(null);
+      setFilters({});
+      setGroupBy('status');
+      return;
+    }
+    
+    setSelectedViewId(view.id);
+    // Only apply filters, not view mode - views work across all view modes
+    if (view.filters) {
+      setFilters(view.filters as FilterState);
+    }
+    if (view.groupBy && view.groupBy !== 'assignee') {
+      setGroupBy(view.groupBy as 'status' | 'priority' | 'assignee' | 'tags');
+    }
+  };
+
   // Fetch saved task views and tasks filtered by current project (with enabled flags to prevent fetching when no project)
   const { data: taskViews = [] } = useQuery<TaskView[]>({
     queryKey: ["/api/task-views", effectiveProjectId],
@@ -682,7 +702,7 @@ export default function Tasks() {
           {taskViews.map((view) => (
             <div key={view.id} className="flex items-center">
               <button
-                onClick={() => setSelectedViewId(selectedViewId === view.id ? null : view.id)}
+                onClick={() => handleSelectSavedView(view)}
                 className={`h-6 w-auto px-2 text-xs border rounded-md ${
                   selectedViewId === view.id 
                     ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
