@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Settings, MoreHorizontal, X, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Settings, MoreHorizontal, X, Search, ChevronLeft, ChevronRight, Save } from "lucide-react";
+import { Label } from "@/components/ui/label";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -163,6 +164,95 @@ export default function BusinessTasks() {
       return response.json();
     },
   });
+
+  // Fetch saved task views
+  const { data: taskViews = [] } = useQuery<TaskView[]>({
+    queryKey: ["/api/task-views"],
+    queryFn: async () => {
+      const response = await fetch('/api/task-views', { credentials: 'include' });
+      if (!response.ok) throw new Error('Failed to fetch task views');
+      return response.json();
+    },
+  });
+
+  // State for saved views
+  const [showCreateViewDialog, setShowCreateViewDialog] = useState(false);
+  const [newViewName, setNewViewName] = useState("");
+  const [viewToDelete, setViewToDelete] = useState<TaskView | null>(null);
+  const [showDeleteViewDialog, setShowDeleteViewDialog] = useState(false);
+
+  // Create view mutation
+  const createViewMutation = useMutation({
+    mutationFn: async (data: { name: string; viewType: string; filters: any; groupBy: string }) => {
+      const response = await fetch("/api/task-views", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error('Failed to create view');
+      return response.json();
+    },
+    onSuccess: (newView) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/task-views"] });
+      toast({ title: "View saved successfully" });
+      setShowCreateViewDialog(false);
+      setNewViewName("");
+      setSelectedViewId(newView.id);
+    },
+    onError: () => {
+      toast({ title: "Failed to save view", variant: "destructive" });
+    },
+  });
+
+  // Delete view mutation
+  const deleteViewMutation = useMutation({
+    mutationFn: async (viewId: string) => {
+      const response = await fetch(`/api/task-views/${viewId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error('Failed to delete view');
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/task-views"] });
+      toast({ title: "View deleted" });
+      setShowDeleteViewDialog(false);
+      setViewToDelete(null);
+      if (selectedViewId === viewToDelete?.id) {
+        setSelectedViewId(undefined);
+      }
+    },
+    onError: () => {
+      toast({ title: "Failed to delete view", variant: "destructive" });
+    },
+  });
+
+  const handleSaveView = () => {
+    if (!newViewName.trim()) return;
+    createViewMutation.mutate({
+      name: newViewName,
+      viewType: activeTab,
+      filters,
+      groupBy,
+    });
+  };
+
+  const handleDeleteView = (view: TaskView) => {
+    setViewToDelete(view);
+    setShowDeleteViewDialog(true);
+  };
+
+  const handleSelectSavedView = (view: TaskView) => {
+    setSelectedViewId(view.id);
+    setActiveTab(view.viewType as "board" | "list" | "calendar");
+    if (view.filters) {
+      setFilters(view.filters as FilterState);
+    }
+    if (view.groupBy) {
+      setGroupBy(view.groupBy as 'none' | 'status' | 'priority' | 'assignee');
+    }
+  };
 
   // Fetch task status options from field categories
   const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
@@ -350,10 +440,11 @@ export default function BusinessTasks() {
       <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
         {/* Left: View Tabs */}
         <div className="flex items-center gap-0.5" data-testid="tabs-task-views">
+          {/* Default View Mode Tabs */}
           <button
-            onClick={() => setActiveTab("board")}
+            onClick={() => { setActiveTab("board"); setSelectedViewId(undefined); }}
             className={`h-6 w-auto px-2 text-xs border rounded-md ${
-              activeTab === "board" 
+              activeTab === "board" && !selectedViewId
                 ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
                 : 'hover-elevate'
             } active-elevate-2 flex items-center gap-1`}
@@ -362,9 +453,9 @@ export default function BusinessTasks() {
             Board
           </button>
           <button
-            onClick={() => setActiveTab("list")}
+            onClick={() => { setActiveTab("list"); setSelectedViewId(undefined); }}
             className={`h-6 w-auto px-2 text-xs border rounded-md ${
-              activeTab === "list" 
+              activeTab === "list" && !selectedViewId
                 ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
                 : 'hover-elevate'
             } active-elevate-2 flex items-center gap-1`}
@@ -373,15 +464,56 @@ export default function BusinessTasks() {
             List
           </button>
           <button
-            onClick={() => setActiveTab("calendar")}
+            onClick={() => { setActiveTab("calendar"); setSelectedViewId(undefined); }}
             className={`h-6 w-auto px-2 text-xs border rounded-md ${
-              activeTab === "calendar" 
+              activeTab === "calendar" && !selectedViewId
                 ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
                 : 'hover-elevate'
             } active-elevate-2 flex items-center gap-1`}
             data-testid="tab-calendar"
           >
             Calendar
+          </button>
+          
+          {/* Separator between default views and saved views */}
+          {taskViews.length > 0 && (
+            <div className="h-4 w-px bg-border mx-1" />
+          )}
+          
+          {/* Saved/Custom Views */}
+          {taskViews.map((view) => (
+            <div key={view.id} className="relative group">
+              <button
+                onClick={() => handleSelectSavedView(view)}
+                className={`h-6 w-auto px-2 text-xs border rounded-md ${
+                  selectedViewId === view.id 
+                    ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                    : 'hover-elevate'
+                } active-elevate-2 flex items-center gap-1`}
+                data-testid={`tab-${view.id}`}
+              >
+                <Save className="w-3 h-3" />
+                {view.name}
+              </button>
+              <button
+                className="absolute -right-1 -top-1 h-4 w-4 rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDeleteView(view);
+                }}
+                data-testid={`button-delete-${view.id}`}
+              >
+                <X className="h-2 w-2" />
+              </button>
+            </div>
+          ))}
+          
+          <button
+            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+            onClick={() => setShowCreateViewDialog(true)}
+            data-testid="button-add-view"
+          >
+            <Plus className="w-3 h-3" />
           </button>
         </div>
 
@@ -759,6 +891,76 @@ export default function BusinessTasks() {
           projectId={editingTask.projectId || ""}
         />
       )}
+
+      {/* Save View Dialog */}
+      <Dialog open={showCreateViewDialog} onOpenChange={setShowCreateViewDialog}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Save View</DialogTitle>
+            <DialogDescription>
+              Save your current filters and settings as a reusable view.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="view-name">View Name</Label>
+              <Input
+                id="view-name"
+                value={newViewName}
+                onChange={(e) => setNewViewName(e.target.value)}
+                placeholder="My Custom View"
+                data-testid="input-view-name"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => setShowCreateViewDialog(false)}
+              className="h-8 px-3 text-sm border rounded-md hover-elevate"
+              data-testid="button-cancel-view"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSaveView}
+              disabled={!newViewName.trim() || createViewMutation.isPending}
+              className="h-8 px-3 text-sm bg-[#bba7db] text-white rounded-md hover:bg-[#bba7db]/90 disabled:opacity-50"
+              data-testid="button-save-view"
+            >
+              {createViewMutation.isPending ? "Saving..." : "Save View"}
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete View Confirmation */}
+      <Dialog open={showDeleteViewDialog} onOpenChange={setShowDeleteViewDialog}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Delete View</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{viewToDelete?.name}"? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 mt-4">
+            <button
+              onClick={() => setShowDeleteViewDialog(false)}
+              className="h-8 px-3 text-sm border rounded-md hover-elevate"
+              data-testid="button-cancel-delete"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => viewToDelete && deleteViewMutation.mutate(viewToDelete.id)}
+              disabled={deleteViewMutation.isPending}
+              className="h-8 px-3 text-sm bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90 disabled:opacity-50"
+              data-testid="button-confirm-delete"
+            >
+              {deleteViewMutation.isPending ? "Deleting..." : "Delete"}
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
