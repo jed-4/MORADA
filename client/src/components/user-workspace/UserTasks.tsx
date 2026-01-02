@@ -28,6 +28,7 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Calendar,
   LayoutGrid,
   List,
@@ -40,8 +41,7 @@ import TaskBoard from "@/components/TaskBoard";
 import TaskListCompact from "@/components/TaskListCompact";
 import TaskModalAsana from "@/components/TaskModalAsana";
 import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
-import TaskViewsManager, { type TaskView, type TaskViewFilters } from "@/components/TaskViewsManager";
-import type { User, Task, Project, FieldCategoryWithOptions } from "@shared/schema";
+import type { User, Task, Project, FieldCategoryWithOptions, TaskView } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { applyTaskFilters, extractFilterOptions, deserializeFilters } from "@/utils/taskFilters";
 import { useToast } from "@/hooks/use-toast";
@@ -315,6 +315,14 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
   };
 
   const handleSelectSavedView = (view: TaskView) => {
+    // Toggle behavior: if clicking the already selected view, deselect it
+    if (selectedViewId === view.id) {
+      setSelectedViewId(undefined);
+      setFilters({});
+      setGroupBy('none');
+      return;
+    }
+    
     setSelectedViewId(view.id);
     // Only apply filters, not view mode - views work across all view modes
     if (view.filters) {
@@ -517,9 +525,9 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
               <div className="h-4 w-px bg-border mx-1" />
             )}
             
-            {/* Saved/Custom Views */}
+            {/* Saved/Custom Views - Toggle on/off with dropdown for options */}
             {taskViews.map((view) => (
-              <div key={view.id} className="relative group">
+              <div key={view.id} className="flex items-center">
                 <button
                   onClick={() => handleSelectSavedView(view)}
                   className={`relative h-7 px-2 text-xs flex items-center gap-1 transition-colors ${
@@ -534,26 +542,36 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                     <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#bba7db] rounded-full" />
                   )}
                 </button>
-                <button
-                  className="absolute -left-1 -top-1 h-4 w-4 rounded-full bg-muted text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleEditView(view);
-                  }}
-                  data-testid={`button-edit-${view.id}`}
-                >
-                  <Pencil className="h-2 w-2" />
-                </button>
-                <button
-                  className="absolute -right-1 -top-1 h-4 w-4 rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDeleteView(view);
-                  }}
-                  data-testid={`button-delete-${view.id}`}
-                >
-                  <X className="h-2 w-2" />
-                </button>
+                {/* Dropdown arrow - only shows when view is selected */}
+                {selectedViewId === view.id && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        className="h-5 px-0.5 text-[#bba7db] hover:text-[#bba7db]/80 flex items-center"
+                        data-testid={`button-view-options-${view.id}`}
+                      >
+                        <ChevronDown className="h-3 w-3" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      <DropdownMenuItem 
+                        onClick={() => handleEditView(view)}
+                        data-testid={`menu-edit-${view.id}`}
+                      >
+                        <Pencil className="h-3 w-3 mr-2" />
+                        Edit View
+                      </DropdownMenuItem>
+                      <DropdownMenuItem 
+                        onClick={() => handleDeleteView(view)}
+                        className="text-destructive"
+                        data-testid={`menu-delete-${view.id}`}
+                      >
+                        <X className="h-3 w-3 mr-2" />
+                        Delete View
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
               </div>
             ))}
             
@@ -884,25 +902,6 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
               </DropdownMenu>
             )}
 
-            {/* Saved Views (non-calendar) */}
-            {activeView !== "calendar" && (
-              <TaskViewsManager 
-                currentViewType={activeView}
-                currentFilters={filters as TaskViewFilters}
-                currentGroupBy={groupBy === 'project' ? 'none' : groupBy}
-                onViewSelect={(view: TaskView) => {
-                  setActiveView(view.viewType);
-                  setFilters(view.filters as FilterState);
-                  setGroupBy(view.groupBy === 'assignee' ? 'none' : view.groupBy);
-                  setSelectedViewId(view.id);
-                }}
-                onViewDeselect={() => {
-                  setSelectedViewId(undefined);
-                  setFilters({});
-                }}
-                selectedViewId={selectedViewId}
-              />
-            )}
           </div>
         </div>
       </div>

@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
-import { Plus, Settings, MoreHorizontal, X, Flag, User, Tag, Layers, Eye, Zap, Search, GripVertical, Columns as ColumnsIcon, SlidersHorizontal, Pencil } from "lucide-react";
+import { Plus, Settings, MoreHorizontal, X, Flag, User, Tag, Layers, Eye, Zap, Search, GripVertical, Columns as ColumnsIcon, SlidersHorizontal, Pencil, ChevronDown } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -678,9 +678,9 @@ export default function Tasks() {
             <div className="h-4 w-px bg-border mx-1" />
           )}
           
-          {/* Saved/Custom Views (Filters) - can be toggled on/off */}
+          {/* Saved/Custom Views (Filters) - can be toggled on/off, dropdown arrow for options */}
           {taskViews.map((view) => (
-            <div key={view.id} className="relative group">
+            <div key={view.id} className="flex items-center">
               <button
                 onClick={() => setSelectedViewId(selectedViewId === view.id ? null : view.id)}
                 className={`h-6 w-auto px-2 text-xs border rounded-md ${
@@ -692,26 +692,36 @@ export default function Tasks() {
               >
                 {view.name}
               </button>
-              <button
-                className="absolute -left-1 -top-1 h-4 w-4 rounded-full bg-muted text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleEditView(view);
-                }}
-                data-testid={`button-edit-${view.id}`}
-              >
-                <Pencil className="h-2 w-2" />
-              </button>
-              <button
-                className="absolute -right-1 -top-1 h-4 w-4 rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDeleteView(view);
-                }}
-                data-testid={`button-delete-${view.id}`}
-              >
-                <X className="h-2 w-2" />
-              </button>
+              {/* Dropdown arrow - only shows when view is selected */}
+              {selectedViewId === view.id && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      className="h-5 px-0.5 text-[#bba7db] hover:text-[#bba7db]/80 flex items-center"
+                      data-testid={`button-view-options-${view.id}`}
+                    >
+                      <ChevronDown className="h-3 w-3" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuItem 
+                      onClick={() => handleEditView(view)}
+                      data-testid={`menu-edit-${view.id}`}
+                    >
+                      <Pencil className="h-3 w-3 mr-2" />
+                      Edit View
+                    </DropdownMenuItem>
+                    <DropdownMenuItem 
+                      onClick={() => handleDeleteView(view)}
+                      className="text-destructive"
+                      data-testid={`menu-delete-${view.id}`}
+                    >
+                      <X className="h-3 w-3 mr-2" />
+                      Delete View
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
           ))}
           
