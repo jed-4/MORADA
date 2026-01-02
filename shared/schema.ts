@@ -4781,6 +4781,7 @@ export const insertReminderSchema = createInsertSchema(reminders).omit({
   createdAt: true,
   updatedAt: true,
 }).extend({
+  targetUserId: z.string().optional(),
   scheduleDays: z.array(z.number()).optional(),
   dueAt: z.string().or(z.date()).optional(),
   snoozedUntil: z.string().or(z.date()).optional(),
