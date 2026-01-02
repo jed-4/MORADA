@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Settings, MoreHorizontal, X, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Settings, MoreHorizontal, X, Search, ChevronLeft, ChevronRight, Pencil } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import {
   DropdownMenu,
@@ -180,6 +180,9 @@ export default function BusinessTasks() {
   const [newViewName, setNewViewName] = useState("");
   const [viewToDelete, setViewToDelete] = useState<TaskView | null>(null);
   const [showDeleteViewDialog, setShowDeleteViewDialog] = useState(false);
+  const [viewToEdit, setViewToEdit] = useState<TaskView | null>(null);
+  const [showEditViewDialog, setShowEditViewDialog] = useState(false);
+  const [editViewName, setEditViewName] = useState("");
 
   // Create view mutation
   const createViewMutation = useMutation({
@@ -241,6 +244,45 @@ export default function BusinessTasks() {
   const handleDeleteView = (view: TaskView) => {
     setViewToDelete(view);
     setShowDeleteViewDialog(true);
+  };
+
+  const handleEditView = (view: TaskView) => {
+    setViewToEdit(view);
+    setEditViewName(view.name);
+    setShowEditViewDialog(true);
+  };
+
+  // Update view mutation
+  const updateViewMutation = useMutation({
+    mutationFn: async (data: { id: string; name?: string; filters?: any; groupBy?: string }) => {
+      const response = await fetch(`/api/task-views/${data.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ name: data.name, filters: data.filters, groupBy: data.groupBy }),
+      });
+      if (!response.ok) throw new Error('Failed to update view');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/task-views"] });
+      toast({ title: "View updated" });
+      setShowEditViewDialog(false);
+      setViewToEdit(null);
+    },
+    onError: () => {
+      toast({ title: "Failed to update view", variant: "destructive" });
+    },
+  });
+
+  const handleUpdateView = () => {
+    if (!viewToEdit || !editViewName.trim()) return;
+    updateViewMutation.mutate({
+      id: viewToEdit.id,
+      name: editViewName,
+      filters,
+      groupBy,
+    });
   };
 
   const handleSelectSavedView = (view: TaskView) => {
@@ -493,6 +535,16 @@ export default function BusinessTasks() {
                 data-testid={`tab-${view.id}`}
               >
                 {view.name}
+              </button>
+              <button
+                className="absolute -left-1 -top-1 h-4 w-4 rounded-full bg-muted text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleEditView(view);
+                }}
+                data-testid={`button-edit-${view.id}`}
+              >
+                <Pencil className="h-2 w-2" />
               </button>
               <button
                 className="absolute -right-1 -top-1 h-4 w-4 rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
@@ -956,6 +1008,47 @@ export default function BusinessTasks() {
               data-testid="button-confirm-delete"
             >
               {deleteViewMutation.isPending ? "Deleting..." : "Delete"}
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit View Dialog */}
+      <Dialog open={showEditViewDialog} onOpenChange={setShowEditViewDialog}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Edit View</DialogTitle>
+            <DialogDescription>
+              Update the view name and save current filters to this view.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="edit-view-name">View Name</Label>
+              <Input
+                id="edit-view-name"
+                value={editViewName}
+                onChange={(e) => setEditViewName(e.target.value)}
+                placeholder="My Custom View"
+                data-testid="input-edit-view-name"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => setShowEditViewDialog(false)}
+              className="h-8 px-3 text-sm border rounded-md hover-elevate"
+              data-testid="button-cancel-edit"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleUpdateView}
+              disabled={!editViewName.trim() || updateViewMutation.isPending}
+              className="h-8 px-3 text-sm bg-[#bba7db] text-white rounded-md hover:bg-[#bba7db]/90 disabled:opacity-50"
+              data-testid="button-update-view"
+            >
+              {updateViewMutation.isPending ? "Updating..." : "Update View"}
             </button>
           </div>
         </DialogContent>
