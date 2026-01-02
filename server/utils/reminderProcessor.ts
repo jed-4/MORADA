@@ -4,6 +4,7 @@ import { addDays, addWeeks, addMonths, differenceInMinutes, startOfDay, format }
 
 let isProcessorRunning = false;
 let lastInsuranceCheckDate: string | null = null;
+let lastRecurringTasksCheckDate: string | null = null;
 let processorInterval: NodeJS.Timeout | null = null;
 
 export async function processReminders() {
@@ -156,6 +157,7 @@ export async function processReminders() {
     console.log("[ReminderProcessor] Reminder processing completed");
     
     await processInsuranceExpiryReminders();
+    await processRecurringTaskTemplates();
   } catch (error) {
     console.error("[ReminderProcessor] Error processing reminders:", error);
   } finally {
@@ -397,5 +399,43 @@ export async function processInsuranceExpiryReminders() {
     console.log("[ReminderProcessor] Insurance expiry check completed");
   } catch (error) {
     console.error("[ReminderProcessor] Error in insurance expiry check:", error);
+  }
+}
+
+/**
+ * Process recurring task templates for all companies.
+ * Generates tasks for the current week from active recurring templates.
+ * Runs once daily to ensure tasks are created for each new week.
+ */
+export async function processRecurringTaskTemplates() {
+  const today = format(new Date(), 'yyyy-MM-dd');
+  
+  // Only run once per day
+  if (lastRecurringTasksCheckDate === today) {
+    return;
+  }
+  
+  console.log("[ReminderProcessor] Processing recurring task templates...");
+  
+  try {
+    const companies = await storage.getAllCompanies();
+    let totalGenerated = 0;
+    
+    for (const company of companies) {
+      try {
+        const result = await storage.generateRecurringTasks(company.id);
+        if (result.generated > 0) {
+          console.log(`[ReminderProcessor] Generated ${result.generated} recurring tasks for company ${company.id}`);
+          totalGenerated += result.generated;
+        }
+      } catch (companyError) {
+        console.error(`[ReminderProcessor] Error generating recurring tasks for company ${company.id}:`, companyError);
+      }
+    }
+    
+    lastRecurringTasksCheckDate = today;
+    console.log(`[ReminderProcessor] Recurring task processing completed. Total generated: ${totalGenerated}`);
+  } catch (error) {
+    console.error("[ReminderProcessor] Error in recurring task processing:", error);
   }
 }

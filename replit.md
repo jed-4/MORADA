@@ -1,45 +1,35 @@
 # Replit Configuration
 
 ## Overview
-BuildPro is a project management software for Australian residential builders. Its purpose is to streamline workflows, enhance collaboration, and provide robust financial oversight, including budget tracking, through a dashboard-centric interface. Key capabilities include customizable widget-based dashboards, comprehensive task management with Kanban boards and calendar integration, and a system for managing construction projects, tasks, schedules, and teams. The business vision is to simplify complex construction project management, thereby improving efficiency and profitability for builders.
+BuildPro is a project management software designed for Australian residential builders. Its primary goal is to streamline workflows, enhance collaboration, and provide robust financial oversight, including budget tracking, through a dashboard-centric interface. Key features include customizable widget-based dashboards, comprehensive task management with Kanban boards and calendar integration, and a system for managing construction projects, tasks, schedules, and teams. The business vision is to simplify complex construction project management, thereby improving efficiency and profitability for builders.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
 
 ## System Architecture
 
-### Frontend Architecture
+### Frontend
 - **Framework**: React 18 with TypeScript and Vite.
 - **Routing**: Wouter.
 - **State Management**: TanStack Query for server state, React Context for UI state.
 - **UI Framework**: Radix UI primitives with shadcn/ui.
 - **Styling**: Tailwind CSS with a custom design system, supporting light/dark modes, a white & minimalist aesthetic with muted blue accents, and Inter font family.
-- **Dashboard**: Widget-based with drag & drop, a grid-based layout. Business dashboard views are now database-backed with access control (visibility: everyone/roles/users/private).
-- **UI/UX Decisions**: Emphasis on a minimalist theme, column resizing for tables, and accessibility compliance, drawing inspiration from Buildern-style interfaces.
+- **Dashboard**: Widget-based with drag & drop, a grid-based layout. Business dashboard views are database-backed with access control.
+- **UI/UX Decisions**: Minimalist theme, column resizing for tables, accessibility compliance, inspired by Buildern-style interfaces.
 
-### Backend Architecture
+### Backend
 - **Framework**: Express.js with TypeScript.
 - **API Design**: RESTful API (`/api` prefix).
 - **Session Management**: Express sessions with PostgreSQL session store.
 - **Error Handling**: Centralized middleware.
-- **Email Service**: Resend for transactional emails (user invitations).
+- **Email Service**: Resend for transactional emails.
 
-### Authentication System
-- **Custom Authentication**: Standalone auth system (not tied to Replit accounts).
-- **Password Auth**: Email/password registration and login with bcrypt hashing (12 salt rounds).
-- **Google OAuth**: Optional Google login using GOOGLE_OAUTH_CLIENT_ID/SECRET with CSRF state token validation.
+### Authentication
+- **Custom Authentication**: Standalone email/password registration and login with bcrypt hashing.
+- **Google OAuth**: Optional Google login with CSRF state token validation.
 - **Session Security**: httpOnly cookies, secure in production, lax sameSite, 7-day TTL.
-- **Account Linking**: Google accounts are automatically linked to existing users by email.
-- **Auth Endpoints**:
-  - POST `/api/auth/register` - Create account with email/password
-  - POST `/api/auth/login` - Login with email/password
-  - GET `/api/auth/google` - Initiate Google OAuth flow
-  - GET `/api/auth/google/callback` - OAuth callback with CSRF validation
-  - POST `/api/auth/logout` - Destroy session
-  - GET `/api/auth/user` - Get current authenticated user
-- **Password Reset**: Manager-initiated password reset via POST `/api/users/:id/send-password-reset`. Tokens are SHA-256 hashed before storage in `password_reset_tokens` table with 24-hour expiry. Email includes reset link with plain token.
-- **Team Member Management**: Enhanced edit dialog includes role selection dropdown, active status toggle, and send password reset button.
-- **Required Secrets**: SESSION_SECRET (mandatory), GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET.
+- **Account Linking**: Google accounts linked to existing users by email.
+- **Password Reset**: Manager-initiated password reset via tokenized email links.
 
 ### Data Layer
 - **ORM**: Drizzle ORM with PostgreSQL dialect.
@@ -56,61 +46,36 @@ Preferred communication style: Simple, everyday language.
 
 ### Feature Specifications & System Design
 - **Budget Tracking**: Manages estimates, bills, and variations with a calculation engine.
-- **Task Management**: Kanban, List, and Calendar views with drag-and-drop, including task templates with user-specific or role-based assignments. Task modal includes inline checklist management for viewing/adding/toggling checklist items. Task templates support `defaultTaskStatus` field to specify the status tasks should have when created (prevents clogging wrong status views). Due date filtering with relative date presets (Overdue, Today, Tomorrow, This Week, etc.) available in My Tasks page filter panel.
-- **Polymorphic Task Context Model**: Tasks use `taskContextType` ("project" | "business") and `taskContextId` fields for consistent context handling. Project tasks have contextType='project' with contextId=projectId. Business tasks have contextType='business' with contextId=companyId. Backend auto-derives context from projectId when not explicitly provided. Legacy tasks (null contextType) are handled via fallback logic checking projectId presence. All existing tasks were backfilled during migration.
-- **Checklist System**: Templates with group functionality and dashboard widget integration. Dashboard widget features responsive multi-column layout (1/2/3 columns based on width), compact headers, and color-coded status indicators (amber for priority+actionable, green for actionable items).
-- **Cost Code Management**: Merge functionality with company isolation.
-- **Import System**: Flexible CSV/Excel import with column mapping and intelligent cost code matching. Schedule import functionality allows importing Excel/CSV files directly into project schedules using the same column mapping and preview system as schedule templates via `/api/schedule-items/bulk-create`.
-- **Hierarchical Groups for Estimates**: Unlimited-depth nesting for estimate groups with CRUD operations.
-- **Allowances System**: Tracks Prime Cost (PC) and Provisional Sum (PS) items, integrating with financial modules.
+- **Task Management**: Kanban, List, and Calendar views with drag-and-drop, task templates, inline checklist management, and due date filtering. Polymorphic task context model for consistent handling across projects and business.
+- **Checklist System**: Templates with group functionality and dashboard widget integration, color-coded status indicators.
+- **Cost Code Management**: Company-isolated merge functionality.
+- **Import System**: Flexible CSV/Excel import for schedules with column mapping.
+- **Hierarchical Groups for Estimates**: Unlimited-depth nesting for estimate groups.
+- **Allowances System**: Tracks Prime Cost (PC) and Provisional Sum (PS) items.
 - **Proposals System**: PDF proposal builder with live preview, section-based editing, and template support.
-- **User View Preferences**: Database-backed persistence for user-specific view settings (column order, visibility, filters) across all pages, using `/api/user-view-preferences` with GET and POST.
-- **Optimistic UI Updates**: Implemented for improved responsiveness.
-- **Searchable Select Components**: Reusable typeahead components for dropdowns with many items (e.g., Cost Codes, Projects, Contacts, Users, Task Templates).
+- **User View Preferences**: Database-backed persistence for user-specific view settings (column order, visibility, filters).
+- **Optimistic UI Updates**: Implemented for responsiveness.
+- **Searchable Select Components**: Reusable typeahead components for dropdowns.
 - **Calendar System**: Dual personal and business calendars with month/week/day views, drag-and-drop, and Notion-style flexible filtering with saved views.
-- **Roles & Permissions**: Company-isolated user roles with granular control over 25 Buildern permissions.
+- **Roles & Permissions**: Company-isolated user roles with granular control over 25 permissions.
 - **Business Page Reorganization**: Unified navigation with a 2-row header and tab system.
-- **Timesheets System**: Global access via All Items section, compact table design (h-7 rows, text-[11px], py-1 padding), configurable columns with localStorage persistence, tabbed views (Table/Weekly/Calendar). Weekly view shows user×days matrix with aggregated hours and totals. Rapidfire Approval Modal enables batch review of pending timesheets with inline editing, 15min rounding, missing info highlights, and "Approve & Next" workflow. Simplified status flow: Draft → Approved. Planned features: subcontractor-to-PO workflow.
-- **User Workspace**: Personal workspace with tabs for Overview, Tasks, and future Schedule/Time/Notes. **Default landing page after login** - users are automatically redirected to their workspace (`/users/:userId`) from the root URL. The Overview tab features a fully customizable widget-based dashboard with:
-  - Personal widgets: My Tasks, My Calendar (task-based), Cross-Project Deadlines, Personal Metrics, Quick Actions (clock in/out, log time), My Memos, Day Calendar, Week Calendar
-  - Day Calendar widget: Scrollable 24-hour timeline with all-day items pinned at top, configurable data sources (tasks, schedule, timesheets, Google Calendar, reminders)
-  - Week Calendar widget: 7-column grid view with expandable day columns, show/hide more events per day
-  - Widget resizing: Drag corner handle to resize widgets (snaps to 8-column grid), dimensions persisted in localStorage
-  - Drag-and-drop widget reordering via @dnd-kit
-  - Add/remove widgets with configuration dialogs
-  - Saved views with create/delete/switch functionality
-  - Default "Overview" view protected from deletion
-  - localStorage persistence per user including widget dimensions
+- **Timesheets System**: Global access, compact table design, configurable columns, tabbed views (Table/Weekly/Calendar), rapid approval modal.
+- **User Workspace**: Default landing page after login, fully customizable widget-based dashboard including personal widgets (My Tasks, My Calendar, Cross-Project Deadlines, Quick Actions, Memos, Day/Week Calendar), widget resizing, drag-and-drop reordering, and saved views.
 - **Notes & Memos**: Dedicated business/project notes and personal quick-capture memos.
 - **Onboarding Flow**: Two-step process for user profile completion and company creation.
-- **Activity Feed Settings**: Company Settings > Activity section allows toggling visibility of activity types (task, estimate, bill, variation, invoice, proposal, project, site_diary, other). Stored in `companySettings.activityTypesVisible` JSON field. ActivityWidget respects these settings and filters activities accordingly.
-- **Business Dashboard Views**: Database-backed views with company-wide access control. Each view stores widget configuration and visibility settings (everyone/roles/users/private). Features include:
-  - View creation/deletion with CRUD via `/api/business-dashboard-views`
-  - Access control: visibility types (everyone, roles, users, private) with allowedRoleIds/allowedUserIds
-  - Default "Overview" view auto-created for each company (protected from deletion)
-  - Widget configuration persisted to database instead of localStorage
-  - Creator and admin permissions for edit/delete operations
-- **Schedule Widget**: Project dashboard schedule widget with multiple view modes (list, day, week, month). Settings configured via edit modal only (widget is display-only). Day/Week views support both stacked (simple list) and timeline (hourly scale) display modes with:
-  - Header row with day names and navigation
-  - All-day items section (pinned at top)
-  - Scrollable hourly timeline with current time indicator (for timeline mode)
-  - Configurable filters for tasks, milestones, priority, status
-- **Default Diary**: Systems > Default Diary tab shows weekly view of recurring tasks. Allows filtering by user to see their "default week" schedule of active recurring tasks.
-- **Actionable Status Flag**: Field options for status categories (estimate.status, estimate_item.status, schedule_item.status, task.status) have an `isActionable` boolean flag. Configured via Settings > Field Settings. Enables dashboard widgets to filter and highlight items requiring action.
-- **Suppliers Migration (Complete)**: Legacy `suppliers` table unified into `contacts` with `contactType='supplier'`. 
-  - **Completed**: `bills.supplierId`, `rfqQuotes.supplierId`, `priceListItems.supplierId` now reference `contacts.id` instead of `suppliers.id`.
-  - **Deprecated**: `suppliers`, `supplierLabels`, `supplierLabelAssignments`, `supplierInsurances`, `supplierContacts` tables marked deprecated but functional for backward compatibility.
-  - **Contact Merge**: `mergeContacts()` handles bills, RFQs, favoriteSuppliers, scheduleItems, purchaseOrders, rfqQuotes, priceListItems, and contactInsurances correctly.
-  - **Contact Insurances**: New `contactInsurances` table for tracking insurance documents for contact-based suppliers. API at `/api/contacts/:id/insurances`. ReminderProcessor checks both legacy supplierInsurances and new contactInsurances for expiry alerts.
-  - **Insurance UI**: EditContactDialog includes ContactInsuranceSection for supplier-type contacts with full CRUD and expiry status badges.
-  - **Legacy Limitation**: Old supplier sub-tables (supplierInsurances, supplierContacts, supplierLabels) still reference `suppliers.id` for existing data.
+- **Activity Feed Settings**: Company-level settings to toggle visibility of activity types in the ActivityWidget.
+- **Business Dashboard Views**: Database-backed views with company-wide access control, supporting view creation/deletion, access control (everyone/roles/users/private), and widget configuration persistence to the database.
+- **Schedule Widget**: Project dashboard schedule widget with multiple view modes (list, day, week, month), supporting stacked and timeline display modes with configurable filters.
+- **Default Diary**: Weekly view of recurring tasks, with automated generation of recurring tasks from templates.
+- **Actionable Status Flag**: `isActionable` boolean flag for status categories to filter and highlight items requiring action in widgets.
+- **Suppliers Migration**: Unified `suppliers` into `contacts` with `contactType='supplier'`, updating all related references. Includes contact merging and dedicated `contactInsurances` table with UI for supplier-type contacts.
 
 ### Mobile App (Capacitor-based)
-- **Framework**: React with Capacitor for native mobile features.
-- **Location**: `/mobile` directory with separate build configuration.
+- **Framework**: React with Capacitor.
+- **Location**: `/mobile` directory.
 - **Features Implemented**: ProjectTasks, ProjectScope, ProjectNotes, ProjectMinutes, ProjectDefects, ProjectTimesheets, ProjectSiteDiary.
-- **Shared Components**: `SwipeableCard`, `BottomSheet`, `PullToRefresh`, mobile-optimized form components.
-- **UX Patterns**: Pull-to-refresh, haptic feedback, FAB for adding items, search/filter chips.
+- **Shared Components**: `SwipeableCard`, `BottomSheet`, `PullToRefresh`, mobile-optimized forms.
+- **UX Patterns**: Pull-to-refresh, haptic feedback, FAB, search/filter chips.
 
 ## External Dependencies
 
@@ -150,6 +115,6 @@ Preferred communication style: Simple, everyday language.
 - **nanoid**: Unique string ID generator.
 
 ### Integrations
-- **Google Calendar Integration**: Per-user OAuth for displaying read-only Google Calendar events.
-- **Google Drive Integration**: Company-level OAuth connection with tokens stored encrypted. Enables a live Google Drive browser, per-project folder linking, company-wide file management, folder templates, and file attachments to BuildPro entities. Features include file upload/download, folder creation, file preview, and activity logging.
+- **Google Calendar Integration**: Per-user OAuth for displaying read-only events.
+- **Google Drive Integration**: Company-level OAuth for live Google Drive browser, folder linking, file management, and attachments.
 - **Resend**: Transactional email service.
