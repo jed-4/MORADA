@@ -15319,13 +15319,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Task template not found" });
       }
       
-      // If this is a recurring template, regenerate tasks to reflect changes
+      // If this is a recurring template, sync changes to existing tasks and generate any missing ones
       if (template.isRecurringTemplate && template.isActive) {
         try {
-          const result = await storage.clearAndRegenerateTemplateTask(template.id, companyId);
-          console.log(`[PATCH /api/systems/task-templates] Regenerated ${result.generated} recurring task instances for template ${template.id}`);
+          // First sync template changes to existing future uncompleted tasks
+          const syncResult = await storage.syncTemplateToTasks(template.id, companyId);
+          console.log(`[PATCH /api/systems/task-templates] Synced ${syncResult.synced} existing tasks for template ${template.id}`);
+          
+          // Then generate any new tasks for the 14-day window
+          const genResult = await storage.generateRecurringTasks(companyId);
+          console.log(`[PATCH /api/systems/task-templates] Generated ${genResult.generated} new recurring task instances`);
         } catch (genError) {
-          console.error("[PATCH /api/systems/task-templates] Failed to regenerate recurring tasks (non-fatal):", genError);
+          console.error("[PATCH /api/systems/task-templates] Failed to sync/generate recurring tasks (non-fatal):", genError);
         }
       }
       

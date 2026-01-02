@@ -871,6 +871,7 @@ export interface IStorage {
   deleteTaskTemplate(id: string, companyId: string): Promise<boolean>;
   generateRecurringTasks(companyId: string): Promise<{ generated: number }>;
   clearAndRegenerateTemplateTask(templateId: string, companyId: string): Promise<{ deleted: number; generated: number }>;
+  syncTemplateToTasks(templateId: string, companyId: string): Promise<{ synced: number }>;
   createNextRecurringTask(completedTask: Task, companyId: string): Promise<Task | null>;
 
   // Systems Library - Workflow Templates
@@ -7002,6 +7003,20 @@ export class DbStorage implements IStorage {
     try {
       const user = await this.getUser(userId);
       if (!user || !user.roleId) return false;
+
+      // Check if user has an admin-level built-in role (bypass permission check)
+      const role = await this.getUserRole(user.roleId);
+      if (role && role.isBuiltIn) {
+        const roleName = role.name?.toLowerCase() || '';
+        const isAdminRole = 
+          roleName.includes('admin') || 
+          roleName.includes('general manage') || 
+          roleName.includes('owner') ||
+          roleName === 'general manager';
+        if (isAdminRole) {
+          return true; // Full access for built-in admin roles
+        }
+      }
 
       const rolePermissions = await db
         .select({
@@ -15331,6 +15346,134 @@ export class DbStorage implements IStorage {
       return { deleted: deletedCount, generated: generatedCount };
     } catch (error) {
       console.error("Database error in clearAndRegenerateTemplateTask:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Sync template changes to existing future uncompleted tasks
+   * Updates tasks that were generated from this template but haven't been completed yet
+   * Only syncs tasks with due dates >= today and status still in initial states
+   */
+  async syncTemplateToTasks(templateId: string, companyId: string): Promise<{ synced: number }> {
+    try {
+      const template = await this.getTaskTemplate(templateId, companyId);
+      if (!template) {
+        return { synced: 0 };
+      }
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      // Find all future, uncompleted tasks from this template
+      // Only sync tasks that are in initial states (not modified by user)
+      const initialStatuses = ['todo', 'backlog', template.defaultTaskStatus].filter(Boolean);
+      
+      const tasksToSync = await db.select()
+        .from(schema.notes)
+        .where(and(
+          eq(schema.notes.templateId, templateId),
+          eq(schema.notes.companyId, companyId),
+          eq(schema.notes.type, "task"),
+          gte(schema.notes.dueDate, today)
+        ));
+
+      // Filter to only sync tasks that are still in initial status
+      const eligibleTasks = tasksToSync.filter(task => 
+        initialStatuses.includes(task.status || 'todo')
+      );
+
+      if (eligibleTasks.length === 0) {
+        return { synced: 0 };
+      }
+
+      // Get all users for assignee name lookups
+      const allUsers = await db.select()
+        .from(schema.users)
+        .where(eq(schema.users.companyId, companyId));
+
+      // Determine new assignee based on template settings
+      let newAssigneeId: string | null = null;
+      let newAssigneeName: string | null = null;
+      
+      if (template.assigneeType === 'user' && template.assigneeUserId) {
+        newAssigneeId = template.assigneeUserId;
+        const user = allUsers.find(u => u.id === template.assigneeUserId);
+        if (user) {
+          newAssigneeName = `${user.firstName} ${user.lastName}`;
+        }
+      }
+
+      // Prepare update data
+      const updateData: any = {
+        title: template.title,
+        content: template.description || "",
+        priority: template.priority,
+        updatedAt: new Date(),
+      };
+
+      // Only update assignee if template uses direct user assignment (not role-based)
+      // Role-based assignments should preserve the per-user task assignment
+      if (template.assigneeType === 'user') {
+        updateData.assigneeId = newAssigneeId;
+        updateData.assigneeName = newAssigneeName;
+      }
+
+      // Update checklist - merge with existing to preserve completed state
+      const templateChecklist = (template as any).checklist || [];
+      
+      let syncedCount = 0;
+      for (const task of eligibleTasks) {
+        // Merge checklist: keep completed state for matching items
+        const existingChecklist = (task.checklist as any[]) || [];
+        const mergedChecklist = templateChecklist.map((templateItem: any, index: number) => {
+          // Try to find matching existing item by text or index
+          const existingItem = existingChecklist.find(e => e.text === templateItem.text) 
+            || existingChecklist[index];
+          return {
+            id: existingItem?.id || crypto.randomUUID(),
+            text: templateItem.text,
+            completed: existingItem?.completed || false, // Preserve completed state
+          };
+        });
+
+        // Get time from schedule based on task's day of week
+        const taskDueDate = task.dueDate ? new Date(task.dueDate) : null;
+        const dayOfWeek = taskDueDate?.getDay();
+        
+        let startTime = undefined;
+        let endTime = undefined;
+        
+        if (dayOfWeek !== undefined) {
+          const schedule = (template.recurringSchedule as any[]) || [];
+          const scheduleForDay = schedule.find(s => Number(s.dayOfWeek) === dayOfWeek);
+          if (scheduleForDay) {
+            startTime = scheduleForDay.startTime;
+            if (scheduleForDay.duration > 0) {
+              const [hours, minutes] = scheduleForDay.startTime.split(':').map(Number);
+              const totalMinutes = hours * 60 + minutes + scheduleForDay.duration;
+              const endHours = Math.floor(totalMinutes / 60) % 24;
+              const endMinutes = totalMinutes % 60;
+              endTime = `${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}`;
+            }
+          }
+        }
+
+        await db.update(schema.notes)
+          .set({
+            ...updateData,
+            checklist: mergedChecklist,
+            startTime: startTime !== undefined ? startTime : task.startTime,
+            endTime: endTime !== undefined ? endTime : task.endTime,
+          })
+          .where(eq(schema.notes.id, task.id));
+        
+        syncedCount++;
+      }
+
+      return { synced: syncedCount };
+    } catch (error) {
+      console.error("Database error in syncTemplateToTasks:", error);
       throw error;
     }
   }

@@ -57,7 +57,7 @@ Preferred communication style: Simple, everyday language.
 - **Optimistic UI Updates**: Implemented for responsiveness.
 - **Searchable Select Components**: Reusable typeahead components for dropdowns.
 - **Calendar System**: Dual personal and business calendars with month/week/day views, drag-and-drop, and Notion-style flexible filtering with saved views.
-- **Roles & Permissions**: Company-isolated user roles with granular control over 25 permissions.
+- **Roles & Permissions**: Company-isolated user roles with granular control over 25 permissions. Built-in admin roles (General Manager, Admin, Owner) automatically bypass permission checks for full access.
 - **Business Page Reorganization**: Unified navigation with a 2-row header and tab system.
 - **Timesheets System**: Global access, compact table design, configurable columns, tabbed views (Table/Weekly/Calendar), rapid approval modal.
 - **User Workspace**: Default landing page after login, fully customizable widget-based dashboard including personal widgets (My Tasks, My Calendar, Cross-Project Deadlines, Quick Actions, Memos, Day/Week Calendar), widget resizing, drag-and-drop reordering, and saved views.
@@ -66,7 +66,7 @@ Preferred communication style: Simple, everyday language.
 - **Activity Feed Settings**: Company-level settings to toggle visibility of activity types in the ActivityWidget.
 - **Business Dashboard Views**: Database-backed views with company-wide access control, supporting view creation/deletion, access control (everyone/roles/users/private), and widget configuration persistence to the database.
 - **Schedule Widget**: Project dashboard schedule widget with multiple view modes (list, day, week, month), supporting stacked and timeline display modes with configurable filters.
-- **Default Diary**: Weekly view of recurring tasks, with automated generation of recurring tasks from templates.
+- **Default Diary**: Weekly view of recurring tasks, with automated generation of recurring tasks from templates. **Two-Week Pre-Generation**: Tasks are generated for current week + next week (14 days ahead). **Template Sync**: Editing a recurring template automatically syncs changes to all future uncompleted tasks (preserving completed checklist items).
 - **Actionable Status Flag**: `isActionable` boolean flag for status categories to filter and highlight items requiring action in widgets.
 - **Suppliers Migration**: Unified `suppliers` into `contacts` with `contactType='supplier'`, updating all related references. Includes contact merging and dedicated `contactInsurances` table with UI for supplier-type contacts.
 

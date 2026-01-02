@@ -107,12 +107,20 @@ export function requirePermission(permissionKey: string, action: 'view' | 'add' 
     try {
       // Check if user has an admin-level role (bypass permission check for admins)
       const role = await storage.getUserRole(req.user.roleId);
-      const roleName = role?.name?.toLowerCase() || '';
-      // Match "general manage" (catches both "general manage" and "general manager")
-      const isAdminRole = roleName.includes('admin') || roleName.includes('general manage') || roleName.includes('owner');
-      if (isAdminRole) {
-        next();
-        return;
+      if (role) {
+        const roleName = role.name?.toLowerCase() || '';
+        // Built-in admin roles always have full access
+        // Match "general manage" (catches both "general manage" and "general manager")
+        const isAdminRole = role.isBuiltIn && (
+          roleName.includes('admin') || 
+          roleName.includes('general manage') || 
+          roleName.includes('owner') ||
+          roleName === 'general manager'
+        );
+        if (isAdminRole) {
+          next();
+          return;
+        }
       }
 
       // Get role permissions

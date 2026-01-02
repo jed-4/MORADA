@@ -50,8 +50,8 @@ function calculateEndTime(startTime: string, durationMinutes: number): string {
 }
 
 /**
- * Generate task instances for a recurring template for the CURRENT WEEK only (Asana-style)
- * Tasks for the next week are created when the current week's task is completed
+ * Generate task instances for a recurring template for CURRENT + NEXT WEEK (14 days)
+ * This ensures users always have visibility into the next 1-2 weeks of scheduled tasks
  * @param template Task template with recurring schedule
  * @param existingTaskDates Set of existing task dates (ISO strings) to avoid duplicates
  * @returns Array of task instances to create
@@ -70,12 +70,12 @@ export function generateRecurringTaskInstances(
   const today = new Date();
   today.setHours(0, 0, 0, 0); // Start of today
 
-  // Generate for current week only (Monday-Sunday of this week)
-  // Start from Monday of current week, end on Sunday
-  const weekStart = startOfWeek(today, { weekStartsOn: 1 }); // Monday
-  const endDate = addDays(weekStart, 6); // Sunday
+  // Generate for current week + next week (14 days total)
+  // Start from Monday of current week, end on Sunday of next week
+  const weekStart = startOfWeek(today, { weekStartsOn: 1 }); // Monday of current week
+  const endDate = addDays(weekStart, 13); // Sunday of next week (14 days total)
 
-  // Iterate through each day in the 4-week window starting from today
+  // Iterate through each day in the 2-week window starting from today
   for (let currentDate = new Date(today); currentDate <= endDate; currentDate = addDays(currentDate, 1)) {
     // Get day of week (0=Sunday, 6=Saturday - JavaScript standard)
     const dayOfWeek = currentDate.getDay();
@@ -230,4 +230,67 @@ export function generateNextRecurringInstance(
   }
 
   return instance;
+}
+
+/**
+ * Fields that should be synced from template to generated tasks
+ */
+export interface TemplateSyncFields {
+  title?: string;
+  content?: string;
+  priority?: string;
+  assigneeId?: string;
+  assigneeName?: string;
+  checklist?: Array<{ id?: string; text: string; completed: boolean }>;
+  startTime?: string;
+  endTime?: string;
+}
+
+/**
+ * Generate sync fields from a template for updating existing tasks
+ * Only syncs fields that make sense to update on generated tasks
+ * Does NOT sync: dueDate (that's based on schedule), status (user can change that)
+ */
+export function getTemplateSyncFields(
+  template: RecurringTaskTemplate,
+  dayOfWeek?: number
+): TemplateSyncFields {
+  // Determine assignee
+  const effectiveAssigneeId = template.assigneeType === 'user' && template.assigneeUserId 
+    ? template.assigneeUserId 
+    : template.defaultAssigneeId;
+
+  const syncFields: TemplateSyncFields = {
+    title: template.title,
+    content: template.content,
+    priority: template.priority,
+    assigneeId: effectiveAssigneeId,
+  };
+
+  // Sync checklist but preserve completed status if possible
+  if (template.checklist && template.checklist.length > 0) {
+    syncFields.checklist = template.checklist.map((item, index) => ({
+      id: `item-${index}`,
+      text: item.text,
+      completed: false, // Will be merged with existing completed state in storage
+    }));
+  }
+
+  // Sync time if dayOfWeek provided
+  if (dayOfWeek !== undefined) {
+    const scheduleForDay = template.recurringSchedule?.find(s => Number(s.dayOfWeek) === dayOfWeek);
+    if (scheduleForDay) {
+      syncFields.startTime = scheduleForDay.startTime;
+      if (scheduleForDay.duration > 0) {
+        syncFields.endTime = calculateEndTime(scheduleForDay.startTime, scheduleForDay.duration);
+      }
+    } else if (template.recurringStartTime) {
+      syncFields.startTime = template.recurringStartTime;
+      if (template.recurringDuration && template.recurringDuration > 0) {
+        syncFields.endTime = calculateEndTime(template.recurringStartTime, template.recurringDuration);
+      }
+    }
+  }
+
+  return syncFields;
 }
