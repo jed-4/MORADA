@@ -106,7 +106,8 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
   });
 
   // Use fetched task (which includes checklist) over propTask when available
-  const task = fetchedTask || propTask;
+  // IMPORTANT: Only use fetchedTask if we have an effectiveTaskId, otherwise stale cache causes bugs
+  const task = effectiveTaskId ? (fetchedTask || propTask) : undefined;
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleValue, setTitleValue] = useState(task?.title || "");
   const [subtaskInput, setSubtaskInput] = useState("");
