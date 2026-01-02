@@ -4479,7 +4479,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     // This ensures the redirect URI is always consistent regardless of deployment
     const productionUrl = 'https://buildpro4.replit.app/api/google-calendar/callback';
     
-    if (process.env.NODE_ENV === 'production' || process.env.REPLIT_DEPLOYMENT) {
+    // Check for production environment - multiple ways to detect
+    const domains = process.env.REPLIT_DOMAINS?.split(',') || [];
+    const hasProductionDomain = domains.some(d => d.trim().endsWith('.replit.app'));
+    const isProduction = process.env.NODE_ENV === 'production' || 
+                         process.env.REPLIT_DEPLOYMENT || 
+                         hasProductionDomain;
+    
+    console.log('[GoogleCalendar] Environment check:', {
+      NODE_ENV: process.env.NODE_ENV,
+      REPLIT_DEPLOYMENT: !!process.env.REPLIT_DEPLOYMENT,
+      REPLIT_DOMAINS: process.env.REPLIT_DOMAINS,
+      hasProductionDomain,
+      isProduction
+    });
+    
+    if (isProduction) {
       console.log('[GoogleCalendar] Using production redirect URI:', productionUrl);
       return productionUrl;
     }
