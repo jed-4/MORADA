@@ -4777,6 +4777,7 @@ export const reminders = pgTable("reminders", {
 export const insertReminderSchema = createInsertSchema(reminders).omit({
   id: true,
   companyId: true,
+  userId: true,
   createdAt: true,
   updatedAt: true,
 }).extend({
