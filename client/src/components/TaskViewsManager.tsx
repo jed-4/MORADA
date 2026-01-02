@@ -49,6 +49,7 @@ interface TaskViewsManagerProps {
   currentFilters: TaskViewFilters;
   currentGroupBy: "none" | "status" | "priority" | "assignee";
   onViewSelect: (view: TaskView) => void;
+  onViewDeselect?: () => void;
   selectedViewId?: string;
 }
 
@@ -57,6 +58,7 @@ export default function TaskViewsManager({
   currentFilters,
   currentGroupBy,
   onViewSelect,
+  onViewDeselect,
   selectedViewId,
 }: TaskViewsManagerProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -180,7 +182,12 @@ export default function TaskViewsManager({
 
   const handleViewSelect = (view: TaskView) => {
     setDropdownOpen(false);
-    onViewSelect(view);
+    // Toggle behavior: if clicking the already selected view, deselect it
+    if (selectedViewId === view.id && onViewDeselect) {
+      onViewDeselect();
+    } else {
+      onViewSelect(view);
+    }
   };
 
   const currentView = views.find((v: TaskView) => v.id === selectedViewId);

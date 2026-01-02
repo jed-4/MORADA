@@ -662,6 +662,10 @@ export default function BusinessTasks() {
               setGroupBy(view.groupBy);
               setSelectedViewId(view.id);
             }}
+            onViewDeselect={() => {
+              setSelectedViewId(undefined);
+              setFilters({});
+            }}
             selectedViewId={selectedViewId}
           />
         )}

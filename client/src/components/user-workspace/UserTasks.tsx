@@ -896,6 +896,10 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                   setGroupBy(view.groupBy === 'assignee' ? 'none' : view.groupBy);
                   setSelectedViewId(view.id);
                 }}
+                onViewDeselect={() => {
+                  setSelectedViewId(undefined);
+                  setFilters({});
+                }}
                 selectedViewId={selectedViewId}
               />
             )}
