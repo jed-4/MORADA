@@ -1,5 +1,4 @@
 import React, { useState, useRef } from "react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -71,7 +70,8 @@ export default function Tasks() {
   
   // Use projectId from URL params if available, otherwise fall back to currentProject
   const effectiveProjectId = params.projectId || currentProject?.id;
-  const [activeTab, setActiveTab] = useState("list");
+  const [activeView, setActiveView] = useState<"list" | "kanban" | "calendar">("list");
+  const [selectedViewId, setSelectedViewId] = useState<string | null>(null);
   const [showViewSettings, setShowViewSettings] = useState(false);
   const [showCreateViewDialog, setShowCreateViewDialog] = useState(false);
   const [showDeleteViewDialog, setShowDeleteViewDialog] = useState(false);
@@ -103,7 +103,7 @@ export default function Tasks() {
     },
     {
       key: "g",
-      handler: () => setActiveTab("board"),
+      handler: () => setActiveView("kanban"),
       description: "Go to Board (G)"
     },
     {
@@ -151,7 +151,7 @@ export default function Tasks() {
     },
     onSuccess: (newView: TaskView) => {
       queryClient.invalidateQueries({ queryKey: ["/api/task-views", effectiveProjectId] });
-      setActiveTab(newView.id); // Auto-select the newly created view
+      setSelectedViewId(newView.id); // Auto-select the newly created view
       setShowCreateViewDialog(false);
       setNewViewName("");
       setNewViewType("kanban");
@@ -235,8 +235,8 @@ export default function Tasks() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/task-views", effectiveProjectId] });
       // If the deleted view was active, switch to default kanban view
-      if (viewToDelete && activeTab === viewToDelete.id) {
-        setActiveTab("kanban");
+      if (viewToDelete && selectedViewId === viewToDelete.id) {
+        setSelectedViewId(null);
       }
       setShowDeleteViewDialog(false);
       setViewToDelete(null);
@@ -359,7 +359,8 @@ export default function Tasks() {
     if (userPreferences?.preferences) {
       const prefs = userPreferences.preferences;
       console.log('[Tasks] Applying loaded preferences:', prefs);
-      if (prefs.activeTab) setActiveTab(prefs.activeTab);
+      if (prefs.activeView) setActiveView(prefs.activeView);
+      if (prefs.selectedViewId) setSelectedViewId(prefs.selectedViewId);
       if (prefs.groupBy) setGroupBy(prefs.groupBy);
       if (prefs.filters) setFilters(prefs.filters);
       if (prefs.columnOrder) {
@@ -413,7 +414,8 @@ export default function Tasks() {
 
     const timeoutId = setTimeout(() => {
       savePreferencesMutation.mutate({
-        activeTab,
+        activeView,
+        selectedViewId,
         groupBy,
         filters,
         columnOrder,
@@ -424,7 +426,7 @@ export default function Tasks() {
     }, 1000); // 1 second debounce
 
     return () => clearTimeout(timeoutId);
-  }, [activeTab, groupBy, filters, columnOrder, columnVisibility, cardDisplaySettings, cardWidth, preferencesLoaded]);
+  }, [activeView, selectedViewId, groupBy, filters, columnOrder, columnVisibility, cardDisplaySettings, cardWidth, preferencesLoaded]);
 
   // Group tasks based on selected grouping (useMemo hook must be declared here with all other hooks)
   const groupedTasks = React.useMemo(() => {
@@ -441,7 +443,8 @@ export default function Tasks() {
     const filteredTasks = applyTaskFilters(allTasks, filters);
     
     const getCurrentViewFilters = () => {
-      const currentView = taskViews.find(view => view.id === activeTab);
+      if (!selectedViewId) return {};
+      const currentView = taskViews.find(view => view.id === selectedViewId);
       if (currentView && currentView.filters) {
         return deserializeFilters(currentView.filters as Record<string, any>);
       }
@@ -455,12 +458,8 @@ export default function Tasks() {
     
     const effectivelyFilteredTasks = applyTaskFilters(allTasks, effectiveFilters);
     
-    if (activeTab !== 'list' && activeTab !== 'kanban') {
-      return { 'All Tasks': effectivelyFilteredTasks };
-    }
-    
     // For list view without grouping, return all tasks
-    if (activeTab === 'list') {
+    if (activeView === 'list') {
       return { 'All Tasks': effectivelyFilteredTasks };
     }
 
@@ -497,7 +496,7 @@ export default function Tasks() {
     });
     
     return sortedGroups;
-  }, [currentProject, taskViews, allTasks, filters, groupBy, activeTab]);
+  }, [currentProject, taskViews, allTasks, filters, groupBy, activeView, selectedViewId]);
 
   // CONDITIONAL RENDERING - MUST BE AFTER ALL HOOKS
   if (!currentProject) {
@@ -531,7 +530,7 @@ export default function Tasks() {
     if (!effectiveProjectId) return;
     
     // Check if we're on a custom view
-    const currentView = taskViews.find(view => view.id === activeTab);
+    const currentView = selectedViewId ? taskViews.find(view => view.id === selectedViewId) : null;
     
     if (currentView) {
       // Update existing view with current filters and settings
@@ -583,7 +582,8 @@ export default function Tasks() {
 
   // Get current view filters for custom views
   const getCurrentViewFilters = () => {
-    const currentView = taskViews.find(view => view.id === activeTab);
+    if (!selectedViewId) return {};
+    const currentView = taskViews.find(view => view.id === selectedViewId);
     if (currentView && currentView.filters) {
       return deserializeFilters(currentView.filters as Record<string, any>);
     }
@@ -657,13 +657,13 @@ export default function Tasks() {
       <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
         {/* Left: View Tabs */}
         <div className="flex items-center gap-0.5" data-testid="tabs-task-views">
-          {/* Default View Mode Tabs */}
+          {/* Default View Mode Tabs - always one selected */}
           {defaultViews.map((view) => (
             <button
               key={view.id}
-              onClick={() => setActiveTab(view.id)}
+              onClick={() => setActiveView(view.id as "list" | "kanban" | "calendar")}
               className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                activeTab === view.id 
+                activeView === view.id 
                   ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
                   : 'hover-elevate'
               } active-elevate-2 flex items-center gap-1`}
@@ -678,13 +678,13 @@ export default function Tasks() {
             <div className="h-4 w-px bg-border mx-1" />
           )}
           
-          {/* Saved/Custom Views */}
+          {/* Saved/Custom Views (Filters) - can be toggled on/off */}
           {taskViews.map((view) => (
             <div key={view.id} className="relative group">
               <button
-                onClick={() => setActiveTab(view.id)}
+                onClick={() => setSelectedViewId(selectedViewId === view.id ? null : view.id)}
                 className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                  activeTab === view.id 
+                  selectedViewId === view.id 
                     ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
                     : 'hover-elevate'
                 } active-elevate-2 flex items-center gap-1`}
@@ -964,7 +964,7 @@ export default function Tasks() {
           {/* Right: Card Width & Group By Controls */}
           <div className="flex items-center gap-1.5">
             {/* Card Width - only show in kanban view */}
-            {activeTab === "kanban" && (
+            {activeView === "kanban" && (
               <Select value={cardWidth} onValueChange={(value) => setCardWidth(value as typeof cardWidth)}>
                 <SelectTrigger className="h-6 w-auto px-2 py-0 text-xs border [&>svg]:hidden" data-testid="select-card-width">
                   <span>Cards</span>
@@ -978,7 +978,7 @@ export default function Tasks() {
             )}
 
             {/* Card Display Settings - only show in kanban view */}
-            {activeTab === "kanban" && (
+            {activeView === "kanban" && (
               <Popover>
                 <PopoverTrigger asChild>
                   <button
@@ -1036,7 +1036,7 @@ export default function Tasks() {
             )}
 
             {/* Group by - only show in kanban view */}
-            {activeTab === "kanban" && (
+            {activeView === "kanban" && (
               <Select value={groupBy} onValueChange={(value) => setGroupBy(value as typeof groupBy)}>
                 <SelectTrigger className="h-6 w-auto px-2 py-0 text-xs border [&>svg]:hidden" data-testid="select-group-by">
                   <span>Group by</span>
@@ -1055,7 +1055,7 @@ export default function Tasks() {
             )}
 
             {/* Columns button - only show in list view */}
-            {activeTab === "list" && (
+            {activeView === "list" && (
               <Popover>
                 <PopoverTrigger asChild>
                   <button
@@ -1135,26 +1135,28 @@ export default function Tasks() {
           </div>
         </div>
 
-      {/* Content Area with Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-        <div className="flex-1 overflow-auto">
-          <TabsContent value="kanban" className="h-full m-0 p-2 data-[state=active]:flex">
+      {/* Content Area - render based on activeView mode, with saved view filters applied */}
+      <div className="flex-1 overflow-auto">
+        {activeView === "kanban" && (
+          <div className="h-full p-2">
             <TaskBoard tasks={effectivelyFilteredTasks} isLoading={tasksLoading} onTaskClick={(task: Task) => setEditingTask(task)} projectId={effectiveProjectId} displaySettings={cardDisplaySettings} cardWidth={cardWidth} />
-          </TabsContent>
-          
-          <TabsContent value="list" className="h-full m-0 data-[state=active]:flex">
-            <div className="flex-1 overflow-auto p-2">
-              <TaskListCompact
-                tasks={effectivelyFilteredTasks}
-                isLoading={tasksLoading}
-                onTaskClick={(task: Task) => setEditingTask(task)}
-                projectId={effectiveProjectId}
-                columnConfig={{ order: columnOrder }}
-              />
-            </div>
-          </TabsContent>
+          </div>
+        )}
+        
+        {activeView === "list" && (
+          <div className="flex-1 overflow-auto p-2">
+            <TaskListCompact
+              tasks={effectivelyFilteredTasks}
+              isLoading={tasksLoading}
+              onTaskClick={(task: Task) => setEditingTask(task)}
+              projectId={effectiveProjectId}
+              columnConfig={{ order: columnOrder }}
+            />
+          </div>
+        )}
 
-          <TabsContent value="calendar" className="h-full m-0 p-2 data-[state=active]:flex">
+        {activeView === "calendar" && (
+          <div className="h-full p-2">
             <EnhancedCalendar
               events={tasksToCalendarEvents(effectivelyFilteredTasks)}
               date={calendarDate}
@@ -1168,63 +1170,24 @@ export default function Tasks() {
               onEventReschedule={handleTaskReschedule}
               onEventResize={handleTaskResize}
             />
-          </TabsContent>
-          
-          {/* Custom Views */}
-          {taskViews.map((view) => {
-            // For custom views, merge view filters with user filters and apply to tasks
-            const viewFilters = deserializeFilters(view.filters as Record<string, any> || {});
-            const combinedFilters = { ...viewFilters, ...filters };
-            const viewFilteredTasks = applyTaskFilters(allTasks, combinedFilters);
-            
-            return (
-              <TabsContent key={view.id} value={view.id} className="h-full m-0 p-2 data-[state=active]:flex">
-                {view.viewType === "kanban" ? (
-                  <TaskBoard tasks={viewFilteredTasks} isLoading={tasksLoading} onTaskClick={(task: Task) => setEditingTask(task)} displaySettings={cardDisplaySettings} cardWidth={cardWidth} />
-                ) : view.viewType === "calendar" ? (
-                  <EnhancedCalendar
-                    events={tasksToCalendarEvents(viewFilteredTasks)}
-                    date={calendarDate}
-                    onDateChange={setCalendarDate}
-                    mode={calendarMode}
-                    onEventClick={(event) => {
-                      const task = allTasks.find((t) => t.id === event.id);
-                      if (task) setEditingTask(task);
-                    }}
-                    onEventComplete={handleTaskComplete}
-                    onEventReschedule={handleTaskReschedule}
-                    onEventResize={handleTaskResize}
-                  />
-                ) : (
-                  <div className="flex-1 overflow-auto">
-                    <TaskListCompact
-                      tasks={viewFilteredTasks}
-                      isLoading={tasksLoading}
-                      onTaskClick={(task: Task) => setEditingTask(task)}
-                      projectId={effectiveProjectId}
-                    />
-                  </div>
-                )}
-              </TabsContent>
-            );
-          })}
-        </div>
-      </Tabs>
+          </div>
+        )}
+      </div>
 
       {/* Save View Dialog */}
       <Dialog open={showCreateViewDialog} onOpenChange={setShowCreateViewDialog}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>
-              {taskViews.find(view => view.id === activeTab) ? "Save View" : "Save As New View"}
+              {selectedViewId && taskViews.find(view => view.id === selectedViewId) ? "Save View" : "Save As New View"}
             </DialogTitle>
             <DialogDescription>
-              {taskViews.find(view => view.id === activeTab) 
+              {selectedViewId && taskViews.find(view => view.id === selectedViewId) 
                 ? "Update the current view with your current filters and settings."
                 : "Create a new view from the current view with your filters and settings."}
             </DialogDescription>
           </DialogHeader>
-          {!taskViews.find(view => view.id === activeTab) && (
+          {!(selectedViewId && taskViews.find(view => view.id === selectedViewId)) && (
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
                 <Label htmlFor="view-name">View Name</Label>
@@ -1261,7 +1224,7 @@ export default function Tasks() {
             </Button>
             <Button
               onClick={handleSaveView}
-              disabled={(taskViews.find(view => view.id === activeTab) ? false : !newViewName.trim()) || createViewMutation.isPending || updateViewMutation.isPending}
+              disabled={(selectedViewId && taskViews.find(view => view.id === selectedViewId) ? false : !newViewName.trim()) || createViewMutation.isPending || updateViewMutation.isPending}
               data-testid="button-save-view"
             >
               {(createViewMutation.isPending || updateViewMutation.isPending) ? "Saving..." : "Save View"}
