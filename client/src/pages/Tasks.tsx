@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
-import { Plus, Settings, MoreHorizontal, X, Flag, User, Tag, Layers, Eye, Zap, Search, GripVertical, Columns as ColumnsIcon, SlidersHorizontal } from "lucide-react";
+import { Plus, Settings, MoreHorizontal, X, Flag, User, Tag, Layers, Eye, Zap, Search, GripVertical, Columns as ColumnsIcon, SlidersHorizontal, Pencil } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -75,9 +75,12 @@ export default function Tasks() {
   const [showViewSettings, setShowViewSettings] = useState(false);
   const [showCreateViewDialog, setShowCreateViewDialog] = useState(false);
   const [showDeleteViewDialog, setShowDeleteViewDialog] = useState(false);
+  const [showEditViewDialog, setShowEditViewDialog] = useState(false);
   const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [viewToDelete, setViewToDelete] = useState<TaskView | null>(null);
+  const [viewToEdit, setViewToEdit] = useState<TaskView | null>(null);
+  const [editViewName, setEditViewName] = useState("");
   const [newViewName, setNewViewName] = useState("");
   const [newViewType, setNewViewType] = useState<"kanban" | "list" | "calendar">("kanban");
   const [groupBy, setGroupBy] = useState<'status' | 'priority' | 'assignee' | 'tags'>('status');
@@ -168,12 +171,12 @@ export default function Tasks() {
 
   // Mutation for updating views
   const updateViewMutation = useMutation({
-    mutationFn: async (data: { id: string; filters?: any; columnConfig?: any }): Promise<TaskView> => {
+    mutationFn: async (data: { id: string; name?: string; filters?: any; columnConfig?: any }): Promise<TaskView> => {
       const response = await fetch(`/api/task-views/${data.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ filters: data.filters, columnConfig: data.columnConfig }),
+        body: JSON.stringify({ name: data.name, filters: data.filters, columnConfig: data.columnConfig }),
       });
       if (!response.ok) throw new Error("Failed to update view");
       return response.json();
@@ -181,6 +184,8 @@ export default function Tasks() {
     onSuccess: (updatedView: TaskView) => {
       queryClient.invalidateQueries({ queryKey: ["/api/task-views", effectiveProjectId] });
       setShowCreateViewDialog(false);
+      setShowEditViewDialog(false);
+      setViewToEdit(null);
       toast({
         title: "View saved",
         description: `"${updatedView.name}" has been updated.`,
@@ -194,6 +199,29 @@ export default function Tasks() {
       });
     },
   });
+
+  // Handle edit view
+  const handleEditView = (view: TaskView) => {
+    setViewToEdit(view);
+    setEditViewName(view.name);
+    setShowEditViewDialog(true);
+  };
+
+  const handleUpdateView = () => {
+    if (!viewToEdit || !editViewName.trim()) return;
+    updateViewMutation.mutate({
+      id: viewToEdit.id,
+      name: editViewName,
+      filters,
+      columnConfig: {
+        columnOrder,
+        columnVisibility,
+        cardDisplaySettings,
+        cardWidth,
+        groupBy,
+      },
+    });
+  };
 
   // Mutation for deleting views
   const deleteViewMutation = useMutation({
@@ -663,6 +691,16 @@ export default function Tasks() {
                 data-testid={`tab-${view.id}`}
               >
                 {view.name}
+              </button>
+              <button
+                className="absolute -left-1 -top-1 h-4 w-4 rounded-full bg-muted text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleEditView(view);
+                }}
+                data-testid={`button-edit-${view.id}`}
+              >
+                <Pencil className="h-2 w-2" />
               </button>
               <button
                 className="absolute -right-1 -top-1 h-4 w-4 rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
@@ -1254,6 +1292,46 @@ export default function Tasks() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Edit View Dialog */}
+      <Dialog open={showEditViewDialog} onOpenChange={setShowEditViewDialog}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Edit View</DialogTitle>
+            <DialogDescription>
+              Update the view name and save current filters to this view.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="edit-view-name">View Name</Label>
+              <Input
+                id="edit-view-name"
+                value={editViewName}
+                onChange={(e) => setEditViewName(e.target.value)}
+                placeholder="My Custom View"
+                data-testid="input-edit-view-name"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowEditViewDialog(false)}
+              data-testid="button-cancel-edit"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleUpdateView}
+              disabled={!editViewName.trim() || updateViewMutation.isPending}
+              data-testid="button-update-view"
+            >
+              {updateViewMutation.isPending ? "Updating..." : "Update View"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Task Creation Dialog */}
       <TaskModalAsana 

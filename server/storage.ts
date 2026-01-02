@@ -6303,7 +6303,12 @@ export class DbStorage implements IStorage {
       })
       .from(schema.users)
       .leftJoin(schema.userRoles, eq(schema.users.roleId, schema.userRoles.id))
-      .where(and(...baseConditions));
+      .where(and(...baseConditions))
+      .orderBy(
+        asc(schema.userRoles.displayOrder),
+        asc(schema.users.firstName),
+        asc(schema.users.lastName)
+      );
 
     return results.map(({ user, role }) => ({
       ...user,
