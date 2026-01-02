@@ -4475,25 +4475,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Initialize Google OAuth2 client for Google Calendar
   const getCalendarRedirectUri = () => {
-    if (process.env.REPLIT_DOMAINS) {
-      // Use the first domain from REPLIT_DOMAINS
-      const domain = process.env.REPLIT_DOMAINS.split(',')[0];
-      return `https://${domain}/api/google-calendar/callback`;
+    // Use hardcoded production URL to match Google Cloud Console configuration
+    // This ensures the redirect URI is always consistent regardless of deployment
+    const productionUrl = 'https://buildpro4.replit.app/api/google-calendar/callback';
+    
+    if (process.env.NODE_ENV === 'production' || process.env.REPLIT_DEPLOYMENT) {
+      console.log('[GoogleCalendar] Using production redirect URI:', productionUrl);
+      return productionUrl;
     }
-    return 'http://localhost:5000/api/google-calendar/callback';
+    
+    // For development, use localhost
+    if (!process.env.REPLIT_DOMAINS) {
+      console.log('[GoogleCalendar] Using localhost redirect URI');
+      return 'http://localhost:5000/api/google-calendar/callback';
+    }
+    
+    // For Replit dev environment, use the domain but log it
+    const domain = process.env.REPLIT_DOMAINS.split(',')[0];
+    const devUrl = `https://${domain}/api/google-calendar/callback`;
+    console.log('[GoogleCalendar] Using dev redirect URI:', devUrl);
+    console.log('[GoogleCalendar] NOTE: Make sure this URI is registered in Google Cloud Console');
+    return devUrl;
   };
 
+  const redirectUri = getCalendarRedirectUri();
+  console.log('[GoogleCalendar] Initializing OAuth2 client with redirect URI:', redirectUri);
+  
   const calendarOauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
-    getCalendarRedirectUri()
+    redirectUri
   );
 
   // Initiate Google Calendar OAuth flow
   app.get('/api/google-calendar/initiate', async (req: any, res) => {
     try {
       const userId = (req.session as any)?.userId;
+      console.log('[GoogleCalendar] /initiate called, userId:', userId);
+      console.log('[GoogleCalendar] Session ID:', req.sessionID);
+      console.log('[GoogleCalendar] Request host:', req.get('host'));
+      
       if (!userId) {
+        console.error('[GoogleCalendar] No userId in session - user not logged in');
         return res.status(401).json({ message: "Unauthorized" });
       }
 
@@ -4503,6 +4526,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Store user ID and state in session for callback verification
       (req.session as any).googleOAuthUserId = userId;
       (req.session as any).googleOAuthState = state;
+      
+      // Force session save before redirect
+      await new Promise<void>((resolve, reject) => {
+        req.session.save((err: any) => {
+          if (err) {
+            console.error('[GoogleCalendar] Session save error:', err);
+            reject(err);
+          } else {
+            console.log('[GoogleCalendar] Session saved successfully');
+            resolve();
+          }
+        });
+      });
 
       const authUrl = calendarOauth2Client.generateAuthUrl({
         access_type: 'offline',
@@ -4511,9 +4547,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         state: state, // CSRF protection
       });
 
+      console.log('[GoogleCalendar] Redirecting to Google auth URL');
       res.redirect(authUrl);
     } catch (error) {
-      console.error("Error initiating Google OAuth:", error);
+      console.error("[GoogleCalendar] Error initiating OAuth:", error);
       res.status(500).json({ message: "Failed to initiate OAuth" });
     }
   });
@@ -4525,23 +4562,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = (req.session as any)?.googleOAuthUserId;
       const storedState = (req.session as any)?.googleOAuthState;
 
+      console.log('[GoogleCalendar] /callback received');
+      console.log('[GoogleCalendar] Session ID:', req.sessionID);
+      console.log('[GoogleCalendar] Request host:', req.get('host'));
+      console.log('[GoogleCalendar] Has code:', !!code);
+      console.log('[GoogleCalendar] Has state:', !!state);
+      console.log('[GoogleCalendar] UserId from session:', userId);
+      console.log('[GoogleCalendar] StoredState exists:', !!storedState);
+
       // Handle OAuth errors from Google
       if (oauthError) {
-        console.error("OAuth error from Google:", oauthError);
+        console.error("[GoogleCalendar] OAuth error from Google:", oauthError);
         delete (req.session as any).googleOAuthUserId;
         delete (req.session as any).googleOAuthState;
         return res.redirect(`/profile?error=oauth_denied`);
       }
 
       if (!code) {
-        console.error("No authorization code received");
+        console.error("[GoogleCalendar] No authorization code received");
         delete (req.session as any).googleOAuthUserId;
         delete (req.session as any).googleOAuthState;
         return res.redirect('/profile?error=no_code');
       }
 
       if (!userId) {
-        console.error("No userId in session");
+        console.error("[GoogleCalendar] No userId in session - session may have been lost");
+        console.error("[GoogleCalendar] This often happens when the callback domain differs from the initiate domain");
         delete (req.session as any).googleOAuthUserId;
         delete (req.session as any).googleOAuthState;
         return res.redirect('/profile?error=session_expired');
@@ -4549,7 +4595,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Verify CSRF state token
       if (!state || !storedState || state !== storedState) {
-        console.error("State mismatch - CSRF protection triggered");
+        console.error("[GoogleCalendar] State mismatch - CSRF protection triggered");
+        console.error("[GoogleCalendar] Received state:", state?.substring(0, 10) + '...');
+        console.error("[GoogleCalendar] Stored state:", storedState?.substring(0, 10) + '...');
         delete (req.session as any).googleOAuthUserId;
         delete (req.session as any).googleOAuthState;
         return res.redirect('/profile?error=invalid_state');
