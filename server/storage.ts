@@ -15132,10 +15132,19 @@ export class DbStorage implements IStorage {
       for (const template of templates) {
         const instances = generateRecurringTaskInstances(template as any, existingTaskKeys);
 
-        // Determine assignees for this template
+        // Determine assignees for this template based on assigneeType
         let assignees: typeof allUsers = [];
-        if (template.defaultRoleId) {
+        const templateData = template as any;
+        
+        if (templateData.assigneeType === 'user' && templateData.assigneeUserId) {
+          // Direct user assignment - find the specific user
+          const singleUser = allUsers.find(user => user.id === templateData.assigneeUserId);
+          if (singleUser) assignees = [singleUser];
+        } else if (templateData.assigneeType === 'role' && template.defaultRoleId) {
           // Role-based assignment: find all users with this role
+          assignees = allUsers.filter(user => user.roleId === template.defaultRoleId);
+        } else if (template.defaultRoleId) {
+          // Legacy fallback: role-based assignment without assigneeType
           assignees = allUsers.filter(user => user.roleId === template.defaultRoleId);
         } else if (template.recurringAssigneeId) {
           // Legacy: single assignee (DEPRECATED)
@@ -15264,9 +15273,19 @@ export class DbStorage implements IStorage {
       // Generate new task instances
       const instances = generateRecurringTaskInstances(template as any, new Set());
 
-      // Determine assignees for this template
+      // Determine assignees for this template based on assigneeType
       let assignees: typeof allUsers = [];
-      if (template.defaultRoleId) {
+      const templateData = template as any;
+      
+      if (templateData.assigneeType === 'user' && templateData.assigneeUserId) {
+        // Direct user assignment - find the specific user
+        const singleUser = allUsers.find(user => user.id === templateData.assigneeUserId);
+        if (singleUser) assignees = [singleUser];
+      } else if (templateData.assigneeType === 'role' && template.defaultRoleId) {
+        // Role-based assignment: find all users with this role
+        assignees = allUsers.filter(user => user.roleId === template.defaultRoleId);
+      } else if (template.defaultRoleId) {
+        // Legacy fallback: role-based assignment without assigneeType
         assignees = allUsers.filter(user => user.roleId === template.defaultRoleId);
       }
 
