@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Settings, MoreHorizontal, X, Search, ChevronLeft, ChevronRight, Save } from "lucide-react";
+import { Plus, Settings, MoreHorizontal, X, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import {
   DropdownMenu,
@@ -245,7 +245,7 @@ export default function BusinessTasks() {
 
   const handleSelectSavedView = (view: TaskView) => {
     setSelectedViewId(view.id);
-    setActiveTab(view.viewType as "board" | "list" | "calendar");
+    // Only apply filters, not view mode - views work across all view modes
     if (view.filters) {
       setFilters(view.filters as FilterState);
     }
@@ -492,7 +492,6 @@ export default function BusinessTasks() {
                 } active-elevate-2 flex items-center gap-1`}
                 data-testid={`tab-${view.id}`}
               >
-                <Save className="w-3 h-3" />
                 {view.name}
               </button>
               <button

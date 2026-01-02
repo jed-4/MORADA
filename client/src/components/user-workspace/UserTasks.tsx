@@ -34,7 +34,6 @@ import {
   Filter,
   X,
   CalendarDays,
-  Save,
 } from "lucide-react";
 import TaskBoard from "@/components/TaskBoard";
 import TaskListCompact from "@/components/TaskListCompact";
@@ -274,7 +273,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
 
   const handleSelectSavedView = (view: TaskView) => {
     setSelectedViewId(view.id);
-    setActiveView(view.viewType as ViewType);
+    // Only apply filters, not view mode - views work across all view modes
     if (view.filters) {
       setFilters(view.filters as FilterState);
     }
@@ -487,7 +486,6 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                   }`}
                   data-testid={`tab-${view.id}`}
                 >
-                  <Save className="w-3 h-3" />
                   <span>{view.name}</span>
                   {selectedViewId === view.id && (
                     <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#bba7db] rounded-full" />
