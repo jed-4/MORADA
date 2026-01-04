@@ -91,10 +91,18 @@ export class GoogleOAuthService {
   
   async handleCallback(code: string, state: string): Promise<User> {
     const { userId } = this.parseState(state);
+    console.log('[GoogleOAuth] Processing callback for user:', userId);
     
     const { tokens } = await this.oauth2Client.getToken(code);
     
+    console.log('[GoogleOAuth] Received tokens:', {
+      hasAccessToken: !!tokens.access_token,
+      hasRefreshToken: !!tokens.refresh_token,
+      expiryDate: tokens.expiry_date,
+    });
+    
     if (!tokens.access_token || !tokens.refresh_token) {
+      console.error('[GoogleOAuth] Missing tokens - access:', !!tokens.access_token, 'refresh:', !!tokens.refresh_token);
       throw new Error('Missing tokens from Google OAuth response');
     }
     
@@ -106,6 +114,8 @@ export class GoogleOAuthService {
     if (!email) {
       throw new Error('Unable to retrieve email from Google');
     }
+    
+    console.log('[GoogleOAuth] Encrypting and storing tokens for:', email);
     
     const encryptedAccessToken = encryptToken(tokens.access_token);
     const encryptedRefreshToken = tokens.refresh_token ? encryptToken(tokens.refresh_token) : null;
@@ -126,6 +136,8 @@ export class GoogleOAuthService {
       throw new Error('Failed to update user with Google Calendar tokens');
     }
     
+    console.log('[GoogleOAuth] Successfully connected Google Calendar for user:', userId, 'email:', email);
+    
     return updatedUser;
   }
   
@@ -133,11 +145,32 @@ export class GoogleOAuthService {
     const user = await this.storage.getUser(userId);
     
     if (!user || !user.googleCalendarAccessToken || !user.googleCalendarRefreshToken) {
+      console.log('[GoogleOAuth] No tokens found for user:', userId);
       throw new Error('Google Calendar not connected for this user');
     }
     
-    const accessToken = decryptToken(user.googleCalendarAccessToken);
-    const refreshToken = decryptToken(user.googleCalendarRefreshToken);
+    console.log('[GoogleOAuth] Attempting to decrypt tokens for user:', userId);
+    
+    let accessToken: string;
+    let refreshToken: string;
+    
+    try {
+      accessToken = decryptToken(user.googleCalendarAccessToken);
+      refreshToken = decryptToken(user.googleCalendarRefreshToken);
+      console.log('[GoogleOAuth] Token decryption successful');
+    } catch (decryptError: any) {
+      console.error('[GoogleOAuth] DECRYPTION FAILED for user:', userId);
+      console.error('[GoogleOAuth] Error:', decryptError.message);
+      console.error('[GoogleOAuth] Clearing corrupted tokens - user will need to reconnect');
+      await this.storage.updateUser(userId, {
+        googleCalendarEmail: null,
+        googleCalendarAccessToken: null,
+        googleCalendarRefreshToken: null,
+        googleCalendarTokenExpiry: null,
+        googleCalendarConnectedAt: null,
+      });
+      throw new Error('Google Calendar tokens corrupted. Please reconnect your calendar.');
+    }
     
     this.oauth2Client.setCredentials({
       access_token: accessToken,
@@ -145,12 +178,22 @@ export class GoogleOAuthService {
       expiry_date: user.googleCalendarTokenExpiry?.getTime(),
     });
     
+    const tokenExpiry = user.googleCalendarTokenExpiry?.getTime() || 0;
     const shouldRefresh = !user.googleCalendarTokenExpiry || 
-      user.googleCalendarTokenExpiry.getTime() < Date.now() + 5 * 60 * 1000;
+      tokenExpiry < Date.now() + 5 * 60 * 1000;
+    
+    console.log('[GoogleOAuth] Token status:', {
+      userId,
+      tokenExpiry: user.googleCalendarTokenExpiry,
+      expiresIn: tokenExpiry ? Math.round((tokenExpiry - Date.now()) / 1000 / 60) + ' minutes' : 'unknown',
+      shouldRefresh,
+    });
     
     if (shouldRefresh) {
+      console.log('[GoogleOAuth] Attempting token refresh for user:', userId);
       try {
         const { credentials } = await this.oauth2Client.refreshAccessToken();
+        console.log('[GoogleOAuth] Token refresh successful');
         
         if (credentials.access_token) {
           const encryptedAccessToken = encryptToken(credentials.access_token);
@@ -163,15 +206,23 @@ export class GoogleOAuthService {
             googleCalendarTokenExpiry: expiryDate,
           });
           
+          console.log('[GoogleOAuth] New token saved, expires:', expiryDate);
           this.oauth2Client.setCredentials(credentials);
         }
       } catch (refreshError: any) {
-        console.error('[GoogleOAuth] Token refresh failed:', refreshError.message);
-        // Clear invalid tokens so user is prompted to reconnect
+        console.error('[GoogleOAuth] TOKEN REFRESH FAILED for user:', userId);
+        console.error('[GoogleOAuth] Error name:', refreshError.name);
+        console.error('[GoogleOAuth] Error message:', refreshError.message);
+        console.error('[GoogleOAuth] Error code:', refreshError.code);
+        console.error('[GoogleOAuth] Full error:', JSON.stringify(refreshError, null, 2));
+        console.error('[GoogleOAuth] Clearing invalid tokens - user will need to reconnect');
+        
         await this.storage.updateUser(userId, {
+          googleCalendarEmail: null,
           googleCalendarAccessToken: null,
           googleCalendarRefreshToken: null,
           googleCalendarTokenExpiry: null,
+          googleCalendarConnectedAt: null,
         });
         throw new Error('Google Calendar token expired. Please reconnect your calendar.');
       }
@@ -216,11 +267,28 @@ export class GoogleOAuthService {
     const user = await this.storage.getUser(userId);
     
     if (!user || !user.googleCalendarAccessToken || !user.googleCalendarRefreshToken) {
+      console.log('[GoogleOAuth/Gmail] No tokens found for user:', userId);
       throw new Error('Google account not connected for this user');
     }
     
-    const accessToken = decryptToken(user.googleCalendarAccessToken);
-    const refreshToken = decryptToken(user.googleCalendarRefreshToken);
+    let accessToken: string;
+    let refreshToken: string;
+    
+    try {
+      accessToken = decryptToken(user.googleCalendarAccessToken);
+      refreshToken = decryptToken(user.googleCalendarRefreshToken);
+    } catch (decryptError: any) {
+      console.error('[GoogleOAuth/Gmail] DECRYPTION FAILED for user:', userId);
+      console.error('[GoogleOAuth/Gmail] Error:', decryptError.message);
+      await this.storage.updateUser(userId, {
+        googleCalendarEmail: null,
+        googleCalendarAccessToken: null,
+        googleCalendarRefreshToken: null,
+        googleCalendarTokenExpiry: null,
+        googleCalendarConnectedAt: null,
+      });
+      throw new Error('Google account tokens corrupted. Please reconnect.');
+    }
     
     this.oauth2Client.setCredentials({
       access_token: accessToken,
@@ -249,11 +317,14 @@ export class GoogleOAuthService {
           this.oauth2Client.setCredentials(credentials);
         }
       } catch (refreshError: any) {
-        console.error('[GoogleOAuth] Token refresh failed:', refreshError.message);
+        console.error('[GoogleOAuth/Gmail] TOKEN REFRESH FAILED for user:', userId);
+        console.error('[GoogleOAuth/Gmail] Error:', refreshError.message);
         await this.storage.updateUser(userId, {
+          googleCalendarEmail: null,
           googleCalendarAccessToken: null,
           googleCalendarRefreshToken: null,
           googleCalendarTokenExpiry: null,
+          googleCalendarConnectedAt: null,
         });
         throw new Error('Google account token expired. Please reconnect.');
       }

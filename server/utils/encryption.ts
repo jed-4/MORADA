@@ -29,22 +29,29 @@ export function encryptToken(token: string): string {
 }
 
 export function decryptToken(encryptedData: string): string {
-  const key = getEncryptionKey();
-  const parts = encryptedData.split(':');
-  
-  if (parts.length !== 3) {
-    throw new Error('Invalid encrypted token format');
+  try {
+    const key = getEncryptionKey();
+    const parts = encryptedData.split(':');
+    
+    if (parts.length !== 3) {
+      console.error('[Encryption] Invalid token format - expected 3 parts, got:', parts.length);
+      throw new Error('Invalid encrypted token format');
+    }
+    
+    const iv = Buffer.from(parts[0], 'hex');
+    const authTag = Buffer.from(parts[1], 'hex');
+    const encrypted = parts[2];
+    
+    const decipher = createDecipheriv(ALGORITHM, key, iv);
+    decipher.setAuthTag(authTag);
+    
+    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    
+    return decrypted;
+  } catch (error: any) {
+    console.error('[Encryption] Decryption failed:', error.message);
+    console.error('[Encryption] This usually means GOOGLE_OAUTH_ENCRYPTION_KEY changed since tokens were stored');
+    throw error;
   }
-  
-  const iv = Buffer.from(parts[0], 'hex');
-  const authTag = Buffer.from(parts[1], 'hex');
-  const encrypted = parts[2];
-  
-  const decipher = createDecipheriv(ALGORITHM, key, iv);
-  decipher.setAuthTag(authTag);
-  
-  let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-  decrypted += decipher.final('utf8');
-  
-  return decrypted;
 }
