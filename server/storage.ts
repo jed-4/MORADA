@@ -3033,7 +3033,8 @@ export class MemStorage implements IStorage {
     if (assigneeId) {
       filteredTasks = filteredTasks.filter(task => 
         task.assigneeId === assigneeId || 
-        (task.assignedTo && task.assignedTo.includes(assigneeId))
+        (task.assignedTo && task.assignedTo.includes(assigneeId)) ||
+        (task.assigneeType === "user" && task.assigneeUserId === assigneeId)
       );
     }
     
@@ -6490,7 +6491,16 @@ export class DbStorage implements IStorage {
       conditions.push(eq(schema.notes.status, status));
     }
     if (assigneeId) {
-      conditions.push(eq(schema.notes.assigneeId, assigneeId));
+      // Check both legacy assigneeId and polymorphic assigneeUserId (when assigneeType='user')
+      conditions.push(
+        or(
+          eq(schema.notes.assigneeId, assigneeId),
+          and(
+            eq(schema.notes.assigneeType, "user"),
+            eq(schema.notes.assigneeUserId, assigneeId)
+          )
+        )!
+      );
     }
     
     const tasks = await db.select().from(schema.notes).where(

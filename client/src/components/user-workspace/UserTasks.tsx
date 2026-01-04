@@ -499,11 +499,11 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
             {/* Default View Mode Tabs */}
             {(["list", "board", "calendar"] as const).map((view) => {
               const Icon = view === "list" ? List : view === "board" ? LayoutGrid : Calendar;
-              const isActive = activeView === view && !selectedViewId;
+              const isActive = activeView === view;
               return (
                 <button
                   key={view}
-                  onClick={() => { setActiveView(view); setSelectedViewId(undefined); }}
+                  onClick={() => setActiveView(view)}
                   className={`relative h-7 px-2 text-xs flex items-center gap-1 transition-colors ${
                     isActive
                       ? 'text-[#bba7db] font-medium'
