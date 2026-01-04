@@ -55,6 +55,17 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { ChecklistTemplateFormDialog } from "@/components/checklist/ChecklistTemplateFormDialog";
+import {
   Form,
   FormControl,
   FormField,
@@ -77,6 +88,8 @@ export default function ChecklistTemplateDetail() {
   const [editingItem, setEditingItem] = useState<ChecklistTemplateItem | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [movingGroup, setMovingGroup] = useState<ChecklistTemplateGroup | null>(null);
+  const [isEditingTemplate, setIsEditingTemplate] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   // Fetch template
   const { data: template, isLoading: templateLoading } = useQuery<ChecklistTemplate>({
@@ -159,6 +172,28 @@ export default function ChecklistTemplateDetail() {
     },
   });
 
+  // Delete template mutation
+  const deleteTemplateMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest(`/api/checklist-templates/${templateId}`, 'DELETE');
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates"] });
+      toast({
+        title: "Checklist group deleted",
+        description: "The checklist group and all its contents have been deleted.",
+      });
+      setLocation("/checklist-templates");
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete checklist group.",
+        variant: "destructive",
+      });
+    },
+  });
+
   if (templateLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -202,6 +237,31 @@ export default function ChecklistTemplateDetail() {
                 <p className="text-muted-foreground mt-1">{template.description}</p>
               )}
             </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" data-testid="button-template-menu">
+                  <MoreVertical className="h-5 w-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={() => setIsEditingTemplate(true)}
+                  data-testid="button-edit-template"
+                >
+                  <Edit3 className="h-4 w-4 mr-2" />
+                  Edit Details
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => setIsDeleteDialogOpen(true)}
+                  className="text-destructive"
+                  data-testid="button-delete-template"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </div>
@@ -458,6 +518,38 @@ export default function ChecklistTemplateDetail() {
         groups={groups}
         templateId={templateId!}
       />
+
+      {/* Edit Template Dialog */}
+      <ChecklistTemplateFormDialog
+        open={isEditingTemplate}
+        onOpenChange={setIsEditingTemplate}
+        template={template}
+        onTemplateUpdated={() => {
+          queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates", templateId] });
+        }}
+      />
+
+      {/* Delete Template Confirmation */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Checklist Group</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{template.name}"? This will permanently remove this checklist group along with all its checklists and items. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteTemplateMutation.mutate()}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete"
+            >
+              {deleteTemplateMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

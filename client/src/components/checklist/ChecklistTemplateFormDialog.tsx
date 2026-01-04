@@ -3,7 +3,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { insertChecklistTemplateSchema, FieldCategoryWithOptions } from "@shared/schema";
+import { insertChecklistTemplateSchema, FieldCategoryWithOptions, ChecklistTemplate } from "@shared/schema";
 import { z } from "zod";
 import { useEffect, useMemo } from "react";
 import {
@@ -43,12 +43,17 @@ export function ChecklistTemplateFormDialog({
   open,
   onOpenChange,
   onTemplateCreated,
+  onTemplateUpdated,
+  template,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onTemplateCreated?: (templateId: string) => void;
+  onTemplateUpdated?: (template: ChecklistTemplate) => void;
+  template?: ChecklistTemplate | null;
 }) {
   const { toast } = useToast();
+  const isEditMode = !!template;
 
   const { data: checklistTypesCategory, isLoading: isLoadingTypes } = useQuery<FieldCategoryWithOptions>({
     queryKey: ["/api/field-categories/by-key/checklist.type"],
@@ -83,48 +88,54 @@ export function ChecklistTemplateFormDialog({
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      name: "",
-      description: "",
-      type: "",
+      name: template?.name || "",
+      description: template?.description || "",
+      type: template?.type || "",
     },
   });
 
+  // Set default type for new templates
   useEffect(() => {
-    if (defaultType && !form.getValues("type")) {
+    if (!isEditMode && defaultType && !form.getValues("type")) {
       form.setValue("type", defaultType);
     }
-  }, [defaultType, form]);
+  }, [defaultType, form, isEditMode]);
 
-  // Reset form when dialog closes
+  // Reset form when dialog opens/closes or template changes
   useEffect(() => {
-    if (!open) {
+    if (open) {
+      form.reset({
+        name: template?.name || "",
+        description: template?.description || "",
+        type: template?.type || defaultType || "",
+      });
+    } else {
       form.reset({
         name: "",
         description: "",
         type: defaultType || "",
       });
     }
-  }, [open, form, defaultType]);
+  }, [open, template, form, defaultType]);
 
   const createMutation = useMutation({
     mutationFn: async (data: FormData) => {
-      const template = await apiRequest("/api/checklist-templates", "POST", {
+      const result = await apiRequest("/api/checklist-templates", "POST", {
         name: data.name,
         description: data.description,
         type: data.type,
       });
-      return template;
+      return result;
     },
-    onSuccess: (template) => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates"] });
       toast({
         title: "Checklist group created",
         description: "The checklist group has been created successfully.",
       });
       onOpenChange(false);
-      form.reset();
       if (onTemplateCreated) {
-        onTemplateCreated(template.id);
+        onTemplateCreated(result.id);
       }
     },
     onError: (error: any) => {
@@ -136,17 +147,55 @@ export function ChecklistTemplateFormDialog({
     },
   });
 
+  const updateMutation = useMutation({
+    mutationFn: async (data: FormData) => {
+      const result = await apiRequest(`/api/checklist-templates/${template!.id}`, "PATCH", {
+        name: data.name,
+        description: data.description,
+        type: data.type,
+      });
+      return result;
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates", template!.id] });
+      toast({
+        title: "Checklist group updated",
+        description: "The checklist group has been updated successfully.",
+      });
+      onOpenChange(false);
+      if (onTemplateUpdated) {
+        onTemplateUpdated(result);
+      }
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update checklist group.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const onSubmit = (data: FormData) => {
-    createMutation.mutate(data);
+    if (isEditMode) {
+      updateMutation.mutate(data);
+    } else {
+      createMutation.mutate(data);
+    }
   };
+
+  const isPending = createMutation.isPending || updateMutation.isPending;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Create Checklist Group</DialogTitle>
+          <DialogTitle>{isEditMode ? "Edit Checklist Group" : "Create Checklist Group"}</DialogTitle>
           <DialogDescription>
-            Create a new checklist group. You can add checklists and items after creation.
+            {isEditMode 
+              ? "Update the details of this checklist group."
+              : "Create a new checklist group. You can add checklists and items after creation."}
           </DialogDescription>
         </DialogHeader>
 
@@ -231,10 +280,10 @@ export function ChecklistTemplateFormDialog({
               </Button>
               <Button
                 type="submit"
-                disabled={createMutation.isPending || isLoadingTypes || checklistTypes.length === 0}
+                disabled={isPending || isLoadingTypes || checklistTypes.length === 0}
                 data-testid="button-save-template"
               >
-                {createMutation.isPending ? "Creating..." : "Create Checklist Group"}
+                {isPending ? "Saving..." : isEditMode ? "Save Changes" : "Create Checklist Group"}
               </Button>
             </div>
           </form>
