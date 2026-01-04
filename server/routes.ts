@@ -11901,6 +11901,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let templatesCreated = 0;
       let groupsCreated = 0;
       let itemsCreated = 0;
+      let skippedRows = 0;
+      const skippedReasons: string[] = [];
+
+      // Helper function to normalize type values (case-insensitive)
+      const normalizeType = (typeValue: string | undefined | null): "Task" | "Job" | "Estimation" | "Lead" => {
+        if (!typeValue || typeof typeValue !== 'string' || !typeValue.trim()) {
+          return "Job"; // Default type
+        }
+        const normalized = typeValue.trim().toLowerCase();
+        if (normalized === 'task' || normalized === 'tasks') return "Task";
+        if (normalized === 'job' || normalized === 'jobs') return "Job";
+        if (normalized === 'estimation' || normalized === 'estimate' || normalized === 'estimates') return "Estimation";
+        if (normalized === 'lead' || normalized === 'leads') return "Lead";
+        return "Job"; // Default for unrecognized values
+      };
 
       // Group items by template name
       const templateMap = new Map<string, {
@@ -11911,18 +11926,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }>();
 
       // First pass: organize data structure
-      for (const row of items) {
-        if (!row.templateName || !row.type) {
-          continue; // Skip invalid rows
+      for (let i = 0; i < items.length; i++) {
+        const row = items[i];
+        
+        // Only require templateName - type defaults to "Job" if missing
+        if (!row.templateName || (typeof row.templateName === 'string' && !row.templateName.trim())) {
+          skippedRows++;
+          skippedReasons.push(`Row ${i + 1}: Missing template name`);
+          continue;
         }
 
         const templateKey = row.templateName.trim();
+        const normalizedType = normalizeType(row.type);
         
         if (!templateMap.has(templateKey)) {
           templateMap.set(templateKey, {
-            name: row.templateName,
+            name: row.templateName.trim(),
             description: row.templateDescription || null,
-            type: row.type,
+            type: normalizedType,
             groups: new Map(),
           });
         }
@@ -11977,11 +11998,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // Log import summary
+      console.log(`[Checklist Import] Templates: ${templatesCreated}, Groups: ${groupsCreated}, Items: ${itemsCreated}, Skipped: ${skippedRows}`);
+      if (skippedReasons.length > 0 && skippedReasons.length <= 10) {
+        console.log(`[Checklist Import] Skipped reasons:`, skippedReasons);
+      }
+
       res.json({
         templatesCreated,
         groupsCreated,
         itemsCreated,
         totalProcessed: items.length,
+        skippedRows,
+        skippedReasons: skippedReasons.slice(0, 10), // Limit to first 10 reasons
       });
     } catch (error: any) {
       res.status(500).json({ 

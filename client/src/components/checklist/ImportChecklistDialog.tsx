@@ -46,12 +46,29 @@ export function ImportChecklistDialog({ open, onOpenChange }: ImportChecklistDia
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates"] });
+      
+      let description = `Created ${data.templatesCreated} checklist groups, ${data.groupsCreated} checklists, and ${data.itemsCreated} items.`;
+      if (data.skippedRows && data.skippedRows > 0) {
+        description += ` (${data.skippedRows} rows skipped - missing template name)`;
+      }
+      
       toast({
-        title: "Import successful",
-        description: `Created ${data.templatesCreated} templates, ${data.groupsCreated} groups, and ${data.itemsCreated} items.`,
+        title: data.templatesCreated > 0 ? "Import successful" : "Import completed with no data",
+        description,
+        variant: data.templatesCreated > 0 ? "default" : "destructive",
       });
       onOpenChange(false);
       setFile(null);
+      setHeaders([]);
+      setHeaderIndices(new Map());
+      setRawData([]);
+      setColumnMapping({
+        templateName: "",
+        templateDescription: "",
+        type: "",
+        groupName: "",
+        itemDescription: "",
+      });
       setPreviewData([]);
       setError(null);
     },

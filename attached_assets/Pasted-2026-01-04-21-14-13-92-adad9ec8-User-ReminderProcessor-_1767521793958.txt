@@ -1,0 +1,92 @@
+2026-01-04 21:14:13.92
+adad9ec8
+User
+[ReminderProcessor] Found 0 due reminders
+2026-01-04 21:14:13.94
+adad9ec8
+User
+[ReminderProcessor] Reminder processing completed
+2026-01-04 21:14:13.94
+adad9ec8
+User
+[ReminderProcessor] Found 0 business reminders for 10:14
+2026-01-04 21:14:27.37
+adad9ec8
+User
+10:14:27 AM [express] GET /api/notifications/unread-count 304 in 304ms :: {"count":0}
+2026-01-04 21:14:28.41
+adad9ec8
+User
+10:14:28 AM [express] GET /api/channels/unread/counts 304 in 603ms :: {"6f7d4813-1cd4-4e65-807a-6ee8d…
+2026-01-04 21:14:41.11
+adad9ec8
+User
+10:14:41 AM [express] POST /api/checklist-templates/import 200 in 282ms :: {"templatesCreated":0,"gro…
+2026-01-04 21:14:41.48
+adad9ec8
+User
+10:14:41 AM [express] GET /api/checklist-templates 304 in 92ms :: [{"id":"05834314-1c56-4157-8383-40d…
+2026-01-04 21:15:13.79
+adad9ec8
+User
+[ReminderProcessor] Starting reminder processing...
+2026-01-04 21:15:13.88
+adad9ec8
+User
+[ReminderProcessor] Found 0 due reminders
+2026-01-04 21:15:13.90
+adad9ec8
+User
+[ReminderProcessor] Found 0 business reminders for 10:15
+2026-01-04 21:15:13.90
+adad9ec8
+User
+[ReminderProcessor] Reminder processing completed
+2026-01-04 21:15:58.10
+adad9ec8
+User
+10:15:58 AM [express] POST /api/checklist-templates/import 200 in 135ms :: {"templatesCreated":0,"gro…
+2026-01-04 21:15:58.24
+adad9ec8
+User
+10:15:58 AM [express] GET /api/notifications/unread-count 304 in 476ms :: {"count":0}
+2026-01-04 21:15:58.41
+adad9ec8
+User
+10:15:58 AM [express] GET /api/checklist-templates 304 in 95ms :: [{"id":"05834314-1c56-4157-8383-40d…
+2026-01-04 21:15:59.30
+adad9ec8
+User
+10:15:59 AM [express] GET /api/channels/unread/counts 304 in 640ms :: {"6f7d4813-1cd4-4e65-807a-6ee8d…
+2026-01-04 21:16:12.45
+adad9ec8
+User
+User disconnected: 44689844
+2026-01-04 21:16:13.79
+adad9ec8
+User
+[ReminderProcessor] Starting reminder processing...
+2026-01-04 21:16:14.57
+adad9ec8
+User
+[ReminderProcessor] Found 0 due reminders
+2026-01-04 21:16:14.69
+adad9ec8
+User
+[ReminderProcessor] Found 0 business reminders for 10:16
+2026-01-04 21:16:14.69
+adad9ec8
+User
+[ReminderProcessor] Reminder processing completed
+2026-01-04 21:16:15.15
+adad9ec8
+User
+User connected: 44689844
+2026-01-04 21:16:15.15
+adad9ec8
+User
+User connected: 44689844
+2026-01-04 21:16:15.15
+adad9ec8
+User
+User connected: 44689844
