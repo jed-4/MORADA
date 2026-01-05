@@ -15154,7 +15154,7 @@ export class DbStorage implements IStorage {
       // Generate task instances for each template
       let generatedCount = 0;
       for (const template of templates) {
-        const instances = generateRecurringTaskInstances(template as any, existingTaskKeys);
+        const instances = generateRecurringTaskInstances(template as any);
 
         // Determine assignees for this template based on assigneeType
         let assignees: typeof allUsers = [];
@@ -15295,7 +15295,7 @@ export class DbStorage implements IStorage {
         .where(eq(schema.users.companyId, companyId));
 
       // Generate new task instances
-      const instances = generateRecurringTaskInstances(template as any, new Set());
+      const instances = generateRecurringTaskInstances(template as any);
 
       // Determine assignees for this template based on assigneeType
       let assignees: typeof allUsers = [];

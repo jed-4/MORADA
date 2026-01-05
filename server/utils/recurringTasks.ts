@@ -52,13 +52,16 @@ function calculateEndTime(startTime: string, durationMinutes: number): string {
 /**
  * Generate task instances for a recurring template for CURRENT + NEXT WEEK (14 days)
  * This ensures users always have visibility into the next 1-2 weeks of scheduled tasks
+ * 
+ * NOTE: This function generates ALL possible instances for the schedule.
+ * Duplicate detection should be handled by the caller (generateRecurringTasks in storage.ts)
+ * because this function doesn't know about per-user role-based assignments.
+ * 
  * @param template Task template with recurring schedule
- * @param existingTaskDates Set of existing task dates (ISO strings) to avoid duplicates
- * @returns Array of task instances to create
+ * @returns Array of task instances to create (caller handles duplicate filtering)
  */
 export function generateRecurringTaskInstances(
-  template: RecurringTaskTemplate,
-  existingTaskDates: Set<string> = new Set()
+  template: RecurringTaskTemplate
 ): GeneratedTaskInstance[] {
   const instances: GeneratedTaskInstance[] = [];
 
@@ -82,53 +85,48 @@ export function generateRecurringTaskInstances(
 
     // Check if template is scheduled for this day
     if (template.recurringDays.includes(dayOfWeek)) {
-      // Check if task already exists for this date
-      const dateKey = `${template.id}:${format(currentDate, 'yyyy-MM-dd')}`;
+      // Determine assignee - prefer assigneeUserId when assigneeType is "user", otherwise use legacy defaultAssigneeId
+      const effectiveAssigneeId = template.assigneeType === 'user' && template.assigneeUserId 
+        ? template.assigneeUserId 
+        : template.defaultAssigneeId;
       
-      if (!existingTaskDates.has(dateKey)) {
-        // Determine assignee - prefer assigneeUserId when assigneeType is "user", otherwise use legacy defaultAssigneeId
-        const effectiveAssigneeId = template.assigneeType === 'user' && template.assigneeUserId 
-          ? template.assigneeUserId 
-          : template.defaultAssigneeId;
-        
-        // Create task instance
-        const instance: GeneratedTaskInstance = {
-          templateId: template.id,
-          title: template.title,
-          content: template.content,
-          priority: template.priority,
-          assigneeId: effectiveAssigneeId,
-          tagIds: template.tagIds,
-          category: template.category,
-          dueDate: new Date(currentDate),
-        };
+      // Create task instance
+      const instance: GeneratedTaskInstance = {
+        templateId: template.id,
+        title: template.title,
+        content: template.content,
+        priority: template.priority,
+        assigneeId: effectiveAssigneeId,
+        tagIds: template.tagIds,
+        category: template.category,
+        dueDate: new Date(currentDate),
+      };
 
-        // Copy checklist from template (reset all to uncompleted)
-        if (template.checklist && template.checklist.length > 0) {
-          instance.checklist = template.checklist.map(item => ({
-            text: item.text,
-            completed: false
-          }));
-        }
-
-        // Add start and end times - prefer recurringSchedule, fallback to recurringStartTime
-        // Use loose equality (==) to handle potential type mismatches from JSON parsing
-        const scheduleForDay = template.recurringSchedule?.find(s => Number(s.dayOfWeek) === dayOfWeek);
-        if (scheduleForDay) {
-          instance.startTime = scheduleForDay.startTime;
-          if (scheduleForDay.duration > 0) {
-            instance.endTime = calculateEndTime(scheduleForDay.startTime, scheduleForDay.duration);
-          }
-        } else if (template.recurringStartTime) {
-          // Fallback to legacy single time for all days
-          instance.startTime = template.recurringStartTime;
-          if (template.recurringDuration && template.recurringDuration > 0) {
-            instance.endTime = calculateEndTime(template.recurringStartTime, template.recurringDuration);
-          }
-        }
-
-        instances.push(instance);
+      // Copy checklist from template (reset all to uncompleted)
+      if (template.checklist && template.checklist.length > 0) {
+        instance.checklist = template.checklist.map(item => ({
+          text: item.text,
+          completed: false
+        }));
       }
+
+      // Add start and end times - prefer recurringSchedule, fallback to recurringStartTime
+      // Use loose equality (==) to handle potential type mismatches from JSON parsing
+      const scheduleForDay = template.recurringSchedule?.find(s => Number(s.dayOfWeek) === dayOfWeek);
+      if (scheduleForDay) {
+        instance.startTime = scheduleForDay.startTime;
+        if (scheduleForDay.duration > 0) {
+          instance.endTime = calculateEndTime(scheduleForDay.startTime, scheduleForDay.duration);
+        }
+      } else if (template.recurringStartTime) {
+        // Fallback to legacy single time for all days
+        instance.startTime = template.recurringStartTime;
+        if (template.recurringDuration && template.recurringDuration > 0) {
+          instance.endTime = calculateEndTime(template.recurringStartTime, template.recurringDuration);
+        }
+      }
+
+      instances.push(instance);
     }
   }
 
