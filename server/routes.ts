@@ -605,6 +605,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
       res.json(tasks);
     } catch (error) {
+      console.error("[GET /api/tasks] Error:", error);
       res.status(500).json({ error: "Failed to fetch tasks" });
     }
   });
@@ -764,14 +765,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/tasks/:id", async (req, res) => {
+  app.delete("/api/tasks/:id", requireAuth, async (req, res) => {
     try {
-      const success = await storage.deleteTask(req.params.id);
+      const user = req.user as any;
+      const taskId = req.params.id;
+      
+      console.log(`[DELETE /api/tasks/${taskId}] User: ${user?.id}, Company: ${user?.companyId}`);
+      
+      const success = await storage.deleteTask(taskId);
       if (!success) {
+        console.log(`[DELETE /api/tasks/${taskId}] Task not found`);
         return res.status(404).json({ error: "Task not found" });
       }
+      
+      console.log(`[DELETE /api/tasks/${taskId}] Task deleted successfully`);
       res.status(204).send();
     } catch (error) {
+      console.error(`[DELETE /api/tasks/${req.params.id}] Error:`, error);
       res.status(500).json({ error: "Failed to delete task" });
     }
   });

@@ -6491,16 +6491,8 @@ export class DbStorage implements IStorage {
       conditions.push(eq(schema.notes.status, status));
     }
     if (assigneeId) {
-      // Check both legacy assigneeId and polymorphic assigneeUserId (when assigneeType='user')
-      conditions.push(
-        or(
-          eq(schema.notes.assigneeId, assigneeId),
-          and(
-            eq(schema.notes.assigneeType, "user"),
-            eq(schema.notes.assigneeUserId, assigneeId)
-          )
-        )!
-      );
+      // Filter by assigneeId - notes table uses single assigneeId field
+      conditions.push(eq(schema.notes.assigneeId, assigneeId));
     }
     
     const tasks = await db.select().from(schema.notes).where(
