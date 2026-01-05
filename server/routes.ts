@@ -14083,7 +14083,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           status: "not_started", // Always start as not_started
           priority: templateItem.priority || "medium",
           startDate: new Date(), // Default to today, user can adjust
-          endDate: new Date(Date.now() + (templateItem.duration || 1) * 24 * 60 * 60 * 1000), // Calculate from duration
+          endDate: new Date(Date.now() + ((templateItem.duration || 1) - 1) * 24 * 60 * 60 * 1000), // Duration of 1 = same day
           duration: templateItem.duration || 1,
           progressPercent: 0,
           sortOrder: templateItem.sortOrder || 0,

@@ -57,6 +57,7 @@ import {
   ZoomIn,
   ZoomOut,
   Upload,
+  Download,
   Settings,
   Calendar,
 } from "lucide-react";
@@ -676,6 +677,43 @@ export default function ScheduleTemplateDetail() {
     updateTemplateMutation.mutate({ templateData: items });
   };
 
+  const handleExportTemplate = () => {
+    if (!template) return;
+    
+    const exportData = {
+      name: template.name,
+      description: template.description,
+      category: template.category,
+      templateData: items.map(item => ({
+        name: item.name,
+        description: item.description,
+        duration: item.duration,
+        type: item.type,
+        assigneeName: item.assigneeName,
+        category: item.category,
+        relativeStartDay: item.relativeStartDay,
+        parentItemId: item.parentItemId,
+        sortOrder: item.sortOrder,
+        color: item.color,
+      })),
+    };
+
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${template.name.replace(/[^a-z0-9]/gi, "_")}_template.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    toast({
+      title: "Template exported",
+      description: "The template has been downloaded as a JSON file.",
+    });
+  };
+
   if (isLoading) {
     return (
       <div className="h-full flex items-center justify-center">
@@ -726,6 +764,15 @@ export default function ScheduleTemplateDetail() {
 
         {/* Right: Action Buttons */}
         <div className="flex items-center gap-1.5">
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
+            onClick={handleExportTemplate}
+            data-testid="button-export-template"
+          >
+            <Download className="w-3 h-3 inline mr-0.5" />
+            Export
+          </button>
+          
           <button
             className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
             onClick={() => setShowApplyDialog(true)}
