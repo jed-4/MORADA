@@ -1,0 +1,152 @@
+2026-01-05 17:00:21.52
+366da5aa
+User
+[PATCH /api/systems/task-templates] Generated 0 new recurring task instances
+2026-01-05 17:00:21.54
+366da5aa
+User
+6:00:21 AM [express] PATCH /api/systems/task-templates/b7eb4418-6fcc-47c4-84ba-ba0fa22a45b4 200 in 2…
+2026-01-05 17:00:22.61
+366da5aa
+User
+6:00:22 AM [express] GET /api/systems/task-templates 200 in 845ms :: [{"id":"2a0d27e8-0166-4eca-9ee3…
+2026-01-05 17:00:27.30
+366da5aa
+User
+[PATCH /api/systems/task-templates] Synced 15 existing tasks for template 2eca18e9-d5d4-4624-9705-74af7ff1ebb9
+2026-01-05 17:00:28.14
+366da5aa
+User
+6:00:28 AM [express] GET /api/notifications/unread-count 304 in 249ms :: {"count":0}
+2026-01-05 17:00:28.42
+366da5aa
+User
+[PATCH /api/systems/task-templates] Generated 0 new recurring task instances
+2026-01-05 17:00:28.45
+366da5aa
+User
+6:00:28 AM [express] PATCH /api/systems/task-templates/2eca18e9-d5d4-4624-9705-74af7ff1ebb9 200 in 2…
+2026-01-05 17:00:29.17
+366da5aa
+User
+6:00:29 AM [express] GET /api/systems/task-templates 200 in 509ms :: [{"id":"2a0d27e8-0166-4eca-9ee3…
+2026-01-05 17:00:33.10
+366da5aa
+User
+[PATCH /api/systems/task-templates] Synced 3 existing tasks for template 8b0d8a57-fc96-4ab0-a246-d872b7c6585e
+2026-01-05 17:00:34.01
+366da5aa
+User
+[PATCH /api/systems/task-templates] Generated 0 new recurring task instances
+2026-01-05 17:00:34.03
+366da5aa
+User
+6:00:34 AM [express] PATCH /api/systems/task-templates/8b0d8a57-fc96-4ab0-a246-d872b7c6585e 200 in 1…
+2026-01-05 17:00:34.45
+366da5aa
+User
+6:00:34 AM [express] GET /api/systems/task-templates 200 in 203ms :: [{"id":"2a0d27e8-0166-4eca-9ee3…
+2026-01-05 17:00:39.48
+366da5aa
+User
+[PATCH /api/systems/task-templates] Synced 14 existing tasks for template 600c8eaf-1af3-4474-a249-39faa91478e9
+2026-01-05 17:00:39.80
+366da5aa
+User
+6:00:39 AM [express] GET /api/channels/unread/counts 304 in 1379ms :: {"6f7d4813-1cd4-4e65-807a-6ee8…
+2026-01-05 17:00:40.84
+366da5aa
+User
+[PATCH /api/systems/task-templates] Generated 0 new recurring task instances
+2026-01-05 17:00:40.87
+366da5aa
+User
+6:00:40 AM [express] PATCH /api/systems/task-templates/600c8eaf-1af3-4474-a249-39faa91478e9 200 in 2…
+2026-01-05 17:00:41.25
+366da5aa
+User
+6:00:41 AM [express] GET /api/systems/task-templates 200 in 150ms :: [{"id":"2a0d27e8-0166-4eca-9ee3…
+2026-01-05 17:00:43.27
+366da5aa
+User
+[ReminderProcessor] Starting reminder processing...
+2026-01-05 17:00:43.35
+366da5aa
+User
+[ReminderProcessor] Found 0 due reminders
+2026-01-05 17:00:43.37
+366da5aa
+User
+[ReminderProcessor] Reminder processing completed
+2026-01-05 17:00:43.37
+366da5aa
+User
+[ReminderProcessor] Found 0 business reminders for 06:00
+2026-01-05 17:00:47.07
+366da5aa
+User
+User disconnected: 44689844
+2026-01-05 17:00:48.04
+366da5aa
+User
+email: 'jed@lighthouseprojects.com.au',
+2026-01-05 17:00:48.04
+366da5aa
+User
+}
+2026-01-05 17:00:48.04
+366da5aa
+User
+companyNickname: 'Lighthouse Projects'
+2026-01-05 17:00:48.04
+366da5aa
+User
+companyId: 'a23a0e7b-8f73-4b63-957d-5f74ae191294',
+2026-01-05 17:00:48.04
+366da5aa
+User
+roleId: 'd6fb935e-88e3-46b0-86cd-96ce7335f7f8',
+2026-01-05 17:00:48.04
+366da5aa
+User
+id: '44689844',
+2026-01-05 17:00:48.04
+366da5aa
+User
+✅ [GET /api/auth/user] Returning user: {
+2026-01-05 17:00:48.06
+366da5aa
+User
+6:00:48 AM [express] GET /api/auth/user 200 in 169ms :: {"id":"44689844","email":"jed@lighthouseproj…
+2026-01-05 17:00:48.63
+366da5aa
+User
+6:00:48 AM [express] GET /api/timesheets/active 401 in 305ms :: {"error":"User not found in database…
+2026-01-05 17:00:48.72
+366da5aa
+User
+6:00:48 AM [express] GET /api/user-roles 304 in 397ms :: [{"id":"d6fb935e-88e3-46b0-86cd-96ce7335f7f…
+2026-01-05 17:00:48.78
+366da5aa
+User
+[GET /api/projects] Phase distribution for company a23a0e7b-8f73-4b63-957d-5f74ae191294: { construction: 4, pre_construction: 11, lead: 8 }
+2026-01-05 17:00:48.81
+366da5aa
+User
+6:00:48 AM [express] GET /api/projects 200 in 488ms :: [{"id":"e4a2263e-4e4f-4f59-8f5f-d60cddebc830"…
+2026-01-05 17:00:48.86
+366da5aa
+User
+6:00:48 AM [express] GET /api/field-categories/by-key/systemDocument.status 304 in 540ms :: {"id":"d…
+2026-01-05 17:00:48.89
+366da5aa
+User
+6:00:48 AM [express] GET /api/users 304 in 561ms :: [{"id":"44689844","email":"jed@lighthouseproject…
+2026-01-05 17:00:48.90
+366da5aa
+User
+6:00:48 AM [express] GET /api/companies/a23a0e7b-8f73-4b63-957d-5f74ae191294 304 in 580ms :: {"id":"…
+2026-01-05 17:00:48.98
+366da5aa
+User
+6:00:48 AM [express] GET /api/cost-codes 304 in 662ms :: [{"id":"b42a2454-f41b-4d82-9de5-ce7f95f3651…
