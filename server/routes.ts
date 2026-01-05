@@ -14050,7 +14050,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Get the schedule to verify it exists and belongs to user's company
-      const schedule = await storage.getSchedule(scheduleId);
+      // Note: getScheduleById takes a schedule ID, getSchedule takes a projectId
+      const schedule = await storage.getScheduleById(scheduleId);
       if (!schedule) {
         return res.status(404).json({ error: "Schedule not found" });
       }
