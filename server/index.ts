@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { startReminderProcessor } from "./utils/reminderProcessor";
+import { storage } from "./storage";
 import path from "path";
 import fs from "fs";
 
@@ -131,8 +132,19 @@ app.use((req, res, next) => {
     port,
     host: "0.0.0.0",
     reusePort: true,
-  }, () => {
+  }, async () => {
     log(`serving on port ${port}`);
+    
+    // Auto-seed missing built-in field categories (for production databases)
+    try {
+      const seedResult = await storage.seedMissingBuiltInCategories();
+      if (seedResult.addedCategories.length > 0 || seedResult.addedOptions.length > 0) {
+        log(`Seeded missing field categories: ${seedResult.addedCategories.join(', ') || 'none'}`);
+        log(`Seeded missing field options: ${seedResult.addedOptions.join(', ') || 'none'}`);
+      }
+    } catch (error) {
+      console.error('Failed to seed missing field categories:', error);
+    }
     
     startReminderProcessor(1);
   });
