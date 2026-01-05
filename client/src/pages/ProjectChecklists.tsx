@@ -486,7 +486,7 @@ export default function ProjectChecklists() {
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold" data-testid="text-page-title">{pageTitle}</h2>
           <Badge variant="secondary" className="text-xs" data-testid="text-checklist-count">
-            {allGroups.length} groups
+            {allGroups.length} checklists
           </Badge>
         </div>
         <div className="flex items-center gap-1.5">

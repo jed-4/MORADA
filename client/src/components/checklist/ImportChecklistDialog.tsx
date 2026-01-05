@@ -75,7 +75,7 @@ export function ImportChecklistDialog({ open, onOpenChange }: ImportChecklistDia
     onError: (error: any) => {
       toast({
         title: "Import failed",
-        description: error.message || "Failed to import checklist templates.",
+        description: error.message || "Failed to import checklist groups.",
         variant: "destructive",
       });
     },
@@ -209,9 +209,9 @@ export function ImportChecklistDialog({ open, onOpenChange }: ImportChecklistDia
       return;
     }
 
-    // Validate that required fields are mapped - only Template Name is strictly required
+    // Validate that required fields are mapped - only Checklist Group is strictly required
     if (!columnMapping.templateName) {
-      setError("Please map the Template Name column to identify your checklist templates.");
+      setError("Please map the Checklist Group column to identify your checklist groups.");
       return;
     }
     
@@ -254,9 +254,9 @@ export function ImportChecklistDialog({ open, onOpenChange }: ImportChecklistDia
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Import Checklist Templates</DialogTitle>
+          <DialogTitle>Import Checklist Groups</DialogTitle>
           <DialogDescription>
-            Upload a CSV or Excel file with checklist templates, groups, and items. Each row should contain template information.
+            Upload a CSV or Excel file with checklist groups, checklists, and items. Each row should contain checklist information.
           </DialogDescription>
         </DialogHeader>
 
@@ -283,8 +283,8 @@ export function ImportChecklistDialog({ open, onOpenChange }: ImportChecklistDia
               </Button>
             </div>
             <p className="text-sm text-muted-foreground">
-              Supported columns: Template Name (required), Group, Item Description, Type, Description. 
-              Only Template Name is required - other fields are optional.
+              Supported columns: Checklist Group (required), Checklist, Checklist Item, Type, Description. 
+              Only Checklist Group is required - other fields are optional.
             </p>
           </div>
 
@@ -301,16 +301,16 @@ export function ImportChecklistDialog({ open, onOpenChange }: ImportChecklistDia
             <div className="space-y-3 p-4 border rounded-md bg-muted/50">
               <Label className="text-base">Map Your Columns</Label>
               <p className="text-sm text-muted-foreground">
-                Select which column from your file matches each field. Only Template Name is required.
+                Select which column from your file matches each field. Only Checklist Group is required.
               </p>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="map-group">Checklist Group</Label>
+                  <Label htmlFor="map-template-name">Checklist Group *</Label>
                   <Select
-                    value={columnMapping.groupName || "__none__"}
-                    onValueChange={(value) => handleColumnMappingChange('groupName', value)}
+                    value={columnMapping.templateName || "__none__"}
+                    onValueChange={(value) => handleColumnMappingChange('templateName', value)}
                   >
-                    <SelectTrigger id="map-group" data-testid="select-map-group">
+                    <SelectTrigger id="map-template-name" data-testid="select-map-template-name">
                       <SelectValue placeholder="Select column" />
                     </SelectTrigger>
                     <SelectContent>
@@ -325,12 +325,12 @@ export function ImportChecklistDialog({ open, onOpenChange }: ImportChecklistDia
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="map-template-name">Checklist *</Label>
+                  <Label htmlFor="map-group">Checklist</Label>
                   <Select
-                    value={columnMapping.templateName || "__none__"}
-                    onValueChange={(value) => handleColumnMappingChange('templateName', value)}
+                    value={columnMapping.groupName || "__none__"}
+                    onValueChange={(value) => handleColumnMappingChange('groupName', value)}
                   >
-                    <SelectTrigger id="map-template-name" data-testid="select-map-template-name">
+                    <SelectTrigger id="map-group" data-testid="select-map-group">
                       <SelectValue placeholder="Select column" />
                     </SelectTrigger>
                     <SelectContent>
@@ -425,8 +425,8 @@ export function ImportChecklistDialog({ open, onOpenChange }: ImportChecklistDia
                   <tbody>
                     {previewData.slice(0, 10).map((row, idx) => (
                       <tr key={idx} className="border-b">
-                        <td className="p-2">{row.groupName}</td>
                         <td className="p-2">{row.templateName}</td>
+                        <td className="p-2">{row.groupName}</td>
                         <td className="p-2">{row.itemDescription}</td>
                         <td className="p-2">{row.type}</td>
                         <td className="p-2">{row.templateDescription}</td>

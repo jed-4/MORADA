@@ -47,7 +47,7 @@ Preferred communication style: Simple, everyday language.
 ### Feature Specifications & System Design
 - **Budget Tracking**: Manages estimates, bills, and variations with a calculation engine.
 - **Task Management**: Kanban, List, and Calendar views with drag-and-drop, task templates, inline checklist management, and due date filtering. Polymorphic task context model for consistent handling across projects and business.
-- **Checklist System**: Templates with group functionality and dashboard widget integration, color-coded status indicators.
+- **Checklist System**: Templates with group functionality and dashboard widget integration, color-coded status indicators. **Terminology mapping**: Database `checklistTemplates` table = UI "Checklist Group" (e.g., "01 Estimation"); Database `checklistTemplateGroups` table = UI "Checklist" (e.g., "EST04 - RFQs Issued"); Database `checklistTemplateItems` table = UI "Checklist Item" (e.g., "Prepare RFQs").
 - **Cost Code Management**: Company-isolated merge functionality.
 - **Import System**: Flexible CSV/Excel import for schedules with column mapping.
 - **Hierarchical Groups for Estimates**: Unlimited-depth nesting for estimate groups.
