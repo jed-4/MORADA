@@ -184,9 +184,10 @@ export function ImportChecklistDialog({ open, onOpenChange }: ImportChecklistDia
           return columnIndex !== undefined ? (row[columnIndex] || "") : "";
         };
 
+        const templateName = getColumnValue('templateName');
         const groupName = getColumnValue('groupName');
         return {
-          templateName: getColumnValue('templateName'),
+          templateName: templateName && templateName.trim() ? templateName.trim() : "General",
           templateDescription: getColumnValue('templateDescription'),
           type: getColumnValue('type'),
           groupName: groupName && groupName.trim() ? groupName.trim() : "General",
@@ -209,10 +210,12 @@ export function ImportChecklistDialog({ open, onOpenChange }: ImportChecklistDia
       return;
     }
 
-    // Validate that required fields are mapped - only Checklist Group is strictly required
+    // Show note if Checklist Group not mapped - will default to "General"
     if (!columnMapping.templateName) {
-      setError("Please map the Checklist Group column to identify your checklist groups.");
-      return;
+      toast({
+        title: "Note",
+        description: "Checklist Group column not mapped. Items will go into 'General'.",
+      });
     }
     
     // Type is optional - will default to "Job" if not mapped
@@ -283,8 +286,8 @@ export function ImportChecklistDialog({ open, onOpenChange }: ImportChecklistDia
               </Button>
             </div>
             <p className="text-sm text-muted-foreground">
-              Supported columns: Checklist Group (required), Checklist, Checklist Item, Type, Description. 
-              Only Checklist Group is required - other fields are optional.
+              Supported columns: Checklist Group, Checklist, Checklist Item, Type, Description. 
+              All fields are optional - unmapped items will go into "General".
             </p>
           </div>
 
@@ -301,11 +304,11 @@ export function ImportChecklistDialog({ open, onOpenChange }: ImportChecklistDia
             <div className="space-y-3 p-4 border rounded-md bg-muted/50">
               <Label className="text-base">Map Your Columns</Label>
               <p className="text-sm text-muted-foreground">
-                Select which column from your file matches each field. Only Checklist Group is required.
+                Select which column from your file matches each field. Unmapped fields will default to "General".
               </p>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="map-template-name">Checklist Group *</Label>
+                  <Label htmlFor="map-template-name">Checklist Group</Label>
                   <Select
                     value={columnMapping.templateName || "__none__"}
                     onValueChange={(value) => handleColumnMappingChange('templateName', value)}
