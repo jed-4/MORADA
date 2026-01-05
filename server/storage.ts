@@ -6531,9 +6531,14 @@ export class DbStorage implements IStorage {
     );
     
     const filteredTasks = allCompanyTasks.filter(task => {
-      // Check if user is assigned (via assigneeId or assignedTo array)
-      const isAssigned = task.assigneeId === userId || 
-        (Array.isArray(task.assignedTo) && task.assignedTo.includes(userId));
+      // Check if user is assigned via:
+      // 1. Legacy assigneeId field
+      // 2. Polymorphic model (assigneeType='user' and assigneeUserId matches)
+      // 3. assignedTo array (multiple assignees)
+      const isAssignedLegacy = task.assigneeId === userId;
+      const isAssignedPolymorphic = task.assigneeType === 'user' && task.assigneeUserId === userId;
+      const isAssignedArray = Array.isArray(task.assignedTo) && task.assignedTo.includes(userId);
+      const isAssigned = isAssignedLegacy || isAssignedPolymorphic || isAssignedArray;
       if (!isAssigned) return false;
       
       // Business-level tasks - always include if assigned
