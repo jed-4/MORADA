@@ -352,7 +352,7 @@ export default function ChecklistTemplateDetail() {
                               data-testid={`button-move-group-${group.id}`}
                             >
                               <FolderInput className="h-4 w-4 mr-2" />
-                              Move to Checklist
+                              Move to Checklist Group
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
@@ -959,8 +959,6 @@ function ItemFormDialog({
   );
 }
 
-type TemplateWithGroups = ChecklistTemplate & { groups: ChecklistTemplateGroup[] };
-
 function MoveToGroupDialog({
   open,
   onOpenChange,
@@ -973,65 +971,42 @@ function MoveToGroupDialog({
   currentTemplateId: string;
 }) {
   const { toast } = useToast();
-  const [targetGroupId, setTargetGroupId] = useState<string>("");
+  const [targetTemplateId, setTargetTemplateId] = useState<string>("");
 
-  // Fetch ALL templates with their groups in parallel
-  const { data: templatesWithGroups = [], isLoading } = useQuery<TemplateWithGroups[]>({
-    queryKey: ["/api/checklist-templates-with-groups", sourceGroup?.id],
-    queryFn: async () => {
-      const templatesRes = await fetch("/api/checklist-templates");
-      if (!templatesRes.ok) throw new Error("Failed to fetch templates");
-      const templates: ChecklistTemplate[] = await templatesRes.json();
-      
-      // Fetch all groups in parallel
-      const groupPromises = templates.map(async (template) => {
-        const res = await fetch(`/api/checklist-templates/${template.id}/groups`);
-        if (!res.ok) return { ...template, groups: [] };
-        const groups: ChecklistTemplateGroup[] = await res.json();
-        return { ...template, groups };
-      });
-      
-      return Promise.all(groupPromises);
-    },
+  // Fetch all checklist groups (templates), excluding current one
+  const { data: templates = [], isLoading } = useQuery<ChecklistTemplate[]>({
+    queryKey: ["/api/checklist-templates"],
     enabled: open,
-    staleTime: 30000, // Cache for 30 seconds
+    staleTime: 30000,
   });
 
-  // Flatten and filter groups, excluding the source group
-  const availableGroups = templatesWithGroups.flatMap((template) =>
-    template.groups
-      .filter((g) => g.id !== sourceGroup?.id)
-      .map((g) => ({
-        ...g,
-        templateId: template.id,
-        templateName: template.name,
-      }))
-  );
+  // Filter out the current template - we only want to show OTHER checklist groups
+  const availableTemplates = templates.filter((t) => t.id !== currentTemplateId);
 
-  const selectedGroup = availableGroups.find((g) => g.id === targetGroupId);
+  const selectedTemplate = availableTemplates.find((t) => t.id === targetTemplateId);
 
   const moveMutation = useMutation({
     mutationFn: async () => {
-      if (!sourceGroup || !targetGroupId) return;
-      return await apiRequest(`/api/checklist-template-groups/${sourceGroup.id}/move-to`, 'POST', {
-        targetGroupId,
+      if (!sourceGroup || !targetTemplateId) return;
+      // Move the checklist (group) to a different checklist group (template)
+      return await apiRequest(`/api/checklist-template-groups/${sourceGroup.id}/move-to-template`, 'POST', {
+        targetTemplateId,
       });
     },
     onSuccess: () => {
       // Invalidate relevant queries
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates", currentTemplateId, "groups"] });
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-template-items", currentTemplateId] });
-      if (selectedGroup && selectedGroup.templateId !== currentTemplateId) {
-        queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates", selectedGroup.templateId, "groups"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/checklist-template-items", selectedGroup.templateId] });
+      if (selectedTemplate) {
+        queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates", selectedTemplate.id, "groups"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/checklist-template-items", selectedTemplate.id] });
       }
-      queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates-with-groups"] });
       toast({
         title: "Checklist moved",
-        description: `"${sourceGroup?.name}" items have been merged into "${selectedGroup?.name}".`,
+        description: `"${sourceGroup?.name}" has been moved to "${selectedTemplate?.name}".`,
       });
       onOpenChange(false);
-      setTargetGroupId("");
+      setTargetTemplateId("");
     },
     onError: () => {
       toast({
@@ -1046,53 +1021,41 @@ function MoveToGroupDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Move to Checklist</DialogTitle>
+          <DialogTitle>Move to Checklist Group</DialogTitle>
           <DialogDescription>
-            Merge "{sourceGroup?.name}" items into another checklist. The source checklist will be removed after moving.
+            Move "{sourceGroup?.name}" to a different checklist group.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-4">
           <div className="space-y-2">
-            <label className="text-sm font-medium">Select destination checklist</label>
-            <Select value={targetGroupId} onValueChange={setTargetGroupId} disabled={isLoading}>
+            <label className="text-sm font-medium">Select destination checklist group</label>
+            <Select value={targetTemplateId} onValueChange={setTargetTemplateId} disabled={isLoading}>
               <SelectTrigger data-testid="select-target-group">
-                <SelectValue placeholder={isLoading ? "Loading..." : "Choose a checklist..."} />
+                <SelectValue placeholder={isLoading ? "Loading..." : "Choose a checklist group..."} />
               </SelectTrigger>
               <SelectContent>
-                {templatesWithGroups.map((template) => {
-                  const templateGroups = template.groups.filter((g) => g.id !== sourceGroup?.id);
-                  if (templateGroups.length === 0) return null;
-                  return (
-                    <SelectGroup key={template.id}>
-                      <SelectLabel>{template.name}</SelectLabel>
-                      {templateGroups.map((group) => (
-                        <SelectItem key={group.id} value={group.id}>
-                          {group.name}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  );
-                })}
+                {availableTemplates.map((template) => (
+                  <SelectItem key={template.id} value={template.id}>
+                    {template.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
 
-          {selectedGroup && (
+          {selectedTemplate && (
             <div className="p-3 bg-muted rounded-md text-sm">
               <p className="text-muted-foreground">
-                Items from "{sourceGroup?.name}" will be moved into "{selectedGroup.name}"
-                {selectedGroup.templateId !== currentTemplateId && (
-                  <span className="font-medium"> (in {selectedGroup.templateName})</span>
-                )}
+                "{sourceGroup?.name}" will be moved to "{selectedTemplate.name}"
               </p>
             </div>
           )}
 
-          {!isLoading && availableGroups.length === 0 && (
+          {!isLoading && availableTemplates.length === 0 && (
             <div className="p-3 bg-muted rounded-md text-sm text-center">
               <p className="text-muted-foreground">
-                No other checklists available. Create another checklist first.
+                No other checklist groups available. Create another checklist group first.
               </p>
             </div>
           )}
@@ -1104,7 +1067,7 @@ function MoveToGroupDialog({
           </Button>
           <Button
             onClick={() => moveMutation.mutate()}
-            disabled={!targetGroupId || moveMutation.isPending}
+            disabled={!targetTemplateId || moveMutation.isPending}
             data-testid="button-confirm-move"
           >
             {moveMutation.isPending ? "Moving..." : "Move"}

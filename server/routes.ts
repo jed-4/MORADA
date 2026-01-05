@@ -11816,6 +11816,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Move a checklist (group) to a different checklist group (template)
+  app.post("/api/checklist-template-groups/:id/move-to-template", async (req, res) => {
+    try {
+      const { targetTemplateId } = req.body;
+      if (!targetTemplateId) {
+        return res.status(400).json({ error: "Target template ID is required" });
+      }
+
+      const sourceGroupId = req.params.id;
+      
+      const sourceGroup = await storage.getChecklistTemplateGroup(sourceGroupId);
+      if (!sourceGroup) {
+        return res.status(404).json({ error: "Source checklist not found" });
+      }
+
+      const targetTemplate = await storage.getChecklistTemplate(targetTemplateId);
+      if (!targetTemplate) {
+        return res.status(404).json({ error: "Target checklist group not found" });
+      }
+
+      // Update the group's templateId to move it to the new template
+      await storage.updateChecklistTemplateGroup(sourceGroupId, { 
+        templateId: targetTemplateId 
+      });
+
+      res.json({ 
+        success: true, 
+        message: `Moved "${sourceGroup.name}" to "${targetTemplate.name}"`
+      });
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to move checklist",
+        details: error.message 
+      });
+    }
+  });
+
   // Checklist Template Item routes
   app.get("/api/checklist-template-groups/:groupId/items", async (req, res) => {
     try {
