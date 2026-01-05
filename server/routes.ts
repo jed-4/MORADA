@@ -14066,11 +14066,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "Access denied to this schedule" });
       }
 
-      // Verify user is a member of the project
-      const isMember = await storage.isProjectMember(user.id, schedule.projectId);
-      if (!isMember) {
-        return res.status(403).json({ error: "You are not a member of this project" });
-      }
+      // Company-level access is sufficient for applying templates
+      // (project membership check removed as company ownership is already verified)
 
       // Create schedule items from template data
       const templateItems = template.templateData as any[];
