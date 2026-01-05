@@ -1,5 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import {
   Dialog,
   DialogContent,
@@ -10,6 +13,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { Checkbox } from "@/components/ui/checkbox";
 import { 
   Calendar,
   Clock,
@@ -24,6 +28,8 @@ import { format } from "date-fns";
 import type { CalendarEvent } from "./EnhancedCalendar";
 import type { Task, Project } from "@shared/schema";
 
+type ChecklistItem = { id?: string; text: string; completed: boolean };
+
 interface CalendarEventDetailDialogProps {
   event: CalendarEvent | null;
   open: boolean;
@@ -32,6 +38,8 @@ interface CalendarEventDetailDialogProps {
 
 export function CalendarEventDetailDialog({ event, open, onOpenChange }: CalendarEventDetailDialogProps) {
   const [, navigate] = useLocation();
+  const { toast } = useToast();
+  const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([]);
 
   // Fetch project details if the event has a projectId
   const { data: project } = useQuery<Project>({
@@ -44,6 +52,43 @@ export function CalendarEventDetailDialog({ event, open, onOpenChange }: Calenda
     queryKey: ["/api/tasks", event?.id],
     enabled: open && event?.type === "task",
   });
+
+  // Sync local checklist state with task data
+  useEffect(() => {
+    if (taskDetails?.checklist) {
+      setChecklistItems(taskDetails.checklist as ChecklistItem[]);
+    } else {
+      setChecklistItems([]);
+    }
+  }, [taskDetails?.checklist]);
+
+  // Mutation to update checklist
+  const updateChecklistMutation = useMutation({
+    mutationFn: async (newChecklist: ChecklistItem[]) => {
+      if (!event?.id) return;
+      return await apiRequest(`/api/tasks/${event.id}`, "PATCH", { checklist: newChecklist });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to update checklist",
+        description: error.message,
+        variant: "destructive",
+      });
+      // Revert by re-fetching
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks", event?.id] });
+    },
+  });
+
+  const handleToggleChecklistItem = (itemIndex: number) => {
+    const newChecklist = checklistItems.map((item, idx) =>
+      idx === itemIndex ? { ...item, completed: !item.completed } : item
+    );
+    setChecklistItems(newChecklist);
+    updateChecklistMutation.mutate(newChecklist);
+  };
 
   if (!event) return null;
 
@@ -170,7 +215,7 @@ export function CalendarEventDetailDialog({ event, open, onOpenChange }: Calenda
           )}
 
           {/* Checklist (for tasks) */}
-          {isTask && taskDetails?.checklist && (taskDetails.checklist as Array<{text: string; completed: boolean}>).length > 0 && (
+          {isTask && checklistItems.length > 0 && (
             <>
               <Separator />
               <div className="flex items-start gap-3">
@@ -179,22 +224,26 @@ export function CalendarEventDetailDialog({ event, open, onOpenChange }: Calenda
                   <div className="flex items-center justify-between">
                     <p className="font-medium text-sm">Checklist</p>
                     <Badge variant="secondary" className="text-xs">
-                      {(taskDetails.checklist as Array<{text: string; completed: boolean}>).filter(item => item.completed).length}/
-                      {(taskDetails.checklist as Array<{text: string; completed: boolean}>).length} complete
+                      {checklistItems.filter(item => item.completed).length}/
+                      {checklistItems.length} complete
                     </Badge>
                   </div>
-                  <div className="space-y-1 mt-2">
-                    {(taskDetails.checklist as Array<{text: string; completed: boolean}>).map((item, index) => (
-                      <div key={index} className="flex items-center gap-2 text-sm">
-                        {item.completed ? (
-                          <CheckCircle2 className="h-4 w-4 text-green-600" />
-                        ) : (
-                          <div className="h-4 w-4 rounded-full border-2 border-muted-foreground/30" />
-                        )}
+                  <div className="space-y-2 mt-2">
+                    {checklistItems.map((item, index) => (
+                      <label 
+                        key={item.id || index} 
+                        className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 rounded p-1 -ml-1"
+                        data-testid={`checklist-item-${index}`}
+                      >
+                        <Checkbox 
+                          checked={item.completed}
+                          onCheckedChange={() => handleToggleChecklistItem(index)}
+                          data-testid={`checkbox-checklist-item-${index}`}
+                        />
                         <span className={item.completed ? 'line-through text-muted-foreground' : ''}>
                           {item.text}
                         </span>
-                      </div>
+                      </label>
                     ))}
                   </div>
                 </div>
