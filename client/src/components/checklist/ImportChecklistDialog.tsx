@@ -255,7 +255,7 @@ export function ImportChecklistDialog({ open, onOpenChange }: ImportChecklistDia
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-6xl max-h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>Import Checklist Groups</DialogTitle>
           <DialogDescription>
@@ -263,7 +263,7 @@ export function ImportChecklistDialog({ open, onOpenChange }: ImportChecklistDia
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="flex-1 overflow-y-auto space-y-4">
           {/* File Upload */}
           <div className="space-y-2">
             <Label htmlFor="file-upload">Upload File</Label>
@@ -446,28 +446,29 @@ export function ImportChecklistDialog({ open, onOpenChange }: ImportChecklistDia
             </div>
           )}
 
-          {/* Actions */}
-          <div className="flex justify-end gap-2 pt-4">
-            <Button
-              variant="outline"
-              onClick={() => {
-                onOpenChange(false);
-                setFile(null);
-                setPreviewData([]);
-                setError(null);
-              }}
-              data-testid="button-cancel-import"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleImport}
-              disabled={previewData.length === 0 || importMutation.isPending}
-              data-testid="button-confirm-import"
-            >
-              {importMutation.isPending ? "Importing..." : `Import ${previewData.length} Rows`}
-            </Button>
-          </div>
+        </div>
+
+        {/* Sticky Actions Footer */}
+        <div className="flex justify-end gap-2 pt-4 border-t bg-background sticky bottom-0">
+          <Button
+            variant="outline"
+            onClick={() => {
+              onOpenChange(false);
+              setFile(null);
+              setPreviewData([]);
+              setError(null);
+            }}
+            data-testid="button-cancel-import"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleImport}
+            disabled={previewData.length === 0 || importMutation.isPending}
+            data-testid="button-confirm-import"
+          >
+            {importMutation.isPending ? "Importing..." : `Import ${previewData.length} Rows`}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
