@@ -13053,9 +13053,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get schedule items for a specific project (used by Gantt timeline)
+  // Optional query params: limit, offset for pagination (omit for all items)
+  // Always returns array for backwards compatibility
   app.get("/api/projects/:projectId/schedule-items", requireAuth, requireTeamMember, async (req, res) => {
     try {
-      const items = await storage.getScheduleItemsByProject(req.params.projectId);
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
+      const offset = req.query.offset ? parseInt(req.query.offset as string) : undefined;
+      
+      const items = await storage.getScheduleItemsByProject(req.params.projectId, { limit, offset });
+      
+      // Always return array for backwards compatibility
+      // Pagination metadata can be added via headers if needed in future
       res.json(items);
     } catch (error: any) {
       res.status(500).json({ 

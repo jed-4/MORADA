@@ -767,7 +767,7 @@ export interface IStorage {
 
   // Schedule Items CRUD
   getScheduleItems(scheduleId: string): Promise<ScheduleItem[]>;
-  getScheduleItemsByProject(projectId: string): Promise<ScheduleItem[]>;
+  getScheduleItemsByProject(projectId: string, pagination?: { limit?: number; offset?: number }): Promise<ScheduleItem[]>;
   getAllScheduleItems(companyId: string): Promise<ScheduleItem[]>;
   getScheduleItem(id: string): Promise<ScheduleItem | undefined>;
   createScheduleItem(item: InsertScheduleItem): Promise<ScheduleItem>;
@@ -13812,14 +13812,23 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async getScheduleItemsByProject(projectId: string): Promise<ScheduleItem[]> {
+  async getScheduleItemsByProject(projectId: string, pagination?: { limit?: number; offset?: number }): Promise<ScheduleItem[]> {
     try {
-      const items = await db.select()
+      let query = db.select()
         .from(schema.scheduleItems)
         .innerJoin(schema.schedules, eq(schema.scheduleItems.scheduleId, schema.schedules.id))
         .where(eq(schema.schedules.projectId, projectId))
         .orderBy(schema.scheduleItems.startDate, schema.scheduleItems.sortOrder);
       
+      // Apply pagination if provided
+      if (pagination?.limit !== undefined) {
+        query = query.limit(pagination.limit) as typeof query;
+      }
+      if (pagination?.offset !== undefined) {
+        query = query.offset(pagination.offset) as typeof query;
+      }
+      
+      const items = await query;
       return items.map(item => item.schedule_items);
     } catch (error) {
       console.error("Database error in getScheduleItemsByProject:", error);

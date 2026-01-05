@@ -2005,10 +2005,11 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                           );
                         })()}
                         
-                        {/* Progress slider handle at bottom - appears on hover */}
+                        {/* Progress slider handle at bottom - appears on hover, disabled when schedule is offline */}
                         <div
-                          className="absolute bottom-0 left-0 right-0 h-2 opacity-0 group-hover/bar:opacity-100 transition-opacity cursor-ew-resize"
+                          className={`absolute bottom-0 left-0 right-0 h-2 opacity-0 group-hover/bar:opacity-100 transition-opacity ${schedule?.status === 'offline' ? 'pointer-events-none' : 'cursor-ew-resize'}`}
                           onMouseDown={(e) => {
+                            if (schedule?.status === 'offline') return;
                             e.stopPropagation();
                             e.preventDefault();
                             const barRect = e.currentTarget.parentElement?.getBoundingClientRect();
@@ -2024,9 +2025,10 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                           <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white/30" />
                           {/* Slider thumb */}
                           <div 
-                            className="absolute bottom-0 w-2 h-2 bg-white rounded-full shadow-md -translate-x-1/2 cursor-ew-resize hover:scale-125 transition-transform"
+                            className={`absolute bottom-0 w-2 h-2 bg-white rounded-full shadow-md -translate-x-1/2 transition-transform ${schedule?.status === 'offline' ? '' : 'cursor-ew-resize hover:scale-125'}`}
                             style={{ left: `${progressDrag?.itemId === parentItem.id ? progressDrag.currentProgress : (parentItem.progressPercent ?? 0)}%` }}
                             onMouseDown={(e) => {
+                              if (schedule?.status === 'offline') return;
                               e.stopPropagation();
                               e.preventDefault();
                               const barRect = e.currentTarget.parentElement?.parentElement?.getBoundingClientRect();
@@ -2171,10 +2173,11 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                                 );
                               })()}
                               
-                              {/* Progress slider handle at bottom - appears on hover */}
+                              {/* Progress slider handle at bottom - appears on hover, disabled when schedule is offline */}
                               <div
-                                className="absolute bottom-0 left-0 right-0 h-2 opacity-0 group-hover/bar:opacity-100 transition-opacity cursor-ew-resize"
+                                className={`absolute bottom-0 left-0 right-0 h-2 opacity-0 group-hover/bar:opacity-100 transition-opacity ${schedule?.status === 'offline' ? 'pointer-events-none' : 'cursor-ew-resize'}`}
                                 onMouseDown={(e) => {
+                                  if (schedule?.status === 'offline') return;
                                   e.stopPropagation();
                                   e.preventDefault();
                                   const barRect = e.currentTarget.parentElement?.getBoundingClientRect();
@@ -2190,9 +2193,10 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                                 <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white/30" />
                                 {/* Slider thumb */}
                                 <div 
-                                  className="absolute bottom-0 w-2 h-2 bg-white rounded-full shadow-md -translate-x-1/2 cursor-ew-resize hover:scale-125 transition-transform"
+                                  className={`absolute bottom-0 w-2 h-2 bg-white rounded-full shadow-md -translate-x-1/2 transition-transform ${schedule?.status === 'offline' ? '' : 'cursor-ew-resize hover:scale-125'}`}
                                   style={{ left: `${progressDrag?.itemId === childItem.id ? progressDrag.currentProgress : (childItem.progressPercent ?? 0)}%` }}
                                   onMouseDown={(e) => {
+                                    if (schedule?.status === 'offline') return;
                                     e.stopPropagation();
                                     e.preventDefault();
                                     const barRect = e.currentTarget.parentElement?.parentElement?.getBoundingClientRect();
@@ -2284,14 +2288,17 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                     const predStart = predEffective
                       ? getPosition(predEffective.startDate)
                       : getPosition(new Date(predItem.startDate));
-                    const predEnd = predEffective
-                      ? getPosition(predEffective.endDate) + (differenceInDays(predEffective.endDate, predEffective.startDate) + 1) * pixelsPerDay
-                      : getPosition(new Date(predItem.endDate)) + (differenceInDays(new Date(predItem.endDate), new Date(predItem.startDate)) + 1) * pixelsPerDay;
+                    // Calculate end position: position of start date + bar width
+                    const predDuration = predEffective
+                      ? differenceInDays(predEffective.endDate, predEffective.startDate) + 1
+                      : differenceInDays(new Date(predItem.endDate), new Date(predItem.startDate)) + 1;
+                    const predEnd = predStart + predDuration * pixelsPerDay;
                     
                     // Get target end position for FF and SF dependencies
-                    const targetEnd = targetEffective
-                      ? getPosition(targetEffective.endDate) + (differenceInDays(targetEffective.endDate, targetEffective.startDate) + 1) * pixelsPerDay
-                      : getPosition(new Date(item.endDate)) + (differenceInDays(new Date(item.endDate), new Date(item.startDate)) + 1) * pixelsPerDay;
+                    const targetDuration = targetEffective
+                      ? differenceInDays(targetEffective.endDate, targetEffective.startDate) + 1
+                      : differenceInDays(new Date(item.endDate), new Date(item.startDate)) + 1;
+                    const targetEnd = targetStart + targetDuration * pixelsPerDay;
                     
                     // Determine start/end positions based on dependency type
                     // FS = Finish-to-Start, SS = Start-to-Start, FF = Finish-to-Finish, SF = Start-to-Finish
@@ -2468,9 +2475,11 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                   const sourceStart = sourceEffective
                     ? getPosition(sourceEffective.startDate)
                     : getPosition(new Date(sourceItem.startDate));
-                  const sourceEnd = sourceEffective
-                    ? getPosition(sourceEffective.endDate) + (differenceInDays(sourceEffective.endDate, sourceEffective.startDate) + 1) * pixelsPerDay
-                    : getPosition(new Date(sourceItem.endDate)) + (differenceInDays(new Date(sourceItem.endDate), new Date(sourceItem.startDate)) + 1) * pixelsPerDay;
+                  // Calculate end position: position of start date + bar width
+                  const sourceDuration = sourceEffective
+                    ? differenceInDays(sourceEffective.endDate, sourceEffective.startDate) + 1
+                    : differenceInDays(new Date(sourceItem.endDate), new Date(sourceItem.startDate)) + 1;
+                  const sourceEnd = sourceStart + sourceDuration * pixelsPerDay;
                   
                   // Determine start position based on sourceAnchor (already in timeline-relative coords)
                   const startX = dragging.sourceAnchor === 'start' ? sourceStart : sourceEnd;
