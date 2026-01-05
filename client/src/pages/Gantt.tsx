@@ -851,10 +851,6 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     // Use custom color if set
     if (item.color) return item.color;
     
-    // Check if overdue
-    const isOverdue = new Date(item.endDate) < new Date() && item.status !== 'completed';
-    if (isOverdue) return '#ef4444'; // red for overdue
-    
     // Use neutral gray color as default
     return '#9ca3af'; // neutral gray
   };
@@ -884,6 +880,10 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     dragType: 'move' | 'resize-left' | 'resize-right' | 'dependency' = 'move',
     anchor?: 'start' | 'end'
   ) => {
+    // Only start drag on left mouse button (button 0)
+    // Right-click (button 2) should trigger context menu instead
+    if (e.button !== 0) return;
+    
     e.preventDefault();
     e.stopPropagation();
     
@@ -1999,7 +1999,6 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                 const parentDuration = differenceInDays(effectiveDates.endDate, effectiveDates.startDate) + 1;
                 const parentWidth = parentDuration * pixelsPerDay;
                 const barColor = getBarColor(parentItem);
-                const isOverdue = new Date(parentItem.endDate) < new Date() && parentItem.status !== 'completed';
 
                 // Check if name fits in bar (approximate: 7px per character + 16px padding)
                 const approximateTextWidth = parentItem.name.length * 7 + 16;
@@ -2044,7 +2043,6 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                           `}
                           style={{
                             backgroundColor: barColor,
-                            border: isOverdue ? '2px dashed #dc2626' : 'none',
                           }}
                           onClick={(e) => handleBarClick(e, parentItem)}
                           onContextMenu={(e) => {
