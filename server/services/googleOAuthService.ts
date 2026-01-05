@@ -191,40 +191,67 @@ export class GoogleOAuthService {
     
     if (shouldRefresh) {
       console.log('[GoogleOAuth] Attempting token refresh for user:', userId);
-      try {
-        const { credentials } = await this.oauth2Client.refreshAccessToken();
-        console.log('[GoogleOAuth] Token refresh successful');
-        
-        if (credentials.access_token) {
-          const encryptedAccessToken = encryptToken(credentials.access_token);
-          const expiryDate = credentials.expiry_date 
-            ? new Date(credentials.expiry_date)
-            : new Date(Date.now() + 3600 * 1000);
+      
+      const maxRetries = 3;
+      let lastError: any = null;
+      
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          const { credentials } = await this.oauth2Client.refreshAccessToken();
+          console.log('[GoogleOAuth] Token refresh successful on attempt', attempt);
           
-          await this.storage.updateUser(userId, {
-            googleCalendarAccessToken: encryptedAccessToken,
-            googleCalendarTokenExpiry: expiryDate,
-          });
+          if (credentials.access_token) {
+            const encryptedAccessToken = encryptToken(credentials.access_token);
+            const expiryDate = credentials.expiry_date 
+              ? new Date(credentials.expiry_date)
+              : new Date(Date.now() + 3600 * 1000);
+            
+            await this.storage.updateUser(userId, {
+              googleCalendarAccessToken: encryptedAccessToken,
+              googleCalendarTokenExpiry: expiryDate,
+            });
+            
+            console.log('[GoogleOAuth] New token saved, expires:', expiryDate);
+            this.oauth2Client.setCredentials(credentials);
+          }
+          lastError = null;
+          break;
+        } catch (refreshError: any) {
+          lastError = refreshError;
+          console.error(`[GoogleOAuth] TOKEN REFRESH FAILED (attempt ${attempt}/${maxRetries}) for user:`, userId);
+          console.error('[GoogleOAuth] Error name:', refreshError.name);
+          console.error('[GoogleOAuth] Error message:', refreshError.message);
+          console.error('[GoogleOAuth] Error code:', refreshError.code);
           
-          console.log('[GoogleOAuth] New token saved, expires:', expiryDate);
-          this.oauth2Client.setCredentials(credentials);
+          // Check if this is a permanent error that means the token is truly invalid
+          const isPermanentError = this.isPermanentTokenError(refreshError);
+          
+          if (isPermanentError) {
+            console.error('[GoogleOAuth] Permanent error detected - token has been revoked or is invalid');
+            await this.storage.updateUser(userId, {
+              googleCalendarEmail: null,
+              googleCalendarAccessToken: null,
+              googleCalendarRefreshToken: null,
+              googleCalendarTokenExpiry: null,
+              googleCalendarConnectedAt: null,
+            });
+            throw new Error('Google Calendar access has been revoked. Please reconnect your calendar.');
+          }
+          
+          // For temporary errors, wait before retrying (but not on last attempt)
+          if (attempt < maxRetries) {
+            console.log(`[GoogleOAuth] Temporary error, retrying in ${attempt * 1000}ms...`);
+            await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+          }
         }
-      } catch (refreshError: any) {
-        console.error('[GoogleOAuth] TOKEN REFRESH FAILED for user:', userId);
-        console.error('[GoogleOAuth] Error name:', refreshError.name);
-        console.error('[GoogleOAuth] Error message:', refreshError.message);
-        console.error('[GoogleOAuth] Error code:', refreshError.code);
-        console.error('[GoogleOAuth] Full error:', JSON.stringify(refreshError, null, 2));
-        console.error('[GoogleOAuth] Clearing invalid tokens - user will need to reconnect');
-        
-        await this.storage.updateUser(userId, {
-          googleCalendarEmail: null,
-          googleCalendarAccessToken: null,
-          googleCalendarRefreshToken: null,
-          googleCalendarTokenExpiry: null,
-          googleCalendarConnectedAt: null,
-        });
-        throw new Error('Google Calendar token expired. Please reconnect your calendar.');
+      }
+      
+      // If we exhausted retries but it wasn't a permanent error, don't disconnect
+      // Just throw an error so the user knows there's an issue, but they can try again
+      if (lastError) {
+        console.error('[GoogleOAuth] Token refresh failed after all retries, but keeping tokens for retry');
+        console.error('[GoogleOAuth] Full error:', JSON.stringify(lastError, null, 2));
+        throw new Error('Unable to refresh Google Calendar connection. Please try again in a moment.');
       }
     }
     
@@ -239,6 +266,50 @@ export class GoogleOAuthService {
       googleCalendarTokenExpiry: null,
       googleCalendarConnectedAt: null,
     });
+  }
+  
+  /**
+   * Check if a token refresh error is permanent (requires reconnection)
+   * or temporary (can be retried)
+   */
+  private isPermanentTokenError(error: any): boolean {
+    const errorMessage = error?.message?.toLowerCase() || '';
+    const errorDescription = error?.response?.data?.error_description?.toLowerCase() || '';
+    const errorCode = error?.response?.data?.error || error?.code || '';
+    
+    // These error codes/messages indicate the token is permanently invalid
+    const permanentErrorPatterns = [
+      'invalid_grant',           // Token has been revoked or expired permanently
+      'invalid_token',           // Token is invalid
+      'token has been expired or revoked',
+      'token has been revoked',
+      'authorization_revoked',
+      'access_denied',
+      'invalid_client',          // Client credentials are wrong
+      'unauthorized_client',
+    ];
+    
+    for (const pattern of permanentErrorPatterns) {
+      if (
+        errorMessage.includes(pattern) ||
+        errorDescription.includes(pattern) ||
+        errorCode === pattern
+      ) {
+        return true;
+      }
+    }
+    
+    // Check HTTP status codes that indicate permanent failure
+    const status = error?.response?.status || error?.status;
+    if (status === 401 || status === 403) {
+      // 401/403 with specific error codes are permanent
+      if (permanentErrorPatterns.includes(errorCode)) {
+        return true;
+      }
+    }
+    
+    // All other errors are considered temporary (network issues, rate limits, etc.)
+    return false;
   }
   
   async getConnectionStatus(userId: string): Promise<{
@@ -300,33 +371,63 @@ export class GoogleOAuthService {
       user.googleCalendarTokenExpiry.getTime() < Date.now() + 5 * 60 * 1000;
     
     if (shouldRefresh) {
-      try {
-        const { credentials } = await this.oauth2Client.refreshAccessToken();
-        
-        if (credentials.access_token) {
-          const encryptedAccessToken = encryptToken(credentials.access_token);
-          const expiryDate = credentials.expiry_date 
-            ? new Date(credentials.expiry_date)
-            : new Date(Date.now() + 3600 * 1000);
+      console.log('[GoogleOAuth/Gmail] Attempting token refresh for user:', userId);
+      
+      const maxRetries = 3;
+      let lastError: any = null;
+      
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          const { credentials } = await this.oauth2Client.refreshAccessToken();
+          console.log('[GoogleOAuth/Gmail] Token refresh successful on attempt', attempt);
           
-          await this.storage.updateUser(userId, {
-            googleCalendarAccessToken: encryptedAccessToken,
-            googleCalendarTokenExpiry: expiryDate,
-          });
+          if (credentials.access_token) {
+            const encryptedAccessToken = encryptToken(credentials.access_token);
+            const expiryDate = credentials.expiry_date 
+              ? new Date(credentials.expiry_date)
+              : new Date(Date.now() + 3600 * 1000);
+            
+            await this.storage.updateUser(userId, {
+              googleCalendarAccessToken: encryptedAccessToken,
+              googleCalendarTokenExpiry: expiryDate,
+            });
+            
+            this.oauth2Client.setCredentials(credentials);
+          }
+          lastError = null;
+          break;
+        } catch (refreshError: any) {
+          lastError = refreshError;
+          console.error(`[GoogleOAuth/Gmail] TOKEN REFRESH FAILED (attempt ${attempt}/${maxRetries}) for user:`, userId);
+          console.error('[GoogleOAuth/Gmail] Error:', refreshError.message);
           
-          this.oauth2Client.setCredentials(credentials);
+          // Check if this is a permanent error
+          const isPermanentError = this.isPermanentTokenError(refreshError);
+          
+          if (isPermanentError) {
+            console.error('[GoogleOAuth/Gmail] Permanent error detected - token has been revoked or is invalid');
+            await this.storage.updateUser(userId, {
+              googleCalendarEmail: null,
+              googleCalendarAccessToken: null,
+              googleCalendarRefreshToken: null,
+              googleCalendarTokenExpiry: null,
+              googleCalendarConnectedAt: null,
+            });
+            throw new Error('Google account access has been revoked. Please reconnect.');
+          }
+          
+          // For temporary errors, wait before retrying
+          if (attempt < maxRetries) {
+            console.log(`[GoogleOAuth/Gmail] Temporary error, retrying in ${attempt * 1000}ms...`);
+            await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+          }
         }
-      } catch (refreshError: any) {
-        console.error('[GoogleOAuth/Gmail] TOKEN REFRESH FAILED for user:', userId);
-        console.error('[GoogleOAuth/Gmail] Error:', refreshError.message);
-        await this.storage.updateUser(userId, {
-          googleCalendarEmail: null,
-          googleCalendarAccessToken: null,
-          googleCalendarRefreshToken: null,
-          googleCalendarTokenExpiry: null,
-          googleCalendarConnectedAt: null,
-        });
-        throw new Error('Google account token expired. Please reconnect.');
+      }
+      
+      // If we exhausted retries but it wasn't a permanent error, don't disconnect
+      if (lastError) {
+        console.error('[GoogleOAuth/Gmail] Token refresh failed after all retries, but keeping tokens for retry');
+        throw new Error('Unable to refresh Google account connection. Please try again in a moment.');
       }
     }
     
