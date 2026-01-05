@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown, User, Search, Filter, Columns, MoreVertical, FileText, Edit, Eye, Copy, Check, Palette, Trash2, Settings, Download, Wifi, WifiOff, GanttChart, List as ListIcon, GripVertical } from "lucide-react";
+import { Plus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown, User, Search, Filter, Columns, MoreVertical, FileText, Edit, Eye, Copy, Check, Palette, Trash2, Settings, Download, Wifi, WifiOff, GanttChart, List as ListIcon, GripVertical, Link, Unlink } from "lucide-react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -193,6 +193,13 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
   const [scrollVersion, setScrollVersion] = useState(0); // Force re-render on scroll during dependency drag
   const lastCursorPosition = useRef<{ x: number; y: number } | null>(null); // Track last cursor for scroll updates
   const dragHappened = useRef<boolean>(false); // Track if actual drag occurred (to distinguish from clicks)
+  
+  // Context menu state for right-click on bars
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    item: ScheduleItem;
+  } | null>(null);
   
   // Infinite scroll: track extra buffer days beyond data bounds
   const [timelineBuffer, setTimelineBuffer] = useState({ before: 14, after: 28 });
@@ -633,6 +640,23 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+    },
+  });
+
+  const deleteItemMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest(`/api/schedule-items/${id}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      toast({ title: "Task deleted" });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to delete", 
+        description: error?.message || "Could not delete the task",
+        variant: "destructive",
+      });
     },
   });
 
@@ -1959,6 +1983,11 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                             border: isOverdue ? '2px dashed #dc2626' : 'none',
                           }}
                           onClick={(e) => handleBarClick(e, parentItem)}
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setContextMenu({ x: e.clientX, y: e.clientY, item: parentItem });
+                          }}
                           onMouseDown={(e) => handleBarMouseDown(e, parentItem, 'move')}
                           onMouseEnter={() => setHoveredBar(parentItem.id)}
                           onMouseLeave={() => setHoveredBar(null)}
@@ -2127,6 +2156,11 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                                 border: '2px dotted rgba(255, 255, 255, 0.6)',
                               }}
                               onClick={(e) => handleBarClick(e, childItem)}
+                              onContextMenu={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setContextMenu({ x: e.clientX, y: e.clientY, item: childItem });
+                              }}
                               onMouseDown={(e) => handleBarMouseDown(e, childItem, 'move')}
                               onMouseEnter={() => setHoveredBar(childItem.id)}
                               onMouseLeave={() => setHoveredBar(null)}
@@ -2719,6 +2753,133 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Right-click context menu for Gantt bars */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 min-w-[180px] rounded-md border-2 bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-80"
+          style={{
+            left: contextMenu.x,
+            top: contextMenu.y,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Close on click outside */}
+          <div
+            className="fixed inset-0 z-[-1]"
+            onClick={() => setContextMenu(null)}
+          />
+          
+          <button
+            className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left"
+            onClick={() => {
+              if (onEditItem) {
+                onEditItem(contextMenu.item);
+              } else {
+                setEditingItemContext(contextMenu.item);
+                setShowItemDialog(true);
+              }
+              setContextMenu(null);
+            }}
+            data-testid="context-menu-edit"
+          >
+            <Edit className="w-4 h-4 mr-2" />
+            Edit Task
+          </button>
+          
+          <button
+            className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left"
+            onClick={() => {
+              setSelectedTask(contextMenu.item);
+              setContextMenu(null);
+            }}
+            data-testid="context-menu-view"
+          >
+            <Eye className="w-4 h-4 mr-2" />
+            View Details
+          </button>
+          
+          <div className="-mx-1 my-1 h-0.5 bg-border" />
+          
+          {/* Status submenu */}
+          <div className="relative">
+            <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+              Change Status
+            </div>
+            {statusOptions.slice(0, 5).map((status) => (
+              <button
+                key={status.id}
+                className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left"
+                onClick={() => {
+                  updateItemStatusMutation.mutate({ id: contextMenu.item.id, statusId: status.id });
+                  setContextMenu(null);
+                }}
+                data-testid={`context-menu-status-${status.id}`}
+              >
+                <div 
+                  className="w-3 h-3 rounded-full mr-2" 
+                  style={{ backgroundColor: status.color }}
+                />
+                {status.name}
+                {contextMenu.item.statusId === status.id && (
+                  <Check className="w-4 h-4 ml-auto" />
+                )}
+              </button>
+            ))}
+          </div>
+          
+          <div className="-mx-1 my-1 h-0.5 bg-border" />
+          
+          <button
+            className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left"
+            onClick={() => {
+              navigator.clipboard.writeText(contextMenu.item.name);
+              toast({ title: "Copied", description: "Task name copied to clipboard" });
+              setContextMenu(null);
+            }}
+            data-testid="context-menu-copy-name"
+          >
+            <Copy className="w-4 h-4 mr-2" />
+            Copy Name
+          </button>
+          
+          {contextMenu.item.dependencies && contextMenu.item.dependencies.length > 0 && (
+            <button
+              className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left text-orange-600 dark:text-orange-400"
+              onClick={() => {
+                const deps = contextMenu.item.dependencies as Array<{ id: string }>;
+                deps.forEach((dep) => {
+                  deleteDependencyMutation.mutate({
+                    itemId: contextMenu.item.id,
+                    predecessorId: dep.id,
+                  });
+                });
+                setContextMenu(null);
+              }}
+              data-testid="context-menu-remove-dependencies"
+            >
+              <Unlink className="w-4 h-4 mr-2" />
+              Remove All Dependencies
+            </button>
+          )}
+          
+          <div className="-mx-1 my-1 h-0.5 bg-border" />
+          
+          <button
+            className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left text-destructive"
+            onClick={() => {
+              if (confirm(`Are you sure you want to delete "${contextMenu.item.name}"?`)) {
+                deleteItemMutation.mutate(contextMenu.item.id);
+              }
+              setContextMenu(null);
+            }}
+            data-testid="context-menu-delete"
+          >
+            <Trash2 className="w-4 h-4 mr-2" />
+            Delete Task
+          </button>
+        </div>
+      )}
     </div>
   );
 }
