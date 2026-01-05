@@ -57,6 +57,7 @@ export function ChecklistTemplateFormDialog({
 
   const { data: checklistTypesCategory, isLoading: isLoadingTypes } = useQuery<FieldCategoryWithOptions>({
     queryKey: ["/api/field-categories/by-key/checklist.type"],
+    staleTime: 60000, // Cache for 60 seconds
   });
 
   const checklistTypes = useMemo(() => 
@@ -224,18 +225,11 @@ export function ChecklistTemplateFormDialog({
                   <Select 
                     onValueChange={field.onChange} 
                     value={field.value}
-                    disabled={isLoadingTypes || checklistTypes.length === 0}
+                    disabled={isLoadingTypes}
                   >
                     <FormControl>
                       <SelectTrigger data-testid="select-template-type">
-                        {isLoadingTypes ? (
-                          <span className="flex items-center gap-2">
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            Loading types...
-                          </span>
-                        ) : (
-                          <SelectValue placeholder="Select type" />
-                        )}
+                        <SelectValue placeholder={isLoadingTypes ? "Loading types..." : "Select type"} />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
@@ -280,7 +274,7 @@ export function ChecklistTemplateFormDialog({
               </Button>
               <Button
                 type="submit"
-                disabled={isPending || isLoadingTypes || checklistTypes.length === 0}
+                disabled={isPending || isLoadingTypes}
                 data-testid="button-save-template"
               >
                 {isPending ? "Saving..." : isEditMode ? "Save Changes" : "Create Checklist Group"}
