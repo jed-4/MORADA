@@ -1024,8 +1024,8 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
         if (deltaDays !== 0) {
           const newStart = addDays(dragging.originalStart, deltaDays);
           
-          // Ensure start is before end (minimum 1 day duration)
-          if (newStart < dragging.originalEnd) {
+          // Ensure start is before or equal to end (allows 1-day duration)
+          if (newStart <= dragging.originalEnd) {
             // Optimistic update for instant line update
             updateCacheOptimistically(dragging.id, newStart, dragging.originalEnd);
             
@@ -1041,8 +1041,8 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
         if (deltaDays !== 0) {
           const newEnd = addDays(dragging.originalEnd, deltaDays);
           
-          // Ensure end is after start (minimum 1 day duration)
-          if (newEnd > dragging.originalStart) {
+          // Ensure end is after or equal to start (allows 1-day duration)
+          if (newEnd >= dragging.originalStart) {
             // Optimistic update for instant line update
             updateCacheOptimistically(dragging.id, dragging.originalStart, newEnd);
             
@@ -1924,6 +1924,70 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                   left: `${todayPosition}px`,
                 }}
               />
+              
+              {/* Ghost preview bar during drag/resize */}
+              {dragging && (dragging.type === 'move' || dragging.type === 'resize-left' || dragging.type === 'resize-right') && (() => {
+                const dragItem = allItems.find(item => item.id === dragging.id);
+                if (!dragItem) return null;
+                
+                const originalStart = getPosition(new Date(dragItem.startDate));
+                const originalDuration = differenceInDays(new Date(dragItem.endDate), new Date(dragItem.startDate)) + 1;
+                const originalWidth = originalDuration * pixelsPerDay;
+                
+                // Calculate preview dimensions based on drag type
+                let previewLeft = originalStart;
+                let previewWidth = originalWidth;
+                const deltaX = dragging.currentDeltaX || 0;
+                
+                if (dragging.type === 'move') {
+                  previewLeft = originalStart + deltaX;
+                } else if (dragging.type === 'resize-left') {
+                  previewLeft = originalStart + deltaX;
+                  previewWidth = Math.max(pixelsPerDay, originalWidth - deltaX);
+                } else if (dragging.type === 'resize-right') {
+                  previewWidth = Math.max(pixelsPerDay, originalWidth + deltaX);
+                }
+                
+                // Calculate the row index for this item (mirrors actual render ordering)
+                let foundRow = 0;
+                let found = false;
+                for (let i = 0; i < orderedParentItems.length && !found; i++) {
+                  // Check if this parent is the dragged item
+                  if (orderedParentItems[i].id === dragging.id) {
+                    found = true;
+                    break;
+                  }
+                  foundRow++; // Count this parent row
+                  
+                  // If not collapsed, check children
+                  if (!collapsedItems.has(orderedParentItems[i].id)) {
+                    const children = childItemsByParent[orderedParentItems[i].id] || [];
+                    for (let j = 0; j < children.length; j++) {
+                      if (children[j].id === dragging.id) {
+                        found = true;
+                        break;
+                      }
+                      foundRow++; // Count this child row
+                    }
+                  }
+                }
+                
+                return (
+                  <div
+                    className="absolute h-6 rounded-sm border-2 border-dashed border-[#bba7db] bg-[#bba7db]/30 pointer-events-none z-40"
+                    style={{
+                      left: `${previewLeft}px`,
+                      width: `${previewWidth}px`,
+                      top: `${foundRow * 40 + 4}px`,
+                    }}
+                    data-testid="ghost-preview-bar"
+                  >
+                    <div className="absolute inset-0 flex items-center justify-center text-xs font-medium text-[#7c5fb3]">
+                      {Math.max(1, Math.round(previewWidth / pixelsPerDay))}d
+                    </div>
+                  </div>
+                );
+              })()}
               
               {orderedParentItems.map((parentItem, parentIdx) => {
                 const isCollapsed = collapsedItems.has(parentItem.id);
