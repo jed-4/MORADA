@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { TASK_COLORS, type TaskColor, getTaskColorConfig } from "@/lib/taskColors";
+import { generateNotionColors } from "@/lib/taskColors";
 import {
   DndContext,
   DragEndEvent,
@@ -88,17 +88,9 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
   const isRecurring = !!event.templateId;
   const showTime = event.startTime || event.endTime;
 
-  // Notion-style colors: check if event.color is a known color key
-  const taskColorConfig = getTaskColorConfig(event.color);
-  
-  // Determine if this is a legacy hex color (starts with #)
-  const isLegacyHexColor = event.color && event.color.startsWith('#');
-  
-  // Get event color for border (always use hex for consistent border color)
-  const borderColor = taskColorConfig?.hex || (isRecurring ? "#a855f7" : (event.projectColor || event.color || "#6366f1"));
-  
-  // For legacy hex colors, use white text for contrast; for task colors, use the configured text class
-  const useLightText = !taskColorConfig || isLegacyHexColor;
+  // Generate Notion-style colors from project color (or fallback)
+  const baseColor = isRecurring ? "#a855f7" : (event.projectColor || event.color || "#6366f1");
+  const notionColors = generateNotionColors(baseColor);
 
   return (
     <div
@@ -116,15 +108,14 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
         showResizeHandles && !isGoogleCalendarEvent && "cursor-pointer hover:shadow-md",
         isGoogleCalendarEvent && "cursor-pointer hover:shadow-md",
         isCompleted && "opacity-60",
-        isDragging && "opacity-50 scale-[0.98] shadow-lg",
-        taskColorConfig && !isLegacyHexColor && taskColorConfig.bg
+        isDragging && "opacity-50 scale-[0.98] shadow-lg"
       )}
       style={{
-        ...((isLegacyHexColor || !taskColorConfig) && { backgroundColor: borderColor }),
-        borderLeft: `3px solid ${borderColor}`,
-        border: `1px solid rgba(0,0,0,0.1)`,
+        backgroundColor: notionColors.pastelBg,
+        borderLeft: `3px solid ${notionColors.originalHex}`,
+        border: `1px solid rgba(0,0,0,0.08)`,
         borderLeftWidth: '3px',
-        borderLeftColor: borderColor,
+        borderLeftColor: notionColors.originalHex,
       }}
     >
       {/* Top resize handle - Notion style */}
@@ -158,11 +149,13 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
       )}
       <div className="flex-1 min-w-0 overflow-hidden flex items-start flex-col">
         <div className="flex items-center gap-1 w-full">
-          <div className={cn(
-            "font-medium truncate flex-1 text-[10.5px]",
-            useLightText ? "text-white" : taskColorConfig?.text,
-            isCompleted && "line-through opacity-60"
-          )}>
+          <div 
+            className={cn(
+              "font-semibold truncate flex-1 text-[10.5px]",
+              isCompleted && "line-through opacity-60"
+            )}
+            style={{ color: notionColors.darkText }}
+          >
             {event.title}
           </div>
           {isRecurring && (
@@ -177,10 +170,10 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
           )}
         </div>
         {showTime && (
-          <div className={cn(
-            "text-[9px] font-normal opacity-70",
-            useLightText ? "text-white" : taskColorConfig?.text
-          )}>
+          <div 
+            className="text-[9px] font-normal opacity-80"
+            style={{ color: notionColors.darkText }}
+          >
             {event.startTime}{event.endTime && ` - ${event.endTime}`}
           </div>
         )}
@@ -859,20 +852,15 @@ export function EnhancedCalendar({
                         <div className="text-xs font-semibold mb-2">All Events ({allDayEvents.length})</div>
                         <div className="space-y-1">
                           {allDayEvents.map((event, idx) => {
-                            const popColorKey = event.color as TaskColor | undefined;
-                            const popColorConfig = popColorKey && TASK_COLORS[popColorKey] ? TASK_COLORS[popColorKey] : null;
-                            const popBorderColor = popColorConfig?.hex || event.color || '#6366f1';
+                            const popColors = generateNotionColors(event.projectColor || event.color);
                             return (
                               <div
                                 key={`popover-${event.id}-${idx}`}
-                                className={cn(
-                                  "text-xs p-1.5 rounded cursor-pointer hover:opacity-80 transition-colors flex items-center gap-2",
-                                  popColorConfig?.bg,
-                                  popColorConfig?.text
-                                )}
+                                className="text-xs p-1.5 rounded cursor-pointer hover:opacity-80 transition-colors flex items-center gap-2 font-semibold"
                                 style={{ 
-                                  borderLeft: `3px solid ${popBorderColor}`,
-                                  ...(!popColorConfig && { backgroundColor: `${popBorderColor}20` })
+                                  backgroundColor: popColors.pastelBg,
+                                  color: popColors.darkText,
+                                  borderLeft: `3px solid ${popColors.originalHex}`,
                                 }}
                                 onClick={() => onEventClick?.(event)}
                               >

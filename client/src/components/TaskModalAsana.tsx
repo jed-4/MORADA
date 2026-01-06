@@ -66,12 +66,9 @@ import {
   Clock,
   RotateCcw,
   Settings2,
-  Palette,
 } from "lucide-react";
 import { SetReminderDialog } from "@/components/SetReminderDialog";
 import { DriveFilePicker } from "@/components/DriveFilePicker";
-
-import { TASK_COLORS, type TaskColor } from "@/lib/taskColors";
 
 const taskFormSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -956,31 +953,6 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-
-              {/* Color */}
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                  <Palette className="h-3 w-3" />
-                  Color
-                </label>
-                <div className="flex flex-wrap gap-1.5">
-                  {Object.entries(TASK_COLORS).map(([key, color]) => (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => form.setValue("color", key === "default" ? undefined : key, { shouldDirty: true, shouldTouch: true })}
-                      className={`w-6 h-6 rounded-full border-2 transition-all ${
-                        (form.watch("color") === key || (!form.watch("color") && key === "default"))
-                          ? "border-foreground scale-110"
-                          : "border-transparent hover:scale-105"
-                      }`}
-                      style={{ backgroundColor: color.hex }}
-                      title={color.name}
-                      data-testid={`color-${key}`}
-                    />
-                  ))}
-                </div>
               </div>
 
               {/* Due Date */}
