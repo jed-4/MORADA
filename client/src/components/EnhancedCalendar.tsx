@@ -101,7 +101,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
       data-testid={`event-${event.type}-${event.id}`}
       onClick={() => onEventClick?.(event)}
       className={cn(
-        "group relative flex items-start gap-1.5 px-1.5 py-1 rounded text-[11px] mb-0.5 transition-all overflow-hidden shadow-sm",
+        "group relative flex items-start gap-2 px-2 py-1.5 rounded text-xs mb-0.5 transition-all overflow-hidden shadow-sm",
         showResizeHandles && "h-full",
         !isGoogleCalendarEvent && "touch-none",
         !isGoogleCalendarEvent && !showResizeHandles && "cursor-move hover:shadow-md",
@@ -151,7 +151,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
         <div className="flex items-center gap-1 w-full">
           <div 
             className={cn(
-              "font-semibold truncate flex-1 text-[10.5px]",
+              "font-semibold truncate flex-1 text-[11px]",
               isCompleted && "line-through opacity-60"
             )}
             style={{ color: notionColors.darkText }}
@@ -171,7 +171,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
         </div>
         {showTime && (
           <div 
-            className="text-[9px] font-normal opacity-80"
+            className="text-[10px] font-normal opacity-80"
             style={{ color: notionColors.darkText }}
           >
             {event.startTime}{event.endTime && ` - ${event.endTime}`}
@@ -856,7 +856,7 @@ export function EnhancedCalendar({
                             return (
                               <div
                                 key={`popover-${event.id}-${idx}`}
-                                className="text-xs p-1.5 rounded cursor-pointer hover:opacity-80 transition-colors flex items-center gap-2 font-semibold"
+                                className="text-xs px-2 py-1.5 rounded cursor-pointer hover:opacity-80 transition-colors flex items-center gap-2 font-semibold"
                                 style={{ 
                                   backgroundColor: popColors.pastelBg,
                                   color: popColors.darkText,
