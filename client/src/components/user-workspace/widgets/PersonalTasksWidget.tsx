@@ -7,6 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { 
   CheckSquare, 
   Clock, 
@@ -420,9 +421,16 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                       )}
                     </button>
                     
-                    <span className={`text-[11px] flex-1 truncate ${isCompleted ? 'line-through' : ''}`}>
-                      {task.title}
-                    </span>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className={`text-[11px] flex-1 truncate cursor-default ${isCompleted ? 'line-through' : ''}`}>
+                          {task.title}
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-xs">
+                        <p>{task.title}</p>
+                      </TooltipContent>
+                    </Tooltip>
                     
                     <div className="flex items-center gap-1 flex-shrink-0">
                       {dueInfo && (
@@ -503,9 +511,16 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                         </button>
                         
                         
-                        <span className={`text-[11px] flex-1 truncate ${isCompleted ? 'line-through' : ''}`}>
-                          {task.title}
-                        </span>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className={`text-[11px] flex-1 truncate cursor-default ${isCompleted ? 'line-through' : ''}`}>
+                              {task.title}
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-xs">
+                            <p>{task.title}</p>
+                          </TooltipContent>
+                        </Tooltip>
                         
                         <div className="flex items-center gap-1 flex-shrink-0">
                           {groupBy !== 'dueDate' && dueInfo && (

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import CreateProjectDialog from "./CreateProjectDialog";
+import TaskModalAsana from "./TaskModalAsana";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -50,6 +51,7 @@ export default function Header() {
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [isDark, setIsDark] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [isProjectSearchOpen, setIsProjectSearchOpen] = useState(false);
@@ -230,7 +232,7 @@ export default function Header() {
   };
 
   const handleNewTask = () => {
-    navigate('/tasks');
+    setIsTaskModalOpen(true);
   };
 
   const handleNewProject = () => {
@@ -542,6 +544,14 @@ export default function Header() {
       <GlobalSearch 
         open={isGlobalSearchOpen} 
         onOpenChange={setIsGlobalSearchOpen} 
+      />
+
+      {/* Task Creation Modal */}
+      <TaskModalAsana
+        open={isTaskModalOpen}
+        onOpenChange={setIsTaskModalOpen}
+        projectId={currentProject?.id}
+        defaultScope={currentProject ? "project" : "personal"}
       />
     </header>
   );
