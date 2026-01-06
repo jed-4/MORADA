@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { WidgetProps } from "@/types/widgets";
 import { usePersonalCalendarEvents, CalendarItem } from "./usePersonalCalendarEvents";
 import { format, addDays, subDays, isToday, isBefore, startOfDay } from "date-fns";
+import { generateNotionColors } from "@/lib/taskColors";
 
 const HOUR_HEIGHT = 48;
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
@@ -85,33 +86,43 @@ function TimelineEvent({ event, colorMode }: { event: CalendarItem; colorMode: C
     isPast = isBefore(eventStartTime, now);
   }
   
-  const eventColor = getEventColor(event, colorMode);
+  const baseColor = getEventColor(event, colorMode);
+  const notionColors = generateNotionColors(baseColor);
   
   return (
     <div
-      className={`absolute left-12 right-2 rounded-md border px-2 py-1 overflow-hidden cursor-pointer hover-elevate ${
+      className={`absolute left-12 right-2 rounded-md px-2 py-1 overflow-hidden cursor-pointer hover-elevate ${
         isPast ? 'opacity-50' : ''
       }`}
       style={{
         top: `${top}px`,
         height: `${height}px`,
-        backgroundColor: `${eventColor}60`,
-        borderColor: eventColor,
+        backgroundColor: notionColors.pastelBg,
+        border: `1px solid rgba(0,0,0,0.08)`,
         borderLeftWidth: '3px',
+        borderLeftColor: notionColors.originalHex,
       }}
       title={`${event.title}${event.description ? `\n${event.description}` : ''}`}
     >
       <div className="flex items-start gap-1.5">
         <div 
-          className="flex-shrink-0 w-4 h-4 rounded-sm flex items-center justify-center text-white"
-          style={{ backgroundColor: typeColors[event.type] }}
+          className="flex-shrink-0 w-4 h-4 rounded-sm flex items-center justify-center"
+          style={{ backgroundColor: notionColors.originalHex, color: notionColors.pastelBg }}
         >
           {typeIcons[event.type]}
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium truncate leading-tight">{event.title}</p>
+          <p 
+            className="text-xs font-semibold truncate leading-tight"
+            style={{ color: notionColors.darkText }}
+          >
+            {event.title}
+          </p>
           {height >= 36 && (
-            <p className="text-[10px] text-muted-foreground truncate">
+            <p 
+              className="text-[10px] truncate opacity-80"
+              style={{ color: notionColors.darkText }}
+            >
               {event.startTime} - {event.endTime || 'No end'}
               {event.projectName && ` | ${event.projectName}`}
             </p>
@@ -123,25 +134,32 @@ function TimelineEvent({ event, colorMode }: { event: CalendarItem; colorMode: C
 }
 
 function AllDayEvent({ event, colorMode }: { event: CalendarItem; colorMode: ColorMode }) {
-  const eventColor = getEventColor(event, colorMode);
+  const baseColor = getEventColor(event, colorMode);
+  const notionColors = generateNotionColors(baseColor);
   
   return (
     <div
-      className="flex items-center gap-1.5 px-2 py-1 rounded-md border cursor-pointer hover-elevate"
+      className="flex items-center gap-1.5 px-2 py-1 rounded-md cursor-pointer hover-elevate"
       style={{
-        backgroundColor: `${eventColor}60`,
-        borderColor: eventColor,
+        backgroundColor: notionColors.pastelBg,
+        border: `1px solid rgba(0,0,0,0.08)`,
         borderLeftWidth: '3px',
+        borderLeftColor: notionColors.originalHex,
       }}
       title={event.title}
     >
       <div 
-        className="flex-shrink-0 w-4 h-4 rounded-sm flex items-center justify-center text-white"
-        style={{ backgroundColor: typeColors[event.type] }}
+        className="flex-shrink-0 w-4 h-4 rounded-sm flex items-center justify-center"
+        style={{ backgroundColor: notionColors.originalHex, color: notionColors.pastelBg }}
       >
         {typeIcons[event.type]}
       </div>
-      <p className="text-xs font-medium truncate">{event.title}</p>
+      <p 
+        className="text-xs font-semibold truncate"
+        style={{ color: notionColors.darkText }}
+      >
+        {event.title}
+      </p>
     </div>
   );
 }

@@ -137,12 +137,12 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
           data-testid={`checkbox-complete-${event.id}`}
           onClick={(e) => onToggleComplete?.(e, event)}
           onPointerDown={(e) => e.stopPropagation()}
-          className={cn(
-            "flex-shrink-0 w-3 h-3 rounded-sm border flex items-center justify-center transition-all",
-            isCompleted 
-              ? "bg-foreground border-foreground text-background" 
-              : "border-border hover:border-foreground/70 hover:bg-accent"
-          )}
+          className="flex-shrink-0 w-3 h-3 rounded-sm border flex items-center justify-center transition-all"
+          style={{
+            borderColor: notionColors.darkText,
+            backgroundColor: isCompleted ? notionColors.darkText : 'transparent',
+            color: isCompleted ? notionColors.pastelBg : notionColors.darkText,
+          }}
         >
           {isCompleted && <Check className="w-2 h-2" />}
         </button>

@@ -19,6 +19,7 @@ import {
   isBefore,
   startOfDay
 } from "date-fns";
+import { generateNotionColors } from "@/lib/taskColors";
 
 type ColorMode = "type" | "project" | "priority";
 
@@ -97,25 +98,32 @@ function DayColumn({
         ) : (
           <>
             {visibleEvents.map(event => {
-              const eventColor = getEventColor(event, colorMode);
+              const baseColor = getEventColor(event, colorMode);
+              const notionColors = generateNotionColors(baseColor);
               return (
                 <div
                   key={event.id}
-                  className="flex items-center gap-0.5 px-1 py-0.5 rounded border text-[10px] cursor-pointer hover-elevate"
+                  className="flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] cursor-pointer hover-elevate"
                   style={{
-                    backgroundColor: `${eventColor}60`,
-                    borderColor: eventColor,
+                    backgroundColor: notionColors.pastelBg,
+                    border: `1px solid rgba(0,0,0,0.08)`,
                     borderLeftWidth: '2px',
+                    borderLeftColor: notionColors.originalHex,
                   }}
                   title={`${event.title}${event.startTime ? ` at ${event.startTime}` : ''}`}
                 >
                   <div 
-                    className="flex-shrink-0 w-3 h-3 rounded-sm flex items-center justify-center text-white"
-                    style={{ backgroundColor: typeColors[event.type] }}
+                    className="flex-shrink-0 w-3 h-3 rounded-sm flex items-center justify-center"
+                    style={{ backgroundColor: notionColors.originalHex, color: notionColors.pastelBg }}
                   >
                     {typeIcons[event.type]}
                   </div>
-                  <span className="truncate flex-1 min-w-0">{event.title}</span>
+                  <span 
+                    className="truncate flex-1 min-w-0 font-semibold"
+                    style={{ color: notionColors.darkText }}
+                  >
+                    {event.title}
+                  </span>
                 </div>
               );
             })}

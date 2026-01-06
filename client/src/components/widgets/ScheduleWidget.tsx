@@ -41,6 +41,7 @@ import {
   startOfDay,
   getDay
 } from "date-fns";
+import { generateNotionColors } from "@/lib/taskColors";
 
 type ViewMode = "list" | "day" | "week" | "month";
 
@@ -57,19 +58,16 @@ interface ScheduleItem {
   priority?: "high" | "medium" | "low";
 }
 
-const typeColors = {
-  task: "bg-blue-500",
-  milestone: "bg-purple-500",
-  meeting: "bg-green-500",
-  inspection: "bg-amber-500",
+const typeHexColors: Record<string, string> = {
+  task: "#3b82f6",
+  milestone: "#a855f7",
+  meeting: "#22c55e",
+  inspection: "#f59e0b",
 };
 
-const typeBadgeColors = {
-  task: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
-  milestone: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
-  meeting: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
-  inspection: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
-};
+function getTypeNotionColors(type: string) {
+  return generateNotionColors(typeHexColors[type] || "#6b7280");
+}
 
 const priorityColors = {
   high: "text-red-500",
@@ -503,7 +501,14 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                   </div>
                 </div>
                 
-                <Badge className={`text-[10px] ${typeBadgeColors[item.type]}`}>
+                <Badge 
+                  className="text-[10px] font-semibold"
+                  style={{
+                    backgroundColor: getTypeNotionColors(item.type).pastelBg,
+                    color: getTypeNotionColors(item.type).darkText,
+                    border: `1px solid rgba(0,0,0,0.08)`,
+                  }}
+                >
                   {item.type}
                 </Badge>
               </div>
@@ -582,17 +587,30 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
           <div className="flex-shrink-0 px-3 py-1.5 border-b space-y-1 bg-muted/10 max-h-20 overflow-y-auto">
             <div className="text-[10px] text-muted-foreground uppercase tracking-wide">All Day</div>
             <div className="flex flex-wrap gap-1">
-              {allDayItems.map(item => (
-                <div
-                  key={item.id}
-                  className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] cursor-pointer hover-elevate ${
-                    item.status === 'overdue' ? 'bg-red-100 dark:bg-red-950/50' : 'bg-muted'
-                  }`}
-                >
-                  <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${typeColors[item.type]}`} />
-                  <span className="truncate max-w-[100px]">{item.title}</span>
-                </div>
-              ))}
+              {allDayItems.map(item => {
+                const notionColors = getTypeNotionColors(item.type);
+                return (
+                  <div
+                    key={item.id}
+                    className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] cursor-pointer hover-elevate"
+                    style={{
+                      backgroundColor: item.status === 'overdue' ? '#fee2e2' : notionColors.pastelBg,
+                      border: `1px solid rgba(0,0,0,0.08)`,
+                    }}
+                  >
+                    <div 
+                      className="w-1.5 h-1.5 rounded-full flex-shrink-0" 
+                      style={{ backgroundColor: notionColors.originalHex }}
+                    />
+                    <span 
+                      className="truncate max-w-[100px] font-semibold"
+                      style={{ color: item.status === 'overdue' ? '#b91c1c' : notionColors.darkText }}
+                    >
+                      {item.title}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -629,18 +647,32 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                 const startHour = parseTime(item.time);
                 if (startHour === null) return null;
                 const top = startHour * HOUR_HEIGHT;
+                const notionColors = getTypeNotionColors(item.type);
                 
                 return (
                   <div
                     key={item.id}
-                    className={`absolute left-12 right-2 rounded-md border px-2 py-1 cursor-pointer hover-elevate ${
-                      item.status === 'overdue' ? 'border-red-300 bg-red-50 dark:bg-red-950/30' : 'bg-card'
-                    }`}
-                    style={{ top: `${top}px`, minHeight: '20px' }}
+                    className="absolute left-12 right-2 rounded-md px-2 py-1 cursor-pointer hover-elevate"
+                    style={{ 
+                      top: `${top}px`, 
+                      minHeight: '20px',
+                      backgroundColor: item.status === 'overdue' ? '#fee2e2' : notionColors.pastelBg,
+                      border: `1px solid rgba(0,0,0,0.08)`,
+                      borderLeftWidth: '3px',
+                      borderLeftColor: item.status === 'overdue' ? '#ef4444' : notionColors.originalHex,
+                    }}
                   >
                     <div className="flex items-center gap-1">
-                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${typeColors[item.type]}`} />
-                      <span className="text-[11px] truncate flex-1">{item.title}</span>
+                      <div 
+                        className="w-2 h-2 rounded-full flex-shrink-0" 
+                        style={{ backgroundColor: notionColors.originalHex }}
+                      />
+                      <span 
+                        className="text-[11px] truncate flex-1 font-semibold"
+                        style={{ color: item.status === 'overdue' ? '#b91c1c' : notionColors.darkText }}
+                      >
+                        {item.title}
+                      </span>
                       {item.priority && (
                         <span className={`text-[9px] ${priorityColors[item.priority]}`}>
                           {item.priority}
