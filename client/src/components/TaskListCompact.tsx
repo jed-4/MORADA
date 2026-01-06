@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { type Task, type FieldCategoryWithOptions, type User, type Project } from "@shared/schema";
-import { GripVertical, Calendar as CalendarIcon, Flag, Pencil, User as UserIcon, ArrowUp, ArrowDown, ArrowUpDown, Trash2, MoreHorizontal } from "lucide-react";
+import { GripVertical, Calendar as CalendarIcon, Flag, Pencil, User as UserIcon, ArrowUp, ArrowDown, ArrowUpDown, Trash2, MoreVertical } from "lucide-react";
 import { format } from "date-fns";
 import {
   DndContext,
@@ -63,16 +63,25 @@ export type SortDirection = 'asc' | 'desc' | null;
 export interface TaskColumnConfig {
   order: TaskColumnKey[];
   sort?: { column: TaskColumnKey | 'title'; direction: SortDirection };
+  widths?: Record<TaskColumnKey, number>;
 }
 
 export const DEFAULT_COLUMN_ORDER: TaskColumnKey[] = ['status', 'priority', 'assignee', 'dueDate'];
 
-const COLUMN_DEFINITIONS: Record<TaskColumnKey, { label: string; width: string }> = {
-  status: { label: 'Status', width: 'w-20' },
-  priority: { label: 'Priority', width: 'w-20' },
-  assignee: { label: 'Assignee', width: 'w-24' },
-  dueDate: { label: 'Due Date', width: 'w-20' },
-  project: { label: 'Project', width: 'w-28' },
+const DEFAULT_COLUMN_WIDTHS: Record<TaskColumnKey, number> = {
+  status: 80,
+  priority: 80,
+  assignee: 96,
+  dueDate: 80,
+  project: 112,
+};
+
+const COLUMN_DEFINITIONS: Record<TaskColumnKey, { label: string; minWidth: number }> = {
+  status: { label: 'Status', minWidth: 60 },
+  priority: { label: 'Priority', minWidth: 60 },
+  assignee: { label: 'Assignee', minWidth: 70 },
+  dueDate: { label: 'Due Date', minWidth: 70 },
+  project: { label: 'Project', minWidth: 80 },
 };
 
 interface TaskListCompactProps {
@@ -111,38 +120,70 @@ const getInitials = (name: string | null | undefined): string => {
   return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 };
 
-// Sortable header column
+// Sortable and resizable header column
 function SortableHeaderColumn({
   columnKey,
   label,
   width,
+  minWidth,
   sortConfig,
   onSort,
+  onResize,
 }: {
   columnKey: TaskColumnKey;
   label: string;
-  width: string;
+  width: number;
+  minWidth: number;
   sortConfig?: { column: TaskColumnKey | 'title'; direction: SortDirection };
   onSort: (column: TaskColumnKey) => void;
+  onResize?: (column: TaskColumnKey, width: number) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: columnKey,
   });
+  const [isResizing, setIsResizing] = useState(false);
+  const startXRef = useRef(0);
+  const startWidthRef = useRef(width);
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
+    width: `${width}px`,
+    minWidth: `${minWidth}px`,
   };
 
   const isActive = sortConfig?.column === columnKey;
   const direction = isActive ? sortConfig.direction : null;
 
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsResizing(true);
+    startXRef.current = e.clientX;
+    startWidthRef.current = width;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const delta = moveEvent.clientX - startXRef.current;
+      const newWidth = Math.max(minWidth, startWidthRef.current + delta);
+      onResize?.(columnKey, newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className={`${width} flex items-center gap-0.5 cursor-pointer select-none text-[10px] font-medium text-muted-foreground hover:text-foreground`}
+      className="flex items-center gap-0.5 cursor-pointer select-none text-[10px] font-medium text-muted-foreground hover:text-foreground relative flex-shrink-0"
       onClick={() => onSort(columnKey)}
       {...attributes}
       {...listeners}
@@ -151,6 +192,16 @@ function SortableHeaderColumn({
       {direction === 'asc' && <ArrowUp className="h-2.5 w-2.5" />}
       {direction === 'desc' && <ArrowDown className="h-2.5 w-2.5" />}
       {!direction && <ArrowUpDown className="h-2.5 w-2.5 opacity-0 group-hover:opacity-50" />}
+      {/* Resize handle */}
+      {onResize && (
+        <div
+          className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/30 group"
+          onMouseDown={handleMouseDown}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className={`h-full w-0.5 mx-auto ${isResizing ? 'bg-primary' : 'group-hover:bg-primary/50'}`} />
+        </div>
+      )}
     </div>
   );
 }
@@ -184,6 +235,7 @@ function SortableTaskRow({
   projects,
   onUpdate,
   columnOrder,
+  columnWidths,
   onDelete,
   showActions = false,
 }: {
@@ -198,6 +250,7 @@ function SortableTaskRow({
   projects: Project[];
   onUpdate: (field: string, value: any) => void;
   columnOrder: TaskColumnKey[];
+  columnWidths: Record<TaskColumnKey, number>;
   onDelete?: (task: Task) => void;
   showActions?: boolean;
 }) {
@@ -281,7 +334,7 @@ function SortableTaskRow({
         
         if (col === 'status') {
           return (
-            <div key={col} className={`${colDef.width} flex-shrink-0`}>
+            <div key={col} style={{ width: `${columnWidths[col]}px` }} className="flex-shrink-0">
               {editingField === 'status' ? (
                 <Select
                   value={task.status || ''}
@@ -312,7 +365,7 @@ function SortableTaskRow({
                   className="group relative"
                 >
                   <Badge className={`text-xs px-2 py-0.5 h-5 rounded-full ${statusColor} border-0 no-default-hover-elevate no-default-active-elevate cursor-pointer hover:opacity-80 truncate max-w-full`}>
-                    {task.status}
+                    {statusOptions.find(opt => opt.key === task.status)?.name || task.status}
                   </Badge>
                 </div>
               ) : (
@@ -324,7 +377,7 @@ function SortableTaskRow({
         
         if (col === 'priority') {
           return (
-            <div key={col} className={`${colDef.width} flex-shrink-0`}>
+            <div key={col} style={{ width: `${columnWidths[col]}px` }} className="flex-shrink-0">
               {editingField === 'priority' ? (
                 <Select
                   value={task.priority || ''}
@@ -356,7 +409,7 @@ function SortableTaskRow({
                 >
                   <Badge className={`text-xs px-1.5 py-0.5 h-5 rounded-full ${priorityColor} border-0 gap-0.5 no-default-hover-elevate no-default-active-elevate cursor-pointer hover:opacity-80`}>
                     <Flag className="h-2.5 w-2.5" />
-                    {task.priority}
+                    {priorityOptions.find(opt => opt.key === task.priority)?.name || task.priority}
                   </Badge>
                 </div>
               ) : (
@@ -368,7 +421,7 @@ function SortableTaskRow({
         
         if (col === 'assignee') {
           return (
-            <div key={col} className={`${colDef.width} flex-shrink-0`}>
+            <div key={col} style={{ width: `${columnWidths[col]}px` }} className="flex-shrink-0">
               {editingField === 'assigneeId' ? (
                 <Popover open={editingField === 'assigneeId'} onOpenChange={(open) => !open && setEditingField(null)}>
                   <PopoverTrigger onClick={(e) => e.stopPropagation()} />
@@ -432,7 +485,7 @@ function SortableTaskRow({
         
         if (col === 'dueDate') {
           return (
-            <div key={col} className={`${colDef.width} flex-shrink-0`}>
+            <div key={col} style={{ width: `${columnWidths[col]}px` }} className="flex-shrink-0">
               {editingField === 'dueDate' ? (
                 <Input
                   ref={dateInputRef}
@@ -463,7 +516,7 @@ function SortableTaskRow({
         if (col === 'project') {
           const project = projects.find(p => p.id === task.projectId);
           return (
-            <div key={col} className={`${colDef.width} flex-shrink-0`}>
+            <div key={col} style={{ width: `${columnWidths[col]}px` }} className="flex-shrink-0">
               {project ? (
                 <div className="flex items-center gap-1 text-xs truncate">
                   {project.color && (
@@ -491,7 +544,7 @@ function SortableTaskRow({
             <DropdownMenu>
               <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                 <Button variant="ghost" size="icon" className="h-6 w-6">
-                  <MoreHorizontal className="h-3.5 w-3.5" />
+                  <MoreVertical className="h-3.5 w-3.5" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -534,10 +587,25 @@ export default function TaskListCompact({
   // Internal state for uncontrolled mode
   const [internalColumnOrder, setInternalColumnOrder] = useState<TaskColumnKey[]>(DEFAULT_COLUMN_ORDER);
   const [internalSort, setInternalSort] = useState<{ column: TaskColumnKey | 'title'; direction: SortDirection } | undefined>();
+  const [internalColumnWidths, setInternalColumnWidths] = useState<Record<TaskColumnKey, number>>(DEFAULT_COLUMN_WIDTHS);
   
   // Use controlled or internal state
   const columnOrder = columnConfig?.order || internalColumnOrder;
   const sortConfig = columnConfig?.sort ?? internalSort;
+  const columnWidths = columnConfig?.widths || internalColumnWidths;
+
+  // Handle column resize
+  const handleColumnResize = (column: TaskColumnKey, width: number) => {
+    if (onColumnConfigChange) {
+      onColumnConfigChange({
+        ...columnConfig,
+        order: columnOrder,
+        widths: { ...columnWidths, [column]: width },
+      });
+    } else {
+      setInternalColumnWidths(prev => ({ ...prev, [column]: width }));
+    }
+  };
 
   // Fetch tasks if not provided
   const { data: fetchedTasks = [], isLoading: fetchIsLoading } = useQuery<Task[]>({
@@ -798,9 +866,11 @@ export default function TaskListCompact({
                 key={col}
                 columnKey={col}
                 label={colDef.label}
-                width={colDef.width}
+                width={columnWidths[col]}
+                minWidth={colDef.minWidth}
                 sortConfig={sortConfig}
                 onSort={handleSort}
+                onResize={handleColumnResize}
               />
             );
           })}
@@ -837,6 +907,7 @@ export default function TaskListCompact({
                     projects={projects}
                     onUpdate={(field, value) => handleUpdate(task.id, field, value)}
                     columnOrder={columnOrder}
+                    columnWidths={columnWidths}
                     onDelete={onDelete}
                     showActions={showActions}
                   />
@@ -875,6 +946,7 @@ export default function TaskListCompact({
                 projects={projects}
                 onUpdate={(field, value) => handleUpdate(task.id, field, value)}
                 columnOrder={columnOrder}
+                columnWidths={columnWidths}
                 onDelete={onDelete}
                 showActions={showActions}
               />
