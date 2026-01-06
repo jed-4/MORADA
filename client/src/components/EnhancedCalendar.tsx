@@ -949,8 +949,8 @@ export function EnhancedCalendar({
                             };
                           });
 
-                          // Google Calendar style: Lane-based positioning with per-event width calculation
-                          // Each event's width is based on max concurrent events during its duration
+                          // Google Calendar style: Stacked offset positioning with lane reuse
+                          // Overlapping events stack with offset, later events appear on top
                           type EventPosition = {
                             event: CalendarEvent;
                             startMinutes: number;
@@ -958,7 +958,6 @@ export function EnhancedCalendar({
                             top: number;
                             height: number;
                             lane?: number;
-                            maxConcurrent?: number;
                           };
                           
                           // Helper to check if two events overlap
@@ -972,40 +971,39 @@ export function EnhancedCalendar({
                             return (b.endMinutes - b.startMinutes) - (a.endMinutes - a.startMinutes);
                           });
                           
-                          // Assign lanes using greedy algorithm
+                          // Assign lanes - find the smallest available lane for each event
+                          // This allows lane reuse when previous events have ended
                           const lanes: EventPosition[][] = [];
                           sortedEvents.forEach((eventPos) => {
-                            // Find first lane where event doesn't overlap
-                            let placed = false;
+                            // Find first lane where this event doesn't overlap with any existing event
+                            let assignedLane = -1;
                             for (let laneIdx = 0; laneIdx < lanes.length; laneIdx++) {
                               const hasOverlap = lanes[laneIdx].some(e => eventsOverlap(e, eventPos));
                               if (!hasOverlap) {
                                 lanes[laneIdx].push(eventPos);
-                                eventPos.lane = laneIdx;
-                                placed = true;
+                                assignedLane = laneIdx;
                                 break;
                               }
                             }
-                            if (!placed) {
-                              eventPos.lane = lanes.length;
+                            if (assignedLane === -1) {
+                              assignedLane = lanes.length;
                               lanes.push([eventPos]);
                             }
+                            eventPos.lane = assignedLane;
                           });
                           
-                          // For each event, calculate max concurrent during its time span
-                          sortedEvents.forEach((eventPos) => {
-                            // Find all events that overlap with this one
-                            const overlapping = sortedEvents.filter(e => eventsOverlap(e, eventPos));
-                            eventPos.maxConcurrent = overlapping.length;
-                          });
+                          // Stacking constants - Google Calendar style offset
+                          const OFFSET_PER_LANE = 12; // 12% offset per lane
+                          const RIGHT_MARGIN = 8; // Right margin percentage
+                          const MAX_OFFSET = 36; // Max offset (capped at 3 lanes worth)
                           
-                          // Render events with calculated positions
+                          // Render events with stacked positions
                           return sortedEvents.map((eventPos, idx) => {
                             const lane = eventPos.lane ?? 0;
-                            const maxConcurrent = eventPos.maxConcurrent ?? 1;
-                            const widthPercent = 100 / maxConcurrent;
-                            const leftPercent = lane * widthPercent;
-                            const gapPx = maxConcurrent > 1 ? 2 : 0;
+                            // Calculate left offset (capped to keep events in bounds)
+                            const leftPercent = Math.min(lane * OFFSET_PER_LANE, MAX_OFFSET);
+                            // Width fills remaining space minus right margin
+                            const widthPercent = 100 - leftPercent - RIGHT_MARGIN;
                             
                             return (
                               <div
@@ -1014,8 +1012,8 @@ export function EnhancedCalendar({
                                 style={{ 
                                   top: `${eventPos.top}px`,
                                   height: `${eventPos.height}px`,
-                                  left: `calc(${leftPercent}% + ${gapPx}px)`,
-                                  width: `calc(${widthPercent}% - ${gapPx * 2}px)`,
+                                  left: `${leftPercent}%`,
+                                  width: `calc(${widthPercent}% - 4px)`,
                                   zIndex: lane + 1,
                                 }}
                               >
