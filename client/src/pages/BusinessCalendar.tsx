@@ -7,6 +7,7 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  User,
 } from "lucide-react";
 import { format, parseISO, isWithinInterval } from "date-fns";
 import type { Task, ScheduleItem, Project, User as UserType, FieldCategoryWithOptions, Schedule } from "@shared/schema";
