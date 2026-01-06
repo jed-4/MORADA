@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -9,17 +9,19 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { format, isToday, isTomorrow, addDays, subDays, startOfWeek, endOfWeek, isSameDay, eachDayOfInterval, isBefore } from "date-fns";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { generateNotionColors } from "@/lib/taskColors";
+import TaskModalAsana from "@/components/TaskModalAsana";
 
 type ViewMode = "list" | "day" | "week";
 
 const HOUR_HEIGHT = 36;
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 
-const typeColors: Record<string, string> = {
-  task: "bg-blue-500",
-  schedule: "bg-emerald-500",
-  timesheet: "bg-amber-500",
-  reminder: "bg-purple-500",
+const typeHexColors: Record<string, string> = {
+  task: "#3b82f6",
+  schedule: "#10b981",
+  timesheet: "#f59e0b",
+  reminder: "#a855f7",
 };
 
 interface CalendarEvent {
@@ -31,9 +33,10 @@ interface CalendarEvent {
   allDay?: boolean;
   type?: string;
   projectId?: string;
+  projectColor?: string;
 }
 
-function TimelineEvent({ event, compact }: { event: CalendarEvent; compact?: boolean }) {
+function TimelineEvent({ event, compact, onClick }: { event: CalendarEvent; compact?: boolean; onClick?: () => void }) {
   const startHour = event.startTime ? parseTimeString(event.startTime) : parseTimeFromDate(event.start);
   const endHour = event.endTime ? parseTimeString(event.endTime) : (startHour !== null ? startHour + 1 : null);
   
@@ -47,20 +50,31 @@ function TimelineEvent({ event, compact }: { event: CalendarEvent; compact?: boo
   const eventDate = new Date(event.start);
   const isPast = isBefore(eventDate, now) && !isToday(eventDate);
   
+  const baseColor = event.projectColor || typeHexColors[event.type || 'task'] || "#3b82f6";
+  const notionColors = generateNotionColors(baseColor);
+  
   return (
     <div
-      className={`absolute left-10 right-1 rounded-sm border text-[10px] px-1 py-0.5 overflow-hidden cursor-pointer hover-elevate ${
+      className={`absolute left-10 right-1 rounded-md text-[10px] px-1.5 py-0.5 overflow-hidden cursor-pointer hover-elevate ${
         isPast ? 'opacity-50' : ''
       }`}
       style={{
         top: `${top}px`,
         height: `${height}px`,
-        backgroundColor: typeColors[event.type || 'task']?.replace('bg-', 'hsl(var(--') || 'hsl(var(--muted))',
-        borderColor: 'hsl(var(--border))',
+        backgroundColor: notionColors.pastelBg,
+        border: `1px solid rgba(0,0,0,0.08)`,
+        borderLeftWidth: '3px',
+        borderLeftColor: notionColors.originalHex,
       }}
       title={event.title}
+      onClick={onClick}
     >
-      <p className="font-medium truncate leading-tight">{event.title}</p>
+      <p 
+        className="font-semibold truncate leading-tight"
+        style={{ color: notionColors.darkText }}
+      >
+        {event.title}
+      </p>
     </div>
   );
 }
@@ -91,6 +105,7 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
   const [configMaxEvents, setConfigMaxEvents] = useState(maxEvents);
   const [configDaysAhead, setConfigDaysAhead] = useState(daysAhead);
   const [configViewMode, setConfigViewMode] = useState(defaultViewMode);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [, setLocation] = useLocation();
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -115,6 +130,20 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
     enabled: !!userId,
   });
 
+  const { data: projects = [], isLoading: projectsLoading } = useQuery<any[]>({
+    queryKey: ["/api/projects"],
+  });
+
+  const projectColorMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    projects.forEach((project: any) => {
+      if (project.color) {
+        map[String(project.id)] = project.color;
+      }
+    });
+    return map;
+  }, [projects]);
+
   const startDate = new Date();
   startDate.setHours(0, 0, 0, 0);
   const endDate = addDays(startDate, daysAhead);
@@ -134,6 +163,7 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
       endTime: task.endTime,
       type: 'task',
       projectId: task.projectId,
+      projectColor: task.projectId ? projectColorMap[String(task.projectId)] : undefined,
     }));
 
   // Scroll to 6 AM or earliest event on mount
@@ -157,7 +187,7 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
     }
   }, [viewMode, allEvents]);
 
-  const isLoading = tasksLoading;
+  const isLoading = tasksLoading || projectsLoading;
 
   const sortedEvents = [...allEvents].sort((a, b) => 
     new Date(a.start).getTime() - new Date(b.start).getTime()
@@ -335,23 +365,49 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
         {displayEvents.map((event) => {
           const eventDate = new Date(event.start);
           const isTodayEvent = isToday(eventDate);
+          const baseColor = event.projectColor || typeHexColors[event.type || 'task'] || "#3b82f6";
+          const notionColors = generateNotionColors(baseColor);
           return (
             <div 
               key={event.id}
-              className={`p-2 border rounded-md hover-elevate cursor-pointer ${
-                isTodayEvent ? 'bg-[#bba7db]/10 border-[#bba7db]/30' : ''
-              }`}
+              className="p-2 rounded-md hover-elevate cursor-pointer"
+              style={{
+                backgroundColor: notionColors.pastelBg,
+                border: `1px solid rgba(0,0,0,0.08)`,
+                borderLeftWidth: '3px',
+                borderLeftColor: notionColors.originalHex,
+              }}
               data-testid={`calendar-event-${event.id}`}
+              onClick={() => event.type === 'task' && setSelectedTaskId(event.id)}
             >
               <div className="flex items-start gap-2">
-                <CheckSquare className={`h-3 w-3 mt-0.5 flex-shrink-0 ${isTodayEvent ? 'text-[#bba7db]' : 'text-muted-foreground'}`} />
+                <CheckSquare 
+                  className="h-3 w-3 mt-0.5 flex-shrink-0"
+                  style={{ color: notionColors.originalHex }} 
+                />
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium truncate leading-tight">{event.title}</p>
+                  <p 
+                    className="text-xs font-semibold truncate leading-tight"
+                    style={{ color: notionColors.darkText }}
+                  >
+                    {event.title}
+                  </p>
                   <div className="flex items-center gap-1 mt-0.5">
-                    <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">
+                    <Badge 
+                      variant="outline" 
+                      className="text-[10px] px-1 py-0 h-4"
+                      style={{ 
+                        backgroundColor: 'rgba(255,255,255,0.5)',
+                        color: notionColors.darkText,
+                        borderColor: 'rgba(0,0,0,0.1)'
+                      }}
+                    >
                       {getDayLabel(event.start)}
                     </Badge>
-                    <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                    <span 
+                      className="text-[10px] flex items-center gap-0.5"
+                      style={{ color: notionColors.darkText, opacity: 0.7 }}
+                    >
                       <Clock className="h-2 w-2" />
                       {getTimeLabel(event)}
                     </span>
@@ -404,7 +460,11 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
           
           {/* Events */}
           {dayEvents.map((event) => (
-            <TimelineEvent key={event.id} event={event} />
+            <TimelineEvent 
+              key={event.id} 
+              event={event} 
+              onClick={() => event.type === 'task' && setSelectedTaskId(event.id)}
+            />
           ))}
           
           {dayEvents.length === 0 && (
@@ -449,15 +509,25 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
                 key={day.toISOString()} 
                 className={`border-r border-border/30 p-0.5 min-h-[180px] ${isToday(day) ? 'bg-[#bba7db]/5' : ''}`}
               >
-                {dayEvents.slice(0, 4).map((event) => (
-                  <div
-                    key={event.id}
-                    className="text-[9px] p-0.5 mb-0.5 rounded-sm bg-blue-500/20 border-l-2 border-blue-500 truncate cursor-pointer hover-elevate"
-                    title={event.title}
-                  >
-                    {event.title}
-                  </div>
-                ))}
+                {dayEvents.slice(0, 4).map((event) => {
+                  const baseColor = event.projectColor || typeHexColors[event.type || 'task'] || "#3b82f6";
+                  const notionColors = generateNotionColors(baseColor);
+                  return (
+                    <div
+                      key={event.id}
+                      className="text-[9px] p-0.5 mb-0.5 rounded-sm truncate cursor-pointer hover-elevate font-semibold"
+                      style={{
+                        backgroundColor: notionColors.pastelBg,
+                        borderLeft: `2px solid ${notionColors.originalHex}`,
+                        color: notionColors.darkText,
+                      }}
+                      title={event.title}
+                      onClick={() => event.type === 'task' && setSelectedTaskId(event.id)}
+                    >
+                      {event.title}
+                    </div>
+                  );
+                })}
                 {dayEvents.length > 4 && (
                   <div className="text-[8px] text-muted-foreground text-center">
                     +{dayEvents.length - 4} more
@@ -471,21 +541,32 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
     );
   };
 
+  const selectedTask = tasks.find(t => String(t.id) === String(selectedTaskId));
+
   return (
-    <div className="h-full flex flex-col">
-      {renderHeader()}
+    <>
+      <div className="h-full flex flex-col">
+        {renderHeader()}
+        
+        {isLoading ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="animate-pulse text-xs text-muted-foreground">Loading...</div>
+          </div>
+        ) : (
+          <>
+            {viewMode === "list" && renderListView()}
+            {viewMode === "day" && renderDayView()}
+            {viewMode === "week" && renderWeekView()}
+          </>
+        )}
+      </div>
       
-      {isLoading ? (
-        <div className="flex-1 flex items-center justify-center">
-          <div className="animate-pulse text-xs text-muted-foreground">Loading...</div>
-        </div>
-      ) : (
-        <>
-          {viewMode === "list" && renderListView()}
-          {viewMode === "day" && renderDayView()}
-          {viewMode === "week" && renderWeekView()}
-        </>
-      )}
-    </div>
+      <TaskModalAsana
+        open={!!selectedTaskId}
+        onOpenChange={(open) => !open && setSelectedTaskId(null)}
+        task={selectedTask}
+        taskId={selectedTaskId || undefined}
+      />
+    </>
   );
 }

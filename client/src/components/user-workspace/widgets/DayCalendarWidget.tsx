@@ -10,6 +10,7 @@ import { WidgetProps } from "@/types/widgets";
 import { usePersonalCalendarEvents, CalendarItem } from "./usePersonalCalendarEvents";
 import { format, addDays, subDays, isToday, isBefore, startOfDay } from "date-fns";
 import { generateNotionColors } from "@/lib/taskColors";
+import TaskModalAsana from "@/components/TaskModalAsana";
 
 const HOUR_HEIGHT = 48;
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
@@ -61,7 +62,7 @@ function parseTime(timeStr: string | null): number | null {
   return hours + minutes / 60;
 }
 
-function TimelineEvent({ event, colorMode }: { event: CalendarItem; colorMode: ColorMode }) {
+function TimelineEvent({ event, colorMode, onClick }: { event: CalendarItem; colorMode: ColorMode; onClick?: () => void }) {
   const startHour = parseTime(event.startTime);
   const endHour = parseTime(event.endTime);
   
@@ -103,6 +104,7 @@ function TimelineEvent({ event, colorMode }: { event: CalendarItem; colorMode: C
         borderLeftColor: notionColors.originalHex,
       }}
       title={`${event.title}${event.description ? `\n${event.description}` : ''}`}
+      onClick={onClick}
     >
       <div className="flex items-start gap-1.5">
         <div 
@@ -133,7 +135,7 @@ function TimelineEvent({ event, colorMode }: { event: CalendarItem; colorMode: C
   );
 }
 
-function AllDayEvent({ event, colorMode }: { event: CalendarItem; colorMode: ColorMode }) {
+function AllDayEvent({ event, colorMode, onClick }: { event: CalendarItem; colorMode: ColorMode; onClick?: () => void }) {
   const baseColor = getEventColor(event, colorMode);
   const notionColors = generateNotionColors(baseColor);
   
@@ -147,6 +149,7 @@ function AllDayEvent({ event, colorMode }: { event: CalendarItem; colorMode: Col
         borderLeftColor: notionColors.originalHex,
       }}
       title={event.title}
+      onClick={onClick}
     >
       <div 
         className="flex-shrink-0 w-4 h-4 rounded-sm flex items-center justify-center"
@@ -167,6 +170,7 @@ function AllDayEvent({ event, colorMode }: { event: CalendarItem; colorMode: Col
 export default function DayCalendarWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId }: WidgetProps) {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [editingTitle, setEditingTitle] = useState(widget.title);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   
   // Current time state that updates every minute
@@ -361,7 +365,12 @@ export default function DayCalendarWidget({ widget, onUpdate, isConfiguring, onC
           <div className="text-[10px] text-muted-foreground uppercase tracking-wide sticky top-0 bg-muted/10">All Day</div>
           <div className="flex flex-wrap gap-1">
             {allDayEvents.map(event => (
-              <AllDayEvent key={event.id} event={event} colorMode={colorMode} />
+              <AllDayEvent 
+                key={event.id} 
+                event={event} 
+                colorMode={colorMode}
+                onClick={() => event.type === 'task' && setSelectedTaskId(event.id)}
+              />
             ))}
           </div>
         </div>
@@ -398,7 +407,12 @@ export default function DayCalendarWidget({ widget, onUpdate, isConfiguring, onC
             )}
 
             {timedEvents.map(event => (
-              <TimelineEvent key={event.id} event={event} colorMode={colorMode} />
+              <TimelineEvent 
+                key={event.id} 
+                event={event} 
+                colorMode={colorMode}
+                onClick={() => event.type === 'task' && setSelectedTaskId(event.id)}
+              />
             ))}
 
             {events.length === 0 && (
@@ -409,6 +423,12 @@ export default function DayCalendarWidget({ widget, onUpdate, isConfiguring, onC
           </div>
         )}
       </div>
+      
+      <TaskModalAsana
+        open={!!selectedTaskId}
+        onOpenChange={(open) => !open && setSelectedTaskId(null)}
+        taskId={selectedTaskId || undefined}
+      />
     </div>
   );
 }

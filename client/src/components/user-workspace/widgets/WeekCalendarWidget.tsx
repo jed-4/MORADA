@@ -20,6 +20,7 @@ import {
   startOfDay
 } from "date-fns";
 import { generateNotionColors } from "@/lib/taskColors";
+import TaskModalAsana from "@/components/TaskModalAsana";
 
 type ColorMode = "type" | "project" | "priority";
 
@@ -66,12 +67,14 @@ function DayColumn({
   date, 
   events, 
   isCurrentDay,
-  colorMode 
+  colorMode,
+  onEventClick 
 }: { 
   date: Date; 
   events: CalendarItem[];
   isCurrentDay: boolean;
   colorMode: ColorMode;
+  onEventClick?: (event: CalendarItem) => void;
 }) {
   const [showAll, setShowAll] = useState(false);
   const dayEvents = events.filter(e => isSameDay(e.startDate, date));
@@ -111,6 +114,7 @@ function DayColumn({
                     borderLeftColor: notionColors.originalHex,
                   }}
                   title={`${event.title}${event.startTime ? ` at ${event.startTime}` : ''}`}
+                  onClick={() => onEventClick?.(event)}
                 >
                   <div 
                     className="flex-shrink-0 w-3 h-3 rounded-sm flex items-center justify-center"
@@ -153,6 +157,7 @@ function DayColumn({
 export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId }: WidgetProps) {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [editingTitle, setEditingTitle] = useState(widget.title);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   
   const config = widget.config || {};
   const [configState, setConfigState] = useState({
@@ -336,11 +341,18 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
                 events={events}
                 isCurrentDay={isToday(date)}
                 colorMode={colorMode}
+                onEventClick={(event) => event.type === 'task' && setSelectedTaskId(event.id)}
               />
             ))}
           </div>
         )}
       </div>
+      
+      <TaskModalAsana
+        open={!!selectedTaskId}
+        onOpenChange={(open) => !open && setSelectedTaskId(null)}
+        taskId={selectedTaskId || undefined}
+      />
     </div>
   );
 }
