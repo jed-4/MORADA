@@ -7,6 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { TaskTooltip } from "@/components/ui/task-tooltip";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
@@ -423,16 +424,11 @@ function ChecklistAccordionItem({
             
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className={`text-xs font-medium ${wrapText ? '' : 'truncate'} max-w-[200px] block`}>
-                      {checklist.name}
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="max-w-[300px]">
-                    <p className="text-xs">{checklist.name}</p>
-                  </TooltipContent>
-                </Tooltip>
+                <TaskTooltip content={checklist.name}>
+                  <span className={`text-xs font-medium ${wrapText ? '' : 'truncate'} max-w-[200px] block`}>
+                    {checklist.name}
+                  </span>
+                </TaskTooltip>
                 <Badge 
                   className={`${getStatusBadgeColor(checklist.status)} text-[10px] px-1.5 py-0 h-4 flex-shrink-0 no-default-hover-elevate no-default-active-elevate`}
                 >
@@ -584,16 +580,11 @@ function ChecklistGroupItem({
             <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
           )}
           
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className={`text-[11px] font-medium flex-1 ${wrapText ? '' : 'truncate'}`}>
-                {group.name}
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="max-w-[300px]">
-              <p className="text-xs">{group.name}</p>
-            </TooltipContent>
-          </Tooltip>
+          <TaskTooltip content={group.name}>
+            <span className={`text-[11px] font-medium flex-1 ${wrapText ? '' : 'truncate'}`}>
+              {group.name}
+            </span>
+          </TaskTooltip>
 
           <Badge 
             className={`${getStatusBadgeColor(group.status)} text-[9px] px-1 py-0 h-3.5 flex-shrink-0 no-default-hover-elevate no-default-active-elevate`}
@@ -644,18 +635,13 @@ function ChecklistGroupItem({
                   )}
                 </button>
                 
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className={`text-[10px] flex-1 ${wrapText ? '' : 'truncate'} ${
-                      item.status === "completed" ? "line-through text-muted-foreground" : ""
-                    }`}>
-                      {item.description}
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="max-w-[300px]">
-                    <p className="text-xs">{item.description}</p>
-                  </TooltipContent>
-                </Tooltip>
+                <TaskTooltip content={item.description}>
+                  <span className={`text-[10px] flex-1 ${wrapText ? '' : 'truncate'} ${
+                    item.status === "completed" ? "line-through text-muted-foreground" : ""
+                  }`}>
+                    {item.description}
+                  </span>
+                </TaskTooltip>
               </div>
             ))
           )}

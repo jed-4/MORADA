@@ -1,7 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { TaskTooltip } from "@/components/ui/task-tooltip";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { type Task } from "@shared/schema";
 import { Plus, Circle, CheckSquare } from "lucide-react";
@@ -270,14 +270,9 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
                 </button>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className={`text-sm font-medium truncate cursor-default ${isCompleted ? 'line-through' : ''}`}>{task.title}</span>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="max-w-xs">
-                        <p>{task.title}</p>
-                      </TooltipContent>
-                    </Tooltip>
+                    <TaskTooltip content={task.title}>
+                      <span className={`text-sm font-medium truncate cursor-default ${isCompleted ? 'line-through' : ''}`}>{task.title}</span>
+                    </TaskTooltip>
                     <Badge className={`text-xs ${priorityColors[task.priority as "low" | "medium" | "high"]}`}>
                       {task.priority}
                     </Badge>

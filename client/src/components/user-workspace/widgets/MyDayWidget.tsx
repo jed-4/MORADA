@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { TaskTooltip } from "@/components/ui/task-tooltip";
 import { 
   Sun, 
   Circle,
@@ -392,14 +392,9 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
                   data-testid={`myday-schedule-${item.id}`}
                 >
                   <CalendarDays className="h-3.5 w-3.5 text-blue-500 flex-shrink-0" />
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="text-xs truncate flex-1 cursor-default">{item.title}</span>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-xs">
-                      <p>{item.title}</p>
-                    </TooltipContent>
-                  </Tooltip>
+                  <TaskTooltip content={item.title}>
+                    <span className="text-xs truncate flex-1 cursor-default">{item.title}</span>
+                  </TaskTooltip>
                   {item.startTime && (
                     <span className="text-[10px] text-muted-foreground">{item.startTime}</span>
                   )}
@@ -425,14 +420,9 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
                     >
                       <Circle className={`h-3.5 w-3.5 ${sectionConfig.id === 'overdue' ? 'text-red-500' : 'text-muted-foreground'}`} />
                     </button>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="text-xs truncate flex-1 cursor-default">{task.title}</span>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="max-w-xs">
-                        <p>{task.title}</p>
-                      </TooltipContent>
-                    </Tooltip>
+                    <TaskTooltip content={task.title}>
+                      <span className="text-xs truncate flex-1 cursor-default">{task.title}</span>
+                    </TaskTooltip>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       {task.dueDate && (
                         <span className="text-[10px] text-muted-foreground w-12 text-right">

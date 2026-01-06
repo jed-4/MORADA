@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { TaskTooltip } from "@/components/ui/task-tooltip";
 import { 
   Calendar, 
   Clock, 
@@ -484,14 +484,9 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                     {item.status === 'overdue' && (
                       <AlertTriangle className="h-3 w-3 text-red-500 flex-shrink-0" />
                     )}
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="text-sm font-medium truncate cursor-default">{item.title}</span>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="max-w-xs">
-                        <p>{item.title}</p>
-                      </TooltipContent>
-                    </Tooltip>
+                    <TaskTooltip content={item.title}>
+                      <span className="text-sm font-medium truncate cursor-default">{item.title}</span>
+                    </TaskTooltip>
                   </div>
                   
                   <div className="flex items-center gap-3 text-xs text-muted-foreground">
@@ -610,19 +605,14 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                       className="w-1.5 h-1.5 rounded-full flex-shrink-0" 
                       style={{ backgroundColor: notionColors.originalHex }}
                     />
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span 
-                          className="truncate max-w-[100px] font-semibold cursor-default"
-                          style={{ color: item.status === 'overdue' ? '#b91c1c' : notionColors.darkText }}
-                        >
-                          {item.title}
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="max-w-xs">
-                        <p>{item.title}</p>
-                      </TooltipContent>
-                    </Tooltip>
+                    <TaskTooltip content={item.title}>
+                      <span 
+                        className="truncate max-w-[100px] font-semibold cursor-default"
+                        style={{ color: item.status === 'overdue' ? '#b91c1c' : notionColors.darkText }}
+                      >
+                        {item.title}
+                      </span>
+                    </TaskTooltip>
                   </div>
                 );
               })}
@@ -682,19 +672,14 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                         className="w-2 h-2 rounded-full flex-shrink-0" 
                         style={{ backgroundColor: notionColors.originalHex }}
                       />
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <span 
-                            className="text-[11px] truncate flex-1 font-semibold cursor-default"
-                            style={{ color: item.status === 'overdue' ? '#b91c1c' : notionColors.darkText }}
-                          >
-                            {item.title}
-                          </span>
-                        </TooltipTrigger>
-                        <TooltipContent side="top" className="max-w-xs">
-                          <p>{item.title}</p>
-                        </TooltipContent>
-                      </Tooltip>
+                      <TaskTooltip content={item.title}>
+                        <span 
+                          className="text-[11px] truncate flex-1 font-semibold cursor-default"
+                          style={{ color: item.status === 'overdue' ? '#b91c1c' : notionColors.darkText }}
+                        >
+                          {item.title}
+                        </span>
+                      </TaskTooltip>
                       {item.priority && (
                         <span className={`text-[9px] ${priorityColors[item.priority]}`}>
                           {item.priority}
@@ -728,14 +713,9 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                   }`}
                 >
                   <div className={`w-2 h-2 rounded-full flex-shrink-0 ${typeColors[item.type]}`} />
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="text-sm flex-1 truncate cursor-default">{item.title}</span>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-xs">
-                      <p>{item.title}</p>
-                    </TooltipContent>
-                  </Tooltip>
+                  <TaskTooltip content={item.title}>
+                    <span className="text-sm flex-1 truncate cursor-default">{item.title}</span>
+                  </TaskTooltip>
                   {item.time && (
                     <span className="text-[10px] text-muted-foreground">{item.time}</span>
                   )}
