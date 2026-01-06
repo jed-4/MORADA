@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,9 @@ import { generateNotionColors } from "@/lib/taskColors";
 import TaskModalAsana from "@/components/TaskModalAsana";
 
 type ColorMode = "type" | "project" | "priority";
+
+const HOUR_HEIGHT = 40;
+const HOURS = Array.from({ length: 18 }, (_, i) => i + 6); // 6am to 11pm
 
 const typeColors: Record<string, string> = {
   task: "#3b82f6",
@@ -63,93 +66,122 @@ function getEventColor(event: CalendarItem, colorMode: ColorMode): string {
   }
 }
 
-function DayColumn({ 
-  date, 
-  events, 
-  isCurrentDay,
-  colorMode,
-  onEventClick 
+function parseTime(timeStr: string | null): number | null {
+  if (!timeStr) return null;
+  const [hours, minutes] = timeStr.split(':').map(Number);
+  return hours + (minutes || 0) / 60;
+}
+
+function TimelineEvent({ 
+  event, 
+  colorMode, 
+  onClick,
+  columnWidth 
 }: { 
-  date: Date; 
-  events: CalendarItem[];
-  isCurrentDay: boolean;
-  colorMode: ColorMode;
-  onEventClick?: (event: CalendarItem) => void;
+  event: CalendarItem; 
+  colorMode: ColorMode; 
+  onClick?: () => void;
+  columnWidth?: number;
 }) {
-  const [showAll, setShowAll] = useState(false);
-  const dayEvents = events.filter(e => isSameDay(e.startDate, date));
-  const isPastDay = isBefore(date, startOfDay(new Date()));
-  const visibleEvents = showAll ? dayEvents : dayEvents.slice(0, 4);
-  const hasMore = dayEvents.length > 4;
+  const startHour = parseTime(event.startTime);
+  const endHour = parseTime(event.endTime);
+  
+  if (startHour === null) return null;
+  
+  const duration = endHour !== null ? endHour - startHour : 1;
+  const top = (startHour - 6) * HOUR_HEIGHT; // Offset by start hour (6am)
+  const height = Math.max(duration * HOUR_HEIGHT, 18);
+  
+  const now = new Date();
+  let isPast = false;
+  
+  if (endHour !== null && event.endTime) {
+    const eventEndTime = new Date(event.startDate);
+    const [hours, minutes] = event.endTime.split(':').map(Number);
+    eventEndTime.setHours(hours || 0, minutes || 0, 0, 0);
+    isPast = isBefore(eventEndTime, now);
+  } else if (event.startTime) {
+    const eventStartTime = new Date(event.startDate);
+    const [hours, minutes] = event.startTime.split(':').map(Number);
+    eventStartTime.setHours(hours || 0, minutes || 0, 0, 0);
+    isPast = isBefore(eventStartTime, now);
+  }
+  
+  const baseColor = getEventColor(event, colorMode);
+  const notionColors = generateNotionColors(baseColor);
   
   return (
-    <div className={`flex flex-col h-full min-w-0 border-r last:border-r-0 ${isPastDay ? 'opacity-60' : ''}`}>
-      <div className={`text-center py-1 border-b flex-shrink-0 ${isCurrentDay ? 'bg-[#bba7db]/10' : ''}`}>
-        <div className="text-[10px] text-muted-foreground uppercase">
-          {format(date, "EEE")}
+    <div
+      className={`absolute left-0 right-1 rounded-sm px-1 py-0.5 overflow-hidden cursor-pointer hover-elevate text-[9px] ${
+        isPast ? 'opacity-50' : ''
+      }`}
+      style={{
+        top: `${top}px`,
+        height: `${height}px`,
+        backgroundColor: notionColors.pastelBg,
+        border: `1px solid rgba(0,0,0,0.08)`,
+        borderLeftWidth: '2px',
+        borderLeftColor: notionColors.originalHex,
+      }}
+      title={`${event.title}${event.startTime ? ` at ${event.startTime}` : ''}`}
+      onClick={onClick}
+    >
+      <div className="flex items-start gap-0.5">
+        <div 
+          className="flex-shrink-0 w-3 h-3 rounded-sm flex items-center justify-center"
+          style={{ backgroundColor: notionColors.originalHex, color: notionColors.pastelBg }}
+        >
+          {typeIcons[event.type]}
         </div>
-        <div className={`text-sm font-medium ${isCurrentDay ? 'text-[#bba7db]' : ''}`}>
-          {format(date, "d")}
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <p 
+            className="font-semibold truncate leading-tight"
+            style={{ color: notionColors.darkText }}
+          >
+            {event.title}
+          </p>
+          {height >= 30 && (
+            <p 
+              className="truncate opacity-70"
+              style={{ color: notionColors.darkText }}
+            >
+              {event.startTime}{event.endTime && ` - ${event.endTime}`}
+            </p>
+          )}
         </div>
       </div>
-      
-      <div className="flex-1 p-0.5 space-y-0.5 overflow-y-auto">
-        {dayEvents.length === 0 ? (
-          <div className="h-full min-h-8 flex items-center justify-center">
-            <span className="text-[9px] text-muted-foreground">-</span>
-          </div>
-        ) : (
-          <>
-            {visibleEvents.map(event => {
-              const baseColor = getEventColor(event, colorMode);
-              const notionColors = generateNotionColors(baseColor);
-              return (
-                <div
-                  key={event.id}
-                  className="flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] cursor-pointer hover-elevate"
-                  style={{
-                    backgroundColor: notionColors.pastelBg,
-                    border: `1px solid rgba(0,0,0,0.08)`,
-                    borderLeftWidth: '2px',
-                    borderLeftColor: notionColors.originalHex,
-                  }}
-                  title={`${event.title}${event.startTime ? ` at ${event.startTime}` : ''}`}
-                  onClick={() => onEventClick?.(event)}
-                >
-                  <div 
-                    className="flex-shrink-0 w-3 h-3 rounded-sm flex items-center justify-center"
-                    style={{ backgroundColor: notionColors.originalHex, color: notionColors.pastelBg }}
-                  >
-                    {typeIcons[event.type]}
-                  </div>
-                  <span 
-                    className="truncate flex-1 min-w-0 font-semibold"
-                    style={{ color: notionColors.darkText }}
-                  >
-                    {event.title}
-                  </span>
-                </div>
-              );
-            })}
-            {hasMore && !showAll && (
-              <button 
-                onClick={() => setShowAll(true)}
-                className="w-full text-[9px] text-[#bba7db] hover:underline text-center py-0.5"
-              >
-                +{dayEvents.length - 4} more
-              </button>
-            )}
-            {showAll && hasMore && (
-              <button 
-                onClick={() => setShowAll(false)}
-                className="w-full text-[9px] text-muted-foreground hover:underline text-center py-0.5"
-              >
-                Show less
-              </button>
-            )}
-          </>
-        )}
+    </div>
+  );
+}
+
+function AllDayEventChip({ event, colorMode, onClick }: { event: CalendarItem; colorMode: ColorMode; onClick?: () => void }) {
+  const baseColor = getEventColor(event, colorMode);
+  const notionColors = generateNotionColors(baseColor);
+  
+  return (
+    <div
+      className="flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] cursor-pointer hover-elevate mb-0.5"
+      style={{
+        backgroundColor: notionColors.pastelBg,
+        border: `1px solid rgba(0,0,0,0.08)`,
+        borderLeftWidth: '2px',
+        borderLeftColor: notionColors.originalHex,
+      }}
+      title={event.title}
+      onClick={onClick}
+    >
+      <div 
+        className="flex-shrink-0 w-2.5 h-2.5 rounded-sm flex items-center justify-center"
+        style={{ backgroundColor: notionColors.originalHex, color: notionColors.pastelBg }}
+      >
+        {typeIcons[event.type]}
       </div>
+      <span 
+        className="truncate font-semibold"
+        style={{ color: notionColors.darkText }}
+      >
+        {event.title}
+      </span>
     </div>
   );
 }
@@ -158,6 +190,20 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  
+  const [currentTimeMinutes, setCurrentTimeMinutes] = useState(() => {
+    const now = new Date();
+    return now.getHours() * 60 + now.getMinutes();
+  });
+  
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = new Date();
+      setCurrentTimeMinutes(now.getHours() * 60 + now.getMinutes());
+    }, 60000);
+    return () => clearInterval(interval);
+  }, []);
   
   const config = widget.config || {};
   const [configState, setConfigState] = useState({
@@ -183,14 +229,42 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
   
   const colorMode = (widget.config?.colorMode as ColorMode) ?? "project";
 
-  const { events, isLoading } = usePersonalCalendarEvents({
+  const { events, allDayEvents, timedEvents, isLoading } = usePersonalCalendarEvents({
     userId,
     date: weekStart,
     range: "week",
     ...configState,
   });
 
-  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  const weekDays = useMemo(() => 
+    Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
+    [weekStart]
+  );
+
+  // Get events for a specific day
+  const getEventsForDay = (date: Date, eventList: CalendarItem[]) => 
+    eventList.filter(e => isSameDay(e.startDate, date));
+
+  // Auto-scroll to current time on mount
+  useEffect(() => {
+    if (scrollRef.current && !isLoading) {
+      const now = new Date();
+      const currentHour = now.getHours();
+      
+      // Check if current week contains today
+      const todayInWeek = weekDays.some(d => isToday(d));
+      
+      if (todayInWeek && currentHour >= 6) {
+        const containerHeight = scrollRef.current.clientHeight;
+        const currentTimePosition = (currentHour - 6 + now.getMinutes() / 60) * HOUR_HEIGHT;
+        const targetScroll = Math.max(0, currentTimePosition - containerHeight / 3);
+        scrollRef.current.scrollTop = targetScroll;
+      } else {
+        // Scroll to 8am by default
+        scrollRef.current.scrollTop = (8 - 6) * HOUR_HEIGHT;
+      }
+    }
+  }, [isLoading, weekDays]);
 
   if (isConfiguring) {
     const handleSaveConfig = () => {
@@ -284,48 +358,92 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
 
   const weekEnd = addDays(weekStart, 6);
   const weekLabel = format(weekStart, "MMM d") + " - " + format(weekEnd, "MMM d, yyyy");
+  
+  // Check if any day has all-day events
+  const hasAllDayEvents = allDayEvents.length > 0;
 
-  const totalEvents = events.length;
-  const legend = [
-    { type: 'task', label: 'Tasks', count: events.filter(e => e.type === 'task').length },
-    { type: 'schedule', label: 'Schedule', count: events.filter(e => e.type === 'schedule').length },
-    { type: 'google-calendar', label: 'Calendar', count: events.filter(e => e.type === 'google-calendar').length },
-  ].filter(l => l.count > 0);
+  // Current time position for the indicator (relative to 6am start)
+  const currentTimeTop = ((currentTimeMinutes / 60) - 6) * HOUR_HEIGHT;
 
   return (
     <div className="flex flex-col h-full -m-3 overflow-hidden">
+      {/* Header */}
       <div className="flex-shrink-0 flex items-center justify-between px-3 py-1.5 border-b bg-muted/30">
         <div className="flex items-center gap-1">
-          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={goToPrev}>
+          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={goToPrev} data-testid="week-prev-btn">
             <ChevronLeft className="h-3.5 w-3.5" />
           </Button>
-          <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={goToThisWeek}>
+          <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={goToThisWeek} data-testid="week-today-btn">
             This Week
           </Button>
-          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={goToNext}>
+          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={goToNext} data-testid="week-next-btn">
             <ChevronRight className="h-3.5 w-3.5" />
           </Button>
         </div>
         <div className="text-xs font-medium flex items-center gap-1.5">
           {weekLabel}
-          {totalEvents > 0 && (
-            <Badge variant="secondary" className="text-[10px] px-1 py-0">{totalEvents}</Badge>
+          {events.length > 0 && (
+            <Badge variant="secondary" className="text-[10px] px-1 py-0">{events.length}</Badge>
           )}
         </div>
       </div>
 
-      {legend.length > 0 && (
-        <div className="flex-shrink-0 flex items-center gap-2 px-3 py-1 border-b text-[10px]">
-          {legend.map(l => (
-            <div key={l.type} className="flex items-center gap-1">
-              <div className="w-2 h-2 rounded-sm" style={{ backgroundColor: typeColors[l.type] }} />
-              <span className="text-muted-foreground">{l.count}</span>
+      {/* Day headers - sticky */}
+      <div className="flex-shrink-0 grid grid-cols-[40px_repeat(7,1fr)] border-b bg-background sticky top-0 z-10">
+        <div className="border-r border-border/30" /> {/* Time column header */}
+        {weekDays.map((day) => {
+          const isCurrentDay = isToday(day);
+          const isPast = isBefore(day, startOfDay(new Date()));
+          return (
+            <div 
+              key={day.toISOString()} 
+              className={`text-center py-1.5 border-r last:border-r-0 ${isCurrentDay ? 'bg-[#bba7db]/10' : ''} ${isPast && !isCurrentDay ? 'opacity-50' : ''}`}
+            >
+              <div className="text-[10px] text-muted-foreground uppercase">
+                {format(day, "EEE")}
+              </div>
+              <div className={`text-sm font-medium ${isCurrentDay ? 'text-[#bba7db]' : ''}`}>
+                {format(day, "d")}
+              </div>
             </div>
-          ))}
+          );
+        })}
+      </div>
+
+      {/* All-day events bar */}
+      {hasAllDayEvents && (
+        <div className="flex-shrink-0 grid grid-cols-[40px_repeat(7,1fr)] border-b bg-muted/10 max-h-20 overflow-y-auto">
+          <div className="border-r border-border/30 flex items-start justify-center py-1">
+            <span className="text-[9px] text-muted-foreground uppercase">All Day</span>
+          </div>
+          {weekDays.map((day) => {
+            const dayAllDayEvents = getEventsForDay(day, allDayEvents);
+            return (
+              <div 
+                key={day.toISOString()} 
+                className="border-r last:border-r-0 p-0.5 min-h-[28px]"
+              >
+                {dayAllDayEvents.slice(0, 3).map(event => (
+                  <AllDayEventChip
+                    key={event.id}
+                    event={event}
+                    colorMode={colorMode}
+                    onClick={() => event.type === 'task' && setSelectedTaskId(event.id)}
+                  />
+                ))}
+                {dayAllDayEvents.length > 3 && (
+                  <div className="text-[8px] text-muted-foreground text-center">
+                    +{dayAllDayEvents.length - 3} more
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
-      <div className="flex-1 min-h-0 overflow-hidden">
+      {/* Timeline grid */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
         {isLoading ? (
           <div className="p-4 grid grid-cols-7 gap-1">
             {[1, 2, 3, 4, 5, 6, 7].map(i => (
@@ -333,17 +451,67 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-7 h-full">
-            {weekDays.map(date => (
-              <DayColumn
-                key={date.toISOString()}
-                date={date}
-                events={events}
-                isCurrentDay={isToday(date)}
-                colorMode={colorMode}
-                onEventClick={(event) => event.type === 'task' && setSelectedTaskId(event.id)}
-              />
-            ))}
+          <div className="grid grid-cols-[40px_repeat(7,1fr)] relative" style={{ minHeight: `${HOURS.length * HOUR_HEIGHT}px` }}>
+            {/* Time labels column */}
+            <div className="relative border-r border-border/30">
+              {HOURS.map((hour) => (
+                <div
+                  key={hour}
+                  className="absolute left-0 right-0"
+                  style={{ top: `${(hour - 6) * HOUR_HEIGHT}px`, height: `${HOUR_HEIGHT}px` }}
+                >
+                  <span className="absolute left-1 top-0 text-[9px] text-muted-foreground -translate-y-1/2">
+                    {format(new Date().setHours(hour, 0), "ha")}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* Day columns */}
+            {weekDays.map((day) => {
+              const isCurrentDay = isToday(day);
+              const isPast = isBefore(day, startOfDay(new Date()));
+              const dayTimedEvents = getEventsForDay(day, timedEvents);
+              
+              return (
+                <div 
+                  key={day.toISOString()} 
+                  className={`relative border-r last:border-r-0 ${isCurrentDay ? 'bg-[#bba7db]/5' : ''} ${isPast && !isCurrentDay ? 'opacity-50' : ''}`}
+                  style={{ minHeight: `${HOURS.length * HOUR_HEIGHT}px` }}
+                >
+                  {/* Hour gridlines */}
+                  {HOURS.map((hour) => (
+                    <div
+                      key={hour}
+                      className="absolute left-0 right-0 border-t border-border/30"
+                      style={{ top: `${(hour - 6) * HOUR_HEIGHT}px`, height: `${HOUR_HEIGHT}px` }}
+                    />
+                  ))}
+                  
+                  {/* Current time indicator */}
+                  {isCurrentDay && currentTimeMinutes >= 360 && currentTimeMinutes < 1380 && (
+                    <div
+                      className="absolute left-0 right-0 border-t-2 border-red-500 z-20 pointer-events-none"
+                      style={{ top: `${currentTimeTop}px` }}
+                    >
+                      <div className="absolute -left-1 -top-1 w-2 h-2 rounded-full bg-red-500" />
+                    </div>
+                  )}
+                  
+                  {/* Timed events */}
+                  <div className="absolute inset-0 px-0.5">
+                    {dayTimedEvents.map(event => (
+                      <TimelineEvent
+                        key={event.id}
+                        event={event}
+                        colorMode={colorMode}
+                        onClick={() => event.type === 'task' && setSelectedTaskId(event.id)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
