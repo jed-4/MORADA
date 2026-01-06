@@ -99,15 +99,15 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
     const canViewOtherUsers = useMemo(() => {
       if (!currentUser?.roleId) return true; // Allow by default if no role system
       const userRole = userRoles.find((r: any) => r.id === currentUser.roleId);
-      return userRole?.name === "Admin" || userRole?.name === "Owner" || userRole?.isAdmin;
+      return userRole?.name === "Admin" || userRole?.name === "Owner" || userRole?.name === "General Manager" || userRole?.isAdmin;
     }, [currentUser?.roleId, userRoles]);
 
-    // Default to "all" to show all recurring templates
+    // Default to current user (not "all")
     useEffect(() => {
-      if (selectedUserId === null) {
-        setSelectedUserId("all");
+      if (selectedUserId === null && currentUser?.id) {
+        setSelectedUserId(currentUser.id);
       }
-    }, [selectedUserId]);
+    }, [selectedUserId, currentUser?.id]);
 
     useImperativeHandle(ref, () => ({
       refresh: () => refetch(),
