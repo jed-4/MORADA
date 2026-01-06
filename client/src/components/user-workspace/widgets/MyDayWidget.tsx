@@ -400,7 +400,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
                   )}
                 </div>
               ))}
-              {sectionConfig.id !== "schedule" && (items as Task[]).slice(0, 5).map((task) => {
+              {sectionConfig.id !== "schedule" && (items as Task[]).map((task) => {
                 const project = task.projectId ? projects.find(p => p.id === task.projectId) : null;
                 return (
                   <div 
@@ -441,11 +441,6 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
                   </div>
                 );
               })}
-              {items.length > 5 && sectionConfig.id !== "schedule" && (
-                <div className="text-[10px] text-muted-foreground pl-6 py-0.5">
-                  +{items.length - 5} more
-                </div>
-              )}
             </>
           )}
         </CollapsibleContent>
