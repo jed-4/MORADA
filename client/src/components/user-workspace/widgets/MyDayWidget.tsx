@@ -18,7 +18,9 @@ import {
   CalendarDays,
   CloudSun,
   Cloud,
-  CloudRain
+  CloudRain,
+  ChevronsUpDown,
+  ChevronsDownUp
 } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -448,13 +450,44 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
     );
   };
 
+  const allCollapsed = useMemo(() => {
+    return visibleSections.every(s => collapsedState[s.id]);
+  }, [visibleSections, collapsedState]);
+
+  const toggleAllSections = () => {
+    const newState: Record<string, boolean> = {};
+    const shouldCollapse = !allCollapsed;
+    visibleSections.forEach(s => {
+      newState[s.id] = shouldCollapse;
+    });
+    setCollapsedState(prev => ({ ...prev, ...newState }));
+  };
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <span className="text-xs text-muted-foreground">{format(new Date(), 'EEEE, MMMM d')}</span>
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <CloudSun className="h-3.5 w-3.5 text-amber-500" />
-          <span>--°C</span>
+        <div className="flex items-center gap-1.5">
+          {visibleSections.length > 0 && (
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-5 w-5"
+              onClick={toggleAllSections}
+              data-testid="button-toggle-all-myday"
+              title={allCollapsed ? "Expand all" : "Collapse all"}
+            >
+              {allCollapsed ? (
+                <ChevronsUpDown className="h-3 w-3" />
+              ) : (
+                <ChevronsDownUp className="h-3 w-3" />
+              )}
+            </Button>
+          )}
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <CloudSun className="h-3.5 w-3.5 text-amber-500" />
+            <span>--°C</span>
+          </div>
         </div>
       </div>
 

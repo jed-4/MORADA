@@ -16,7 +16,9 @@ import {
   Circle,
   ChevronDown,
   ChevronRight,
-  Folder
+  Folder,
+  ChevronsUpDown,
+  ChevronsDownUp
 } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -355,9 +357,39 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
     );
   }
 
+  const allCollapsed = useMemo(() => {
+    if (groupBy === 'none') return false;
+    return groupedTasks.every(g => collapsedGroups.has(g.key));
+  }, [groupedTasks, collapsedGroups, groupBy]);
+
+  const toggleAllGroups = () => {
+    if (groupBy === 'none') return;
+    if (allCollapsed) {
+      setCollapsedGroups(new Set());
+    } else {
+      setCollapsedGroups(new Set(groupedTasks.map(g => g.key)));
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-end mb-2">
+      <div className="flex items-center justify-end gap-1 mb-2">
+        {groupBy !== 'none' && groupedTasks.length > 1 && (
+          <Button 
+            size="icon" 
+            variant="ghost" 
+            className="h-5 w-5"
+            onClick={toggleAllGroups}
+            data-testid="button-toggle-all-tasks"
+            title={allCollapsed ? "Expand all" : "Collapse all"}
+          >
+            {allCollapsed ? (
+              <ChevronsUpDown className="h-3 w-3" />
+            ) : (
+              <ChevronsDownUp className="h-3 w-3" />
+            )}
+          </Button>
+        )}
         <Button 
           size="icon" 
           variant="ghost" 
