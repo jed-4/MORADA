@@ -23,6 +23,7 @@ import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Popover,
   PopoverContent,
@@ -65,6 +66,7 @@ export default function BusinessCalendar() {
   const [newViewName, setNewViewName] = useState("");
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+  const [selectedViewUserId, setSelectedViewUserId] = useState<string>("all");
   const defaultViewCreationAttempted = useRef(false);
 
   // Fetch all projects
@@ -308,6 +310,11 @@ export default function BusinessCalendar() {
     // Apply filters
     let filtered = allEvents;
 
+    // Apply "View as User" filter first (separate from assignee multi-select filter)
+    if (selectedViewUserId !== "all") {
+      filtered = filtered.filter(event => event.assigneeId === selectedViewUserId);
+    }
+
     // Event type filter
     if (filters.eventTypes && filters.eventTypes.length > 0) {
       filtered = filtered.filter(event => {
@@ -355,7 +362,7 @@ export default function BusinessCalendar() {
     }
 
     return filtered;
-  }, [allTasks, allScheduleItems, schedules, projects, completedOption, filters]);
+  }, [allTasks, allScheduleItems, schedules, projects, completedOption, filters, selectedViewUserId]);
 
   const handleEventComplete = (eventId: string, completed: boolean) => {
     const event = filteredEvents.find(e => e.id === eventId);
@@ -646,6 +653,24 @@ export default function BusinessCalendar() {
           >
             <Settings className="w-3 h-3" />
           </button>
+        </div>
+
+        {/* View as User Dropdown */}
+        <div className="flex items-center gap-1.5">
+          <User className="h-3.5 w-3.5 text-muted-foreground" />
+          <Select value={selectedViewUserId} onValueChange={setSelectedViewUserId}>
+            <SelectTrigger className="h-6 w-44 text-xs" data-testid="select-view-as-user">
+              <SelectValue placeholder="All Users" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Users</SelectItem>
+              {availableAssignees.map((assignee: any) => (
+                <SelectItem key={assignee.id} value={assignee.id}>
+                  {assignee.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
