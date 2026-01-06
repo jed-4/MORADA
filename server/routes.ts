@@ -12378,6 +12378,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/checklist-instance-groups/:groupId/items", async (req, res) => {
+    try {
+      const items = await storage.getChecklistInstanceItemsByGroup(req.params.groupId);
+      res.json(items);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch checklist group items",
+        details: error.message 
+      });
+    }
+  });
+
   // Checklist Instance Item routes
   app.get("/api/checklist-instances/:instanceId/items", async (req, res) => {
     try {

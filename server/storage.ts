@@ -717,6 +717,7 @@ export interface IStorage {
 
   // Checklist Instance Items CRUD
   getChecklistInstanceItems(instanceId: string): Promise<ChecklistInstanceItem[]>;
+  getChecklistInstanceItemsByGroup(groupId: string): Promise<ChecklistInstanceItem[]>;
   getChecklistInstanceItem(id: string): Promise<ChecklistInstanceItem | undefined>;
   createChecklistInstanceItem(item: InsertChecklistInstanceItem): Promise<ChecklistInstanceItem>;
   updateChecklistInstanceItem(id: string, item: Partial<InsertChecklistInstanceItem>): Promise<ChecklistInstanceItem | undefined>;
@@ -12954,6 +12955,18 @@ export class DbStorage implements IStorage {
         .orderBy(schema.checklistInstanceItems.groupOrder, schema.checklistInstanceItems.order);
     } catch (error) {
       console.error("Database error in getChecklistInstanceItems:", error);
+      throw error;
+    }
+  }
+
+  async getChecklistInstanceItemsByGroup(groupId: string): Promise<ChecklistInstanceItem[]> {
+    try {
+      return await db.select()
+        .from(schema.checklistInstanceItems)
+        .where(eq(schema.checklistInstanceItems.groupId, groupId))
+        .orderBy(schema.checklistInstanceItems.order);
+    } catch (error) {
+      console.error("Database error in getChecklistInstanceItemsByGroup:", error);
       throw error;
     }
   }
