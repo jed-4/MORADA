@@ -103,6 +103,7 @@ const PROJECT_TAB_GROUPS = [
       { id: "overview", label: "Overview", icon: Home, path: "" },
       { id: "activity", label: "Activity", icon: Activity, path: "/activity" },
       { id: "messages", label: "Messages", icon: MessageSquare, path: "/messages" },
+      { id: "minutes", label: "Minutes", icon: ClipboardList, path: "/minutes" },
       { id: "notes", label: "Notes", icon: FileText, path: "/notes" },
       { id: "scope", label: "Scope", icon: ListTree, path: "/scope" },
     ]
@@ -114,8 +115,19 @@ const PROJECT_TAB_GROUPS = [
     items: [
       { id: "schedule", label: "Schedule", icon: Clock, path: "/schedule" },
       { id: "tasks", label: "Tasks", icon: CheckSquare, path: "/tasks" },
+      { id: "checklists", label: "Checklists", icon: ListChecks, path: "/checklists" },
+      { id: "rfqs", label: "RFQs", icon: FileSearch, path: "/rfqs" },
+      { id: "rfis", label: "RFIs", icon: HelpCircle, path: "/rfis" },
+      { id: "selections", label: "Selections", icon: CheckCircle, path: "/selections" },
+      { id: "allowances", label: "Allowances", icon: DollarSign, path: "/allowances" },
+      { id: "purchase-orders", label: "Purchase Orders", icon: Receipt, path: "/purchase-orders" },
+      { id: "variations", label: "Variations", icon: FileText, path: "/variations" },
+      { id: "client-invoices", label: "Client Invoices", icon: Receipt, path: "/client-invoices" },
+      { id: "defects", label: "Defects", icon: AlertCircle, path: "/defects" },
+      { id: "site-diary", label: "Site Diary", icon: BookOpen, path: "/site-diary" },
       { id: "timesheets", label: "Timesheets", icon: Timer, path: "/timesheets" },
       { id: "files", label: "Files", icon: FolderOpen, path: "/files" },
+      { id: "team", label: "Team", icon: Users, path: "/team" },
     ]
   },
   { 
