@@ -23,6 +23,16 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -56,9 +66,12 @@ import {
   Clock,
   RotateCcw,
   Settings2,
+  Palette,
 } from "lucide-react";
 import { SetReminderDialog } from "@/components/SetReminderDialog";
 import { DriveFilePicker } from "@/components/DriveFilePicker";
+
+import { TASK_COLORS, type TaskColor } from "@/lib/taskColors";
 
 const taskFormSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -76,6 +89,7 @@ const taskFormSchema = z.object({
   estimatedUnits: z.number().optional(),
   projectId: z.string().optional(),
   scope: z.enum(["personal", "project", "system", "business"]).default("project"),
+  color: z.string().optional(),
 });
 
 type TaskFormData = z.infer<typeof taskFormSchema>;
@@ -121,6 +135,7 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
   const [showDriveFilePicker, setShowDriveFilePicker] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [optimisticCompleted, setOptimisticCompleted] = useState<boolean | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const { user } = useAuth();
@@ -221,6 +236,7 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
       projectId: task?.projectId || projectId || undefined,
       // Priority: existing task scope > legacy detection > defaultScope prop > project if projectId given > project
       scope: (task?.scope as any) || (task && !task.projectId ? "business" : defaultScope || (projectId ? "project" : "project")),
+      color: (task as any)?.color || undefined,
     },
   });
 
@@ -243,6 +259,7 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
         projectId: task?.projectId || projectId || undefined,
         // Priority: existing task scope > legacy detection > defaultScope prop > project if projectId given > project
         scope: (task?.scope as any) || (task && !task.projectId ? "business" : defaultScope || (projectId ? "project" : "project")),
+        color: (task as any)?.color || undefined,
       };
       form.reset(newDefaults);
       setTitleValue(newDefaults.title);
@@ -553,12 +570,10 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
                 {task && onDelete && (
                   <DropdownMenuItem 
                     className="text-destructive focus:text-destructive"
-                    onClick={() => {
-                      onDelete(task.id);
-                      onOpenChange(false);
-                    }}
+                    onClick={() => setShowDeleteConfirm(true)}
                     data-testid="menu-item-delete"
                   >
+                    <Trash2 className="h-4 w-4 mr-2" />
                     Delete
                   </DropdownMenuItem>
                 )}
@@ -943,6 +958,31 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
                 </Select>
               </div>
 
+              {/* Color */}
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                  <Palette className="h-3 w-3" />
+                  Color
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {Object.entries(TASK_COLORS).map(([key, color]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => form.setValue("color", key === "default" ? undefined : key, { shouldDirty: true, shouldTouch: true })}
+                      className={`w-6 h-6 rounded-full border-2 transition-all ${
+                        (form.watch("color") === key || (!form.watch("color") && key === "default"))
+                          ? "border-foreground scale-110"
+                          : "border-transparent hover:scale-105"
+                      }`}
+                      style={{ backgroundColor: color.hex }}
+                      title={color.name}
+                      data-testid={`color-${key}`}
+                    />
+                  ))}
+                </div>
+              </div>
+
               {/* Due Date */}
               <div className="space-y-2">
                 <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
@@ -1100,6 +1140,33 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
         multiple={true}
         title="Attach File from Google Drive"
       />
+
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Task</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{task?.title}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={() => {
+                if (task && onDelete) {
+                  onDelete(task.id);
+                  setShowDeleteConfirm(false);
+                  onOpenChange(false);
+                }
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }

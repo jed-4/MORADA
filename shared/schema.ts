@@ -429,6 +429,7 @@ export const notes: any = pgTable("notes", {
   tags: json("tags").default([]), // string[] for task tags
   labels: json("labels").default([]), // string[] for task labels from field options
   checklist: json("checklist").default([]), // Array of checklist items [{id, text, completed}] for tasks
+  color: text("color"), // Notion-style color for calendar display (e.g., "blue", "green", "red")
   
   // Subtask support
   parentTaskId: varchar("parent_task_id").references(() => notes.id),
@@ -499,6 +500,7 @@ export const insertNoteSchema = createInsertSchema(notes).omit({
     text: z.string(),
     completed: z.boolean().default(false),
   })).optional(),
+  color: z.string().optional(), // Notion-style color for calendar display
   // Subtask fields
   parentTaskId: z.string().optional(),
   subtaskOrder: z.number().optional(),

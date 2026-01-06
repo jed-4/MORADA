@@ -659,14 +659,17 @@ export default function Tasks() {
       return {
         id: task.id,
         title: task.title,
-        start: dueDate,
-        end: dueDate,
+        startDate: dueDate,
+        endDate: dueDate,
+        startTime: task.startTime,
+        endTime: task.endTime,
         type: "task" as const,
         projectId: task.projectId,
         status: task.status,
         priority: task.priority,
-        completed: task.completed,
-        assigneeId: task.assigneeId,
+        isCompleted: task.completed,
+        color: (task as any).color,
+        resource: task,
       };
     });
   };

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { TASK_COLORS, type TaskColor, getTaskColorConfig } from "@/lib/taskColors";
 import {
   DndContext,
   DragEndEvent,
@@ -34,6 +35,7 @@ export interface CalendarEvent {
   location?: string | null;
   templateId?: string | null;
   tagIds?: string[] | null;
+  resource?: any; // Original task/event data for click handlers
 }
 
 interface EnhancedCalendarProps {
@@ -84,13 +86,19 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
 
   const isCompleted = event.status === "done" || event.status === "completed" || event.isCompleted;
   const isRecurring = !!event.templateId;
-  const eventColor = isRecurring 
-    ? "hsl(270 50% 60%)" // Light purple for recurring tasks
-    : (event.projectColor || event.color || "hsl(215 35% 45%)");
   const showTime = event.startTime || event.endTime;
 
-  // Use solid background color (no transparency) for clear visual separation
-  const backgroundColor = eventColor;
+  // Notion-style colors: check if event.color is a known color key
+  const taskColorConfig = getTaskColorConfig(event.color);
+  
+  // Determine if this is a legacy hex color (starts with #)
+  const isLegacyHexColor = event.color && event.color.startsWith('#');
+  
+  // Get event color for border (always use hex for consistent border color)
+  const borderColor = taskColorConfig?.hex || (isRecurring ? "#a855f7" : (event.projectColor || event.color || "#6366f1"));
+  
+  // For legacy hex colors, use white text for contrast; for task colors, use the configured text class
+  const useLightText = !taskColorConfig || isLegacyHexColor;
 
   return (
     <div
@@ -108,14 +116,15 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
         showResizeHandles && !isGoogleCalendarEvent && "cursor-pointer hover:shadow-md",
         isGoogleCalendarEvent && "cursor-pointer hover:shadow-md",
         isCompleted && "opacity-60",
-        isDragging && "opacity-50 scale-[0.98] shadow-lg"
+        isDragging && "opacity-50 scale-[0.98] shadow-lg",
+        taskColorConfig && !isLegacyHexColor && taskColorConfig.bg
       )}
       style={{
-        backgroundColor,
-        borderLeft: `3px solid ${eventColor}`,
+        ...((isLegacyHexColor || !taskColorConfig) && { backgroundColor: borderColor }),
+        borderLeft: `3px solid ${borderColor}`,
         border: `1px solid rgba(0,0,0,0.1)`,
         borderLeftWidth: '3px',
-        borderLeftColor: eventColor,
+        borderLeftColor: borderColor,
       }}
     >
       {/* Top resize handle - Notion style */}
@@ -150,7 +159,8 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
       <div className="flex-1 min-w-0 overflow-hidden flex items-start flex-col">
         <div className="flex items-center gap-1 w-full">
           <div className={cn(
-            "font-medium truncate flex-1 text-white text-[10.5px]",
+            "font-medium truncate flex-1 text-[10.5px]",
+            useLightText ? "text-white" : taskColorConfig?.text,
             isCompleted && "line-through opacity-60"
           )}>
             {event.title}
@@ -167,7 +177,10 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
           )}
         </div>
         {showTime && (
-          <div className="text-[9px] text-white/70 font-normal">
+          <div className={cn(
+            "text-[9px] font-normal opacity-70",
+            useLightText ? "text-white" : taskColorConfig?.text
+          )}>
             {event.startTime}{event.endTime && ` - ${event.endTime}`}
           </div>
         )}
@@ -845,16 +858,28 @@ export function EnhancedCalendar({
                       <PopoverContent className="w-64 p-2 max-h-60 overflow-y-auto" align="start">
                         <div className="text-xs font-semibold mb-2">All Events ({allDayEvents.length})</div>
                         <div className="space-y-1">
-                          {allDayEvents.map((event, idx) => (
-                            <div
-                              key={`popover-${event.id}-${idx}`}
-                              className="text-xs p-1.5 rounded cursor-pointer hover:bg-muted/50 transition-colors flex items-center gap-2"
-                              style={{ borderLeft: `3px solid ${event.color || '#6366f1'}` }}
-                              onClick={() => onEventClick?.(event)}
-                            >
-                              <span className="truncate">{event.title}</span>
-                            </div>
-                          ))}
+                          {allDayEvents.map((event, idx) => {
+                            const popColorKey = event.color as TaskColor | undefined;
+                            const popColorConfig = popColorKey && TASK_COLORS[popColorKey] ? TASK_COLORS[popColorKey] : null;
+                            const popBorderColor = popColorConfig?.hex || event.color || '#6366f1';
+                            return (
+                              <div
+                                key={`popover-${event.id}-${idx}`}
+                                className={cn(
+                                  "text-xs p-1.5 rounded cursor-pointer hover:opacity-80 transition-colors flex items-center gap-2",
+                                  popColorConfig?.bg,
+                                  popColorConfig?.text
+                                )}
+                                style={{ 
+                                  borderLeft: `3px solid ${popBorderColor}`,
+                                  ...(!popColorConfig && { backgroundColor: `${popBorderColor}20` })
+                                }}
+                                onClick={() => onEventClick?.(event)}
+                              >
+                                <span className="truncate">{event.title}</span>
+                              </div>
+                            );
+                          })}
                         </div>
                       </PopoverContent>
                     </Popover>

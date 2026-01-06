@@ -499,7 +499,7 @@ export default function BusinessTasks() {
           endDate: new Date(task.dueDate!),
           startTime: task.startTime,
           endTime: task.endTime,
-          color: project?.color,
+          color: (task as any).color || project?.color,
           projectId: task.projectId,
           projectColor: project?.color,
           type: "task" as const,
