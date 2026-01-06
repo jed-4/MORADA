@@ -53,6 +53,8 @@ export function usePersonalCalendarEvents({
   const rangeStart = range === "day" ? startOfDay(date) : startOfWeek(date, { weekStartsOn: 1 });
   const rangeEnd = range === "day" ? endOfDay(date) : endOfWeek(date, { weekStartsOn: 1 });
 
+  const REFETCH_INTERVAL = 15000; // Refresh every 15 seconds for real-time updates
+
   const { data: tasks = [], isLoading: tasksLoading } = useQuery<any[]>({
     queryKey: ["/api/tasks", { assigneeId: userId }],
     queryFn: async () => {
@@ -62,6 +64,7 @@ export function usePersonalCalendarEvents({
       return response.json();
     },
     enabled: !!userId && includeTasks,
+    refetchInterval: REFETCH_INTERVAL,
   });
 
   const { data: scheduleItems = [], isLoading: scheduleLoading } = useQuery<any[]>({
@@ -73,6 +76,7 @@ export function usePersonalCalendarEvents({
         : [];
     },
     enabled: !!userId && includeSchedule,
+    refetchInterval: REFETCH_INTERVAL,
   });
 
   const { data: timesheets = [], isLoading: timesheetsLoading } = useQuery<any[]>({
@@ -84,6 +88,7 @@ export function usePersonalCalendarEvents({
       return response.json();
     },
     enabled: !!userId && includeTimesheets,
+    refetchInterval: REFETCH_INTERVAL,
   });
 
   const { data: googleCalendarStatus } = useQuery<{ connected: boolean }>({
@@ -124,6 +129,7 @@ export function usePersonalCalendarEvents({
       return response.json();
     },
     enabled: !!userId && includeReminders,
+    refetchInterval: REFETCH_INTERVAL,
   });
 
   const { data: projects = [] } = useQuery<any[]>({

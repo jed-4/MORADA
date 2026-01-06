@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, ChevronLeft, ChevronRight, CheckSquare, CalendarDays, Timer, Bell, Palette } from "lucide-react";
+import { Calendar, ChevronLeft, ChevronRight, CheckSquare, CalendarDays, Timer, Bell, Palette, LayoutList, Clock } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { usePersonalCalendarEvents, CalendarItem } from "./usePersonalCalendarEvents";
 import { 
@@ -23,6 +23,8 @@ import { generateNotionColors } from "@/lib/taskColors";
 import TaskModalAsana from "@/components/TaskModalAsana";
 
 type ColorMode = "type" | "project" | "priority";
+type ViewMode = "timeline" | "stacked";
+type TaskFilter = "all" | "my-tasks" | "tasks-only";
 
 const HOUR_HEIGHT = 40;
 const HOURS = Array.from({ length: 18 }, (_, i) => i + 6); // 6am to 11pm
@@ -186,6 +188,63 @@ function AllDayEventChip({ event, colorMode, onClick }: { event: CalendarItem; c
   );
 }
 
+function StackedEventChip({ event, colorMode, onClick }: { event: CalendarItem; colorMode: ColorMode; onClick?: () => void }) {
+  const baseColor = getEventColor(event, colorMode);
+  const notionColors = generateNotionColors(baseColor);
+  
+  const now = new Date();
+  let isPast = false;
+  
+  if (event.endTime) {
+    const eventEndTime = new Date(event.startDate);
+    const [hours, minutes] = event.endTime.split(':').map(Number);
+    eventEndTime.setHours(hours || 0, minutes || 0, 0, 0);
+    isPast = isBefore(eventEndTime, now);
+  } else if (event.startTime) {
+    const eventStartTime = new Date(event.startDate);
+    const [hours, minutes] = event.startTime.split(':').map(Number);
+    eventStartTime.setHours(hours || 0, minutes || 0, 0, 0);
+    isPast = isBefore(eventStartTime, now);
+  }
+  
+  return (
+    <div
+      className={`flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] cursor-pointer hover-elevate ${isPast ? 'opacity-50' : ''}`}
+      style={{
+        backgroundColor: notionColors.pastelBg,
+        border: `1px solid rgba(0,0,0,0.08)`,
+        borderLeftWidth: '2px',
+        borderLeftColor: notionColors.originalHex,
+      }}
+      title={`${event.title}${event.startTime ? ` at ${event.startTime}` : ''}`}
+      onClick={onClick}
+    >
+      <div 
+        className="flex-shrink-0 w-2.5 h-2.5 rounded-sm flex items-center justify-center"
+        style={{ backgroundColor: notionColors.originalHex, color: notionColors.pastelBg }}
+      >
+        {typeIcons[event.type]}
+      </div>
+      <div className="flex-1 min-w-0 flex items-center gap-0.5">
+        <span 
+          className="truncate font-semibold"
+          style={{ color: notionColors.darkText }}
+        >
+          {event.title}
+        </span>
+        {event.startTime && (
+          <span 
+            className="flex-shrink-0 text-[8px] opacity-70"
+            style={{ color: notionColors.darkText }}
+          >
+            {event.startTime}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId }: WidgetProps) {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [editingTitle, setEditingTitle] = useState(widget.title);
@@ -213,6 +272,8 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
     includeGoogleCalendar: config.includeGoogleCalendar ?? true,
     includeReminders: config.includeReminders ?? true,
     colorMode: (config.colorMode as ColorMode) ?? "project",
+    viewMode: (config.viewMode as ViewMode) ?? "timeline",
+    taskFilter: (config.taskFilter as TaskFilter) ?? "all",
   });
 
   useEffect(() => {
@@ -224,17 +285,33 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
       includeGoogleCalendar: widget.config?.includeGoogleCalendar ?? true,
       includeReminders: widget.config?.includeReminders ?? true,
       colorMode: (widget.config?.colorMode as ColorMode) ?? "project",
+      viewMode: (widget.config?.viewMode as ViewMode) ?? "timeline",
+      taskFilter: (widget.config?.taskFilter as TaskFilter) ?? "all",
     });
   }, [widget.title, widget.config]);
   
   const colorMode = (widget.config?.colorMode as ColorMode) ?? "project";
+  const viewMode = (widget.config?.viewMode as ViewMode) ?? "timeline";
+  const taskFilter = (widget.config?.taskFilter as TaskFilter) ?? "all";
 
-  const { events, allDayEvents, timedEvents, isLoading } = usePersonalCalendarEvents({
+  const { events: rawEvents, allDayEvents: rawAllDayEvents, timedEvents: rawTimedEvents, isLoading } = usePersonalCalendarEvents({
     userId,
     date: weekStart,
     range: "week",
     ...configState,
   });
+
+  // Apply task filter
+  const filterEvents = (eventList: CalendarItem[]) => {
+    if (taskFilter === "tasks-only") {
+      return eventList.filter(e => e.type === "task");
+    }
+    return eventList;
+  };
+
+  const events = useMemo(() => filterEvents(rawEvents), [rawEvents, taskFilter]);
+  const allDayEvents = useMemo(() => filterEvents(rawAllDayEvents), [rawAllDayEvents, taskFilter]);
+  const timedEvents = useMemo(() => filterEvents(rawTimedEvents), [rawTimedEvents, taskFilter]);
 
   const weekDays = useMemo(() => 
     Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
@@ -245,9 +322,9 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
   const getEventsForDay = (date: Date, eventList: CalendarItem[]) => 
     eventList.filter(e => isSameDay(e.startDate, date));
 
-  // Auto-scroll to current time on mount
+  // Auto-scroll to current time on mount (only for timeline view)
   useEffect(() => {
-    if (scrollRef.current && !isLoading) {
+    if (scrollRef.current && !isLoading && viewMode === "timeline") {
       const now = new Date();
       const currentHour = now.getHours();
       
@@ -264,7 +341,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
         scrollRef.current.scrollTop = (8 - 6) * HOUR_HEIGHT;
       }
     }
-  }, [isLoading, weekDays]);
+  }, [isLoading, weekDays, viewMode]);
 
   if (isConfiguring) {
     const handleSaveConfig = () => {
@@ -313,6 +390,52 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
           </div>
         </div>
         
+        <div className="space-y-2">
+          <Label className="text-xs flex items-center gap-1.5">
+            <LayoutList className="h-3 w-3" />
+            View Mode
+          </Label>
+          <Select
+            value={configState.viewMode}
+            onValueChange={(value: ViewMode) => 
+              setConfigState(prev => ({ ...prev, viewMode: value }))
+            }
+          >
+            <SelectTrigger className="h-7 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="timeline">Timeline (by hour)</SelectItem>
+              <SelectItem value="stacked">Stacked (list)</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-[10px] text-muted-foreground">
+            {configState.viewMode === "timeline" && "Events positioned by time on hourly grid"}
+            {configState.viewMode === "stacked" && "Events stacked as a list under each day"}
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label className="text-xs flex items-center gap-1.5">
+            <CheckSquare className="h-3 w-3" />
+            Task Filter
+          </Label>
+          <Select
+            value={configState.taskFilter}
+            onValueChange={(value: TaskFilter) => 
+              setConfigState(prev => ({ ...prev, taskFilter: value }))
+            }
+          >
+            <SelectTrigger className="h-7 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Items</SelectItem>
+              <SelectItem value="tasks-only">Tasks Only</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
         <div className="space-y-2">
           <Label className="text-xs flex items-center gap-1.5">
             <Palette className="h-3 w-3" />
@@ -389,8 +512,8 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
       </div>
 
       {/* Day headers - sticky */}
-      <div className="flex-shrink-0 grid grid-cols-[40px_repeat(7,1fr)] border-b bg-background sticky top-0 z-10">
-        <div className="border-r border-border/30" /> {/* Time column header */}
+      <div className={`flex-shrink-0 grid border-b bg-background sticky top-0 z-10 ${viewMode === "timeline" ? "grid-cols-[40px_repeat(7,1fr)]" : "grid-cols-7"}`}>
+        {viewMode === "timeline" && <div className="border-r border-border/30" />}
         {weekDays.map((day) => {
           const isCurrentDay = isToday(day);
           const isPast = isBefore(day, startOfDay(new Date()));
@@ -412,10 +535,12 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
 
       {/* All-day events bar */}
       {hasAllDayEvents && (
-        <div className="flex-shrink-0 grid grid-cols-[40px_repeat(7,1fr)] border-b bg-muted/10 max-h-20 overflow-y-auto">
-          <div className="border-r border-border/30 flex items-start justify-center py-1">
-            <span className="text-[9px] text-muted-foreground uppercase">All Day</span>
-          </div>
+        <div className={`flex-shrink-0 grid border-b bg-muted/10 max-h-20 overflow-y-auto ${viewMode === "timeline" ? "grid-cols-[40px_repeat(7,1fr)]" : "grid-cols-7"}`}>
+          {viewMode === "timeline" && (
+            <div className="border-r border-border/30 flex items-start justify-center py-1">
+              <span className="text-[9px] text-muted-foreground uppercase">All Day</span>
+            </div>
+          )}
           {weekDays.map((day) => {
             const dayAllDayEvents = getEventsForDay(day, allDayEvents);
             return (
@@ -442,7 +567,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
         </div>
       )}
 
-      {/* Timeline grid */}
+      {/* Content area - Timeline or Stacked view */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
         {isLoading ? (
           <div className="p-4 grid grid-cols-7 gap-1">
@@ -450,7 +575,40 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
               <div key={i} className="animate-pulse h-24 bg-muted rounded-md" />
             ))}
           </div>
+        ) : viewMode === "stacked" ? (
+          /* Stacked view - events listed under each day */
+          <div className="grid grid-cols-7 h-full">
+            {weekDays.map((day) => {
+              const isCurrentDay = isToday(day);
+              const isPast = isBefore(day, startOfDay(new Date()));
+              const dayTimedEvents = getEventsForDay(day, timedEvents);
+              
+              return (
+                <div 
+                  key={day.toISOString()} 
+                  className={`border-r last:border-r-0 p-1 ${isCurrentDay ? 'bg-[#bba7db]/5' : ''} ${isPast && !isCurrentDay ? 'opacity-50' : ''}`}
+                >
+                  <div className="space-y-0.5">
+                    {dayTimedEvents.map(event => (
+                      <StackedEventChip
+                        key={event.id}
+                        event={event}
+                        colorMode={colorMode}
+                        onClick={() => event.type === 'task' && setSelectedTaskId(event.id)}
+                      />
+                    ))}
+                    {dayTimedEvents.length === 0 && (
+                      <div className="text-[9px] text-muted-foreground/50 text-center py-2">
+                        No events
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         ) : (
+          /* Timeline view - events positioned by time */
           <div className="grid grid-cols-[40px_repeat(7,1fr)] relative" style={{ minHeight: `${HOURS.length * HOUR_HEIGHT}px` }}>
             {/* Time labels column */}
             <div className="relative border-r border-border/30">
