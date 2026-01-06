@@ -89,82 +89,8 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
     : (event.projectColor || event.color || "hsl(215 35% 45%)");
   const showTime = event.startTime || event.endTime;
 
-  // Convert color to proper format with 87% opacity
-  const backgroundColor = (() => {
-    const color = eventColor.trim();
-    
-    // Handle HSL
-    if (color.startsWith('hsl(') && !color.startsWith('hsla(')) {
-      const values = color.slice(4, -1).trim();
-      // Remove any trailing slash-alpha (hsl(... / 0.5) → hsl(...))
-      const cleaned = values.split('/')[0].trim();
-      // Normalize to commas
-      const normalized = cleaned.includes(',') ? cleaned : cleaned.replace(/\s+/g, ', ');
-      return `hsla(${normalized}, 0.87)`;
-    }
-    
-    // Handle HSLA - normalize alpha to 0.87
-    if (color.startsWith('hsla(')) {
-      const values = color.slice(5, -1).trim();
-      // Split on slash first to remove alpha
-      const baseValues = values.split('/')[0].trim();
-      // Then split on commas or spaces to get components
-      const parts = baseValues.split(/[\s,]+/).filter(p => p);
-      if (parts.length >= 3) {
-        return `hsla(${parts[0]}, ${parts[1]}, ${parts[2]}, 0.87)`;
-      }
-      return color;
-    }
-    
-    // Handle hex colors
-    if (color.startsWith('#')) {
-      const hex = color.slice(1);
-      if (hex.length === 3) {
-        const r = hex[0] + hex[0];
-        const g = hex[1] + hex[1];
-        const b = hex[2] + hex[2];
-        return `#${r}${g}${b}dd`;
-      } else if (hex.length === 6) {
-        return `${color}dd`;
-      } else if (hex.length === 4 || hex.length === 8) {
-        // Has alpha - replace it
-        const base = hex.length === 4 
-          ? hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2]
-          : hex.slice(0, 6);
-        return `#${base}dd`;
-      }
-      return color;
-    }
-    
-    // Handle RGB
-    if (color.startsWith('rgb(') && !color.startsWith('rgba(')) {
-      const values = color.slice(4, -1).trim();
-      const cleaned = values.split('/')[0].trim();
-      const normalized = cleaned.includes(',') ? cleaned : cleaned.replace(/\s+/g, ', ');
-      return `rgba(${normalized}, 0.87)`;
-    }
-    
-    // Handle RGBA - normalize alpha to 0.87
-    if (color.startsWith('rgba(')) {
-      const values = color.slice(5, -1).trim();
-      // Split on slash first to remove alpha
-      const baseValues = values.split('/')[0].trim();
-      // Then split on commas or spaces to get components
-      const parts = baseValues.split(/[\s,]+/).filter(p => p);
-      if (parts.length >= 3) {
-        return `rgba(${parts[0]}, ${parts[1]}, ${parts[2]}, 0.87)`;
-      }
-      return color;
-    }
-    
-    // Handle CSS variables
-    if (color.startsWith('var(')) {
-      return `color-mix(in srgb, ${color} 87%, transparent)`;
-    }
-    
-    // Fallback: return as-is (named colors, etc.)
-    return color;
-  })();
+  // Use solid background color (no transparency) for clear visual separation
+  const backgroundColor = eventColor;
 
   return (
     <div
@@ -175,18 +101,21 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
       data-testid={`event-${event.type}-${event.id}`}
       onClick={() => onEventClick?.(event)}
       className={cn(
-        "group relative flex items-start gap-1.5 px-1.5 py-1 rounded text-[11px] mb-0.5 transition-all overflow-hidden",
+        "group relative flex items-start gap-1.5 px-1.5 py-1 rounded text-[11px] mb-0.5 transition-all overflow-hidden shadow-sm",
         showResizeHandles && "h-full",
         !isGoogleCalendarEvent && "touch-none",
-        !isGoogleCalendarEvent && !showResizeHandles && "cursor-move hover:shadow-sm",
-        showResizeHandles && !isGoogleCalendarEvent && "cursor-pointer",
-        isGoogleCalendarEvent && "cursor-pointer",
-        isCompleted && "opacity-50",
-        isDragging && "opacity-40 scale-[0.98]"
+        !isGoogleCalendarEvent && !showResizeHandles && "cursor-move hover:shadow-md",
+        showResizeHandles && !isGoogleCalendarEvent && "cursor-pointer hover:shadow-md",
+        isGoogleCalendarEvent && "cursor-pointer hover:shadow-md",
+        isCompleted && "opacity-60",
+        isDragging && "opacity-50 scale-[0.98] shadow-lg"
       )}
       style={{
         backgroundColor,
-        borderLeft: `2px solid ${eventColor}`,
+        borderLeft: `3px solid ${eventColor}`,
+        border: `1px solid rgba(0,0,0,0.1)`,
+        borderLeftWidth: '3px',
+        borderLeftColor: eventColor,
       }}
     >
       {/* Top resize handle - Notion style */}
@@ -1020,72 +949,86 @@ export function EnhancedCalendar({
                             };
                           });
 
-                          // Detect overlaps and assign columns
+                          // Google Calendar style: Lane-based positioning with per-event width calculation
+                          // Each event's width is based on max concurrent events during its duration
                           type EventPosition = {
                             event: CalendarEvent;
                             startMinutes: number;
                             endMinutes: number;
                             top: number;
                             height: number;
+                            lane?: number;
+                            maxConcurrent?: number;
                           };
-                          const columns: EventPosition[][] = [];
-                          eventsWithPosition.forEach((eventPos) => {
-                            // Find first column where this event doesn't overlap
+                          
+                          // Helper to check if two events overlap
+                          const eventsOverlap = (a: EventPosition, b: EventPosition) => {
+                            return !(a.endMinutes <= b.startMinutes || a.startMinutes >= b.endMinutes);
+                          };
+                          
+                          // Sort events by start time, then by duration (longer first)
+                          const sortedEvents = [...eventsWithPosition].sort((a, b) => {
+                            if (a.startMinutes !== b.startMinutes) return a.startMinutes - b.startMinutes;
+                            return (b.endMinutes - b.startMinutes) - (a.endMinutes - a.startMinutes);
+                          });
+                          
+                          // Assign lanes using greedy algorithm
+                          const lanes: EventPosition[][] = [];
+                          sortedEvents.forEach((eventPos) => {
+                            // Find first lane where event doesn't overlap
                             let placed = false;
-                            for (const column of columns) {
-                              const hasOverlap = column.some((existing) => {
-                                return !(
-                                  eventPos.endMinutes <= existing.startMinutes ||
-                                  eventPos.startMinutes >= existing.endMinutes
-                                );
-                              });
+                            for (let laneIdx = 0; laneIdx < lanes.length; laneIdx++) {
+                              const hasOverlap = lanes[laneIdx].some(e => eventsOverlap(e, eventPos));
                               if (!hasOverlap) {
-                                column.push(eventPos);
+                                lanes[laneIdx].push(eventPos);
+                                eventPos.lane = laneIdx;
                                 placed = true;
                                 break;
                               }
                             }
                             if (!placed) {
-                              columns.push([eventPos]);
+                              eventPos.lane = lanes.length;
+                              lanes.push([eventPos]);
                             }
                           });
-
-                          // Google Calendar style: Stack overlapping events with offset
-                          // Each event in a group gets progressively offset to the right
-                          return columns.flatMap((column, colIdx) => {
-                            const totalColumns = columns.length;
-                            // Google Calendar style: each column is narrower and offset
-                            // First column is widest, subsequent columns are offset and slightly narrower
-                            const baseWidth = totalColumns === 1 ? 100 : Math.max(60, 100 - (totalColumns - 1) * 15);
-                            const offsetPerColumn = totalColumns === 1 ? 0 : Math.min(35, 100 / totalColumns);
+                          
+                          // For each event, calculate max concurrent during its time span
+                          sortedEvents.forEach((eventPos) => {
+                            // Find all events that overlap with this one
+                            const overlapping = sortedEvents.filter(e => eventsOverlap(e, eventPos));
+                            eventPos.maxConcurrent = overlapping.length;
+                          });
+                          
+                          // Render events with calculated positions
+                          return sortedEvents.map((eventPos, idx) => {
+                            const lane = eventPos.lane ?? 0;
+                            const maxConcurrent = eventPos.maxConcurrent ?? 1;
+                            const widthPercent = 100 / maxConcurrent;
+                            const leftPercent = lane * widthPercent;
+                            const gapPx = maxConcurrent > 1 ? 2 : 0;
                             
-                            return column.map((eventPos, idx) => {
-                              const leftPercent = colIdx * offsetPerColumn;
-                              const widthPercent = baseWidth - (colIdx * 5); // Slightly narrower for each subsequent column
-                              
-                              return (
-                                <div
-                                  key={`${eventPos.event.id}-${idx}`}
-                                  className="absolute pointer-events-auto"
-                                  style={{ 
-                                    top: `${eventPos.top}px`,
-                                    height: `${eventPos.height}px`,
-                                    left: `${leftPercent}%`,
-                                    width: `calc(${widthPercent}% - 4px)`,
-                                    zIndex: colIdx + 1, // Later columns on top
-                                  }}
-                                >
-                                  <DraggableEvent
-                                    event={eventPos.event}
-                                    index={idx}
-                                    onEventClick={onEventClick}
-                                    onToggleComplete={handleToggleComplete}
-                                    showCompletionCheckbox={showCompletionCheckbox}
-                                    showResizeHandles={true}
-                                  />
-                                </div>
-                              );
-                            });
+                            return (
+                              <div
+                                key={`${eventPos.event.id}-${idx}`}
+                                className="absolute pointer-events-auto"
+                                style={{ 
+                                  top: `${eventPos.top}px`,
+                                  height: `${eventPos.height}px`,
+                                  left: `calc(${leftPercent}% + ${gapPx}px)`,
+                                  width: `calc(${widthPercent}% - ${gapPx * 2}px)`,
+                                  zIndex: lane + 1,
+                                }}
+                              >
+                                <DraggableEvent
+                                  event={eventPos.event}
+                                  index={idx}
+                                  onEventClick={onEventClick}
+                                  onToggleComplete={handleToggleComplete}
+                                  showCompletionCheckbox={showCompletionCheckbox}
+                                  showResizeHandles={true}
+                                />
+                              </div>
+                            );
                           });
                         })()}
                         
