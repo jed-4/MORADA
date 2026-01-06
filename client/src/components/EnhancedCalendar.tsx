@@ -429,7 +429,12 @@ export function EnhancedCalendar({
       const weekEnd = endOfWeek(monthRangeEnd, { weekStartsOn: 1 });
       return eachDayOfInterval({ start: weekStart, end: weekEnd });
     } else if (view === "week") {
-      // Infinite scrolling - use expanded range
+      // Show exactly 1 week (Mon-Sun) for better column visibility
+      const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
+      const weekEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
+      return eachDayOfInterval({ start: weekStart, end: weekEnd });
+    } else if (view === "roster") {
+      // Roster view uses infinite scrolling range
       return eachDayOfInterval({ start: weekRangeStart, end: weekRangeEnd });
     } else {
       return [currentDate];
@@ -490,8 +495,8 @@ export function EnhancedCalendar({
         timeGridScrollRef.current.scrollLeft = scrollLeft;
       }
 
-      // Check for infinite scroll expansion (week view only)
-      if (view === 'week') {
+      // Check for infinite scroll expansion (roster view only - week view now shows fixed 1 week)
+      if (view === 'roster') {
         const EDGE_THRESHOLD = 200; // pixels from edge
         
         // Near left edge - expand to earlier dates
@@ -817,7 +822,9 @@ export function EnhancedCalendar({
   const renderWeekView = () => {
     const hours = Array.from({ length: 24 }, (_, i) => i);
     const HOUR_HEIGHT = 40; // Reduced from 64px to 40px
-    const DAY_WIDTH = view === "day" ? undefined : 140; // Full width for day view, fixed width for week view
+    // Day view: full width. Week view: expand to fill (handled by flex-1 on columns)
+    // Roster view: use fixed 140px width for horizontal scroll
+    const DAY_WIDTH = (view === "day" || view === "week") ? undefined : 140;
     
     return (
       <div className="flex-1 flex flex-col overflow-hidden bg-background">
@@ -825,7 +832,7 @@ export function EnhancedCalendar({
         <div className="flex border-b border-border">
           <div className="py-2 px-2 border-r border-border/50 w-16 flex-shrink-0 bg-background"></div>
           <div 
-            className={cn("flex overflow-x-auto hide-scrollbar", view === "day" && "flex-1")} 
+            className={cn("flex overflow-x-auto hide-scrollbar", (view === "day" || view === "week") && "flex-1")} 
             ref={scrollContainerRef}
             onScroll={handleHorizontalScroll('header')}
           >
@@ -839,7 +846,7 @@ export function EnhancedCalendar({
                   className={cn(
                     "py-2 px-1 text-center border-r border-border/50 flex-shrink-0",
                     isToday(date) ? "bg-primary/10" : !isWeekday && "bg-muted/50",
-                    view === "day" && "flex-1"
+                    (view === "day" || view === "week") && "flex-1"
                   )}
                   style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
                 >
@@ -864,7 +871,7 @@ export function EnhancedCalendar({
             All Day
           </div>
           <div 
-            className={cn("flex overflow-x-auto hide-scrollbar", view === "day" && "flex-1")}
+            className={cn("flex overflow-x-auto hide-scrollbar", (view === "day" || view === "week") && "flex-1")}
             ref={allDayScrollRef}
             onScroll={handleHorizontalScroll('allDay')}
           >
@@ -883,7 +890,7 @@ export function EnhancedCalendar({
                   className={cn(
                     "border-r border-border/50 p-1 min-h-[36px] max-h-[80px] overflow-hidden flex-shrink-0",
                     isToday(date) ? "bg-primary/10" : !isWeekday && "bg-muted/50",
-                    view === "day" && "flex-1"
+                    (view === "day" || view === "week") && "flex-1"
                   )}
                   style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
                   data-testid={`all-day-column-${format(date, "yyyy-MM-dd")}`}
@@ -923,7 +930,7 @@ export function EnhancedCalendar({
             ))}
           </div>
           <div 
-            className={cn("flex overflow-auto hide-scrollbar h-full", view === "day" && "flex-1")}
+            className={cn("flex overflow-auto hide-scrollbar h-full", (view === "day" || view === "week") && "flex-1")}
             ref={timeGridScrollRef}
             onScroll={handleTimeGridScroll}
           >
@@ -938,7 +945,7 @@ export function EnhancedCalendar({
                   key={dayIdx}
                   className={cn(
                     "relative flex-shrink-0",
-                    view === "day" && "flex-1"
+                    (view === "day" || view === "week") && "flex-1"
                   )}
                   style={DAY_WIDTH ? { minWidth: `${DAY_WIDTH}px`, width: `${DAY_WIDTH}px` } : undefined}
                 >
