@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { type Task, type FieldCategoryWithOptions, type User, type Project } from "@shared/schema";
-import { GripVertical, Calendar as CalendarIcon, Flag, Pencil, User as UserIcon, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
+import { GripVertical, Calendar as CalendarIcon, Flag, Pencil, User as UserIcon, ArrowUp, ArrowDown, ArrowUpDown, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import {
   DndContext,
@@ -66,6 +66,8 @@ interface TaskListCompactProps {
   projectId?: string;
   columnConfig?: TaskColumnConfig;
   onColumnConfigChange?: (config: TaskColumnConfig) => void;
+  onDelete?: (task: Task) => void;
+  showActions?: boolean;
 }
 
 // Status colors matching Asana 2025
@@ -164,6 +166,8 @@ function SortableTaskRow({
   projects,
   onUpdate,
   columnOrder,
+  onDelete,
+  showActions = false,
 }: {
   task: Task;
   onClick: () => void;
@@ -176,6 +180,8 @@ function SortableTaskRow({
   projects: Project[];
   onUpdate: (field: string, value: any) => void;
   columnOrder: TaskColumnKey[];
+  onDelete?: (task: Task) => void;
+  showActions?: boolean;
 }) {
   const [isHovered, setIsHovered] = useState(false);
   const [editingField, setEditingField] = useState<string | null>(null);
@@ -459,6 +465,20 @@ function SortableTaskRow({
         
         return null;
       })}
+
+      {/* Delete button - shows on hover when actions enabled */}
+      {showActions && onDelete && (
+        <button
+          className={`w-6 h-6 flex items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-opacity ${isHovered ? 'opacity-100' : 'opacity-0'}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete(task);
+          }}
+          data-testid={`delete-task-${task.id}`}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      )}
     </div>
   );
 }
@@ -471,6 +491,8 @@ export default function TaskListCompact({
   projectId,
   columnConfig,
   onColumnConfigChange,
+  onDelete,
+  showActions = false,
 }: TaskListCompactProps) {
   const { toast } = useToast();
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
@@ -782,6 +804,8 @@ export default function TaskListCompact({
                     projects={projects}
                     onUpdate={(field, value) => handleUpdate(task.id, field, value)}
                     columnOrder={columnOrder}
+                    onDelete={onDelete}
+                    showActions={showActions}
                   />
                 ))}
               </SortableContext>
@@ -818,6 +842,8 @@ export default function TaskListCompact({
                 projects={projects}
                 onUpdate={(field, value) => handleUpdate(task.id, field, value)}
                 columnOrder={columnOrder}
+                onDelete={onDelete}
+                showActions={showActions}
               />
             ))}
           </SortableContext>

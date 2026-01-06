@@ -424,6 +424,30 @@ export default function BusinessTasks() {
     },
   });
 
+  // Delete task mutation
+  const deleteTaskMutation = useMutation({
+    mutationFn: async (taskId: string) => {
+      return await apiRequest(`/api/tasks/${taskId}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      toast({
+        title: "Task deleted",
+        description: "Task has been deleted successfully.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Failed to delete task",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleDeleteTask = (task: Task) => {
+    deleteTaskMutation.mutate(task.id);
+  };
+
   // Convert tasks to calendar events
   const calendarEvents: CalendarEvent[] = React.useMemo(() => {
     return filteredTasks
@@ -880,6 +904,8 @@ export default function BusinessTasks() {
                 setEditingTask(null);
                 setShowCreateTaskDialog(true);
               }}
+              onDelete={handleDeleteTask}
+              showActions={true}
               displaySettings={cardDisplaySettings}
             />
           </div>
@@ -894,6 +920,8 @@ export default function BusinessTasks() {
                 setEditingTask(task);
                 setShowCreateTaskDialog(true);
               }}
+              onDelete={handleDeleteTask}
+              showActions={true}
             />
           </div>
         )}
