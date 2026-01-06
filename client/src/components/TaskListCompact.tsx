@@ -192,14 +192,15 @@ function SortableHeaderColumn({
       {direction === 'asc' && <ArrowUp className="h-2.5 w-2.5" />}
       {direction === 'desc' && <ArrowDown className="h-2.5 w-2.5" />}
       {!direction && <ArrowUpDown className="h-2.5 w-2.5 opacity-0 group-hover:opacity-50" />}
-      {/* Resize handle */}
+      {/* Resize handle - visible bar on hover */}
       {onResize && (
         <div
-          className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/30 group"
+          className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize group/resize flex items-center justify-center"
           onMouseDown={handleMouseDown}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className={`h-full w-0.5 mx-auto ${isResizing ? 'bg-primary' : 'group-hover:bg-primary/50'}`} />
+          {/* Hover indicator - visible vertical bar */}
+          <div className={`w-1 h-4 rounded-full transition-all ${isResizing ? 'bg-primary scale-y-125' : 'bg-transparent group-hover/resize:bg-primary/60'}`} />
         </div>
       )}
     </div>

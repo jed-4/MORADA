@@ -878,9 +878,10 @@ export function EnhancedCalendar({
             {dateRange.map((date, dayIdx) => {
               const dayEvents = getEventsForDate(date);
               const allDayEvents = dayEvents.filter(event => !event.startTime && !event.endTime);
-              const MAX_ALL_DAY_EVENTS = 2;
+              const MAX_ALL_DAY_EVENTS = 5;
               const visibleEvents = allDayEvents.slice(0, MAX_ALL_DAY_EVENTS);
-              const hiddenCount = Math.max(0, allDayEvents.length - MAX_ALL_DAY_EVENTS);
+              const hiddenEvents = allDayEvents.slice(MAX_ALL_DAY_EVENTS);
+              const hiddenCount = hiddenEvents.length;
               const dayOfWeek = getDay(date);
               const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5; // 0 = Sunday, 6 = Saturday
               
@@ -888,7 +889,7 @@ export function EnhancedCalendar({
                 <div 
                   key={dayIdx} 
                   className={cn(
-                    "border-r border-border/50 p-1 min-h-[36px] max-h-[80px] overflow-hidden flex-shrink-0",
+                    "border-r border-border/50 p-1 min-h-[36px] max-h-[140px] overflow-hidden flex-shrink-0",
                     isToday(date) ? "bg-primary/10" : !isWeekday && "bg-muted/50",
                     (view === "day" || view === "week") && "flex-1"
                   )}
@@ -906,9 +907,28 @@ export function EnhancedCalendar({
                     />
                   ))}
                   {hiddenCount > 0 && (
-                    <div className="text-[9px] text-muted-foreground px-1 py-0.5">
-                      +{hiddenCount} more
-                    </div>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <div className="text-[9px] text-muted-foreground px-1 py-0.5 cursor-pointer hover:text-foreground hover:bg-muted/50 rounded transition-colors">
+                          +{hiddenCount} more
+                        </div>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-64 p-2 max-h-60 overflow-y-auto" align="start">
+                        <div className="text-xs font-semibold mb-2">All Events ({allDayEvents.length})</div>
+                        <div className="space-y-1">
+                          {allDayEvents.map((event, idx) => (
+                            <div
+                              key={`popover-${event.id}-${idx}`}
+                              className="text-xs p-1.5 rounded cursor-pointer hover:bg-muted/50 transition-colors flex items-center gap-2"
+                              style={{ borderLeft: `3px solid ${event.color || '#6366f1'}` }}
+                              onClick={() => onEventClick?.(event)}
+                            >
+                              <span className="truncate">{event.title}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
                   )}
                 </div>
               );
@@ -1030,12 +1050,18 @@ export function EnhancedCalendar({
                             }
                           });
 
-                          // Flatten and assign width/left based on column count
+                          // Google Calendar style: Stack overlapping events with offset
+                          // Each event in a group gets progressively offset to the right
                           return columns.flatMap((column, colIdx) => {
                             const totalColumns = columns.length;
+                            // Google Calendar style: each column is narrower and offset
+                            // First column is widest, subsequent columns are offset and slightly narrower
+                            const baseWidth = totalColumns === 1 ? 100 : Math.max(60, 100 - (totalColumns - 1) * 15);
+                            const offsetPerColumn = totalColumns === 1 ? 0 : Math.min(35, 100 / totalColumns);
+                            
                             return column.map((eventPos, idx) => {
-                              const widthPercent = 100 / totalColumns;
-                              const leftPercent = (colIdx * 100) / totalColumns;
+                              const leftPercent = colIdx * offsetPerColumn;
+                              const widthPercent = baseWidth - (colIdx * 5); // Slightly narrower for each subsequent column
                               
                               return (
                                 <div
@@ -1045,7 +1071,8 @@ export function EnhancedCalendar({
                                     top: `${eventPos.top}px`,
                                     height: `${eventPos.height}px`,
                                     left: `${leftPercent}%`,
-                                    width: `${widthPercent - 2}%`, // Subtract 2% for visual gap
+                                    width: `calc(${widthPercent}% - 4px)`,
+                                    zIndex: colIdx + 1, // Later columns on top
                                   }}
                                 >
                                   <DraggableEvent

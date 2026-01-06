@@ -53,6 +53,8 @@ interface TaskBoardProps {
   cardWidth?: 'compact' | 'comfortable' | 'spacious';
   scrollContainerRef?: React.RefObject<HTMLDivElement>;
   onScrollOverflowChange?: (hasOverflow: boolean) => void;
+  onDelete?: (task: Task) => void;
+  showActions?: boolean;
 }
 
 // Draggable Task Card wrapper
@@ -181,7 +183,7 @@ function DroppableColumn({
   );
 }
 
-export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, filters, onTaskClick, onAddTask: propOnAddTask, projectId, displaySettings, cardWidth: propCardWidth = 'comfortable' }: TaskBoardProps = {}) {
+export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, filters, onTaskClick, onAddTask: propOnAddTask, projectId, displaySettings, cardWidth: propCardWidth = 'comfortable', onDelete, showActions }: TaskBoardProps = {}) {
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
   const [selectedColumnStatus, setSelectedColumnStatus] = useState<string>("todo");
   const [activeTask, setActiveTask] = useState<Task | null>(null);
@@ -462,8 +464,8 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
                       }
                     }}
                     displaySettings={boardDisplaySettings}
-                    onDelete={handleDeleteTask}
-                    showActions={true}
+                    onDelete={onDelete || handleDeleteTask}
+                    showActions={showActions !== undefined ? showActions : true}
                   />
                 </div>
               );

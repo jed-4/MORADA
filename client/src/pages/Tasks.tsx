@@ -79,6 +79,7 @@ export default function Tasks() {
   const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [viewToDelete, setViewToDelete] = useState<TaskView | null>(null);
+  const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
   const [viewToEdit, setViewToEdit] = useState<TaskView | null>(null);
   const [editViewName, setEditViewName] = useState("");
   const [newViewName, setNewViewName] = useState("");
@@ -282,6 +283,39 @@ export default function Tasks() {
 
   const handleTaskResize = (taskId: string, dueDate: string) => {
     updateTaskMutation.mutate({ taskId, updates: { dueDate } });
+  };
+
+  // Delete task mutation
+  const deleteTaskMutation = useMutation({
+    mutationFn: async (taskId: string) => {
+      return await apiRequest(`/api/tasks/${taskId}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks", effectiveProjectId] });
+      toast({
+        title: "Task deleted",
+        description: "Task has been deleted successfully.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Failed to delete task",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleDeleteTask = (task: Task) => {
+    setTaskToDelete(task);
+  };
+
+  const confirmDeleteTask = () => {
+    if (taskToDelete) {
+      deleteTaskMutation.mutate(taskToDelete.id);
+      setTaskToDelete(null);
+      setShowCreateTaskDialog(false);
+      setEditingTask(null);
+    }
   };
 
   // Handle saved view selection with toggle behavior
@@ -1169,7 +1203,7 @@ export default function Tasks() {
       <div className="flex-1 overflow-auto">
         {activeView === "kanban" && (
           <div className="h-full p-2">
-            <TaskBoard tasks={effectivelyFilteredTasks} isLoading={tasksLoading} onTaskClick={(task: Task) => setEditingTask(task)} projectId={effectiveProjectId} displaySettings={cardDisplaySettings} cardWidth={cardWidth} />
+            <TaskBoard tasks={effectivelyFilteredTasks} isLoading={tasksLoading} onTaskClick={(task: Task) => setEditingTask(task)} projectId={effectiveProjectId} displaySettings={cardDisplaySettings} cardWidth={cardWidth} onDelete={handleDeleteTask} showActions={true} />
           </div>
         )}
         
@@ -1181,6 +1215,8 @@ export default function Tasks() {
               onTaskClick={(task: Task) => setEditingTask(task)}
               projectId={effectiveProjectId}
               columnConfig={{ order: columnOrder }}
+              onDelete={handleDeleteTask}
+              showActions={true}
             />
           </div>
         )}
@@ -1342,6 +1378,28 @@ export default function Tasks() {
           projectId={effectiveProjectId}
         />
       )}
+
+      {/* Delete Task Confirmation Dialog */}
+      <AlertDialog open={!!taskToDelete} onOpenChange={(open) => !open && setTaskToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Task</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{taskToDelete?.title}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete-task">Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={confirmDeleteTask}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete-task"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
