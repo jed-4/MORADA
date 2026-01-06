@@ -415,7 +415,7 @@ export default function ChecklistTemplateDetail() {
                     </div>
                   </CardHeader>
                   <CardContent className="flex-1 overflow-y-auto">
-                    {allItems.filter(item => item.groupId === selectedGroupId).length === 0 ? (
+                    {allItems.filter(item => item.groupId === selectedGroupId).sort((a, b) => a.description.localeCompare(b.description)).length === 0 ? (
                       <div className="flex flex-col items-center justify-center h-full text-center py-12">
                         <CheckSquare className="h-10 w-10 text-muted-foreground mb-3" />
                         <p className="text-sm text-muted-foreground mb-3">
@@ -434,6 +434,7 @@ export default function ChecklistTemplateDetail() {
                       <div className="space-y-1">
                         {allItems
                           .filter(item => item.groupId === selectedGroupId)
+                          .sort((a, b) => a.description.localeCompare(b.description))
                           .map((item) => {
                             const responseType = (item.responseType as string) || "checkbox";
                             const responseOptions = (item.responseOptions as string[]) || [];
