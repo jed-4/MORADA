@@ -8,6 +8,23 @@ import {
   type ChecklistTemplateGroup,
   type ChecklistTemplateItem,
 } from "@shared/schema";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -174,6 +191,51 @@ export default function ChecklistTemplateDetail() {
     },
   });
 
+  // Reorder groups mutation
+  const reorderGroupsMutation = useMutation({
+    mutationFn: async (orderedGroupIds: string[]) => {
+      return await apiRequest(`/api/checklist-templates/${templateId}/groups/reorder`, 'POST', {
+        orderedGroupIds,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates", templateId, "groups"] });
+    },
+  });
+
+  // Sensors for drag and drop
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  // Handle drag end for groups
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      const oldIndex = groups.findIndex((g) => g.id === active.id);
+      const newIndex = groups.findIndex((g) => g.id === over.id);
+
+      const newOrder = arrayMove(groups, oldIndex, newIndex);
+      const orderedIds = newOrder.map((g) => g.id);
+
+      // Optimistic update
+      queryClient.setQueryData(
+        ["/api/checklist-templates", templateId, "groups"],
+        newOrder
+      );
+
+      reorderGroupsMutation.mutate(orderedIds);
+    }
+  };
+
   // Delete template mutation
   const deleteTemplateMutation = useMutation({
     mutationFn: async () => {
@@ -305,72 +367,30 @@ export default function ChecklistTemplateDetail() {
                   </div>
                 </CardHeader>
                 <CardContent className="flex-1 overflow-y-auto">
-                  <div className="space-y-1">
-                    {groups.map((group) => (
-                      <div
-                        key={group.id}
-                        className={`flex items-center justify-between gap-2 py-2 px-2 rounded border cursor-pointer hover-elevate group/item ${
-                          selectedGroupId === group.id 
-                            ? 'bg-accent border-accent' 
-                            : 'bg-card border-border'
-                        }`}
-                        onClick={() => setSelectedGroupId(group.id)}
-                        data-testid={`group-item-${group.id}`}
-                      >
-                        <div className="flex items-center gap-2 flex-1 min-w-0">
-                          <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />
-                          <span className="font-medium truncate text-sm">{group.name}</span>
-                        </div>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 shrink-0 opacity-0 group-hover/item:opacity-100"
-                              onClick={(e) => e.stopPropagation()}
-                              data-testid={`button-menu-group-${group.id}`}
-                            >
-                              <MoreVertical className="h-3 w-3" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setEditingGroup(group);
-                              }}
-                              data-testid={`button-edit-group-${group.id}`}
-                            >
-                              <Edit3 className="h-4 w-4 mr-2" />
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setMovingGroup(group);
-                              }}
-                              data-testid={`button-move-group-${group.id}`}
-                            >
-                              <FolderInput className="h-4 w-4 mr-2" />
-                              Move to Checklist Group
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                deleteGroupMutation.mutate(group.id);
-                              }}
-                              className="text-destructive"
-                              data-testid={`button-delete-group-${group.id}`}
-                            >
-                              <Trash2 className="h-4 w-4 mr-2" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleDragEnd}
+                  >
+                    <SortableContext
+                      items={groups.map((g) => g.id)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="space-y-1">
+                        {groups.map((group) => (
+                          <SortableGroupItem
+                            key={group.id}
+                            group={group}
+                            isSelected={selectedGroupId === group.id}
+                            onSelect={() => setSelectedGroupId(group.id)}
+                            onEdit={() => setEditingGroup(group)}
+                            onMove={() => setMovingGroup(group)}
+                            onDelete={() => deleteGroupMutation.mutate(group.id)}
+                          />
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    </SortableContext>
+                  </DndContext>
                 </CardContent>
               </Card>
             </ResizablePanel>
@@ -550,6 +570,111 @@ export default function ChecklistTemplateDetail() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </div>
+  );
+}
+
+// Sortable Group Item Component
+function SortableGroupItem({
+  group,
+  isSelected,
+  onSelect,
+  onEdit,
+  onMove,
+  onDelete,
+}: {
+  group: ChecklistTemplateGroup;
+  isSelected: boolean;
+  onSelect: () => void;
+  onEdit: () => void;
+  onMove: () => void;
+  onDelete: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: group.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-center justify-between gap-2 py-2 px-2 rounded border cursor-pointer hover-elevate group/item ${
+        isSelected 
+          ? 'bg-accent border-accent' 
+          : 'bg-card border-border'
+      }`}
+      onClick={onSelect}
+      data-testid={`group-item-${group.id}`}
+    >
+      <div className="flex items-center gap-2 flex-1 min-w-0">
+        <div 
+          {...attributes} 
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing touch-none"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />
+        </div>
+        <span className="font-medium truncate text-sm">{group.name}</span>
+      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 shrink-0 opacity-0 group-hover/item:opacity-100"
+            onClick={(e) => e.stopPropagation()}
+            data-testid={`button-menu-group-${group.id}`}
+          >
+            <MoreVertical className="h-3 w-3" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit();
+            }}
+            data-testid={`button-edit-group-${group.id}`}
+          >
+            <Edit3 className="h-4 w-4 mr-2" />
+            Edit
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.stopPropagation();
+              onMove();
+            }}
+            data-testid={`button-move-group-${group.id}`}
+          >
+            <FolderInput className="h-4 w-4 mr-2" />
+            Move to Checklist Group
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            className="text-destructive"
+            data-testid={`button-delete-group-${group.id}`}
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }

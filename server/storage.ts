@@ -13835,24 +13835,13 @@ export class DbStorage implements IStorage {
 
   async getAllScheduleItems(companyId: string): Promise<ScheduleItem[]> {
     try {
-      const items = await db.select({
-        id: schema.scheduleItems.id,
-        scheduleId: schema.scheduleItems.scheduleId,
-        title: schema.scheduleItems.title,
-        description: schema.scheduleItems.description,
-        startDate: schema.scheduleItems.startDate,
-        endDate: schema.scheduleItems.endDate,
-        color: schema.scheduleItems.color,
-        sortOrder: schema.scheduleItems.sortOrder,
-        createdAt: schema.scheduleItems.createdAt,
-        updatedAt: schema.scheduleItems.updatedAt,
-      })
+      const items = await db.select()
         .from(schema.scheduleItems)
         .innerJoin(schema.schedules, eq(schema.scheduleItems.scheduleId, schema.schedules.id))
         .innerJoin(schema.projects, eq(schema.schedules.projectId, schema.projects.id))
         .where(eq(schema.projects.companyId, companyId))
         .orderBy(schema.scheduleItems.startDate);
-      return items;
+      return items.map(row => row.schedule_items);
     } catch (error) {
       console.error("Database error in getAllScheduleItems:", error);
       throw error;

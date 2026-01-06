@@ -11863,6 +11863,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Reorder checklist template groups
+  app.post("/api/checklist-templates/:templateId/groups/reorder", async (req, res) => {
+    try {
+      const { orderedGroupIds } = req.body;
+      if (!Array.isArray(orderedGroupIds) || orderedGroupIds.length === 0) {
+        return res.status(400).json({ error: "orderedGroupIds must be a non-empty array" });
+      }
+
+      const templateId = req.params.templateId;
+      
+      // Update each group's order
+      for (let i = 0; i < orderedGroupIds.length; i++) {
+        await storage.updateChecklistTemplateGroup(orderedGroupIds[i], { order: i });
+      }
+
+      // Return updated groups
+      const groups = await storage.getChecklistTemplateGroups(templateId);
+      res.json(groups);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to reorder groups",
+        details: error.message 
+      });
+    }
+  });
+
   // Checklist Template Item routes
   app.get("/api/checklist-template-groups/:groupId/items", async (req, res) => {
     try {
