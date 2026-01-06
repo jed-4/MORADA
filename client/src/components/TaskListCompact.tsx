@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { type Task, type FieldCategoryWithOptions, type User, type Project } from "@shared/schema";
-import { GripVertical, Calendar as CalendarIcon, Flag, Pencil, User as UserIcon, ArrowUp, ArrowDown, ArrowUpDown, Trash2 } from "lucide-react";
+import { GripVertical, Calendar as CalendarIcon, Flag, Pencil, User as UserIcon, ArrowUp, ArrowDown, ArrowUpDown, Trash2, MoreHorizontal } from "lucide-react";
 import { format } from "date-fns";
 import {
   DndContext,
@@ -39,6 +39,23 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export type TaskColumnKey = 'status' | 'priority' | 'assignee' | 'dueDate' | 'project';
 export type SortDirection = 'asc' | 'desc' | null;
@@ -149,6 +166,7 @@ function TaskRowSkeleton() {
       <div className="w-20 h-4 bg-muted rounded-full" />
       <div className="w-24 h-4 bg-muted rounded-full" />
       <div className="w-20 h-3 bg-muted rounded" />
+      <div className="w-6 flex-shrink-0" /> {/* Actions column spacer */}
     </div>
   );
 }
@@ -466,19 +484,33 @@ function SortableTaskRow({
         return null;
       })}
 
-      {/* Delete button - shows on hover when actions enabled */}
-      {showActions && onDelete && (
-        <button
-          className={`w-6 h-6 flex items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-opacity ${isHovered ? 'opacity-100' : 'opacity-0'}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete(task);
-          }}
-          data-testid={`delete-task-${task.id}`}
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
-      )}
+      {/* Actions column - fixed width for alignment */}
+      <div className="w-6 flex-shrink-0">
+        {showActions && onDelete && (
+          <div className={`transition-opacity ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                <Button variant="ghost" size="icon" className="h-6 w-6">
+                  <MoreHorizontal className="h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem 
+                  className="text-destructive focus:text-destructive"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(task);
+                  }}
+                  data-testid={`delete-task-${task.id}`}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -774,6 +806,7 @@ export default function TaskListCompact({
           })}
         </SortableContext>
       </DndContext>
+      <div className="w-6 flex-shrink-0" /> {/* Actions column spacer */}
     </div>
   );
 

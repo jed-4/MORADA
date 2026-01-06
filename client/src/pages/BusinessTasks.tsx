@@ -16,6 +16,16 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import TaskBoard from "@/components/TaskBoard";
@@ -35,6 +45,7 @@ export default function BusinessTasks() {
   const [activeTab, setActiveTab] = useState<"board" | "list" | "calendar">("board");
   const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
   const [initialTaskStatus, setInitialTaskStatus] = useState<string>("todo");
   const [groupBy, setGroupBy] = useState<'none' | 'status' | 'priority' | 'assignee'>('none');
   const [filters, setFilters] = useState<FilterState>({});
@@ -445,7 +456,32 @@ export default function BusinessTasks() {
   });
 
   const handleDeleteTask = (task: Task) => {
-    deleteTaskMutation.mutate(task.id);
+    setTaskToDelete(task);
+  };
+
+  const handleDeleteTaskFromModal = (taskId: string) => {
+    // Use editingTask directly if available, otherwise create a minimal task object
+    if (editingTask && editingTask.id === taskId) {
+      setTaskToDelete(editingTask);
+    } else {
+      // Fallback: create minimal task object for deletion
+      const task = tasks.find(t => t.id === taskId);
+      if (task) {
+        setTaskToDelete(task);
+      } else {
+        // If task not in current list (filtered), still allow deletion with minimal info
+        setTaskToDelete({ id: taskId, title: "this task" } as Task);
+      }
+    }
+  };
+
+  const confirmDeleteTask = () => {
+    if (taskToDelete) {
+      deleteTaskMutation.mutate(taskToDelete.id);
+      setTaskToDelete(null);
+      setShowCreateTaskDialog(false);
+      setEditingTask(null);
+    }
   };
 
   // Convert tasks to calendar events
@@ -972,6 +1008,7 @@ export default function BusinessTasks() {
             if (!open) setEditingTask(null);
           }}
           projectId={editingTask.projectId || ""}
+          onDelete={handleDeleteTaskFromModal}
         />
       )}
 
@@ -1085,6 +1122,28 @@ export default function BusinessTasks() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Task Confirmation Dialog */}
+      <AlertDialog open={!!taskToDelete} onOpenChange={(open) => !open && setTaskToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Task</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{taskToDelete?.title}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={confirmDeleteTask}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

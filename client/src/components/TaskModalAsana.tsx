@@ -89,9 +89,10 @@ interface TaskModalAsanaProps {
   initialStatus?: string;
   defaultAssigneeId?: string;
   defaultScope?: "personal" | "project" | "system" | "business";
+  onDelete?: (taskId: string) => void;
 }
 
-export default function TaskModalAsana({ task: propTask, taskId, open, onOpenChange, projectId, initialStatus, defaultAssigneeId, defaultScope }: TaskModalAsanaProps) {
+export default function TaskModalAsana({ task: propTask, taskId, open, onOpenChange, projectId, initialStatus, defaultAssigneeId, defaultScope, onDelete }: TaskModalAsanaProps) {
   // Use taskId from prop or from propTask to always fetch fresh data
   const effectiveTaskId = taskId || propTask?.id;
   
@@ -549,7 +550,18 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem>Duplicate</DropdownMenuItem>
-                <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
+                {task && onDelete && (
+                  <DropdownMenuItem 
+                    className="text-destructive focus:text-destructive"
+                    onClick={() => {
+                      onDelete(task.id);
+                      onOpenChange(false);
+                    }}
+                    data-testid="menu-item-delete"
+                  >
+                    Delete
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
