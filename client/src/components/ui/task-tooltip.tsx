@@ -7,7 +7,7 @@ interface TaskTooltipProps {
   delay?: number;
 }
 
-export function TaskTooltip({ content, children, delay = 1500 }: TaskTooltipProps) {
+export function TaskTooltip({ content, children, delay = 800 }: TaskTooltipProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
