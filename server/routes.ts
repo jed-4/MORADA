@@ -12275,7 +12275,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const instance = await storage.createChecklistInstance(data);
 
-      // If created from a template, copy the template items
+      // If created from a template, copy the template groups and items
       if (data.templateId) {
         const groups = await storage.getChecklistTemplateGroups(data.templateId);
         
@@ -12285,10 +12285,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
           : groups;
         
         for (const group of filteredGroups) {
+          // Create the instance group record
+          const instanceGroup = await storage.createChecklistInstanceGroup({
+            instanceId: instance.id,
+            name: group.name,
+            order: group.order,
+            status: "active",
+          });
+          
+          // Create items linked to this group
           const templateItems = await storage.getChecklistTemplateItems(group.id);
           for (const templateItem of templateItems) {
             await storage.createChecklistInstanceItem({
               instanceId: instance.id,
+              groupId: instanceGroup.id,
               groupName: group.name,
               groupOrder: group.order,
               description: templateItem.description,
