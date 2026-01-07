@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { CalendarDays, Clock, Repeat, User, ListTodo } from "lucide-react";
+import { generateNotionColors } from "@/lib/taskColors";
 import type { TaskTemplate } from "@shared/schema";
 
 const DAYS_OF_WEEK = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -385,7 +386,8 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
 
                       {/* Positioned templates with collision handling */}
                       {(() => {
-                        const TASK_HEIGHT = HOUR_HEIGHT - 4;
+                        // Minimum height supports 15-minute blocks (HOUR_HEIGHT/4 = 12px)
+                        const MIN_TASK_HEIGHT = Math.max(HOUR_HEIGHT / 4, 12);
                         const dayTemplates = getTemplatesForDay(dayIndex);
                         
                         // Get templates with times (from recurringSchedule or dueTime)
@@ -406,8 +408,8 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
                               duration,
                               timeStr,
                               top: startHour * HOUR_HEIGHT + 2,
-                              bottom: startHour * HOUR_HEIGHT + 2 + Math.max(heightPx, TASK_HEIGHT),
-                              heightPx: Math.max(heightPx, TASK_HEIGHT),
+                              bottom: startHour * HOUR_HEIGHT + 2 + Math.max(heightPx, MIN_TASK_HEIGHT),
+                              heightPx: Math.max(heightPx, MIN_TASK_HEIGHT),
                             };
                           })
                           .filter(Boolean)
@@ -467,21 +469,20 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
                           const leftPercent = colInfo.colIdx * widthPercent;
                           
                           const assigneeName = template.assigneeUserName || template.defaultRoleName;
-                          const bgColor = template.color || undefined;
-                          const textColor = bgColor ? getContrastTextColor(bgColor) : undefined;
+                          const notionColors = generateNotionColors(template.color || '#6366f1');
 
                           return (
                             <div
                               key={template.id}
-                              className="absolute rounded text-[9px] px-1 py-0.5 overflow-hidden cursor-pointer hover:opacity-90 hover:z-20 border"
+                              className="absolute rounded text-[9px] px-1.5 py-0.5 overflow-hidden cursor-pointer hover:opacity-90 hover:z-20 shadow-sm"
                               style={{ 
                                 top: `${template.top}px`, 
                                 height: `${template.heightPx}px`,
                                 left: `calc(${leftPercent}% + 2px)`,
                                 width: `calc(${widthPercent}% - 4px)`,
-                                backgroundColor: bgColor || 'hsl(var(--primary) / 0.1)',
-                                borderColor: bgColor || 'hsl(var(--primary) / 0.3)',
-                                color: textColor || 'hsl(var(--primary))',
+                                backgroundColor: notionColors.pastelBg,
+                                borderLeft: `3px solid ${notionColors.originalHex}`,
+                                color: notionColors.darkText,
                               }}
                               title={`${template.title}${template.timeStr ? ` @ ${template.timeStr}` : ''} (${template.duration}min)`}
                               data-testid={`diary-template-${template.id}`}
@@ -490,10 +491,10 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
                                 <ListTodo className="h-2 w-2 flex-shrink-0 mt-0.5 opacity-60" />
                                 <div className="flex-1 min-w-0">
                                   <div className="font-medium truncate leading-tight">{template.title}</div>
-                                  {colInfo.totalCols === 1 && template.timeStr && (
+                                  {colInfo.totalCols === 1 && template.heightPx >= 24 && template.timeStr && (
                                     <div className="opacity-70 text-[8px]">{template.timeStr} ({template.duration}min)</div>
                                   )}
-                                  {colInfo.totalCols === 1 && assigneeName && (
+                                  {colInfo.totalCols === 1 && template.heightPx >= 36 && assigneeName && (
                                     <div className="opacity-70 truncate text-[8px]">{assigneeName}</div>
                                   )}
                                 </div>

@@ -3541,6 +3541,10 @@ export const taskTemplates = pgTable("task_templates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
   
+  // Scope - whether this template is for business-level or project-level tasks
+  scope: text("scope").default("business"), // "business" | "project"
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }), // Only set when scope is "project"
+  
   title: text("title").notNull(),
   goal: text("goal"), // Brief, to-the-point goal
   description: text("description"), // Detailed description
@@ -3610,6 +3614,8 @@ export const insertTaskTemplateSchema = createInsertSchema(taskTemplates).omit({
   recurringAssigneeName: true, // Server will populate this
   assigneeUserName: true, // Server will populate this
 }).extend({
+  scope: z.enum(["business", "project"]).optional(),
+  projectId: z.string().nullable().optional(),
   assigneeType: z.enum(["role", "user"]).optional(),
   assigneeUserId: z.string().nullable().optional(),
   goal: z.string().optional(),
