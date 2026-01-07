@@ -476,15 +476,82 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
     );
   };
 
-  // Render Week View
+  // Render Week View with timeline and overlap handling (like EnhancedCalendar)
   const renderWeekView = () => {
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    
+    // Helper to check if two events overlap in time
+    type EventPosition = {
+      event: CalendarEvent;
+      startMinutes: number;
+      endMinutes: number;
+      top: number;
+      height: number;
+      lane?: number;
+    };
+    
+    const eventsOverlap = (a: EventPosition, b: EventPosition) => {
+      return !(a.endMinutes <= b.startMinutes || a.startMinutes >= b.endMinutes);
+    };
+    
+    // Process events for a day with overlap handling
+    const processEventsForDay = (dayEvents: CalendarEvent[]): EventPosition[] => {
+      // Calculate positions for each event
+      const eventsWithPosition: EventPosition[] = dayEvents.map((event) => {
+        const startHour = event.startTime ? parseTimeString(event.startTime) : parseTimeFromDate(event.start);
+        const endHour = event.endTime ? parseTimeString(event.endTime) : (startHour !== null ? startHour + 1 : 9);
+        
+        const startMinutes = (startHour ?? 9) * 60;
+        const endMinutes = (endHour ?? 10) * 60;
+        
+        const top = (startMinutes / 60) * HOUR_HEIGHT;
+        const durationMinutes = endMinutes - startMinutes;
+        const height = Math.max((durationMinutes / 60) * HOUR_HEIGHT - 2, 14);
+        
+        return { event, startMinutes, endMinutes, top, height };
+      });
+      
+      // Sort by start time, then by duration (longer first)
+      const sortedEvents = [...eventsWithPosition].sort((a, b) => {
+        if (a.startMinutes !== b.startMinutes) return a.startMinutes - b.startMinutes;
+        return (b.endMinutes - b.startMinutes) - (a.endMinutes - a.startMinutes);
+      });
+      
+      // Assign lanes - find smallest available lane for each event
+      const lanes: EventPosition[][] = [];
+      sortedEvents.forEach((eventPos) => {
+        let assignedLane = -1;
+        for (let laneIdx = 0; laneIdx < lanes.length; laneIdx++) {
+          const hasOverlap = lanes[laneIdx].some(e => eventsOverlap(e, eventPos));
+          if (!hasOverlap) {
+            lanes[laneIdx].push(eventPos);
+            assignedLane = laneIdx;
+            break;
+          }
+        }
+        if (assignedLane === -1) {
+          assignedLane = lanes.length;
+          lanes.push([eventPos]);
+        }
+        eventPos.lane = assignedLane;
+      });
+      
+      return sortedEvents;
+    };
+    
+    // Stacking constants - Google Calendar style offset (matches EnhancedCalendar)
+    const OFFSET_PER_LANE = 12; // 12% offset per lane
+    const RIGHT_MARGIN = 8; // Right margin percentage
+    const MAX_OFFSET = 36; // Max offset (capped at 3 lanes worth)
+    
     return (
       <div 
         ref={scrollRef}
         className="overflow-auto flex-1"
       >
-        {/* Day headers */}
-        <div className="grid grid-cols-7 gap-px border-b border-border sticky top-0 bg-background z-10">
+        {/* Day headers - sticky */}
+        <div className="grid grid-cols-7 gap-px border-b border-border sticky top-0 bg-background z-20">
           {weekDays.map((day) => (
             <div 
               key={day.toISOString()} 
@@ -498,42 +565,77 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
           ))}
         </div>
         
-        {/* Day columns with events */}
-        <div className="grid grid-cols-7 gap-px min-h-[200px]">
-          {weekDays.map((day) => {
-            const dayEvents = getEventsForDate(day);
-            return (
-              <div 
-                key={day.toISOString()} 
-                className={`border-r border-border/30 p-0.5 min-h-[180px] ${isToday(day) ? 'bg-[#bba7db]/5' : ''}`}
-              >
-                {dayEvents.slice(0, 4).map((event) => {
-                  const baseColor = event.projectColor || typeHexColors[event.type || 'task'] || "#3b82f6";
-                  const notionColors = generateNotionColors(baseColor);
-                  return (
+        {/* Timeline grid with day columns */}
+        <div className="relative" style={{ height: `${24 * HOUR_HEIGHT}px` }}>
+          {/* Hour lines across all columns */}
+          {HOURS.map((hour) => (
+            <div
+              key={hour}
+              className="absolute left-0 right-0 border-t border-border/20"
+              style={{ top: `${hour * HOUR_HEIGHT}px` }}
+            />
+          ))}
+          
+          {/* Day columns */}
+          <div className="grid grid-cols-7 h-full absolute inset-0">
+            {weekDays.map((day) => {
+              const dayEvents = getEventsForDate(day);
+              const processedEvents = processEventsForDay(dayEvents);
+              
+              return (
+                <div 
+                  key={day.toISOString()} 
+                  className={`relative border-r border-border/30 ${isToday(day) ? 'bg-[#bba7db]/5' : ''}`}
+                >
+                  {/* Events with overlap handling */}
+                  {processedEvents.map((eventPos, idx) => {
+                    const lane = eventPos.lane ?? 0;
+                    const leftPercent = Math.min(lane * OFFSET_PER_LANE, MAX_OFFSET);
+                    const widthPercent = 100 - leftPercent - RIGHT_MARGIN;
+                    
+                    const baseColor = eventPos.event.projectColor || typeHexColors[eventPos.event.type || 'task'] || "#3b82f6";
+                    const notionColors = generateNotionColors(baseColor);
+                    
+                    return (
+                      <div
+                        key={`${eventPos.event.id}-${idx}`}
+                        className="absolute rounded-sm text-[8px] px-0.5 overflow-hidden cursor-pointer hover-elevate"
+                        style={{
+                          top: `${eventPos.top}px`,
+                          height: `${eventPos.height}px`,
+                          left: `${leftPercent}%`,
+                          width: `${widthPercent}%`,
+                          zIndex: lane + 1,
+                          backgroundColor: notionColors.pastelBg,
+                          borderLeft: `2px solid ${notionColors.originalHex}`,
+                        }}
+                        title={eventPos.event.title}
+                        onClick={() => eventPos.event.type === 'task' && setSelectedTaskId(eventPos.event.id)}
+                      >
+                        <p 
+                          className="font-semibold truncate leading-tight"
+                          style={{ color: notionColors.darkText }}
+                        >
+                          {eventPos.event.title}
+                        </p>
+                      </div>
+                    );
+                  })}
+                  
+                  {/* Current time indicator for today */}
+                  {isToday(day) && (
                     <div
-                      key={event.id}
-                      className="text-[9px] p-0.5 mb-0.5 rounded-sm truncate cursor-pointer hover-elevate font-semibold"
-                      style={{
-                        backgroundColor: notionColors.pastelBg,
-                        borderLeft: `2px solid ${notionColors.originalHex}`,
-                        color: notionColors.darkText,
-                      }}
-                      title={event.title}
-                      onClick={() => event.type === 'task' && setSelectedTaskId(event.id)}
+                      className="absolute left-0 right-0 z-30 pointer-events-none"
+                      style={{ top: `${(currentMinutes / 60) * HOUR_HEIGHT}px` }}
                     >
-                      {event.title}
+                      <div className="absolute -left-0.5 -top-1 w-2 h-2 rounded-full bg-red-500" />
+                      <div className="h-0.5 bg-red-500 w-full" />
                     </div>
-                  );
-                })}
-                {dayEvents.length > 4 && (
-                  <div className="text-[8px] text-muted-foreground text-center">
-                    +{dayEvents.length - 4} more
-                  </div>
-                )}
-              </div>
-            );
-          })}
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     );
