@@ -84,7 +84,7 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
     const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
 
     const { data: users = [], isLoading: usersLoading } = useQuery<UserType[]>({
-      queryKey: ["/api/users"],
+      queryKey: ["/api/users/assignable"],
     });
 
     // Fetch task templates with recurring schedules
@@ -93,7 +93,7 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
     });
 
     const { data: userRoles = [] } = useQuery<any[]>({
-      queryKey: ["/api/user-roles"],
+      queryKey: ["/api/roles/assignable"],
     });
 
     // Check if current user is admin or has elevated permissions

@@ -128,14 +128,14 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
     queryKey: ["/api/systems/task-templates"],
   });
 
-  // Fetch user roles
+  // Fetch user roles (lightweight endpoint for assignment dropdowns)
   const { data: roles = [] } = useQuery<UserRole[]>({
-    queryKey: ["/api/user-roles"],
+    queryKey: ["/api/roles/assignable"],
   });
 
-  // Fetch users for assignee selection
+  // Fetch users for assignee selection (lightweight endpoint)
   const { data: users = [] } = useQuery<any[]>({
-    queryKey: ["/api/users"],
+    queryKey: ["/api/users/assignable"],
   });
 
   // Fetch projects for scope selection

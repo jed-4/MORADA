@@ -111,11 +111,11 @@ export const BusinessReminders = forwardRef<BusinessRemindersHandle, BusinessRem
     });
 
     const { data: roles = [] } = useQuery<UserRole[]>({
-      queryKey: ["/api/user-roles"],
+      queryKey: ["/api/roles/assignable"],
     });
 
     const { data: users = [] } = useQuery<User[]>({
-      queryKey: ["/api/users"],
+      queryKey: ["/api/users/assignable"],
     });
 
     const form = useForm<FormValues>({

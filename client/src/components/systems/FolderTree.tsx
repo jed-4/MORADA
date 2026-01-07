@@ -425,9 +425,9 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(({ searc
     queryKey: ["/api/systems/documents"],
   });
 
-  // Fetch user roles for role dropdown
+  // Fetch user roles for role dropdown (lightweight endpoint)
   const { data: roles = [] } = useQuery<any[]>({
-    queryKey: ["/api/user-roles"],
+    queryKey: ["/api/roles/assignable"],
   });
 
   // Fetch status options from field categories
@@ -445,9 +445,9 @@ export const FolderTree = forwardRef<FolderTreeHandle, FolderTreeProps>(({ searc
     queryKey: ["/api/projects"],
   });
 
-  // Fetch users for assignee selection
+  // Fetch users for assignee selection (lightweight endpoint)
   const { data: users = [] } = useQuery<any[]>({
-    queryKey: ["/api/users"],
+    queryKey: ["/api/users/assignable"],
   });
 
   // Task form state for creating from template

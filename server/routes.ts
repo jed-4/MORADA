@@ -5204,6 +5204,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Lightweight endpoint for user assignment dropdowns (task templates, etc.)
+  // Only requires team membership, no admin permissions needed
+  app.get("/api/users/assignable", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const currentUser = req.user as any;
+      if (!currentUser?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      // Get all active users in the company with minimal info for assignment purposes
+      const users = await storage.getUsersByCompanyWithRoles(currentUser.companyId);
+      // Return only necessary fields for assignment dropdowns
+      const assignableUsers = users
+        .filter((user: any) => user.status !== 'inactive')
+        .map((user: any) => ({
+          id: user.id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          profileImageUrl: user.profileImageUrl,
+          roleId: user.roleId,
+          roleName: user.roleName,
+        }));
+      res.json(assignableUsers);
+    } catch (error) {
+      console.error("Error fetching assignable users:", error);
+      res.status(500).json({ error: "Failed to fetch assignable users" });
+    }
+  });
+
+  // Lightweight endpoint for role assignment dropdowns (task templates, etc.)
+  // Only requires team membership, no admin permissions needed
+  app.get("/api/roles/assignable", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const currentUser = req.user as any;
+      if (!currentUser?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      // Get all roles in the company
+      const roles = await storage.getUserRoles(undefined, currentUser.companyId);
+      // Return only necessary fields for assignment dropdowns
+      const assignableRoles = roles.map((role: any) => ({
+        id: role.id,
+        name: role.name,
+        description: role.description,
+      }));
+      res.json(assignableRoles);
+    } catch (error) {
+      console.error("Error fetching assignable roles:", error);
+      res.status(500).json({ error: "Failed to fetch assignable roles" });
+    }
+  });
+
   app.get("/api/users/:id", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const currentUser = req.user as any;

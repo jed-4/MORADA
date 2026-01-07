@@ -231,8 +231,8 @@ export default function SystemTaskTemplates() {
   const { data: statuses = [] } = useQuery<TaskTemplateStatus[]>({
     queryKey: ["/api/task-template-statuses"],
   });
-  const { data: users = [] } = useQuery<any[]>({ queryKey: ["/api/users"] });
-  const { data: userRoles = [] } = useQuery<any[]>({ queryKey: ["/api/user-roles"] });
+  const { data: users = [] } = useQuery<any[]>({ queryKey: ["/api/users/assignable"] });
+  const { data: userRoles = [] } = useQuery<any[]>({ queryKey: ["/api/roles/assignable"] });
   
   // Query for existing tasks to check for duplicates
   const { data: existingTasks = [] } = useQuery<any[]>({
