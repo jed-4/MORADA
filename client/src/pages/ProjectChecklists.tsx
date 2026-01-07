@@ -392,26 +392,34 @@ export default function ProjectChecklists() {
   }, [allGroups, activeTab, searchTerm, assigneeFilter]);
 
   const groupedByInstance = useMemo(() => {
-    const grouped: Record<string, { instance: ChecklistInstance; groups: ChecklistGroupWithCounts[] }> = {};
-    
+    // Build lookup of groups by instance ID
+    const groupsByInstanceId: Record<string, ChecklistGroupWithCounts[]> = {};
     filteredGroups.forEach(group => {
-      const instance = instances.find(i => i.id === group.instanceId);
-      if (!instance) return;
-      
-      if (!grouped[instance.id]) {
-        grouped[instance.id] = { instance, groups: [] };
+      if (!groupsByInstanceId[group.instanceId]) {
+        groupsByInstanceId[group.instanceId] = [];
       }
-      grouped[instance.id].groups.push(group);
+      groupsByInstanceId[group.instanceId].push(group);
     });
     
-    Object.values(grouped).forEach(({ groups }) => {
+    // Start from instances so even those with no groups are included
+    const result = instances.map(instance => {
+      const groups = groupsByInstanceId[instance.id] || [];
+      // Sort groups by order
       groups.sort((a, b) => (a.order || 0) - (b.order || 0));
+      return { instance, groups };
     });
     
-    return Object.values(grouped).sort((a, b) => 
+    // When filtering by tab/search/assignee, only show instances that have matching groups
+    // But on "all" tab with no filters, show all instances including empty ones
+    const hasFilters = activeTab !== "all" || searchTerm || assigneeFilter !== "all";
+    const filtered = hasFilters 
+      ? result.filter(({ groups }) => groups.length > 0)
+      : result;
+    
+    return filtered.sort((a, b) => 
       a.instance.name.localeCompare(b.instance.name)
     );
-  }, [filteredGroups, instances]);
+  }, [filteredGroups, instances, activeTab, searchTerm, assigneeFilter]);
 
   const allCount = allGroups.length;
   const upcomingCount = allGroups.filter(g => g.status === "active").length;
