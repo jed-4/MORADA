@@ -28,6 +28,8 @@ export const sessionMiddleware = (() => {
     tableName: 'sessions',
   });
 
+  const isProduction = process.env.NODE_ENV === 'production';
+  
   return session({
     secret: sessionSecret,
     store: sessionStore,
@@ -36,8 +38,8 @@ export const sessionMiddleware = (() => {
     rolling: true,
     cookie: {
       httpOnly: true,
-      secure: true,
-      sameSite: 'none' as const,
+      secure: isProduction,
+      sameSite: isProduction ? 'none' as const : 'lax' as const,
       maxAge: sessionTtl,
     },
   });
