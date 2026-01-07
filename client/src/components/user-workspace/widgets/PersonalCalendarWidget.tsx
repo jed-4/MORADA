@@ -431,8 +431,7 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
     return (
       <div 
         ref={scrollRef}
-        className="relative overflow-auto"
-        style={{ height: 'calc(100% - 32px)', maxHeight: '300px' }}
+        className="relative overflow-auto flex-1"
       >
         <div className="relative" style={{ height: `${24 * HOUR_HEIGHT}px` }}>
           {/* Hour lines */}
@@ -482,8 +481,7 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
     return (
       <div 
         ref={scrollRef}
-        className="overflow-auto"
-        style={{ height: 'calc(100% - 32px)', maxHeight: '300px' }}
+        className="overflow-auto flex-1"
       >
         {/* Day headers */}
         <div className="grid grid-cols-7 gap-px border-b border-border sticky top-0 bg-background z-10">

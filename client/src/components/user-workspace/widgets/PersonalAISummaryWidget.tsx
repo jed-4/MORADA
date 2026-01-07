@@ -306,7 +306,7 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
   ];
 
   return (
-    <ScrollArea className="h-full max-h-[350px]">
+    <ScrollArea className="h-full">
       <div className="space-y-3 pr-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
