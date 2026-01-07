@@ -119,6 +119,8 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
     recurringDays: [] as number[],
     recurringSchedule: [] as Array<{ dayOfWeek: number; startTime: string; duration: number }>,
     defaultTaskStatus: "todo", // Default status for tasks created from this template
+    scope: "business" as "business" | "project",
+    projectId: "" as string,
   });
 
   // Fetch task templates
@@ -134,6 +136,11 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
   // Fetch users for assignee selection
   const { data: users = [] } = useQuery<any[]>({
     queryKey: ["/api/users"],
+  });
+
+  // Fetch projects for scope selection
+  const { data: projects = [] } = useQuery<any[]>({
+    queryKey: ["/api/projects"],
   });
 
   // Create template mutation
@@ -323,6 +330,8 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
       recurringDays: [],
       recurringSchedule: [],
       defaultTaskStatus: "todo",
+      scope: "business",
+      projectId: "",
     });
   };
 
@@ -355,6 +364,8 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
       recurringDays: template.recurringDays ? (Array.isArray(template.recurringDays) ? template.recurringDays : JSON.parse(template.recurringDays as string)) : [],
       recurringSchedule: template.recurringSchedule ? (Array.isArray(template.recurringSchedule) ? template.recurringSchedule : JSON.parse(template.recurringSchedule as string)) : [],
       defaultTaskStatus: template.defaultTaskStatus || "todo",
+      scope: (template.scope as "business" | "project") || "business",
+      projectId: template.projectId || "",
     });
     setShowDialog(true);
   };
@@ -366,6 +377,18 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
   }));
 
   const handleSaveTemplate = () => {
+    // Validate required fields
+    if (!templateForm.title.trim()) {
+      toast({ title: "Title is required", variant: "destructive" });
+      return;
+    }
+    
+    // Validate project is selected when scope is "project"
+    if (templateForm.scope === "project" && !templateForm.projectId) {
+      toast({ title: "Please select a project for project-scoped templates", variant: "destructive" });
+      return;
+    }
+    
     // Build recurringSchedule from dueDayOfWeek and individual day schedules
     // Use estimatedDuration for all schedules
     let recurringScheduleData: Array<{ dayOfWeek: number; startTime: string; duration: number }> = [];
@@ -406,6 +429,9 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
       // Include assignee fields
       assigneeType: templateForm.assigneeType,
       assigneeUserId: templateForm.assigneeType === 'user' ? (templateForm.assigneeUserId || null) : null,
+      // Scope fields - only include projectId when scope is project
+      scope: templateForm.scope,
+      projectId: templateForm.scope === 'project' ? (templateForm.projectId || null) : null,
     };
 
     console.log("Saving template with data:", cleanedData);
@@ -1032,6 +1058,48 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                 className="min-h-[60px] text-[11px]"
                 data-testid="input-template-description"
               />
+            </div>
+
+            {/* Scope Selection */}
+            <div className="space-y-1.5">
+              <Label className="text-[10px] text-muted-foreground">Scope</Label>
+              <div className="flex gap-1.5">
+                <Button
+                  type="button"
+                  variant={templateForm.scope === "business" ? "default" : "outline"}
+                  className="flex-1 h-7 text-[11px]"
+                  onClick={() => setTemplateForm({ ...templateForm, scope: "business", projectId: "" })}
+                  data-testid="button-scope-business"
+                >
+                  Business
+                </Button>
+                <Button
+                  type="button"
+                  variant={templateForm.scope === "project" ? "default" : "outline"}
+                  className="flex-1 h-7 text-[11px]"
+                  onClick={() => setTemplateForm({ ...templateForm, scope: "project" })}
+                  data-testid="button-scope-project"
+                >
+                  Project
+                </Button>
+              </div>
+              {templateForm.scope === "project" && (
+                <Select
+                  value={templateForm.projectId}
+                  onValueChange={(value) => setTemplateForm({ ...templateForm, projectId: value })}
+                >
+                  <SelectTrigger className="h-7 text-[11px]" data-testid="select-template-project">
+                    <SelectValue placeholder="Select a project" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {projects.map((project: any) => (
+                      <SelectItem key={project.id} value={project.id} className="text-[11px]">
+                        {project.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
 
             {/* Status, Category, Duration - 3 column grid */}
