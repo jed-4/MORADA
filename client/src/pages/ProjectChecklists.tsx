@@ -147,8 +147,10 @@ export default function ProjectChecklists() {
   });
 
   // Fetch all groups for all instances
+  // Include instance IDs in queryKey so it refetches when instances change
+  const instanceIds = instances.map(i => i.id).sort().join(',');
   const { data: allGroups = [] } = useQuery<ChecklistGroupWithCounts[]>({
-    queryKey: ["/api/checklist-instance-groups", { projectId }],
+    queryKey: ["/api/checklist-instance-groups", { projectId, instanceIds }],
     queryFn: async () => {
       const groupPromises = instances.map(async (instance) => {
         const res = await fetch(`/api/checklist-instances/${instance.id}/groups`, {
@@ -249,9 +251,11 @@ export default function ProjectChecklists() {
       });
       return result;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances", { projectId }] });
-      queryClient.invalidateQueries({ queryKey: ["/api/checklist-instance-groups", { projectId }] });
+    onSuccess: async () => {
+      // First invalidate and wait for instances to refetch
+      await queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances", { projectId }] });
+      // Then invalidate groups - now the instances list will be updated
+      await queryClient.invalidateQueries({ queryKey: ["/api/checklist-instance-groups", { projectId }] });
       toast({ title: "Checklist Group created", description: "The checklist group has been created successfully." });
       setShowAddDialog(false);
       setFormData({ templateId: "", name: "", description: "", priority: "medium", dueDate: "", assigneeId: "", selectedGroupIds: [] });
