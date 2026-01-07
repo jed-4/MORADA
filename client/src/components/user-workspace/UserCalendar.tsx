@@ -158,6 +158,68 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
     toggleTaskCompleteMutation.mutate({ taskId: eventId, isCompleted });
   };
 
+  // Task reschedule mutation (for drag-and-drop)
+  const rescheduleTaskMutation = useMutation({
+    mutationFn: async ({ taskId, newDate, newTime }: { taskId: string; newDate: Date; newTime?: string }) => {
+      const updateData: any = { 
+        dueDate: newDate.toISOString(),
+        isModified: true, // Mark as moved from original template time
+      };
+      if (newTime !== undefined) {
+        updateData.startTime = newTime;
+      }
+      return await apiRequest(`/api/tasks/${taskId}`, "PATCH", updateData);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      toast({ title: "Task rescheduled" });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to reschedule task",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Task resize mutation (for changing duration)
+  const resizeTaskMutation = useMutation({
+    mutationFn: async ({ taskId, startTime, endTime }: { taskId: string; startTime: string; endTime: string }) => {
+      return await apiRequest(`/api/tasks/${taskId}`, "PATCH", { 
+        startTime, 
+        endTime,
+        isModified: true, // Mark as modified from original template time
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      toast({ title: "Task duration updated" });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to update task duration",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Handler for task reschedule from calendar drag-and-drop
+  const handleEventReschedule = (eventId: string, newDate: Date, eventType: "task" | "schedule" | "meeting" | "google-calendar", newTime?: string) => {
+    // Only allow rescheduling of tasks (not Google Calendar events)
+    if (eventType === "task") {
+      rescheduleTaskMutation.mutate({ taskId: eventId, newDate, newTime });
+    }
+  };
+
+  // Handler for task resize from calendar
+  const handleEventResize = (eventId: string, startTime: string, endTime: string, eventType: "task" | "schedule" | "meeting" | "google-calendar") => {
+    if (eventType === "task") {
+      resizeTaskMutation.mutate({ taskId: eventId, startTime, endTime });
+    }
+  };
+
   // Fetch schedule items for displayed user
   const { data: scheduleItems = [], isLoading: isLoadingSchedule } = useQuery({
     queryKey: ["/api/schedule", displayedUserId],
@@ -279,6 +341,8 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
           status: task.status,
           isCompleted: task.status === "completed" || task.status === "done",
           description: task.content,
+          templateId: task.taskTemplateId,
+          isModified: task.isModified,
         });
       }
     });
@@ -868,6 +932,8 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
           events={filteredEvents}
           onEventClick={handleEventClick}
           onEventComplete={handleEventComplete}
+          onEventReschedule={handleEventReschedule}
+          onEventResize={handleEventResize}
           showCompletionCheckbox={true}
           currentDate={currentDate}
           onCurrentDateChange={setCurrentDate}

@@ -444,6 +444,8 @@ export const notes: any = pgTable("notes", {
   recurringEndDate: timestamp("recurring_end_date"),
   lastRecurringDate: timestamp("last_recurring_date"),
   templateId: varchar("template_id"), // Link to task template for recurring tasks
+  occurrenceDate: timestamp("occurrence_date"), // Original scheduled date from template (for duplicate prevention)
+  isModified: boolean("is_modified").default(false), // True if user has moved/rescheduled this task from template time
   
   // Reference fields for system-generated tasks (e.g., insurance expiry reminders)
   referenceType: text("reference_type"), // e.g., "insurance_expiry_30", "insurance_expiry_7"
@@ -512,6 +514,8 @@ export const insertNoteSchema = createInsertSchema(notes).omit({
   recurringStartDate: z.coerce.date().optional(),
   recurringEndDate: z.coerce.date().optional(),
   templateId: z.string().optional(),
+  occurrenceDate: z.coerce.date().optional(), // Original scheduled date from template
+  isModified: z.boolean().optional(), // True if user moved/rescheduled from template time
   lastRecurringDate: z.coerce.date().optional(),
   // Reference fields for system-generated tasks
   referenceType: z.string().optional(),

@@ -444,6 +444,10 @@ export default function EstimateDetail() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
 
+  // Edit estimate dialog state
+  const [isEditEstimateDialogOpen, setIsEditEstimateDialogOpen] = useState(false);
+  const [editEstimateForm, setEditEstimateForm] = useState({ name: "", status: "" });
+
   // Column configuration state - use lazy initializer to deep clone DEFAULT_COLUMNS
   const [columns, setColumns] = useState<ColumnConfig[]>(() => 
     DEFAULT_COLUMNS.map(col => ({ ...col }))
@@ -1806,6 +1810,34 @@ export default function EstimateDetail() {
   const handleNameCancel = () => {
     setEditingName(estimate?.name || "");
     setIsEditingName(false);
+  };
+
+  // Handler to open the edit estimate dialog
+  const handleOpenEditEstimateDialog = () => {
+    if (!estimate) return;
+    setEditEstimateForm({
+      name: estimate.name,
+      status: estimate.status || "draft"
+    });
+    setIsEditEstimateDialogOpen(true);
+  };
+
+  // Handler to save estimate changes from dialog
+  const handleSaveEstimateEdit = () => {
+    if (!estimate) return;
+    const updates: { name?: string; status?: string } = {};
+    
+    if (editEstimateForm.name.trim() && editEstimateForm.name !== estimate.name) {
+      updates.name = editEstimateForm.name.trim();
+    }
+    if (editEstimateForm.status && editEstimateForm.status !== estimate.status) {
+      updates.status = editEstimateForm.status;
+    }
+    
+    if (Object.keys(updates).length > 0) {
+      updateEstimateMutation.mutate(updates);
+    }
+    setIsEditEstimateDialogOpen(false);
   };
 
   const handleNameKeyDown = (e: React.KeyboardEvent) => {
@@ -4274,6 +4306,20 @@ export default function EstimateDetail() {
         {/* Right: Action Buttons */}
         <div className="flex items-center gap-1.5">
           {estimate && getStatusBadge(estimate)}
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                  onClick={handleOpenEditEstimateDialog}
+                  data-testid="button-edit-estimate"
+                >
+                  <Edit className="w-3 h-3" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Edit estimate</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
           <MultiUserSelect
             value={estimate?.assigneeIds || []}
             onValueChange={(assigneeIds) => updateAssigneesMutation.mutate(assigneeIds)}
@@ -6406,6 +6452,67 @@ export default function EstimateDetail() {
           }}
         />
       )}
+
+      {/* Edit Estimate Dialog */}
+      <Dialog open={isEditEstimateDialogOpen} onOpenChange={setIsEditEstimateDialogOpen}>
+        <DialogContent className="rounded-xl max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Estimate</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Name</label>
+              <Input
+                value={editEstimateForm.name}
+                onChange={(e) => setEditEstimateForm(prev => ({ ...prev, name: e.target.value }))}
+                placeholder="Estimate name"
+                data-testid="input-edit-estimate-name"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Status</label>
+              <Select
+                value={editEstimateForm.status}
+                onValueChange={(value) => setEditEstimateForm(prev => ({ ...prev, status: value }))}
+              >
+                <SelectTrigger data-testid="select-edit-estimate-status">
+                  <SelectValue placeholder="Select status" />
+                </SelectTrigger>
+                <SelectContent>
+                  {estimateStatuses.map((status) => (
+                    <SelectItem key={status.key} value={status.key}>
+                      <div className="flex items-center gap-2">
+                        {status.color && (
+                          <div 
+                            className="w-2 h-2 rounded-full" 
+                            style={{ backgroundColor: status.color }} 
+                          />
+                        )}
+                        {status.name}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setIsEditEstimateDialogOpen(false)}
+              data-testid="button-cancel-edit-estimate"
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleSaveEstimateEdit}
+              data-testid="button-save-edit-estimate"
+            >
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Group Delete Confirmation Dialog */}
       <Dialog open={isDeleteGroupDialogOpen} onOpenChange={setIsDeleteGroupDialogOpen}>

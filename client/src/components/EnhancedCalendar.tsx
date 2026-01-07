@@ -35,6 +35,7 @@ export interface CalendarEvent {
   location?: string | null;
   templateId?: string | null;
   tagIds?: string[] | null;
+  isModified?: boolean; // True if task has been moved/rescheduled from original template time
   resource?: any; // Original task/event data for click handlers
 }
 
@@ -166,6 +167,16 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
               data-testid={`recurring-badge-${event.id}`}
             >
               R
+            </Badge>
+          )}
+          {event.isModified && (
+            <Badge 
+              variant="outline" 
+              className="flex-shrink-0 text-[8px] px-1 py-0 h-3 bg-amber-500 border-none text-white font-bold"
+              title="Task has been rescheduled"
+              data-testid={`moved-badge-${event.id}`}
+            >
+              M
             </Badge>
           )}
         </div>

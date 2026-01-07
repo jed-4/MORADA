@@ -15122,14 +15122,17 @@ export class DbStorage implements IStorage {
           eq(schema.notes.type, "task")
         ));
 
-      // Build Set of existing task keys (templateId:assigneeId:date for role-based, templateId:date for unassigned)
+      // Build Set of existing task keys (templateId:assigneeId:occurrenceDate for role-based, templateId:occurrenceDate for unassigned)
+      // Uses occurrenceDate (original scheduled date) for duplicate detection - this ensures moved tasks aren't duplicated
       const existingTaskKeys = new Set<string>();
       for (const task of existingTasks) {
         const taskData = task as any;
-        if (taskData.templateId && taskData.dueDate) {
+        if (taskData.templateId && (taskData.occurrenceDate || taskData.dueDate)) {
           // Include assigneeId in the key for per-user duplicate detection
+          // Use occurrenceDate if available (for moved tasks), fallback to dueDate for legacy tasks
           const assigneeId = taskData.assigneeId || "unassigned";
-          const dateStr = getRecurringTaskKey(taskData.templateId, taskData.dueDate);
+          const occurrenceDate = taskData.occurrenceDate || taskData.dueDate;
+          const dateStr = getRecurringTaskKey(taskData.templateId, occurrenceDate);
           const key = `${dateStr}:${assigneeId}`;
           existingTaskKeys.add(key);
         }
@@ -15205,6 +15208,7 @@ export class DbStorage implements IStorage {
                 labels: [],
                 category: instance.category,
                 templateId: instance.templateId,
+                occurrenceDate: instance.dueDate, // Store original scheduled date for duplicate prevention
                 companyId: companyId,
                 checklist: taskChecklist,
               };
@@ -15244,6 +15248,7 @@ export class DbStorage implements IStorage {
                   labels: [],
                   category: instance.category,
                   templateId: instance.templateId,
+                  occurrenceDate: instance.dueDate, // Store original scheduled date for duplicate prevention
                   companyId: companyId,
                   checklist: taskChecklist,
                 };
@@ -15534,6 +15539,7 @@ export class DbStorage implements IStorage {
       const assigneeName = completedTask.assigneeName;
       
       // Check if task already exists for next week's date AND same assignee
+      // Use occurrenceDate for duplicate detection (allows moved tasks without duplicates)
       const dateKey = getRecurringTaskKey(completedTask.templateId, nextDueDate);
       const existingTasks = await db.select().from(schema.notes).where(
         and(
@@ -15544,9 +15550,12 @@ export class DbStorage implements IStorage {
       );
       
       // Include assignee in duplicate check for per-user instances
+      // Use occurrenceDate if available, fallback to dueDate for legacy tasks
       const exists = existingTasks.some(t => {
-        if (!t.dueDate) return false;
-        const taskDateKey = getRecurringTaskKey(completedTask.templateId, t.dueDate);
+        const taskData = t as any;
+        const occurrenceDate = taskData.occurrenceDate || t.dueDate;
+        if (!occurrenceDate) return false;
+        const taskDateKey = getRecurringTaskKey(completedTask.templateId, occurrenceDate);
         const sameAssignee = (t.assigneeId || null) === (assigneeId || null);
         return taskDateKey === dateKey && sameAssignee;
       });
@@ -15578,6 +15587,7 @@ export class DbStorage implements IStorage {
         labels: completedTask.labels || [],
         category: completedTask.category,
         templateId: completedTask.templateId,
+        occurrenceDate: nextDueDate, // Store original scheduled date for duplicate prevention
         companyId: companyId,
         checklist: taskChecklist,
       };
