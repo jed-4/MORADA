@@ -5218,15 +5218,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Return only necessary fields for assignment dropdowns
       const assignableUsers = users
         .filter((user: any) => user.status !== 'inactive')
-        .map((user: any) => ({
-          id: user.id,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          profileImageUrl: user.profileImageUrl,
-          roleId: user.roleId,
-          roleName: user.roleName,
-        }));
+        .map((user: any) => {
+          // Build displayName from firstName and lastName
+          const displayName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email || 'Unknown User';
+          return {
+            id: user.id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            displayName,
+            email: user.email,
+            profileImageUrl: user.profileImageUrl,
+            roleId: user.roleId,
+            roleName: user.roleName,
+          };
+        });
       res.json(assignableUsers);
     } catch (error) {
       console.error("Error fetching assignable users:", error);
