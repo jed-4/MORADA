@@ -240,14 +240,14 @@ export default function ProjectChecklists() {
 
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
-      const res = await apiRequest("/api/checklist-instances", "POST", {
+      const result = await apiRequest("/api/checklist-instances", "POST", {
         ...data,
         projectId,
         assigneeName: teamMembers.find(u => u.id === data.assigneeId)?.name,
         dueDate: data.dueDate ? new Date(data.dueDate) : null,
         selectedGroupIds: data.selectedGroupIds.length > 0 ? data.selectedGroupIds : undefined,
       });
-      return res.json();
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances", { projectId }] });
