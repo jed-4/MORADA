@@ -453,30 +453,30 @@ function ChecklistAccordionItem({
       <div className="border rounded-md overflow-hidden">
         <CollapsibleTrigger asChild>
           <div 
-            className="flex items-center gap-1.5 px-2 py-1.5 hover-elevate cursor-pointer"
+            className="flex items-center gap-1 px-1.5 py-1 hover-elevate cursor-pointer"
             data-testid={`checklist-widget-item-${checklist.id}`}
           >
             {isExpanded ? (
-              <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+              <ChevronDown className="h-2.5 w-2.5 text-muted-foreground flex-shrink-0" />
             ) : (
-              <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+              <ChevronRight className="h-2.5 w-2.5 text-muted-foreground flex-shrink-0" />
             )}
             
             <TaskTooltip content={checklist.name}>
-              <span className={`text-xs font-medium flex-1 min-w-0 ${wrapText ? '' : 'truncate'}`}>
+              <span className={`text-[11px] font-medium flex-1 min-w-0 ${wrapText ? '' : 'truncate'}`}>
                 {checklist.name}
               </span>
             </TaskTooltip>
             
             <Badge 
-              className={`${getStatusBadgeColor(checklist.status)} text-[9px] px-1 py-0 h-3.5 flex-shrink-0 no-default-hover-elevate no-default-active-elevate`}
+              className={`${getStatusBadgeColor(checklist.status)} text-[8px] px-0.5 py-0 h-3 flex-shrink-0 no-default-hover-elevate no-default-active-elevate`}
             >
               {getStatusLabel(checklist.status)}
             </Badge>
             
             {checklist.dueDate && (
-              <div className="flex items-center gap-0.5 text-[10px] text-muted-foreground flex-shrink-0">
-                <Calendar className="h-2.5 w-2.5" />
+              <div className="flex items-center gap-0.5 text-[9px] text-muted-foreground flex-shrink-0">
+                <Calendar className="h-2 w-2" />
                 {format(new Date(checklist.dueDate), "MMM d")}
               </div>
             )}
@@ -484,8 +484,8 @@ function ChecklistAccordionItem({
             {checklist.assigneeName && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Avatar className="h-3.5 w-3.5 flex-shrink-0">
-                    <AvatarFallback className="text-[7px] bg-primary/10 text-primary">
+                  <Avatar className="h-3 w-3 flex-shrink-0">
+                    <AvatarFallback className="text-[6px] bg-primary/10 text-primary">
                       {getInitials(checklist.assigneeName)}
                     </AvatarFallback>
                   </Avatar>
@@ -496,9 +496,9 @@ function ChecklistAccordionItem({
               </Tooltip>
             )}
             
-            <div className="flex items-center gap-1 flex-shrink-0">
-              <Progress value={progressPercent} className="h-1 w-12" />
-              <span className="text-[9px] text-muted-foreground w-7 text-right">
+            <div className="flex items-center gap-0.5 flex-shrink-0">
+              <Progress value={progressPercent} className="h-1 w-10" />
+              <span className="text-[8px] text-muted-foreground w-6 text-right">
                 {checklist.completedCount}/{checklist.totalCount}
               </span>
             </div>
@@ -506,14 +506,14 @@ function ChecklistAccordionItem({
             <Button
               size="sm"
               variant="ghost"
-              className="h-4 w-4 p-0 flex-shrink-0"
+              className="h-3.5 w-3.5 p-0 flex-shrink-0"
               onClick={(e) => {
                 e.stopPropagation();
                 setLocation(`/projects/${projectId}/checklists/${checklist.id}`);
               }}
               data-testid={`checklist-open-${checklist.id}`}
             >
-              <ExternalLink className="h-2.5 w-2.5" />
+              <ExternalLink className="h-2 w-2" />
             </Button>
           </div>
         </CollapsibleTrigger>
