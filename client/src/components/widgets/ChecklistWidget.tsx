@@ -327,21 +327,15 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
     <div className="space-y-1">
       <div className="flex items-center justify-end gap-1">
         <Button 
-          size="sm" 
+          size="icon" 
           variant="ghost"
           onClick={toggleAll}
           data-testid="checklist-widget-toggle-all"
         >
           {allExpanded ? (
-            <>
-              <ChevronDown className="h-3 w-3 mr-1" />
-              Collapse
-            </>
+            <ChevronDown className="h-4 w-4" />
           ) : (
-            <>
-              <ChevronRight className="h-3 w-3 mr-1" />
-              Expand
-            </>
+            <ChevronRight className="h-4 w-4" />
           )}
         </Button>
         <Button 
