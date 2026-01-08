@@ -131,8 +131,7 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
         }
         if (assigneeFilter !== "all" && checklist.assigneeId !== assigneeFilter) return false;
         return true;
-      })
-      .sort((a, b) => a.name.localeCompare(b.name));
+      });
   }, [checklists, statusFilter, assigneeFilter]);
 
   const displayChecklists = filteredChecklists.slice(0, maxChecklists);
@@ -431,10 +430,7 @@ function ChecklistAccordionItem({
         credentials: "include",
       });
       if (!response.ok) throw new Error("Failed to fetch groups");
-      const data = await response.json();
-      return data.sort((a: ChecklistGroupWithItems, b: ChecklistGroupWithItems) => 
-        a.name.localeCompare(b.name)
-      );
+      return response.json();
     },
     enabled: isExpanded,
   });
