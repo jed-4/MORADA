@@ -10,6 +10,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { TaskTooltip } from "@/components/ui/task-tooltip";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
 import { 
   ListChecks, 
   Plus, 
@@ -67,7 +69,9 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
   const wrapText = widget.config?.wrapText || false;
   const savedStatusFilter = (widget.config?.statusFilter as StatusFilter) || "all";
   const savedAssigneeFilter = widget.config?.assigneeFilter || "all";
-  const savedHideCompleted = widget.config?.hideCompleted || false;
+  const savedHideCompletedGroups = widget.config?.hideCompletedGroups || false;
+  const savedHideCompletedChecklists = widget.config?.hideCompletedChecklists || false;
+  const savedHideCompletedItems = widget.config?.hideCompletedItems || false;
   
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const [configMaxChecklists, setConfigMaxChecklists] = useState(maxChecklists);
@@ -75,7 +79,10 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
   
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(savedStatusFilter);
   const [assigneeFilter, setAssigneeFilter] = useState<string>(savedAssigneeFilter);
-  const [hideCompleted, setHideCompleted] = useState<boolean>(savedHideCompleted);
+  const [hideCompletedGroups, setHideCompletedGroups] = useState<boolean>(savedHideCompletedGroups);
+  const [hideCompletedChecklists, setHideCompletedChecklists] = useState<boolean>(savedHideCompletedChecklists);
+  const [hideCompletedItems, setHideCompletedItems] = useState<boolean>(savedHideCompletedItems);
+  const [hideMenuOpen, setHideMenuOpen] = useState(false);
   const [expandedChecklists, setExpandedChecklists] = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   
@@ -133,13 +140,13 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
         } else if (statusFilter !== "all" && checklist.status !== statusFilter) {
           return false;
         }
-        // Hide completed filter
-        if (hideCompleted && checklist.status === "completed") return false;
+        // Hide completed groups (top level instances)
+        if (hideCompletedGroups && checklist.status === "completed") return false;
         if (assigneeFilter !== "all" && checklist.assigneeId !== assigneeFilter) return false;
         return true;
       })
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [checklists, statusFilter, assigneeFilter, hideCompleted]);
+  }, [checklists, statusFilter, assigneeFilter, hideCompletedGroups]);
 
   const displayChecklists = filteredChecklists.slice(0, maxChecklists);
 
@@ -223,7 +230,9 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
             wrapText: configWrapText,
             statusFilter: statusFilter,
             assigneeFilter: assigneeFilter,
-            hideCompleted: hideCompleted,
+            hideCompletedGroups: hideCompletedGroups,
+            hideCompletedChecklists: hideCompletedChecklists,
+            hideCompletedItems: hideCompletedItems,
           }
         });
       }
@@ -342,37 +351,111 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
   return (
     <div className="space-y-1 relative">
       <div className="absolute -top-7 right-6 flex items-center gap-0.5">
-        <Tooltip>
-          <TooltipTrigger asChild>
+        <Popover open={hideMenuOpen} onOpenChange={setHideMenuOpen}>
+          <PopoverTrigger asChild>
             <Button 
               size="icon" 
               variant="ghost"
-              className={`h-5 w-5 ${hideCompleted ? 'text-[#bba7db]' : ''}`}
-              onClick={() => {
-                setHideCompleted(!hideCompleted);
-                if (onUpdate) {
-                  onUpdate({
-                    ...widget,
-                    config: {
-                      ...widget.config,
-                      hideCompleted: !hideCompleted,
-                    }
-                  });
-                }
-              }}
+              className={`h-5 w-5 ${(hideCompletedGroups || hideCompletedChecklists || hideCompletedItems) ? 'text-[#bba7db]' : ''}`}
               data-testid="checklist-widget-toggle-hide-completed"
             >
-              {hideCompleted ? (
+              {(hideCompletedGroups || hideCompletedChecklists || hideCompletedItems) ? (
                 <EyeOff className="h-3 w-3" />
               ) : (
                 <CheckCircle2 className="h-3 w-3" />
               )}
             </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top">
-            <p className="text-xs">{hideCompleted ? "Show completed" : "Hide completed"}</p>
-          </TooltipContent>
-        </Tooltip>
+          </PopoverTrigger>
+          <PopoverContent className="w-48 p-2" align="end">
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground mb-2">Hide Completed</p>
+              <div 
+                className="flex items-center gap-2 py-1 px-1 rounded hover-elevate cursor-pointer"
+                onClick={() => {
+                  const newValue = !hideCompletedGroups;
+                  setHideCompletedGroups(newValue);
+                  if (onUpdate) {
+                    onUpdate({
+                      ...widget,
+                      config: { ...widget.config, hideCompletedGroups: newValue }
+                    });
+                  }
+                }}
+              >
+                <Checkbox 
+                  checked={hideCompletedGroups} 
+                  onCheckedChange={(checked) => {
+                    setHideCompletedGroups(!!checked);
+                    if (onUpdate) {
+                      onUpdate({
+                        ...widget,
+                        config: { ...widget.config, hideCompletedGroups: !!checked }
+                      });
+                    }
+                  }}
+                  className="h-3.5 w-3.5"
+                />
+                <span className="text-xs">Groups</span>
+              </div>
+              <div 
+                className="flex items-center gap-2 py-1 px-1 rounded hover-elevate cursor-pointer"
+                onClick={() => {
+                  const newValue = !hideCompletedChecklists;
+                  setHideCompletedChecklists(newValue);
+                  if (onUpdate) {
+                    onUpdate({
+                      ...widget,
+                      config: { ...widget.config, hideCompletedChecklists: newValue }
+                    });
+                  }
+                }}
+              >
+                <Checkbox 
+                  checked={hideCompletedChecklists} 
+                  onCheckedChange={(checked) => {
+                    setHideCompletedChecklists(!!checked);
+                    if (onUpdate) {
+                      onUpdate({
+                        ...widget,
+                        config: { ...widget.config, hideCompletedChecklists: !!checked }
+                      });
+                    }
+                  }}
+                  className="h-3.5 w-3.5"
+                />
+                <span className="text-xs">Checklists</span>
+              </div>
+              <div 
+                className="flex items-center gap-2 py-1 px-1 rounded hover-elevate cursor-pointer"
+                onClick={() => {
+                  const newValue = !hideCompletedItems;
+                  setHideCompletedItems(newValue);
+                  if (onUpdate) {
+                    onUpdate({
+                      ...widget,
+                      config: { ...widget.config, hideCompletedItems: newValue }
+                    });
+                  }
+                }}
+              >
+                <Checkbox 
+                  checked={hideCompletedItems} 
+                  onCheckedChange={(checked) => {
+                    setHideCompletedItems(!!checked);
+                    if (onUpdate) {
+                      onUpdate({
+                        ...widget,
+                        config: { ...widget.config, hideCompletedItems: !!checked }
+                      });
+                    }
+                  }}
+                  className="h-3.5 w-3.5"
+                />
+                <span className="text-xs">Items</span>
+              </div>
+            </div>
+          </PopoverContent>
+        </Popover>
         <Button 
           size="icon" 
           variant="ghost"
@@ -430,6 +513,8 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
               getInitials={getInitials}
               expandedGroups={expandedGroups}
               onToggleGroup={handleToggleGroup}
+              hideCompletedChecklists={hideCompletedChecklists}
+              hideCompletedItems={hideCompletedItems}
             />
           ))
         )}
@@ -449,6 +534,8 @@ function ChecklistAccordionItem({
   getInitials,
   expandedGroups,
   onToggleGroup,
+  hideCompletedChecklists,
+  hideCompletedItems,
 }: {
   checklist: ChecklistInstanceWithCounts;
   isExpanded: boolean;
@@ -460,6 +547,8 @@ function ChecklistAccordionItem({
   getInitials: (name: string) => string;
   expandedGroups: Set<string>;
   onToggleGroup: (groupId: string) => void;
+  hideCompletedChecklists: boolean;
+  hideCompletedItems: boolean;
 }) {
   const [, setLocation] = useLocation();
   const progressPercent = checklist.totalCount > 0 
@@ -556,6 +645,7 @@ function ChecklistAccordionItem({
               </div>
             ) : (
               [...groups]
+                .filter(group => !hideCompletedChecklists || group.status !== "completed")
                 .sort((a, b) => a.name.localeCompare(b.name))
                 .map((group) => (
                   <ChecklistGroupItem
@@ -569,6 +659,7 @@ function ChecklistAccordionItem({
                     getStatusBadgeColor={getStatusBadgeColor}
                     getStatusLabel={getStatusLabel}
                     getInitials={getInitials}
+                    hideCompletedItems={hideCompletedItems}
                   />
                 ))
             )}
@@ -589,6 +680,7 @@ function ChecklistGroupItem({
   getStatusBadgeColor,
   getStatusLabel,
   getInitials,
+  hideCompletedItems,
 }: {
   group: ChecklistGroupWithItems;
   checklistId: string;
@@ -599,6 +691,7 @@ function ChecklistGroupItem({
   getStatusBadgeColor: (status: string) => string;
   getStatusLabel: (status: string) => string;
   getInitials: (name: string) => string;
+  hideCompletedItems: boolean;
 }) {
   const [, setLocation] = useLocation();
 
@@ -692,7 +785,9 @@ function ChecklistGroupItem({
           {items.length === 0 ? (
             <div className="text-xs text-muted-foreground py-1">No items</div>
           ) : (
-            items.map((item) => (
+            items
+              .filter(item => !hideCompletedItems || (item.status !== "completed" && item.status !== "na"))
+              .map((item) => (
               <div 
                 key={item.id}
                 className="flex items-center gap-2 py-0.5 group"

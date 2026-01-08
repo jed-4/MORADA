@@ -134,6 +134,7 @@ export default function ProjectChecklists() {
   // Collapsed state - track which are collapsed (default: all expanded)
   const [collapsedInstances, setCollapsedInstances] = useState<Set<string>>(new Set());
   const [expandedChecklists, setExpandedChecklists] = useState<Set<string>>(new Set());
+  const [newItemText, setNewItemText] = useState<Record<string, string>>({});
   
   const [formData, setFormData] = useState({
     templateId: "",
@@ -331,6 +332,53 @@ export default function ProjectChecklists() {
           return Array.isArray(key) && key.length > 0 && key[0] === "/api/checklist-items";
         }
       });
+    },
+  });
+
+  const createItemMutation = useMutation({
+    mutationFn: async ({ instanceId, groupId, description }: { instanceId: string; groupId: string; description: string }) => {
+      return await apiRequest(`/api/checklist-instances/${instanceId}/items`, "POST", {
+        groupId,
+        description,
+        responseType: "checkbox",
+        order: 9999,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ 
+        predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/checklist-items"
+      });
+      queryClient.invalidateQueries({ 
+        predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/checklist-instance-groups"
+      });
+      queryClient.invalidateQueries({ 
+        predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/checklist-instances"
+      });
+      toast({ title: "Item added", description: "The checklist item has been added." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to add checklist item.", variant: "destructive" });
+    },
+  });
+
+  const deleteItemMutation = useMutation({
+    mutationFn: async (itemId: string) => {
+      await apiRequest(`/api/checklist-instance-items/${itemId}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ 
+        predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/checklist-items"
+      });
+      queryClient.invalidateQueries({ 
+        predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/checklist-instance-groups"
+      });
+      queryClient.invalidateQueries({ 
+        predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/checklist-instances"
+      });
+      toast({ title: "Item deleted", description: "The checklist item has been removed." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to delete checklist item.", variant: "destructive" });
     },
   });
 
@@ -965,9 +1013,51 @@ export default function ProjectChecklists() {
                             {isExpanded && (
                               <div className="border-t border-border/40 bg-muted/30 p-3">
                                 {items.length === 0 ? (
-                                  <p className="text-xs text-muted-foreground text-center py-4">
-                                    No items in this checklist
-                                  </p>
+                                  <div className="space-y-3">
+                                    <p className="text-xs text-muted-foreground text-center py-2">
+                                      No items in this checklist
+                                    </p>
+                                    {/* Add Item Form - shown even when empty */}
+                                    <div className="flex items-center gap-2">
+                                      <Input
+                                        placeholder="Add new item..."
+                                        value={newItemText[group.id] || ""}
+                                        onChange={(e) => setNewItemText(prev => ({ ...prev, [group.id]: e.target.value }))}
+                                        onKeyDown={(e) => {
+                                          if (e.key === "Enter" && newItemText[group.id]?.trim()) {
+                                            createItemMutation.mutate({
+                                              instanceId: group.instanceId,
+                                              groupId: group.id,
+                                              description: newItemText[group.id].trim(),
+                                            });
+                                            setNewItemText(prev => ({ ...prev, [group.id]: "" }));
+                                          }
+                                        }}
+                                        className="h-8 text-sm"
+                                        data-testid={`add-item-input-empty-${group.id}`}
+                                      />
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-8 px-3"
+                                        disabled={!newItemText[group.id]?.trim() || createItemMutation.isPending}
+                                        onClick={() => {
+                                          if (newItemText[group.id]?.trim()) {
+                                            createItemMutation.mutate({
+                                              instanceId: group.instanceId,
+                                              groupId: group.id,
+                                              description: newItemText[group.id].trim(),
+                                            });
+                                            setNewItemText(prev => ({ ...prev, [group.id]: "" }));
+                                          }
+                                        }}
+                                        data-testid={`add-item-button-empty-${group.id}`}
+                                      >
+                                        <Plus className="h-3.5 w-3.5 mr-1" />
+                                        Add
+                                      </Button>
+                                    </div>
+                                  </div>
                                 ) : (
                                   <div className="space-y-1.5">
                                     <div className="flex items-center justify-between mb-2">
@@ -1144,10 +1234,63 @@ export default function ProjectChecklists() {
                                                 </div>
                                               )}
                                             </div>
+                                            
+                                            {/* Delete Item Button */}
+                                            <Button
+                                              variant="ghost"
+                                              size="icon"
+                                              className="h-5 w-5 shrink-0 text-muted-foreground hover:text-destructive self-start mt-0.5"
+                                              onClick={() => deleteItemMutation.mutate(item.id)}
+                                              disabled={deleteItemMutation.isPending}
+                                              data-testid={`delete-item-${item.id}`}
+                                            >
+                                              <Trash2 className="h-3 w-3" />
+                                            </Button>
                                           </div>
                                         </div>
                                       );
                                     })}
+                                    
+                                    {/* Add Item Form */}
+                                    <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border/40">
+                                      <Input
+                                        placeholder="Add new item..."
+                                        value={newItemText[group.id] || ""}
+                                        onChange={(e) => setNewItemText(prev => ({ ...prev, [group.id]: e.target.value }))}
+                                        onKeyDown={(e) => {
+                                          if (e.key === "Enter" && newItemText[group.id]?.trim()) {
+                                            createItemMutation.mutate({
+                                              instanceId: group.instanceId,
+                                              groupId: group.id,
+                                              description: newItemText[group.id].trim(),
+                                            });
+                                            setNewItemText(prev => ({ ...prev, [group.id]: "" }));
+                                          }
+                                        }}
+                                        className="h-8 text-sm"
+                                        data-testid={`add-item-input-${group.id}`}
+                                      />
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-8 px-3"
+                                        disabled={!newItemText[group.id]?.trim() || createItemMutation.isPending}
+                                        onClick={() => {
+                                          if (newItemText[group.id]?.trim()) {
+                                            createItemMutation.mutate({
+                                              instanceId: group.instanceId,
+                                              groupId: group.id,
+                                              description: newItemText[group.id].trim(),
+                                            });
+                                            setNewItemText(prev => ({ ...prev, [group.id]: "" }));
+                                          }
+                                        }}
+                                        data-testid={`add-item-button-${group.id}`}
+                                      >
+                                        <Plus className="h-3.5 w-3.5 mr-1" />
+                                        Add
+                                      </Button>
+                                    </div>
                                   </div>
                                 )}
                               </div>
