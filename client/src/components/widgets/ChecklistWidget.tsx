@@ -42,7 +42,23 @@ interface ChecklistGroupWithItems extends ChecklistInstanceGroup {
   totalCount?: number;
 }
 
-type StatusFilter = "all" | "active" | "in_progress" | "completed";
+type StatusFilter = "all" | "active" | "in_progress" | "completed" | "actionable";
+
+const COLLAPSED_STATE_KEY = "checklist-widget-collapsed";
+
+function getStoredCollapsedState(projectId: string): { checklists: string[]; groups: string[] } {
+  try {
+    const stored = localStorage.getItem(`${COLLAPSED_STATE_KEY}-${projectId}`);
+    if (stored) return JSON.parse(stored);
+  } catch {}
+  return { checklists: [], groups: [] };
+}
+
+function saveCollapsedState(projectId: string, checklists: string[], groups: string[]) {
+  try {
+    localStorage.setItem(`${COLLAPSED_STATE_KEY}-${projectId}`, JSON.stringify({ checklists, groups }));
+  } catch {}
+}
 
 export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
   const maxChecklists = widget.config?.maxChecklists || 10;
@@ -59,13 +75,21 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
   const [expandedChecklists, setExpandedChecklists] = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   
+  const { currentProject } = useProject();
+  
   useEffect(() => {
     setEditingTitle(widget.title);
     setConfigMaxChecklists(widget.config?.maxChecklists || 10);
     setConfigWrapText(widget.config?.wrapText || false);
   }, [widget.title, widget.config]);
-  
-  const { currentProject } = useProject();
+
+  useEffect(() => {
+    if (currentProject?.id) {
+      const stored = getStoredCollapsedState(currentProject.id);
+      setExpandedChecklists(new Set(stored.checklists));
+      setExpandedGroups(new Set(stored.groups));
+    }
+  }, [currentProject?.id]);
   const [, setLocation] = useLocation();
   
   const { data: checklists = [], isLoading } = useQuery<ChecklistInstanceWithCounts[]>({
@@ -98,11 +122,17 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
   }, [checklists]);
 
   const filteredChecklists = useMemo(() => {
-    return checklists.filter(checklist => {
-      if (statusFilter !== "all" && checklist.status !== statusFilter) return false;
-      if (assigneeFilter !== "all" && checklist.assigneeId !== assigneeFilter) return false;
-      return true;
-    });
+    return checklists
+      .filter(checklist => {
+        if (statusFilter === "actionable") {
+          if (checklist.status !== "in_progress" && checklist.status !== "active") return false;
+        } else if (statusFilter !== "all" && checklist.status !== statusFilter) {
+          return false;
+        }
+        if (assigneeFilter !== "all" && checklist.assigneeId !== assigneeFilter) return false;
+        return true;
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
   }, [checklists, statusFilter, assigneeFilter]);
 
   const displayChecklists = filteredChecklists.slice(0, maxChecklists);
@@ -145,6 +175,24 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
         next.delete(id);
       } else {
         next.add(id);
+      }
+      if (currentProject?.id) {
+        saveCollapsedState(currentProject.id, Array.from(next), Array.from(expandedGroups));
+      }
+      return next;
+    });
+  };
+
+  const handleToggleGroup = (groupId: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      if (currentProject?.id) {
+        saveCollapsedState(currentProject.id, Array.from(expandedChecklists), Array.from(next));
       }
       return next;
     });
@@ -261,11 +309,12 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap flex-1">
           <Select value={statusFilter} onValueChange={(v) => handleStatusFilterChange(v as StatusFilter)}>
-            <SelectTrigger className="h-6 text-xs w-[100px]" data-testid="checklist-status-filter">
+            <SelectTrigger className="h-6 text-xs w-[110px]" data-testid="checklist-status-filter">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="actionable">Actionable</SelectItem>
               <SelectItem value="active">Upcoming</SelectItem>
               <SelectItem value="in_progress">Action</SelectItem>
               <SelectItem value="completed">Done</SelectItem>
@@ -347,7 +396,7 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
               getStatusLabel={getStatusLabel}
               getInitials={getInitials}
               expandedGroups={expandedGroups}
-              setExpandedGroups={setExpandedGroups}
+              onToggleGroup={handleToggleGroup}
             />
           ))
         )}
@@ -366,7 +415,7 @@ function ChecklistAccordionItem({
   getStatusLabel,
   getInitials,
   expandedGroups,
-  setExpandedGroups,
+  onToggleGroup,
 }: {
   checklist: ChecklistInstanceWithCounts;
   isExpanded: boolean;
@@ -377,7 +426,7 @@ function ChecklistAccordionItem({
   getStatusLabel: (status: string) => string;
   getInitials: (name: string) => string;
   expandedGroups: Set<string>;
-  setExpandedGroups: React.Dispatch<React.SetStateAction<Set<string>>>;
+  onToggleGroup: (groupId: string) => void;
 }) {
   const [, setLocation] = useLocation();
   const progressPercent = checklist.totalCount > 0 
@@ -391,102 +440,88 @@ function ChecklistAccordionItem({
         credentials: "include",
       });
       if (!response.ok) throw new Error("Failed to fetch groups");
-      return response.json();
+      const data = await response.json();
+      return data.sort((a: ChecklistGroupWithItems, b: ChecklistGroupWithItems) => 
+        a.name.localeCompare(b.name)
+      );
     },
     enabled: isExpanded,
   });
-
-  const toggleGroup = (groupId: string) => {
-    setExpandedGroups(prev => {
-      const next = new Set(prev);
-      if (next.has(groupId)) {
-        next.delete(groupId);
-      } else {
-        next.add(groupId);
-      }
-      return next;
-    });
-  };
 
   return (
     <Collapsible open={isExpanded} onOpenChange={onToggle}>
       <div className="border rounded-md overflow-hidden">
         <CollapsibleTrigger asChild>
           <div 
-            className="flex items-center gap-2 p-2 hover-elevate cursor-pointer"
+            className="flex items-center gap-1.5 px-2 py-1.5 hover-elevate cursor-pointer"
             data-testid={`checklist-widget-item-${checklist.id}`}
           >
             {isExpanded ? (
-              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+              <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
             ) : (
-              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+              <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
             )}
             
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <TaskTooltip content={checklist.name}>
-                  <span className={`text-xs font-medium ${wrapText ? '' : 'truncate'} max-w-[200px] block`}>
-                    {checklist.name}
-                  </span>
-                </TaskTooltip>
-                <Badge 
-                  className={`${getStatusBadgeColor(checklist.status)} text-[10px] px-1.5 py-0 h-4 flex-shrink-0 no-default-hover-elevate no-default-active-elevate`}
-                >
-                  {getStatusLabel(checklist.status)}
-                </Badge>
+            <TaskTooltip content={checklist.name}>
+              <span className={`text-xs font-medium flex-1 min-w-0 ${wrapText ? '' : 'truncate'}`}>
+                {checklist.name}
+              </span>
+            </TaskTooltip>
+            
+            <Badge 
+              className={`${getStatusBadgeColor(checklist.status)} text-[9px] px-1 py-0 h-3.5 flex-shrink-0 no-default-hover-elevate no-default-active-elevate`}
+            >
+              {getStatusLabel(checklist.status)}
+            </Badge>
+            
+            {checklist.dueDate && (
+              <div className="flex items-center gap-0.5 text-[10px] text-muted-foreground flex-shrink-0">
+                <Calendar className="h-2.5 w-2.5" />
+                {format(new Date(checklist.dueDate), "MMM d")}
               </div>
-              
-              <div className="flex items-center gap-2">
-                <div className="flex-1 max-w-[120px]">
-                  <Progress value={progressPercent} className="h-1.5" />
-                </div>
-                <span className="text-[10px] text-muted-foreground flex-shrink-0">
-                  {checklist.completedCount}/{checklist.totalCount}
-                </span>
-                
-                {checklist.dueDate && (
-                  <div className="flex items-center gap-0.5 text-[10px] text-muted-foreground flex-shrink-0">
-                    <Calendar className="h-2.5 w-2.5" />
-                    {format(new Date(checklist.dueDate), "MMM d")}
-                  </div>
-                )}
-                
-                {checklist.assigneeName && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Avatar className="h-4 w-4 flex-shrink-0">
-                        <AvatarFallback className="text-[8px] bg-primary/10 text-primary">
-                          {getInitials(checklist.assigneeName)}
-                        </AvatarFallback>
-                      </Avatar>
-                    </TooltipTrigger>
-                    <TooltipContent side="top">
-                      <p className="text-xs">{checklist.assigneeName}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-              </div>
+            )}
+            
+            {checklist.assigneeName && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Avatar className="h-3.5 w-3.5 flex-shrink-0">
+                    <AvatarFallback className="text-[7px] bg-primary/10 text-primary">
+                      {getInitials(checklist.assigneeName)}
+                    </AvatarFallback>
+                  </Avatar>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  <p className="text-xs">{checklist.assigneeName}</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+            
+            <div className="flex items-center gap-1 flex-shrink-0">
+              <Progress value={progressPercent} className="h-1 w-12" />
+              <span className="text-[9px] text-muted-foreground w-7 text-right">
+                {checklist.completedCount}/{checklist.totalCount}
+              </span>
             </div>
 
             <Button
               size="sm"
               variant="ghost"
-              className="h-5 w-5 p-0 flex-shrink-0"
+              className="h-4 w-4 p-0 flex-shrink-0"
               onClick={(e) => {
                 e.stopPropagation();
                 setLocation(`/projects/${projectId}/checklists/${checklist.id}`);
               }}
               data-testid={`checklist-open-${checklist.id}`}
             >
-              <ExternalLink className="h-3 w-3" />
+              <ExternalLink className="h-2.5 w-2.5" />
             </Button>
           </div>
         </CollapsibleTrigger>
         
         <CollapsibleContent>
-          <div className="border-t bg-muted/30 px-2 py-1.5 space-y-1">
+          <div className="border-t bg-muted/30 px-2 py-1 space-y-0.5">
             {groups.length === 0 ? (
-              <div className="text-xs text-muted-foreground text-center py-2">
+              <div className="text-[10px] text-muted-foreground text-center py-1">
                 No checklists in this group
               </div>
             ) : (
@@ -498,7 +533,7 @@ function ChecklistAccordionItem({
                   projectId={projectId}
                   wrapText={wrapText}
                   isExpanded={expandedGroups.has(group.id)}
-                  onToggle={() => toggleGroup(group.id)}
+                  onToggle={() => onToggleGroup(group.id)}
                   getStatusBadgeColor={getStatusBadgeColor}
                   getStatusLabel={getStatusLabel}
                   getInitials={getInitials}
@@ -571,23 +606,23 @@ function ChecklistGroupItem({
     <Collapsible open={isExpanded} onOpenChange={onToggle}>
       <CollapsibleTrigger asChild>
         <div 
-          className="flex items-center gap-1.5 py-1 px-1 rounded hover-elevate cursor-pointer"
+          className="flex items-center gap-1 py-0.5 px-1 rounded hover-elevate cursor-pointer"
           data-testid={`checklist-group-${group.id}`}
         >
           {isExpanded ? (
-            <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+            <ChevronDown className="h-2.5 w-2.5 text-muted-foreground flex-shrink-0" />
           ) : (
-            <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+            <ChevronRight className="h-2.5 w-2.5 text-muted-foreground flex-shrink-0" />
           )}
           
           <TaskTooltip content={group.name}>
-            <span className={`text-[11px] font-medium flex-1 ${wrapText ? '' : 'truncate'}`}>
+            <span className={`text-[10px] flex-1 min-w-0 ${wrapText ? '' : 'truncate'}`}>
               {group.name}
             </span>
           </TaskTooltip>
 
           <Badge 
-            className={`${getStatusBadgeColor(group.status)} text-[9px] px-1 py-0 h-3.5 flex-shrink-0 no-default-hover-elevate no-default-active-elevate`}
+            className={`${getStatusBadgeColor(group.status)} text-[8px] px-0.5 py-0 h-3 flex-shrink-0 no-default-hover-elevate no-default-active-elevate`}
           >
             {getStatusLabel(group.status)}
           </Badge>
@@ -595,8 +630,8 @@ function ChecklistGroupItem({
           {group.assigneeName && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Avatar className="h-3.5 w-3.5 flex-shrink-0">
-                  <AvatarFallback className="text-[7px] bg-primary/10 text-primary">
+                <Avatar className="h-3 w-3 flex-shrink-0">
+                  <AvatarFallback className="text-[6px] bg-primary/10 text-primary">
                     {getInitials(group.assigneeName)}
                   </AvatarFallback>
                 </Avatar>
@@ -605,6 +640,15 @@ function ChecklistGroupItem({
                 <p className="text-xs">{group.assigneeName}</p>
               </TooltipContent>
             </Tooltip>
+          )}
+          
+          {isExpanded && totalCount > 0 && (
+            <div className="flex items-center gap-0.5 flex-shrink-0">
+              <Progress value={progressPercent} className="h-0.5 w-8" />
+              <span className="text-[8px] text-muted-foreground">
+                {completedCount}/{totalCount}
+              </span>
+            </div>
           )}
         </div>
       </CollapsibleTrigger>
