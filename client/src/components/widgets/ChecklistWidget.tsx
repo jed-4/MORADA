@@ -444,7 +444,7 @@ function ChecklistAccordionItem({
       <div className="border rounded-md overflow-hidden">
         <CollapsibleTrigger asChild>
           <div 
-            className="flex items-center gap-2 py-1.5 px-2 hover-elevate cursor-pointer"
+            className="flex items-center gap-2 py-1.5 px-2 hover-elevate cursor-pointer pt-[0px] pb-[0px]"
             data-testid={`checklist-widget-item-${checklist.id}`}
           >
             {isExpanded ? (
@@ -607,7 +607,7 @@ function ChecklistGroupItem({
           )}
           
           <TaskTooltip content={group.name}>
-            <span className={`text-[10px] flex-1 min-w-0 ${wrapText ? '' : 'truncate'}`}>
+            <span className={`text-[10px] flex-1 min-w-0 pt-[1px] pb-[1px] ${wrapText ? '' : 'truncate'}`}>
               {group.name}
             </span>
           </TaskTooltip>
