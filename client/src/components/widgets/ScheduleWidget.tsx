@@ -631,7 +631,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                   className="absolute left-0 right-0 border-b border-border/50"
                   style={{ top: `${hour * HOUR_HEIGHT}px`, height: `${HOUR_HEIGHT}px` }}
                 >
-                  <span className="absolute left-2 top-0 text-[10px] text-muted-foreground -translate-y-1/2">
+                  <span className="absolute left-2 top-1 text-[10px] text-muted-foreground">
                     {format(new Date().setHours(hour, 0), "h a")}
                   </span>
                 </div>
@@ -825,7 +825,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                     className="absolute left-0 right-0 border-b border-border/30"
                     style={{ top: `${hour * HOUR_HEIGHT}px`, height: `${HOUR_HEIGHT}px` }}
                   >
-                    <span className="absolute left-1 top-0 text-[9px] text-muted-foreground -translate-y-1/2">
+                    <span className="absolute left-1 top-1 text-[9px] text-muted-foreground">
                       {format(new Date().setHours(hour, 0), "ha")}
                     </span>
                   </div>

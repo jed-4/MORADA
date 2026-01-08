@@ -618,7 +618,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
                   className="absolute left-0 right-0"
                   style={{ top: `${(hour - 6) * HOUR_HEIGHT}px`, height: `${HOUR_HEIGHT}px` }}
                 >
-                  <span className="absolute left-1 top-0 text-[9px] text-muted-foreground -translate-y-1/2">
+                  <span className="absolute left-1 top-1 text-[9px] text-muted-foreground">
                     {format(new Date().setHours(hour, 0), "ha")}
                   </span>
                 </div>
