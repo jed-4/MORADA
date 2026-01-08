@@ -97,6 +97,16 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { ChevronsUpDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 type TabType = "all" | "upcoming" | "action" | "done";
 
@@ -119,6 +129,7 @@ export default function ProjectChecklists() {
   const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
   const [openLinkPopover, setOpenLinkPopover] = useState<string | null>(null);
   const [hideCompleted, setHideCompleted] = useState(false);
+  const [templatePopoverOpen, setTemplatePopoverOpen] = useState(false);
   
   // Collapsed state - track which are collapsed (default: all expanded)
   const [collapsedInstances, setCollapsedInstances] = useState<Set<string>>(new Set());
@@ -1167,18 +1178,53 @@ export default function ProjectChecklists() {
             {templates.length > 0 && (
               <div className="space-y-2">
                 <Label>Start from Template (optional)</Label>
-                <Select value={formData.templateId} onValueChange={handleTemplateSelect}>
-                  <SelectTrigger data-testid="select-template">
-                    <SelectValue placeholder="Select a template..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {templates.map((template) => (
-                      <SelectItem key={template.id} value={template.id}>
-                        {template.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Popover open={templatePopoverOpen} onOpenChange={setTemplatePopoverOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={templatePopoverOpen}
+                      className="w-full justify-between font-normal"
+                      data-testid="select-template"
+                    >
+                      {formData.templateId
+                        ? templates.find((t) => t.id === formData.templateId)?.name
+                        : "Select a template..."}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search templates..." />
+                      <CommandList>
+                        <CommandEmpty>No template found.</CommandEmpty>
+                        <CommandGroup>
+                          {[...templates]
+                            .sort((a, b) => a.name.localeCompare(b.name))
+                            .map((template) => (
+                              <CommandItem
+                                key={template.id}
+                                value={template.name}
+                                onSelect={() => {
+                                  handleTemplateSelect(template.id);
+                                  setTemplatePopoverOpen(false);
+                                }}
+                                data-testid={`template-option-${template.id}`}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    formData.templateId === template.id ? "opacity-100" : "opacity-0"
+                                  )}
+                                />
+                                {template.name}
+                              </CommandItem>
+                            ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
               </div>
             )}
 
