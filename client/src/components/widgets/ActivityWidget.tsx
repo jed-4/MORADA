@@ -259,11 +259,67 @@ export default function ActivityWidget({ widget, onUpdate, isConfiguring, onClos
 
   if (filteredActivities.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-center py-8">
-        <Clock className="h-8 w-8 text-muted-foreground mb-2" />
-        <p className="text-sm text-muted-foreground">
-          No recent activity on this project
-        </p>
+      <div className="flex flex-col h-full">
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-sm font-semibold">0 recent activities</div>
+          {!isAddingNote && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 px-2 text-xs"
+              onClick={() => setIsAddingNote(true)}
+              data-testid="button-add-activity-note-empty"
+            >
+              <Plus className="h-3 w-3 mr-1" />
+              Add Note
+            </Button>
+          )}
+        </div>
+
+        {isAddingNote && (
+          <div className="mb-3 p-2 border rounded-md bg-muted/30 space-y-2">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <MessageSquare className="h-3 w-3" />
+              <span>Add activity note</span>
+            </div>
+            <Textarea
+              value={newNoteText}
+              onChange={(e) => setNewNoteText(e.target.value)}
+              placeholder="What's the update?"
+              className="min-h-[60px] text-sm resize-none"
+              data-testid="input-activity-note-empty"
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2 text-xs"
+                onClick={() => {
+                  setIsAddingNote(false);
+                  setNewNoteText("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                className="h-6 px-2 text-xs"
+                disabled={!newNoteText.trim() || createActivityMutation.isPending}
+                onClick={() => createActivityMutation.mutate(newNoteText.trim())}
+                data-testid="button-save-activity-note-empty"
+              >
+                {createActivityMutation.isPending ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-col items-center justify-center flex-1 text-center py-8">
+          <Clock className="h-8 w-8 text-muted-foreground mb-2" />
+          <p className="text-sm text-muted-foreground">
+            No recent activity on this project
+          </p>
+        </div>
       </div>
     );
   }
