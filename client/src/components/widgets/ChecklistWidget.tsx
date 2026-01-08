@@ -643,7 +643,7 @@ function ChecklistGroupItem({
           {items.length === 0 ? (
             <div className="text-xs text-muted-foreground py-1">No items</div>
           ) : (
-            items.slice(0, 10).map((item) => (
+            items.map((item) => (
               <div 
                 key={item.id}
                 className="flex items-center gap-2 py-0.5 group"
@@ -673,11 +673,6 @@ function ChecklistGroupItem({
                 </TaskTooltip>
               </div>
             ))
-          )}
-          {items.length > 10 && (
-            <div className="text-xs text-muted-foreground pt-1">
-              +{items.length - 10} more items
-            </div>
           )}
         </div>
       </CollapsibleContent>
