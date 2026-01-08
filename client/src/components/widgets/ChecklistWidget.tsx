@@ -21,7 +21,9 @@ import {
   Circle,
   Calendar,
   User,
-  ExternalLink
+  ExternalLink,
+  CheckCircle2,
+  EyeOff
 } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -65,6 +67,7 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
   const wrapText = widget.config?.wrapText || false;
   const savedStatusFilter = (widget.config?.statusFilter as StatusFilter) || "all";
   const savedAssigneeFilter = widget.config?.assigneeFilter || "all";
+  const savedHideCompleted = widget.config?.hideCompleted || false;
   
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const [configMaxChecklists, setConfigMaxChecklists] = useState(maxChecklists);
@@ -72,6 +75,7 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
   
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(savedStatusFilter);
   const [assigneeFilter, setAssigneeFilter] = useState<string>(savedAssigneeFilter);
+  const [hideCompleted, setHideCompleted] = useState<boolean>(savedHideCompleted);
   const [expandedChecklists, setExpandedChecklists] = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   
@@ -129,10 +133,12 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
         } else if (statusFilter !== "all" && checklist.status !== statusFilter) {
           return false;
         }
+        // Hide completed filter
+        if (hideCompleted && checklist.status === "completed") return false;
         if (assigneeFilter !== "all" && checklist.assigneeId !== assigneeFilter) return false;
         return true;
       });
-  }, [checklists, statusFilter, assigneeFilter]);
+  }, [checklists, statusFilter, assigneeFilter, hideCompleted]);
 
   const displayChecklists = filteredChecklists.slice(0, maxChecklists);
 
@@ -216,6 +222,7 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
             wrapText: configWrapText,
             statusFilter: statusFilter,
             assigneeFilter: assigneeFilter,
+            hideCompleted: hideCompleted,
           }
         });
       }
@@ -293,6 +300,14 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
             onCheckedChange={setConfigWrapText}
           />
         </div>
+
+        <div className="flex items-center justify-between">
+          <Label className="text-xs">Hide Completed</Label>
+          <Switch 
+            checked={hideCompleted}
+            onCheckedChange={setHideCompleted}
+          />
+        </div>
         
         <div className="flex justify-end gap-2 pt-2">
           <Button size="sm" variant="outline" onClick={handleCancelConfig} className="h-6 px-2 text-xs">
@@ -326,6 +341,37 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
   return (
     <div className="space-y-1 relative">
       <div className="absolute -top-7 right-6 flex items-center gap-0.5">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button 
+              size="icon" 
+              variant="ghost"
+              className={`h-5 w-5 ${hideCompleted ? 'text-[#bba7db]' : ''}`}
+              onClick={() => {
+                setHideCompleted(!hideCompleted);
+                if (onUpdate) {
+                  onUpdate({
+                    ...widget,
+                    config: {
+                      ...widget.config,
+                      hideCompleted: !hideCompleted,
+                    }
+                  });
+                }
+              }}
+              data-testid="checklist-widget-toggle-hide-completed"
+            >
+              {hideCompleted ? (
+                <EyeOff className="h-3 w-3" />
+              ) : (
+                <CheckCircle2 className="h-3 w-3" />
+              )}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            <p className="text-xs">{hideCompleted ? "Show completed" : "Hide completed"}</p>
+          </TooltipContent>
+        </Tooltip>
         <Button 
           size="icon" 
           variant="ghost"

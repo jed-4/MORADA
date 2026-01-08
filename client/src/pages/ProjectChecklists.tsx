@@ -118,6 +118,7 @@ export default function ProjectChecklists() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
   const [openLinkPopover, setOpenLinkPopover] = useState<string | null>(null);
+  const [hideCompleted, setHideCompleted] = useState(false);
   
   // Collapsed state - track which are collapsed (default: all expanded)
   const [collapsedInstances, setCollapsedInstances] = useState<Set<string>>(new Set());
@@ -397,12 +398,15 @@ export default function ProjectChecklists() {
       if (activeTab === "action" && group.status !== "in_progress") return false;
       if (activeTab === "done" && group.status !== "completed") return false;
       
+      // Hide completed filter
+      if (hideCompleted && group.status === "completed") return false;
+      
       if (searchTerm && !group.name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
       if (assigneeFilter !== "all" && group.assigneeId !== assigneeFilter) return false;
       
       return true;
     });
-  }, [allGroups, activeTab, searchTerm, assigneeFilter]);
+  }, [allGroups, activeTab, searchTerm, assigneeFilter, hideCompleted]);
 
   const groupedByInstance = useMemo(() => {
     // Build lookup of groups by instance ID
@@ -422,9 +426,9 @@ export default function ProjectChecklists() {
       return { instance, groups };
     });
     
-    // When filtering by tab/search/assignee, only show instances that have matching groups
+    // When filtering by tab/search/assignee/hideCompleted, only show instances that have matching groups
     // But on "all" tab with no filters, show all instances including empty ones
-    const hasFilters = activeTab !== "all" || searchTerm || assigneeFilter !== "all";
+    const hasFilters = activeTab !== "all" || searchTerm || assigneeFilter !== "all" || hideCompleted;
     const filtered = hasFilters 
       ? result.filter(({ groups }) => groups.length > 0)
       : result;
@@ -607,6 +611,18 @@ export default function ProjectChecklists() {
               ))}
             </SelectContent>
           </Select>
+          <button
+            onClick={() => setHideCompleted(!hideCompleted)}
+            className={`h-6 px-2 text-xs border rounded-md flex items-center gap-1 ${
+              hideCompleted 
+                ? "bg-[#bba7db] text-white border-[#bba7db]/20" 
+                : "hover-elevate"
+            } active-elevate-2`}
+            data-testid="toggle-hide-completed"
+          >
+            <CheckCircle2 className="h-3 w-3" />
+            {hideCompleted ? "Show Done" : "Hide Done"}
+          </button>
         </div>
       </div>
 
