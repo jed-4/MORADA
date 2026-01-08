@@ -324,27 +324,29 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
   };
 
   return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-end gap-1">
+    <div className="space-y-1 relative">
+      <div className="absolute -top-7 right-6 flex items-center gap-0.5">
         <Button 
           size="icon" 
           variant="ghost"
+          className="h-5 w-5"
           onClick={toggleAll}
           data-testid="checklist-widget-toggle-all"
         >
           {allExpanded ? (
-            <ChevronDown className="h-4 w-4" />
+            <ChevronDown className="h-3 w-3" />
           ) : (
-            <ChevronRight className="h-4 w-4" />
+            <ChevronRight className="h-3 w-3" />
           )}
         </Button>
         <Button 
           size="icon" 
           variant="ghost"
+          className="h-5 w-5"
           onClick={() => setLocation(`/projects/${currentProject.id}/checklists`)}
           data-testid="checklist-widget-view-all"
         >
-          <ExternalLink className="h-4 w-4" />
+          <ExternalLink className="h-3 w-3" />
         </Button>
       </div>
       
