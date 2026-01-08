@@ -656,12 +656,12 @@ function ChecklistGroupItem({
       <CollapsibleContent>
         <div className="ml-4 pl-2 border-l border-muted space-y-0.5 py-1">
           {items.length === 0 ? (
-            <div className="text-[10px] text-muted-foreground py-1">No items</div>
+            <div className="text-xs text-muted-foreground py-1">No items</div>
           ) : (
             items.slice(0, 10).map((item) => (
               <div 
                 key={item.id}
-                className="flex items-center gap-1.5 py-0.5 group"
+                className="flex items-center gap-2 py-0.5 group"
                 data-testid={`checklist-item-${item.id}`}
               >
                 <button
@@ -671,16 +671,16 @@ function ChecklistGroupItem({
                   data-testid={`checklist-item-toggle-${item.id}`}
                 >
                   {item.status === "completed" ? (
-                    <Check className="h-3 w-3 text-green-600" />
+                    <Check className="h-3.5 w-3.5 text-green-600" />
                   ) : item.status === "na" ? (
-                    <X className="h-3 w-3 text-gray-400" />
+                    <X className="h-3.5 w-3.5 text-gray-400" />
                   ) : (
-                    <Circle className="h-3 w-3 text-muted-foreground group-hover:text-primary" />
+                    <Circle className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary" />
                   )}
                 </button>
                 
                 <TaskTooltip content={item.description}>
-                  <span className={`text-[10px] flex-1 ${wrapText ? '' : 'truncate'} ${
+                  <span className={`text-xs flex-1 ${wrapText ? '' : 'truncate'} ${
                     item.status === "completed" ? "line-through text-muted-foreground" : ""
                   }`}>
                     {item.description}
@@ -690,7 +690,7 @@ function ChecklistGroupItem({
             ))
           )}
           {items.length > 10 && (
-            <div className="text-[10px] text-muted-foreground pt-1">
+            <div className="text-xs text-muted-foreground pt-1">
               +{items.length - 10} more items
             </div>
           )}
