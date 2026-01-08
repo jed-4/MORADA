@@ -137,36 +137,6 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
 
   const displayChecklists = filteredChecklists.slice(0, maxChecklists);
 
-  const saveFilters = (newStatus: StatusFilter, newAssignee: string) => {
-    if (onUpdate) {
-      onUpdate({
-        ...widget,
-        config: {
-          ...widget.config,
-          statusFilter: newStatus,
-          assigneeFilter: newAssignee,
-        }
-      });
-    }
-  };
-
-  const handleStatusFilterChange = (value: StatusFilter) => {
-    setStatusFilter(value);
-    saveFilters(value, assigneeFilter);
-  };
-
-  const handleAssigneeFilterChange = (value: string) => {
-    setAssigneeFilter(value);
-    saveFilters(statusFilter, value);
-  };
-
-  const clearFilters = () => {
-    setStatusFilter("all");
-    setAssigneeFilter("all");
-    saveFilters("all", "all");
-  };
-
-  const hasActiveFilters = statusFilter !== "all" || assigneeFilter !== "all";
 
   const toggleChecklist = (id: string) => {
     setExpandedChecklists(prev => {
@@ -245,6 +215,8 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
             ...widget.config, 
             maxChecklists: configMaxChecklists,
             wrapText: configWrapText,
+            statusFilter: statusFilter,
+            assigneeFilter: assigneeFilter,
           }
         });
       }
@@ -270,6 +242,37 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
             className="h-7 text-xs"
             placeholder="Widget title"
           />
+        </div>
+
+        <div className="space-y-2">
+          <Label className="text-xs">Status Filter</Label>
+          <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
+            <SelectTrigger className="h-7 text-xs" data-testid="checklist-config-status-filter">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="actionable">Actionable</SelectItem>
+              <SelectItem value="active">Upcoming</SelectItem>
+              <SelectItem value="in_progress">Action</SelectItem>
+              <SelectItem value="completed">Done</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label className="text-xs">Assignee Filter</Label>
+          <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
+            <SelectTrigger className="h-7 text-xs" data-testid="checklist-config-assignee-filter">
+              <SelectValue placeholder="Assignee" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Assignees</SelectItem>
+              {uniqueAssignees.map(a => (
+                <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         
         <div className="space-y-2">
@@ -305,63 +308,21 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
   }
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-2 flex-wrap flex-1">
-          <Select value={statusFilter} onValueChange={(v) => handleStatusFilterChange(v as StatusFilter)}>
-            <SelectTrigger className="h-6 text-xs w-[110px]" data-testid="checklist-status-filter">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="actionable">Actionable</SelectItem>
-              <SelectItem value="active">Upcoming</SelectItem>
-              <SelectItem value="in_progress">Action</SelectItem>
-              <SelectItem value="completed">Done</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Select value={assigneeFilter} onValueChange={handleAssigneeFilterChange}>
-            <SelectTrigger className="h-6 text-xs w-[110px]" data-testid="checklist-assignee-filter">
-              <SelectValue placeholder="Assignee" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Assignees</SelectItem>
-              {uniqueAssignees.map(a => (
-                <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {hasActiveFilters && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-6 px-2 text-xs"
-              onClick={clearFilters}
-              data-testid="checklist-clear-filters"
-            >
-              <X className="h-3 w-3 mr-1" />
-              Clear
-            </Button>
-          )}
-        </div>
-        
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">
-            {filteredChecklists.length} of {checklists.length}
-          </span>
-          <Button 
-            size="sm" 
-            variant="ghost"
-            className="h-6 px-2 text-xs"
-            onClick={() => setLocation(`/projects/${currentProject.id}/checklists`)}
-            data-testid="checklist-widget-view-all"
-          >
-            <ExternalLink className="h-3 w-3 mr-1" />
-            View All
-          </Button>
-        </div>
+    <div className="space-y-1">
+      <div className="flex items-center justify-end gap-2">
+        <span className="text-xs text-muted-foreground">
+          {filteredChecklists.length} of {checklists.length}
+        </span>
+        <Button 
+          size="sm" 
+          variant="ghost"
+          className="h-6 px-2 text-xs"
+          onClick={() => setLocation(`/projects/${currentProject.id}/checklists`)}
+          data-testid="checklist-widget-view-all"
+        >
+          <ExternalLink className="h-3 w-3 mr-1" />
+          View All
+        </Button>
       </div>
       
       <div className="space-y-1">
@@ -381,7 +342,7 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
           </div>
         ) : displayChecklists.length === 0 ? (
           <div className="text-center py-4 text-xs text-muted-foreground">
-            {hasActiveFilters ? "No checklists match filters" : "No checklists yet"}
+            {(statusFilter !== "all" || assigneeFilter !== "all") ? "No checklists match filters" : "No checklists yet"}
           </div>
         ) : (
           displayChecklists.map((checklist) => (
@@ -453,30 +414,30 @@ function ChecklistAccordionItem({
       <div className="border rounded-md overflow-hidden">
         <CollapsibleTrigger asChild>
           <div 
-            className="flex items-center gap-1 px-1.5 py-1 hover-elevate cursor-pointer"
+            className="flex items-center gap-2 p-2 hover-elevate cursor-pointer"
             data-testid={`checklist-widget-item-${checklist.id}`}
           >
             {isExpanded ? (
-              <ChevronDown className="h-2.5 w-2.5 text-muted-foreground flex-shrink-0" />
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
             ) : (
-              <ChevronRight className="h-2.5 w-2.5 text-muted-foreground flex-shrink-0" />
+              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
             )}
             
             <TaskTooltip content={checklist.name}>
-              <span className={`text-[11px] font-medium flex-1 min-w-0 ${wrapText ? '' : 'truncate'}`}>
+              <span className={`text-xs font-medium flex-1 min-w-0 ${wrapText ? '' : 'truncate'}`}>
                 {checklist.name}
               </span>
             </TaskTooltip>
             
             <Badge 
-              className={`${getStatusBadgeColor(checklist.status)} text-[8px] px-0.5 py-0 h-3 flex-shrink-0 no-default-hover-elevate no-default-active-elevate`}
+              className={`${getStatusBadgeColor(checklist.status)} text-[10px] px-1.5 py-0 h-4 flex-shrink-0 no-default-hover-elevate no-default-active-elevate`}
             >
               {getStatusLabel(checklist.status)}
             </Badge>
             
             {checklist.dueDate && (
-              <div className="flex items-center gap-0.5 text-[9px] text-muted-foreground flex-shrink-0">
-                <Calendar className="h-2 w-2" />
+              <div className="flex items-center gap-0.5 text-[10px] text-muted-foreground flex-shrink-0">
+                <Calendar className="h-2.5 w-2.5" />
                 {format(new Date(checklist.dueDate), "MMM d")}
               </div>
             )}
@@ -484,8 +445,8 @@ function ChecklistAccordionItem({
             {checklist.assigneeName && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Avatar className="h-3 w-3 flex-shrink-0">
-                    <AvatarFallback className="text-[6px] bg-primary/10 text-primary">
+                  <Avatar className="h-4 w-4 flex-shrink-0">
+                    <AvatarFallback className="text-[8px] bg-primary/10 text-primary">
                       {getInitials(checklist.assigneeName)}
                     </AvatarFallback>
                   </Avatar>
@@ -496,9 +457,9 @@ function ChecklistAccordionItem({
               </Tooltip>
             )}
             
-            <div className="flex items-center gap-0.5 flex-shrink-0">
-              <Progress value={progressPercent} className="h-1 w-10" />
-              <span className="text-[8px] text-muted-foreground w-6 text-right">
+            <div className="flex items-center gap-1 flex-shrink-0">
+              <Progress value={progressPercent} className="h-1.5 w-12" />
+              <span className="text-[10px] text-muted-foreground">
                 {checklist.completedCount}/{checklist.totalCount}
               </span>
             </div>
@@ -506,14 +467,14 @@ function ChecklistAccordionItem({
             <Button
               size="sm"
               variant="ghost"
-              className="h-3.5 w-3.5 p-0 flex-shrink-0"
+              className="h-5 w-5 p-0 flex-shrink-0"
               onClick={(e) => {
                 e.stopPropagation();
                 setLocation(`/projects/${projectId}/checklists/${checklist.id}`);
               }}
               data-testid={`checklist-open-${checklist.id}`}
             >
-              <ExternalLink className="h-2 w-2" />
+              <ExternalLink className="h-3 w-3" />
             </Button>
           </div>
         </CollapsibleTrigger>
