@@ -137,7 +137,8 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
         if (hideCompleted && checklist.status === "completed") return false;
         if (assigneeFilter !== "all" && checklist.assigneeId !== assigneeFilter) return false;
         return true;
-      });
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
   }, [checklists, statusFilter, assigneeFilter, hideCompleted]);
 
   const displayChecklists = filteredChecklists.slice(0, maxChecklists);
@@ -554,20 +555,22 @@ function ChecklistAccordionItem({
                 No checklists in this group
               </div>
             ) : (
-              groups.map((group) => (
-                <ChecklistGroupItem
-                  key={group.id}
-                  group={group}
-                  checklistId={checklist.id}
-                  projectId={projectId}
-                  wrapText={wrapText}
-                  isExpanded={expandedGroups.has(group.id)}
-                  onToggle={() => onToggleGroup(group.id)}
-                  getStatusBadgeColor={getStatusBadgeColor}
-                  getStatusLabel={getStatusLabel}
-                  getInitials={getInitials}
-                />
-              ))
+              [...groups]
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map((group) => (
+                  <ChecklistGroupItem
+                    key={group.id}
+                    group={group}
+                    checklistId={checklist.id}
+                    projectId={projectId}
+                    wrapText={wrapText}
+                    isExpanded={expandedGroups.has(group.id)}
+                    onToggle={() => onToggleGroup(group.id)}
+                    getStatusBadgeColor={getStatusBadgeColor}
+                    getStatusLabel={getStatusLabel}
+                    getInitials={getInitials}
+                  />
+                ))
             )}
           </div>
         </CollapsibleContent>
