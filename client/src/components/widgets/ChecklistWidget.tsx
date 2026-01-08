@@ -560,7 +560,9 @@ function ChecklistGroupItem({
         credentials: "include",
       });
       if (!response.ok) throw new Error("Failed to fetch items");
-      return response.json();
+      const data = await response.json();
+      // Sort by order to maintain template order
+      return data.sort((a: ChecklistInstanceItem, b: ChecklistInstanceItem) => (a.order ?? 0) - (b.order ?? 0));
     },
     enabled: isExpanded,
   });

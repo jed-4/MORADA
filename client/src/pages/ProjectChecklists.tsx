@@ -190,6 +190,10 @@ export default function ProjectChecklists() {
           });
         }
       }));
+      // Sort items by order to maintain template order
+      Object.keys(itemsMap).forEach(groupId => {
+        itemsMap[groupId].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      });
       return itemsMap;
     },
     enabled: expandedChecklistIds.length > 0 && allGroups.length > 0,
