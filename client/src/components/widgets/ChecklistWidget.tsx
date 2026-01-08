@@ -307,21 +307,51 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
     );
   }
 
+  const allExpanded = displayChecklists.length > 0 && displayChecklists.every(c => expandedChecklists.has(c.id));
+  
+  const toggleAll = () => {
+    if (allExpanded) {
+      setExpandedChecklists(new Set());
+      if (currentProject?.id) {
+        saveCollapsedState(currentProject.id, [], Array.from(expandedGroups));
+      }
+    } else {
+      const allIds = new Set(displayChecklists.map(c => c.id));
+      setExpandedChecklists(allIds);
+      if (currentProject?.id) {
+        saveCollapsedState(currentProject.id, Array.from(allIds), Array.from(expandedGroups));
+      }
+    }
+  };
+
   return (
     <div className="space-y-1">
-      <div className="flex items-center justify-end gap-2">
-        <span className="text-xs text-muted-foreground">
-          {filteredChecklists.length} of {checklists.length}
-        </span>
+      <div className="flex items-center justify-end gap-1">
         <Button 
           size="sm" 
           variant="ghost"
-          className="h-6 px-2 text-xs"
+          onClick={toggleAll}
+          data-testid="checklist-widget-toggle-all"
+        >
+          {allExpanded ? (
+            <>
+              <ChevronDown className="h-3 w-3 mr-1" />
+              Collapse
+            </>
+          ) : (
+            <>
+              <ChevronRight className="h-3 w-3 mr-1" />
+              Expand
+            </>
+          )}
+        </Button>
+        <Button 
+          size="icon" 
+          variant="ghost"
           onClick={() => setLocation(`/projects/${currentProject.id}/checklists`)}
           data-testid="checklist-widget-view-all"
         >
-          <ExternalLink className="h-3 w-3 mr-1" />
-          View All
+          <ExternalLink className="h-4 w-4" />
         </Button>
       </div>
       
@@ -414,7 +444,7 @@ function ChecklistAccordionItem({
       <div className="border rounded-md overflow-hidden">
         <CollapsibleTrigger asChild>
           <div 
-            className="flex items-center gap-2 p-2 hover-elevate cursor-pointer"
+            className="flex items-center gap-2 py-1.5 px-2 hover-elevate cursor-pointer"
             data-testid={`checklist-widget-item-${checklist.id}`}
           >
             {isExpanded ? (
