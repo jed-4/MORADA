@@ -256,10 +256,14 @@ export default function ProjectChecklists() {
       return result;
     },
     onSuccess: async () => {
-      // First invalidate and wait for instances to refetch
-      await queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances", { projectId }] });
-      // Then invalidate groups - now the instances list will be updated
-      await queryClient.invalidateQueries({ queryKey: ["/api/checklist-instance-groups", { projectId }] });
+      // Invalidate all checklist instances queries (covers page and widget variations)
+      await queryClient.invalidateQueries({ 
+        predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/checklist-instances"
+      });
+      // Then invalidate groups
+      await queryClient.invalidateQueries({ 
+        predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/checklist-instance-groups"
+      });
       toast({ title: "Checklist Group created", description: "The checklist group has been created successfully." });
       setShowAddDialog(false);
       setFormData({ templateId: "", name: "", description: "", priority: "medium", dueDate: "", assigneeId: "", selectedGroupIds: [] });
@@ -274,8 +278,13 @@ export default function ProjectChecklists() {
       await apiRequest(`/api/checklist-instances/${id}`, "DELETE");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances", { projectId }] });
-      queryClient.invalidateQueries({ queryKey: ["/api/checklist-instance-groups", { projectId }] });
+      // Invalidate all checklist instances queries (covers page and widget variations)
+      queryClient.invalidateQueries({ 
+        predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/checklist-instances"
+      });
+      queryClient.invalidateQueries({ 
+        predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/checklist-instance-groups"
+      });
       toast({ title: "Checklist Group deleted", description: "The checklist group has been deleted." });
       setShowDeleteConfirm(null);
     },

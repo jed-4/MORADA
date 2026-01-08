@@ -69,7 +69,10 @@ export default function ProjectActivity() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/activities", "project", currentProject?.id] });
+      // Invalidate all activities queries (covers page and widget variations)
+      queryClient.invalidateQueries({ 
+        predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/activities"
+      });
       setNewActivityDescription("");
       setIsAddDialogOpen(false);
       toast({
@@ -91,7 +94,10 @@ export default function ProjectActivity() {
       return apiRequest(`/api/activities/${id}`, "PATCH", { pinned });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/activities", "project", currentProject?.id] });
+      // Invalidate all activities queries (covers page and widget variations)
+      queryClient.invalidateQueries({ 
+        predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/activities"
+      });
     },
     onError: (error: any) => {
       toast({

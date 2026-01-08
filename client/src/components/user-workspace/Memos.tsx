@@ -103,7 +103,12 @@ export default function Memos({ user, isOwnPage }: UserNotesProps) {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/users", user.id, "notes"] });
+      // Invalidate all notes and memos queries (covers page and widget variations)
+      queryClient.invalidateQueries({ 
+        predicate: (query) => Array.isArray(query.queryKey) && 
+          (query.queryKey[0] === "/api/notes" || query.queryKey[0] === "/api/memos" ||
+           (query.queryKey[0] === "/api/users" && query.queryKey[2] === "notes"))
+      });
       toast({ title: "Memo created successfully" });
       handleCloseDialog();
     },
@@ -121,7 +126,12 @@ export default function Memos({ user, isOwnPage }: UserNotesProps) {
       return await apiRequest(`/api/notes/${id}`, "PATCH", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/users", user.id, "notes"] });
+      // Invalidate all notes and memos queries (covers page and widget variations)
+      queryClient.invalidateQueries({ 
+        predicate: (query) => Array.isArray(query.queryKey) && 
+          (query.queryKey[0] === "/api/notes" || query.queryKey[0] === "/api/memos" ||
+           (query.queryKey[0] === "/api/users" && query.queryKey[2] === "notes"))
+      });
       toast({ title: "Memo updated successfully" });
       handleCloseDialog();
     },
@@ -139,7 +149,12 @@ export default function Memos({ user, isOwnPage }: UserNotesProps) {
       return await apiRequest(`/api/notes/${id}`, "DELETE", {});
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/users", user.id, "notes"] });
+      // Invalidate all notes and memos queries (covers page and widget variations)
+      queryClient.invalidateQueries({ 
+        predicate: (query) => Array.isArray(query.queryKey) && 
+          (query.queryKey[0] === "/api/notes" || query.queryKey[0] === "/api/memos" ||
+           (query.queryKey[0] === "/api/users" && query.queryKey[2] === "notes"))
+      });
       toast({ title: "Memo deleted successfully" });
     },
     onError: () => {
@@ -156,7 +171,12 @@ export default function Memos({ user, isOwnPage }: UserNotesProps) {
       return await apiRequest(`/api/notes/${id}`, "PATCH", { pinned });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/users", user.id, "notes"] });
+      // Invalidate all notes and memos queries (covers page and widget variations)
+      queryClient.invalidateQueries({ 
+        predicate: (query) => Array.isArray(query.queryKey) && 
+          (query.queryKey[0] === "/api/notes" || query.queryKey[0] === "/api/memos" ||
+           (query.queryKey[0] === "/api/users" && query.queryKey[2] === "notes"))
+      });
     },
     onError: (error: any) => {
       toast({ 

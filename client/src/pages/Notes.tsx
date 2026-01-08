@@ -470,7 +470,14 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
       return await apiRequest("/api/notes", "POST", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/notes", effectiveProjectId] });
+      // Invalidate all notes queries (covers page and widget variations)
+      queryClient.invalidateQueries({ 
+        predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/notes"
+      });
+      // Also invalidate activities widget (notes may trigger activity logs)
+      if (effectiveProjectId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/activities", effectiveProjectId] });
+      }
       toast({ title: "Note created successfully" });
       setIsAddingNote(false);
       form.reset(defaultValuesRef.current);
@@ -489,7 +496,14 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
       return await apiRequest(`/api/notes/${id}`, "PATCH", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/notes", effectiveProjectId] });
+      // Invalidate all notes queries (covers page and widget variations)
+      queryClient.invalidateQueries({ 
+        predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/notes"
+      });
+      // Also invalidate activities widget
+      if (effectiveProjectId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/activities", effectiveProjectId] });
+      }
       toast({ title: "Note updated successfully" });
       setEditingNote(null);
       form.reset(defaultValuesRef.current);
@@ -508,7 +522,14 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
       await apiRequest(`/api/notes/${id}`, "DELETE");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/notes", effectiveProjectId] });
+      // Invalidate all notes queries (covers page and widget variations)
+      queryClient.invalidateQueries({ 
+        predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/notes"
+      });
+      // Also invalidate activities widget
+      if (effectiveProjectId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/activities", effectiveProjectId] });
+      }
       toast({ title: "Note deleted successfully" });
     },
     onError: (error) => {

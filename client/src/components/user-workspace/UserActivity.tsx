@@ -72,7 +72,10 @@ export default function UserActivity({ user, isOwnPage }: UserActivityProps) {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/activities", "user", user.id] });
+      // Invalidate all activities queries (covers page and widget variations)
+      queryClient.invalidateQueries({ 
+        predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/activities"
+      });
       setNewActivityDescription("");
       setIsAddDialogOpen(false);
       toast({
@@ -94,7 +97,10 @@ export default function UserActivity({ user, isOwnPage }: UserActivityProps) {
       return apiRequest(`/api/activities/${id}`, "PATCH", { pinned });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/activities", "user", user.id] });
+      // Invalidate all activities queries (covers page and widget variations)
+      queryClient.invalidateQueries({ 
+        predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/activities"
+      });
     },
     onError: (error: any) => {
       toast({
