@@ -38,6 +38,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
+import TaskModalAsana from "@/components/TaskModalAsana";
 
 // Helper function to normalize filter dates from API responses
 function normalizeFilterDates(filters: CalendarFiltersType): CalendarFiltersType {
@@ -67,6 +68,8 @@ export default function BusinessCalendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [selectedViewUserId, setSelectedViewUserId] = useState<string>("all");
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [showTaskDialog, setShowTaskDialog] = useState(false);
   const defaultViewCreationAttempted = useRef(false);
 
   // Fetch all projects
@@ -278,6 +281,7 @@ export default function BusinessCalendar() {
           isCompleted,
           assigneeId: task.assigneeId,
           templateId: task.templateId,
+          resource: task,
         };
       });
 
@@ -431,7 +435,10 @@ export default function BusinessCalendar() {
   };
 
   const handleEventClick = (event: CalendarEvent) => {
-    console.log("Event clicked:", event);
+    if (event.resource && event.type === "task") {
+      setEditingTask(event.resource as Task);
+      setShowTaskDialog(true);
+    }
   };
 
   const handleViewSelect = (view: CalendarView) => {
@@ -1133,6 +1140,19 @@ export default function BusinessCalendar() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Task Modal */}
+      {editingTask && (
+        <TaskModalAsana
+          task={editingTask}
+          open={showTaskDialog}
+          onOpenChange={(open) => {
+            setShowTaskDialog(open);
+            if (!open) setEditingTask(null);
+          }}
+          projectId={editingTask.projectId || ""}
+        />
+      )}
     </div>
   );
 }
