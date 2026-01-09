@@ -435,9 +435,13 @@ export default function BusinessCalendar() {
   };
 
   const handleEventClick = (event: CalendarEvent) => {
-    if (event.resource && event.type === "task") {
-      setEditingTask(event.resource as Task);
-      setShowTaskDialog(true);
+    if (event.type === "task") {
+      // Find the task from allTasks by ID
+      const task = allTasks.find(t => t.id === event.id);
+      if (task) {
+        setEditingTask(task);
+        setShowTaskDialog(true);
+      }
     }
   };
 
