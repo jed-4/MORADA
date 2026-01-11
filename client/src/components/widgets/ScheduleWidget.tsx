@@ -6,6 +6,12 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TaskTooltip } from "@/components/ui/task-tooltip";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { 
   Calendar, 
   Clock, 
@@ -99,6 +105,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
   
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [selectedItem, setSelectedItem] = useState<ScheduleItem | null>(null);
   const [currentTimeMinutes, setCurrentTimeMinutes] = useState(() => {
     const now = new Date();
     return now.getHours() * 60 + now.getMinutes();
@@ -471,6 +478,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                   : ''
               }`}
               data-testid={`schedule-widget-item-${item.id}`}
+              onClick={() => setSelectedItem(item)}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1 min-w-0">
@@ -600,6 +608,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                       backgroundColor: item.status === 'overdue' ? '#fee2e2' : notionColors.pastelBg,
                       border: `1px solid rgba(0,0,0,0.08)`,
                     }}
+                    onClick={() => setSelectedItem(item)}
                   >
                     <div 
                       className="w-1.5 h-1.5 rounded-full flex-shrink-0" 
@@ -607,7 +616,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                     />
                     <TaskTooltip content={item.title}>
                       <span 
-                        className="truncate max-w-[100px] font-semibold cursor-default"
+                        className="truncate max-w-[100px] font-semibold"
                         style={{ color: item.status === 'overdue' ? '#b91c1c' : notionColors.darkText }}
                       >
                         {item.title}
@@ -666,6 +675,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                       borderLeftWidth: '3px',
                       borderLeftColor: item.status === 'overdue' ? '#ef4444' : notionColors.originalHex,
                     }}
+                    onClick={() => setSelectedItem(item)}
                   >
                     <div className="flex items-center gap-1">
                       <div 
@@ -674,7 +684,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                       />
                       <TaskTooltip content={item.title}>
                         <span 
-                          className="text-[11px] truncate flex-1 font-semibold cursor-default"
+                          className="text-[11px] truncate flex-1 font-semibold"
                           style={{ color: item.status === 'overdue' ? '#b91c1c' : notionColors.darkText }}
                         >
                           {item.title}
@@ -711,10 +721,11 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                   className={`flex items-center gap-2 p-2 rounded border hover-elevate cursor-pointer ${
                     item.status === 'overdue' ? 'border-red-300 bg-red-50 dark:bg-red-950/30' : ''
                   }`}
+                  onClick={() => setSelectedItem(item)}
                 >
                   <div className={`w-2 h-2 rounded-full flex-shrink-0 ${typeColors[item.type]}`} />
                   <TaskTooltip content={item.title}>
-                    <span className="text-sm flex-1 truncate cursor-default">{item.title}</span>
+                    <span className="text-sm flex-1 truncate">{item.title}</span>
                   </TaskTooltip>
                   {item.time && (
                     <span className="text-[10px] text-muted-foreground">{item.time}</span>
@@ -798,6 +809,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                           item.status === 'overdue' ? 'bg-red-100 dark:bg-red-950/50' : 'bg-muted'
                         }`}
                         title={item.title}
+                        onClick={() => setSelectedItem(item)}
                       >
                         <div className={`w-1 h-1 rounded-full flex-shrink-0 ${typeColors[item.type]}`} />
                         <span className="truncate">{item.title}</span>
@@ -877,6 +889,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                             }`}
                             style={{ top: `${top}px`, minHeight: '16px' }}
                             title={item.title}
+                            onClick={() => setSelectedItem(item)}
                           >
                             <div className="flex items-center gap-0.5">
                               <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${typeColors[item.type]}`} />
@@ -911,6 +924,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                           item.status === 'overdue' ? 'bg-red-100 dark:bg-red-950/50' : 'bg-muted'
                         }`}
                         title={item.title}
+                        onClick={() => setSelectedItem(item)}
                       >
                         <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${typeColors[item.type]}`} />
                         <span className="truncate">{item.title}</span>
@@ -1005,10 +1019,11 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                       {dayItems.slice(0, 2).map(item => (
                         <div
                           key={item.id}
-                          className={`flex items-center gap-0.5 px-0.5 rounded text-[8px] cursor-pointer ${
+                          className={`flex items-center gap-0.5 px-0.5 rounded text-[8px] cursor-pointer hover-elevate ${
                             item.status === 'overdue' ? 'bg-red-100 dark:bg-red-950/50' : 'bg-muted'
                           }`}
                           title={item.title}
+                          onClick={() => setSelectedItem(item)}
                         >
                           <div className={`w-1 h-1 rounded-full flex-shrink-0 ${typeColors[item.type]}`} />
                           <span className="truncate">{item.title}</span>
@@ -1030,8 +1045,72 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
     );
   };
 
-  if (viewMode === "day") return renderDayView();
-  if (viewMode === "week") return renderWeekView();
-  if (viewMode === "month") return renderMonthView();
-  return renderListView();
+  const renderItemDetailDialog = () => (
+    <Dialog open={!!selectedItem} onOpenChange={(open) => !open && setSelectedItem(null)}>
+      <DialogContent className="sm:max-w-[400px]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            {selectedItem?.type === 'milestone' && <Flag className="h-4 w-4 text-purple-500" />}
+            {selectedItem?.status === 'overdue' && <AlertTriangle className="h-4 w-4 text-red-500" />}
+            {selectedItem?.status === 'completed' && <CheckCircle2 className="h-4 w-4 text-green-500" />}
+            <span className="truncate">{selectedItem?.title}</span>
+          </DialogTitle>
+        </DialogHeader>
+        {selectedItem && (
+          <div className="space-y-4 pt-2">
+            <div className="flex items-center gap-2">
+              <Badge 
+                className="text-xs font-semibold"
+                style={{
+                  backgroundColor: getTypeNotionColors(selectedItem.type).pastelBg,
+                  color: getTypeNotionColors(selectedItem.type).darkText,
+                  border: `1px solid rgba(0,0,0,0.08)`,
+                }}
+              >
+                {selectedItem.type}
+              </Badge>
+              <Badge 
+                variant={selectedItem.status === 'overdue' ? 'destructive' : selectedItem.status === 'completed' ? 'secondary' : 'outline'}
+                className="text-xs"
+              >
+                {selectedItem.status === 'overdue' ? 'Overdue' : 
+                 selectedItem.status === 'completed' ? 'Completed' :
+                 selectedItem.status === 'in_progress' ? 'In Progress' : 'Scheduled'}
+              </Badge>
+            </div>
+            
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Calendar className="h-4 w-4" />
+                <span className={selectedItem.status === 'overdue' ? 'text-red-500 font-medium' : ''}>
+                  {format(new Date(selectedItem.date), "EEEE, MMMM d, yyyy")}
+                </span>
+              </div>
+              
+              {selectedItem.time && (
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Clock className="h-4 w-4" />
+                  <span>{selectedItem.time}</span>
+                </div>
+              )}
+              
+              {selectedItem.priority && (
+                <div className="flex items-center gap-2">
+                  <Flag className="h-4 w-4" />
+                  <span className={`capitalize ${priorityColors[selectedItem.priority]}`}>
+                    {selectedItem.priority} Priority
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+
+  if (viewMode === "day") return <>{renderDayView()}{renderItemDetailDialog()}</>;
+  if (viewMode === "week") return <>{renderWeekView()}{renderItemDetailDialog()}</>;
+  if (viewMode === "month") return <>{renderMonthView()}{renderItemDetailDialog()}</>;
+  return <>{renderListView()}{renderItemDetailDialog()}</>;
 }
