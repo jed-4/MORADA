@@ -302,6 +302,29 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
     },
   });
 
+  // Delete task mutation
+  const deleteTaskMutation = useMutation({
+    mutationFn: async (taskId: string) => {
+      const response = await apiRequest(`/api/tasks/${taskId}`, "DELETE");
+      return response;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ 
+        predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/tasks"
+      });
+      toast({ title: "Task deleted" });
+    },
+    onError: () => {
+      toast({ title: "Failed to delete task", variant: "destructive" });
+    },
+  });
+
+  const handleDeleteTask = (task: Task) => {
+    if (confirm(`Delete "${task.title}"?`)) {
+      deleteTaskMutation.mutate(task.id);
+    }
+  };
+
   const handleUpdateView = () => {
     if (!viewToEdit || !editViewName.trim()) return;
     updateViewMutation.mutate({
@@ -931,6 +954,8 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
               tasks={tasksWithProjects}
               isLoading={isLoading}
               onTaskClick={(task) => setEditingTask(task)}
+              onDelete={handleDeleteTask}
+              showActions={true}
             />
           </div>
         ) : (

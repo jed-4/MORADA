@@ -85,7 +85,7 @@ function DraggableTaskCard({ task, onTaskClick, displaySettings, onDelete, showA
       style={style}
       {...attributes}
       {...listeners}
-      className="touch-none"
+      className="touch-none cursor-grab active:cursor-grabbing"
     >
       <TaskCardCompact task={task} onClick={() => onTaskClick?.(task)} isDragging={isDragging} displaySettings={displaySettings} onDelete={onDelete} showActions={showActions} />
     </div>
@@ -233,11 +233,12 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
     }
   };
 
-  // Set up drag sensors
+  // Set up drag sensors - distance threshold allows clicks to work on buttons/menus
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8,
+        distance: 10,
+        tolerance: 5,
       },
     })
   );
