@@ -82,6 +82,13 @@ const priorityColors = {
   low: "text-blue-500",
 };
 
+const typeColors: Record<string, string> = {
+  task: "bg-blue-500",
+  milestone: "bg-purple-500",
+  meeting: "bg-green-500",
+  inspection: "bg-amber-500",
+};
+
 function parseTime(timeStr: string | null | undefined): number | null {
   if (!timeStr) return null;
   const [hours, minutes] = timeStr.split(':').map(Number);
