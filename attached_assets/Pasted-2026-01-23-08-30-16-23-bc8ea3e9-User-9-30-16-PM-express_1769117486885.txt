@@ -1,0 +1,96 @@
+2026-01-23 08:30:16.23
+bc8ea3e9
+User
+9:30:16 PM [express] GET /api/systems/folders 304 in 287ms :: [{"id":"0c4e3698-3a3d-4a2c-b379-ef1a0c…
+2026-01-23 08:30:16.29
+bc8ea3e9
+User
+9:30:16 PM [express] GET /api/field-categories/by-key/systemDocument.status 304 in 357ms :: {"id":"d…
+2026-01-23 08:30:16.30
+bc8ea3e9
+User
+9:30:16 PM [express] GET /api/roles/assignable 304 in 355ms :: [{"id":"d6fb935e-88e3-46b0-86cd-96ce7…
+2026-01-23 08:30:16.31
+bc8ea3e9
+User
+9:30:16 PM [express] GET /api/systems/documents 304 in 367ms :: []
+2026-01-23 08:30:16.31
+bc8ea3e9
+User
+9:30:16 PM [express] GET /api/systems/task-templates 200 in 368ms :: [{"id":"d5824082-e81b-4feb-b545…
+2026-01-23 08:30:16.31
+bc8ea3e9
+User
+9:30:16 PM [express] GET /api/users/assignable 304 in 365ms :: [{"id":"44689844","firstName":"Jed","…
+2026-01-23 08:30:18.68
+bc8ea3e9
+User
+at async file:///home/runner/workspace/dist/index.js:29630:22
+2026-01-23 08:30:18.68
+bc8ea3e9
+User
+Database error in generateRecurringTasks: RangeError: Invalid time value
+2026-01-23 08:30:18.68
+bc8ea3e9
+User
+Failed to generate recurring tasks: RangeError: Invalid time value
+2026-01-23 08:30:18.68
+bc8ea3e9
+User
+at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+2026-01-23 08:30:18.68
+bc8ea3e9
+User
+at format (file:///home/runner/workspace/node_modules/date-fns/format.mjs:352:11)
+2026-01-23 08:30:18.68
+bc8ea3e9
+User
+at DbStorage.generateRecurringTasks (file:///home/runner/workspace/dist/index.js:12487:31)
+2026-01-23 08:30:18.68
+bc8ea3e9
+User
+at DbStorage.generateRecurringTasks (file:///home/runner/workspace/dist/index.js:12487:31)
+2026-01-23 08:30:18.68
+bc8ea3e9
+User
+at getRecurringTaskKey (file:///home/runner/workspace/dist/index.js:142:91)
+2026-01-23 08:30:18.68
+bc8ea3e9
+User
+at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+2026-01-23 08:30:18.68
+bc8ea3e9
+User
+at getRecurringTaskKey (file:///home/runner/workspace/dist/index.js:142:91)
+2026-01-23 08:30:18.68
+bc8ea3e9
+User
+at format (file:///home/runner/workspace/node_modules/date-fns/format.mjs:352:11)
+2026-01-23 08:30:18.68
+bc8ea3e9
+User
+at async file:///home/runner/workspace/dist/index.js:29630:22
+2026-01-23 08:30:18.71
+bc8ea3e9
+User
+9:30:18 PM [express] POST /api/systems/task-templates/generate-recurring 500 in 219ms :: {"error":"F…
+2026-01-23 08:30:56.63
+bc8ea3e9
+User
+User disconnected: 44689844
+2026-01-23 08:30:58.49
+bc8ea3e9
+User
+User connected: 44689844
+2026-01-23 08:31:09.43
+bc8ea3e9
+User
+[ReminderProcessor] Starting reminder processing...
+2026-01-23 08:31:09.53
+bc8ea3e9
+User
+[ReminderProcessor] Found 0 due reminders
+2026-01-23 08:31:09.55
+bc8ea3e9
+User
+[ReminderProcessor] Reminder processing completed
