@@ -146,12 +146,32 @@ export function getRecurringTaskKey(templateId: string, dueDate: Date | string |
   }
   
   try {
-    // Always normalize to YYYY-MM-DD format regardless of input type
-    const parsedDate = typeof dueDate === 'string' ? new Date(dueDate) : dueDate;
+    let parsedDate: Date;
     
-    // Validate the parsed date
-    if (isNaN(parsedDate.getTime())) {
-      console.warn(`[getRecurringTaskKey] Invalid date value "${dueDate}" for template ${templateId}`);
+    // Handle Date objects that might already be Invalid Date
+    if (dueDate instanceof Date) {
+      if (isNaN(dueDate.getTime())) {
+        // Silent skip for already-invalid Date objects (common from DB type mismatches)
+        return `${templateId}:invalid-date`;
+      }
+      parsedDate = dueDate;
+    } else if (typeof dueDate === 'string') {
+      // Handle string dates - could be ISO format, date-only, etc.
+      parsedDate = new Date(dueDate);
+      if (isNaN(parsedDate.getTime())) {
+        // Try parsing as date-only format (YYYY-MM-DD) 
+        const dateOnlyMatch = dueDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (dateOnlyMatch) {
+          parsedDate = new Date(parseInt(dateOnlyMatch[1]), parseInt(dateOnlyMatch[2]) - 1, parseInt(dateOnlyMatch[3]));
+        }
+        if (isNaN(parsedDate.getTime())) {
+          console.warn(`[getRecurringTaskKey] Cannot parse date string "${dueDate}" for template ${templateId}`);
+          return `${templateId}:invalid-date`;
+        }
+      }
+    } else {
+      // Unknown type
+      console.warn(`[getRecurringTaskKey] Unknown date type for template ${templateId}`);
       return `${templateId}:invalid-date`;
     }
     
