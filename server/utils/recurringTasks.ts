@@ -138,12 +138,29 @@ export function generateRecurringTaskInstances(
  * Used to track which tasks have already been generated
  * Normalizes both Date objects and ISO timestamp strings to YYYY-MM-DD format
  */
-export function getRecurringTaskKey(templateId: string, dueDate: Date | string): string {
-  // Always normalize to YYYY-MM-DD format regardless of input type
-  const dateStr = typeof dueDate === 'string' 
-    ? format(new Date(dueDate), 'yyyy-MM-dd')  // Parse ISO string to Date, then format
-    : format(dueDate, 'yyyy-MM-dd');
-  return `${templateId}:${dateStr}`;
+export function getRecurringTaskKey(templateId: string, dueDate: Date | string | null | undefined): string {
+  // Handle null/undefined dates gracefully
+  if (!dueDate) {
+    console.warn(`[getRecurringTaskKey] Missing dueDate for template ${templateId}, using fallback`);
+    return `${templateId}:no-date`;
+  }
+  
+  try {
+    // Always normalize to YYYY-MM-DD format regardless of input type
+    const parsedDate = typeof dueDate === 'string' ? new Date(dueDate) : dueDate;
+    
+    // Validate the parsed date
+    if (isNaN(parsedDate.getTime())) {
+      console.warn(`[getRecurringTaskKey] Invalid date value "${dueDate}" for template ${templateId}`);
+      return `${templateId}:invalid-date`;
+    }
+    
+    const dateStr = format(parsedDate, 'yyyy-MM-dd');
+    return `${templateId}:${dateStr}`;
+  } catch (error) {
+    console.error(`[getRecurringTaskKey] Error formatting date for template ${templateId}:`, error);
+    return `${templateId}:error`;
+  }
 }
 
 /**

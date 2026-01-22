@@ -15178,6 +15178,18 @@ export class DbStorage implements IStorage {
         const defaultStatus = template.defaultTaskStatus || "todo";
         
         for (const instance of instances) {
+          // Skip instances with invalid dates
+          if (!instance.dueDate) {
+            console.warn(`[generateRecurringTasks] Skipping instance with no dueDate for template ${template.id} (${template.name})`);
+            continue;
+          }
+          
+          const parsedDueDate = typeof instance.dueDate === 'string' ? new Date(instance.dueDate) : instance.dueDate;
+          if (isNaN(parsedDueDate.getTime())) {
+            console.warn(`[generateRecurringTasks] Skipping instance with invalid dueDate "${instance.dueDate}" for template ${template.id} (${template.name})`);
+            continue;
+          }
+          
           if (assignees.length === 0) {
             // No assignees - create task without assignment
             const dateKey = getRecurringTaskKey(instance.templateId, instance.dueDate);
