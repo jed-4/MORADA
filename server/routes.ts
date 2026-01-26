@@ -794,6 +794,88 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Cleanup duplicate recurring tasks (production fix endpoint)
+  app.post("/api/tasks/cleanup-recurring-duplicates", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      
+      if (!companyId) {
+        return res.status(400).json({ error: "Company ID required" });
+      }
+
+      // Get all recurring tasks for this company
+      const allTasks = await storage.getTasksByCompany(companyId);
+      const recurringTasks = allTasks.filter(t => t.templateId && t.occurrenceDate);
+
+      // Group by templateId + occurrenceDate (normalized to date string)
+      const taskGroups = new Map<string, typeof recurringTasks>();
+      
+      for (const task of recurringTasks) {
+        let occDateStr: string;
+        const occ = task.occurrenceDate;
+        if (occ instanceof Date) {
+          occDateStr = occ.toISOString().split('T')[0];
+        } else if (typeof occ === 'string') {
+          const d = new Date(occ);
+          occDateStr = !isNaN(d.getTime()) ? d.toISOString().split('T')[0] : occ;
+        } else {
+          continue; // Skip tasks with invalid occurrence dates
+        }
+
+        const key = `${task.templateId}:${occDateStr}`;
+        const existing = taskGroups.get(key) || [];
+        existing.push(task);
+        taskGroups.set(key, existing);
+      }
+
+      // Find and delete duplicates, keeping the oldest one (first created)
+      let deletedCount = 0;
+      const duplicateDetails: { key: string; kept: string; deleted: string[] }[] = [];
+
+      for (const [key, tasks] of taskGroups.entries()) {
+        if (tasks.length > 1) {
+          // Sort by createdAt ascending (oldest first)
+          tasks.sort((a, b) => {
+            const aDate = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+            const bDate = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+            return aDate - bDate;
+          });
+
+          const [keep, ...toDelete] = tasks;
+          const deletedIds: string[] = [];
+
+          for (const task of toDelete) {
+            const success = await storage.deleteTask(task.id);
+            if (success) {
+              deletedCount++;
+              deletedIds.push(task.id);
+            }
+          }
+
+          if (deletedIds.length > 0) {
+            duplicateDetails.push({
+              key,
+              kept: keep.id,
+              deleted: deletedIds
+            });
+          }
+        }
+      }
+
+      console.log(`[CLEANUP] Cleaned up ${deletedCount} duplicate recurring tasks for company ${companyId}`);
+      
+      res.json({ 
+        message: "Duplicate recurring tasks cleaned up", 
+        deleted: deletedCount,
+        details: duplicateDetails 
+      });
+    } catch (error: any) {
+      console.error("Error cleaning up duplicate recurring tasks:", error);
+      res.status(500).json({ error: "Failed to cleanup duplicates" });
+    }
+  });
+
   // Defects API Routes
   app.get("/api/defects", async (req, res) => {
     try {

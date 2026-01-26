@@ -212,6 +212,7 @@ export interface IStorage {
   // Tasks CRUD operations (specific to type="task")
   getTasks(projectId?: string, status?: string, businessTasks?: boolean, assigneeId?: string, dateRange?: { startDate?: string; endDate?: string }): Promise<Task[]>;
   getTasksByUser(userId: string, companyId: string): Promise<Task[]>;
+  getTasksByCompany(companyId: string): Promise<Task[]>;
   getTask(id: string): Promise<Task | undefined>;
   createTask(task: InsertTask): Promise<Task>;
   updateTask(id: string, task: Partial<InsertTask>): Promise<Task | undefined>;
@@ -3056,6 +3057,12 @@ export class MemStorage implements IStorage {
     }
     
     return filteredTasks.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async getTasksByCompany(companyId: string): Promise<Task[]> {
+    const allTasks = Array.from(this.notes.values())
+      .filter(note => note.type === "task") as Task[];
+    return allTasks.filter(task => task.companyId === companyId);
   }
 
   async getTasksByUser(userId: string, companyId: string): Promise<Task[]> {
@@ -6533,6 +6540,18 @@ export class DbStorage implements IStorage {
     const tasks = await db.select().from(schema.notes).where(
       conditions.length === 1 ? conditions[0] : and(...conditions)
     );
+    return tasks as Task[];
+  }
+
+  async getTasksByCompany(companyId: string): Promise<Task[]> {
+    const tasks = await db.select()
+      .from(schema.notes)
+      .where(
+        and(
+          eq(schema.notes.type, "task"),
+          eq(schema.notes.companyId, companyId)
+        )
+      );
     return tasks as Task[];
   }
 

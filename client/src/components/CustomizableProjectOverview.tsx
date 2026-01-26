@@ -102,6 +102,7 @@ const PROJECT_TAB_GROUPS = [
     items: [
       { id: "overview", label: "Overview", icon: Home, path: "" },
       { id: "activity", label: "Activity", icon: Activity, path: "/activity" },
+      { id: "tasks", label: "Tasks", icon: CheckSquare, path: "/tasks" },
       { id: "messages", label: "Messages", icon: MessageSquare, path: "/messages" },
       { id: "minutes", label: "Minutes", icon: ClipboardList, path: "/minutes" },
       { id: "notes", label: "Notes", icon: FileText, path: "/notes" },
@@ -114,7 +115,6 @@ const PROJECT_TAB_GROUPS = [
     icon: ClipboardList,
     items: [
       { id: "schedule", label: "Schedule", icon: Clock, path: "/schedule" },
-      { id: "tasks", label: "Tasks", icon: CheckSquare, path: "/tasks" },
       { id: "checklists", label: "Checklists", icon: ListChecks, path: "/checklists" },
       { id: "rfqs", label: "RFQs", icon: FileSearch, path: "/rfqs" },
       { id: "rfis", label: "RFIs", icon: HelpCircle, path: "/rfis" },

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, json, jsonb, integer, boolean, pgEnum, numeric, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, json, jsonb, integer, boolean, pgEnum, numeric, index, uniqueIndex, date } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -444,7 +444,7 @@ export const notes: any = pgTable("notes", {
   recurringEndDate: timestamp("recurring_end_date"),
   lastRecurringDate: timestamp("last_recurring_date"),
   templateId: varchar("template_id"), // Link to task template for recurring tasks
-  occurrenceDate: timestamp("occurrence_date"), // Original scheduled date from template (for duplicate prevention)
+  occurrenceDate: date("occurrence_date"), // Original scheduled date from template (for duplicate prevention)
   isModified: boolean("is_modified").default(false), // True if user has moved/rescheduled this task from template time
   
   // Reference fields for system-generated tasks (e.g., insurance expiry reminders)
