@@ -210,7 +210,7 @@ export interface IStorage {
   reorderNoteGroups(companyId: string, projectId: string | null, groupIds: string[]): Promise<NoteGroup[]>;
 
   // Tasks CRUD operations (specific to type="task")
-  getTasks(projectId?: string, status?: string, businessTasks?: boolean, assigneeId?: string): Promise<Task[]>;
+  getTasks(projectId?: string, status?: string, businessTasks?: boolean, assigneeId?: string, dateRange?: { startDate?: string; endDate?: string }): Promise<Task[]>;
   getTasksByUser(userId: string, companyId: string): Promise<Task[]>;
   getTask(id: string): Promise<Task | undefined>;
   createTask(task: InsertTask): Promise<Task>;
@@ -769,7 +769,7 @@ export interface IStorage {
   // Schedule Items CRUD
   getScheduleItems(scheduleId: string): Promise<ScheduleItem[]>;
   getScheduleItemsByProject(projectId: string, pagination?: { limit?: number; offset?: number }): Promise<ScheduleItem[]>;
-  getAllScheduleItems(companyId: string): Promise<ScheduleItem[]>;
+  getAllScheduleItems(companyId: string, dateRange?: { startDate?: string; endDate?: string }): Promise<ScheduleItem[]>;
   getScheduleItem(id: string): Promise<ScheduleItem | undefined>;
   createScheduleItem(item: InsertScheduleItem): Promise<ScheduleItem>;
   updateScheduleItem(id: string, item: Partial<InsertScheduleItem>): Promise<ScheduleItem | undefined>;
@@ -3011,7 +3011,7 @@ export class MemStorage implements IStorage {
   }
 
   // Tasks CRUD operations
-  async getTasks(projectId?: string, status?: string, businessTasks?: boolean, assigneeId?: string): Promise<Task[]> {
+  async getTasks(projectId?: string, status?: string, businessTasks?: boolean, assigneeId?: string, dateRange?: { startDate?: string; endDate?: string }): Promise<Task[]> {
     const allTasks = Array.from(this.notes.values())
       .filter(note => note.type === "task") as Task[];
     
@@ -3041,6 +3041,18 @@ export class MemStorage implements IStorage {
     
     if (status) {
       filteredTasks = filteredTasks.filter(task => task.status === status);
+    }
+    
+    // Apply date range filtering if provided
+    if (dateRange?.startDate || dateRange?.endDate) {
+      const rangeStart = dateRange.startDate ? new Date(dateRange.startDate).getTime() : 0;
+      const rangeEnd = dateRange.endDate ? new Date(dateRange.endDate).getTime() : Infinity;
+      
+      filteredTasks = filteredTasks.filter(task => {
+        if (!task.dueDate) return false; // Skip tasks without due dates when date filtering
+        const taskDate = new Date(task.dueDate).getTime();
+        return taskDate >= rangeStart && taskDate <= rangeEnd;
+      });
     }
     
     return filteredTasks.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
@@ -5159,7 +5171,7 @@ export class MemStorage implements IStorage {
     return new Date(note.createdAt) > fiveMinutesAgo;
   }
 
-  async getAllScheduleItems(companyId: string): Promise<ScheduleItem[]> {
+  async getAllScheduleItems(companyId: string, dateRange?: { startDate?: string; endDate?: string }): Promise<ScheduleItem[]> {
     const allItems: ScheduleItem[] = [];
     
     for (const schedule of this.schedules.values()) {
@@ -5170,7 +5182,21 @@ export class MemStorage implements IStorage {
       }
     }
     
-    return allItems.sort((a, b) => 
+    // Apply date range filtering if provided
+    let filteredItems = allItems;
+    if (dateRange?.startDate || dateRange?.endDate) {
+      const rangeStart = dateRange.startDate ? new Date(dateRange.startDate).getTime() : 0;
+      const rangeEnd = dateRange.endDate ? new Date(dateRange.endDate).getTime() : Infinity;
+      
+      filteredItems = allItems.filter(item => {
+        const itemStart = new Date(item.startDate).getTime();
+        const itemEnd = new Date(item.endDate).getTime();
+        // Item overlaps with range if item ends after range start AND item starts before range end
+        return itemEnd >= rangeStart && itemStart <= rangeEnd;
+      });
+    }
+    
+    return filteredItems.sort((a, b) => 
       new Date(a.startDate).getTime() - new Date(b.startDate).getTime()
     );
   }
@@ -6466,7 +6492,7 @@ export class DbStorage implements IStorage {
   }
 
   // Tasks CRUD operations
-  async getTasks(projectId?: string, status?: string, businessTasks?: boolean, assigneeId?: string): Promise<Task[]> {
+  async getTasks(projectId?: string, status?: string, businessTasks?: boolean, assigneeId?: string, dateRange?: { startDate?: string; endDate?: string }): Promise<Task[]> {
     const conditions = [eq(schema.notes.type, "task")];
     
     if (businessTasks) {
@@ -6494,6 +6520,14 @@ export class DbStorage implements IStorage {
     if (assigneeId) {
       // Filter by assigneeId - notes table uses single assigneeId field
       conditions.push(eq(schema.notes.assigneeId, assigneeId));
+    }
+    
+    // Add date range filtering for calendar performance
+    if (dateRange?.startDate) {
+      conditions.push(gte(schema.notes.dueDate, new Date(dateRange.startDate)));
+    }
+    if (dateRange?.endDate) {
+      conditions.push(lte(schema.notes.dueDate, new Date(dateRange.endDate)));
     }
     
     const tasks = await db.select().from(schema.notes).where(
@@ -13846,13 +13880,23 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async getAllScheduleItems(companyId: string): Promise<ScheduleItem[]> {
+  async getAllScheduleItems(companyId: string, dateRange?: { startDate?: string; endDate?: string }): Promise<ScheduleItem[]> {
     try {
+      const conditions = [eq(schema.projects.companyId, companyId)];
+      
+      // Add date range filtering if provided
+      if (dateRange?.startDate) {
+        conditions.push(gte(schema.scheduleItems.endDate, new Date(dateRange.startDate)));
+      }
+      if (dateRange?.endDate) {
+        conditions.push(lte(schema.scheduleItems.startDate, new Date(dateRange.endDate)));
+      }
+      
       const items = await db.select()
         .from(schema.scheduleItems)
         .innerJoin(schema.schedules, eq(schema.scheduleItems.scheduleId, schema.schedules.id))
         .innerJoin(schema.projects, eq(schema.schedules.projectId, schema.projects.id))
-        .where(eq(schema.projects.companyId, companyId))
+        .where(and(...conditions))
         .orderBy(schema.scheduleItems.startDate);
       return items.map(row => row.schedule_items);
     } catch (error) {

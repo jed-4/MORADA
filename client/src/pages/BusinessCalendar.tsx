@@ -9,7 +9,7 @@ import {
   ChevronRight,
   User,
 } from "lucide-react";
-import { format, parseISO, isWithinInterval } from "date-fns";
+import { format, parseISO, isWithinInterval, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths } from "date-fns";
 import type { Task, ScheduleItem, Project, User as UserType, FieldCategoryWithOptions, Schedule } from "@shared/schema";
 import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
 import { CalendarFilters as CalendarFiltersType } from "@/components/CalendarFilters";
@@ -72,19 +72,40 @@ export default function BusinessCalendar() {
   const [showTaskDialog, setShowTaskDialog] = useState(false);
   const defaultViewCreationAttempted = useRef(false);
 
+  // Calculate date range for calendar data fetching (current view +/- 1 month buffer)
+  const dateRange = useMemo(() => {
+    const bufferMonths = 1;
+    const rangeStart = startOfWeek(startOfMonth(subMonths(currentDate, bufferMonths)));
+    const rangeEnd = endOfWeek(endOfMonth(addMonths(currentDate, bufferMonths)));
+    return {
+      startDate: format(rangeStart, 'yyyy-MM-dd'),
+      endDate: format(rangeEnd, 'yyyy-MM-dd')
+    };
+  }, [currentDate]);
+
   // Fetch all projects
   const { data: projects = [], isLoading: isLoadingProjects } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
   });
 
-  // Fetch all tasks across all projects
+  // Fetch tasks with date range filtering for calendar performance
   const { data: allTasks = [], isLoading: isLoadingTasks } = useQuery<Task[]>({
-    queryKey: ["/api/tasks"],
+    queryKey: ["/api/tasks", { startDate: dateRange.startDate, endDate: dateRange.endDate }],
+    queryFn: async () => {
+      const response = await fetch(`/api/tasks?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`);
+      if (!response.ok) throw new Error('Failed to fetch tasks');
+      return response.json();
+    },
   });
 
-  // Fetch all schedule items
+  // Fetch schedule items with date range filtering for calendar performance
   const { data: allScheduleItems = [], isLoading: isLoadingSchedule } = useQuery<ScheduleItem[]>({
-    queryKey: ["/api/schedule-items/all"],
+    queryKey: ["/api/schedule-items/all", { startDate: dateRange.startDate, endDate: dateRange.endDate }],
+    queryFn: async () => {
+      const response = await fetch(`/api/schedule-items/all?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`);
+      if (!response.ok) throw new Error('Failed to fetch schedule items');
+      return response.json();
+    },
   });
 
   // Fetch all schedules to map schedule items to projects

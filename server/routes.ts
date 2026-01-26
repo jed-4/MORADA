@@ -593,15 +593,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Tasks API Routes
+  // Tasks API Routes (with optional date range filtering for calendar performance)
   app.get("/api/tasks", async (req, res) => {
     try {
-      const { projectId, status, businessTasks, assigneeId } = req.query;
+      const { projectId, status, businessTasks, assigneeId, startDate, endDate } = req.query;
+      
+      // Optional date range filtering for calendar performance
+      const dateRange = (startDate || endDate) ? {
+        startDate: startDate as string | undefined,
+        endDate: endDate as string | undefined
+      } : undefined;
+      
       const tasks = await storage.getTasks(
         projectId as string | undefined,
         status as string | undefined,
         businessTasks === 'true',
-        assigneeId as string | undefined
+        assigneeId as string | undefined,
+        dateRange
       );
       res.json(tasks);
     } catch (error) {
@@ -13190,7 +13198,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get all schedule items across all schedules/projects
+  // Get all schedule items across all schedules/projects (with optional date range filtering)
   app.get("/api/schedule-items/all", async (req, res) => {
     try {
       const user = req.user as any;
@@ -13198,7 +13206,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Unauthorized - no company context" });
       }
       
-      const items = await storage.getAllScheduleItems(user.companyId);
+      // Optional date range filtering for calendar performance
+      const { startDate, endDate } = req.query;
+      const dateRange = (startDate || endDate) ? {
+        startDate: startDate as string | undefined,
+        endDate: endDate as string | undefined
+      } : undefined;
+      
+      const items = await storage.getAllScheduleItems(user.companyId, dateRange);
       res.json(items);
     } catch (error: any) {
       res.status(500).json({ 
