@@ -986,6 +986,10 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
         task={editingTask || undefined}
         open={!!editingTask}
         onOpenChange={(open) => !open && setEditingTask(null)}
+        onDelete={(taskId) => {
+          deleteTaskMutation.mutate(taskId);
+          setEditingTask(null);
+        }}
       />
 
       {/* Save View Dialog */}
