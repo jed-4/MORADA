@@ -5,7 +5,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { type Task, type FieldCategoryWithOptions, type Project } from "@shared/schema";
+import { type Task, type FieldCategoryWithOptions, type Project, type TaskTag } from "@shared/schema";
 import { z } from "zod";
 import { format } from "date-fns";
 
@@ -66,6 +66,7 @@ import {
   Clock,
   RotateCcw,
   Settings2,
+  Tag,
 } from "lucide-react";
 import { SetReminderDialog } from "@/components/SetReminderDialog";
 import { DriveFilePicker } from "@/components/DriveFilePicker";
@@ -154,6 +155,12 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
     queryKey: ["/api/tasks", task?.id, "subtasks"],
     enabled: !!task?.id,
   });
+
+  const { data: taskTags = [] } = useQuery<TaskTag[]>({
+    queryKey: ["/api/task-tags"],
+  });
+
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
 
   const { data: attachments = [] } = useQuery<any[]>({
     queryKey: ["/api/drive-attachments", "task", task?.id],
@@ -279,6 +286,8 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
       setChecklistInput("");
       // Reset optimistic completion state when modal opens
       setOptimisticCompleted(null);
+      // Initialize selected tags from task
+      setSelectedTagIds((task?.tagIds as string[]) || []);
     }
   }, [task, open, initialStatus, projectId, defaultAssigneeId, form, isChecklistMutating]);
 
@@ -291,10 +300,11 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
 
   const saveTaskMutation = useMutation({
     mutationFn: async (data: TaskFormData) => {
+      const payload = { ...data, tagIds: selectedTagIds };
       if (task) {
-        return await apiRequest(`/api/tasks/${task.id}`, "PATCH", data);
+        return await apiRequest(`/api/tasks/${task.id}`, "PATCH", payload);
       } else {
-        return await apiRequest("/api/tasks", "POST", { ...data, type: "task" });
+        return await apiRequest("/api/tasks", "POST", { ...payload, type: "task" });
       }
     },
     onSuccess: () => {
@@ -598,12 +608,12 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
                       setIsEditingTitle(false);
                     }
                   }}
-                  className="text-xl font-semibold border-0 shadow-none px-0 h-auto focus-visible:ring-0"
+                  className="text-xl font-semibold border-0 shadow-none p-0 h-auto leading-tight focus-visible:ring-0"
                   data-testid="input-task-title"
                 />
               ) : (
                 <h2
-                  className={`text-xl font-semibold cursor-pointer hover:text-primary ${isCompleted ? 'line-through text-muted-foreground' : ''}`}
+                  className={`text-xl font-semibold leading-tight cursor-pointer hover:text-primary ${isCompleted ? 'line-through text-muted-foreground' : ''}`}
                   onClick={() => {
                     setTitleValue(form.watch("title"));
                     setIsEditingTitle(true);
@@ -953,6 +963,63 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+
+              {/* Labels */}
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                  <Tag className="h-3 w-3" />
+                  Labels
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {selectedTagIds.map((tagId) => {
+                    const tag = taskTags.find(t => t.id === tagId);
+                    if (!tag) return null;
+                    return (
+                      <div key={tag.id} className="flex items-center gap-0.5" data-testid={`label-tag-${tag.id}`}>
+                        <Badge variant="secondary">
+                          <div className="w-2 h-2 rounded-full mr-1.5" style={{ backgroundColor: tag.color }} />
+                          {tag.name}
+                        </Badge>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setSelectedTagIds(prev => prev.filter(id => id !== tag.id))}
+                          data-testid={`button-remove-tag-${tag.id}`}
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" className="w-full justify-start" data-testid="button-add-label">
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add label
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="w-48">
+                    {taskTags.filter(tag => !selectedTagIds.includes(tag.id)).length === 0 ? (
+                      <div className="px-2 py-1.5 text-sm text-muted-foreground">No more labels available</div>
+                    ) : (
+                      taskTags.filter(tag => tag.isActive && !selectedTagIds.includes(tag.id)).map((tag) => (
+                        <DropdownMenuItem
+                          key={tag.id}
+                          onClick={() => setSelectedTagIds(prev => [...prev, tag.id])}
+                          data-testid={`menu-item-tag-${tag.id}`}
+                        >
+                          <div
+                            className="w-3 h-3 rounded-full mr-2"
+                            style={{ backgroundColor: tag.color }}
+                          />
+                          {tag.name}
+                        </DropdownMenuItem>
+                      ))
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
 
               {/* Due Date */}

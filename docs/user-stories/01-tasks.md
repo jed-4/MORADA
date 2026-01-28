@@ -36,11 +36,15 @@ The Tasks system is the core work management feature of BuildPro, enabling build
 **So that** I can capture work that needs to be done and track it in the system
 
 **Acceptance Criteria:**
-- [ ] User can create a task from multiple entry points (quick add, task list, calendar)
-- [ ] Task has required field: title
-- [ ] Task has optional fields: description, due date, priority, assignee
-- [ ] Task is saved immediately and appears in relevant views
-- [ ] User receives confirmation of task creation
+- [x] User can create a task from multiple entry points:
+  - Global header "New" button → New Task option
+  - Dashboard widgets (Tasks widget, My Tasks widget, My Day widget)
+  - Tasks page (project-level and business-level)
+  - Calendar views (click to add)
+- [x] Task has required field: title
+- [x] Task has optional fields: description, due date, priority, assignee, labels
+- [x] Task is saved immediately and appears in relevant views
+- [x] User receives confirmation of task creation
 
 **Priority:** Must Have  
 **Status:** Implemented
@@ -153,11 +157,12 @@ The Tasks system is the core work management feature of BuildPro, enabling build
 **So that** I can see when work is due and plan my schedule
 
 **Acceptance Criteria:**
-- [ ] Calendar shows month, week, and day views
-- [ ] Tasks appear on their due date
-- [ ] Tasks are color-coded by project or priority
-- [ ] Clicking a task opens the detail modal
-- [ ] Tasks can be dragged to reschedule
+- [x] Calendar shows month, week, and day views
+- [x] Tasks appear on their due date
+- [x] Tasks are color-coded by project (using Notion-style colors derived from project color)
+- [x] Clicking a task opens the detail modal first (read-only view)
+- [x] User can switch to edit mode from the detail modal
+- [x] Tasks can be dragged to reschedule
 
 **Priority:** Must Have  
 **Status:** Implemented
@@ -299,7 +304,43 @@ The Tasks system is the core work management feature of BuildPro, enabling build
 
 ---
 
-### 6. Personal Workspace
+### 6. Task Labels
+
+#### US-T045: Add Labels to Tasks
+**As a** project manager  
+**I want to** add labels/tags to tasks  
+**So that** I can categorize and filter tasks by custom criteria
+
+**Acceptance Criteria:**
+- [x] User can add labels to a task from the task detail/edit modal
+- [x] Labels are displayed as coloured badges on the task
+- [x] Labels can be selected from a company-wide tag library
+- [x] Multiple labels can be applied to a single task
+- [x] Labels can be removed from tasks
+- [ ] Tasks can be filtered by label (planned)
+
+**Priority:** Should Have  
+**Status:** Partially Implemented
+
+---
+
+#### US-T046: Manage Task Tag Library
+**As a** admin  
+**I want to** create and manage a library of task tags  
+**So that** the team has consistent labels to use across tasks
+
+**Acceptance Criteria:**
+- [ ] Admin can create new tags with name and colour
+- [ ] Admin can edit existing tag names and colours
+- [ ] Admin can delete unused tags
+- [ ] Tags are company-wide and shared by all users
+
+**Priority:** Should Have  
+**Status:** Planned
+
+---
+
+### 7. Personal Workspace
 
 #### US-T050: View My Tasks
 **As a** team member  
@@ -349,7 +390,7 @@ The Tasks system is the core work management feature of BuildPro, enabling build
 
 ---
 
-### 7. Reminders & Notifications
+### 8. Reminders & Notifications
 
 #### US-T060: Set Task Reminder
 **As a** team member  
@@ -380,6 +421,9 @@ The Tasks system is the core work management feature of BuildPro, enabling build
 - Saved views with filters
 - Drag-and-drop rescheduling
 - Task reminders
+- Task labels/tags with company-wide tag library
+- Multiple task creation entry points (header, widgets, pages, calendar)
+- Detail modal opens first from calendar (view before edit)
 
 ### Known Limitations
 - No real-time collaboration (requires refresh to see others' changes)
