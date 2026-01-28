@@ -1,6 +1,6 @@
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { pdf } from "@react-pdf/renderer";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -56,12 +56,13 @@ import {
   ExternalLink,
   CheckCircle2,
   AlertCircle,
+  Search,
 } from "lucide-react";
 import { RFQDocument } from "@/components/rfq/pdf/RFQDocument";
 import { SendRFQDialog } from "@/components/rfq/SendRFQDialog";
 import { UploadQuoteDialog } from "@/components/rfq/UploadQuoteDialog";
 import { QuoteComparisonView } from "@/components/rfq/QuoteComparisonView";
-import type { Rfq, RfqItem, RfqQuote, Supplier, RfqTemplate, CostCode, EstimateItem } from "@shared/schema";
+import type { Rfq, RfqItem, RfqQuote, Contact, RfqTemplate, CostCode, EstimateItem } from "@shared/schema";
 import { format } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -111,6 +112,7 @@ export default function RFQDetail() {
   });
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [selectedEstimateItems, setSelectedEstimateItems] = useState<string[]>([]);
+  const [supplierSearch, setSupplierSearch] = useState("");
 
   const { data: rfq, isLoading: rfqLoading } = useQuery<Rfq>({
     queryKey: ["/api/rfqs", id],
@@ -127,9 +129,14 @@ export default function RFQDetail() {
     enabled: !!id,
   });
 
-  const { data: suppliers = [] } = useQuery<Supplier[]>({
-    queryKey: ["/api/suppliers"],
+  const { data: suppliers = [] } = useQuery<Contact[]>({
+    queryKey: ["/api/contacts", { contactType: "supplier" }],
   });
+
+  const filteredSuppliers = useMemo(() => {
+    const search = supplierSearch.toLowerCase();
+    return suppliers.filter((s) => (s.name ?? "").toLowerCase().includes(search));
+  }, [suppliers, supplierSearch]);
 
   const { data: rfqTemplates = [] } = useQuery<RfqTemplate[]>({
     queryKey: ["/api/rfq-templates"],
@@ -500,21 +507,40 @@ export default function RFQDetail() {
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-64 p-2" align="start">
+                    <div className="relative mb-2">
+                      <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                      <Input
+                        value={supplierSearch}
+                        onChange={(e) => setSupplierSearch(e.target.value)}
+                        placeholder="Search suppliers..."
+                        className="h-7 pl-7 text-sm"
+                      />
+                    </div>
                     <div className="space-y-1 max-h-[200px] overflow-y-auto">
-                      {suppliers.map((supplier) => (
-                        <label
-                          key={supplier.id}
-                          className="flex items-center gap-2 p-2 rounded hover-elevate cursor-pointer"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={formData.supplierIds.includes(supplier.id)}
-                            onChange={() => toggleSupplier(supplier.id, supplier.name)}
-                            className="rounded"
-                          />
-                          <span className="text-sm">{supplier.name}</span>
-                        </label>
-                      ))}
+                      {suppliers.length === 0 ? (
+                        <p className="text-xs text-muted-foreground text-center py-4">
+                          No suppliers found. Add suppliers first.
+                        </p>
+                      ) : filteredSuppliers.length === 0 ? (
+                        <p className="text-xs text-muted-foreground text-center py-2">
+                          No suppliers match your search.
+                        </p>
+                      ) : (
+                        filteredSuppliers.map((supplier) => (
+                          <label
+                            key={supplier.id}
+                            className="flex items-center gap-2 p-2 rounded hover-elevate cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={formData.supplierIds.includes(supplier.id)}
+                              onChange={() => toggleSupplier(supplier.id, supplier.name ?? "")}
+                              className="rounded"
+                            />
+                            <span className="text-sm">{supplier.name}</span>
+                          </label>
+                        ))
+                      )}
                     </div>
                   </PopoverContent>
                 </Popover>

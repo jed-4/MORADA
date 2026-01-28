@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -13,8 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
-import { CalendarIcon, Upload, X, FileText } from "lucide-react";
-import type { EstimateItem, Supplier } from "@shared/schema";
+import { CalendarIcon, Upload, X, FileText, Search } from "lucide-react";
+import type { EstimateItem, Contact } from "@shared/schema";
 import { useQuery } from "@tanstack/react-query";
 
 // RFQ Form Schema
@@ -50,11 +50,17 @@ export function CreateRFQDialog({
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [attachments, setAttachments] = useState<File[]>([]);
+  const [supplierSearch, setSupplierSearch] = useState("");
 
-  // Fetch suppliers
-  const { data: suppliers = [] } = useQuery<Supplier[]>({
-    queryKey: ["/api/suppliers"],
+  // Fetch suppliers (from contacts with contactType='supplier')
+  const { data: suppliers = [] } = useQuery<Contact[]>({
+    queryKey: ["/api/contacts", { contactType: "supplier" }],
   });
+
+  const filteredSuppliers = useMemo(() => {
+    const search = supplierSearch.toLowerCase();
+    return suppliers.filter((s) => (s.name ?? "").toLowerCase().includes(search));
+  }, [suppliers, supplierSearch]);
 
   // Get selected items
   const selectedItems = estimateItems.filter(item => selectedItemIds.has(item.id));
@@ -171,8 +177,26 @@ export function CreateRFQDialog({
           {/* Multi-Supplier Selection */}
           <div className="space-y-2">
             <Label>Suppliers</Label>
-            <div className="space-y-2">
-              {suppliers.map((supplier) => (
+            <div className="relative mb-2">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <Input
+                value={supplierSearch}
+                onChange={(e) => setSupplierSearch(e.target.value)}
+                placeholder="Search suppliers..."
+                className="h-8 pl-7 text-sm"
+              />
+            </div>
+            <div className="space-y-2 max-h-[200px] overflow-y-auto border rounded-md p-2">
+              {suppliers.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-4">
+                  No suppliers found. Add suppliers first.
+                </p>
+              ) : filteredSuppliers.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-2">
+                  No suppliers match your search.
+                </p>
+              ) : (
+                filteredSuppliers.map((supplier) => (
                 <div key={supplier.id} className="flex items-center space-x-2">
                   <input
                     type="checkbox"
@@ -192,7 +216,7 @@ export function CreateRFQDialog({
                     {supplier.name}
                   </label>
                 </div>
-              ))}
+              )))}
             </div>
             {form.formState.errors.supplierIds && (
               <p className="text-sm text-destructive">{form.formState.errors.supplierIds.message}</p>

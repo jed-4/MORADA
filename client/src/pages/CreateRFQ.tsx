@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useLocation, useParams } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -36,8 +36,9 @@ import {
   Clock,
   ExternalLink,
   X,
+  Search,
 } from "lucide-react";
-import { type Project, type Supplier, type RfqTemplate } from "@shared/schema";
+import { type Project, type Contact, type RfqTemplate } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { format } from "date-fns";
 
@@ -66,6 +67,8 @@ export default function CreateRFQ() {
     items: [] as { description: string; quantity: string; unit: string; notes: string }[],
   });
 
+  const [supplierSearch, setSupplierSearch] = useState("");
+
   // Auto-populate project from URL when creating from project context
   useEffect(() => {
     if (projectIdFromUrl) {
@@ -82,9 +85,14 @@ export default function CreateRFQ() {
     queryKey: ["/api/projects"],
   });
 
-  const { data: suppliers = [] } = useQuery<Supplier[]>({
-    queryKey: ["/api/suppliers"],
+  const { data: suppliers = [] } = useQuery<Contact[]>({
+    queryKey: ["/api/contacts", { contactType: "supplier" }],
   });
+
+  const filteredSuppliers = useMemo(() => {
+    const search = supplierSearch.toLowerCase();
+    return suppliers.filter((s) => (s.name ?? "").toLowerCase().includes(search));
+  }, [suppliers, supplierSearch]);
 
   const { data: rfqTemplates = [] } = useQuery<RfqTemplate[]>({
     queryKey: ["/api/rfq-templates"],
@@ -295,13 +303,26 @@ export default function CreateRFQ() {
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-64 p-2" align="start">
+                    <div className="relative mb-2">
+                      <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                      <Input
+                        value={supplierSearch}
+                        onChange={(e) => setSupplierSearch(e.target.value)}
+                        placeholder="Search suppliers..."
+                        className="h-7 pl-7 text-sm"
+                      />
+                    </div>
                     <div className="space-y-1 max-h-[200px] overflow-y-auto">
                       {suppliers.length === 0 ? (
                         <p className="text-xs text-muted-foreground text-center py-4">
                           No suppliers found. Add suppliers first.
                         </p>
+                      ) : filteredSuppliers.length === 0 ? (
+                        <p className="text-xs text-muted-foreground text-center py-2">
+                          No suppliers match your search.
+                        </p>
                       ) : (
-                        suppliers.map((supplier) => (
+                        filteredSuppliers.map((supplier) => (
                           <label
                             key={supplier.id}
                             className="flex items-center gap-2 p-2 rounded hover-elevate cursor-pointer"
@@ -309,7 +330,7 @@ export default function CreateRFQ() {
                             <input
                               type="checkbox"
                               checked={form.supplierIds.includes(supplier.id)}
-                              onChange={() => toggleSupplier(supplier.id, supplier.name)}
+                              onChange={() => toggleSupplier(supplier.id, supplier.name ?? "")}
                               className="rounded"
                             />
                             <span className="text-sm">{supplier.name}</span>
