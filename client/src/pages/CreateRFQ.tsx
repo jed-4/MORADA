@@ -86,7 +86,7 @@ export default function CreateRFQ() {
   });
 
   const { data: suppliers = [] } = useQuery<Contact[]>({
-    queryKey: ["/api/contacts", { contactType: "supplier" }],
+    queryKey: ["/api/contacts?contactType=supplier"],
   });
 
   const filteredSuppliers = useMemo(() => {

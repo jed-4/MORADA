@@ -54,7 +54,7 @@ export function CreateRFQDialog({
 
   // Fetch suppliers (from contacts with contactType='supplier')
   const { data: suppliers = [] } = useQuery<Contact[]>({
-    queryKey: ["/api/contacts", { contactType: "supplier" }],
+    queryKey: ["/api/contacts?contactType=supplier"],
   });
 
   const filteredSuppliers = useMemo(() => {
