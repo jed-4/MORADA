@@ -86,7 +86,7 @@ interface UserTasksProps {
 }
 
 type ViewType = "list" | "board" | "calendar";
-type GroupByType = "none" | "status" | "priority" | "project";
+type GroupByType = "none" | "status" | "priority" | "project" | "labels";
 
 export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
   const { toast } = useToast();
@@ -386,6 +386,21 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
         case 'project':
           groupKey = task.projectName || 'No Project';
           break;
+        case 'labels':
+          // Check both task.labels and task.tagIds (for labels assigned via modal)
+          if (task.labels && task.labels.length > 0) {
+            groupKey = task.labels[0];
+          } else if (task.tagIds && (task.tagIds as string[]).length > 0) {
+            // Resolve tagIds to label names
+            const labelCategory = fieldCategories.find(cat => cat.key === "task.labels");
+            const labelOptions = labelCategory?.options || [];
+            const tagId = (task.tagIds as string[])[0];
+            const label = labelOptions.find(l => l.id === tagId);
+            groupKey = label?.name || 'No Labels';
+          } else {
+            groupKey = 'No Labels';
+          }
+          break;
       }
       
       if (!groups[groupKey]) {
@@ -400,7 +415,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
     });
     
     return sortedGroups;
-  }, [tasksWithProjects, groupBy]);
+  }, [tasksWithProjects, groupBy, fieldCategories]);
 
   const updateTaskMutation = useMutation({
     mutationFn: async ({ taskId, status }: { taskId: string; status: string }) => {
@@ -914,7 +929,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  {(["none", "status", "priority", "project"] as const).map(option => (
+                  {(["none", "status", "priority", "project", "labels"] as const).map(option => (
                     <DropdownMenuItem key={option} onClick={() => setGroupBy(option)}>
                       {option === 'none' ? 'No Grouping' : option.charAt(0).toUpperCase() + option.slice(1)}
                     </DropdownMenuItem>
