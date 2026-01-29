@@ -303,7 +303,9 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
       if (task) {
         return await apiRequest(`/api/tasks/${task.id}`, "PATCH", payload);
       } else {
-        return await apiRequest("/api/tasks", "POST", { ...payload, type: "task" });
+        // Include checklist items when creating a new task
+        const createPayload = { ...payload, type: "task", checklist: checklistItems };
+        return await apiRequest("/api/tasks", "POST", createPayload);
       }
     },
     onSuccess: () => {
@@ -397,44 +399,54 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
   });
 
   const handleAddChecklistItem = () => {
-    if (checklistInput.trim() && task) {
+    if (checklistInput.trim()) {
       const newItem = { id: crypto.randomUUID(), text: checklistInput.trim(), completed: false };
       const newChecklist = [...checklistItems, newItem];
       setChecklistItems(newChecklist);
-      updateChecklistMutation.mutate(newChecklist);
+      // Only call API mutation for existing tasks
+      if (task) {
+        updateChecklistMutation.mutate(newChecklist);
+      }
       setChecklistInput("");
       setShowChecklistInput(false);
     }
   };
 
   const handleToggleChecklistItem = (itemId: string) => {
-    if (!task) return;
     const newChecklist = checklistItems.map(item =>
       item.id === itemId ? { ...item, completed: !item.completed } : item
     );
     setChecklistItems(newChecklist);
-    updateChecklistMutation.mutate(newChecklist);
+    // Only call API mutation for existing tasks
+    if (task) {
+      updateChecklistMutation.mutate(newChecklist);
+    }
     
     // Auto-complete: if all checklist items are now completed, mark the task as done
     // If unchecking an item and task was completed, revert to default/in-progress status
-    const allCompleted = newChecklist.length > 0 && newChecklist.every(item => item.completed);
-    // Use isCompleted which already incorporates optimistic state
-    const currentlyCompleted = isCompleted;
-    
-    if (allCompleted && !currentlyCompleted) {
-      // All items checked - auto-complete the task
-      toggleCompleteMutation.mutate(true);
-    } else if (!allCompleted && currentlyCompleted) {
-      // Unchecked an item on a completed task - revert to default status
-      toggleCompleteMutation.mutate(false);
+    // Only apply auto-complete for existing tasks (not during new task creation)
+    if (task) {
+      const allCompleted = newChecklist.length > 0 && newChecklist.every(item => item.completed);
+      // Use isCompleted which already incorporates optimistic state
+      const currentlyCompleted = isCompleted;
+      
+      if (allCompleted && !currentlyCompleted) {
+        // All items checked - auto-complete the task
+        toggleCompleteMutation.mutate(true);
+      } else if (!allCompleted && currentlyCompleted) {
+        // Unchecked an item on a completed task - revert to default status
+        toggleCompleteMutation.mutate(false);
+      }
     }
   };
 
   const handleRemoveChecklistItem = (itemId: string) => {
-    if (!task) return;
     const newChecklist = checklistItems.filter(item => item.id !== itemId);
     setChecklistItems(newChecklist);
-    updateChecklistMutation.mutate(newChecklist);
+    // Only call API mutation for existing tasks
+    if (task) {
+      updateChecklistMutation.mutate(newChecklist);
+    }
   };
 
   const onSubmit = (data: TaskFormData) => {
@@ -701,10 +713,9 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
             )}
 
             {/* Checklist */}
-            {task && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium text-muted-foreground">Checklist</label>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium text-muted-foreground">Checklist</label>
                   <div className="flex items-center gap-2">
                     {checklistItems.length > 0 && (
                       <span className="text-xs text-muted-foreground">
@@ -775,7 +786,6 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                   )}
                 </div>
               </div>
-            )}
 
             {/* Attachments */}
             {task && attachments.length > 0 && (

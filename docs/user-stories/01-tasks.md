@@ -57,8 +57,8 @@ The Tasks system is the core work management feature of BuildPro, enabling build
 **So that** I can update information as requirements change
 
 **Acceptance Criteria:**
-- [ ] User can edit all task fields from the task detail modal
-- [ ] Changes are saved automatically or on explicit save
+- [x] User can edit all task fields from the task detail modal
+- [x] Changes are saved automatically or on explicit save
 - [ ] Edit history is preserved (activity feed)
 - [ ] Other viewers see updates in real-time or on refresh
 
@@ -277,11 +277,11 @@ The Tasks system is the core work management feature of BuildPro, enabling build
 **So that** I can break down complex work into steps
 
 **Acceptance Criteria:**
-- [ ] User can add multiple checklist items to a task
-- [ ] Checklist items can be checked/unchecked
+- [x] User can add multiple checklist items to a task
+- [x] Checklist items can be checked/unchecked
 - [ ] Checklist items can be reordered
-- [ ] Checklist items can be edited and deleted
-- [ ] Task shows checklist completion progress
+- [x] Checklist items can be edited and deleted
+- [x] Task shows checklist completion progress
 
 **Priority:** Must Have  
 **Status:** Implemented
