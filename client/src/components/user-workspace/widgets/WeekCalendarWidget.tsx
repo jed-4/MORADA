@@ -20,7 +20,9 @@ import {
   startOfDay
 } from "date-fns";
 import { generateNotionColors } from "@/lib/taskColors";
+import { TaskDetailModal } from "@/components/TaskDetailModal";
 import TaskEditModal from "@/components/TaskEditModal";
+import type { Task } from "@shared/schema";
 
 type ColorMode = "type" | "project" | "priority";
 type ViewMode = "timeline" | "stacked";
@@ -249,6 +251,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   
   const [currentTimeMinutes, setCurrentTimeMinutes] = useState(() => {
@@ -674,10 +677,17 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
         )}
       </div>
       
-      <TaskEditModal
+      <TaskDetailModal
+        taskId={selectedTaskId}
         open={!!selectedTaskId}
         onOpenChange={(open) => !open && setSelectedTaskId(null)}
-        taskId={selectedTaskId || undefined}
+        onEdit={(task) => setEditingTask(task)}
+      />
+      
+      <TaskEditModal
+        task={editingTask || undefined}
+        open={!!editingTask}
+        onOpenChange={(open) => !open && setEditingTask(null)}
       />
     </div>
   );

@@ -10,7 +10,9 @@ import { useLocation } from "wouter";
 import { format, isToday, isTomorrow, addDays, subDays, startOfWeek, endOfWeek, isSameDay, eachDayOfInterval, isBefore } from "date-fns";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { generateNotionColors } from "@/lib/taskColors";
+import { TaskDetailModal } from "@/components/TaskDetailModal";
 import TaskEditModal from "@/components/TaskEditModal";
+import type { Task } from "@shared/schema";
 
 type ViewMode = "list" | "day" | "week";
 
@@ -106,6 +108,7 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
   const [configDaysAhead, setConfigDaysAhead] = useState(daysAhead);
   const [configViewMode, setConfigViewMode] = useState(defaultViewMode);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [, setLocation] = useLocation();
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -661,11 +664,17 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
         )}
       </div>
       
-      <TaskEditModal
+      <TaskDetailModal
+        taskId={selectedTaskId}
         open={!!selectedTaskId}
         onOpenChange={(open) => !open && setSelectedTaskId(null)}
-        task={selectedTask}
-        taskId={selectedTaskId || undefined}
+        onEdit={(task) => setEditingTask(task)}
+      />
+      
+      <TaskEditModal
+        task={editingTask || undefined}
+        open={!!editingTask}
+        onOpenChange={(open) => !open && setEditingTask(null)}
       />
     </>
   );

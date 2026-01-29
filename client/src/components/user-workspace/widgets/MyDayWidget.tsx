@@ -28,6 +28,7 @@ import { useLocation } from "wouter";
 import { format, isToday, isBefore, startOfDay } from "date-fns";
 import { type Task, type Project } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { TaskDetailModal } from "@/components/TaskDetailModal";
 import TaskEditModal from "@/components/TaskEditModal";
 import {
   DndContext,
@@ -125,6 +126,7 @@ function SortableSectionItem({
 export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId }: WidgetProps) {
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [, setLocation] = useLocation();
   const today = startOfDay(new Date());
 
@@ -511,11 +513,17 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
         </div>
       )}
       
-      <TaskEditModal
+      <TaskDetailModal
+        taskId={selectedTaskId}
         open={!!selectedTaskId}
         onOpenChange={(open) => !open && setSelectedTaskId(null)}
-        task={tasks.find(t => t.id === selectedTaskId)}
-        taskId={selectedTaskId || undefined}
+        onEdit={(task) => setEditingTask(task)}
+      />
+      
+      <TaskEditModal
+        task={editingTask || undefined}
+        open={!!editingTask}
+        onOpenChange={(open) => !open && setEditingTask(null)}
       />
     </div>
   );

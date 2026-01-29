@@ -10,7 +10,9 @@ import { WidgetProps } from "@/types/widgets";
 import { usePersonalCalendarEvents, CalendarItem } from "./usePersonalCalendarEvents";
 import { format, addDays, subDays, isToday, isBefore, startOfDay } from "date-fns";
 import { generateNotionColors } from "@/lib/taskColors";
+import { TaskDetailModal } from "@/components/TaskDetailModal";
 import TaskEditModal from "@/components/TaskEditModal";
+import type { Task } from "@shared/schema";
 
 const HOUR_HEIGHT = 48;
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
@@ -171,6 +173,7 @@ export default function DayCalendarWidget({ widget, onUpdate, isConfiguring, onC
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   
   // Current time state that updates every minute
@@ -424,10 +427,17 @@ export default function DayCalendarWidget({ widget, onUpdate, isConfiguring, onC
         )}
       </div>
       
-      <TaskEditModal
+      <TaskDetailModal
+        taskId={selectedTaskId}
         open={!!selectedTaskId}
         onOpenChange={(open) => !open && setSelectedTaskId(null)}
-        taskId={selectedTaskId || undefined}
+        onEdit={(task) => setEditingTask(task)}
+      />
+      
+      <TaskEditModal
+        task={editingTask || undefined}
+        open={!!editingTask}
+        onOpenChange={(open) => !open && setEditingTask(null)}
       />
     </div>
   );

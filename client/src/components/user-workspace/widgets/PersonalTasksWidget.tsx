@@ -23,6 +23,7 @@ import {
 import { WidgetProps } from "@/types/widgets";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { type Task, type Project } from "@shared/schema";
+import { TaskDetailModal } from "@/components/TaskDetailModal";
 import TaskEditModal from "@/components/TaskEditModal";
 import { format, isToday, isTomorrow, isBefore, startOfDay, addDays, addWeeks, addMonths, isWithinInterval, endOfWeek, endOfMonth, startOfWeek, startOfMonth } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -58,6 +59,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
   const [configProjectFilter, setConfigProjectFilter] = useState(projectFilter);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -406,11 +408,17 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
         onOpenChange={setShowCreateDialog}
       />
       
-      <TaskEditModal
+      <TaskDetailModal
+        taskId={selectedTaskId}
         open={!!selectedTaskId}
         onOpenChange={(open) => !open && setSelectedTaskId(null)}
-        task={tasks.find(t => t.id === selectedTaskId)}
-        taskId={selectedTaskId || undefined}
+        onEdit={(task) => setEditingTask(task)}
+      />
+      
+      <TaskEditModal
+        task={editingTask || undefined}
+        open={!!editingTask}
+        onOpenChange={(open) => !open && setEditingTask(null)}
       />
       
       <ScrollArea className="flex-1 min-h-0">

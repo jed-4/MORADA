@@ -39,7 +39,8 @@ import type { Task, Project } from "@shared/schema";
 type ChecklistItem = { id?: string; text: string; completed: boolean };
 
 interface TaskDetailModalProps {
-  event: CalendarEvent | null;
+  event?: CalendarEvent | null;
+  taskId?: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onEdit?: (task: Task) => void;
@@ -58,22 +59,27 @@ function getInitials(name: string | null | undefined): string {
   return name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
 }
 
-export function TaskDetailModal({ event, open, onOpenChange, onEdit }: TaskDetailModalProps) {
+export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: TaskDetailModalProps) {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  // Fetch project details if the event has a projectId
-  const { data: project } = useQuery<Project>({
-    queryKey: ["/api/projects", event?.projectId],
-    enabled: !!event?.projectId,
+  // Determine which ID to use - taskId prop takes precedence
+  const effectiveTaskId = taskId || event?.id;
+  const isTaskType = taskId ? true : event?.type === "task";
+
+  // Fetch full task details if it's a task event or taskId is provided
+  const { data: taskDetails } = useQuery<Task>({
+    queryKey: ["/api/tasks", effectiveTaskId],
+    enabled: open && isTaskType && !!effectiveTaskId,
   });
 
-  // Fetch full task details if it's a task event
-  const { data: taskDetails } = useQuery<Task>({
-    queryKey: ["/api/tasks", event?.id],
-    enabled: open && event?.type === "task",
+  // Fetch project details - use taskDetails.projectId when opened via taskId
+  const projectIdForQuery = event?.projectId || taskDetails?.projectId;
+  const { data: project } = useQuery<Project>({
+    queryKey: ["/api/projects", projectIdForQuery],
+    enabled: !!projectIdForQuery,
   });
 
   // Sync local checklist state with task data
@@ -88,8 +94,8 @@ export function TaskDetailModal({ event, open, onOpenChange, onEdit }: TaskDetai
   // Mutation to update checklist
   const updateChecklistMutation = useMutation({
     mutationFn: async (newChecklist: ChecklistItem[]) => {
-      if (!event?.id) return;
-      return await apiRequest(`/api/tasks/${event.id}`, "PATCH", { checklist: newChecklist });
+      if (!effectiveTaskId) return;
+      return await apiRequest(`/api/tasks/${effectiveTaskId}`, "PATCH", { checklist: newChecklist });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
@@ -100,7 +106,7 @@ export function TaskDetailModal({ event, open, onOpenChange, onEdit }: TaskDetai
         description: error.message,
         variant: "destructive",
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks", event?.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks", effectiveTaskId] });
     },
   });
 
@@ -110,11 +116,11 @@ export function TaskDetailModal({ event, open, onOpenChange, onEdit }: TaskDetai
   // Mutation to mark task complete/incomplete
   const toggleCompleteMutation = useMutation({
     mutationFn: async () => {
-      if (!event?.id) return;
+      if (!effectiveTaskId) return;
       // Use taskDetails for fresh state, fallback to event prop
-      const currentlyCompleted = taskDetails?.status === "done" || taskDetails?.status === "completed" || event.isCompleted;
+      const currentlyCompleted = taskDetails?.status === "done" || taskDetails?.status === "completed" || event?.isCompleted;
       const newStatus = currentlyCompleted ? "todo" : "done";
-      return await apiRequest(`/api/tasks/${event.id}`, "PATCH", { status: newStatus });
+      return await apiRequest(`/api/tasks/${effectiveTaskId}`, "PATCH", { status: newStatus });
     },
     onSuccess: (_, __, context) => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
@@ -138,8 +144,8 @@ export function TaskDetailModal({ event, open, onOpenChange, onEdit }: TaskDetai
   // Mutation to delete task
   const deleteTaskMutation = useMutation({
     mutationFn: async () => {
-      if (!event?.id) return;
-      return await apiRequest(`/api/tasks/${event.id}`, "DELETE");
+      if (!effectiveTaskId) return;
+      return await apiRequest(`/api/tasks/${effectiveTaskId}`, "DELETE");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
