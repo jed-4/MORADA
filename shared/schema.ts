@@ -97,6 +97,9 @@ export const users = pgTable("users", {
   // Gmail integration - send BuildPro emails from user's Gmail
   useGmailForSending: boolean("use_gmail_for_sending").notNull().default(false),
   
+  // User preferences
+  timezone: text("timezone"), // User's preferred display timezone (null = use company timezone)
+  
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

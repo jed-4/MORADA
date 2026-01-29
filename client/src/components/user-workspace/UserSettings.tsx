@@ -4,9 +4,39 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { Bell, User, Calendar, Settings as SettingsIcon, Mail, CheckCircle2, Clock, Shield } from "lucide-react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import { Bell, User, Calendar, Settings as SettingsIcon, Mail, CheckCircle2, Clock, Shield, Globe } from "lucide-react";
+
+const TIMEZONE_OPTIONS = [
+  { value: "Australia/Sydney", label: "Sydney (AEDT/AEST)" },
+  { value: "Australia/Melbourne", label: "Melbourne (AEDT/AEST)" },
+  { value: "Australia/Brisbane", label: "Brisbane (AEST)" },
+  { value: "Australia/Perth", label: "Perth (AWST)" },
+  { value: "Australia/Adelaide", label: "Adelaide (ACDT/ACST)" },
+  { value: "Australia/Darwin", label: "Darwin (ACST)" },
+  { value: "Australia/Hobart", label: "Hobart (AEDT/AEST)" },
+  { value: "Pacific/Auckland", label: "Auckland (NZDT/NZST)" },
+  { value: "Asia/Manila", label: "Manila (PHT)" },
+  { value: "Asia/Singapore", label: "Singapore (SGT)" },
+  { value: "Asia/Hong_Kong", label: "Hong Kong (HKT)" },
+  { value: "Asia/Tokyo", label: "Tokyo (JST)" },
+  { value: "Asia/Jakarta", label: "Jakarta (WIB)" },
+  { value: "Asia/Kolkata", label: "India (IST)" },
+  { value: "Europe/London", label: "London (GMT/BST)" },
+  { value: "America/New_York", label: "New York (EST/EDT)" },
+  { value: "America/Los_Angeles", label: "Los Angeles (PST/PDT)" },
+  { value: "UTC", label: "UTC" },
+];
 
 const USER_SETTINGS_CATEGORIES = [
   {
@@ -77,6 +107,25 @@ export default function UserSettings() {
     setNotifications(updated);
     localStorage.setItem('notificationPreferences', JSON.stringify(updated));
     toast({ title: "Preferences saved" });
+  };
+
+  // Timezone update mutation
+  const updateTimezoneMutation = useMutation({
+    mutationFn: async (timezone: string | null) => {
+      return await apiRequest(`/api/users/${user?.id}/timezone`, "PATCH", { timezone });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+      toast({ title: "Timezone updated", description: "Your timezone preference has been saved." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update timezone.", variant: "destructive" });
+    },
+  });
+
+  const handleTimezoneChange = (value: string) => {
+    const timezone = value === "company-default" ? null : value;
+    updateTimezoneMutation.mutate(timezone);
   };
 
   const NotificationItem = ({ 
@@ -225,13 +274,50 @@ export default function UserSettings() {
             <Card className="border-2">
               <CardHeader className="pb-2">
                 <CardTitle className="text-base font-semibold flex items-center gap-2">
+                  <Globe className="h-4 w-4 text-muted-foreground" />
+                  Timezone
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Display Timezone</Label>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    All dates and times in the app will be displayed in your selected timezone. 
+                    Leave as "Company Default" to use your company's timezone setting.
+                  </p>
+                  <Select
+                    value={user?.timezone || "company-default"}
+                    onValueChange={handleTimezoneChange}
+                  >
+                    <SelectTrigger className="w-full max-w-xs" data-testid="select-timezone">
+                      <SelectValue placeholder="Select timezone" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="company-default">Company Default</SelectItem>
+                      {TIMEZONE_OPTIONS.map((tz) => (
+                        <SelectItem key={tz.value} value={tz.value}>
+                          {tz.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {updateTimezoneMutation.isPending && (
+                    <p className="text-xs text-muted-foreground">Saving...</p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-2">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base font-semibold flex items-center gap-2">
                   <SettingsIcon className="h-4 w-4 text-muted-foreground" />
-                  Display Preferences
+                  Other Preferences
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-sm text-muted-foreground py-8 text-center">
-                  Display preferences coming soon
+                  Additional display preferences coming soon
                 </div>
               </CardContent>
             </Card>

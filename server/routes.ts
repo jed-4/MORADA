@@ -5450,6 +5450,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Update user timezone (users can only update their own timezone)
+  app.patch("/api/users/:id/timezone", requireAuth, async (req, res) => {
+    try {
+      const currentUser = req.user as any;
+      const targetUserId = req.params.id;
+      
+      // Users can only update their own timezone
+      if (currentUser.id !== targetUserId) {
+        return res.status(403).json({ error: "You can only update your own timezone" });
+      }
+      
+      const { timezone } = req.body;
+      
+      // Validate timezone is a valid IANA timezone string or null
+      if (timezone !== null && typeof timezone !== 'string') {
+        return res.status(400).json({ error: "Invalid timezone format" });
+      }
+      
+      const updatedUser = await storage.updateUser(targetUserId, { timezone });
+      res.json(updatedUser);
+    } catch (error) {
+      console.error("Error updating user timezone:", error);
+      res.status(500).json({ error: "Failed to update timezone" });
+    }
+  });
+
   app.patch("/api/users/:id", requireTeamMember, requirePermission("admin.users", "edit"), async (req, res) => {
     try {
       // Validate password strength if password is being updated
