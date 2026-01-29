@@ -41,7 +41,7 @@ import TaskBoard, { type BoardGroupByType } from "@/components/TaskBoard";
 import TaskListCompact from "@/components/TaskListCompact";
 import TaskModalAsana from "@/components/TaskModalAsana";
 import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
-import type { User, Task, Project, FieldCategoryWithOptions, TaskView } from "@shared/schema";
+import type { User, Task, Project, FieldCategoryWithOptions, TaskView, Company } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { applyTaskFilters, extractFilterOptions, deserializeFilters } from "@/utils/taskFilters";
 import { useToast } from "@/hooks/use-toast";
@@ -122,6 +122,13 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
   const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
     queryKey: ["/api/field-categories"],
   });
+
+  // Fetch company data for business nickname
+  const { data: company } = useQuery<Company>({
+    queryKey: ["/api/companies", user?.companyId],
+    enabled: !!user?.companyId,
+  });
+  const businessNickname = company?.nickname || company?.name;
 
   const { priorityOptions: fetchedPriorityOptions } = useTaskPriorityOptions();
   
@@ -984,6 +991,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
               groupBy={groupBy === 'none' ? 'status' : groupBy as BoardGroupByType}
               fieldCategories={fieldCategories}
               projects={projects.map(p => ({ id: p.id, name: p.name, color: p.color }))}
+              businessNickname={businessNickname}
             />
           </div>
         ) : (

@@ -61,6 +61,7 @@ interface TaskBoardProps {
   groupBy?: BoardGroupByType;
   fieldCategories?: FieldCategoryWithOptions[];
   projects?: { id: string; name: string; color?: string | null }[];
+  businessNickname?: string;
 }
 
 // Draggable Task Card wrapper
@@ -189,7 +190,7 @@ function DroppableColumn({
   );
 }
 
-export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, filters, onTaskClick, onAddTask: propOnAddTask, projectId, displaySettings, cardWidth: propCardWidth = 'comfortable', onDelete, showActions, groupBy = 'status', fieldCategories = [], projects = [] }: TaskBoardProps = {}) {
+export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, filters, onTaskClick, onAddTask: propOnAddTask, projectId, displaySettings, cardWidth: propCardWidth = 'comfortable', onDelete, showActions, groupBy = 'status', fieldCategories = [], projects = [], businessNickname }: TaskBoardProps = {}) {
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
   const [selectedColumnStatus, setSelectedColumnStatus] = useState<string>("todo");
   const [activeTask, setActiveTask] = useState<Task | null>(null);
@@ -315,8 +316,9 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
           status: proj.id,
           color: proj.color || undefined
         }));
-        // Add "No Project" column
-        projectCols.push({ id: 'no-project', title: 'No Project', status: 'no-project', color: '#6B7280' });
+        // Add column for tasks without a project - use business nickname if available
+        const noProjectTitle = businessNickname || 'Business';
+        projectCols.push({ id: 'no-project', title: noProjectTitle, status: 'no-project', color: '#6B7280' });
         return projectCols;
       default:
         return fallbackStatusColumns;
