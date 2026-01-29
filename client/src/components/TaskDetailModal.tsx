@@ -175,22 +175,34 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
     updateChecklistMutation.mutate(newChecklist);
   };
 
-  if (!event) return null;
+  // If no event and no taskId, nothing to show
+  if (!event && !taskId) return null;
 
-  const isGoogleCalendar = event.type === "google-calendar";
-  const isTask = event.type === "task";
-  const isSchedule = event.type === "schedule";
-  const isMeeting = event.type === "meeting";
+  // When only taskId is provided, we treat it as a task
+  const isGoogleCalendar = event?.type === "google-calendar";
+  const isTask = taskId ? true : event?.type === "task";
+  const isSchedule = event?.type === "schedule";
+  const isMeeting = event?.type === "meeting";
+
+  // Get display values - use taskDetails when available, fallback to event
+  const displayTitle = taskDetails?.title || event?.title || "Task";
+  const displayProjectId = taskDetails?.projectId || event?.projectId;
+  const displayDescription = taskDetails?.description || event?.description || null;
+  const displayStartDate = taskDetails?.dueDate || event?.startDate;
+  const displayStartTime = event?.startTime;
+  const displayEndTime = event?.endTime;
+  const displayStatus = taskDetails?.status || event?.status;
+  const displayLocation = event?.location;
 
   const handleNavigate = () => {
-    if (isTask && event.projectId) {
-      navigate(`/projects/${event.projectId}/tasks`);
+    if (isTask && displayProjectId) {
+      navigate(`/projects/${displayProjectId}/tasks`);
       onOpenChange(false);
-    } else if (isSchedule && event.projectId) {
-      navigate(`/projects/${event.projectId}/schedule`);
+    } else if (isSchedule && displayProjectId) {
+      navigate(`/projects/${displayProjectId}/schedule`);
       onOpenChange(false);
-    } else if (isMeeting && event.projectId) {
-      navigate(`/projects/${event.projectId}/minutes`);
+    } else if (isMeeting && displayProjectId) {
+      navigate(`/projects/${displayProjectId}/minutes`);
       onOpenChange(false);
     }
   };
@@ -220,7 +232,7 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1 min-w-0">
               <DialogTitle className="text-xl flex items-center gap-2 flex-wrap">
-                {event.title}
+                {displayTitle}
                 {isGoogleCalendar && (
                   <Badge 
                     variant="outline" 
@@ -255,13 +267,13 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
                   {priorityInfo.label}
                 </Badge>
               )}
-              {(taskDetails?.status || event.status) && (
+              {displayStatus && (
                 <Badge 
                   variant={isTaskCompleted ? "default" : "secondary"}
                   data-testid="status-badge"
                 >
                   {isTaskCompleted && <CheckCircle2 className="h-3 w-3 mr-1" />}
-                  {taskDetails?.status || event.status}
+                  {displayStatus}
                 </Badge>
               )}
             </div>
@@ -290,17 +302,22 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
                 </>
               )}
             </Button>
-            {event.projectId && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleNavigate}
-                data-testid="edit-task-button"
-              >
-                <Pencil className="h-4 w-4 mr-1.5" />
-                Edit
-              </Button>
-            )}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                if (onEdit && taskDetails) {
+                  onEdit(taskDetails);
+                  onOpenChange(false);
+                } else if (displayProjectId) {
+                  handleNavigate();
+                }
+              }}
+              data-testid="edit-task-button"
+            >
+              <Pencil className="h-4 w-4 mr-1.5" />
+              Edit
+            </Button>
             {!showDeleteConfirm ? (
               <Button
                 size="sm"
@@ -338,19 +355,21 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
 
         <div className="space-y-4 mt-4">
           {/* Date and Time */}
-          <div className="flex items-start gap-3">
-            <Calendar className="h-5 w-5 text-muted-foreground mt-0.5" />
-            <div className="flex-1">
-              <p className="font-medium">{formatEventDate(event.startDate)}</p>
-              {(event.startTime || event.endTime) && (
-                <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-                  <Clock className="h-3 w-3" />
-                  {formatTime(event.startTime)}
-                  {event.endTime && ` - ${formatTime(event.endTime)}`}
-                </p>
-              )}
+          {displayStartDate && (
+            <div className="flex items-start gap-3">
+              <Calendar className="h-5 w-5 text-muted-foreground mt-0.5" />
+              <div className="flex-1">
+                <p className="font-medium">{formatEventDate(new Date(displayStartDate))}</p>
+                {(displayStartTime || displayEndTime) && (
+                  <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
+                    <Clock className="h-3 w-3" />
+                    {formatTime(displayStartTime)}
+                    {displayEndTime && ` - ${formatTime(displayEndTime)}`}
+                  </p>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Assignee with Avatar (for tasks) */}
           {isTask && taskDetails?.assigneeName && (
@@ -374,21 +393,21 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
           )}
 
           {/* Location (for Google Calendar events) */}
-          {isGoogleCalendar && event.location && (
+          {isGoogleCalendar && displayLocation && (
             <>
               <Separator />
               <div className="flex items-start gap-3">
                 <MapPin className="h-5 w-5 text-muted-foreground mt-0.5" />
                 <div className="flex-1">
                   <p className="font-medium text-sm">Location</p>
-                  <p className="text-sm text-muted-foreground mt-1">{event.location}</p>
+                  <p className="text-sm text-muted-foreground mt-1">{displayLocation}</p>
                 </div>
               </div>
             </>
           )}
 
           {/* Description */}
-          {((isGoogleCalendar && event.description) || (isTask && taskDetails?.content)) && (
+          {((isGoogleCalendar && displayDescription) || (isTask && taskDetails?.content)) && (
             <>
               <Separator />
               <div className="flex items-start gap-3">
@@ -396,7 +415,7 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
                 <div className="flex-1">
                   <p className="font-medium text-sm">Description</p>
                   <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap line-clamp-4">
-                    {isGoogleCalendar ? event.description : taskDetails?.content}
+                    {isGoogleCalendar ? displayDescription : taskDetails?.content}
                   </p>
                 </div>
               </div>
@@ -472,7 +491,7 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
           <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="close-event-detail">
             Close
           </Button>
-          {(isSchedule || isMeeting) && event.projectId && (
+          {(isSchedule || isMeeting) && displayProjectId && (
             <Button onClick={handleNavigate} data-testid="go-to-event">
               <ExternalLink className="h-4 w-4 mr-2" />
               {isSchedule && "Go to Schedule"}
