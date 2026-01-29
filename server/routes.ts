@@ -16538,8 +16538,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Reminder Notifications
-  app.get("/api/notifications", requireAuth, async (req, res) => {
+  // Reminder Notifications (legacy - use /api/reminder-notifications)
+  app.get("/api/reminder-notifications", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
       if (!user?.id) {
@@ -16556,20 +16556,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/notifications/unread-count", requireAuth, async (req, res) => {
+  app.get("/api/reminder-notifications/unread-count", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
       if (!user?.id) {
         return res.status(401).json({ error: "Unauthorized" });
       }
-      const count = await storage.getUnreadNotificationCount(user.id);
+      const count = await (storage as any).getUnreadReminderNotificationCount?.(user.id) || 0;
       res.json({ count });
     } catch (error: any) {
       res.status(500).json({ error: "Failed to fetch unread count", details: error.message });
     }
   });
 
-  app.post("/api/notifications/:id/read", requireAuth, async (req, res) => {
+  app.post("/api/reminder-notifications/:id/read", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
       if (!user?.id) {
