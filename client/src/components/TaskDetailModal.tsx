@@ -59,6 +59,12 @@ function getInitials(name: string | null | undefined): string {
   return name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
 }
 
+function isEmptyHtmlContent(content: string | null | undefined): boolean {
+  if (!content) return true;
+  const stripped = content.replace(/<[^>]*>/g, '').trim();
+  return stripped.length === 0;
+}
+
 export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: TaskDetailModalProps) {
   const [, navigate] = useLocation();
   const { toast } = useToast();
@@ -407,7 +413,7 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
           )}
 
           {/* Description */}
-          {((isGoogleCalendar && displayDescription) || (isTask && taskDetails?.content)) && (
+          {((isGoogleCalendar && displayDescription) || (isTask && taskDetails?.content && !isEmptyHtmlContent(taskDetails.content))) && (
             <>
               <Separator />
               <div className="flex items-start gap-3">
