@@ -35,6 +35,16 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -299,6 +309,9 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
   
   // Grouping and Archive state
   const [isArchiveOpen, setIsArchiveOpen] = useState(false);
+  
+  // Unsaved changes confirmation dialog
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
@@ -1314,10 +1327,12 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
         open={isDialogOpen} 
         onOpenChange={(open) => {
           if (!open) {
-            setIsAddingNote(false);
-            setEditingNote(null);
-            setSelectedTemplate(null);
-            form.reset(defaultValuesRef.current);
+            // Check if form has unsaved changes
+            if (form.formState.isDirty) {
+              setShowDiscardConfirm(true);
+              return;
+            }
+            handleDialogClose();
           }
         }}
       >
@@ -1684,6 +1699,29 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
           </Form>
         </DialogContent>
       </Dialog>
+
+      {/* Unsaved changes confirmation dialog */}
+      <AlertDialog open={showDiscardConfirm} onOpenChange={setShowDiscardConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have unsaved changes. Are you sure you want to close without saving?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep Editing</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setShowDiscardConfirm(false);
+                handleDialogClose();
+              }}
+            >
+              Discard Changes
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
