@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { type Task } from "@shared/schema";
+import { type Task, type FieldCategoryWithOptions } from "@shared/schema";
 import { Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import TaskCardCompact from "./TaskCardCompact";
 import TaskModalAsana from "./TaskModalAsana";
@@ -40,7 +40,10 @@ interface CardDisplaySettings {
   showAssignee?: boolean;
   showDueDate?: boolean;
   showSubtasks?: boolean;
+  showStatus?: boolean;
 }
+
+export type BoardGroupByType = 'status' | 'priority' | 'labels' | 'project';
 
 interface TaskBoardProps {
   tasks?: Task[];
@@ -55,6 +58,9 @@ interface TaskBoardProps {
   onScrollOverflowChange?: (hasOverflow: boolean) => void;
   onDelete?: (task: Task) => void;
   showActions?: boolean;
+  groupBy?: BoardGroupByType;
+  fieldCategories?: FieldCategoryWithOptions[];
+  projects?: { id: string; name: string; color?: string | null }[];
 }
 
 // Draggable Task Card wrapper
@@ -183,7 +189,7 @@ function DroppableColumn({
   );
 }
 
-export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, filters, onTaskClick, onAddTask: propOnAddTask, projectId, displaySettings, cardWidth: propCardWidth = 'comfortable', onDelete, showActions }: TaskBoardProps = {}) {
+export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, filters, onTaskClick, onAddTask: propOnAddTask, projectId, displaySettings, cardWidth: propCardWidth = 'comfortable', onDelete, showActions, groupBy = 'status', fieldCategories = [], projects = [] }: TaskBoardProps = {}) {
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
   const [selectedColumnStatus, setSelectedColumnStatus] = useState<string>("todo");
   const [activeTask, setActiveTask] = useState<Task | null>(null);
@@ -246,22 +252,76 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
   // Get dynamic status options
   const { statusOptions, getStatusInfo, isLoading: statusOptionsLoading, hasLoadedButNoOptions } = useTaskStatusOptions();
   
-  // Fallback columns for loading and no-options states
-  const fallbackColumns = [
+  // Get priority and label options from field categories
+  const priorityCategory = fieldCategories.find(cat => cat.key === "task.priority");
+  const priorityOptions = priorityCategory?.options || [];
+  const labelCategory = fieldCategories.find(cat => cat.key === "task.labels");
+  const labelOptions = labelCategory?.options || [];
+  
+  // Fallback columns for different groupBy types
+  const fallbackStatusColumns = [
     { id: "todo", title: "To Do", status: "todo", color: "#6B7280" },
     { id: "in-progress", title: "In Progress", status: "in-progress", color: "#F59E0B" },
     { id: "done", title: "Done", status: "done", color: "#10B981" }
   ];
+  
+  const fallbackPriorityColumns = [
+    { id: "high", title: "High", status: "high", color: "#EF4444" },
+    { id: "medium", title: "Medium", status: "medium", color: "#F59E0B" },
+    { id: "low", title: "Low", status: "low", color: "#10B981" },
+    { id: "none", title: "No Priority", status: "none", color: "#6B7280" }
+  ];
 
-  // Create dynamic columns from status options with fallback to defaults
-  const columns = statusOptions.length > 0 
-    ? statusOptions.map(option => ({
-        id: option.key,
-        title: option.name,
-        status: option.key,
-        color: option.color || undefined
-      }))
-    : fallbackColumns; // Use fallback during loading and when no options configured
+  // Create dynamic columns based on groupBy type
+  const columns = (() => {
+    switch (groupBy) {
+      case 'status':
+        return statusOptions.length > 0 
+          ? statusOptions.map(option => ({
+              id: option.key,
+              title: option.name,
+              status: option.key,
+              color: option.color || undefined
+            }))
+          : fallbackStatusColumns;
+      case 'priority':
+        const priorityCols = priorityOptions.length > 0
+          ? priorityOptions.map(option => ({
+              id: option.key,
+              title: option.name,
+              status: option.key,
+              color: option.color || undefined
+            }))
+          : fallbackPriorityColumns;
+        // Add "No Priority" column if not exists
+        if (!priorityCols.find(col => col.id === 'none' || col.id === 'no-priority')) {
+          priorityCols.push({ id: 'none', title: 'No Priority', status: 'none', color: '#6B7280' });
+        }
+        return priorityCols;
+      case 'labels':
+        const labelCols = labelOptions.map(option => ({
+          id: option.id,
+          title: option.name,
+          status: option.id, // Use id for grouping
+          color: option.color || undefined
+        }));
+        // Add "No Labels" column
+        labelCols.push({ id: 'no-labels', title: 'No Labels', status: 'no-labels', color: '#6B7280' });
+        return labelCols;
+      case 'project':
+        const projectCols = projects.map(proj => ({
+          id: proj.id,
+          title: proj.name,
+          status: proj.id,
+          color: proj.color || undefined
+        }));
+        // Add "No Project" column
+        projectCols.push({ id: 'no-project', title: 'No Project', status: 'no-project', color: '#6B7280' });
+        return projectCols;
+      default:
+        return fallbackStatusColumns;
+    }
+  })();
   
   // Robust overflow detection using ResizeObserver
   useEffect(() => {
@@ -302,10 +362,36 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
   const tasks = propTasks || fetchedTasks;
   const isLoading = (propIsLoading !== undefined ? propIsLoading : fetchIsLoading) || statusOptionsLoading;
 
-  // Move task to different column
+  // Move task to different column - updates different fields based on groupBy
   const moveTaskMutation = useMutation({
-    mutationFn: async ({ taskId, newStatus }: { taskId: string; newStatus: string }) => {
-      const response = await apiRequest(`/api/tasks/${taskId}/status`, "PATCH", { status: newStatus });
+    mutationFn: async ({ taskId, newValue, currentTask }: { taskId: string; newValue: string; currentTask?: Task }) => {
+      let payload: Record<string, any> = {};
+      
+      switch (groupBy) {
+        case 'status':
+          payload = { status: newValue };
+          break;
+        case 'priority':
+          payload = { priority: newValue === 'none' ? null : newValue };
+          break;
+        case 'labels':
+          // For labels, preserve existing labels and update the primary (first) label
+          // This moves the task to the new label column while keeping other labels
+          const existingTagIds = (currentTask?.tagIds as string[] | undefined) || [];
+          if (newValue === 'no-labels') {
+            payload = { tagIds: [] };
+          } else {
+            // Replace the first label (primary) with the new one, keep others
+            const otherLabels = existingTagIds.slice(1);
+            payload = { tagIds: [newValue, ...otherLabels] };
+          }
+          break;
+        case 'project':
+          payload = { projectId: newValue === 'no-project' ? null : newValue };
+          break;
+      }
+      
+      const response = await apiRequest(`/api/tasks/${taskId}`, "PATCH", payload);
       return response.json();
     },
     onSuccess: () => {
@@ -343,17 +429,48 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
     deleteTaskMutation.mutate(task.id);
   };
 
-  // Board view displaySettings - hide status since tasks are grouped by status columns
+  // Board view displaySettings - hide the grouped field since tasks are organized by columns
   const boardDisplaySettings = {
     ...displaySettings,
-    showStatus: false,
+    showStatus: groupBy === 'status' ? false : displaySettings?.showStatus,
+    showPriority: groupBy === 'priority' ? false : displaySettings?.showPriority,
+    showLabels: groupBy === 'labels' ? false : displaySettings?.showLabels,
   };
 
-  // Group tasks by status
-  const tasksByStatus = tasks.reduce((acc, task) => {
-    const status = task.status || "todo";
-    if (!acc[status]) acc[status] = [];
-    acc[status].push(task);
+  // Group tasks by the selected groupBy field
+  const tasksByGroup = tasks.reduce((acc, task) => {
+    let groupKey: string;
+    
+    switch (groupBy) {
+      case 'status':
+        groupKey = task.status || "todo";
+        break;
+      case 'priority':
+        groupKey = task.priority || "none";
+        break;
+      case 'labels':
+        // Use first tagId if available, otherwise check labels array
+        const tagIds = task.tagIds as string[] | undefined;
+        if (tagIds && tagIds.length > 0) {
+          groupKey = tagIds[0];
+        } else if (task.labels && task.labels.length > 0) {
+          // Try to find the label ID by name
+          const labelName = task.labels[0];
+          const foundLabel = labelOptions.find(l => l.name === labelName);
+          groupKey = foundLabel?.id || 'no-labels';
+        } else {
+          groupKey = 'no-labels';
+        }
+        break;
+      case 'project':
+        groupKey = task.projectId || 'no-project';
+        break;
+      default:
+        groupKey = task.status || "todo";
+    }
+    
+    if (!acc[groupKey]) acc[groupKey] = [];
+    acc[groupKey].push(task);
     return acc;
   }, {} as Record<string, Task[]>);
 
@@ -386,18 +503,32 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
     
     if (!activeTask) return;
 
+    // Get the current group value for the active task
+    const getCurrentGroupValue = (task: Task): string => {
+      switch (groupBy) {
+        case 'status': return task.status || 'todo';
+        case 'priority': return task.priority || 'none';
+        case 'labels': 
+          const tagIds = task.tagIds as string[] | undefined;
+          return tagIds?.[0] || 'no-labels';
+        case 'project': return task.projectId || 'no-project';
+        default: return task.status || 'todo';
+      }
+    };
+
     // If dropped over a column
     if (over.data.current?.type === "column") {
-      const newStatus = over.data.current.column.status;
-      if (activeTask.status !== newStatus) {
-        moveTaskMutation.mutate({ taskId: activeTaskId, newStatus });
+      const newValue = over.data.current.column.status;
+      if (getCurrentGroupValue(activeTask) !== newValue) {
+        moveTaskMutation.mutate({ taskId: activeTaskId, newValue, currentTask: activeTask });
       }
     }
     // If dropped over another task, move to that task's column
     else if (over.data.current?.type === "task") {
       const overTask = over.data.current.task;
-      if (activeTask.status !== overTask.status) {
-        moveTaskMutation.mutate({ taskId: activeTaskId, newStatus: overTask.status });
+      const overTaskValue = getCurrentGroupValue(overTask);
+      if (getCurrentGroupValue(activeTask) !== overTaskValue) {
+        moveTaskMutation.mutate({ taskId: activeTaskId, newValue: overTaskValue, currentTask: activeTask });
       }
     }
   };
@@ -447,7 +578,7 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
           }}>
           <SortableContext items={columns.map(col => col.id)} strategy={verticalListSortingStrategy}>
             {columns.map((column) => {
-              const columnTasks = tasksByStatus[column.status] || [];
+              const columnTasks = tasksByGroup[column.status] || [];
               
               return (
                 <div key={column.id} className={`${getColumnWidthClass()} flex-shrink-0`}>

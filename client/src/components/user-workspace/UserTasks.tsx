@@ -37,7 +37,7 @@ import {
   CalendarDays,
   Pencil,
 } from "lucide-react";
-import TaskBoard from "@/components/TaskBoard";
+import TaskBoard, { type BoardGroupByType } from "@/components/TaskBoard";
 import TaskListCompact from "@/components/TaskListCompact";
 import TaskModalAsana from "@/components/TaskModalAsana";
 import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
@@ -920,8 +920,8 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            {/* Group By (list view only) */}
-            {activeView === "list" && (
+            {/* Group By (list and board views) */}
+            {(activeView === "list" || activeView === "board") && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5">
@@ -929,11 +929,21 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  {(["none", "status", "priority", "project", "labels"] as const).map(option => (
-                    <DropdownMenuItem key={option} onClick={() => setGroupBy(option)}>
-                      {option === 'none' ? 'No Grouping' : option.charAt(0).toUpperCase() + option.slice(1)}
-                    </DropdownMenuItem>
-                  ))}
+                  {activeView === "list" ? (
+                    // List view supports "none" grouping
+                    (["none", "status", "priority", "project", "labels"] as const).map(option => (
+                      <DropdownMenuItem key={option} onClick={() => setGroupBy(option)}>
+                        {option === 'none' ? 'No Grouping' : option.charAt(0).toUpperCase() + option.slice(1)}
+                      </DropdownMenuItem>
+                    ))
+                  ) : (
+                    // Board view always needs grouping (no "none" option)
+                    (["status", "priority", "project", "labels"] as const).map(option => (
+                      <DropdownMenuItem key={option} onClick={() => setGroupBy(option)}>
+                        {option.charAt(0).toUpperCase() + option.slice(1)}
+                      </DropdownMenuItem>
+                    ))
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
@@ -971,6 +981,9 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
               onTaskClick={(task) => setEditingTask(task)}
               onDelete={handleDeleteTask}
               showActions={true}
+              groupBy={groupBy === 'none' ? 'status' : groupBy as BoardGroupByType}
+              fieldCategories={fieldCategories}
+              projects={projects.map(p => ({ id: p.id, name: p.name, color: p.color }))}
             />
           </div>
         ) : (
