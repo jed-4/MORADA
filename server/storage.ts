@@ -115,6 +115,7 @@ import { contactInsurances as contactInsurancesTable } from "@shared/schema";
 import type { PriceListCategory, InsertPriceListCategory, PriceListItem, InsertPriceListItem, BillLineItemPriceLink, InsertBillLineItemPriceLink } from "@shared/schema";
 import type { DashboardView, InsertDashboardView, DashboardViewPermission, InsertDashboardViewPermission, UserDashboardPreference } from "@shared/schema";
 import type { NoteGroup, InsertNoteGroup } from "@shared/schema";
+import type { Notification as InAppNotification, InsertNotification } from "@shared/schema";
 import type { PaymentTermsOption, InsertPaymentTermsOption } from "@shared/schema";
 
 // modify the interface with any CRUD methods
@@ -1027,6 +1028,15 @@ export interface IStorage {
   updateBusinessDashboardView(id: string, companyId: string, updates: Partial<import("@shared/schema").InsertBusinessDashboardView>): Promise<import("@shared/schema").BusinessDashboardView | undefined>;
   deleteBusinessDashboardView(id: string, companyId: string): Promise<boolean>;
   ensureDefaultBusinessDashboardView(companyId: string): Promise<import("@shared/schema").BusinessDashboardView>;
+
+  // In-App Notifications
+  getNotifications(userId: string, companyId: string, options?: { limit?: number; unreadOnly?: boolean }): Promise<InAppNotification[]>;
+  getNotification(id: string, userId: string): Promise<InAppNotification | undefined>;
+  createNotification(notification: InsertNotification): Promise<InAppNotification>;
+  markNotificationAsRead(id: string, userId: string): Promise<InAppNotification | undefined>;
+  markAllNotificationsAsRead(userId: string, companyId: string): Promise<number>;
+  deleteNotification(id: string, userId: string): Promise<boolean>;
+  getUnreadNotificationCount(userId: string, companyId: string): Promise<number>;
 }
 
 export class MemStorage implements IStorage {
@@ -5312,6 +5322,29 @@ export class MemStorage implements IStorage {
   }
   async ensureDefaultBusinessDashboardView(companyId: string): Promise<import("@shared/schema").BusinessDashboardView> {
     throw new Error("Not implemented in MemStorage");
+  }
+
+  // In-App Notifications - MemStorage stubs
+  async getNotifications(userId: string, companyId: string, options?: { limit?: number; unreadOnly?: boolean }): Promise<InAppNotification[]> {
+    return [];
+  }
+  async getNotification(id: string, userId: string): Promise<InAppNotification | undefined> {
+    return undefined;
+  }
+  async createNotification(notification: InsertNotification): Promise<InAppNotification> {
+    throw new Error("Not implemented in MemStorage");
+  }
+  async markNotificationAsRead(id: string, userId: string): Promise<InAppNotification | undefined> {
+    return undefined;
+  }
+  async markAllNotificationsAsRead(userId: string, companyId: string): Promise<number> {
+    return 0;
+  }
+  async deleteNotification(id: string, userId: string): Promise<boolean> {
+    return false;
+  }
+  async getUnreadNotificationCount(userId: string, companyId: string): Promise<number> {
+    return 0;
   }
 }
 
@@ -17974,6 +18007,119 @@ export class DbStorage implements IStorage {
       return created;
     } catch (error) {
       console.error("Database error in ensureDefaultBusinessDashboardView:", error);
+      throw error;
+    }
+  }
+
+  // In-App Notifications
+  async getNotifications(userId: string, companyId: string, options?: { limit?: number; unreadOnly?: boolean }): Promise<InAppNotification[]> {
+    try {
+      let query = db.select()
+        .from(schema.notifications)
+        .where(and(
+          eq(schema.notifications.userId, userId),
+          eq(schema.notifications.companyId, companyId),
+          ...(options?.unreadOnly ? [eq(schema.notifications.isRead, false)] : [])
+        ))
+        .orderBy(desc(schema.notifications.createdAt));
+      
+      if (options?.limit) {
+        query = query.limit(options.limit) as any;
+      }
+      
+      return await query;
+    } catch (error) {
+      console.error("Database error in getNotifications:", error);
+      throw error;
+    }
+  }
+
+  async getNotification(id: string, userId: string): Promise<InAppNotification | undefined> {
+    try {
+      const [notification] = await db.select()
+        .from(schema.notifications)
+        .where(and(
+          eq(schema.notifications.id, id),
+          eq(schema.notifications.userId, userId)
+        ))
+        .limit(1);
+      return notification;
+    } catch (error) {
+      console.error("Database error in getNotification:", error);
+      throw error;
+    }
+  }
+
+  async createNotification(notification: InsertNotification): Promise<InAppNotification> {
+    try {
+      const [created] = await db.insert(schema.notifications)
+        .values(notification)
+        .returning();
+      return created;
+    } catch (error) {
+      console.error("Database error in createNotification:", error);
+      throw error;
+    }
+  }
+
+  async markNotificationAsRead(id: string, userId: string): Promise<InAppNotification | undefined> {
+    try {
+      const [updated] = await db.update(schema.notifications)
+        .set({ isRead: true, readAt: new Date() })
+        .where(and(
+          eq(schema.notifications.id, id),
+          eq(schema.notifications.userId, userId)
+        ))
+        .returning();
+      return updated;
+    } catch (error) {
+      console.error("Database error in markNotificationAsRead:", error);
+      throw error;
+    }
+  }
+
+  async markAllNotificationsAsRead(userId: string, companyId: string): Promise<number> {
+    try {
+      const result = await db.update(schema.notifications)
+        .set({ isRead: true, readAt: new Date() })
+        .where(and(
+          eq(schema.notifications.userId, userId),
+          eq(schema.notifications.companyId, companyId),
+          eq(schema.notifications.isRead, false)
+        ));
+      return (result as any).rowCount || 0;
+    } catch (error) {
+      console.error("Database error in markAllNotificationsAsRead:", error);
+      throw error;
+    }
+  }
+
+  async deleteNotification(id: string, userId: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.notifications)
+        .where(and(
+          eq(schema.notifications.id, id),
+          eq(schema.notifications.userId, userId)
+        ));
+      return (result as any).rowCount > 0;
+    } catch (error) {
+      console.error("Database error in deleteNotification:", error);
+      throw error;
+    }
+  }
+
+  async getUnreadNotificationCount(userId: string, companyId: string): Promise<number> {
+    try {
+      const [result] = await db.select({ count: sql<number>`count(*)` })
+        .from(schema.notifications)
+        .where(and(
+          eq(schema.notifications.userId, userId),
+          eq(schema.notifications.companyId, companyId),
+          eq(schema.notifications.isRead, false)
+        ));
+      return Number(result?.count || 0);
+    } catch (error) {
+      console.error("Database error in getUnreadNotificationCount:", error);
       throw error;
     }
   }

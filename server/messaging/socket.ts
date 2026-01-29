@@ -1,53 +1,9 @@
-import { Server as HttpServer } from "http";
 import { Server, Socket } from "socket.io";
 import { storage } from "../storage";
 import type { InsertMessage, Message } from "@shared/schema";
-import type { Request } from "express";
 
-export function setupMessagingSocket(httpServer: HttpServer, sessionMiddleware: any) {
-  const io = new Server(httpServer, {
-    cors: {
-      origin: process.env.NODE_ENV === "production" 
-        ? true // Allow same-origin in production (Replit handles this)
-        : "http://localhost:5000",
-      credentials: true
-    },
-    path: "/socket.io/"
-  });
-
-  // Wrap Express session middleware for Socket.io
-  io.engine.use(sessionMiddleware);
-
-  // Middleware to authenticate socket connections using Express session
-  io.use(async (socket: Socket, next) => {
-    try {
-      const req = socket.request as any;
-      const session = req.session;
-      
-      // Verify session exists and has a userId
-      if (!session || !session.userId) {
-        return next(new Error("Authentication required - no valid session"));
-      }
-      
-      // Get user from database to verify they exist and get companyId
-      const user = await storage.getUser(session.userId);
-      if (!user || !user.companyId) {
-        return next(new Error("User not found or has no company"));
-      }
-      
-      // Store authenticated user info in socket data
-      socket.data.userId = user.id;
-      socket.data.companyId = user.companyId;
-      
-      next();
-    } catch (error) {
-      console.error("Socket authentication error:", error);
-      next(new Error("Authentication failed"));
-    }
-  });
-
+export function setupMessagingHandlers(io: Server) {
   io.on("connection", (socket: Socket) => {
-    console.log(`User connected: ${socket.data.userId}`);
 
     // Join channel rooms
     socket.on("join_channel", async (channelId: string) => {
@@ -217,11 +173,5 @@ export function setupMessagingSocket(httpServer: HttpServer, sessionMiddleware: 
       }
     });
 
-    // Handle disconnection
-    socket.on("disconnect", () => {
-      console.log(`User disconnected: ${socket.data.userId}`);
-    });
   });
-
-  return io;
 }

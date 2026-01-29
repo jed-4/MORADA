@@ -1,7 +1,8 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
 import { io, Socket } from "socket.io-client";
 import { useAuth } from "@/hooks/use-auth";
-import type { Message } from "@shared/schema";
+import { queryClient } from "@/lib/queryClient";
+import type { Message, Task } from "@shared/schema";
 
 interface SocketContextType {
   socket: Socket | null;
@@ -212,4 +213,90 @@ export function useTypingIndicator(channelId: string | null) {
   }, [socket, channelId]);
 
   return typingUsers;
+}
+
+interface TaskEventData {
+  task?: Task;
+  taskId?: string;
+  createdBy?: string;
+  updatedBy?: string;
+  deletedBy?: string;
+  timestamp: string;
+}
+
+interface NotificationData {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  link?: string;
+  createdAt: string;
+}
+
+export function useTaskEvents() {
+  const { socket } = useSocket();
+  const { user } = useAuth();
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleTaskCreated = (data: TaskEventData) => {
+      if (data.createdBy === user?.id) return;
+      
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+    };
+
+    const handleTaskUpdated = (data: TaskEventData) => {
+      if (data.updatedBy === user?.id) return;
+      
+      if (data.task?.id) {
+        queryClient.invalidateQueries({ queryKey: ["/api/tasks", data.task.id] });
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+    };
+
+    const handleTaskDeleted = (data: TaskEventData) => {
+      if (data.deletedBy === user?.id) return;
+      
+      if (data.taskId) {
+        queryClient.removeQueries({ queryKey: ["/api/tasks", data.taskId] });
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+    };
+
+    socket.on("task:created", handleTaskCreated);
+    socket.on("task:updated", handleTaskUpdated);
+    socket.on("task:deleted", handleTaskDeleted);
+
+    return () => {
+      socket.off("task:created", handleTaskCreated);
+      socket.off("task:updated", handleTaskUpdated);
+      socket.off("task:deleted", handleTaskDeleted);
+    };
+  }, [socket, user?.id]);
+}
+
+export function useNotificationEvents(onNotification?: (notification: NotificationData) => void) {
+  const { socket } = useSocket();
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleNewNotification = (notification: NotificationData) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+      onNotification?.(notification);
+    };
+
+    socket.on("notification:new", handleNewNotification);
+
+    return () => {
+      socket.off("notification:new", handleNewNotification);
+    };
+  }, [socket, onNotification]);
+}
+
+export function TaskEventsListener({ children }: { children?: ReactNode }) {
+  useTaskEvents();
+  return <>{children}</>;
 }

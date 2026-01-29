@@ -92,7 +92,7 @@ import AuthPage from "@/pages/AuthPage";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation, Redirect } from "wouter";
-import { SocketProvider } from "@/lib/socket";
+import { SocketProvider, TaskEventsListener } from "@/lib/socket";
 import Messages from "@/pages/Messages";
 import RFQs from "@/pages/RFQs";
 import RFQDetail from "@/pages/RFQDetail";
@@ -430,6 +430,7 @@ function AuthWrapper() {
       <ThemeProvider>
         <ProjectProvider>
           <SocketProvider>
+            <TaskEventsListener />
             <SidebarProvider style={style as React.CSSProperties}>
             <div 
               className="flex flex-col h-screen w-full bg-[hsl(var(--page-background))] p-2 gap-2"

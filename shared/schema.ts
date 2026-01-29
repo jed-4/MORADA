@@ -4845,6 +4845,37 @@ export const insertReminderNotificationSchema = createInsertSchema(reminderNotif
 export type InsertReminderNotification = z.infer<typeof insertReminderNotificationSchema>;
 export type ReminderNotification = typeof reminderNotifications.$inferSelect;
 
+// In-App Notifications (for task assignments, mentions, etc.)
+export const notifications = pgTable("notifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  type: text("type").notNull(), // "task_assigned" | "task_mentioned" | "task_completed" etc.
+  title: text("title").notNull(),
+  message: text("message"),
+  link: text("link"), // URL to navigate to when clicked
+  entityType: text("entity_type"), // "task" | "project" | "message" etc.
+  entityId: varchar("entity_id"), // ID of the related entity
+  isRead: boolean("is_read").notNull().default(false),
+  readAt: timestamp("read_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  createdByUserId: varchar("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+}, (table) => ({
+  userIdx: index("notifications_user_idx").on(table.userId),
+  companyIdx: index("notifications_company_idx").on(table.companyId),
+  isReadIdx: index("notifications_is_read_idx").on(table.isRead),
+  createdAtIdx: index("notifications_created_at_idx").on(table.createdAt),
+}));
+
+export const insertNotificationSchema = createInsertSchema(notifications).omit({
+  id: true,
+  createdAt: true,
+  readAt: true,
+});
+
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type Notification = typeof notifications.$inferSelect;
+
 // Google Drive Folder Templates
 export const driveFolderTemplates = pgTable("drive_folder_templates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

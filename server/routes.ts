@@ -129,7 +129,8 @@ import { eq, and, asc } from "drizzle-orm";
 import { PasswordUtils } from "./utils/auth";
 import { requireAuth, requireAdmin, requireTeamMember, requirePermission, toSafeUser } from "./middleware/auth";
 import multer from "multer";
-import { setupMessagingSocket } from "./messaging/socket";
+import { setupMessagingHandlers } from "./messaging/socket";
+import { initializeSocketManager, emitTaskCreated, emitTaskUpdated, emitTaskDeleted, emitNotification } from "./socketManager";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Setup Replit Auth - see blueprint:javascript_log_in_with_replit
@@ -694,6 +695,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         taskContextType,
         taskContextId
       });
+      
+      emitTaskCreated(user.companyId, task, user.id);
       res.status(201).json(task);
     } catch (error) {
       console.error("Error creating task:", error);
@@ -749,6 +752,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // Create notification when task is assigned to a different user
+      const assigneeChanged = existingTask.assigneeId !== task.assigneeId;
+      const assignedToSomeoneElse = task.assigneeId && task.assigneeId !== user.id;
+      
+      if (assigneeChanged && assignedToSomeoneElse) {
+        try {
+          const notification = await storage.createNotification({
+            userId: task.assigneeId!,
+            companyId: user.companyId,
+            type: "task_assigned",
+            title: "Task Assigned",
+            message: `${user.firstName || user.email} assigned you a task: "${task.title}"`,
+            link: task.projectId ? `/projects/${task.projectId}/tasks` : `/workspace/tasks`,
+            entityType: "task",
+            entityId: task.id,
+            isRead: false,
+            createdByUserId: user.id
+          });
+          
+          // Emit real-time notification
+          emitNotification(task.assigneeId!, notification);
+        } catch (err) {
+          console.error("Failed to create task assignment notification:", err);
+        }
+      }
+
+      emitTaskUpdated(user.companyId, task, user.id);
       res.json(task);
     } catch (error) {
       console.error("Error updating task:", error);
@@ -787,6 +817,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       console.log(`[DELETE /api/tasks/${taskId}] Task deleted successfully`);
+      emitTaskDeleted(user.companyId, taskId, user.id);
       res.status(204).send();
     } catch (error) {
       console.error(`[DELETE /api/tasks/${req.params.id}] Error:`, error);
@@ -17103,10 +17134,102 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
     }
   });
 
+  // ==================== NOTIFICATIONS ====================
+  
+  // Get notifications for current user
+  app.get("/api/notifications", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id || !user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+      const unreadOnly = req.query.unreadOnly === 'true';
+
+      const notifications = await storage.getNotifications(user.id, user.companyId, { limit, unreadOnly });
+      res.json(notifications);
+    } catch (error: any) {
+      console.error("Error fetching notifications:", error);
+      res.status(500).json({ error: "Failed to fetch notifications" });
+    }
+  });
+
+  // Get unread notification count
+  app.get("/api/notifications/unread-count", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id || !user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const count = await storage.getUnreadNotificationCount(user.id, user.companyId);
+      res.json({ count });
+    } catch (error: any) {
+      console.error("Error fetching unread count:", error);
+      res.status(500).json({ error: "Failed to fetch unread count" });
+    }
+  });
+
+  // Mark a notification as read
+  app.patch("/api/notifications/:id/read", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const notification = await storage.markNotificationAsRead(req.params.id, user.id);
+      if (!notification) {
+        return res.status(404).json({ error: "Notification not found" });
+      }
+      res.json(notification);
+    } catch (error: any) {
+      console.error("Error marking notification as read:", error);
+      res.status(500).json({ error: "Failed to mark notification as read" });
+    }
+  });
+
+  // Mark all notifications as read
+  app.post("/api/notifications/mark-all-read", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id || !user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const count = await storage.markAllNotificationsAsRead(user.id, user.companyId);
+      res.json({ success: true, count });
+    } catch (error: any) {
+      console.error("Error marking all notifications as read:", error);
+      res.status(500).json({ error: "Failed to mark notifications as read" });
+    }
+  });
+
+  // Delete a notification
+  app.delete("/api/notifications/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const success = await storage.deleteNotification(req.params.id, user.id);
+      if (!success) {
+        return res.status(404).json({ error: "Notification not found" });
+      }
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting notification:", error);
+      res.status(500).json({ error: "Failed to delete notification" });
+    }
+  });
+
   const httpServer = createServer(app);
 
-  // Setup Socket.io for real-time messaging with session authentication
-  setupMessagingSocket(httpServer, sessionMiddleware);
+  // Setup Socket.io for real-time messaging and task updates with session authentication
+  const io = initializeSocketManager(httpServer, sessionMiddleware);
+  setupMessagingHandlers(io);
 
   return httpServer;
 }
