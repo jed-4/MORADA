@@ -20,7 +20,7 @@ import {
   startOfDay
 } from "date-fns";
 import { generateNotionColors } from "@/lib/taskColors";
-import TaskModalAsana from "@/components/TaskModalAsana";
+import TaskEditModal from "@/components/TaskEditModal";
 
 type ColorMode = "type" | "project" | "priority";
 type ViewMode = "timeline" | "stacked";
@@ -674,7 +674,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
         )}
       </div>
       
-      <TaskModalAsana
+      <TaskEditModal
         open={!!selectedTaskId}
         onOpenChange={(open) => !open && setSelectedTaskId(null)}
         taskId={selectedTaskId || undefined}

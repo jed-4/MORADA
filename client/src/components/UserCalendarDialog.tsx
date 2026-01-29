@@ -11,7 +11,8 @@ import { Calendar as CalendarIcon, AlertCircle } from "lucide-react";
 import { format } from "date-fns";
 import type { Task, ScheduleItem, Project, FieldCategoryWithOptions } from "@shared/schema";
 import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
-import { CalendarEventDetailDialog } from "@/components/CalendarEventDetailDialog";
+import { TaskDetailModal } from "@/components/TaskDetailModal";
+import TaskEditModal from "@/components/TaskEditModal";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -25,6 +26,7 @@ export function UserCalendarDialog({ open, onOpenChange }: UserCalendarDialogPro
   const queryClient = useQueryClient();
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
 
   // Fetch all projects
   const { data: projects = [] } = useQuery<Project[]>({
@@ -228,10 +230,17 @@ export function UserCalendarDialog({ open, onOpenChange }: UserCalendarDialogPro
         </div>
       </DialogContent>
       
-      <CalendarEventDetailDialog
+      <TaskDetailModal
         event={selectedEvent}
         open={detailDialogOpen}
         onOpenChange={setDetailDialogOpen}
+        onEdit={(task) => setEditingTask(task)}
+      />
+      
+      <TaskEditModal
+        task={editingTask || undefined}
+        open={!!editingTask}
+        onOpenChange={(open) => !open && setEditingTask(null)}
       />
     </Dialog>
   );

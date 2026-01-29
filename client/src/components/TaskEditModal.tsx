@@ -92,7 +92,7 @@ const taskFormSchema = z.object({
 
 type TaskFormData = z.infer<typeof taskFormSchema>;
 
-interface TaskModalAsanaProps {
+interface TaskEditModalProps {
   task?: Task;
   taskId?: string;
   open: boolean;
@@ -104,7 +104,7 @@ interface TaskModalAsanaProps {
   onDelete?: (taskId: string) => void;
 }
 
-export default function TaskModalAsana({ task: propTask, taskId, open, onOpenChange, projectId, initialStatus, defaultAssigneeId, defaultScope, onDelete }: TaskModalAsanaProps) {
+export default function TaskEditModal({ task: propTask, taskId, open, onOpenChange, projectId, initialStatus, defaultAssigneeId, defaultScope, onDelete }: TaskEditModalProps) {
   // Use taskId from prop or from propTask to always fetch fresh data
   const effectiveTaskId = taskId || propTask?.id;
   

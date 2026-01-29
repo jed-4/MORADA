@@ -38,10 +38,11 @@ import type { Task, Project } from "@shared/schema";
 
 type ChecklistItem = { id?: string; text: string; completed: boolean };
 
-interface CalendarEventDetailDialogProps {
+interface TaskDetailModalProps {
   event: CalendarEvent | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onEdit?: (task: Task) => void;
 }
 
 const priorityConfig: Record<string, { label: string; color: string; bgColor: string }> = {
@@ -57,7 +58,7 @@ function getInitials(name: string | null | undefined): string {
   return name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
 }
 
-export function CalendarEventDetailDialog({ event, open, onOpenChange }: CalendarEventDetailDialogProps) {
+export function TaskDetailModal({ event, open, onOpenChange, onEdit }: TaskDetailModalProps) {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([]);
@@ -447,6 +448,19 @@ export function CalendarEventDetailDialog({ event, open, onOpenChange }: Calenda
 
         {/* Footer Action Buttons */}
         <div className="flex justify-end gap-2 mt-6">
+          {event?.type === "task" && taskDetails && onEdit && (
+            <Button 
+              variant="default" 
+              onClick={() => {
+                onOpenChange(false);
+                onEdit(taskDetails);
+              }} 
+              data-testid="edit-task-button"
+            >
+              <Pencil className="h-4 w-4 mr-2" />
+              Edit
+            </Button>
+          )}
           <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="close-event-detail">
             Close
           </Button>

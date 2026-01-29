@@ -30,7 +30,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import TaskBoard from "@/components/TaskBoard";
 import TaskListCompact from "@/components/TaskListCompact";
-import TaskModalAsana from "@/components/TaskModalAsana";
+import TaskEditModal from "@/components/TaskEditModal";
 import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
 import { type TaskView, type Task, type FieldCategoryWithOptions, type Project } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
@@ -983,7 +983,7 @@ export default function BusinessTasks() {
 
       {/* Task Creation Dialog */}
       {!editingTask && (
-        <TaskModalAsana 
+        <TaskEditModal 
           open={showCreateTaskDialog}
           onOpenChange={(open) => {
             setShowCreateTaskDialog(open);
@@ -1000,7 +1000,7 @@ export default function BusinessTasks() {
 
       {/* Task Editing Dialog */}
       {editingTask && (
-        <TaskModalAsana
+        <TaskEditModal
           task={editingTask}
           open={showCreateTaskDialog}
           onOpenChange={(open) => {

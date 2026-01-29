@@ -38,7 +38,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
-import TaskModalAsana from "@/components/TaskModalAsana";
+import TaskEditModal from "@/components/TaskEditModal";
 
 // Helper function to normalize filter dates from API responses
 function normalizeFilterDates(filters: CalendarFiltersType): CalendarFiltersType {
@@ -1168,7 +1168,7 @@ export default function BusinessCalendar() {
 
       {/* Task Modal */}
       {editingTask && (
-        <TaskModalAsana
+        <TaskEditModal
           task={editingTask}
           open={showTaskDialog}
           onOpenChange={(open) => {

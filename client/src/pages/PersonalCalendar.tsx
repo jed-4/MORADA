@@ -21,7 +21,9 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
-import { CalendarEventDetailDialog } from "@/components/CalendarEventDetailDialog";
+import { TaskDetailModal } from "@/components/TaskDetailModal";
+import TaskEditModal from "@/components/TaskEditModal";
+import type { Task } from "@shared/schema";
 import { CalendarFilters as CalendarFiltersType } from "@/components/CalendarFilters";
 import { CalendarView } from "@/components/SavedViews";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -71,6 +73,7 @@ function normalizeFilterDates(filters: CalendarFiltersType): CalendarFiltersType
 export default function PersonalCalendar() {
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [filters, setFilters] = useState<CalendarFiltersType>({});
   const [calendarMode, setCalendarMode] = useState<string>("week");
   const [selectedViewId, setSelectedViewId] = useState<string | undefined>();
@@ -992,11 +995,19 @@ export default function PersonalCalendar() {
         />
       </div>
 
-      {/* Event Detail Dialog */}
-      <CalendarEventDetailDialog
+      {/* Task Detail Modal */}
+      <TaskDetailModal
         event={selectedEvent}
         open={detailDialogOpen}
         onOpenChange={setDetailDialogOpen}
+        onEdit={(task) => setEditingTask(task)}
+      />
+
+      {/* Task Edit Modal */}
+      <TaskEditModal
+        task={editingTask || undefined}
+        open={!!editingTask}
+        onOpenChange={(open) => !open && setEditingTask(null)}
       />
 
       {/* Create View Dialog */}

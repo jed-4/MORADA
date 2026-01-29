@@ -23,7 +23,7 @@ import {
 import { WidgetProps } from "@/types/widgets";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { type Task, type Project } from "@shared/schema";
-import TaskModalAsana from "@/components/TaskModalAsana";
+import TaskEditModal from "@/components/TaskEditModal";
 import { format, isToday, isTomorrow, isBefore, startOfDay, addDays, addWeeks, addMonths, isWithinInterval, endOfWeek, endOfMonth, startOfWeek, startOfMonth } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -401,12 +401,12 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
         </Button>
       </div>
       
-      <TaskModalAsana
+      <TaskEditModal
         open={showCreateDialog}
         onOpenChange={setShowCreateDialog}
       />
       
-      <TaskModalAsana
+      <TaskEditModal
         open={!!selectedTaskId}
         onOpenChange={(open) => !open && setSelectedTaskId(null)}
         task={tasks.find(t => t.id === selectedTaskId)}

@@ -39,7 +39,7 @@ import {
 } from "lucide-react";
 import TaskBoard, { type BoardGroupByType } from "@/components/TaskBoard";
 import TaskListCompact from "@/components/TaskListCompact";
-import TaskModalAsana from "@/components/TaskModalAsana";
+import TaskEditModal from "@/components/TaskEditModal";
 import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
 import type { User, Task, Project, FieldCategoryWithOptions, TaskView, Company } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -1013,12 +1013,12 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
       </div>
 
       {/* Task Modals */}
-      <TaskModalAsana
+      <TaskEditModal
         open={showCreateDialog}
         onOpenChange={setShowCreateDialog}
         defaultAssigneeId={user.id}
       />
-      <TaskModalAsana
+      <TaskEditModal
         task={editingTask || undefined}
         open={!!editingTask}
         onOpenChange={(open) => !open && setEditingTask(null)}

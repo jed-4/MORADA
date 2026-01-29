@@ -10,7 +10,7 @@ import { WidgetProps } from "@/types/widgets";
 import { usePersonalCalendarEvents, CalendarItem } from "./usePersonalCalendarEvents";
 import { format, addDays, subDays, isToday, isBefore, startOfDay } from "date-fns";
 import { generateNotionColors } from "@/lib/taskColors";
-import TaskModalAsana from "@/components/TaskModalAsana";
+import TaskEditModal from "@/components/TaskEditModal";
 
 const HOUR_HEIGHT = 48;
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
@@ -424,7 +424,7 @@ export default function DayCalendarWidget({ widget, onUpdate, isConfiguring, onC
         )}
       </div>
       
-      <TaskModalAsana
+      <TaskEditModal
         open={!!selectedTaskId}
         onOpenChange={(open) => !open && setSelectedTaskId(null)}
         taskId={selectedTaskId || undefined}

@@ -10,7 +10,7 @@ import { useLocation } from "wouter";
 import { format, isToday, isTomorrow, addDays, subDays, startOfWeek, endOfWeek, isSameDay, eachDayOfInterval, isBefore } from "date-fns";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { generateNotionColors } from "@/lib/taskColors";
-import TaskModalAsana from "@/components/TaskModalAsana";
+import TaskEditModal from "@/components/TaskEditModal";
 
 type ViewMode = "list" | "day" | "week";
 
@@ -661,7 +661,7 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
         )}
       </div>
       
-      <TaskModalAsana
+      <TaskEditModal
         open={!!selectedTaskId}
         onOpenChange={(open) => !open && setSelectedTaskId(null)}
         task={selectedTask}

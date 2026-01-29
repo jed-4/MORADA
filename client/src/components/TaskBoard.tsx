@@ -8,7 +8,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { type Task, type FieldCategoryWithOptions } from "@shared/schema";
 import { Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import TaskCardCompact from "./TaskCardCompact";
-import TaskModalAsana from "./TaskModalAsana";
+import TaskEditModal from "./TaskEditModal";
 import { useTaskStatusOptions } from "@/hooks/useTaskStatusOptions";
 
 // DnD Kit imports
@@ -609,14 +609,14 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
         
         {projectId && (
           <>
-            <TaskModalAsana 
+            <TaskEditModal 
               open={isCreateTaskOpen}
               onOpenChange={setIsCreateTaskOpen}
               initialStatus={selectedColumnStatus}
               projectId={projectId}
             />
             {selectedTask && (
-              <TaskModalAsana
+              <TaskEditModal
                 task={selectedTask}
                 open={isTaskModalOpen}
                 onOpenChange={(open) => {

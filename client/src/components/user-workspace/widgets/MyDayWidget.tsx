@@ -28,7 +28,7 @@ import { useLocation } from "wouter";
 import { format, isToday, isBefore, startOfDay } from "date-fns";
 import { type Task, type Project } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import TaskModalAsana from "@/components/TaskModalAsana";
+import TaskEditModal from "@/components/TaskEditModal";
 import {
   DndContext,
   closestCenter,
@@ -511,7 +511,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
         </div>
       )}
       
-      <TaskModalAsana
+      <TaskEditModal
         open={!!selectedTaskId}
         onOpenChange={(open) => !open && setSelectedTaskId(null)}
         task={tasks.find(t => t.id === selectedTaskId)}

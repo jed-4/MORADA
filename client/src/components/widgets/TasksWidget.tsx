@@ -8,7 +8,7 @@ import { Plus, Circle, CheckSquare } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { useLocation } from "wouter";
 import { useProject } from "@/contexts/ProjectContext";
-import TaskModalAsana from "@/components/TaskModalAsana";
+import TaskEditModal from "@/components/TaskEditModal";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   Dialog,
@@ -290,7 +290,7 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
           })}
         </div>
         
-        <TaskModalAsana
+        <TaskEditModal
           open={!!selectedTaskId}
           onOpenChange={(open) => !open && setSelectedTaskId(null)}
           task={allTasks.find(t => t.id === selectedTaskId)}

@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import CreateProjectDialog from "./CreateProjectDialog";
-import TaskModalAsana from "./TaskModalAsana";
+import TaskEditModal from "./TaskEditModal";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -547,7 +547,7 @@ export default function Header() {
       />
 
       {/* Task Creation Modal */}
-      <TaskModalAsana
+      <TaskEditModal
         open={isTaskModalOpen}
         onOpenChange={setIsTaskModalOpen}
         projectId={currentProject?.id}

@@ -45,7 +45,7 @@ import {
 import TaskBoard from "@/components/TaskBoard";
 import TaskList from "@/components/TaskList";
 import TaskListCompact from "@/components/TaskListCompact";
-import TaskModalAsana from "@/components/TaskModalAsana";
+import TaskEditModal from "@/components/TaskEditModal";
 import FilterPanel, { type FilterState } from "@/components/FilterPanel";
 import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
 import { type TaskView, type Task, type FieldCategoryWithOptions, type Project } from "@shared/schema";
@@ -1382,7 +1382,7 @@ export default function Tasks() {
       </Dialog>
 
       {/* Task Creation Dialog */}
-      <TaskModalAsana 
+      <TaskEditModal 
         open={showCreateTaskDialog}
         onOpenChange={setShowCreateTaskDialog}
         projectId={effectiveProjectId}
@@ -1390,7 +1390,7 @@ export default function Tasks() {
 
       {/* Task Editing Dialog */}
       {editingTask && (
-        <TaskModalAsana
+        <TaskEditModal
           task={editingTask}
           open={!!editingTask}
           onOpenChange={(open) => !open && setEditingTask(null)}
