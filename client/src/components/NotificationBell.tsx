@@ -1,13 +1,15 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format, formatDistanceToNow, isPast } from "date-fns";
 import { useLocation } from "wouter";
 import { 
   Bell, Clock, Check, AlarmClock, AlarmClockOff, 
-  CheckSquare, ClipboardList, Timer, Wrench, MoreHorizontal
+  CheckSquare, ClipboardList, Timer, Wrench, MoreHorizontal,
+  UserPlus, Trash2, CheckCheck
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,7 +26,8 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Reminder } from "@shared/schema";
+import { useNotificationEvents } from "@/lib/socket";
+import type { Reminder, Notification } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
 
 const REMINDER_TYPE_ICONS: Record<string, any> = {
@@ -42,10 +45,17 @@ const SNOOZE_OPTIONS = [
   { value: 60, label: "1 hour" },
 ];
 
+const NOTIFICATION_TYPE_ICONS: Record<string, any> = {
+  task_assigned: UserPlus,
+  task_mentioned: CheckSquare,
+  task_completed: Check,
+};
+
 export function NotificationBell() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [isOpen, setIsOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("notifications");
   const { user } = useAuth();
 
   const { data: unreadCount = { count: 0 } } = useQuery<{ count: number }>({
@@ -54,10 +64,22 @@ export function NotificationBell() {
     enabled: !!user,
   });
 
+  const { data: notifications = [] } = useQuery<Notification[]>({
+    queryKey: ["/api/notifications"],
+    enabled: isOpen && !!user,
+  });
+
   const { data: reminders = [] } = useQuery<Reminder[]>({
     queryKey: ["/api/reminders/upcoming"],
     enabled: isOpen && !!user,
   });
+
+  const handleNewNotification = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
+  }, []);
+
+  useNotificationEvents(handleNewNotification);
 
   const snoozeMutation = useMutation({
     mutationFn: async ({ id, minutes }: { id: string; minutes: number }) => {
@@ -83,9 +105,30 @@ export function NotificationBell() {
 
   const markAllReadMutation = useMutation({
     mutationFn: async () => {
-      return apiRequest("/api/notifications/read-all", "POST");
+      return apiRequest("/api/notifications/mark-all-read", { method: "POST" });
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
+    },
+  });
+
+  const markNotificationReadMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest(`/api/notifications/${id}/read`, { method: "PATCH" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
+    },
+  });
+
+  const deleteNotificationMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest(`/api/notifications/${id}`, { method: "DELETE" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
       queryClient.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
     },
   });
@@ -123,7 +166,19 @@ export function NotificationBell() {
   };
 
   const activeReminders = reminders.filter(r => r.status === "pending" || r.status === "sent" || r.status === "snoozed");
-  const hasUnread = unreadCount.count > 0;
+  const unreadNotifications = notifications.filter(n => !n.isRead);
+  const hasUnread = unreadCount.count > 0 || activeReminders.length > 0;
+  const totalCount = unreadCount.count + activeReminders.length;
+
+  const handleNotificationClick = (notification: Notification) => {
+    if (!notification.isRead) {
+      markNotificationReadMutation.mutate(notification.id);
+    }
+    if (notification.link) {
+      setIsOpen(false);
+      navigate(notification.link);
+    }
+  };
 
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
@@ -135,34 +190,107 @@ export function NotificationBell() {
           data-testid="button-notifications"
         >
           <Bell className="h-3.5 w-3.5" />
-          {hasUnread && (
+          {totalCount > 0 && (
             <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
               <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-red-500 items-center justify-center text-[9px] font-bold text-white">
-                {unreadCount.count > 9 ? "9+" : unreadCount.count}
+                {totalCount > 9 ? "9+" : totalCount}
               </span>
             </span>
           )}
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 p-0">
-        <div className="flex items-center justify-between px-3 py-2 border-b">
-          <span className="font-semibold text-sm">Reminders</span>
-          {hasUnread && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 text-xs"
-              onClick={() => markAllReadMutation.mutate()}
-              data-testid="button-mark-all-read"
-            >
-              <Check className="h-3 w-3 mr-1" />
-              Mark all read
-            </Button>
-          )}
-        </div>
-        
-        <ScrollArea className="max-h-80">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <div className="flex items-center justify-between px-3 py-2 border-b">
+            <TabsList className="h-7 p-0.5">
+              <TabsTrigger value="notifications" className="h-6 text-xs px-2">
+                Notifications {unreadCount.count > 0 && `(${unreadCount.count})`}
+              </TabsTrigger>
+              <TabsTrigger value="reminders" className="h-6 text-xs px-2">
+                Reminders {activeReminders.length > 0 && `(${activeReminders.length})`}
+              </TabsTrigger>
+            </TabsList>
+            {activeTab === "notifications" && unreadNotifications.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 text-xs"
+                onClick={() => markAllReadMutation.mutate()}
+                data-testid="button-mark-all-read"
+              >
+                <CheckCheck className="h-3 w-3 mr-1" />
+                All read
+              </Button>
+            )}
+          </div>
+          
+          <TabsContent value="notifications" className="m-0">
+            <ScrollArea className="max-h-80">
+              {notifications.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-8 text-center">
+                  <Bell className="h-8 w-8 text-muted-foreground/40 mb-2" />
+                  <p className="text-sm text-muted-foreground">No notifications</p>
+                  <p className="text-xs text-muted-foreground">You're all caught up!</p>
+                </div>
+              ) : (
+                <div className="divide-y">
+                  {notifications.slice(0, 10).map((notification) => {
+                    const TypeIcon = NOTIFICATION_TYPE_ICONS[notification.type] || Bell;
+                    
+                    return (
+                      <div
+                        key={notification.id}
+                        className={`flex items-start gap-2 p-2 hover:bg-muted/50 transition-colors cursor-pointer ${
+                          !notification.isRead ? "bg-primary/5" : ""
+                        }`}
+                        onClick={() => handleNotificationClick(notification)}
+                        data-testid={`notification-item-${notification.id}`}
+                      >
+                        <div className={`flex items-center justify-center w-8 h-8 rounded-lg flex-shrink-0 ${
+                          !notification.isRead ? "bg-primary/10" : "bg-muted"
+                        }`}>
+                          <TypeIcon className={`h-4 w-4 ${!notification.isRead ? "text-primary" : "text-muted-foreground"}`} />
+                        </div>
+                        
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1">
+                            <p className={`text-sm truncate ${!notification.isRead ? "font-medium" : ""}`}>
+                              {notification.title}
+                            </p>
+                            {!notification.isRead && (
+                              <div className="h-1.5 w-1.5 rounded-full bg-primary flex-shrink-0" />
+                            )}
+                          </div>
+                          {notification.message && (
+                            <p className="text-xs text-muted-foreground truncate">{notification.message}</p>
+                          )}
+                          <p className="text-xs text-muted-foreground">
+                            {formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true })}
+                          </p>
+                        </div>
+
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-6 w-6 flex-shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteNotificationMutation.mutate(notification.id);
+                          }}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </ScrollArea>
+          </TabsContent>
+          
+          <TabsContent value="reminders" className="m-0">
+            <ScrollArea className="max-h-80">
           {activeReminders.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 text-center">
               <Bell className="h-8 w-8 text-muted-foreground/40 mb-2" />
@@ -235,19 +363,21 @@ export function NotificationBell() {
               })}
             </div>
           )}
-        </ScrollArea>
+            </ScrollArea>
 
-        <div className="border-t p-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full h-7 text-xs"
-            onClick={handleViewAll}
-            data-testid="button-view-all-reminders"
-          >
-            View all reminders
-          </Button>
-        </div>
+            <div className="border-t p-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full h-7 text-xs"
+                onClick={handleViewAll}
+                data-testid="button-view-all-reminders"
+              >
+                View all reminders
+              </Button>
+            </div>
+          </TabsContent>
+        </Tabs>
       </PopoverContent>
     </Popover>
   );
