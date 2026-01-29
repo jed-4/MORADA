@@ -90,6 +90,11 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
     enabled: !!projectIdForQuery,
   });
 
+  // Reset delete confirmation when task changes
+  useEffect(() => {
+    setShowDeleteConfirm(false);
+  }, [effectiveTaskId]);
+
   // Sync local checklist state with task data
   useEffect(() => {
     if (taskDetails?.checklist) {
