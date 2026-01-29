@@ -5,7 +5,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { type Task, type FieldCategoryWithOptions, type Project, type TaskTag } from "@shared/schema";
+import { type Task, type FieldCategoryWithOptions, type Project } from "@shared/schema";
 import { z } from "zod";
 import { format } from "date-fns";
 
@@ -156,9 +156,8 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
     enabled: !!task?.id,
   });
 
-  const { data: taskTags = [] } = useQuery<TaskTag[]>({
-    queryKey: ["/api/task-tags"],
-  });
+  const labelCategory = fieldCategories.find(cat => cat.key === "task.labels");
+  const labelOptions = labelCategory?.options || [];
 
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
 
@@ -971,21 +970,21 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
                   <Tag className="h-3 w-3" />
                   Labels
                 </label>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2 mb-2">
                   {selectedTagIds.map((tagId) => {
-                    const tag = taskTags.find(t => t.id === tagId);
-                    if (!tag) return null;
+                    const label = labelOptions.find(l => l.id === tagId);
+                    if (!label) return null;
                     return (
-                      <div key={tag.id} className="flex items-center gap-0.5" data-testid={`label-tag-${tag.id}`}>
+                      <div key={label.id} className="flex items-center gap-0.5" data-testid={`label-tag-${label.id}`}>
                         <Badge variant="secondary">
-                          <div className="w-2 h-2 rounded-full mr-1.5" style={{ backgroundColor: tag.color }} />
-                          {tag.name}
+                          <div className="w-2 h-2 rounded-full mr-1.5" style={{ backgroundColor: label.color || '#6b7280' }} />
+                          {label.name}
                         </Badge>
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => setSelectedTagIds(prev => prev.filter(id => id !== tag.id))}
-                          data-testid={`button-remove-tag-${tag.id}`}
+                          onClick={() => setSelectedTagIds(prev => prev.filter(id => id !== label.id))}
+                          data-testid={`button-remove-tag-${label.id}`}
                         >
                           <X className="h-3 w-3" />
                         </Button>
@@ -993,33 +992,35 @@ export default function TaskModalAsana({ task: propTask, taskId, open, onOpenCha
                     );
                   })}
                 </div>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" className="w-full justify-start" data-testid="button-add-label">
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add label
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent className="w-48">
-                    {taskTags.filter(tag => !selectedTagIds.includes(tag.id)).length === 0 ? (
+                <Select
+                  value=""
+                  onValueChange={(value) => {
+                    if (value && !selectedTagIds.includes(value)) {
+                      setSelectedTagIds(prev => [...prev, value]);
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-9" data-testid="select-labels">
+                    <SelectValue placeholder="Add label..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {labelOptions.filter(l => l.isActive && !selectedTagIds.includes(l.id)).length === 0 ? (
                       <div className="px-2 py-1.5 text-sm text-muted-foreground">No more labels available</div>
                     ) : (
-                      taskTags.filter(tag => tag.isActive && !selectedTagIds.includes(tag.id)).map((tag) => (
-                        <DropdownMenuItem
-                          key={tag.id}
-                          onClick={() => setSelectedTagIds(prev => [...prev, tag.id])}
-                          data-testid={`menu-item-tag-${tag.id}`}
-                        >
-                          <div
-                            className="w-3 h-3 rounded-full mr-2"
-                            style={{ backgroundColor: tag.color }}
-                          />
-                          {tag.name}
-                        </DropdownMenuItem>
+                      labelOptions.filter(l => l.isActive && !selectedTagIds.includes(l.id)).map((label) => (
+                        <SelectItem key={label.id} value={label.id}>
+                          <div className="flex items-center gap-2">
+                            <div 
+                              className="w-2 h-2 rounded-full" 
+                              style={{ backgroundColor: label.color || '#6b7280' }}
+                            />
+                            {label.name}
+                          </div>
+                        </SelectItem>
                       ))
                     )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* Due Date */}
