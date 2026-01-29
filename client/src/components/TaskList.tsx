@@ -51,7 +51,7 @@ import SubtaskList from "@/components/SubtaskList";
 interface TaskListProps {
   tasks?: Task[];
   groupedTasks?: Record<string, Task[]>;
-  groupBy?: 'none' | 'status' | 'priority' | 'assignee' | 'tags';
+  groupBy?: 'none' | 'status' | 'priority' | 'assignee' | 'tags' | 'labels';
   isLoading?: boolean;
   filters?: Record<string, any>;
   columnConfig?: Record<string, any>;

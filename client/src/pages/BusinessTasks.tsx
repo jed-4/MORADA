@@ -47,7 +47,7 @@ export default function BusinessTasks() {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
   const [initialTaskStatus, setInitialTaskStatus] = useState<string>("todo");
-  const [groupBy, setGroupBy] = useState<'none' | 'status' | 'priority' | 'assignee'>('none');
+  const [groupBy, setGroupBy] = useState<'none' | 'status' | 'priority' | 'assignee' | 'labels'>('none');
   const [filters, setFilters] = useState<FilterState>({});
   const [selectedViewId, setSelectedViewId] = useState<string | undefined>(undefined);
   const [cardDisplaySettings, setCardDisplaySettings] = useState({
@@ -310,7 +310,7 @@ export default function BusinessTasks() {
       setFilters(view.filters as FilterState);
     }
     if (view.groupBy) {
-      setGroupBy(view.groupBy as 'none' | 'status' | 'priority' | 'assignee');
+      setGroupBy(view.groupBy as 'none' | 'status' | 'priority' | 'assignee' | 'labels');
     }
   };
 

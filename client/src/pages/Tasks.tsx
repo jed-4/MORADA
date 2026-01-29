@@ -84,7 +84,7 @@ export default function Tasks() {
   const [editViewName, setEditViewName] = useState("");
   const [newViewName, setNewViewName] = useState("");
   const [newViewType, setNewViewType] = useState<"kanban" | "list" | "calendar">("kanban");
-  const [groupBy, setGroupBy] = useState<'status' | 'priority' | 'assignee' | 'tags'>('status');
+  const [groupBy, setGroupBy] = useState<'status' | 'priority' | 'assignee' | 'tags' | 'labels'>('status');
   const [filters, setFilters] = useState<FilterState>({});
   const [isCreatingInline, setIsCreatingInline] = useState(false);
   const [cardWidth, setCardWidth] = useState<'compact' | 'comfortable' | 'spacious'>('comfortable');
@@ -334,7 +334,7 @@ export default function Tasks() {
       setFilters(view.filters as FilterState);
     }
     if (view.groupBy && view.groupBy !== 'assignee') {
-      setGroupBy(view.groupBy as 'status' | 'priority' | 'assignee' | 'tags');
+      setGroupBy(view.groupBy as 'status' | 'priority' | 'assignee' | 'tags' | 'labels');
     }
   };
 
@@ -535,6 +535,21 @@ export default function Tasks() {
         case 'tags':
           groupKey = task.tags && task.tags.length > 0 ? task.tags[0] : 'No Tags';
           break;
+        case 'labels':
+          // Check both task.labels and task.tagIds (for labels assigned via modal)
+          if (task.labels && task.labels.length > 0) {
+            groupKey = task.labels[0];
+          } else if (task.tagIds && (task.tagIds as string[]).length > 0) {
+            // Resolve tagIds to label names
+            const labelCategory = fieldCategories.find(cat => cat.key === "task.labels");
+            const labelOptions = labelCategory?.options || [];
+            const tagId = (task.tagIds as string[])[0];
+            const label = labelOptions.find(l => l.id === tagId);
+            groupKey = label?.name || 'No Labels';
+          } else {
+            groupKey = 'No Labels';
+          }
+          break;
       }
       
       if (!groups[groupKey]) {
@@ -550,7 +565,7 @@ export default function Tasks() {
     });
     
     return sortedGroups;
-  }, [currentProject, taskViews, allTasks, filters, groupBy, activeView, selectedViewId]);
+  }, [currentProject, taskViews, allTasks, filters, groupBy, activeView, selectedViewId, fieldCategories]);
 
   // CONDITIONAL RENDERING - MUST BE AFTER ALL HOOKS
   if (!currentProject) {
@@ -1117,6 +1132,7 @@ export default function Tasks() {
                   {filterOptions.availableTags.length > 0 && (
                     <SelectItem value="tags">By Tags</SelectItem>
                   )}
+                  <SelectItem value="labels">By Labels</SelectItem>
                 </SelectContent>
               </Select>
             )}
