@@ -317,10 +317,11 @@ The Tasks system is the core work management feature of BuildPro, enabling build
 - [x] Labels can be selected from a company-wide tag library
 - [x] Multiple labels can be applied to a single task
 - [x] Labels can be removed from tasks
-- [ ] Tasks can be filtered by label (planned)
+- [x] Tasks can be filtered by label
+- [x] Board view supports grouping by labels
 
 **Priority:** Should Have  
-**Status:** Partially Implemented
+**Status:** Implemented
 
 ---
 
@@ -424,6 +425,7 @@ The Tasks system is the core work management feature of BuildPro, enabling build
 - Task labels/tags with company-wide tag library
 - Multiple task creation entry points (header, widgets, pages, calendar)
 - Detail modal opens first from calendar (view before edit)
+- Board view grouping by status, priority, labels, or project
 
 ### Known Limitations
 - No real-time collaboration (requires refresh to see others' changes)
