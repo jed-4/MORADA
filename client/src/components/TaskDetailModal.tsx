@@ -66,7 +66,9 @@ export function TaskDetailModal({ event, taskId, open, onOpenChange, onEdit }: T
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Determine which ID to use - taskId prop takes precedence
-  const effectiveTaskId = taskId || event?.id;
+  // Strip 'task-' prefix from calendar event IDs to get actual task ID
+  const rawTaskId = taskId || event?.id;
+  const effectiveTaskId = rawTaskId?.startsWith('task-') ? rawTaskId.slice(5) : rawTaskId;
   const isTaskType = taskId ? true : event?.type === "task";
 
   // Fetch full task details if it's a task event or taskId is provided
