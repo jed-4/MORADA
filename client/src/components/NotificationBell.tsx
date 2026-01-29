@@ -1,7 +1,8 @@
 import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { format, formatDistanceToNow, isPast } from "date-fns";
+import { formatDistanceToNow, isPast } from "date-fns";
 import { useLocation } from "wouter";
+import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
 import { 
   Bell, Clock, Check, AlarmClock, AlarmClockOff, 
   CheckSquare, ClipboardList, Timer, Wrench, MoreHorizontal,
@@ -57,6 +58,7 @@ export function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("notifications");
   const { user } = useAuth();
+  const { effectiveTimezone } = useTimezone();
 
   const { data: unreadCount = { count: 0 } } = useQuery<{ count: number }>({
     queryKey: ["/api/notifications/unread-count"],
@@ -139,7 +141,7 @@ export function NotificationBell() {
     
     if (reminder.status === "snoozed" && reminder.snoozedUntil) {
       return { 
-        label: `Snoozed until ${format(new Date(reminder.snoozedUntil), "h:mm a")}`, 
+        label: `Snoozed until ${formatInTimezone(new Date(reminder.snoozedUntil), effectiveTimezone, { hour: 'numeric', minute: '2-digit', hour12: true })}`, 
         isOverdue: false,
         isSnoozed: true
       };
@@ -324,7 +326,7 @@ export function NotificationBell() {
                       <p className="text-sm font-medium truncate">{reminder.title}</p>
                       <p className={`text-xs ${timeStatus.isOverdue ? "text-destructive" : "text-muted-foreground"}`}>
                         <Clock className="h-3 w-3 inline mr-1" />
-                        {reminder.triggerAt && format(new Date(reminder.triggerAt), "MMM d, h:mm a")}
+                        {reminder.triggerAt && formatInTimezone(new Date(reminder.triggerAt), effectiveTimezone, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}
                         <span className="ml-1">({timeStatus.label})</span>
                       </p>
                     </div>

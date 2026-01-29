@@ -115,7 +115,7 @@ export default function UserSettings() {
       return await apiRequest(`/api/users/${user?.id}/timezone`, "PATCH", { timezone });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       toast({ title: "Timezone updated", description: "Your timezone preference has been saved." });
     },
     onError: () => {
