@@ -475,12 +475,11 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
     setCurrentDate(newDate);
   };
 
-  // Status options for filtering
-  const filterStatusOptions = [
-    { key: "todo", label: "To Do" },
-    { key: "in-progress", label: "In Progress" },
-    { key: "completed", label: "Completed" },
-  ];
+  // Get status options from field categories instead of hardcoded values
+  const filterStatusOptions = (statusCategory?.options || []).map(opt => ({
+    key: opt.key,
+    label: opt.label,
+  }));
 
   // Event type options for filtering - always show Google Calendar but disable if not connected
   const eventTypeOptions = [

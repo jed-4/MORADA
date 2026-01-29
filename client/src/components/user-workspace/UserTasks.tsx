@@ -36,6 +36,7 @@ import {
   X,
   CalendarDays,
   Pencil,
+  SlidersHorizontal,
 } from "lucide-react";
 import TaskBoard, { type BoardGroupByType } from "@/components/TaskBoard";
 import TaskListCompact from "@/components/TaskListCompact";
@@ -100,6 +101,13 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
   const [filters, setFilters] = useState<FilterState>({});
   const [selectedViewId, setSelectedViewId] = useState<string | undefined>(undefined);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+  const [cardDisplaySettings, setCardDisplaySettings] = useState({
+    showPriority: true,
+    showStatus: true,
+    showAssignee: true,
+    showDueDate: true,
+    showLabels: true,
+  });
   
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [calendarMode, setCalendarMode] = useState<"day" | "week" | "month">("week");
@@ -955,6 +963,73 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
               </DropdownMenu>
             )}
 
+            {/* Card Display Settings - only show in board view */}
+            {activeView === "board" && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+                    data-testid="button-card-settings"
+                  >
+                    <SlidersHorizontal className="w-3 h-3" />
+                    <span>Display</span>
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-56 p-3">
+                  <div className="space-y-3">
+                    <div className="text-sm font-semibold">Card Display</div>
+                    <div className="space-y-2">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <Checkbox
+                          checked={cardDisplaySettings.showStatus !== false}
+                          onCheckedChange={(checked) => 
+                            setCardDisplaySettings({...cardDisplaySettings, showStatus: checked as boolean})
+                          }
+                        />
+                        <span className="text-xs">Status</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <Checkbox
+                          checked={cardDisplaySettings.showAssignee !== false}
+                          onCheckedChange={(checked) => 
+                            setCardDisplaySettings({...cardDisplaySettings, showAssignee: checked as boolean})
+                          }
+                        />
+                        <span className="text-xs">Assignee</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <Checkbox
+                          checked={cardDisplaySettings.showDueDate !== false}
+                          onCheckedChange={(checked) => 
+                            setCardDisplaySettings({...cardDisplaySettings, showDueDate: checked as boolean})
+                          }
+                        />
+                        <span className="text-xs">Due Date</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <Checkbox
+                          checked={cardDisplaySettings.showPriority !== false}
+                          onCheckedChange={(checked) => 
+                            setCardDisplaySettings({...cardDisplaySettings, showPriority: checked as boolean})
+                          }
+                        />
+                        <span className="text-xs">Priority</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <Checkbox
+                          checked={cardDisplaySettings.showLabels !== false}
+                          onCheckedChange={(checked) => 
+                            setCardDisplaySettings({...cardDisplaySettings, showLabels: checked as boolean})
+                          }
+                        />
+                        <span className="text-xs">Labels</span>
+                      </label>
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            )}
+
           </div>
         </div>
       </div>
@@ -992,6 +1067,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
               fieldCategories={fieldCategories}
               projects={projects.map(p => ({ id: p.id, name: p.name, color: p.color }))}
               businessNickname={businessNickname}
+              displaySettings={cardDisplaySettings}
             />
           </div>
         ) : (

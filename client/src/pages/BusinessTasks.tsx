@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Settings, MoreHorizontal, X, Search, ChevronLeft, ChevronRight, Pencil, ChevronDown } from "lucide-react";
+import { Plus, Settings, MoreHorizontal, X, Search, ChevronLeft, ChevronRight, Pencil, ChevronDown, SlidersHorizontal } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import {
   DropdownMenu,
@@ -26,6 +26,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import TaskBoard from "@/components/TaskBoard";
@@ -53,12 +58,9 @@ export default function BusinessTasks() {
   const [cardDisplaySettings, setCardDisplaySettings] = useState({
     showPriority: true,
     showStatus: true,
-    showDescription: true,
-    showTags: true,
-    showLabels: true,
     showAssignee: true,
     showDueDate: true,
-    showSubtasks: true,
+    showLabels: true,
   });
   const searchInputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -897,6 +899,74 @@ export default function BusinessTasks() {
               </button>
             </>
           )}
+          
+          {/* Card Display Settings - only show in board view */}
+          {activeTab === "board" && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+                  data-testid="button-card-settings"
+                >
+                  <SlidersHorizontal className="w-3 h-3" />
+                  <span>Display</span>
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-56 p-3">
+                <div className="space-y-3">
+                  <div className="text-sm font-semibold">Card Display</div>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <Checkbox
+                        checked={cardDisplaySettings.showStatus !== false}
+                        onCheckedChange={(checked) => 
+                          setCardDisplaySettings({...cardDisplaySettings, showStatus: checked as boolean})
+                        }
+                      />
+                      <span className="text-xs">Status</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <Checkbox
+                        checked={cardDisplaySettings.showAssignee !== false}
+                        onCheckedChange={(checked) => 
+                          setCardDisplaySettings({...cardDisplaySettings, showAssignee: checked as boolean})
+                        }
+                      />
+                      <span className="text-xs">Assignee</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <Checkbox
+                        checked={cardDisplaySettings.showDueDate !== false}
+                        onCheckedChange={(checked) => 
+                          setCardDisplaySettings({...cardDisplaySettings, showDueDate: checked as boolean})
+                        }
+                      />
+                      <span className="text-xs">Due Date</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <Checkbox
+                        checked={cardDisplaySettings.showPriority !== false}
+                        onCheckedChange={(checked) => 
+                          setCardDisplaySettings({...cardDisplaySettings, showPriority: checked as boolean})
+                        }
+                      />
+                      <span className="text-xs">Priority</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <Checkbox
+                        checked={cardDisplaySettings.showLabels !== false}
+                        onCheckedChange={(checked) => 
+                          setCardDisplaySettings({...cardDisplaySettings, showLabels: checked as boolean})
+                        }
+                      />
+                      <span className="text-xs">Labels</span>
+                    </label>
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
+          
           <button
             className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
             onClick={() => setShowCreateTaskDialog(true)}
