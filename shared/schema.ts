@@ -443,7 +443,8 @@ export const notes: any = pgTable("notes", {
   recurringType: text("recurring_type"), // "daily" | "weekly" | "monthly" | "yearly" | "custom"
   recurringInterval: integer("recurring_interval").default(1), // Every N days/weeks/months
   recurringDays: json("recurring_days").default([]), // For weekly: [1,2,3] (Mon,Tue,Wed), for monthly: [15,30] (dates)
-  excludeWeekends: boolean("exclude_weekends").default(false), // For daily recurrence: skip Saturday and Sunday
+  includeSaturday: boolean("include_saturday").default(false), // For daily recurrence: include Saturday
+  includeSunday: boolean("include_sunday").default(false), // For daily recurrence: include Sunday
   recurringStartDate: timestamp("recurring_start_date"), // When the recurring pattern starts
   recurringEndDate: timestamp("recurring_end_date"),
   lastRecurringDate: timestamp("last_recurring_date"),
@@ -515,7 +516,8 @@ export const insertNoteSchema = createInsertSchema(notes).omit({
   recurringType: z.enum(["daily", "weekly", "monthly", "yearly", "custom"]).optional(),
   recurringInterval: z.number().optional(),
   recurringDays: z.array(z.number()).optional(),
-  excludeWeekends: z.boolean().optional(),
+  includeSaturday: z.boolean().optional(),
+  includeSunday: z.boolean().optional(),
   recurringStartDate: z.coerce.date().optional(),
   recurringEndDate: z.coerce.date().optional(),
   templateId: z.string().optional(),
@@ -3579,7 +3581,8 @@ export const taskTemplates = pgTable("task_templates", {
   isRecurringTemplate: boolean("is_recurring_template").default(false), // Whether this template auto-generates recurring tasks
   recurringDays: json("recurring_days").default([]), // Days of week: array of 0-6 (Sun-Sat) when tasks should be created
   recurringSchedule: json("recurring_schedule").default([]), // Array of {dayOfWeek: number, startTime: string, duration: number} for day-specific times
-  excludeWeekends: boolean("exclude_weekends").default(false), // For daily frequency: skip Saturday and Sunday
+  includeSaturday: boolean("include_saturday").default(false), // For daily frequency: include Saturday
+  includeSunday: boolean("include_sunday").default(false), // For daily frequency: include Sunday
   recurringStartTime: text("recurring_start_time"), // DEPRECATED: Use recurringSchedule instead
   recurringDuration: integer("recurring_duration"), // DEPRECATED: Use recurringSchedule instead
   recurringAssigneeId: varchar("recurring_assignee_id").references(() => users.id), // DEPRECATED: Use defaultRoleId for role-based assignment

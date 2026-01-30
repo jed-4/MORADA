@@ -518,8 +518,8 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
               <h3 className="text-sm font-medium mb-1">No Recurring Templates</h3>
               <p className="text-xs text-muted-foreground max-w-xs">
                 {effectiveUserId !== "all" 
-                  ? "No active recurring templates found for this user. Create recurring templates from the Task Templates section."
-                  : "No recurring templates have been set up yet. Create task templates and mark them as recurring to see them here."}
+                  ? "No active recurring templates found for this user. Create recurring templates from the Operational Tasks section."
+                  : "No recurring templates have been set up yet. Create operational tasks and mark them as recurring to see them here."}
               </p>
             </div>
           </div>

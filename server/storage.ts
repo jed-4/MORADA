@@ -15712,7 +15712,7 @@ export class DbStorage implements IStorage {
   /**
    * Creates the next instance of a standard recurring task (isRecurring=true, recurringType)
    * This handles daily/weekly/monthly recurrence for standard tasks (not template-based)
-   * Respects excludeWeekends for daily recurrence
+   * Respects includeSaturday/includeSunday for daily recurrence
    */
   async createNextStandardRecurringTask(completedTask: Task, companyId: string): Promise<Task | null> {
     try {
@@ -15730,11 +15730,15 @@ export class DbStorage implements IStorage {
       switch (completedTask.recurringType) {
         case 'daily':
           nextDueDate.setDate(nextDueDate.getDate() + 1);
-          // If excludeWeekends is true, skip Saturday (6) and Sunday (0)
-          if ((completedTask as any).excludeWeekends) {
-            while (nextDueDate.getDay() === 0 || nextDueDate.getDay() === 6) {
-              nextDueDate.setDate(nextDueDate.getDate() + 1);
-            }
+          // Skip days based on includeSaturday/includeSunday settings
+          const includeSaturday = (completedTask as any).includeSaturday;
+          const includeSunday = (completedTask as any).includeSunday;
+          // Skip Saturday (6) if not included, skip Sunday (0) if not included
+          while (
+            (nextDueDate.getDay() === 6 && !includeSaturday) ||
+            (nextDueDate.getDay() === 0 && !includeSunday)
+          ) {
+            nextDueDate.setDate(nextDueDate.getDate() + 1);
           }
           break;
         case 'weekly':
@@ -15818,7 +15822,8 @@ export class DbStorage implements IStorage {
         isRecurring: true,
         recurringType: completedTask.recurringType,
         recurringDays: completedTask.recurringDays,
-        excludeWeekends: (completedTask as any).excludeWeekends,
+        includeSaturday: (completedTask as any).includeSaturday,
+        includeSunday: (completedTask as any).includeSunday,
         taskContextType: completedTask.taskContextType as any,
         taskContextId: completedTask.taskContextId,
         scope: completedTask.scope as any,

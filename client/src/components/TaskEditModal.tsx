@@ -83,7 +83,8 @@ const taskFormSchema = z.object({
   isRecurring: z.boolean().default(false),
   recurringType: z.enum(["daily", "weekly", "monthly"]).optional(),
   recurringDays: z.array(z.number()).default([]),
-  excludeWeekends: z.boolean().default(false),
+  includeSaturday: z.boolean().default(false),
+  includeSunday: z.boolean().default(false),
   estimatedCost: z.number().optional(),
   estimatedUnits: z.number().optional(),
   projectId: z.string().optional(),
@@ -235,7 +236,8 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
       isRecurring: task?.isRecurring || false,
       recurringType: (task?.recurringType as any) || undefined,
       recurringDays: (task?.recurringDays as number[]) || [],
-      excludeWeekends: task?.excludeWeekends || false,
+      includeSaturday: task?.includeSaturday || false,
+      includeSunday: task?.includeSunday || false,
       estimatedCost: task?.estimatedCost || undefined,
       estimatedUnits: task?.estimatedUnits || undefined,
       projectId: task?.projectId || projectId || undefined,
@@ -259,7 +261,8 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
         isRecurring: task?.isRecurring || false,
         recurringType: (task?.recurringType as any) || undefined,
         recurringDays: (task?.recurringDays as number[]) || [],
-        excludeWeekends: task?.excludeWeekends || false,
+        includeSaturday: task?.includeSaturday || false,
+        includeSunday: task?.includeSunday || false,
         estimatedCost: task?.estimatedCost || undefined,
         estimatedUnits: task?.estimatedUnits || undefined,
         projectId: task?.projectId || projectId || undefined,
@@ -1130,15 +1133,27 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                         </Select>
 
                         {form.watch("recurringType") === "daily" && (
-                          <div className="flex items-center gap-2">
-                            <Checkbox
-                              checked={form.watch("excludeWeekends")}
-                              onCheckedChange={(checked) => form.setValue("excludeWeekends", !!checked, { shouldDirty: true, shouldTouch: true })}
-                              data-testid="checkbox-exclude-weekends"
-                            />
-                            <label className="text-xs text-muted-foreground">
-                              Exclude weekends
-                            </label>
+                          <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-1.5">
+                              <Checkbox
+                                checked={form.watch("includeSaturday")}
+                                onCheckedChange={(checked) => form.setValue("includeSaturday", !!checked, { shouldDirty: true, shouldTouch: true })}
+                                data-testid="checkbox-include-saturday"
+                              />
+                              <label className="text-xs text-muted-foreground">
+                                Inc. Saturday
+                              </label>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <Checkbox
+                                checked={form.watch("includeSunday")}
+                                onCheckedChange={(checked) => form.setValue("includeSunday", !!checked, { shouldDirty: true, shouldTouch: true })}
+                                data-testid="checkbox-include-sunday"
+                              />
+                              <label className="text-xs text-muted-foreground">
+                                Inc. Sunday
+                              </label>
+                            </div>
                           </div>
                         )}
 

@@ -67,7 +67,7 @@ export default function Systems() {
           >
             <div className="flex items-center gap-1.5">
               <ListTodo className="h-3 w-3" />
-              <span>Task Templates</span>
+              <span>Operational Tasks</span>
             </div>
           </button>
           <button

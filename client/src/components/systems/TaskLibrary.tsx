@@ -118,7 +118,8 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
     isRecurringTemplate: false,
     recurringDays: [] as number[],
     recurringSchedule: [] as Array<{ dayOfWeek: number; startTime: string; duration: number }>,
-    excludeWeekends: false, // For daily frequency: skip Saturday and Sunday
+    includeSaturday: false, // For daily frequency: include Saturday
+    includeSunday: false, // For daily frequency: include Sunday
     defaultTaskStatus: "todo", // Default status for tasks created from this template
     scope: "business" as "business" | "project",
     projectId: "" as string,
@@ -151,10 +152,10 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
       queryClient.invalidateQueries({ queryKey: ["/api/systems/task-templates"] });
       setShowDialog(false);
       resetForm();
-      toast({ title: "Task template created successfully" });
+      toast({ title: "Operational task created successfully" });
     },
     onError: () => {
-      toast({ title: "Failed to create task template", variant: "destructive" });
+      toast({ title: "Failed to create operational task", variant: "destructive" });
     },
   });
 
@@ -167,11 +168,11 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
       setShowDialog(false);
       setEditingTemplate(null);
       resetForm();
-      toast({ title: "Task template updated successfully" });
+      toast({ title: "Operational task updated successfully" });
     },
     onError: (error: any) => {
       console.error("Update error:", error);
-      const errorMessage = error?.message || error?.details || "Failed to update task template";
+      const errorMessage = error?.message || error?.details || "Failed to update operational task";
       toast({ title: errorMessage, variant: "destructive" });
     },
   });
@@ -181,10 +182,10 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
     mutationFn: (id: string) => apiRequest(`/api/systems/task-templates/${id}`, "DELETE"),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/systems/task-templates"] });
-      toast({ title: "Task template deleted successfully" });
+      toast({ title: "Operational task deleted successfully" });
     },
     onError: () => {
-      toast({ title: "Failed to delete task template", variant: "destructive" });
+      toast({ title: "Failed to delete operational task", variant: "destructive" });
     },
   });
 
@@ -364,7 +365,8 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
       isRecurringTemplate: template.isRecurringTemplate || false,
       recurringDays: template.recurringDays ? (Array.isArray(template.recurringDays) ? template.recurringDays : JSON.parse(template.recurringDays as string)) : [],
       recurringSchedule: template.recurringSchedule ? (Array.isArray(template.recurringSchedule) ? template.recurringSchedule : JSON.parse(template.recurringSchedule as string)) : [],
-      excludeWeekends: template.excludeWeekends || false,
+      includeSaturday: template.includeSaturday || false,
+      includeSunday: template.includeSunday || false,
       defaultTaskStatus: template.defaultTaskStatus || "todo",
       scope: (template.scope as "business" | "project") || "business",
       projectId: template.projectId || "",
@@ -425,9 +427,10 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
       recurringDays: templateForm.isRecurringTemplate && templateForm.frequency === "weekly" 
         ? templateForm.dueDayOfWeek 
         : templateForm.isRecurringTemplate && templateForm.frequency === "daily"
-          ? (templateForm.excludeWeekends ? [1, 2, 3, 4, 5] : [0, 1, 2, 3, 4, 5, 6]) // Daily = weekdays if excludeWeekends, else all days
+          ? [1, 2, 3, 4, 5, ...(templateForm.includeSaturday ? [6] : []), ...(templateForm.includeSunday ? [0] : [])] // Daily = weekdays + optional Sat/Sun
           : [],
-      excludeWeekends: templateForm.excludeWeekends,
+      includeSaturday: templateForm.includeSaturday,
+      includeSunday: templateForm.includeSunday,
       defaultRoleId: templateForm.isRecurringTemplate ? (templateForm.defaultRoleId || null) : null,
       // Include assignee fields
       assigneeType: templateForm.assigneeType,
@@ -760,7 +763,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
         {templates.length === 0 ? (
           <Card className="p-8">
             <div className="text-center text-muted-foreground">
-              No task templates yet. Create your first template to get started.
+              No operational tasks yet. Create your first one to get started.
             </div>
           </Card>
         ) : filteredTemplates.length === 0 ? (
@@ -1021,7 +1024,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
       }}>
         <DialogContent className="sm:max-w-[520px] max-h-[90vh] overflow-y-auto" data-testid="dialog-template">
           <DialogHeader className="pb-2">
-            <DialogTitle className="text-sm">{editingTemplate ? "Edit Template" : "New Task Template"}</DialogTitle>
+            <DialogTitle className="text-sm">{editingTemplate ? "Edit Operational Task" : "New Operational Task"}</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-2 max-h-[calc(90vh-120px)] overflow-y-auto pr-1">
             {/* Title */}
@@ -1032,7 +1035,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
               <Input
                 value={templateForm.title}
                 onChange={(e) => setTemplateForm({ ...templateForm, title: e.target.value })}
-                placeholder="Task template title"
+                placeholder="Operational task title"
                 className="h-7 text-[11px]"
                 data-testid="input-template-title"
                 required
@@ -1287,16 +1290,29 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                         data-testid="input-template-time"
                       />
                     </div>
-                    <div className="flex items-center gap-2 pb-1">
-                      <Checkbox
-                        id="exclude-weekends-template"
-                        checked={templateForm.excludeWeekends}
-                        onCheckedChange={(checked) => setTemplateForm({ ...templateForm, excludeWeekends: !!checked })}
-                        data-testid="checkbox-exclude-weekends-template"
-                      />
-                      <Label htmlFor="exclude-weekends-template" className="text-[10px] text-muted-foreground cursor-pointer">
-                        Exclude weekends
-                      </Label>
+                    <div className="flex items-center gap-4 pb-1">
+                      <div className="flex items-center gap-1.5">
+                        <Checkbox
+                          id="include-saturday-template"
+                          checked={templateForm.includeSaturday}
+                          onCheckedChange={(checked) => setTemplateForm({ ...templateForm, includeSaturday: !!checked })}
+                          data-testid="checkbox-include-saturday-template"
+                        />
+                        <Label htmlFor="include-saturday-template" className="text-[10px] text-muted-foreground cursor-pointer">
+                          Inc. Saturday
+                        </Label>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Checkbox
+                          id="include-sunday-template"
+                          checked={templateForm.includeSunday}
+                          onCheckedChange={(checked) => setTemplateForm({ ...templateForm, includeSunday: !!checked })}
+                          data-testid="checkbox-include-sunday-template"
+                        />
+                        <Label htmlFor="include-sunday-template" className="text-[10px] text-muted-foreground cursor-pointer">
+                          Inc. Sunday
+                        </Label>
+                      </div>
                     </div>
                   </div>
                 )}
