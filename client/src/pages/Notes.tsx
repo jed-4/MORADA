@@ -1327,8 +1327,14 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
         open={isDialogOpen} 
         onOpenChange={(open) => {
           if (!open) {
-            // Check if form has unsaved changes
-            if (form.formState.isDirty) {
+            // Check if form has unsaved changes - use isDirty or check if title/content have values
+            const currentValues = form.getValues();
+            const hasUnsavedChanges = form.formState.isDirty || 
+              (currentValues.title && currentValues.title !== defaultValuesRef.current.title) ||
+              (currentValues.content && currentValues.content !== defaultValuesRef.current.content) ||
+              (currentValues.contentHtml && currentValues.contentHtml !== defaultValuesRef.current.contentHtml);
+            
+            if (hasUnsavedChanges) {
               setShowDiscardConfirm(true);
               return;
             }
