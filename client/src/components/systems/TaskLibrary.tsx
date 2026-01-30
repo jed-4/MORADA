@@ -118,6 +118,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
     isRecurringTemplate: false,
     recurringDays: [] as number[],
     recurringSchedule: [] as Array<{ dayOfWeek: number; startTime: string; duration: number }>,
+    excludeWeekends: false, // For daily frequency: skip Saturday and Sunday
     defaultTaskStatus: "todo", // Default status for tasks created from this template
     scope: "business" as "business" | "project",
     projectId: "" as string,
@@ -363,6 +364,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
       isRecurringTemplate: template.isRecurringTemplate || false,
       recurringDays: template.recurringDays ? (Array.isArray(template.recurringDays) ? template.recurringDays : JSON.parse(template.recurringDays as string)) : [],
       recurringSchedule: template.recurringSchedule ? (Array.isArray(template.recurringSchedule) ? template.recurringSchedule : JSON.parse(template.recurringSchedule as string)) : [],
+      excludeWeekends: template.excludeWeekends || false,
       defaultTaskStatus: template.defaultTaskStatus || "todo",
       scope: (template.scope as "business" | "project") || "business",
       projectId: template.projectId || "",
@@ -423,8 +425,9 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
       recurringDays: templateForm.isRecurringTemplate && templateForm.frequency === "weekly" 
         ? templateForm.dueDayOfWeek 
         : templateForm.isRecurringTemplate && templateForm.frequency === "daily"
-          ? [0, 1, 2, 3, 4, 5, 6] // Daily = all days
+          ? (templateForm.excludeWeekends ? [1, 2, 3, 4, 5] : [0, 1, 2, 3, 4, 5, 6]) // Daily = weekdays if excludeWeekends, else all days
           : [],
+      excludeWeekends: templateForm.excludeWeekends,
       defaultRoleId: templateForm.isRecurringTemplate ? (templateForm.defaultRoleId || null) : null,
       // Include assignee fields
       assigneeType: templateForm.assigneeType,
@@ -1271,17 +1274,30 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                   </Select>
                 </div>
             
-                {/* Daily - Time */}
+                {/* Daily - Time and Exclude Weekends */}
                 {templateForm.frequency === "daily" && (
-                  <div>
-                    <Label className="text-[10px] text-muted-foreground">Time</Label>
-                    <Input
-                      type="time"
-                      value={templateForm.dueTime}
-                      onChange={(e) => setTemplateForm({ ...templateForm, dueTime: e.target.value })}
-                      className="h-7 text-[11px] w-28"
-                      data-testid="input-template-time"
-                    />
+                  <div className="flex items-end gap-4">
+                    <div>
+                      <Label className="text-[10px] text-muted-foreground">Time</Label>
+                      <Input
+                        type="time"
+                        value={templateForm.dueTime}
+                        onChange={(e) => setTemplateForm({ ...templateForm, dueTime: e.target.value })}
+                        className="h-7 text-[11px] w-28"
+                        data-testid="input-template-time"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2 pb-1">
+                      <Checkbox
+                        id="exclude-weekends-template"
+                        checked={templateForm.excludeWeekends}
+                        onCheckedChange={(checked) => setTemplateForm({ ...templateForm, excludeWeekends: !!checked })}
+                        data-testid="checkbox-exclude-weekends-template"
+                      />
+                      <Label htmlFor="exclude-weekends-template" className="text-[10px] text-muted-foreground cursor-pointer">
+                        Exclude weekends
+                      </Label>
+                    </div>
                   </div>
                 )}
             

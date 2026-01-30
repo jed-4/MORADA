@@ -3579,6 +3579,7 @@ export const taskTemplates = pgTable("task_templates", {
   isRecurringTemplate: boolean("is_recurring_template").default(false), // Whether this template auto-generates recurring tasks
   recurringDays: json("recurring_days").default([]), // Days of week: array of 0-6 (Sun-Sat) when tasks should be created
   recurringSchedule: json("recurring_schedule").default([]), // Array of {dayOfWeek: number, startTime: string, duration: number} for day-specific times
+  excludeWeekends: boolean("exclude_weekends").default(false), // For daily frequency: skip Saturday and Sunday
   recurringStartTime: text("recurring_start_time"), // DEPRECATED: Use recurringSchedule instead
   recurringDuration: integer("recurring_duration"), // DEPRECATED: Use recurringSchedule instead
   recurringAssigneeId: varchar("recurring_assignee_id").references(() => users.id), // DEPRECATED: Use defaultRoleId for role-based assignment
