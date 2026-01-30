@@ -83,6 +83,7 @@ const taskFormSchema = z.object({
   isRecurring: z.boolean().default(false),
   recurringType: z.enum(["daily", "weekly", "monthly"]).optional(),
   recurringDays: z.array(z.number()).default([]),
+  excludeWeekends: z.boolean().default(false),
   estimatedCost: z.number().optional(),
   estimatedUnits: z.number().optional(),
   projectId: z.string().optional(),
@@ -234,6 +235,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
       isRecurring: task?.isRecurring || false,
       recurringType: (task?.recurringType as any) || undefined,
       recurringDays: (task?.recurringDays as number[]) || [],
+      excludeWeekends: task?.excludeWeekends || false,
       estimatedCost: task?.estimatedCost || undefined,
       estimatedUnits: task?.estimatedUnits || undefined,
       projectId: task?.projectId || projectId || undefined,
@@ -257,6 +259,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
         isRecurring: task?.isRecurring || false,
         recurringType: (task?.recurringType as any) || undefined,
         recurringDays: (task?.recurringDays as number[]) || [],
+        excludeWeekends: task?.excludeWeekends || false,
         estimatedCost: task?.estimatedCost || undefined,
         estimatedUnits: task?.estimatedUnits || undefined,
         projectId: task?.projectId || projectId || undefined,
@@ -1125,6 +1128,19 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                             <SelectItem value="monthly">Monthly</SelectItem>
                           </SelectContent>
                         </Select>
+
+                        {form.watch("recurringType") === "daily" && (
+                          <div className="flex items-center gap-2">
+                            <Checkbox
+                              checked={form.watch("excludeWeekends")}
+                              onCheckedChange={(checked) => form.setValue("excludeWeekends", !!checked, { shouldDirty: true, shouldTouch: true })}
+                              data-testid="checkbox-exclude-weekends"
+                            />
+                            <label className="text-xs text-muted-foreground">
+                              Exclude weekends
+                            </label>
+                          </div>
+                        )}
 
                         {form.watch("recurringType") === "weekly" && (
                           <div className="flex gap-1">

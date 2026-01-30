@@ -876,6 +876,7 @@ export interface IStorage {
   clearAndRegenerateTemplateTask(templateId: string, companyId: string): Promise<{ deleted: number; generated: number }>;
   syncTemplateToTasks(templateId: string, companyId: string): Promise<{ synced: number }>;
   createNextRecurringTask(completedTask: Task, companyId: string): Promise<Task | null>;
+  createNextStandardRecurringTask(completedTask: Task, companyId: string): Promise<Task | null>;
 
   // Systems Library - Workflow Templates
   getWorkflowTemplates(companyId: string, isActive?: boolean): Promise<WorkflowTemplate[]>;
@@ -15704,6 +15705,130 @@ export class DbStorage implements IStorage {
       return newTask as Task;
     } catch (error) {
       console.error("Database error in createNextRecurringTask:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Creates the next instance of a standard recurring task (isRecurring=true, recurringType)
+   * This handles daily/weekly/monthly recurrence for standard tasks (not template-based)
+   * Respects excludeWeekends for daily recurrence
+   */
+  async createNextStandardRecurringTask(completedTask: Task, companyId: string): Promise<Task | null> {
+    try {
+      if (!completedTask.isRecurring || !completedTask.recurringType || !completedTask.dueDate) {
+        return null;
+      }
+
+      const currentDueDate = typeof completedTask.dueDate === 'string' 
+        ? new Date(completedTask.dueDate) 
+        : completedTask.dueDate;
+      
+      let nextDueDate = new Date(currentDueDate);
+      
+      // Calculate next due date based on recurring type
+      switch (completedTask.recurringType) {
+        case 'daily':
+          nextDueDate.setDate(nextDueDate.getDate() + 1);
+          // If excludeWeekends is true, skip Saturday (6) and Sunday (0)
+          if ((completedTask as any).excludeWeekends) {
+            while (nextDueDate.getDay() === 0 || nextDueDate.getDay() === 6) {
+              nextDueDate.setDate(nextDueDate.getDate() + 1);
+            }
+          }
+          break;
+        case 'weekly':
+          // For weekly, find the next occurrence based on recurringDays
+          const recurringDays = (completedTask.recurringDays as number[]) || [];
+          if (recurringDays.length === 0) {
+            // Default to same day next week
+            nextDueDate.setDate(nextDueDate.getDate() + 7);
+          } else {
+            // Find the next scheduled day by checking each day from tomorrow
+            let found = false;
+            for (let i = 1; i <= 7 && !found; i++) {
+              const checkDate = new Date(currentDueDate);
+              checkDate.setDate(currentDueDate.getDate() + i);
+              if (recurringDays.includes(checkDate.getDay())) {
+                nextDueDate = checkDate;
+                found = true;
+              }
+            }
+            if (!found) {
+              // Fallback to next week same day
+              nextDueDate = new Date(currentDueDate);
+              nextDueDate.setDate(nextDueDate.getDate() + 7);
+            }
+          }
+          break;
+        case 'monthly':
+          nextDueDate.setMonth(nextDueDate.getMonth() + 1);
+          break;
+        default:
+          return null;
+      }
+
+      // Check if task already exists for this date using original task ID as the recurrence source
+      // Normalize to date-only string to avoid timezone issues
+      const dateStr = `${nextDueDate.getFullYear()}-${String(nextDueDate.getMonth() + 1).padStart(2, '0')}-${String(nextDueDate.getDate()).padStart(2, '0')}`;
+      
+      // Use a recurrence key based on the original task's ID + title + recurring config
+      // This ensures we don't create duplicates for the same recurring task series
+      const recurrenceKey = `${completedTask.id}-${completedTask.recurringType}`;
+      
+      const existingTasks = await db.select().from(schema.notes).where(
+        and(
+          eq(schema.notes.companyId, companyId),
+          eq(schema.notes.type, "task"),
+          eq(schema.notes.isRecurring, true)
+        )
+      );
+
+      // Check if a task from the same recurrence series exists for this date
+      const exists = existingTasks.some(t => {
+        if (!t.dueDate) return false;
+        const taskDate = new Date(t.dueDate);
+        const taskDateStr = `${taskDate.getFullYear()}-${String(taskDate.getMonth() + 1).padStart(2, '0')}-${String(taskDate.getDate()).padStart(2, '0')}`;
+        // Match by title and recurring config to identify same series
+        const sameTitle = t.title === completedTask.title;
+        const sameRecurringType = t.recurringType === completedTask.recurringType;
+        return taskDateStr === dateStr && sameTitle && sameRecurringType;
+      });
+
+      if (exists) return null;
+
+      // Clone the task with new due date and reset status
+      const taskData: InsertNote = {
+        title: completedTask.title,
+        content: completedTask.content || "",
+        author: "System",
+        type: "task",
+        priority: completedTask.priority as any,
+        status: "todo",
+        assigneeId: completedTask.assigneeId,
+        assigneeName: completedTask.assigneeName,
+        dueDate: nextDueDate,
+        startTime: completedTask.startTime,
+        endTime: completedTask.endTime,
+        tags: completedTask.tags || [],
+        labels: completedTask.labels || [],
+        category: completedTask.category,
+        projectId: completedTask.projectId,
+        companyId: companyId,
+        isRecurring: true,
+        recurringType: completedTask.recurringType,
+        recurringDays: completedTask.recurringDays,
+        excludeWeekends: (completedTask as any).excludeWeekends,
+        taskContextType: completedTask.taskContextType as any,
+        taskContextId: completedTask.taskContextId,
+        scope: completedTask.scope as any,
+      };
+
+      const [newTask] = await db.insert(schema.notes).values(taskData).returning();
+      console.log(`[createNextStandardRecurringTask] Created next instance for "${completedTask.title}" on ${dateStr}`);
+      return newTask as Task;
+    } catch (error) {
+      console.error("Database error in createNextStandardRecurringTask:", error);
       throw error;
     }
   }

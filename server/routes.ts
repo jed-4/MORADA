@@ -740,15 +740,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Task not found" });
       }
 
-      // Asana-style: Create next week's task when transitioning to 'done' (not already done)
-      // Use the freshly updated task (not pre-update snapshot) to preserve per-user assignee
+      // Handle recurring tasks when transitioning to 'done'
       const wasNotDone = existingTask.status !== 'done';
       const nowDone = task.status === 'done';
-      if (wasNotDone && nowDone && task.templateId && task.dueDate) {
-        try {
-          await storage.createNextRecurringTask(task as any, user.companyId);
-        } catch (err) {
-          console.error("Failed to create next recurring task:", err);
+      
+      if (wasNotDone && nowDone && task.dueDate) {
+        // Operational Tasks (template-based): Create next week's instance
+        if (task.templateId) {
+          try {
+            await storage.createNextRecurringTask(task as any, user.companyId);
+          } catch (err) {
+            console.error("Failed to create next recurring task:", err);
+          }
+        }
+        // Standard recurring tasks (isRecurring=true): Create next instance based on recurringType
+        else if (task.isRecurring && task.recurringType) {
+          try {
+            await storage.createNextStandardRecurringTask(task as any, user.companyId);
+          } catch (err) {
+            console.error("Failed to create next standard recurring task:", err);
+          }
         }
       }
 
@@ -786,17 +797,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/tasks/:id/status", async (req, res) => {
+  app.patch("/api/tasks/:id/status", requireAuth, async (req, res) => {
     try {
+      const user = req.user as any;
       const { status } = req.body;
       if (!status || !["todo", "in-progress", "done"].includes(status)) {
         return res.status(400).json({ error: "Invalid status" });
       }
 
+      // Get existing task to check previous status
+      const existingTask = await storage.getTask(req.params.id, user.companyId);
+      
       const task = await storage.updateTaskStatus(req.params.id, status);
       if (!task) {
         return res.status(404).json({ error: "Task not found" });
       }
+      
+      // Handle recurring tasks when transitioning to 'done'
+      const wasNotDone = existingTask?.status !== 'done';
+      const nowDone = status === 'done';
+      
+      if (wasNotDone && nowDone && task.dueDate) {
+        // Operational Tasks (template-based)
+        if (task.templateId) {
+          try {
+            await storage.createNextRecurringTask(task as any, user.companyId);
+          } catch (err) {
+            console.error("Failed to create next recurring task:", err);
+          }
+        }
+        // Standard recurring tasks
+        else if (task.isRecurring && task.recurringType) {
+          try {
+            await storage.createNextStandardRecurringTask(task as any, user.companyId);
+          } catch (err) {
+            console.error("Failed to create next standard recurring task:", err);
+          }
+        }
+      }
+      
       res.json(task);
     } catch (error) {
       res.status(500).json({ error: "Failed to update task status" });
