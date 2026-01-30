@@ -1222,7 +1222,18 @@ export default function Tasks() {
       <div className="flex-1 overflow-auto">
         {activeView === "kanban" && (
           <div className="h-full p-2">
-            <TaskBoard tasks={effectivelyFilteredTasks} isLoading={tasksLoading} onTaskClick={(task: Task) => setEditingTask(task)} projectId={effectiveProjectId} displaySettings={cardDisplaySettings} cardWidth={cardWidth} onDelete={handleDeleteTask} showActions={true} />
+            <TaskBoard 
+              tasks={effectivelyFilteredTasks} 
+              isLoading={tasksLoading} 
+              onTaskClick={(task: Task) => setEditingTask(task)} 
+              projectId={effectiveProjectId} 
+              displaySettings={cardDisplaySettings} 
+              cardWidth={cardWidth} 
+              onDelete={handleDeleteTask} 
+              showActions={true}
+              groupBy={groupBy === 'tags' ? 'labels' : groupBy === 'assignee' ? 'status' : groupBy as 'status' | 'priority' | 'labels'}
+              fieldCategories={fieldCategories}
+            />
           </div>
         )}
         
