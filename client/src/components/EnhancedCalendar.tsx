@@ -11,6 +11,7 @@ import {
   DragEndEvent,
   DragOverlay,
   DragStartEvent,
+  DragMoveEvent,
   MouseSensor,
   TouchSensor,
   useSensor,
@@ -242,14 +243,19 @@ interface DroppableTimeSlotProps {
   children?: React.ReactNode;
   className?: string;
   onClick?: () => void;
+  isDragging?: boolean; // Global drag state for snap indicators
+  activeEventColor?: string | null; // Color of the event being dragged
 }
 
-function DroppableTimeSlot({ date, hour, quarter, children, className, onClick }: DroppableTimeSlotProps) {
+function DroppableTimeSlot({ date, hour, quarter, children, className, onClick, isDragging = false, activeEventColor }: DroppableTimeSlotProps) {
   const slotId = `${format(date, "yyyy-MM-dd")}-${hour}:${quarter.toString().padStart(2, '0')}`;
   const { setNodeRef, isOver } = useDroppable({
     id: slotId,
     data: { date, hour, quarter },
   });
+
+  // Generate Notion-style colors for the hover effect
+  const notionColors = activeEventColor ? generateNotionColors(activeEventColor) : null;
 
   return (
     <div
@@ -257,9 +263,20 @@ function DroppableTimeSlot({ date, hour, quarter, children, className, onClick }
       onClick={onClick}
       className={cn(
         className,
-        isOver && "ring-2 ring-primary ring-inset"
+        "transition-all duration-75",
+        // Snap-to-grid indicators - show subtle grid lines during drag
+        isDragging && "border-b border-dashed border-muted-foreground/20",
+        // Time slot highlighting - enhanced visual when hovering
+        isOver && "ring-2 ring-primary ring-inset shadow-inner"
       )}
+      style={isOver && notionColors ? {
+        backgroundColor: `${notionColors.pastelBg}`,
+      } : undefined}
     >
+      {/* Snap indicator dot at start of slot */}
+      {isDragging && quarter === 0 && (
+        <div className="absolute left-0 w-1 h-1 rounded-full bg-muted-foreground/40 -translate-x-0.5" />
+      )}
       {children}
     </div>
   );
@@ -283,6 +300,8 @@ export function EnhancedCalendar({
   const [internalCurrentDate, setInternalCurrentDate] = useState(new Date());
   const [internalView, setInternalView] = useState<"month" | "week" | "day" | "roster">(initialView);
   const [activeEvent, setActiveEvent] = useState<CalendarEvent | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [hoverSlotId, setHoverSlotId] = useState<string | null>(null);
   
   // Use controlled currentDate if provided, otherwise use internal state
   const isDateControlled = externalCurrentDate !== undefined;
@@ -565,6 +584,13 @@ export function EnhancedCalendar({
   const handleDragStart = (event: DragStartEvent) => {
     const draggedEvent = event.active.data.current?.event as CalendarEvent;
     setActiveEvent(draggedEvent);
+    setIsDragging(true);
+  };
+
+  // Handle drag move - track hover position for visual feedback
+  const handleDragMove = (event: DragMoveEvent) => {
+    const overId = event.over?.id as string | undefined;
+    setHoverSlotId(overId || null);
   };
 
   // Handle drag end
@@ -572,6 +598,8 @@ export function EnhancedCalendar({
     const { active, over } = event;
     
     setActiveEvent(null);
+    setIsDragging(false);
+    setHoverSlotId(null);
     
     if (!over) {
       return;
@@ -939,8 +967,10 @@ export function EnhancedCalendar({
                             date={date}
                             hour={hour}
                             quarter={quarter}
-                            className="h-2.5 hover:bg-primary/10 cursor-pointer transition-colors"
+                            className="h-2.5 hover:bg-primary/10 cursor-pointer transition-colors relative"
                             onClick={() => onDateClick?.(date)}
+                            isDragging={isDragging}
+                            activeEventColor={activeEvent?.templateId ? "#a855f7" : (activeEvent?.projectColor || activeEvent?.color)}
                           />
                         ))}
                       </div>
@@ -1082,6 +1112,7 @@ export function EnhancedCalendar({
     <DndContext
       sensors={sensors}
       onDragStart={handleDragStart}
+      onDragMove={handleDragMove}
       onDragEnd={handleDragEnd}
     >
       <div className="flex flex-col h-full bg-background">
@@ -1260,22 +1291,38 @@ export function EnhancedCalendar({
         {view === "roster" && renderWeekView()}
       </div>
 
-      {/* Drag overlay - Notion style with ghost effect */}
-      <DragOverlay>
-        {activeEvent ? (
-          <div
-            className="flex items-center gap-1.5 px-2 py-1 rounded text-[10.5px] cursor-move shadow-xl ring-1 ring-black/10"
-            style={{
-              backgroundColor: `${activeEvent.projectColor || activeEvent.color || "hsl(215 35% 45%)"}`,
-              borderLeft: `2px solid ${activeEvent.projectColor || activeEvent.color || "hsl(215 35% 45%)"}`,
-              opacity: 0.9,
-            }}
-          >
-            <div className="font-medium text-white">
-              {activeEvent.title}
+      {/* Ghost preview - Notion-style with pastel background matching actual events */}
+      <DragOverlay dropAnimation={null}>
+        {activeEvent ? (() => {
+          const baseColor = activeEvent.templateId ? "#a855f7" : (activeEvent.projectColor || activeEvent.color || "#6366f1");
+          const ghostColors = generateNotionColors(baseColor);
+          return (
+            <div
+              className="flex items-start gap-1.5 px-2 pt-1 pb-0.5 rounded text-[10.5px] cursor-grabbing shadow-2xl ring-2 ring-primary/50 min-w-[120px]"
+              style={{
+                backgroundColor: ghostColors.pastelBg,
+                borderLeft: `3px solid ${ghostColors.originalHex}`,
+                opacity: 0.95,
+                transform: 'rotate(-1deg) scale(1.02)',
+              }}
+            >
+              <div 
+                className="font-semibold truncate leading-tight"
+                style={{ color: ghostColors.darkText }}
+              >
+                {activeEvent.title}
+              </div>
+              {activeEvent.startTime && (
+                <div 
+                  className="text-[9px] font-normal opacity-70 ml-auto flex-shrink-0"
+                  style={{ color: ghostColors.darkText }}
+                >
+                  {activeEvent.startTime}
+                </div>
+              )}
             </div>
-          </div>
-        ) : null}
+          );
+        })() : null}
       </DragOverlay>
     </DndContext>
   );
