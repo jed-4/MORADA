@@ -1074,6 +1074,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                 <div className="flex items-center gap-2">
                   <Input
                     type="time"
+                    step="900"
                     {...form.register("startTime")}
                     className="h-9 flex-1"
                     placeholder="Start"
@@ -1082,6 +1083,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                   <span className="text-muted-foreground">-</span>
                   <Input
                     type="time"
+                    step="900"
                     {...form.register("endTime")}
                     className="h-9 flex-1"
                     placeholder="End"

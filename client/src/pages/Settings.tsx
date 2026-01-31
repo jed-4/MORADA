@@ -786,6 +786,7 @@ export default function Settings() {
                       <FormControl>
                         <Input
                           type="time"
+                          step="900"
                           placeholder="07:00"
                           {...field}
                           disabled={!isEditing}
@@ -806,6 +807,7 @@ export default function Settings() {
                       <FormControl>
                         <Input
                           type="time"
+                          step="900"
                           placeholder="15:30"
                           {...field}
                           disabled={!isEditing}
@@ -1190,6 +1192,7 @@ function ScheduleSettingsSection() {
               <Label className="text-sm font-medium">Start Time</Label>
               <Input
                 type="time"
+                step="900"
                 value={workHours.start}
                 onChange={(e) => setWorkHours({ ...workHours, start: e.target.value })}
                 className="mt-1.5"
@@ -1200,6 +1203,7 @@ function ScheduleSettingsSection() {
               <Label className="text-sm font-medium">End Time</Label>
               <Input
                 type="time"
+                step="900"
                 value={workHours.end}
                 onChange={(e) => setWorkHours({ ...workHours, end: e.target.value })}
                 className="mt-1.5"

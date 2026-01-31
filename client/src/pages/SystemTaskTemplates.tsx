@@ -1001,6 +1001,7 @@ export default function SystemTaskTemplates() {
                               <span className="w-16 text-sm font-medium">{day?.fullLabel}</span>
                               <Input
                                 type="time"
+                                step="900"
                                 value={schedule?.startTime || "09:00"}
                                 onChange={e =>
                                   updateDaySchedule(

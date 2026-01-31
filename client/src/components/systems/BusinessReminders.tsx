@@ -691,7 +691,7 @@ export const BusinessReminders = forwardRef<BusinessRemindersHandle, BusinessRem
                       <FormItem>
                         <FormLabel>Time</FormLabel>
                         <FormControl>
-                          <Input type="time" {...field} data-testid="input-schedule-time" />
+                          <Input type="time" step="900" {...field} data-testid="input-schedule-time" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>

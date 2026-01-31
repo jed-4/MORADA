@@ -645,6 +645,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
                         <FormControl>
                           <Input
                             type="time"
+                            step="900"
                             {...field}
                             data-testid="task-start-time-input"
                           />
@@ -662,6 +663,7 @@ export default function TaskForm({ task, open, onOpenChange, trigger, initialSta
                         <FormControl>
                           <Input
                             type="time"
+                            step="900"
                             {...field}
                             data-testid="task-end-time-input"
                           />

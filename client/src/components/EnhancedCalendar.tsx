@@ -104,7 +104,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
       data-testid={`event-${event.type}-${event.id}`}
       onClick={() => onEventClick?.(event)}
       className={cn(
-        "group relative flex items-start gap-1.5 px-1.5 pt-1 pb-0.5 rounded text-[11px] mb-0.5 transition-all overflow-hidden shadow-sm",
+        "group relative flex items-start gap-1.5 px-1.5 pt-0.5 pb-0.5 rounded text-[11px] mb-0.5 transition-all overflow-hidden shadow-sm",
         showResizeHandles && "h-full",
         !isGoogleCalendarEvent && "touch-none",
         !isGoogleCalendarEvent && !showResizeHandles && "cursor-move hover:shadow-md",
@@ -243,40 +243,21 @@ interface DroppableTimeSlotProps {
   children?: React.ReactNode;
   className?: string;
   onClick?: () => void;
-  isDragging?: boolean; // Global drag state for snap indicators
-  activeEventColor?: string | null; // Color of the event being dragged
 }
 
-function DroppableTimeSlot({ date, hour, quarter, children, className, onClick, isDragging = false, activeEventColor }: DroppableTimeSlotProps) {
+function DroppableTimeSlot({ date, hour, quarter, children, className, onClick }: DroppableTimeSlotProps) {
   const slotId = `${format(date, "yyyy-MM-dd")}-${hour}:${quarter.toString().padStart(2, '0')}`;
-  const { setNodeRef, isOver } = useDroppable({
+  const { setNodeRef } = useDroppable({
     id: slotId,
     data: { date, hour, quarter },
   });
-
-  // Generate Notion-style colors for the hover effect
-  const notionColors = activeEventColor ? generateNotionColors(activeEventColor) : null;
 
   return (
     <div
       ref={setNodeRef}
       onClick={onClick}
-      className={cn(
-        className,
-        "transition-all duration-75",
-        // Snap-to-grid indicators - show subtle grid lines during drag
-        isDragging && "border-b border-dashed border-muted-foreground/20",
-        // Time slot highlighting - enhanced visual when hovering
-        isOver && "ring-2 ring-primary ring-inset shadow-inner"
-      )}
-      style={isOver && notionColors ? {
-        backgroundColor: `${notionColors.pastelBg}`,
-      } : undefined}
+      className={className}
     >
-      {/* Snap indicator dot at start of slot */}
-      {isDragging && quarter === 0 && (
-        <div className="absolute left-0 w-1 h-1 rounded-full bg-muted-foreground/40 -translate-x-0.5" />
-      )}
       {children}
     </div>
   );
@@ -300,8 +281,13 @@ export function EnhancedCalendar({
   const [internalCurrentDate, setInternalCurrentDate] = useState(new Date());
   const [internalView, setInternalView] = useState<"month" | "week" | "day" | "roster">(initialView);
   const [activeEvent, setActiveEvent] = useState<CalendarEvent | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [hoverSlotId, setHoverSlotId] = useState<string | null>(null);
+  // Track resize preview state for real-time visual feedback
+  const [resizePreview, setResizePreview] = useState<{
+    eventId: string;
+    type: 'resize-start' | 'resize-end';
+    previewStartTime: string;
+    previewEndTime: string;
+  } | null>(null);
   
   // Use controlled currentDate if provided, otherwise use internal state
   const isDateControlled = externalCurrentDate !== undefined;
@@ -583,14 +569,62 @@ export function EnhancedCalendar({
   // Handle drag start
   const handleDragStart = (event: DragStartEvent) => {
     const draggedEvent = event.active.data.current?.event as CalendarEvent;
+    const dragType = event.active.data.current?.type as string;
     setActiveEvent(draggedEvent);
-    setIsDragging(true);
+    
+    // Initialize resize preview if this is a resize operation
+    if ((dragType === 'resize-start' || dragType === 'resize-end') && draggedEvent) {
+      setResizePreview({
+        eventId: draggedEvent.id,
+        type: dragType,
+        previewStartTime: draggedEvent.startTime || '09:00',
+        previewEndTime: draggedEvent.endTime || '10:00',
+      });
+    }
   };
 
-  // Handle drag move - track hover position for visual feedback
+  // Handle drag move - update resize preview for real-time feedback
   const handleDragMove = (event: DragMoveEvent) => {
-    const overId = event.over?.id as string | undefined;
-    setHoverSlotId(overId || null);
+    const dragType = event.active.data.current?.type as string;
+    const draggedEvent = event.active.data.current?.event as CalendarEvent;
+    
+    // Update resize preview in real-time
+    if ((dragType === 'resize-start' || dragType === 'resize-end') && draggedEvent && event.over) {
+      const targetHour = event.over.data.current?.hour as number | undefined;
+      const targetQuarter = event.over.data.current?.quarter as number | undefined;
+      
+      if (targetHour !== undefined && targetQuarter !== undefined) {
+        const newTime = `${targetHour.toString().padStart(2, '0')}:${targetQuarter.toString().padStart(2, '0')}`;
+        const currentStart = draggedEvent.startTime || '09:00';
+        const currentEnd = draggedEvent.endTime || '10:00';
+        
+        if (dragType === 'resize-start') {
+          // Resizing from top - update start time preview
+          const [newH, newM] = newTime.split(':').map(Number);
+          const [endH, endM] = currentEnd.split(':').map(Number);
+          if (newH * 60 + newM <= endH * 60 + endM - 15) {
+            setResizePreview({
+              eventId: draggedEvent.id,
+              type: dragType,
+              previewStartTime: newTime,
+              previewEndTime: currentEnd,
+            });
+          }
+        } else {
+          // Resizing from bottom - update end time preview
+          const [startH, startM] = currentStart.split(':').map(Number);
+          const [newH, newM] = newTime.split(':').map(Number);
+          if (newH * 60 + newM >= startH * 60 + startM + 15) {
+            setResizePreview({
+              eventId: draggedEvent.id,
+              type: dragType,
+              previewStartTime: currentStart,
+              previewEndTime: newTime,
+            });
+          }
+        }
+      }
+    }
   };
 
   // Handle drag end
@@ -598,8 +632,7 @@ export function EnhancedCalendar({
     const { active, over } = event;
     
     setActiveEvent(null);
-    setIsDragging(false);
-    setHoverSlotId(null);
+    setResizePreview(null);
     
     if (!over) {
       return;
@@ -967,10 +1000,8 @@ export function EnhancedCalendar({
                             date={date}
                             hour={hour}
                             quarter={quarter}
-                            className="h-2.5 hover:bg-primary/10 cursor-pointer transition-colors relative"
+                            className="h-2.5 hover:bg-primary/10 cursor-pointer transition-colors"
                             onClick={() => onDateClick?.(date)}
-                            isDragging={isDragging}
-                            activeEventColor={activeEvent?.templateId ? "#a855f7" : (activeEvent?.projectColor || activeEvent?.color)}
                           />
                         ))}
                       </div>
@@ -980,12 +1011,17 @@ export function EnhancedCalendar({
                         {(() => {
                           // Calculate overlaps and position events
                           const eventsWithPosition = timedEvents.map((event) => {
+                            // Check if this event is being resized - use preview times if so
+                            const isResizing = resizePreview?.eventId === event.id;
+                            const displayStartTime = isResizing ? resizePreview.previewStartTime : (event.startTime || '09:00');
+                            const displayEndTime = isResizing ? resizePreview.previewEndTime : (event.endTime || `${(event.startTime || '09:00').split(':').map(Number)[0] + 1}:00`);
+                            
                             // Parse start time
-                            const [startH, startM] = (event.startTime || '09:00').split(':').map(Number);
+                            const [startH, startM] = displayStartTime.split(':').map(Number);
                             const startMinutes = startH * 60 + startM;
                             
-                            // Parse end time - default to 1 hour if not specified
-                            const [endH, endM] = (event.endTime || `${startH + 1}:00`).split(':').map(Number);
+                            // Parse end time
+                            const [endH, endM] = displayEndTime.split(':').map(Number);
                             const endMinutes = endH * 60 + endM;
                             
                             // Calculate position and height with fixed gap for visual separation
@@ -1001,6 +1037,7 @@ export function EnhancedCalendar({
                               endMinutes,
                               top,
                               height: Math.max(height, 15), // Minimum 15px height
+                              isResizing,
                             };
                           });
 

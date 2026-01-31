@@ -1378,6 +1378,7 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                       <Label className="text-[10px] text-muted-foreground">Time</Label>
                       <Input
                         type="time"
+                        step="900"
                         value={templateForm.dueTime}
                         onChange={(e) => setTemplateForm({ ...templateForm, dueTime: e.target.value })}
                         className="h-7 text-[11px] w-28"
