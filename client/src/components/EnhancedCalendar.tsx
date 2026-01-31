@@ -103,11 +103,11 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
       data-testid={`event-${event.type}-${event.id}`}
       onClick={() => onEventClick?.(event)}
       className={cn(
-        "group relative flex items-start gap-1.5 px-1.5 py-1 rounded text-[11px] mb-0.5 transition-all overflow-hidden shadow-sm",
+        "group relative flex items-center justify-center gap-1.5 px-1.5 py-0.5 rounded text-[11px] mb-0.5 transition-all overflow-hidden shadow-sm",
         showResizeHandles && "h-full",
         !isGoogleCalendarEvent && "touch-none",
         !isGoogleCalendarEvent && !showResizeHandles && "cursor-move hover:shadow-md",
-        showResizeHandles && !isGoogleCalendarEvent && "cursor-pointer hover:shadow-md",
+        showResizeHandles && !isGoogleCalendarEvent && "cursor-move hover:shadow-md",
         isGoogleCalendarEvent && "cursor-pointer hover:shadow-md",
         isCompleted && "opacity-60",
         isDragging && "opacity-50 scale-[0.98] shadow-lg"
@@ -120,17 +120,17 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
         borderLeftColor: notionColors.originalHex,
       }}
     >
-      {/* Top resize handle - Notion style */}
+      {/* Top resize handle - Notion style, only interactive on hover */}
       {showResizeHandles && !isGoogleCalendarEvent && (
         <div
           ref={setTopRef}
           {...topAttrs}
           {...topListeners}
-          className="absolute -top-0.5 left-0 right-0 h-2 cursor-ns-resize z-10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+          className="absolute top-0 left-0 right-0 h-1.5 cursor-ns-resize z-10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto"
           onPointerDown={(e) => e.stopPropagation()}
           data-testid={`resize-handle-top-${event.id}`}
         >
-          <div className="h-0.5 bg-muted-foreground w-8 rounded-full" />
+          <div className="h-0.5 bg-muted-foreground/60 w-6 rounded-full" />
         </div>
       )}
 
@@ -149,11 +149,11 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
           {isCompleted && <Check className="w-2 h-2" />}
         </button>
       )}
-      <div className="flex-1 min-w-0 overflow-hidden flex items-start flex-col">
+      <div className="flex-1 min-w-0 overflow-hidden flex items-center flex-col justify-center">
         <div className="flex items-center gap-1 w-full">
           <div 
             className={cn(
-              "font-semibold truncate flex-1 text-[10.5px]",
+              "font-semibold truncate flex-1 text-[10.5px] leading-tight",
               isCompleted && "line-through opacity-60"
             )}
             style={{ color: notionColors.darkText }}
@@ -183,7 +183,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
         </div>
         {showTime && (
           <div 
-            className="text-[9px] font-normal opacity-80"
+            className="text-[9px] font-normal opacity-80 leading-tight"
             style={{ color: notionColors.darkText }}
           >
             {event.startTime}{event.endTime && ` - ${event.endTime}`}
@@ -191,17 +191,17 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
         )}
       </div>
 
-      {/* Bottom resize handle - Notion style */}
+      {/* Bottom resize handle - Notion style, only interactive on hover */}
       {showResizeHandles && !isGoogleCalendarEvent && (
         <div
           ref={setBottomRef}
           {...bottomAttrs}
           {...bottomListeners}
-          className="absolute -bottom-0.5 left-0 right-0 h-2 cursor-ns-resize z-10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+          className="absolute bottom-0 left-0 right-0 h-1.5 cursor-ns-resize z-10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto"
           onPointerDown={(e) => e.stopPropagation()}
           data-testid={`resize-handle-bottom-${event.id}`}
         >
-          <div className="h-0.5 bg-muted-foreground w-8 rounded-full" />
+          <div className="h-0.5 bg-muted-foreground/60 w-6 rounded-full" />
         </div>
       )}
     </div>
