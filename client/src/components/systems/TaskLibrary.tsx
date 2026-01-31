@@ -1,6 +1,7 @@
 import { useState, useImperativeHandle, forwardRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { 
@@ -19,8 +20,12 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
-  PlayCircle
+  PlayCircle,
+  GripVertical
 } from "lucide-react";
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -79,12 +84,78 @@ interface TaskLibraryProps {
   searchQuery?: string;
 }
 
+// Sortable checklist item component
+function SortableChecklistItem({ 
+  id, 
+  item, 
+  index, 
+  onUpdate, 
+  onRemove 
+}: { 
+  id: string;
+  item: { text: string; completed: boolean }; 
+  index: number;
+  onUpdate: (index: number, text: string) => void;
+  onRemove: (index: number) => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} className="flex gap-1 items-center">
+      <div
+        {...listeners}
+        className="cursor-grab active:cursor-grabbing p-0.5"
+        data-testid={`drag-handle-checklist-${index}`}
+      >
+        <GripVertical className="h-3 w-3 text-muted-foreground" />
+      </div>
+      <Input
+        value={item.text}
+        onChange={(e) => onUpdate(index, e.target.value)}
+        placeholder="Checklist item"
+        className="h-6 text-[11px] flex-1"
+        data-testid={`input-checklist-${index}`}
+      />
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-6 w-6"
+        onClick={() => onRemove(index)}
+        data-testid={`button-remove-checklist-${index}`}
+      >
+        <X className="h-3 w-3" />
+      </Button>
+    </div>
+  );
+}
+
 export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ searchQuery }, ref) => {
   const [showDialog, setShowDialog] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<TaskTemplate | null>(null);
   const { toast } = useToast();
+  const { user } = useAuth();
   const { categoryOptions, getCategoryInfo } = useTaskTemplateCategoryOptions();
   const { statusOptions: taskStatusOptions } = useTaskStatusOptions();
+  
+  // Sensors for drag and drop
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
 
   // Filter state
   const [filterCategory, setFilterCategory] = useState<string>("all");
@@ -435,9 +506,10 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
       // Include assignee fields
       assigneeType: templateForm.assigneeType,
       assigneeUserId: templateForm.assigneeType === 'user' ? (templateForm.assigneeUserId || null) : null,
-      // Scope fields - only include projectId when scope is project
+      // Scope fields - include companyId for business scope, projectId for project scope
       scope: templateForm.scope,
       projectId: templateForm.scope === 'project' ? (templateForm.projectId || null) : null,
+      companyId: templateForm.scope === 'business' ? (user?.companyId || null) : null,
     };
 
     console.log("Saving template with data:", cleanedData);
@@ -547,6 +619,21 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
       ...prev,
       checklist: prev.checklist.filter((_, i) => i !== index)
     }));
+  };
+
+  // Handle checklist item drag and drop reorder
+  const handleChecklistDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setTemplateForm((prev) => {
+        const oldIndex = prev.checklist.findIndex((_, i) => `checklist-${i}` === active.id);
+        const newIndex = prev.checklist.findIndex((_, i) => `checklist-${i}` === over.id);
+        return {
+          ...prev,
+          checklist: arrayMove(prev.checklist, oldIndex, newIndex)
+        };
+      });
+    }
   };
 
   // External links management
@@ -1406,29 +1493,29 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                 </Button>
               </div>
               {templateForm.checklist.length > 0 ? (
-                <div className="space-y-1">
-                  {templateForm.checklist.map((item, index) => (
-                    <div key={index} className="flex gap-1">
-                      <Input
-                        value={item.text}
-                        onChange={(e) => updateChecklistItem(index, e.target.value)}
-                        placeholder="Checklist item"
-                        className="h-6 text-[11px]"
-                        data-testid={`input-checklist-${index}`}
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={() => removeChecklistItem(index)}
-                        data-testid={`button-remove-checklist-${index}`}
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleChecklistDragEnd}
+                >
+                  <SortableContext 
+                    items={templateForm.checklist.map((_, index) => `checklist-${index}`)} 
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <div className="space-y-1">
+                      {templateForm.checklist.map((item, index) => (
+                        <SortableChecklistItem
+                          key={`checklist-${index}`}
+                          id={`checklist-${index}`}
+                          item={item}
+                          index={index}
+                          onUpdate={updateChecklistItem}
+                          onRemove={removeChecklistItem}
+                        />
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  </SortableContext>
+                </DndContext>
               ) : (
                 <div className="text-[10px] text-muted-foreground px-2 py-1 bg-muted/30 rounded">No items</div>
               )}

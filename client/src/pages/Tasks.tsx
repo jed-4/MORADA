@@ -864,7 +864,7 @@ export default function Tasks() {
                   { key: "in-progress", name: "In Progress", color: null },
                   { key: "done", name: "Done", color: null },
                 ]).map(option => (
-                  <DropdownMenuItem key={option.key} className="flex items-center">
+                  <DropdownMenuItem key={option.key} className="flex items-center" onSelect={(e) => e.preventDefault()}>
                     <Checkbox
                       checked={filters.status?.includes(option.key) || false}
                       onCheckedChange={() => {
@@ -908,7 +908,7 @@ export default function Tasks() {
                   { key: "medium", name: "Medium", color: null },
                   { key: "low", name: "Low", color: null },
                 ]).map(option => (
-                  <DropdownMenuItem key={option.key} className="flex items-center">
+                  <DropdownMenuItem key={option.key} className="flex items-center" onSelect={(e) => e.preventDefault()}>
                     <Checkbox
                       checked={filters.priority?.includes(option.key) || false}
                       onCheckedChange={() => {
@@ -949,7 +949,7 @@ export default function Tasks() {
               <DropdownMenuContent>
                 {filterOptions.availableAssignees.length > 0 ? (
                   filterOptions.availableAssignees.map(assignee => (
-                    <DropdownMenuItem key={assignee} className="flex items-center">
+                    <DropdownMenuItem key={assignee} className="flex items-center" onSelect={(e) => e.preventDefault()}>
                       <Checkbox
                         checked={filters.assignee?.includes(assignee) || false}
                         onCheckedChange={() => {
@@ -988,7 +988,7 @@ export default function Tasks() {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
                   {filterOptions.availableTags.map(tag => (
-                    <DropdownMenuItem key={tag} className="flex items-center">
+                    <DropdownMenuItem key={tag} className="flex items-center" onSelect={(e) => e.preventDefault()}>
                       <Checkbox
                         checked={filters.tags?.includes(tag) || false}
                         onCheckedChange={() => {
@@ -1022,7 +1022,7 @@ export default function Tasks() {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
                   {filterOptions.availableLabels.map(label => (
-                    <DropdownMenuItem key={label} className="flex items-center">
+                    <DropdownMenuItem key={label} className="flex items-center" onSelect={(e) => e.preventDefault()}>
                       <Checkbox
                         checked={filters.labels?.includes(label) || false}
                         onCheckedChange={() => {
