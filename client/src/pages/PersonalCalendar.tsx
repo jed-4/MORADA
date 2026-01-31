@@ -317,7 +317,7 @@ export default function PersonalCalendar() {
     },
   });
 
-  // Reschedule task mutation
+  // Reschedule task mutation with optimistic update
   const rescheduleTaskMutation = useMutation({
     mutationFn: async ({ taskId, dueDate, startTime }: { taskId: string; dueDate: string; startTime?: string }) => {
       const payload: any = { dueDate };
@@ -326,20 +326,52 @@ export default function PersonalCalendar() {
       }
       return await apiRequest(`/api/tasks/${taskId}`, "PATCH", payload);
     },
-    onSuccess: () => {
+    onMutate: async ({ taskId, dueDate, startTime }) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/tasks", displayedUserId] });
+      const previousTasks = queryClient.getQueryData(["/api/tasks", displayedUserId]);
+      queryClient.setQueryData(["/api/tasks", displayedUserId], (old: any[]) => 
+        old?.map((task: any) => 
+          task.id === taskId 
+            ? { ...task, dueDate, ...(startTime && { startTime }) }
+            : task
+        ) || []
+      );
+      return { previousTasks };
+    },
+    onError: (err, variables, context) => {
+      if (context?.previousTasks) {
+        queryClient.setQueryData(["/api/tasks", displayedUserId], context.previousTasks);
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
-      toast({ title: "Task rescheduled" });
     },
   });
 
-  // Resize task mutation
+  // Resize task mutation with optimistic update
   const resizeTaskMutation = useMutation({
     mutationFn: async ({ taskId, startTime, endTime }: { taskId: string; startTime: string; endTime: string }) => {
       return await apiRequest(`/api/tasks/${taskId}`, "PATCH", { startTime, endTime });
     },
-    onSuccess: () => {
+    onMutate: async ({ taskId, startTime, endTime }) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/tasks", displayedUserId] });
+      const previousTasks = queryClient.getQueryData(["/api/tasks", displayedUserId]);
+      queryClient.setQueryData(["/api/tasks", displayedUserId], (old: any[]) => 
+        old?.map((task: any) => 
+          task.id === taskId 
+            ? { ...task, startTime, endTime }
+            : task
+        ) || []
+      );
+      return { previousTasks };
+    },
+    onError: (err, variables, context) => {
+      if (context?.previousTasks) {
+        queryClient.setQueryData(["/api/tasks", displayedUserId], context.previousTasks);
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
-      toast({ title: "Task time updated" });
     },
   });
 

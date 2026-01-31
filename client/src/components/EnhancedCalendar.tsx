@@ -9,7 +9,6 @@ import { generateNotionColors } from "@/lib/taskColors";
 import {
   DndContext,
   DragEndEvent,
-  DragOverlay,
   DragStartEvent,
   DragMoveEvent,
   MouseSensor,
@@ -1328,39 +1327,6 @@ export function EnhancedCalendar({
         {view === "roster" && renderWeekView()}
       </div>
 
-      {/* Ghost preview - Notion-style with pastel background matching actual events */}
-      <DragOverlay dropAnimation={null}>
-        {activeEvent ? (() => {
-          const baseColor = activeEvent.templateId ? "#a855f7" : (activeEvent.projectColor || activeEvent.color || "#6366f1");
-          const ghostColors = generateNotionColors(baseColor);
-          return (
-            <div
-              className="flex items-start gap-1.5 px-2 pt-1 pb-0.5 rounded text-[10.5px] cursor-grabbing shadow-2xl ring-2 ring-primary/50 min-w-[120px]"
-              style={{
-                backgroundColor: ghostColors.pastelBg,
-                borderLeft: `3px solid ${ghostColors.originalHex}`,
-                opacity: 0.95,
-                transform: 'rotate(-1deg) scale(1.02)',
-              }}
-            >
-              <div 
-                className="font-semibold truncate leading-tight"
-                style={{ color: ghostColors.darkText }}
-              >
-                {activeEvent.title}
-              </div>
-              {activeEvent.startTime && (
-                <div 
-                  className="text-[9px] font-normal opacity-70 ml-auto flex-shrink-0"
-                  style={{ color: ghostColors.darkText }}
-                >
-                  {activeEvent.startTime}
-                </div>
-              )}
-            </div>
-          );
-        })() : null}
-      </DragOverlay>
     </DndContext>
   );
 }

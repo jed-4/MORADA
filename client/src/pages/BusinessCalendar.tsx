@@ -211,7 +211,7 @@ export default function BusinessCalendar() {
     },
   });
 
-  // Reschedule task mutation
+  // Reschedule task mutation with optimistic update
   const rescheduleTaskMutation = useMutation({
     mutationFn: async ({ taskId, dueDate, startTime }: { taskId: string; dueDate: string; startTime?: string }) => {
       const payload: any = { dueDate };
@@ -220,12 +220,26 @@ export default function BusinessCalendar() {
       }
       return await apiRequest(`/api/tasks/${taskId}`, "PATCH", payload);
     },
-    onSuccess: () => {
+    onMutate: async ({ taskId, dueDate, startTime }) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/tasks"] });
+      const queryKey = ["/api/tasks", { startDate: dateRange.startDate, endDate: dateRange.endDate }];
+      const previousTasks = queryClient.getQueryData(queryKey);
+      queryClient.setQueryData(queryKey, (old: Task[] | undefined) => 
+        old?.map((task) => 
+          task.id === taskId 
+            ? { ...task, dueDate, ...(startTime && { startTime }) }
+            : task
+        ) || []
+      );
+      return { previousTasks, queryKey };
+    },
+    onError: (err, variables, context) => {
+      if (context?.previousTasks && context?.queryKey) {
+        queryClient.setQueryData(context.queryKey, context.previousTasks);
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
-      toast({
-        title: "Task rescheduled",
-        description: "Task has been moved to the new date.",
-      });
     },
   });
 
@@ -250,17 +264,31 @@ export default function BusinessCalendar() {
     },
   });
 
-  // Resize task mutation
+  // Resize task mutation with optimistic update
   const resizeTaskMutation = useMutation({
     mutationFn: async ({ taskId, startTime, endTime }: { taskId: string; startTime: string; endTime: string }) => {
       return await apiRequest(`/api/tasks/${taskId}`, "PATCH", { startTime, endTime });
     },
-    onSuccess: () => {
+    onMutate: async ({ taskId, startTime, endTime }) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/tasks"] });
+      const queryKey = ["/api/tasks", { startDate: dateRange.startDate, endDate: dateRange.endDate }];
+      const previousTasks = queryClient.getQueryData(queryKey);
+      queryClient.setQueryData(queryKey, (old: Task[] | undefined) => 
+        old?.map((task) => 
+          task.id === taskId 
+            ? { ...task, startTime, endTime }
+            : task
+        ) || []
+      );
+      return { previousTasks, queryKey };
+    },
+    onError: (err, variables, context) => {
+      if (context?.previousTasks && context?.queryKey) {
+        queryClient.setQueryData(context.queryKey, context.previousTasks);
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
-      toast({
-        title: "Task time updated",
-        description: "Task time has been updated successfully.",
-      });
     },
   });
 
