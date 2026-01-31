@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { flushSync } from "react-dom";
 import { format, startOfWeek, endOfWeek, eachDayOfInterval, addWeeks, subWeeks, addDays, subDays, startOfMonth, endOfMonth, addMonths, subMonths, isSameDay, isToday, isPast, isSameMonth, getDay } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -63,9 +64,10 @@ interface DraggableEventProps {
   onToggleComplete?: (e: React.MouseEvent, event: CalendarEvent) => void;
   showCompletionCheckbox: boolean;
   showResizeHandles?: boolean;
+  isHidden?: boolean;
 }
 
-function DraggableEvent({ event, index, onEventClick, onToggleComplete, showCompletionCheckbox, showResizeHandles = false }: DraggableEventProps) {
+function DraggableEvent({ event, index, onEventClick, onToggleComplete, showCompletionCheckbox, showResizeHandles = false, isHidden = false }: DraggableEventProps) {
   const isGoogleCalendarEvent = event.type === "google-calendar";
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: event.id,
@@ -110,7 +112,8 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
         showResizeHandles && !isGoogleCalendarEvent && "cursor-move hover:shadow-md",
         isGoogleCalendarEvent && "cursor-pointer hover:shadow-md",
         isCompleted && "opacity-60",
-        isDragging && "opacity-50 scale-[0.98] shadow-lg"
+        isDragging && "opacity-50 scale-[0.98] shadow-lg",
+        isHidden && "opacity-0 pointer-events-none"
       )}
       style={{
         backgroundColor: notionColors.pastelBg,
@@ -287,6 +290,8 @@ export function EnhancedCalendar({
     previewStartTime: string;
     previewEndTime: string;
   } | null>(null);
+  // Track which event just finished being dragged (to hide briefly during transition)
+  const [justDroppedEventId, setJustDroppedEventId] = useState<string | null>(null);
   
   // Use controlled currentDate if provided, otherwise use internal state
   const isDateControlled = externalCurrentDate !== undefined;
@@ -330,6 +335,8 @@ export function EnhancedCalendar({
   }, [events]);
   
   // Apply pending moves to events for instant visual feedback
+  // pendingMoves stores { newDate, newStartTime, newEndTime } for events being moved
+  // We mark these events so they don't show at their old position during the transition
   const displayEvents = useMemo(() => {
     if (pendingMoves.size === 0) return events;
     
@@ -680,6 +687,9 @@ export function EnhancedCalendar({
       return;
     }
     
+    // Clear after a brief moment to allow the event to become visible at the new position
+    setTimeout(() => setJustDroppedEventId(null), 100);
+    
     // Handle resize operations
     if ((dragType === 'resize-start' || dragType === 'resize-end') && onEventResize) {
       const targetHour = over.data.current?.hour as number | undefined;
@@ -700,11 +710,14 @@ export function EnhancedCalendar({
           const [endH, endM] = currentEnd.split(':').map(Number);
           // Allow exactly 15 minutes minimum duration
           if (newH * 60 + newM <= endH * 60 + endM - 15) {
-            // Set pending move for instant visual feedback
-            setPendingMoves(prev => new Map(prev).set(draggedEvent.id, {
-              newStartTime: newTime,
-              newEndTime: currentEnd,
-            }));
+            // Set pending move and hide event in one sync render
+            flushSync(() => {
+              setJustDroppedEventId(draggedEvent.id);
+              setPendingMoves(prev => new Map(prev).set(draggedEvent.id, {
+                newStartTime: newTime,
+                newEndTime: currentEnd,
+              }));
+            });
             onEventResize(draggedEvent.id, newTime, currentEnd, draggedEvent.type);
           }
         } else {
@@ -713,11 +726,14 @@ export function EnhancedCalendar({
           const [newH, newM] = newTime.split(':').map(Number);
           // Allow exactly 15 minutes minimum duration
           if (newH * 60 + newM >= startH * 60 + startM + 15) {
-            // Set pending move for instant visual feedback
-            setPendingMoves(prev => new Map(prev).set(draggedEvent.id, {
-              newStartTime: currentStart,
-              newEndTime: newTime,
-            }));
+            // Set pending move and hide event in one sync render
+            flushSync(() => {
+              setJustDroppedEventId(draggedEvent.id);
+              setPendingMoves(prev => new Map(prev).set(draggedEvent.id, {
+                newStartTime: currentStart,
+                newEndTime: newTime,
+              }));
+            });
             onEventResize(draggedEvent.id, currentStart, newTime, draggedEvent.type);
           }
         }
@@ -735,17 +751,23 @@ export function EnhancedCalendar({
         // If dropped on a specific time slot, use the quarter-hour slot
         if (targetHour !== undefined && targetQuarter !== undefined) {
           const newTime = `${targetHour.toString().padStart(2, '0')}:${targetQuarter.toString().padStart(2, '0')}`;
-          // Set pending move for instant visual feedback
-          setPendingMoves(prev => new Map(prev).set(draggedEvent.id, {
-            newDate: targetDate,
-            newStartTime: newTime,
-          }));
+          // Set pending move and hide event in one sync render
+          flushSync(() => {
+            setJustDroppedEventId(draggedEvent.id);
+            setPendingMoves(prev => new Map(prev).set(draggedEvent.id, {
+              newDate: targetDate,
+              newStartTime: newTime,
+            }));
+          });
           onEventReschedule(draggedEvent.id, targetDate, draggedEvent.type, newTime);
         } else {
-          // Set pending move for instant visual feedback (date change only)
-          setPendingMoves(prev => new Map(prev).set(draggedEvent.id, {
-            newDate: targetDate,
-          }));
+          // Set pending move and hide event in one sync render
+          flushSync(() => {
+            setJustDroppedEventId(draggedEvent.id);
+            setPendingMoves(prev => new Map(prev).set(draggedEvent.id, {
+              newDate: targetDate,
+            }));
+          });
           onEventReschedule(draggedEvent.id, targetDate, draggedEvent.type, undefined);
         }
       }
@@ -860,6 +882,7 @@ export function EnhancedCalendar({
                               onEventClick={onEventClick}
                               onToggleComplete={handleToggleComplete}
                               showCompletionCheckbox={showCompletionCheckbox}
+                              isHidden={justDroppedEventId === event.id}
                             />
                           ))}
                           {dayEvents.length > 3 && (
@@ -966,6 +989,7 @@ export function EnhancedCalendar({
                       onEventClick={onEventClick}
                       onToggleComplete={handleToggleComplete}
                       showCompletionCheckbox={showCompletionCheckbox}
+                      isHidden={justDroppedEventId === event.id}
                     />
                   ))}
                   {hiddenCount > 0 && (
@@ -1170,6 +1194,7 @@ export function EnhancedCalendar({
                                   onToggleComplete={handleToggleComplete}
                                   showCompletionCheckbox={showCompletionCheckbox}
                                   showResizeHandles={true}
+                                  isHidden={justDroppedEventId === eventPos.event.id}
                                 />
                               </div>
                             );
