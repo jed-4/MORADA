@@ -1123,3 +1123,20 @@ input[type="number"] {
 .widget-animate-in {
   animation: widgetFadeIn 0.2s ease-out;
 }
+
+/* Calendar event drop animation - masks the snap-back by hiding then fading in */
+@keyframes eventDropFadeIn {
+  0%, 30% {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.event-just-dropped {
+  opacity: 0;
+  animation: eventDropFadeIn 0.25s ease-out forwards;
+}

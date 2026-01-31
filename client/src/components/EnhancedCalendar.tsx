@@ -64,10 +64,9 @@ interface DraggableEventProps {
   onToggleComplete?: (e: React.MouseEvent, event: CalendarEvent) => void;
   showCompletionCheckbox: boolean;
   showResizeHandles?: boolean;
-  isHidden?: boolean;
 }
 
-function DraggableEvent({ event, index, onEventClick, onToggleComplete, showCompletionCheckbox, showResizeHandles = false, isHidden = false }: DraggableEventProps) {
+function DraggableEvent({ event, index, onEventClick, onToggleComplete, showCompletionCheckbox, showResizeHandles = false }: DraggableEventProps) {
   const isGoogleCalendarEvent = event.type === "google-calendar";
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: event.id,
@@ -112,15 +111,11 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
         showResizeHandles && !isGoogleCalendarEvent && "cursor-move hover:shadow-md",
         isGoogleCalendarEvent && "cursor-pointer hover:shadow-md",
         isCompleted && "opacity-60",
-        isDragging && "opacity-50 scale-[0.98] shadow-lg",
-        isHidden && "opacity-0 pointer-events-none"
+        isDragging && "opacity-50 scale-[0.98] shadow-lg"
       )}
       style={{
         backgroundColor: notionColors.pastelBg,
         borderLeft: `3px solid ${notionColors.originalHex}`,
-        border: `1px solid rgba(0,0,0,0.08)`,
-        borderLeftWidth: '3px',
-        borderLeftColor: notionColors.originalHex,
       }}
     >
       {/* Top resize handle - Notion style, only interactive on hover */}
@@ -292,6 +287,13 @@ export function EnhancedCalendar({
   } | null>(null);
   // Track which event just finished being dragged (to hide briefly during transition)
   const [justDroppedEventId, setJustDroppedEventId] = useState<string | null>(null);
+  // Track the pre-drag state to detect when data actually changes (full tuple)
+  const [preDragState, setPreDragState] = useState<{
+    id: string;
+    date: string;
+    startTime?: string;
+    endTime?: string;
+  } | null>(null);
   
   // Use controlled currentDate if provided, otherwise use internal state
   const isDateControlled = externalCurrentDate !== undefined;
@@ -338,9 +340,14 @@ export function EnhancedCalendar({
   // pendingMoves stores { newDate, newStartTime, newEndTime } for events being moved
   // We mark these events so they don't show at their old position during the transition
   const displayEvents = useMemo(() => {
-    if (pendingMoves.size === 0) return events;
+    // First filter out any events that were just dropped (completely remove from DOM)
+    let result = justDroppedEventId 
+      ? events.filter(e => e.id !== justDroppedEventId)
+      : events;
     
-    return events.map(event => {
+    if (pendingMoves.size === 0) return result;
+    
+    return result.map(event => {
       const pending = pendingMoves.get(event.id);
       if (!pending) return event;
       
@@ -354,7 +361,58 @@ export function EnhancedCalendar({
         ...(pending.newEndTime && { endTime: pending.newEndTime }),
       };
     });
-  }, [events, pendingMoves]);
+  }, [events, pendingMoves, justDroppedEventId]);
+  
+  // Clear justDroppedEventId when events prop shows ANY change from pre-drag state
+  // Compare full tuple: date, startTime, endTime to detect any modification
+  useEffect(() => {
+    if (!preDragState || !justDroppedEventId) return;
+    
+    const { id, date: preDragDate, startTime: preDragTime, endTime: preDragEnd } = preDragState;
+    const event = events.find(e => e.id === id);
+    
+    if (event) {
+      // Check if ANY aspect of the event has changed from pre-drag state
+      const currentDate = format(new Date(event.startDate), 'yyyy-MM-dd');
+      const currentStartTime = event.startTime;
+      const currentEndTime = event.endTime;
+      
+      const dateChanged = currentDate !== preDragDate;
+      const startTimeChanged = currentStartTime !== preDragTime;
+      const endTimeChanged = currentEndTime !== preDragEnd;
+      
+      if (dateChanged || startTimeChanged || endTimeChanged) {
+        // Data has updated - show the event at its new position
+        setJustDroppedEventId(null);
+        setPreDragState(null);
+        // Clear pending moves for this event
+        setPendingMoves(prev => {
+          const next = new Map(prev);
+          next.delete(id);
+          return next;
+        });
+      }
+    }
+  }, [events, preDragState, justDroppedEventId]);
+  
+  // Fallback timeout - only for edge cases where data update might not trigger
+  // This is a safety net, not the primary mechanism
+  useEffect(() => {
+    if (!justDroppedEventId) return;
+    
+    const timeout = setTimeout(() => {
+      // Only clear if still hidden - mutation may have succeeded but event unchanged
+      setJustDroppedEventId(null);
+      setPreDragState(null);
+      setPendingMoves(prev => {
+        const next = new Map(prev);
+        next.delete(justDroppedEventId);
+        return next;
+      });
+    }, 5000); // 5 second fallback for edge cases
+    
+    return () => clearTimeout(timeout);
+  }, [justDroppedEventId]);
   
   // Current time state for time indicator - updates every minute
   const [currentTimeMinutes, setCurrentTimeMinutes] = useState(() => {
@@ -687,9 +745,6 @@ export function EnhancedCalendar({
       return;
     }
     
-    // Clear after a brief moment to allow the event to become visible at the new position
-    setTimeout(() => setJustDroppedEventId(null), 100);
-    
     // Handle resize operations
     if ((dragType === 'resize-start' || dragType === 'resize-end') && onEventResize) {
       const targetHour = over.data.current?.hour as number | undefined;
@@ -704,15 +759,25 @@ export function EnhancedCalendar({
         const currentEnd = draggedEvent.endTime || '10:00';
         
         // Ensure start is before end (with minimum 15 minute duration)
+        // Capture pre-drag position before any changes
+        const preDragDate = format(new Date(draggedEvent.startDate), 'yyyy-MM-dd');
+        
         if (dragType === 'resize-start') {
           // Resizing from top - update start time
           const [newH, newM] = newTime.split(':').map(Number);
           const [endH, endM] = currentEnd.split(':').map(Number);
+          
+          // Check for no-op resize (same start time) - skip to prevent flicker
+          if (newTime === currentStart) {
+            return;
+          }
+          
           // Allow exactly 15 minutes minimum duration
           if (newH * 60 + newM <= endH * 60 + endM - 15) {
-            // Set pending move and hide event in one sync render
+            // Set pending move, hide event, and track full pre-drag state
             flushSync(() => {
               setJustDroppedEventId(draggedEvent.id);
+              setPreDragState({ id: draggedEvent.id, date: preDragDate, startTime: currentStart, endTime: currentEnd });
               setPendingMoves(prev => new Map(prev).set(draggedEvent.id, {
                 newStartTime: newTime,
                 newEndTime: currentEnd,
@@ -724,11 +789,18 @@ export function EnhancedCalendar({
           // Resizing from bottom - update end time
           const [startH, startM] = currentStart.split(':').map(Number);
           const [newH, newM] = newTime.split(':').map(Number);
+          
+          // Check for no-op resize (same end time) - skip to prevent flicker
+          if (newTime === currentEnd) {
+            return;
+          }
+          
           // Allow exactly 15 minutes minimum duration
           if (newH * 60 + newM >= startH * 60 + startM + 15) {
-            // Set pending move and hide event in one sync render
+            // Track full pre-drag state including endTime for resize-end detection
             flushSync(() => {
               setJustDroppedEventId(draggedEvent.id);
+              setPreDragState({ id: draggedEvent.id, date: preDragDate, startTime: currentStart, endTime: currentEnd });
               setPendingMoves(prev => new Map(prev).set(draggedEvent.id, {
                 newStartTime: currentStart,
                 newEndTime: newTime,
@@ -748,12 +820,25 @@ export function EnhancedCalendar({
       const targetQuarter = over.data.current?.quarter as number | undefined;
       
       if (targetDate) {
+        // Capture full pre-drag state
+        const preDragDate = format(new Date(draggedEvent.startDate), 'yyyy-MM-dd');
+        const preDragTime = draggedEvent.startTime;
+        const preDragEnd = draggedEvent.endTime;
+        const targetDateStr = format(targetDate, 'yyyy-MM-dd');
+        
         // If dropped on a specific time slot, use the quarter-hour slot
         if (targetHour !== undefined && targetQuarter !== undefined) {
           const newTime = `${targetHour.toString().padStart(2, '0')}:${targetQuarter.toString().padStart(2, '0')}`;
-          // Set pending move and hide event in one sync render
+          
+          // Check for no-op drop (same position) - skip hiding to prevent flicker
+          if (targetDateStr === preDragDate && newTime === preDragTime) {
+            return; // No change, don't hide or process
+          }
+          
+          // Set pending move, hide event, and track full pre-drag state
           flushSync(() => {
             setJustDroppedEventId(draggedEvent.id);
+            setPreDragState({ id: draggedEvent.id, date: preDragDate, startTime: preDragTime, endTime: preDragEnd });
             setPendingMoves(prev => new Map(prev).set(draggedEvent.id, {
               newDate: targetDate,
               newStartTime: newTime,
@@ -761,9 +846,15 @@ export function EnhancedCalendar({
           });
           onEventReschedule(draggedEvent.id, targetDate, draggedEvent.type, newTime);
         } else {
-          // Set pending move and hide event in one sync render
+          // Check for no-op drop (same date, no time slot) - skip hiding to prevent flicker
+          if (targetDateStr === preDragDate) {
+            return; // No change, don't hide or process
+          }
+          
+          // Set pending move, hide event, and track full pre-drag state
           flushSync(() => {
             setJustDroppedEventId(draggedEvent.id);
+            setPreDragState({ id: draggedEvent.id, date: preDragDate, startTime: preDragTime, endTime: preDragEnd });
             setPendingMoves(prev => new Map(prev).set(draggedEvent.id, {
               newDate: targetDate,
             }));
@@ -882,7 +973,6 @@ export function EnhancedCalendar({
                               onEventClick={onEventClick}
                               onToggleComplete={handleToggleComplete}
                               showCompletionCheckbox={showCompletionCheckbox}
-                              isHidden={justDroppedEventId === event.id}
                             />
                           ))}
                           {dayEvents.length > 3 && (
@@ -989,7 +1079,6 @@ export function EnhancedCalendar({
                       onEventClick={onEventClick}
                       onToggleComplete={handleToggleComplete}
                       showCompletionCheckbox={showCompletionCheckbox}
-                      isHidden={justDroppedEventId === event.id}
                     />
                   ))}
                   {hiddenCount > 0 && (
@@ -1194,7 +1283,6 @@ export function EnhancedCalendar({
                                   onToggleComplete={handleToggleComplete}
                                   showCompletionCheckbox={showCompletionCheckbox}
                                   showResizeHandles={true}
-                                  isHidden={justDroppedEventId === eventPos.event.id}
                                 />
                               </div>
                             );
