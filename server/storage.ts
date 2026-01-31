@@ -15607,6 +15607,17 @@ export class DbStorage implements IStorage {
               const endMinutes = totalMinutes % 60;
               endTime = `${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}`;
             }
+          } else if ((template as any).dueTime) {
+            // Use dueTime as the start time for operational tasks
+            startTime = (template as any).dueTime;
+            const duration = (template as any).estimatedDuration;
+            if (duration && duration > 0) {
+              const [hours, minutes] = startTime.split(':').map(Number);
+              const totalMinutes = hours * 60 + minutes + duration;
+              const endHours = Math.floor(totalMinutes / 60) % 24;
+              const endMinutes = totalMinutes % 60;
+              endTime = `${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}`;
+            }
           }
         }
 
