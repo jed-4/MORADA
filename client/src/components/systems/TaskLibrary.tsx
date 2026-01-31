@@ -305,10 +305,17 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
           return key === "/api/tasks" || key === "/api/notes" || key === "/api/tasks/user";
         }
       });
-      toast({ 
-        title: "Tasks generated successfully", 
-        description: `Created ${data.generated} recurring task${data.generated === 1 ? '' : 's'}`
-      });
+      if (data.generated === 0) {
+        toast({ 
+          title: "All tasks up to date", 
+          description: "Tasks for the next 2 weeks have already been generated"
+        });
+      } else {
+        toast({ 
+          title: "Tasks generated successfully", 
+          description: `Created ${data.generated} recurring task${data.generated === 1 ? '' : 's'}`
+        });
+      }
     },
     onError: () => {
       toast({ title: "Failed to generate recurring tasks", variant: "destructive" });
