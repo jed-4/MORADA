@@ -103,7 +103,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
       data-testid={`event-${event.type}-${event.id}`}
       onClick={() => onEventClick?.(event)}
       className={cn(
-        "group relative flex items-center justify-center gap-1.5 px-1.5 py-0.5 rounded text-[11px] mb-0.5 transition-all overflow-hidden shadow-sm",
+        "group relative flex items-start gap-1.5 px-1.5 pt-1 pb-0.5 rounded text-[11px] mb-0.5 transition-all overflow-hidden shadow-sm",
         showResizeHandles && "h-full",
         !isGoogleCalendarEvent && "touch-none",
         !isGoogleCalendarEvent && !showResizeHandles && "cursor-move hover:shadow-md",
@@ -149,7 +149,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
           {isCompleted && <Check className="w-2 h-2" />}
         </button>
       )}
-      <div className="flex-1 min-w-0 overflow-hidden flex items-center flex-col justify-center">
+      <div className="flex-1 min-w-0 overflow-hidden flex items-start flex-col">
         <div className="flex items-center gap-1 w-full">
           <div 
             className={cn(

@@ -751,8 +751,12 @@ export function ProjectBoard({
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
     },
     onSuccess: () => {
-      // NO REFETCH on success - optimistic update is already correct
       // NO TOAST - keeps drag operations fast and silent like Estimates
+    },
+    onSettled: () => {
+      // Always invalidate on settled to ensure Header dropdown and other consumers stay in sync
+      // This runs after both success and error, ensuring eventual consistency
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
     },
   });
 
