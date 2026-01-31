@@ -22,6 +22,8 @@ export interface RecurringTaskTemplate {
   recurringSchedule?: RecurringScheduleItem[]; // Day-specific times (overrides recurringStartTime/Duration)
   recurringStartTime?: string; // DEPRECATED: "HH:MM" format
   recurringDuration?: number; // DEPRECATED: minutes
+  dueTime?: string; // "HH:MM" format - primary time field for operational tasks
+  estimatedDuration?: number; // minutes - for calculating end time
 }
 
 export interface GeneratedTaskInstance {
@@ -110,13 +112,19 @@ export function generateRecurringTaskInstances(
         }));
       }
 
-      // Add start and end times - prefer recurringSchedule, fallback to recurringStartTime
+      // Add start and end times - prefer recurringSchedule, then dueTime, fallback to recurringStartTime
       // Use loose equality (==) to handle potential type mismatches from JSON parsing
       const scheduleForDay = template.recurringSchedule?.find(s => Number(s.dayOfWeek) === dayOfWeek);
       if (scheduleForDay) {
         instance.startTime = scheduleForDay.startTime;
         if (scheduleForDay.duration > 0) {
           instance.endTime = calculateEndTime(scheduleForDay.startTime, scheduleForDay.duration);
+        }
+      } else if (template.dueTime) {
+        // Use dueTime as the start time for operational tasks
+        instance.startTime = template.dueTime;
+        if (template.estimatedDuration && template.estimatedDuration > 0) {
+          instance.endTime = calculateEndTime(template.dueTime, template.estimatedDuration);
         }
       } else if (template.recurringStartTime) {
         // Fallback to legacy single time for all days
@@ -257,6 +265,12 @@ export function generateNextRecurringInstance(
     if (scheduleForDay.duration > 0) {
       instance.endTime = calculateEndTime(scheduleForDay.startTime, scheduleForDay.duration);
     }
+  } else if (template.dueTime) {
+    // Use dueTime as the start time for operational tasks
+    instance.startTime = template.dueTime;
+    if (template.estimatedDuration && template.estimatedDuration > 0) {
+      instance.endTime = calculateEndTime(template.dueTime, template.estimatedDuration);
+    }
   } else if (template.recurringStartTime) {
     instance.startTime = template.recurringStartTime;
     if (template.recurringDuration && template.recurringDuration > 0) {
@@ -318,6 +332,12 @@ export function getTemplateSyncFields(
       syncFields.startTime = scheduleForDay.startTime;
       if (scheduleForDay.duration > 0) {
         syncFields.endTime = calculateEndTime(scheduleForDay.startTime, scheduleForDay.duration);
+      }
+    } else if (template.dueTime) {
+      // Use dueTime as the start time for operational tasks
+      syncFields.startTime = template.dueTime;
+      if (template.estimatedDuration && template.estimatedDuration > 0) {
+        syncFields.endTime = calculateEndTime(template.dueTime, template.estimatedDuration);
       }
     } else if (template.recurringStartTime) {
       syncFields.startTime = template.recurringStartTime;
