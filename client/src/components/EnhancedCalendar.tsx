@@ -313,6 +313,42 @@ export function EnhancedCalendar({
   const [showMeetings, setShowMeetings] = useState(true);
   const [showGoogleCalendar, setShowGoogleCalendar] = useState(true);
   
+  // Track pending moves/resizes for instant visual feedback
+  const [pendingMoves, setPendingMoves] = useState<Map<string, { 
+    newDate?: Date; 
+    newStartTime?: string; 
+    newEndTime?: string;
+  }>>(new Map());
+  
+  // Clear pending moves when events prop changes (data was updated from server)
+  const eventsRef = useRef(events);
+  useEffect(() => {
+    if (events !== eventsRef.current) {
+      eventsRef.current = events;
+      setPendingMoves(new Map());
+    }
+  }, [events]);
+  
+  // Apply pending moves to events for instant visual feedback
+  const displayEvents = useMemo(() => {
+    if (pendingMoves.size === 0) return events;
+    
+    return events.map(event => {
+      const pending = pendingMoves.get(event.id);
+      if (!pending) return event;
+      
+      return {
+        ...event,
+        ...(pending.newDate && { 
+          startDate: pending.newDate,
+          endDate: pending.newDate,
+        }),
+        ...(pending.newStartTime && { startTime: pending.newStartTime }),
+        ...(pending.newEndTime && { endTime: pending.newEndTime }),
+      };
+    });
+  }, [events, pendingMoves]);
+  
   // Current time state for time indicator - updates every minute
   const [currentTimeMinutes, setCurrentTimeMinutes] = useState(() => {
     const now = new Date();
@@ -529,7 +565,7 @@ export function EnhancedCalendar({
     const targetDate = new Date(date);
     targetDate.setHours(0, 0, 0, 0);
     
-    return events.filter(event => {
+    return displayEvents.filter(event => {
       // Date range filter
       const eventStart = new Date(event.startDate);
       eventStart.setHours(0, 0, 0, 0);
@@ -554,7 +590,7 @@ export function EnhancedCalendar({
       }
       return a.title.localeCompare(b.title);
     });
-  }, [events, showTasks, showSchedule, showMeetings, showGoogleCalendar]);
+  }, [displayEvents, showTasks, showSchedule, showMeetings, showGoogleCalendar]);
 
   // Handle event completion toggle
   const handleToggleComplete = useCallback((e: React.MouseEvent, event: CalendarEvent) => {
@@ -664,6 +700,11 @@ export function EnhancedCalendar({
           const [endH, endM] = currentEnd.split(':').map(Number);
           // Allow exactly 15 minutes minimum duration
           if (newH * 60 + newM <= endH * 60 + endM - 15) {
+            // Set pending move for instant visual feedback
+            setPendingMoves(prev => new Map(prev).set(draggedEvent.id, {
+              newStartTime: newTime,
+              newEndTime: currentEnd,
+            }));
             onEventResize(draggedEvent.id, newTime, currentEnd, draggedEvent.type);
           }
         } else {
@@ -672,6 +713,11 @@ export function EnhancedCalendar({
           const [newH, newM] = newTime.split(':').map(Number);
           // Allow exactly 15 minutes minimum duration
           if (newH * 60 + newM >= startH * 60 + startM + 15) {
+            // Set pending move for instant visual feedback
+            setPendingMoves(prev => new Map(prev).set(draggedEvent.id, {
+              newStartTime: currentStart,
+              newEndTime: newTime,
+            }));
             onEventResize(draggedEvent.id, currentStart, newTime, draggedEvent.type);
           }
         }
@@ -689,8 +735,17 @@ export function EnhancedCalendar({
         // If dropped on a specific time slot, use the quarter-hour slot
         if (targetHour !== undefined && targetQuarter !== undefined) {
           const newTime = `${targetHour.toString().padStart(2, '0')}:${targetQuarter.toString().padStart(2, '0')}`;
+          // Set pending move for instant visual feedback
+          setPendingMoves(prev => new Map(prev).set(draggedEvent.id, {
+            newDate: targetDate,
+            newStartTime: newTime,
+          }));
           onEventReschedule(draggedEvent.id, targetDate, draggedEvent.type, newTime);
         } else {
+          // Set pending move for instant visual feedback (date change only)
+          setPendingMoves(prev => new Map(prev).set(draggedEvent.id, {
+            newDate: targetDate,
+          }));
           onEventReschedule(draggedEvent.id, targetDate, draggedEvent.type, undefined);
         }
       }
