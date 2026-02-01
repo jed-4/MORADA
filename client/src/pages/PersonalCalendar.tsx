@@ -343,9 +343,7 @@ export default function PersonalCalendar() {
         queryClient.setQueryData(["/api/tasks", displayedUserId], context.previousTasks);
       }
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
-    },
+    // No onSettled - rely on optimistic update to prevent snap-back during drag-and-drop
   });
 
   // Resize task mutation with optimistic update
@@ -370,9 +368,7 @@ export default function PersonalCalendar() {
         queryClient.setQueryData(["/api/tasks", displayedUserId], context.previousTasks);
       }
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
-    },
+    // No onSettled - rely on optimistic update to prevent snap-back during drag-and-drop
   });
 
   // Apply filters to events
