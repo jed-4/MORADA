@@ -1016,15 +1016,6 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent className="w-56">
-                    <DropdownMenuItem 
-                      onClick={() => {
-                        form.setValue("assigneeIds", [], { shouldDirty: true, shouldTouch: true });
-                        form.setValue("assigneeId", undefined, { shouldDirty: true, shouldTouch: true });
-                      }}
-                    >
-                      <span className="text-muted-foreground">Clear All</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
                     {users.map((user) => {
                       const isSelected = assigneeIds.includes(user.id);
                       return (
@@ -1056,6 +1047,19 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                         </DropdownMenuItem>
                       );
                     })}
+                    {assigneeIds.length > 0 && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem 
+                          onClick={() => {
+                            form.setValue("assigneeIds", [], { shouldDirty: true, shouldTouch: true });
+                            form.setValue("assigneeId", undefined, { shouldDirty: true, shouldTouch: true });
+                          }}
+                        >
+                          <span className="text-muted-foreground">Clear All</span>
+                        </DropdownMenuItem>
+                      </>
+                    )}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
