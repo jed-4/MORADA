@@ -402,7 +402,11 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      // Invalidate all task-related queries (including ones with projectId suffix)
+      queryClient.invalidateQueries({ predicate: (query) => {
+        const key = query.queryKey;
+        return Array.isArray(key) && key[0] === "/api/tasks";
+      }});
       toast({ title: "Task moved successfully" });
     },
     onError: (error) => {
@@ -420,7 +424,11 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
       await apiRequest(`/api/tasks/${taskId}`, "DELETE");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      // Invalidate all task-related queries (including ones with projectId suffix)
+      queryClient.invalidateQueries({ predicate: (query) => {
+        const key = query.queryKey;
+        return Array.isArray(key) && key[0] === "/api/tasks";
+      }});
       toast({ title: "Task deleted" });
     },
     onError: (error: any) => {
