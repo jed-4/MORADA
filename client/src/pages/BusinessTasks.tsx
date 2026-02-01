@@ -537,6 +537,30 @@ export default function BusinessTasks() {
     queryKey: ["/api/projects"],
   });
 
+  // Create task mutation (for inline task creation)
+  const createTaskMutation = useMutation({
+    mutationFn: async (title: string) => {
+      return await apiRequest(`/api/tasks`, "POST", {
+        title,
+        contextType: "business",
+        status: "todo",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      toast({
+        title: "Task created",
+        description: "New task has been created.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Failed to create task",
+        variant: "destructive",
+      });
+    },
+  });
+
   // Update task mutations
   const updateTaskMutation = useMutation({
     mutationFn: async ({ taskId, status }: { taskId: string; status: string }) => {
@@ -1150,10 +1174,7 @@ export default function BusinessTasks() {
               }}
               onDelete={handleDeleteTask}
               showActions={true}
-              onAddTask={() => {
-                setEditingTask(null);
-                setShowCreateTaskDialog(true);
-              }}
+              onAddTask={(title) => createTaskMutation.mutate(title)}
             />
           </div>
         )}

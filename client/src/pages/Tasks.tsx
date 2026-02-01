@@ -426,6 +426,31 @@ export default function Tasks() {
     updateTaskMutation.mutate({ taskId, updates: { dueDate } });
   };
 
+  // Create task mutation (for inline task creation)
+  const createTaskMutation = useMutation({
+    mutationFn: async (title: string) => {
+      return await apiRequest(`/api/tasks`, "POST", {
+        title,
+        projectId: effectiveProjectId || undefined,
+        contextType: effectiveProjectId ? "project" : "business",
+        status: "todo",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks", effectiveProjectId] });
+      toast({
+        title: "Task created",
+        description: "New task has been created.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Failed to create task",
+        variant: "destructive",
+      });
+    },
+  });
+
   // Delete task mutation
   const deleteTaskMutation = useMutation({
     mutationFn: async (taskId: string) => {
@@ -1366,7 +1391,7 @@ export default function Tasks() {
               columnConfig={{ order: columnOrder }}
               onDelete={handleDeleteTask}
               showActions={true}
-              onAddTask={() => setShowCreateTaskDialog(true)}
+              onAddTask={(title) => createTaskMutation.mutate(title)}
             />
           </div>
         )}

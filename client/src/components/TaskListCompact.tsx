@@ -94,7 +94,7 @@ interface TaskListCompactProps {
   onColumnConfigChange?: (config: TaskColumnConfig) => void;
   onDelete?: (task: Task) => void;
   showActions?: boolean;
-  onAddTask?: () => void;
+  onAddTask?: (title: string) => void | Promise<void>;
 }
 
 // Status colors matching Asana 2025
@@ -587,6 +587,11 @@ export default function TaskListCompact({
   const [taskOrder, setTaskOrder] = useState<string[]>([]);
   const listRef = useRef<HTMLDivElement>(null);
   
+  // Inline task creation state
+  const [isAddingTask, setIsAddingTask] = useState(false);
+  const [newTaskTitle, setNewTaskTitle] = useState("");
+  const newTaskInputRef = useRef<HTMLInputElement>(null);
+  
   // Internal state for uncontrolled mode
   const [internalColumnOrder, setInternalColumnOrder] = useState<TaskColumnKey[]>(DEFAULT_COLUMN_ORDER);
   const [internalSort, setInternalSort] = useState<{ column: TaskColumnKey | 'title'; direction: SortDirection } | undefined>();
@@ -802,6 +807,52 @@ export default function TaskListCompact({
     updateTaskMutation.mutate({ taskId, updates: { [field]: value } });
   };
 
+  // Inline task creation handlers
+  const handleStartAddTask = () => {
+    setIsAddingTask(true);
+    setNewTaskTitle("");
+    setTimeout(() => newTaskInputRef.current?.focus(), 0);
+  };
+
+  const handleSubmitNewTask = async () => {
+    const title = newTaskTitle.trim();
+    if (!title) {
+      setIsAddingTask(false);
+      setNewTaskTitle("");
+      return;
+    }
+    
+    try {
+      if (onAddTask) {
+        await onAddTask(title);
+      }
+      setNewTaskTitle("");
+      setIsAddingTask(false);
+    } catch (error) {
+      // Keep input open on error so user can retry
+      toast({
+        title: "Failed to create task",
+        description: "Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleCancelAddTask = () => {
+    setIsAddingTask(false);
+    setNewTaskTitle("");
+  };
+
+  const handleNewTaskKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleSubmitNewTask();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      handleCancelAddTask();
+    }
+  };
+
   const handleTaskClick = (task: Task, index: number) => {
     setSelectedIndex(index);
     if (onTaskClick) {
@@ -920,17 +971,36 @@ export default function TaskListCompact({
           </div>
         ))}
         {onAddTask && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onAddTask}
-            className="w-full justify-start gap-1.5 text-muted-foreground"
-            data-testid="button-add-task-row"
-          >
-            <div className="w-3" />
-            <Plus className="h-3.5 w-3.5" />
-            <span className="text-xs">Add Task</span>
-          </Button>
+          isAddingTask ? (
+            <div className="flex items-center gap-1.5 px-2 py-1.5 border-t border-border/50">
+              <div className="w-3" />
+              <div className="w-4 h-4 flex items-center justify-center">
+                <Plus className="h-3.5 w-3.5 text-muted-foreground" />
+              </div>
+              <Input
+                ref={newTaskInputRef}
+                value={newTaskTitle}
+                onChange={(e) => setNewTaskTitle(e.target.value)}
+                onKeyDown={handleNewTaskKeyDown}
+                onBlur={handleSubmitNewTask}
+                placeholder="Task name..."
+                className="h-6 text-xs border-0 p-0 focus-visible:ring-0 bg-transparent"
+                data-testid="input-new-task-title"
+              />
+            </div>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleStartAddTask}
+              className="w-full justify-start gap-1.5 text-muted-foreground"
+              data-testid="button-add-task-row"
+            >
+              <div className="w-3" />
+              <Plus className="h-3.5 w-3.5" />
+              <span className="text-xs">Add Task</span>
+            </Button>
+          )
         )}
       </div>
     );
@@ -971,17 +1041,36 @@ export default function TaskListCompact({
         </DndContext>
       </div>
       {onAddTask && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onAddTask}
-          className="w-full justify-start gap-1.5 text-muted-foreground"
-          data-testid="button-add-task-row"
-        >
-          <div className="w-3" />
-          <Plus className="h-3.5 w-3.5" />
-          <span className="text-xs">Add Task</span>
-        </Button>
+        isAddingTask ? (
+          <div className="flex items-center gap-1.5 px-2 py-1.5 border-t border-border/50">
+            <div className="w-3" />
+            <div className="w-4 h-4 flex items-center justify-center">
+              <Plus className="h-3.5 w-3.5 text-muted-foreground" />
+            </div>
+            <Input
+              ref={newTaskInputRef}
+              value={newTaskTitle}
+              onChange={(e) => setNewTaskTitle(e.target.value)}
+              onKeyDown={handleNewTaskKeyDown}
+              onBlur={handleSubmitNewTask}
+              placeholder="Task name..."
+              className="h-6 text-xs border-0 p-0 focus-visible:ring-0 bg-transparent"
+              data-testid="input-new-task-title"
+            />
+          </div>
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleStartAddTask}
+            className="w-full justify-start gap-1.5 text-muted-foreground"
+            data-testid="button-add-task-row"
+          >
+            <div className="w-3" />
+            <Plus className="h-3.5 w-3.5" />
+            <span className="text-xs">Add Task</span>
+          </Button>
+        )
       )}
       <div className="h-6 px-2 flex items-center justify-between bg-muted/20 border-t border-border/50">
         <span className="text-[10px] text-muted-foreground">{orderedTasks.length} tasks</span>

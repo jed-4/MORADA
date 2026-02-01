@@ -419,6 +419,26 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
     },
   });
 
+  // Create task mutation (for inline task creation)
+  const createTaskMutation = useMutation({
+    mutationFn: async (title: string) => {
+      return await apiRequest(`/api/tasks`, "POST", {
+        title,
+        contextType: "personal",
+        status: "todo",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ 
+        predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/tasks"
+      });
+      toast({ title: "Task created" });
+    },
+    onError: () => {
+      toast({ title: "Failed to create task", variant: "destructive" });
+    },
+  });
+
   // Delete task mutation
   const deleteTaskMutation = useMutation({
     mutationFn: async (taskId: string) => {
@@ -1173,7 +1193,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                   isLoading={isLoading && groupName === 'All Tasks'}
                   onTaskClick={(task) => setEditingTask(task)}
                   columnConfig={{ order: ['status', 'priority', 'assignee', 'project', 'dueDate'] }}
-                  onAddTask={() => setShowCreateDialog(true)}
+                  onAddTask={(title) => createTaskMutation.mutate(title)}
                 />
               </div>
             ))}
