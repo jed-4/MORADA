@@ -199,6 +199,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [listColumnOrder, setListColumnOrder] = useState<('status' | 'priority' | 'assignee' | 'project' | 'dueDate')[]>(['status', 'priority', 'assignee', 'project', 'dueDate']);
+  const [listSortConfig, setListSortConfig] = useState<{ column: string; direction: 'asc' | 'desc' | null } | undefined>(undefined);
   const [groupBy, setGroupBy] = useState<GroupByType>("none");
   // Default to no filters - show all tasks
   const [filters, setFilters] = useState<FilterState>({});
@@ -1197,8 +1198,11 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                   tasks={groupTasks}
                   isLoading={isLoading && groupName === 'All Tasks'}
                   onTaskClick={(task) => setEditingTask(task)}
-                  columnConfig={{ order: listColumnOrder }}
-                  onColumnConfigChange={(config) => setListColumnOrder(config.order)}
+                  columnConfig={{ order: listColumnOrder, sort: listSortConfig }}
+                  onColumnConfigChange={(config) => {
+                    setListColumnOrder(config.order);
+                    setListSortConfig(config.sort);
+                  }}
                   onAddTask={(title) => createTaskMutation.mutate(title)}
                 />
               </div>

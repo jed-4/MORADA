@@ -223,8 +223,9 @@ export default function Tasks() {
     showSubtasks: true,
   });
 
-  // Column order and visibility for list view
+  // Column order, sorting, and visibility for list view
   const [columnOrder, setColumnOrder] = useState(['assignee', 'dueDate', 'status', 'priority']);
+  const [listSortConfig, setListSortConfig] = useState<{ column: string; direction: 'asc' | 'desc' | null } | undefined>(undefined);
   const [columnVisibility, setColumnVisibility] = useState({
     assignee: true,
     dueDate: true,
@@ -1391,8 +1392,11 @@ export default function Tasks() {
               isLoading={tasksLoading}
               onTaskClick={(task: Task) => setEditingTask(task)}
               projectId={effectiveProjectId}
-              columnConfig={{ order: columnOrder }}
-              onColumnConfigChange={(config) => setColumnOrder(config.order)}
+              columnConfig={{ order: columnOrder, sort: listSortConfig }}
+              onColumnConfigChange={(config) => {
+                setColumnOrder(config.order);
+                setListSortConfig(config.sort);
+              }}
               onDelete={handleDeleteTask}
               showActions={true}
               onAddTask={(title) => createTaskMutation.mutate(title)}
