@@ -600,34 +600,28 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
           </div>
 
           <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setShowReminderDialog(true);
-              }}
-              disabled={!task}
-              title="Set Reminder"
-              data-testid="button-set-reminder"
-            >
-              <Bell className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setShowDriveFilePicker(true);
-              }}
-              disabled={!task}
-              title="Attach File"
-              data-testid="button-attach-file"
-            >
-              <Paperclip className="h-4 w-4" />
-            </Button>
+            {task && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setShowReminderDialog(true)}
+                  title="Set Reminder"
+                  data-testid="button-set-reminder"
+                >
+                  <Bell className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setShowDriveFilePicker(true)}
+                  title="Attach File"
+                  data-testid="button-attach-file"
+                >
+                  <Paperclip className="h-4 w-4" />
+                </Button>
+              </>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" data-testid="button-more-actions">
