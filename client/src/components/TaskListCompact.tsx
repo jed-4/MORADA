@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, KeyboardEvent } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback, KeyboardEvent } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
@@ -644,58 +644,79 @@ export default function TaskListCompact({
   const completedOption = statusCategory?.options.find((opt) => opt.isCompleted);
   const defaultOption = statusCategory?.options.find((opt) => opt.isDefault);
 
+  // Helper function to sort tasks based on sortConfig
+  const sortTasks = useCallback((tasksToSort: Task[]): Task[] => {
+    if (!tasksToSort || tasksToSort.length === 0) return [];
+    if (!sortConfig?.column || !sortConfig?.direction) return tasksToSort;
+    
+    return [...tasksToSort].sort((a, b) => {
+      let aVal: any;
+      let bVal: any;
+      
+      switch (sortConfig.column) {
+        case 'title':
+          aVal = a.title?.toLowerCase() || '';
+          bVal = b.title?.toLowerCase() || '';
+          break;
+        case 'status':
+          aVal = a.status?.toLowerCase() || '';
+          bVal = b.status?.toLowerCase() || '';
+          break;
+        case 'priority':
+          const priorityOrder: Record<string, number> = { 'high': 3, 'urgent': 3, 'medium': 2, 'low': 1 };
+          aVal = priorityOrder[a.priority?.toLowerCase() || ''] || 0;
+          bVal = priorityOrder[b.priority?.toLowerCase() || ''] || 0;
+          break;
+        case 'assignee':
+          aVal = a.assigneeName?.toLowerCase() || 'zzz';
+          bVal = b.assigneeName?.toLowerCase() || 'zzz';
+          break;
+        case 'dueDate':
+          aVal = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
+          bVal = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
+          break;
+        case 'project':
+          aVal = a.projectName?.toLowerCase() || 'zzz';
+          bVal = b.projectName?.toLowerCase() || 'zzz';
+          break;
+        default:
+          return 0;
+      }
+      
+      if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [sortConfig]);
+
   // Create sorted and ordered tasks using useMemo
   const orderedTasks = useMemo(() => {
     if (!tasks || tasks.length === 0) return [];
     
-    let result = [...tasks];
-    
-    // Apply sorting if configured
+    // Apply sorting if configured - takes precedence over drag-drop order
     if (sortConfig?.column && sortConfig?.direction) {
-      result.sort((a, b) => {
-        let aVal: any;
-        let bVal: any;
-        
-        switch (sortConfig.column) {
-          case 'title':
-            aVal = a.title?.toLowerCase() || '';
-            bVal = b.title?.toLowerCase() || '';
-            break;
-          case 'status':
-            aVal = a.status?.toLowerCase() || '';
-            bVal = b.status?.toLowerCase() || '';
-            break;
-          case 'priority':
-            const priorityOrder: Record<string, number> = { 'high': 3, 'urgent': 3, 'medium': 2, 'low': 1 };
-            aVal = priorityOrder[a.priority?.toLowerCase() || ''] || 0;
-            bVal = priorityOrder[b.priority?.toLowerCase() || ''] || 0;
-            break;
-          case 'assignee':
-            aVal = a.assigneeName?.toLowerCase() || 'zzz';
-            bVal = b.assigneeName?.toLowerCase() || 'zzz';
-            break;
-          case 'dueDate':
-            aVal = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
-            bVal = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
-            break;
-          default:
-            return 0;
-        }
-        
-        if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
-        if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
-        return 0;
-      });
+      return sortTasks(tasks);
     }
     
-    // Apply custom order from drag-drop if present and matches
-    if (taskOrder.length > 0 && taskOrder.length === result.length) {
-      const taskMap = new Map(result.map(t => [t.id, t]));
+    // Apply custom order from drag-drop if present and matches (only when no sort is active)
+    if (taskOrder.length > 0 && taskOrder.length === tasks.length) {
+      const taskMap = new Map(tasks.map(t => [t.id, t]));
       return taskOrder.map(id => taskMap.get(id)).filter(Boolean) as Task[];
     }
     
+    return [...tasks];
+  }, [tasks, taskOrder, sortConfig, sortTasks]);
+  
+  // Create sorted grouped tasks
+  const sortedGroupedTasks = useMemo(() => {
+    if (!groupedTasks) return null;
+    
+    const result: Record<string, Task[]> = {};
+    for (const [groupName, groupTaskList] of Object.entries(groupedTasks)) {
+      result[groupName] = sortTasks(groupTaskList);
+    }
     return result;
-  }, [tasks, taskOrder, sortConfig]);
+  }, [groupedTasks, sortTasks]);
 
   // Drag and drop sensors
   const sensors = useSensors(
@@ -937,11 +958,11 @@ export default function TaskListCompact({
   );
 
   // Grouped view
-  if (groupedTasks) {
+  if (sortedGroupedTasks) {
     return (
       <div className="border border-border rounded-md bg-background overflow-hidden">
         <HeaderRow />
-        {Object.entries(groupedTasks).map(([groupName, groupTasks]) => (
+        {Object.entries(sortedGroupedTasks).map(([groupName, groupTasks]) => (
           <div key={groupName}>
             <div className="h-7 px-2 flex items-center bg-muted/30 border-b border-border/50">
               <span className="text-xs font-medium text-muted-foreground">{groupName}</span>
