@@ -286,6 +286,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
         setFilters(loadedFilters);
       }
       if (userPreferences.preferences.selectedViewId) setSelectedViewId(userPreferences.preferences.selectedViewId);
+      if (userPreferences.preferences.listColumnOrder) setListColumnOrder(userPreferences.preferences.listColumnOrder);
       setPreferencesLoaded(true);
     } else if (userPreferences === null || preferencesError) {
       setPreferencesLoaded(true);
@@ -304,11 +305,11 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
   useEffect(() => {
     if (preferencesLoaded) {
       const timer = setTimeout(() => {
-        savePreferencesMutation.mutate({ activeView, groupBy, filters, selectedViewId });
+        savePreferencesMutation.mutate({ activeView, groupBy, filters, selectedViewId, listColumnOrder });
       }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [activeView, groupBy, filters, selectedViewId, preferencesLoaded]);
+  }, [activeView, groupBy, filters, selectedViewId, listColumnOrder, preferencesLoaded]);
 
   // Fetch saved task views
   const { data: taskViews = [] } = useQuery<TaskView[]>({

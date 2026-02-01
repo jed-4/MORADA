@@ -226,6 +226,9 @@ export default function BusinessTasks() {
       if (userPreferences.preferences.groupBy) {
         setGroupBy(userPreferences.preferences.groupBy);
       }
+      if (userPreferences.preferences.listColumnOrder) {
+        setListColumnOrder(userPreferences.preferences.listColumnOrder);
+      }
       setPreferencesLoaded(true);
     } else if (userPreferences === null || preferencesError) {
       console.log('[BusinessTasks] No saved preferences, using defaults');
@@ -235,7 +238,7 @@ export default function BusinessTasks() {
 
   // Save view preferences mutation
   const savePreferencesMutation = useMutation({
-    mutationFn: async (prefs: { cardDisplaySettings: typeof cardDisplaySettings; activeTab: string; groupBy: string }) => {
+    mutationFn: async (prefs: { cardDisplaySettings: typeof cardDisplaySettings; activeTab: string; groupBy: string; listColumnOrder: typeof listColumnOrder }) => {
       console.log('[BusinessTasks] Saving view preferences:', prefs);
       return await apiRequest("/api/user-view-preferences", "POST", {
         viewKey: "business_tasks",
@@ -259,11 +262,12 @@ export default function BusinessTasks() {
           cardDisplaySettings,
           activeTab,
           groupBy,
+          listColumnOrder,
         });
       }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [cardDisplaySettings, activeTab, groupBy, preferencesLoaded]);
+  }, [cardDisplaySettings, activeTab, groupBy, listColumnOrder, preferencesLoaded]);
 
   // Fetch business tasks (tasks without a project)
   const { data: allTasks = [], isLoading: tasksLoading } = useQuery<Task[]>({
