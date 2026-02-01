@@ -85,7 +85,8 @@ function DraggableTaskCard({ task, onTaskClick, displaySettings, onDelete, showA
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1,
+    // Hide original card completely while dragging - DragOverlay shows the dragged card
+    opacity: isDragging ? 0 : 1,
     touchAction: 'none',
   };
 
