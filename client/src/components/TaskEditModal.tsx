@@ -87,6 +87,12 @@ const taskFormSchema = z.object({
   includeSunday: z.boolean().default(false),
   recurringStartDate: z.string().optional(),
   recurringEndDate: z.string().optional(),
+  dueDayOfMonth: z.number().optional(),
+  recurringSchedule: z.array(z.object({
+    dayOfWeek: z.number(),
+    startTime: z.string(),
+    duration: z.number(),
+  })).default([]),
   estimatedCost: z.number().optional(),
   estimatedUnits: z.number().optional(),
   projectId: z.string().optional(),
@@ -242,6 +248,8 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
       includeSunday: task?.includeSunday || false,
       recurringStartDate: task?.recurringStartDate ? format(new Date(task.recurringStartDate), "yyyy-MM-dd") : undefined,
       recurringEndDate: task?.recurringEndDate ? format(new Date(task.recurringEndDate), "yyyy-MM-dd") : undefined,
+      dueDayOfMonth: (task as any)?.dueDayOfMonth || 1,
+      recurringSchedule: (task as any)?.recurringSchedule || [],
       estimatedCost: task?.estimatedCost || undefined,
       estimatedUnits: task?.estimatedUnits || undefined,
       projectId: task?.projectId || projectId || undefined,
@@ -269,6 +277,8 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
         includeSunday: task?.includeSunday || false,
         recurringStartDate: task?.recurringStartDate ? format(new Date(task.recurringStartDate), "yyyy-MM-dd") : undefined,
         recurringEndDate: task?.recurringEndDate ? format(new Date(task.recurringEndDate), "yyyy-MM-dd") : undefined,
+        dueDayOfMonth: (task as any)?.dueDayOfMonth || 1,
+        recurringSchedule: (task as any)?.recurringSchedule || [],
         estimatedCost: task?.estimatedCost || undefined,
         estimatedUnits: task?.estimatedUnits || undefined,
         projectId: task?.projectId || projectId || undefined,
@@ -1140,79 +1150,138 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                           </SelectContent>
                         </Select>
 
+                        {/* Daily - Time and Include Weekends */}
                         {form.watch("recurringType") === "daily" && (
-                          <div className="flex items-center gap-4">
-                            <div className="flex items-center gap-1.5">
-                              <Checkbox
-                                checked={form.watch("includeSaturday")}
-                                onCheckedChange={(checked) => form.setValue("includeSaturday", !!checked, { shouldDirty: true, shouldTouch: true })}
-                                data-testid="checkbox-include-saturday"
-                              />
-                              <label className="text-xs text-muted-foreground">
-                                Inc. Saturday
-                              </label>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              <Checkbox
-                                checked={form.watch("includeSunday")}
-                                onCheckedChange={(checked) => form.setValue("includeSunday", !!checked, { shouldDirty: true, shouldTouch: true })}
-                                data-testid="checkbox-include-sunday"
-                              />
-                              <label className="text-xs text-muted-foreground">
-                                Inc. Sunday
-                              </label>
+                          <div className="space-y-2">
+                            <div className="flex items-end gap-3">
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-medium text-muted-foreground">Time</label>
+                                <Input
+                                  type="time"
+                                  step="900"
+                                  {...form.register("startTime")}
+                                  className="h-8 text-xs w-24"
+                                  data-testid="input-daily-time"
+                                />
+                              </div>
+                              <div className="flex items-center gap-3 pb-1">
+                                <div className="flex items-center gap-1.5">
+                                  <Checkbox
+                                    checked={form.watch("includeSaturday")}
+                                    onCheckedChange={(checked) => form.setValue("includeSaturday", !!checked, { shouldDirty: true, shouldTouch: true })}
+                                    data-testid="checkbox-include-saturday"
+                                  />
+                                  <label className="text-[10px] text-muted-foreground">Inc. Sat</label>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <Checkbox
+                                    checked={form.watch("includeSunday")}
+                                    onCheckedChange={(checked) => form.setValue("includeSunday", !!checked, { shouldDirty: true, shouldTouch: true })}
+                                    data-testid="checkbox-include-sunday"
+                                  />
+                                  <label className="text-[10px] text-muted-foreground">Inc. Sun</label>
+                                </div>
+                              </div>
                             </div>
                           </div>
                         )}
 
+                        {/* Weekly - Days and Time per day */}
                         {form.watch("recurringType") === "weekly" && (
-                          <div className="flex gap-1">
-                            {weekDays.map((day) => (
-                              <button
-                                key={day.value}
-                                type="button"
-                                onClick={() => toggleDay(day.value)}
-                                className={`h-6 w-6 rounded-full text-[10px] font-medium transition-colors ${
-                                  selectedDays?.includes(day.value)
-                                    ? "bg-primary text-primary-foreground"
-                                    : "bg-muted hover:bg-muted/80"
-                                }`}
-                                data-testid={`button-day-${day.value}`}
-                              >
-                                {day.label}
-                              </button>
-                            ))}
+                          <div className="space-y-2">
+                            <div>
+                              <label className="text-[10px] font-medium text-muted-foreground">Days</label>
+                              <div className="flex gap-1 mt-1">
+                                {weekDays.map((day) => (
+                                  <button
+                                    key={day.value}
+                                    type="button"
+                                    onClick={() => toggleDay(day.value)}
+                                    className={`h-6 w-6 rounded-full text-[10px] font-medium transition-colors ${
+                                      selectedDays?.includes(day.value)
+                                        ? "bg-primary text-primary-foreground"
+                                        : "bg-muted hover:bg-muted/80"
+                                    }`}
+                                    data-testid={`button-day-${day.value}`}
+                                  >
+                                    {day.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {selectedDays && selectedDays.length > 0 && (
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-medium text-muted-foreground">Start Times</label>
+                                <div className="grid grid-cols-2 gap-1.5">
+                                  {selectedDays.sort((a, b) => a - b).map((dayValue) => {
+                                    const dayLabel = weekDays.find(d => d.value === dayValue)?.label || "";
+                                    const schedule = form.watch("recurringSchedule")?.find((s: any) => s.dayOfWeek === dayValue);
+                                    
+                                    return (
+                                      <div key={dayValue} className="flex items-center gap-1.5 px-2 py-1 bg-muted/30 rounded border">
+                                        <span className="text-[10px] font-medium w-6">{dayLabel}</span>
+                                        <Input
+                                          type="time"
+                                          step="900"
+                                          value={schedule?.startTime || ""}
+                                          onChange={(e) => {
+                                            const currentSchedule = form.watch("recurringSchedule") || [];
+                                            const existing = currentSchedule.findIndex((s: any) => s.dayOfWeek === dayValue);
+                                            let newSchedule;
+                                            if (existing >= 0) {
+                                              newSchedule = [...currentSchedule];
+                                              newSchedule[existing] = { ...newSchedule[existing], startTime: e.target.value };
+                                            } else {
+                                              newSchedule = [...currentSchedule, { dayOfWeek: dayValue, startTime: e.target.value, duration: 60 }];
+                                            }
+                                            form.setValue("recurringSchedule", newSchedule, { shouldDirty: true, shouldTouch: true });
+                                          }}
+                                          className="h-6 text-[10px] flex-1"
+                                          data-testid={`input-time-${dayLabel.toLowerCase()}`}
+                                        />
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
 
-                        {/* Time - single time field for recurring tasks */}
-                        <div className="flex items-end gap-3 pt-2">
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-medium text-muted-foreground flex items-center gap-1">
-                              <Clock className="h-2.5 w-2.5" />
-                              Time
-                            </label>
-                            <Input
-                              type="time"
-                              step="900"
-                              {...form.register("startTime")}
-                              className="h-8 text-xs w-24"
-                              data-testid="input-recurring-time"
-                            />
+                        {/* Monthly - Day of month and Time */}
+                        {form.watch("recurringType") === "monthly" && (
+                          <div className="flex items-end gap-3">
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-medium text-muted-foreground">Day of Month</label>
+                              <Select
+                                value={String(form.watch("dueDayOfMonth") || 1)}
+                                onValueChange={(value) => form.setValue("dueDayOfMonth", parseInt(value), { shouldDirty: true, shouldTouch: true })}
+                              >
+                                <SelectTrigger className="h-8 text-xs w-20" data-testid="select-day-of-month">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent className="max-h-[200px]">
+                                  {Array.from({ length: 31 }, (_, i) => (
+                                    <SelectItem key={i + 1} value={String(i + 1)} className="text-xs">
+                                      {i + 1}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-medium text-muted-foreground">Time</label>
+                              <Input
+                                type="time"
+                                step="900"
+                                {...form.register("startTime")}
+                                className="h-8 text-xs w-24"
+                                data-testid="input-monthly-time"
+                              />
+                            </div>
                           </div>
-                          <div className="space-y-1 flex-1">
-                            <label className="text-[10px] font-medium text-muted-foreground flex items-center gap-1">
-                              <Calendar className="h-2.5 w-2.5" />
-                              Starting From
-                            </label>
-                            <Input
-                              type="date"
-                              {...form.register("recurringStartDate")}
-                              className="h-8 text-xs"
-                              data-testid="input-recurring-start-date"
-                            />
-                          </div>
-                        </div>
+                        )}
                       </div>
                     )}
                   </div>
