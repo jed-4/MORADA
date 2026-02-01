@@ -394,8 +394,7 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
           break;
       }
       
-      const response = await apiRequest(`/api/tasks/${taskId}`, "PATCH", payload);
-      return response.json();
+      return await apiRequest(`/api/tasks/${taskId}`, "PATCH", payload);
     },
     onSuccess: () => {
       // Invalidate all task-related queries using partial match
