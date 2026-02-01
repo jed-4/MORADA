@@ -108,18 +108,21 @@ function SortableViewTab({
   };
 
   return (
-    <div ref={setNodeRef} style={style} className="flex items-center" {...attributes}>
-      <div {...listeners} className="cursor-grab active:cursor-grabbing px-0.5 text-muted-foreground/50 hover:text-muted-foreground">
-        <GripVertical className="h-3 w-3" />
-      </div>
+    <div 
+      ref={setNodeRef} 
+      style={style} 
+      className="flex items-center"
+      {...attributes}
+    >
       <button
         onClick={onSelect}
-        className={`h-6 w-auto px-2 text-xs border rounded-md ${
+        className={`h-6 w-auto px-2 text-xs border rounded-md cursor-grab active:cursor-grabbing ${
           isSelected 
             ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
             : 'hover-elevate'
         } active-elevate-2 flex items-center gap-1`}
         data-testid={`tab-${view.id}`}
+        {...listeners}
       >
         {view.name}
       </button>
@@ -1363,6 +1366,7 @@ export default function Tasks() {
               columnConfig={{ order: columnOrder }}
               onDelete={handleDeleteTask}
               showActions={true}
+              onAddTask={() => setShowCreateTaskDialog(true)}
             />
           </div>
         )}

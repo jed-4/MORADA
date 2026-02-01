@@ -5,6 +5,23 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  horizontalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -48,6 +65,91 @@ import { applyTaskFilters, extractFilterOptions, deserializeFilters } from "@/ut
 import { useToast } from "@/hooks/use-toast";
 import { type FilterState, type DueDatePreset } from "@/components/FilterPanel";
 import { useTaskPriorityOptions } from "@/hooks/useTaskPriorityOptions";
+
+// Sortable View Tab component for drag-and-drop reordering
+function SortableViewTab({ 
+  view, 
+  isSelected,
+  onSelect,
+  onEditClick,
+  onDeleteClick,
+}: { 
+  view: TaskView; 
+  isSelected: boolean;
+  onSelect: () => void;
+  onEditClick: (view: TaskView) => void;
+  onDeleteClick: (view: TaskView) => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: view.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 100 : 1,
+  };
+
+  return (
+    <div 
+      ref={setNodeRef} 
+      style={style} 
+      className="flex items-center"
+      {...attributes}
+    >
+      <button
+        onClick={onSelect}
+        className={`relative h-7 px-2 text-xs flex items-center gap-1 transition-colors cursor-grab active:cursor-grabbing ${
+          isSelected
+            ? 'text-[#bba7db] font-medium'
+            : 'text-muted-foreground hover:text-foreground'
+        }`}
+        data-testid={`tab-${view.id}`}
+        {...listeners}
+      >
+        <span>{view.name}</span>
+        {isSelected && (
+          <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#bba7db] rounded-full" />
+        )}
+      </button>
+      {isSelected && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="h-5 px-0.5 text-[#bba7db] hover:text-[#bba7db]/80 flex items-center"
+              data-testid={`button-view-options-${view.id}`}
+            >
+              <ChevronDown className="h-3 w-3" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem 
+              onClick={() => onEditClick(view)}
+              data-testid={`menu-edit-${view.id}`}
+            >
+              <Pencil className="h-3 w-3 mr-2" />
+              Edit View
+            </DropdownMenuItem>
+            <DropdownMenuItem 
+              onClick={() => onDeleteClick(view)}
+              className="text-destructive"
+              data-testid={`menu-delete-${view.id}`}
+            >
+              <X className="h-3 w-3 mr-2" />
+              Delete View
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+    </div>
+  );
+}
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, addDays, addWeeks } from "date-fns";
 
 // Helper to resolve preset to display date range
@@ -350,6 +452,51 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
     });
   };
 
+  // Mutation for reordering views
+  const reorderViewsMutation = useMutation({
+    mutationFn: async (viewIds: string[]): Promise<void> => {
+      const response = await fetch("/api/task-views/reorder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ viewIds }),
+      });
+      if (!response.ok) throw new Error("Failed to reorder views");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/task-views"] });
+    },
+  });
+
+  // DnD sensors for view reordering
+  const viewSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 5 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  // Handle view drag end
+  const handleViewDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = taskViews.findIndex((v: TaskView) => v.id === active.id);
+    const newIndex = taskViews.findIndex((v: TaskView) => v.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reorderedViews = arrayMove(taskViews, oldIndex, newIndex);
+    const viewIds = reorderedViews.map((v: TaskView) => v.id);
+    
+    // Optimistic update
+    queryClient.setQueryData(["/api/task-views"], reorderedViews);
+    
+    // Persist to server
+    reorderViewsMutation.mutate(viewIds);
+  };
+
   const handleSelectSavedView = (view: TaskView) => {
     // Toggle behavior: if clicking the already selected view, deselect it
     if (selectedViewId === view.id) {
@@ -576,55 +723,30 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
               <div className="h-4 w-px bg-border mx-1" />
             )}
             
-            {/* Saved/Custom Views - Toggle on/off with dropdown for options */}
-            {taskViews.map((view) => (
-              <div key={view.id} className="flex items-center">
-                <button
-                  onClick={() => handleSelectSavedView(view)}
-                  className={`relative h-7 px-2 text-xs flex items-center gap-1 transition-colors ${
-                    selectedViewId === view.id
-                      ? 'text-[#bba7db] font-medium'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                  data-testid={`tab-${view.id}`}
+            {/* Saved/Custom Views - drag and drop reorderable */}
+            {taskViews.length > 0 && (
+              <DndContext
+                sensors={viewSensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleViewDragEnd}
+              >
+                <SortableContext
+                  items={taskViews.map((v: TaskView) => v.id)}
+                  strategy={horizontalListSortingStrategy}
                 >
-                  <span>{view.name}</span>
-                  {selectedViewId === view.id && (
-                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#bba7db] rounded-full" />
-                  )}
-                </button>
-                {/* Dropdown arrow - only shows when view is selected */}
-                {selectedViewId === view.id && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        className="h-5 px-0.5 text-[#bba7db] hover:text-[#bba7db]/80 flex items-center"
-                        data-testid={`button-view-options-${view.id}`}
-                      >
-                        <ChevronDown className="h-3 w-3" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start">
-                      <DropdownMenuItem 
-                        onClick={() => handleEditView(view)}
-                        data-testid={`menu-edit-${view.id}`}
-                      >
-                        <Pencil className="h-3 w-3 mr-2" />
-                        Edit View
-                      </DropdownMenuItem>
-                      <DropdownMenuItem 
-                        onClick={() => handleDeleteView(view)}
-                        className="text-destructive"
-                        data-testid={`menu-delete-${view.id}`}
-                      >
-                        <X className="h-3 w-3 mr-2" />
-                        Delete View
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-              </div>
-            ))}
+                  {taskViews.map((view: TaskView) => (
+                    <SortableViewTab
+                      key={view.id}
+                      view={view}
+                      isSelected={selectedViewId === view.id}
+                      onSelect={() => handleSelectSavedView(view)}
+                      onEditClick={handleEditView}
+                      onDeleteClick={handleDeleteView}
+                    />
+                  ))}
+                </SortableContext>
+              </DndContext>
+            )}
             
             <button
               className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
@@ -1051,6 +1173,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                   isLoading={isLoading && groupName === 'All Tasks'}
                   onTaskClick={(task) => setEditingTask(task)}
                   columnConfig={{ order: ['status', 'priority', 'assignee', 'project', 'dueDate'] }}
+                  onAddTask={() => setShowCreateDialog(true)}
                 />
               </div>
             ))}
