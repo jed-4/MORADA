@@ -713,8 +713,8 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
           </>
         )}
 
-        {/* Drag Overlay */}
-        <DragOverlay>
+        {/* Drag Overlay - dropAnimation={null} prevents snap-back animation */}
+        <DragOverlay dropAnimation={null}>
           {activeTask ? (
             <div className="rotate-2">
               <TaskCardCompact task={activeTask} onClick={() => {}} isDragging={true} displaySettings={boardDisplaySettings} />
