@@ -382,12 +382,10 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
           break;
         case 'labels':
           // For labels, preserve existing labels and update the primary (first) label
-          // This moves the task to the new label column while keeping other labels
           const existingTagIds = (currentTask?.tagIds as string[] | undefined) || [];
           if (newValue === 'no-labels') {
             payload = { tagIds: [] };
           } else {
-            // Replace the first label (primary) with the new one, keep others
             const otherLabels = existingTagIds.slice(1);
             payload = { tagIds: [newValue, ...otherLabels] };
           }
@@ -399,17 +397,63 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
       
       return await apiRequest(`/api/tasks/${taskId}`, "PATCH", payload);
     },
+    onMutate: async ({ taskId, newValue, currentTask }) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ["/api/tasks"], exact: false });
+      
+      // Snapshot all task queries for rollback
+      const queries = queryClient.getQueriesData<Task[]>({ queryKey: ["/api/tasks"] });
+      const previousData = queries.map(([key, data]) => ({ key, data }));
+      
+      // Optimistically update all matching task queries
+      queryClient.setQueriesData<Task[]>({ queryKey: ["/api/tasks"] }, (old) => {
+        if (!old) return old;
+        return old.map(task => {
+          if (task.id !== taskId) return task;
+          
+          // Create updated task based on groupBy
+          switch (groupBy) {
+            case 'status':
+              return { ...task, status: newValue };
+            case 'priority':
+              return { ...task, priority: newValue === 'none' ? null : newValue };
+            case 'labels':
+              const existingTagIds = (currentTask?.tagIds as string[] | undefined) || [];
+              if (newValue === 'no-labels') {
+                return { ...task, tagIds: [] };
+              } else {
+                const otherLabels = existingTagIds.slice(1);
+                return { ...task, tagIds: [newValue, ...otherLabels] };
+              }
+            case 'project':
+              return { ...task, projectId: newValue === 'no-project' ? null : newValue };
+            default:
+              return task;
+          }
+        });
+      });
+      
+      return { previousData };
+    },
     onSuccess: () => {
-      // Invalidate all task-related queries using partial match
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"], exact: false });
       toast({ title: "Task moved successfully" });
     },
-    onError: (error) => {
+    onError: (error, variables, context) => {
+      // Rollback on error
+      if (context?.previousData) {
+        context.previousData.forEach(({ key, data }) => {
+          queryClient.setQueryData(key, data);
+        });
+      }
       toast({ 
         title: "Failed to move task", 
         description: error.message,
         variant: "destructive" 
       });
+    },
+    onSettled: () => {
+      // Always refetch after error or success to ensure data consistency
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"], exact: false });
     },
   });
 
