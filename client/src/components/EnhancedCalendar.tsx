@@ -12,6 +12,7 @@ import {
   DragEndEvent,
   DragStartEvent,
   DragMoveEvent,
+  DragOverlay,
   MouseSensor,
   TouchSensor,
   useSensor,
@@ -111,7 +112,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
         showResizeHandles && !isGoogleCalendarEvent && "cursor-move hover:shadow-md",
         isGoogleCalendarEvent && "cursor-pointer hover:shadow-md",
         isCompleted && "opacity-60",
-        isDragging && "opacity-50 scale-[0.98] shadow-lg"
+        isDragging && "opacity-0"
       )}
       style={{
         backgroundColor: notionColors.pastelBg,
@@ -206,6 +207,37 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
   );
 }
 
+function EventOverlay({ event }: { event: CalendarEvent }) {
+  const isCompleted = event.status === "done" || event.status === "completed" || event.isCompleted;
+  const isRecurring = !!event.templateId;
+  const baseColor = isRecurring ? "#a855f7" : (event.projectColor || event.color || "#6366f1");
+  const notionColors = generateNotionColors(baseColor);
+
+  return (
+    <div
+      className="flex items-start gap-1.5 px-1.5 pt-0.5 pb-0.5 rounded text-[11px] shadow-lg cursor-grabbing opacity-90"
+      style={{
+        backgroundColor: notionColors.pastelBg,
+        borderLeft: `3px solid ${notionColors.originalHex}`,
+        minWidth: '100px',
+        maxWidth: '200px',
+      }}
+    >
+      <div className="flex-1 min-w-0 overflow-hidden">
+        <div 
+          className={cn(
+            "font-semibold truncate text-[10.5px] leading-tight",
+            isCompleted && "line-through opacity-60"
+          )}
+          style={{ color: notionColors.darkText }}
+        >
+          {event.title}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface DroppableDateCellProps {
   date: Date;
   children: React.ReactNode;
@@ -214,7 +246,7 @@ interface DroppableDateCellProps {
 }
 
 function DroppableDateCell({ date, children, className, onClick }: DroppableDateCellProps) {
-  const { setNodeRef, isOver } = useDroppable({
+  const { setNodeRef } = useDroppable({
     id: format(date, "yyyy-MM-dd"),
     data: { date },
   });
@@ -223,10 +255,7 @@ function DroppableDateCell({ date, children, className, onClick }: DroppableDate
     <div
       ref={setNodeRef}
       onClick={onClick}
-      className={cn(
-        className,
-        isOver && "ring-2 ring-primary ring-inset"
-      )}
+      className={className}
     >
       {children}
     </div>
@@ -1414,6 +1443,9 @@ export function EnhancedCalendar({
         {view === "roster" && renderWeekView()}
       </div>
 
+      <DragOverlay dropAnimation={null}>
+        {activeEvent ? <EventOverlay event={activeEvent} /> : null}
+      </DragOverlay>
     </DndContext>
   );
 }
