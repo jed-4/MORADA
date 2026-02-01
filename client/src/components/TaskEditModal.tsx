@@ -149,6 +149,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
   const [showDriveFilePicker, setShowDriveFilePicker] = useState(false);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [pendingAttachments, setPendingAttachments] = useState<Array<{ id: string; name: string; mimeType: string; webViewLink?: string }>>([]);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [optimisticCompleted, setOptimisticCompleted] = useState<boolean | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
