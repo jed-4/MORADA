@@ -15274,6 +15274,10 @@ export class DbStorage implements IStorage {
         // Use template's default task status if set, otherwise fallback to "todo"
         const defaultStatus = template.defaultTaskStatus || "todo";
         
+        // Determine task context based on template scope
+        const taskContextType = templateData.scope === "project" && templateData.projectId ? "project" : "business";
+        const taskContextId = templateData.scope === "project" && templateData.projectId ? templateData.projectId : companyId;
+        
         for (const instance of instances) {
           // Skip instances with invalid dates
           if (!instance.dueDate) {
@@ -15320,6 +15324,8 @@ export class DbStorage implements IStorage {
                 occurrenceDate: instance.dueDate, // Store original scheduled date for duplicate prevention
                 companyId: companyId,
                 checklist: taskChecklist,
+                taskContextType,
+                taskContextId,
               };
 
               await db.insert(schema.notes).values(taskData);
@@ -15360,6 +15366,8 @@ export class DbStorage implements IStorage {
                   occurrenceDate: instance.dueDate, // Store original scheduled date for duplicate prevention
                   companyId: companyId,
                   checklist: taskChecklist,
+                  taskContextType,
+                  taskContextId,
                 };
 
                 await db.insert(schema.notes).values(taskData);
@@ -15423,6 +15431,11 @@ export class DbStorage implements IStorage {
 
       // Create tasks from instances
       let generatedCount = 0;
+      
+      // Determine task context based on template scope
+      const taskContextType = templateData.scope === "project" && templateData.projectId ? "project" : "business";
+      const taskContextId = templateData.scope === "project" && templateData.projectId ? templateData.projectId : companyId;
+      
       for (const instance of instances) {
         // Use template's default task status if set, otherwise fallback to "todo"
         const defaultStatus = template.defaultTaskStatus || "todo";
@@ -15454,6 +15467,8 @@ export class DbStorage implements IStorage {
             templateId: instance.templateId,
             companyId: companyId,
             checklist: taskChecklist,
+            taskContextType,
+            taskContextId,
           };
 
           await db.insert(schema.notes).values(taskData);
@@ -15486,6 +15501,8 @@ export class DbStorage implements IStorage {
               templateId: instance.templateId,
               companyId: companyId,
               checklist: taskChecklist,
+              taskContextType,
+              taskContextId,
             };
 
             await db.insert(schema.notes).values(taskData);
