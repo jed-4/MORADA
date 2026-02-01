@@ -428,7 +428,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
         content: title,
         scope: "personal",
         status: "todo",
-        assignee: user.id,
+        assigneeId: user.id,
       });
     },
     onSuccess: () => {
