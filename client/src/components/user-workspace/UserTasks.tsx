@@ -428,12 +428,12 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
         content: title,
         scope: "personal",
         status: "todo",
+        assignee: user.id,
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ 
-        predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/tasks"
-      });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks", { assigneeId: user.id }] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
       toast({ title: "Task created" });
     },
     onError: () => {
