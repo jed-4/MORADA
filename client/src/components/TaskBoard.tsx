@@ -15,6 +15,7 @@ import { useTaskStatusOptions } from "@/hooks/useTaskStatusOptions";
 import {
   DndContext,
   DragEndEvent,
+  DragOverEvent,
   DragOverlay,
   DragStartEvent,
   PointerSensor,
@@ -129,6 +130,7 @@ function DroppableColumn({
   displaySettings,
   onDelete,
   showActions,
+  isHighlighted,
 }: { 
   column: { id: string; title: string; status: string; color?: string }; 
   tasks: Task[]; 
@@ -137,10 +139,10 @@ function DroppableColumn({
   displaySettings?: any;
   onDelete?: (task: Task) => void;
   showActions?: boolean;
+  isHighlighted?: boolean;
 }) {
   const {
     setNodeRef,
-    isOver,
   } = useDroppable({
     id: column.id,
     data: {
@@ -157,12 +159,12 @@ function DroppableColumn({
     <div
       ref={setNodeRef}
       className={`rounded-xl border transition-all duration-200 ${
-        isOver ? 'border-2 border-[#bba7db] border-dashed bg-[#bba7db]/10' : 'border-border/50'
+        isHighlighted ? 'border-2 border-[#bba7db] border-dashed bg-[#bba7db]/10' : 'border-border/50'
       }`}
-      style={!isOver ? bgStyle : undefined}
+      style={!isHighlighted ? bgStyle : undefined}
     >
       {/* Column Header - ClickUp style */}
-      <div className={`px-3 py-2.5 border-b border-border/30 transition-colors ${isOver ? 'bg-[#bba7db]/5' : ''}`}>
+      <div className={`px-3 py-2.5 border-b border-border/30 transition-colors ${isHighlighted ? 'bg-[#bba7db]/5' : ''}`}>
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-bold text-foreground">{column.title}</h3>
         </div>
@@ -198,6 +200,7 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  const [hoveredColumnId, setHoveredColumnId] = useState<string | null>(null);
   const { toast } = useToast();
   
   // Use cardWidth from props
@@ -496,9 +499,41 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
     }
   };
 
+  const handleDragOver = (event: DragOverEvent) => {
+    const { over } = event;
+    if (!over) {
+      setHoveredColumnId(null);
+      return;
+    }
+    
+    // If hovering over a column directly
+    if (over.data.current?.type === "column") {
+      setHoveredColumnId(over.id as string);
+    }
+    // If hovering over a task, find its column
+    else if (over.data.current?.type === "task") {
+      const overTask = over.data.current.task;
+      // Find which column this task belongs to
+      const getCurrentGroupValue = (task: Task): string => {
+        switch (groupBy) {
+          case 'status': return task.status || 'todo';
+          case 'priority': return task.priority || 'none';
+          case 'labels': 
+            const tagIds = task.tagIds as string[] | undefined;
+            return tagIds?.[0] || 'no-labels';
+          case 'project': return task.projectId || 'no-project';
+          default: return task.status || 'todo';
+        }
+      };
+      const columnId = columns.find(c => c.status === getCurrentGroupValue(overTask))?.id || null;
+      setHoveredColumnId(columnId);
+    }
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     setActiveTask(null);
+    setHoveredColumnId(null);
 
     if (!over) return;
 
@@ -570,6 +605,7 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
       sensors={sensors}
       collisionDetection={closestCorners}
       onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
     >
       <div className="px-2 pb-6" data-testid="task-board">
@@ -602,6 +638,7 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
                     displaySettings={boardDisplaySettings}
                     onDelete={onDelete || handleDeleteTask}
                     showActions={showActions !== undefined ? showActions : true}
+                    isHighlighted={hoveredColumnId === column.id}
                   />
                 </div>
               );
