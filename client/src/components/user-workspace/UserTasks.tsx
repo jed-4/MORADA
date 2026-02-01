@@ -198,6 +198,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
   const [activeView, setActiveView] = useState<ViewType>("list");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [listColumnOrder, setListColumnOrder] = useState<('status' | 'priority' | 'assignee' | 'project' | 'dueDate')[]>(['status', 'priority', 'assignee', 'project', 'dueDate']);
   const [groupBy, setGroupBy] = useState<GroupByType>("none");
   // Default to no filters - show all tasks
   const [filters, setFilters] = useState<FilterState>({});
@@ -427,6 +428,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
         title,
         content: title,
         scope: "personal",
+        taskContextType: "business",
         status: "todo",
         assigneeId: user.id,
       });
@@ -1194,7 +1196,8 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                   tasks={groupTasks}
                   isLoading={isLoading && groupName === 'All Tasks'}
                   onTaskClick={(task) => setEditingTask(task)}
-                  columnConfig={{ order: ['status', 'priority', 'assignee', 'project', 'dueDate'] }}
+                  columnConfig={{ order: listColumnOrder }}
+                  onColumnConfigChange={(config) => setListColumnOrder(config.order)}
                   onAddTask={(title) => createTaskMutation.mutate(title)}
                 />
               </div>

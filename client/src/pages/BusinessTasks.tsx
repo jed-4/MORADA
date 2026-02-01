@@ -150,6 +150,7 @@ export default function BusinessTasks() {
   const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
+  const [listColumnOrder, setListColumnOrder] = useState<('status' | 'priority' | 'assignee' | 'dueDate' | 'project')[]>(['status', 'priority', 'assignee', 'dueDate', 'project']);
   const [initialTaskStatus, setInitialTaskStatus] = useState<string>("todo");
   const [groupBy, setGroupBy] = useState<'none' | 'status' | 'priority' | 'assignee' | 'labels'>('none');
   const [filters, setFilters] = useState<FilterState>({});
@@ -1174,6 +1175,8 @@ export default function BusinessTasks() {
                 setEditingTask(task);
                 setShowCreateTaskDialog(true);
               }}
+              columnConfig={{ order: listColumnOrder }}
+              onColumnConfigChange={(config) => setListColumnOrder(config.order)}
               onDelete={handleDeleteTask}
               showActions={true}
               onAddTask={(title) => createTaskMutation.mutate(title)}

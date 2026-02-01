@@ -1392,6 +1392,7 @@ export default function Tasks() {
               onTaskClick={(task: Task) => setEditingTask(task)}
               projectId={effectiveProjectId}
               columnConfig={{ order: columnOrder }}
+              onColumnConfigChange={(config) => setColumnOrder(config.order)}
               onDelete={handleDeleteTask}
               showActions={true}
               onAddTask={(title) => createTaskMutation.mutate(title)}
