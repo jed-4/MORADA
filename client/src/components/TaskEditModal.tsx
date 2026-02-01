@@ -85,6 +85,8 @@ const taskFormSchema = z.object({
   recurringDays: z.array(z.number()).default([]),
   includeSaturday: z.boolean().default(false),
   includeSunday: z.boolean().default(false),
+  recurringStartDate: z.string().optional(),
+  recurringEndDate: z.string().optional(),
   estimatedCost: z.number().optional(),
   estimatedUnits: z.number().optional(),
   projectId: z.string().optional(),
@@ -238,6 +240,8 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
       recurringDays: (task?.recurringDays as number[]) || [],
       includeSaturday: task?.includeSaturday || false,
       includeSunday: task?.includeSunday || false,
+      recurringStartDate: task?.recurringStartDate ? format(new Date(task.recurringStartDate), "yyyy-MM-dd") : undefined,
+      recurringEndDate: task?.recurringEndDate ? format(new Date(task.recurringEndDate), "yyyy-MM-dd") : undefined,
       estimatedCost: task?.estimatedCost || undefined,
       estimatedUnits: task?.estimatedUnits || undefined,
       projectId: task?.projectId || projectId || undefined,
@@ -263,6 +267,8 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
         recurringDays: (task?.recurringDays as number[]) || [],
         includeSaturday: task?.includeSaturday || false,
         includeSunday: task?.includeSunday || false,
+        recurringStartDate: task?.recurringStartDate ? format(new Date(task.recurringStartDate), "yyyy-MM-dd") : undefined,
+        recurringEndDate: task?.recurringEndDate ? format(new Date(task.recurringEndDate), "yyyy-MM-dd") : undefined,
         estimatedCost: task?.estimatedCost || undefined,
         estimatedUnits: task?.estimatedUnits || undefined,
         projectId: task?.projectId || projectId || undefined,
@@ -1178,6 +1184,60 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                             ))}
                           </div>
                         )}
+
+                        {/* Recurring Date Range */}
+                        <div className="grid grid-cols-2 gap-2 pt-2">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-medium text-muted-foreground">
+                              Start Date
+                            </label>
+                            <Input
+                              type="date"
+                              {...form.register("recurringStartDate")}
+                              className="h-8 text-xs"
+                              data-testid="input-recurring-start-date"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-medium text-muted-foreground">
+                              End Date (optional)
+                            </label>
+                            <Input
+                              type="date"
+                              {...form.register("recurringEndDate")}
+                              className="h-8 text-xs"
+                              data-testid="input-recurring-end-date"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Recurring Time */}
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-medium text-muted-foreground">
+                              Start Time
+                            </label>
+                            <Input
+                              type="time"
+                              step="900"
+                              {...form.register("startTime")}
+                              className="h-8 text-xs"
+                              data-testid="input-recurring-start-time"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-medium text-muted-foreground">
+                              End Time
+                            </label>
+                            <Input
+                              type="time"
+                              step="900"
+                              {...form.register("endTime")}
+                              className="h-8 text-xs"
+                              data-testid="input-recurring-end-time"
+                            />
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>
