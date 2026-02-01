@@ -81,19 +81,25 @@ function DraggableTaskCard({ task, onTaskClick, displaySettings, onDelete, showA
     },
   });
 
-  const style = {
+  const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
+    opacity: isDragging ? 0.5 : 1,
   };
 
   return (
     <div
       ref={setNodeRef}
       style={style}
-      {...attributes}
-      {...listeners}
-      className="touch-none cursor-grab active:cursor-grabbing"
+      className="relative group"
     >
+      {/* Drag handle overlay - covers the whole card for drag initiation */}
+      <div
+        {...attributes}
+        {...listeners}
+        className="absolute inset-0 z-10 cursor-grab active:cursor-grabbing"
+        style={{ touchAction: 'none' }}
+      />
       <TaskCardCompact task={task} onClick={() => onTaskClick?.(task)} isDragging={isDragging} displaySettings={displaySettings} onDelete={onDelete} showActions={showActions} />
     </div>
   );
@@ -244,8 +250,7 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 10,
-        tolerance: 5,
+        distance: 5,
       },
     })
   );
