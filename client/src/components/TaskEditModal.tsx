@@ -603,7 +603,11 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => task && setShowReminderDialog(true)}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setShowReminderDialog(true);
+              }}
               disabled={!task}
               title="Set Reminder"
               data-testid="button-set-reminder"
@@ -613,7 +617,11 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => task && setShowDriveFilePicker(true)}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setShowDriveFilePicker(true);
+              }}
               disabled={!task}
               title="Attach File"
               data-testid="button-attach-file"
