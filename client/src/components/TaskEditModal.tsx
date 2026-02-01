@@ -69,7 +69,10 @@ import {
   Settings2,
   Tag,
   Check,
+  Upload,
+  HardDrive,
 } from "lucide-react";
+import { useUpload } from "@/hooks/use-upload";
 import { SetReminderDialog } from "@/components/SetReminderDialog";
 import { DriveFilePicker } from "@/components/DriveFilePicker";
 
@@ -144,6 +147,8 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
   const [showChecklistInput, setShowChecklistInput] = useState(false);
   const [isChecklistMutating, setIsChecklistMutating] = useState(false);
   const [showDriveFilePicker, setShowDriveFilePicker] = useState(false);
+  const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [optimisticCompleted, setOptimisticCompleted] = useState<boolean | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -222,6 +227,30 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
     files.forEach(file => {
       addAttachmentMutation.mutate(file);
     });
+  };
+
+  const { uploadFile, isUploading } = useUpload({
+    onSuccess: (response) => {
+      addAttachmentMutation.mutate({
+        id: response.objectPath,
+        name: response.metadata.name,
+        mimeType: response.metadata.contentType,
+        webViewLink: response.objectPath,
+      });
+    },
+    onError: (error) => {
+      toast({ title: "Failed to upload file", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    for (const file of files) {
+      await uploadFile(file);
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   };
 
   const statusCategory = fieldCategories.find(cat => cat.key === "task.status");
@@ -600,28 +629,53 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
           </div>
 
           <div className="flex items-center gap-1">
-            {task && (
-              <>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowReminderDialog(true)}
+              disabled={!task}
+              title={task ? "Set Reminder" : "Save task first to set reminder"}
+              data-testid="button-set-reminder"
+            >
+              <Bell className="h-4 w-4" />
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => setShowReminderDialog(true)}
-                  title="Set Reminder"
-                  data-testid="button-set-reminder"
-                >
-                  <Bell className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setShowDriveFilePicker(true)}
-                  title="Attach File"
+                  disabled={!task}
+                  title={task ? "Attach File" : "Save task first to attach files"}
                   data-testid="button-attach-file"
                 >
                   <Paperclip className="h-4 w-4" />
                 </Button>
-              </>
-            )}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem 
+                  onClick={() => fileInputRef.current?.click()}
+                  data-testid="menu-item-upload-file"
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  Upload File
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={() => setShowDriveFilePicker(true)}
+                  data-testid="menu-item-google-drive"
+                >
+                  <HardDrive className="h-4 w-4 mr-2" />
+                  From Google Drive
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <input
+              type="file"
+              ref={fileInputRef}
+              className="hidden"
+              multiple
+              onChange={handleFileUpload}
+              data-testid="file-input-upload"
+            />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" data-testid="button-more-actions">

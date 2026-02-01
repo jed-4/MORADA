@@ -117,4 +117,10 @@ Preferred communication style: Simple, everyday language.
 ### Integrations
 - **Google Calendar Integration**: Per-user OAuth for displaying read-only events.
 - **Google Drive Integration**: Company-level OAuth for live Google Drive browser, folder linking, file management, and attachments.
+- **Replit Object Storage**: File upload support via presigned URLs using @uppy/core v5, @uppy/dashboard, @uppy/aws-s3. Two-step flow: request presigned URL with metadata, then upload directly to GCS.
 - **Resend**: Transactional email service.
+
+### File Attachments
+- **Task Attachments**: Tasks support file attachments via dropdown menu with "Upload File" (Object Storage) and "From Google Drive" options.
+- **Upload Flow**: Presigned URL flow with useUpload hook, ObjectUploader component, and /api/uploads/request-url endpoint.
+- **Storage**: Files stored in Replit Object Storage with public/private directory structure.

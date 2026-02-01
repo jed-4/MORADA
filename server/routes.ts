@@ -7,6 +7,7 @@ import { randomBytes, randomUUID } from "crypto";
 import { setupAuth, isAuthenticated, sessionMiddleware, ensureLegacySessionFields } from "./auth";
 import { sendInvitationEmail, initializeEmailServices } from "./utils/email";
 import { GoogleOAuthService } from "./services/googleOAuthService";
+import { ObjectStorageService } from "./replit_integrations/object_storage";
 import { 
   insertNoteSchema,
   insertTaskSchema,
@@ -5293,6 +5294,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Error deleting drive attachment:", error);
       res.status(500).json({ error: "Failed to delete attachment" });
+    }
+  });
+
+  // ============================================================
+  // OBJECT STORAGE UPLOAD ROUTES (Authenticated)
+  // ============================================================
+
+  const objectStorageService = new ObjectStorageService();
+
+  // Request presigned URL for file upload (authenticated, company-scoped)
+  app.post("/api/uploads/request-url", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const { name, size, contentType } = req.body;
+      const companyId = req.user.companyId;
+
+      if (!name) {
+        return res.status(400).json({ error: "Missing required field: name" });
+      }
+
+      const uploadURL = await objectStorageService.getObjectEntityUploadURL();
+      const rawObjectPath = objectStorageService.normalizeObjectEntityPath(uploadURL);
+      
+      // Prefix with company ID for access control
+      const objectPath = `/objects/company/${companyId}${rawObjectPath.replace('/objects', '')}`;
+
+      res.json({
+        uploadURL,
+        objectPath,
+        metadata: { name, size, contentType },
+      });
+    } catch (error) {
+      console.error("Error generating upload URL:", error);
+      res.status(500).json({ error: "Failed to generate upload URL" });
+    }
+  });
+
+  // Serve uploaded objects (authenticated, company-scoped)
+  app.get("/objects/company/:companyId/*", requireAuth, async (req: any, res) => {
+    try {
+      const { companyId } = req.params;
+      
+      // Verify user has access to this company's files
+      if (req.user.companyId !== companyId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      // Extract the actual object path after company prefix
+      const pathAfterCompany = req.path.replace(`/objects/company/${companyId}`, '/objects');
+      const objectFile = await objectStorageService.getObjectEntityFile(pathAfterCompany);
+      await objectStorageService.downloadObject(objectFile, res);
+    } catch (error: any) {
+      console.error("Error serving object:", error);
+      if (error.name === "ObjectNotFoundError") {
+        return res.status(404).json({ error: "Object not found" });
+      }
+      return res.status(500).json({ error: "Failed to serve object" });
     }
   });
 
