@@ -233,17 +233,42 @@ export default function TaskCardCompact({ task, onClick, isDragging = false, dis
             )}
           </div>
 
-          {/* Assignee avatar */}
+          {/* Assignee avatar(s) - supports multiple assignees */}
           {(displaySettings?.showAssignee !== false) && (
-            task.assigneeName ? (
-              <Avatar className="h-5 w-5 border border-border/50">
-                <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
-                  {getInitials(task.assigneeName)}
-                </AvatarFallback>
-              </Avatar>
-            ) : (
-              <div className="w-5 h-5 rounded-full border border-dashed border-muted-foreground/20" />
-            )
+            (() => {
+              const assigneeNames = (task as any).assigneeNames as string[] | undefined;
+              const hasMultiple = assigneeNames && assigneeNames.length > 0;
+              const hasSingle = task.assigneeName;
+              
+              if (hasMultiple) {
+                return (
+                  <div className="flex -space-x-1.5">
+                    {assigneeNames.slice(0, 3).map((name, idx) => (
+                      <Avatar key={idx} className="h-5 w-5 border-2 border-background">
+                        <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
+                          {getInitials(name)}
+                        </AvatarFallback>
+                      </Avatar>
+                    ))}
+                    {assigneeNames.length > 3 && (
+                      <div className="h-5 w-5 rounded-full bg-muted flex items-center justify-center text-[10px] border-2 border-background">
+                        +{assigneeNames.length - 3}
+                      </div>
+                    )}
+                  </div>
+                );
+              } else if (hasSingle) {
+                return (
+                  <Avatar className="h-5 w-5 border border-border/50">
+                    <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
+                      {getInitials(task.assigneeName)}
+                    </AvatarFallback>
+                  </Avatar>
+                );
+              } else {
+                return <div className="w-5 h-5 rounded-full border border-dashed border-muted-foreground/20" />;
+              }
+            })()
           )}
         </div>
       </CardContent>

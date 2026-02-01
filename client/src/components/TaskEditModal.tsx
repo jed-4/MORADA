@@ -43,6 +43,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -67,6 +68,7 @@ import {
   RotateCcw,
   Settings2,
   Tag,
+  Check,
 } from "lucide-react";
 import { SetReminderDialog } from "@/components/SetReminderDialog";
 import { DriveFilePicker } from "@/components/DriveFilePicker";
@@ -76,7 +78,8 @@ const taskFormSchema = z.object({
   content: z.string().default(""),
   status: z.string().default("todo"),
   priority: z.string().default("low"),
-  assigneeId: z.string().optional(),
+  assigneeId: z.string().optional(), // Legacy single assignee
+  assigneeIds: z.array(z.string()).default([]), // Multiple assignees
   dueDate: z.string().optional(),
   startTime: z.string().optional(),
   endTime: z.string().optional(),
@@ -136,7 +139,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
   const [subtaskInput, setSubtaskInput] = useState("");
   const [showReminderDialog, setShowReminderDialog] = useState(false);
   const [showSubtaskInput, setShowSubtaskInput] = useState(false);
-  const [checklistItems, setChecklistItems] = useState<Array<{ id?: string; text: string; completed: boolean }>>([]);
+  const [checklistItems, setChecklistItems] = useState<Array<{ id?: string; text: string; completed: boolean; assigneeId?: string; assigneeName?: string }>>([]);
   const [checklistInput, setChecklistInput] = useState("");
   const [showChecklistInput, setShowChecklistInput] = useState(false);
   const [isChecklistMutating, setIsChecklistMutating] = useState(false);
@@ -238,6 +241,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
       status: task?.status || initialStatus || "todo",
       priority: (task?.priority as any) || "low",
       assigneeId: task?.assigneeId || defaultAssigneeId || undefined,
+      assigneeIds: (task as any)?.assigneeIds || (task?.assigneeId ? [task.assigneeId] : defaultAssigneeId ? [defaultAssigneeId] : []),
       dueDate: task?.dueDate ? format(new Date(task.dueDate), "yyyy-MM-dd") : undefined,
       startTime: task?.startTime || undefined,
       endTime: task?.endTime || undefined,
@@ -267,6 +271,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
         status: task?.status || initialStatus || "todo",
         priority: (task?.priority as any) || "low",
         assigneeId: task?.assigneeId || defaultAssigneeId || undefined,
+        assigneeIds: (task as any)?.assigneeIds || (task?.assigneeId ? [task.assigneeId] : defaultAssigneeId ? [defaultAssigneeId] : []),
         dueDate: task?.dueDate ? format(new Date(task.dueDate), "yyyy-MM-dd") : undefined,
         startTime: task?.startTime || undefined,
         endTime: task?.endTime || undefined,
@@ -293,7 +298,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
       // Don't reset if we're in the middle of a mutation (to preserve optimistic updates)
       if (!isChecklistMutating) {
         if (task) {
-          const taskChecklist = (task.checklist as Array<{ id?: string; text: string; completed: boolean }>) || [];
+          const taskChecklist = (task.checklist as Array<{ id?: string; text: string; completed: boolean; assigneeId?: string; assigneeName?: string }>) || [];
           setChecklistItems(taskChecklist.map(item => ({
             ...item,
             id: item.id || crypto.randomUUID(), // Only generate ID if item doesn't have one
@@ -321,7 +326,15 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
 
   const saveTaskMutation = useMutation({
     mutationFn: async (data: TaskFormData) => {
-      const payload = { ...data, tagIds: selectedTagIds };
+      // Build assigneeNames from assigneeIds for caching
+      const selectedAssignees = users.filter(u => (data.assigneeIds || []).includes(u.id));
+      const assigneeNames = selectedAssignees.map(u => getUserDisplayName(u));
+      
+      const payload = { 
+        ...data, 
+        tagIds: selectedTagIds,
+        assigneeNames, // Cache names for display
+      };
       if (task) {
         return await apiRequest(`/api/tasks/${task.id}`, "PATCH", payload);
       } else {
@@ -516,7 +529,9 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
     }
   };
 
-  const assignee = users.find(u => u.id === form.watch("assigneeId"));
+  const assigneeIds = form.watch("assigneeIds") || [];
+  const assignees = users.filter(u => assigneeIds.includes(u.id));
+  const assignee = users.find(u => u.id === form.watch("assigneeId")); // Legacy fallback
   const selectedProject = projects.find(p => p.id === form.watch("projectId"));
   
   const getUserDisplayName = (user: { firstName?: string | null; lastName?: string | null; email?: string | null }) => {
@@ -773,6 +788,70 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                       <span className={`text-sm flex-1 ${item.completed ? 'line-through text-muted-foreground' : ''}`}>
                         {item.text}
                       </span>
+                      
+                      {/* Checklist item assignee dropdown */}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            className="h-5 w-5 rounded-full hover:bg-muted flex items-center justify-center"
+                            data-testid={`button-assignee-checklist-${item.id}`}
+                          >
+                            {item.assigneeId ? (
+                              <Avatar className="h-5 w-5 border border-border/50">
+                                <AvatarFallback className="text-[10px]">
+                                  {getInitials(item.assigneeName || "")}
+                                </AvatarFallback>
+                              </Avatar>
+                            ) : (
+                              <User className="h-3 w-3 text-muted-foreground" />
+                            )}
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-48">
+                          <DropdownMenuItem
+                            onClick={() => {
+                              const newChecklist = checklistItems.map(i =>
+                                i.id === item.id ? { ...i, assigneeId: undefined, assigneeName: undefined } : i
+                              );
+                              setChecklistItems(newChecklist);
+                              if (task) updateChecklistMutation.mutate(newChecklist);
+                            }}
+                          >
+                            <span className="text-muted-foreground">Unassigned</span>
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          {/* Only show users who are assigned to the task */}
+                          {assignees.length > 0 ? (
+                            assignees.map((user) => (
+                              <DropdownMenuItem
+                                key={user.id}
+                                onClick={() => {
+                                  const newChecklist = checklistItems.map(i =>
+                                    i.id === item.id ? { ...i, assigneeId: user.id, assigneeName: getUserDisplayName(user) } : i
+                                  );
+                                  setChecklistItems(newChecklist);
+                                  if (task) updateChecklistMutation.mutate(newChecklist);
+                                }}
+                              >
+                                <Avatar className="h-4 w-4 mr-2">
+                                  <AvatarFallback className="text-[10px]">
+                                    {getInitials(getUserDisplayName(user))}
+                                  </AvatarFallback>
+                                </Avatar>
+                                {getUserDisplayName(user)}
+                                {item.assigneeId === user.id && (
+                                  <Check className="h-3 w-3 ml-auto" />
+                                )}
+                              </DropdownMenuItem>
+                            ))
+                          ) : (
+                            <DropdownMenuItem disabled className="text-xs text-muted-foreground">
+                              Assign task users first
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                      
                       <button
                         onClick={() => handleRemoveChecklistItem(item.id!)}
                         className="p-1 hover:bg-destructive/10 rounded opacity-0 group-hover:opacity-100"
@@ -909,14 +988,27 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                       className="w-full justify-start h-9 font-normal"
                       data-testid="button-select-assignee"
                     >
-                      {assignee ? (
+                      {assignees.length > 0 ? (
                         <div className="flex items-center gap-2">
-                          <Avatar className="h-5 w-5">
-                            <AvatarFallback className="text-[10px]">
-                              {getInitials(getUserDisplayName(assignee))}
-                            </AvatarFallback>
-                          </Avatar>
-                          <span className="truncate">{getUserDisplayName(assignee)}</span>
+                          <div className="flex -space-x-2">
+                            {assignees.slice(0, 3).map((user) => (
+                              <Avatar key={user.id} className="h-5 w-5 border-2 border-background">
+                                <AvatarFallback className="text-[10px]">
+                                  {getInitials(getUserDisplayName(user))}
+                                </AvatarFallback>
+                              </Avatar>
+                            ))}
+                            {assignees.length > 3 && (
+                              <div className="h-5 w-5 rounded-full bg-muted flex items-center justify-center text-[10px] border-2 border-background">
+                                +{assignees.length - 3}
+                              </div>
+                            )}
+                          </div>
+                          <span className="truncate text-xs">
+                            {assignees.length === 1 
+                              ? getUserDisplayName(assignees[0]) 
+                              : `${assignees.length} assigned`}
+                          </span>
                         </div>
                       ) : (
                         <span className="text-muted-foreground">Unassigned</span>
@@ -924,22 +1016,46 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent className="w-56">
-                    <DropdownMenuItem onClick={() => form.setValue("assigneeId", undefined, { shouldDirty: true, shouldTouch: true })}>
-                      <span className="text-muted-foreground">Unassigned</span>
+                    <DropdownMenuItem 
+                      onClick={() => {
+                        form.setValue("assigneeIds", [], { shouldDirty: true, shouldTouch: true });
+                        form.setValue("assigneeId", undefined, { shouldDirty: true, shouldTouch: true });
+                      }}
+                    >
+                      <span className="text-muted-foreground">Clear All</span>
                     </DropdownMenuItem>
-                    {users.map((user) => (
-                      <DropdownMenuItem
-                        key={user.id}
-                        onClick={() => form.setValue("assigneeId", user.id, { shouldDirty: true, shouldTouch: true })}
-                      >
-                        <Avatar className="h-5 w-5 mr-2">
-                          <AvatarFallback className="text-[10px]">
-                            {getInitials(getUserDisplayName(user))}
-                          </AvatarFallback>
-                        </Avatar>
-                        {getUserDisplayName(user)}
-                      </DropdownMenuItem>
-                    ))}
+                    <DropdownMenuSeparator />
+                    {users.map((user) => {
+                      const isSelected = assigneeIds.includes(user.id);
+                      return (
+                        <DropdownMenuItem
+                          key={user.id}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            const currentIds = form.watch("assigneeIds") || [];
+                            let newIds: string[];
+                            if (isSelected) {
+                              newIds = currentIds.filter((id: string) => id !== user.id);
+                            } else {
+                              newIds = [...currentIds, user.id];
+                            }
+                            form.setValue("assigneeIds", newIds, { shouldDirty: true, shouldTouch: true });
+                            form.setValue("assigneeId", newIds[0] || undefined, { shouldDirty: true, shouldTouch: true });
+                          }}
+                        >
+                          <Checkbox 
+                            checked={isSelected} 
+                            className="mr-2 pointer-events-none"
+                          />
+                          <Avatar className="h-5 w-5 mr-2">
+                            <AvatarFallback className="text-[10px]">
+                              {getInitials(getUserDisplayName(user))}
+                            </AvatarFallback>
+                          </Avatar>
+                          {getUserDisplayName(user)}
+                        </DropdownMenuItem>
+                      );
+                    })}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>

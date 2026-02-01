@@ -423,8 +423,10 @@ export const notes: any = pgTable("notes", {
   // Task-specific fields
   type: text("type").notNull().default("note"), // "note" | "task"
   status: text("status").default("todo"), // "todo" | "in-progress" | "done" for tasks
-  assigneeId: varchar("assignee_id").references(() => users.id),
-  assigneeName: text("assignee_name"), // Cached for performance
+  assigneeId: varchar("assignee_id").references(() => users.id), // Legacy single assignee
+  assigneeName: text("assignee_name"), // Legacy cached name
+  assigneeIds: text("assignee_ids").array().default([]), // Multiple assignee user IDs
+  assigneeNames: json("assignee_names").default([]), // Cached names for performance: string[]
   dueDate: timestamp("due_date"),
   startTime: text("start_time"), // Optional time in HH:MM format for timed events
   endTime: text("end_time"), // Optional time in HH:MM format for timed events
@@ -494,8 +496,10 @@ export const insertNoteSchema = createInsertSchema(notes).omit({
   // Task-specific fields
   type: z.enum(["note", "task"]).optional(),
   status: z.enum(["todo", "in-progress", "done"]).optional(),
-  assigneeId: z.string().optional(),
-  assigneeName: z.string().optional(),
+  assigneeId: z.string().optional(), // Legacy single assignee
+  assigneeName: z.string().optional(), // Legacy cached name
+  assigneeIds: z.array(z.string()).optional(), // Multiple assignee user IDs
+  assigneeNames: z.array(z.string()).optional(), // Cached names for performance
   dueDate: z.coerce.date().optional(), // Coerce strings to dates for JSON compatibility
   startTime: z.string().optional(), // HH:MM format
   endTime: z.string().optional(), // HH:MM format
@@ -506,6 +510,8 @@ export const insertNoteSchema = createInsertSchema(notes).omit({
     id: z.string().optional(),
     text: z.string(),
     completed: z.boolean().default(false),
+    assigneeId: z.string().optional(), // Optional assignee for this checklist item
+    assigneeName: z.string().optional(), // Cached name for display
   })).optional(),
   color: z.string().optional(), // Notion-style color for calendar display
   // Subtask fields
