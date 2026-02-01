@@ -430,9 +430,12 @@ export default function Tasks() {
   const createTaskMutation = useMutation({
     mutationFn: async (title: string) => {
       return await apiRequest(`/api/tasks`, "POST", {
+        type: "task",
         title,
+        content: title,
         projectId: effectiveProjectId || undefined,
-        contextType: effectiveProjectId ? "project" : "business",
+        taskContextType: effectiveProjectId ? "project" : "business",
+        taskContextId: effectiveProjectId || undefined,
         status: "todo",
       });
     },

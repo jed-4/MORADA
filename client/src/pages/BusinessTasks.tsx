@@ -541,8 +541,10 @@ export default function BusinessTasks() {
   const createTaskMutation = useMutation({
     mutationFn: async (title: string) => {
       return await apiRequest(`/api/tasks`, "POST", {
+        type: "task",
         title,
-        contextType: "business",
+        content: title,
+        taskContextType: "business",
         status: "todo",
       });
     },

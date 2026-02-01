@@ -423,8 +423,10 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
   const createTaskMutation = useMutation({
     mutationFn: async (title: string) => {
       return await apiRequest(`/api/tasks`, "POST", {
+        type: "task",
         title,
-        contextType: "personal",
+        content: title,
+        scope: "personal",
         status: "todo",
       });
     },
