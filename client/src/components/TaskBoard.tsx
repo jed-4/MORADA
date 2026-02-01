@@ -85,21 +85,17 @@ function DraggableTaskCard({ task, onTaskClick, displaySettings, onDelete, showA
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
+    touchAction: 'none',
   };
 
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className="relative group"
+      {...attributes}
+      {...listeners}
+      className="cursor-grab active:cursor-grabbing"
     >
-      {/* Drag handle overlay - covers the whole card for drag initiation */}
-      <div
-        {...attributes}
-        {...listeners}
-        className="absolute inset-0 z-10 cursor-grab active:cursor-grabbing"
-        style={{ touchAction: 'none' }}
-      />
       <TaskCardCompact task={task} onClick={() => onTaskClick?.(task)} isDragging={isDragging} displaySettings={displaySettings} onDelete={onDelete} showActions={showActions} />
     </div>
   );
@@ -402,11 +398,8 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
       return response.json();
     },
     onSuccess: () => {
-      // Invalidate all task-related queries (including ones with projectId suffix)
-      queryClient.invalidateQueries({ predicate: (query) => {
-        const key = query.queryKey;
-        return Array.isArray(key) && key[0] === "/api/tasks";
-      }});
+      // Invalidate all task-related queries using partial match
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"], exact: false });
       toast({ title: "Task moved successfully" });
     },
     onError: (error) => {
@@ -424,11 +417,8 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
       await apiRequest(`/api/tasks/${taskId}`, "DELETE");
     },
     onSuccess: () => {
-      // Invalidate all task-related queries (including ones with projectId suffix)
-      queryClient.invalidateQueries({ predicate: (query) => {
-        const key = query.queryKey;
-        return Array.isArray(key) && key[0] === "/api/tasks";
-      }});
+      // Invalidate all task-related queries using partial match
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"], exact: false });
       toast({ title: "Task deleted" });
     },
     onError: (error: any) => {
