@@ -2670,6 +2670,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Reorder task views
+  app.post("/api/task-views/reorder", requireAuth, async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const { viewIds } = req.body;
+      if (!Array.isArray(viewIds)) {
+        return res.status(400).json({ error: "viewIds must be an array" });
+      }
+      await storage.reorderTaskViews(viewIds, req.user.companyId);
+      res.status(200).json({ success: true });
+    } catch (error) {
+      console.error("Failed to reorder task views:", error);
+      res.status(500).json({ error: "Failed to reorder task views" });
+    }
+  });
+
   // Subtasks API Routes
   app.get("/api/tasks/:id/subtasks", async (req, res) => {
     try {

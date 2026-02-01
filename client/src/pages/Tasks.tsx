@@ -5,6 +5,23 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
 import { Plus, Settings, MoreHorizontal, X, Flag, User, Tag, Layers, Eye, Zap, Search, GripVertical, Columns as ColumnsIcon, SlidersHorizontal, Pencil, ChevronDown } from "lucide-react";
 import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  horizontalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -58,6 +75,85 @@ import { useKeyboardShortcuts, CASVA_SHORTCUTS } from "@/hooks/useKeyboardShortc
 
 interface TasksParams {
   projectId?: string;
+}
+
+// Sortable View Tab component for drag-and-drop reordering
+function SortableViewTab({ 
+  view, 
+  isSelected,
+  onSelect,
+  onEditClick,
+  onDeleteClick,
+}: { 
+  view: TaskView; 
+  isSelected: boolean;
+  onSelect: () => void;
+  onEditClick: (view: TaskView) => void;
+  onDeleteClick: (view: TaskView) => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: view.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 100 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className="flex items-center" {...attributes}>
+      <div {...listeners} className="cursor-grab active:cursor-grabbing px-0.5 text-muted-foreground/50 hover:text-muted-foreground">
+        <GripVertical className="h-3 w-3" />
+      </div>
+      <button
+        onClick={onSelect}
+        className={`h-6 w-auto px-2 text-xs border rounded-md ${
+          isSelected 
+            ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+            : 'hover-elevate'
+        } active-elevate-2 flex items-center gap-1`}
+        data-testid={`tab-${view.id}`}
+      >
+        {view.name}
+      </button>
+      {isSelected && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="h-5 px-0.5 text-[#bba7db] hover:text-[#bba7db]/80 flex items-center"
+              data-testid={`button-view-options-${view.id}`}
+            >
+              <ChevronDown className="h-3 w-3" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem 
+              onClick={() => onEditClick(view)}
+              data-testid={`menu-edit-${view.id}`}
+            >
+              <Pencil className="h-3 w-3 mr-2" />
+              Edit View
+            </DropdownMenuItem>
+            <DropdownMenuItem 
+              onClick={() => onDeleteClick(view)}
+              className="text-destructive"
+              data-testid={`menu-delete-${view.id}`}
+            >
+              <X className="h-3 w-3 mr-2" />
+              Delete View
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+    </div>
+  );
 }
 
 export default function Tasks() {
@@ -254,6 +350,48 @@ export default function Tasks() {
       });
     },
   });
+
+  // Mutation for reordering views
+  const reorderViewsMutation = useMutation({
+    mutationFn: async (viewIds: string[]): Promise<void> => {
+      await apiRequest("/api/task-views/reorder", {
+        method: "POST",
+        body: JSON.stringify({ viewIds }),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/task-views", effectiveProjectId] });
+    },
+  });
+
+  // DnD sensors for view reordering
+  const viewSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 5 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  // Handle view drag end
+  const handleViewDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = taskViews.findIndex((v: TaskView) => v.id === active.id);
+    const newIndex = taskViews.findIndex((v: TaskView) => v.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reorderedViews = arrayMove(taskViews, oldIndex, newIndex);
+    const viewIds = reorderedViews.map((v: TaskView) => v.id);
+    
+    // Optimistic update
+    queryClient.setQueryData(["/api/task-views", effectiveProjectId], reorderedViews);
+    
+    // Persist to server
+    reorderViewsMutation.mutate(viewIds);
+  };
 
   // Calendar state
   const [calendarDate, setCalendarDate] = useState(new Date());
@@ -750,52 +888,30 @@ export default function Tasks() {
             <div className="h-4 w-px bg-border mx-1" />
           )}
           
-          {/* Saved/Custom Views (Filters) - can be toggled on/off, dropdown arrow for options */}
-          {taskViews.map((view) => (
-            <div key={view.id} className="flex items-center">
-              <button
-                onClick={() => handleSelectSavedView(view)}
-                className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                  selectedViewId === view.id 
-                    ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
-                    : 'hover-elevate'
-                } active-elevate-2 flex items-center gap-1`}
-                data-testid={`tab-${view.id}`}
+          {/* Saved/Custom Views (Filters) - drag and drop reorderable */}
+          {taskViews.length > 0 && (
+            <DndContext
+              sensors={viewSensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleViewDragEnd}
+            >
+              <SortableContext
+                items={taskViews.map((v: TaskView) => v.id)}
+                strategy={horizontalListSortingStrategy}
               >
-                {view.name}
-              </button>
-              {/* Dropdown arrow - only shows when view is selected */}
-              {selectedViewId === view.id && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      className="h-5 px-0.5 text-[#bba7db] hover:text-[#bba7db]/80 flex items-center"
-                      data-testid={`button-view-options-${view.id}`}
-                    >
-                      <ChevronDown className="h-3 w-3" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    <DropdownMenuItem 
-                      onClick={() => handleEditView(view)}
-                      data-testid={`menu-edit-${view.id}`}
-                    >
-                      <Pencil className="h-3 w-3 mr-2" />
-                      Edit View
-                    </DropdownMenuItem>
-                    <DropdownMenuItem 
-                      onClick={() => handleDeleteView(view)}
-                      className="text-destructive"
-                      data-testid={`menu-delete-${view.id}`}
-                    >
-                      <X className="h-3 w-3 mr-2" />
-                      Delete View
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-            </div>
-          ))}
+                {taskViews.map((view: TaskView) => (
+                  <SortableViewTab
+                    key={view.id}
+                    view={view}
+                    isSelected={selectedViewId === view.id}
+                    onSelect={() => handleSelectSavedView(view)}
+                    onEditClick={handleEditView}
+                    onDeleteClick={handleDeleteView}
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
+          )}
           
           <button
             className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"

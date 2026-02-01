@@ -262,6 +262,7 @@ export interface IStorage {
   createTaskView(view: InsertTaskView, userId: string, companyId: string): Promise<TaskView>;
   updateTaskView(id: string, view: Partial<InsertTaskView>, companyId: string): Promise<TaskView | undefined>;
   deleteTaskView(id: string, companyId: string): Promise<boolean>;
+  reorderTaskViews(viewIds: string[], companyId: string): Promise<void>;
 
   // Subtasks operations
   getSubtasks(parentTaskId: string): Promise<Task[]>;
@@ -3371,6 +3372,15 @@ export class MemStorage implements IStorage {
       return false;
     }
     return this.taskViews.delete(id);
+  }
+
+  async reorderTaskViews(viewIds: string[], companyId: string): Promise<void> {
+    viewIds.forEach((id, index) => {
+      const view = this.taskViews.get(id);
+      if (view && view.companyId === companyId) {
+        this.taskViews.set(id, { ...view, sortOrder: index });
+      }
+    });
   }
 
   // Subtasks operations
@@ -7955,7 +7965,7 @@ export class DbStorage implements IStorage {
         query = query.where(eq(schema.taskViews.userId, userId)) as any;
       }
       
-      const views = await query.orderBy(desc(schema.taskViews.createdAt));
+      const views = await query.orderBy(schema.taskViews.sortOrder, desc(schema.taskViews.createdAt));
       return views;
     } catch (error) {
       console.error("Database error in getTaskViews:", error);
@@ -8032,6 +8042,23 @@ export class DbStorage implements IStorage {
       return false;
     }
   }
+
+  async reorderTaskViews(viewIds: string[], companyId: string): Promise<void> {
+    try {
+      for (let i = 0; i < viewIds.length; i++) {
+        await db.update(schema.taskViews)
+          .set({ sortOrder: i })
+          .where(and(
+            eq(schema.taskViews.id, viewIds[i]),
+            eq(schema.taskViews.companyId, companyId)
+          ));
+      }
+    } catch (error) {
+      console.error("Database error in reorderTaskViews:", error);
+      throw error;
+    }
+  }
+
   async getSubtasks(parentTaskId: string): Promise<Task[]> { return []; }
   async createSubtask(parentTaskId: string, subtask: InsertTask): Promise<Task> { throw new Error("Not implemented"); }
   async getEstimates(projectId?: string): Promise<Estimate[]> {

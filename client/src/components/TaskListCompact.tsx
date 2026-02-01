@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { type Task, type FieldCategoryWithOptions, type User, type Project } from "@shared/schema";
-import { GripVertical, Calendar as CalendarIcon, Flag, Pencil, User as UserIcon, ArrowUp, ArrowDown, ArrowUpDown, Trash2, MoreVertical } from "lucide-react";
+import { GripVertical, Calendar as CalendarIcon, Flag, Pencil, User as UserIcon, ArrowUp, ArrowDown, ArrowUpDown, Trash2, MoreVertical, Plus } from "lucide-react";
 import { format } from "date-fns";
 import {
   DndContext,
@@ -94,6 +94,7 @@ interface TaskListCompactProps {
   onColumnConfigChange?: (config: TaskColumnConfig) => void;
   onDelete?: (task: Task) => void;
   showActions?: boolean;
+  onAddTask?: () => void;
 }
 
 // Status colors matching Asana 2025
@@ -579,6 +580,7 @@ export default function TaskListCompact({
   onColumnConfigChange,
   onDelete,
   showActions = false,
+  onAddTask,
 }: TaskListCompactProps) {
   const { toast } = useToast();
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
@@ -917,6 +919,19 @@ export default function TaskListCompact({
             </DndContext>
           </div>
         ))}
+        {onAddTask && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onAddTask}
+            className="w-full justify-start gap-1.5 text-muted-foreground"
+            data-testid="button-add-task-row"
+          >
+            <div className="w-3" />
+            <Plus className="h-3.5 w-3.5" />
+            <span className="text-xs">Add Task</span>
+          </Button>
+        )}
       </div>
     );
   }
@@ -955,6 +970,19 @@ export default function TaskListCompact({
           </SortableContext>
         </DndContext>
       </div>
+      {onAddTask && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onAddTask}
+          className="w-full justify-start gap-1.5 text-muted-foreground"
+          data-testid="button-add-task-row"
+        >
+          <div className="w-3" />
+          <Plus className="h-3.5 w-3.5" />
+          <span className="text-xs">Add Task</span>
+        </Button>
+      )}
       <div className="h-6 px-2 flex items-center justify-between bg-muted/20 border-t border-border/50">
         <span className="text-[10px] text-muted-foreground">{orderedTasks.length} tasks</span>
         <span className="text-[10px] text-muted-foreground/70">↑↓ Navigate • Enter Open • Space Toggle</span>

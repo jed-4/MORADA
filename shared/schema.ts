@@ -770,6 +770,7 @@ export const taskViews = pgTable("task_views", {
   groupBy: text("group_by").default("none"), // "none" | "status" | "priority" | "assignee"
   columnConfig: json("column_config").default({}), // Column visibility and order for list view
   isDefault: boolean("is_default").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0), // For drag-and-drop reordering
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
