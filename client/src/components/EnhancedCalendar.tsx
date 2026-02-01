@@ -1,5 +1,4 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
-import { flushSync } from "react-dom";
 import { format, startOfWeek, endOfWeek, eachDayOfInterval, addWeeks, subWeeks, addDays, subDays, startOfMonth, endOfMonth, addMonths, subMonths, isSameDay, isToday, isPast, isSameMonth, getDay } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +11,6 @@ import {
   DragEndEvent,
   DragStartEvent,
   DragMoveEvent,
-  DragOverlay,
   MouseSensor,
   TouchSensor,
   useSensor,
@@ -112,7 +110,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
         showResizeHandles && !isGoogleCalendarEvent && "cursor-move hover:shadow-md",
         isGoogleCalendarEvent && "cursor-pointer hover:shadow-md",
         isCompleted && "opacity-60",
-        isDragging && "opacity-0"
+        isDragging && "opacity-50 scale-[0.98] shadow-lg"
       )}
       style={{
         backgroundColor: notionColors.pastelBg,
@@ -203,37 +201,6 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
           <div className="h-0.5 bg-muted-foreground/60 w-6 rounded-full" />
         </div>
       )}
-    </div>
-  );
-}
-
-function EventOverlay({ event }: { event: CalendarEvent }) {
-  const isCompleted = event.status === "done" || event.status === "completed" || event.isCompleted;
-  const isRecurring = !!event.templateId;
-  const baseColor = isRecurring ? "#a855f7" : (event.projectColor || event.color || "#6366f1");
-  const notionColors = generateNotionColors(baseColor);
-
-  return (
-    <div
-      className="flex items-start gap-1.5 px-1.5 pt-0.5 pb-0.5 rounded text-[11px] shadow-lg cursor-grabbing opacity-90"
-      style={{
-        backgroundColor: notionColors.pastelBg,
-        borderLeft: `3px solid ${notionColors.originalHex}`,
-        minWidth: '100px',
-        maxWidth: '200px',
-      }}
-    >
-      <div className="flex-1 min-w-0 overflow-hidden">
-        <div 
-          className={cn(
-            "font-semibold truncate text-[10.5px] leading-tight",
-            isCompleted && "line-through opacity-60"
-          )}
-          style={{ color: notionColors.darkText }}
-        >
-          {event.title}
-        </div>
-      </div>
     </div>
   );
 }
@@ -340,43 +307,8 @@ export function EnhancedCalendar({
   const [showMeetings, setShowMeetings] = useState(true);
   const [showGoogleCalendar, setShowGoogleCalendar] = useState(true);
   
-  // Track pending moves/resizes for instant visual feedback
-  const [pendingMoves, setPendingMoves] = useState<Map<string, { 
-    newDate?: Date; 
-    newStartTime?: string; 
-    newEndTime?: string;
-  }>>(new Map());
-  
-  // Clear pending moves when events prop changes (data was updated from server)
-  const eventsRef = useRef(events);
-  useEffect(() => {
-    if (events !== eventsRef.current) {
-      eventsRef.current = events;
-      setPendingMoves(new Map());
-    }
-  }, [events]);
-  
-  // Apply pending moves to events for instant visual feedback
-  // pendingMoves stores { newDate, newStartTime, newEndTime } for events being moved
-  // Apply optimistic updates immediately so event never disappears - just appears at new position/size
-  const displayEvents = useMemo(() => {
-    if (pendingMoves.size === 0) return events;
-    
-    return events.map(event => {
-      const pending = pendingMoves.get(event.id);
-      if (!pending) return event;
-      
-      return {
-        ...event,
-        ...(pending.newDate && { 
-          startDate: pending.newDate,
-          endDate: pending.newDate,
-        }),
-        ...(pending.newStartTime && { startTime: pending.newStartTime }),
-        ...(pending.newEndTime && { endTime: pending.newEndTime }),
-      };
-    });
-  }, [events, pendingMoves]);
+  // Events are displayed directly - optimistic updates handled at parent level
+  const displayEvents = events;
   
   // Current time state for time indicator - updates every minute
   const [currentTimeMinutes, setCurrentTimeMinutes] = useState(() => {
@@ -738,11 +670,6 @@ export function EnhancedCalendar({
           
           // Allow exactly 15 minutes minimum duration
           if (newH * 60 + newM <= endH * 60 + endM - 15) {
-            // Apply optimistic update immediately - event stays visible at new size
-            setPendingMoves(prev => new Map(prev).set(draggedEvent.id, {
-              newStartTime: newTime,
-              newEndTime: currentEnd,
-            }));
             onEventResize(draggedEvent.id, newTime, currentEnd, draggedEvent.type);
           }
         } else {
@@ -757,11 +684,6 @@ export function EnhancedCalendar({
           
           // Allow exactly 15 minutes minimum duration
           if (newH * 60 + newM >= startH * 60 + startM + 15) {
-            // Apply optimistic update immediately - event stays visible at new size
-            setPendingMoves(prev => new Map(prev).set(draggedEvent.id, {
-              newStartTime: currentStart,
-              newEndTime: newTime,
-            }));
             onEventResize(draggedEvent.id, currentStart, newTime, draggedEvent.type);
           }
         }
@@ -791,11 +713,6 @@ export function EnhancedCalendar({
             return;
           }
           
-          // Apply optimistic update immediately - event stays visible at new position
-          setPendingMoves(prev => new Map(prev).set(draggedEvent.id, {
-            newDate: targetDate,
-            newStartTime: newTime,
-          }));
           onEventReschedule(draggedEvent.id, targetDate, draggedEvent.type, newTime);
         } else {
           // Check for no-op drop (same date, no time slot) - skip
@@ -803,10 +720,6 @@ export function EnhancedCalendar({
             return;
           }
           
-          // Apply optimistic update immediately - event stays visible at new position
-          setPendingMoves(prev => new Map(prev).set(draggedEvent.id, {
-            newDate: targetDate,
-          }));
           onEventReschedule(draggedEvent.id, targetDate, draggedEvent.type, undefined);
         }
       }
@@ -1443,9 +1356,6 @@ export function EnhancedCalendar({
         {view === "roster" && renderWeekView()}
       </div>
 
-      <DragOverlay dropAnimation={null}>
-        {activeEvent ? <EventOverlay event={activeEvent} /> : null}
-      </DragOverlay>
     </DndContext>
   );
 }

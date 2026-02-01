@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
+import { flushSync } from "react-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format, isWithinInterval } from "date-fns";
 import {
@@ -476,16 +477,25 @@ export default function PersonalCalendar() {
     }
     
     if (eventType === "task") {
-      const updatePayload: any = { 
+      const newDueDate = format(newDate, "yyyy-MM-dd");
+      
+      // Immediately update cache synchronously to prevent snap-back
+      flushSync(() => {
+        queryClient.setQueryData(["/api/tasks", displayedUserId], (old: any[]) => 
+          old?.map((task: any) => 
+            task.id === eventId 
+              ? { ...task, dueDate: newDueDate, ...(newTime && { startTime: newTime }) }
+              : task
+          ) || []
+        );
+      });
+      
+      // Then trigger the mutation (will skip onMutate cache update since already done)
+      rescheduleTaskMutation.mutate({ 
         taskId: eventId, 
-        dueDate: format(newDate, "yyyy-MM-dd")
-      };
-      
-      if (newTime) {
-        updatePayload.startTime = newTime;
-      }
-      
-      rescheduleTaskMutation.mutate(updatePayload);
+        dueDate: newDueDate,
+        ...(newTime && { startTime: newTime })
+      });
     }
   };
 
@@ -500,6 +510,17 @@ export default function PersonalCalendar() {
     }
     
     if (eventType === "task") {
+      // Immediately update cache synchronously to prevent snap-back
+      flushSync(() => {
+        queryClient.setQueryData(["/api/tasks", displayedUserId], (old: any[]) => 
+          old?.map((task: any) => 
+            task.id === eventId 
+              ? { ...task, startTime, endTime }
+              : task
+          ) || []
+        );
+      });
+      
       resizeTaskMutation.mutate({ taskId: eventId, startTime, endTime });
     }
   };
