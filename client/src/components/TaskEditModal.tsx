@@ -602,8 +602,19 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
             <Button
               variant="ghost"
               size="icon"
+              onClick={() => task && setShowReminderDialog(true)}
+              disabled={!task}
+              title="Set Reminder"
+              data-testid="button-set-reminder"
+            >
+              <Bell className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={() => task && setShowDriveFilePicker(true)}
               disabled={!task}
+              title="Attach File"
               data-testid="button-attach-file"
             >
               <Paperclip className="h-4 w-4" />

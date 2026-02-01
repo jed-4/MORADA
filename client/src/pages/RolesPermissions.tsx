@@ -359,6 +359,7 @@ export default function RolesPermissions() {
   }, {} as Record<string, Permission[]>);
 
   const categoryDisplayNames: Record<string, string> = {
+    tasks: "TASKS",
     projects: "PROJECT MANAGEMENT",
     financial: "FINANCIAL",
     files: "FILES",
