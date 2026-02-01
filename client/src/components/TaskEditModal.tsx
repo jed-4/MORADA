@@ -561,6 +561,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
   };
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className="max-w-4xl p-0 gap-0 rounded-lg overflow-hidden flex flex-col max-h-[85vh]"
@@ -1440,51 +1441,52 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
           </Button>
         </div>
       </DialogContent>
-
-      <SetReminderDialog
-        open={showReminderDialog}
-        onOpenChange={setShowReminderDialog}
-        linkedItemType="task"
-        linkedItemId={task?.id}
-        linkedItemTitle={task?.title}
-        projectId={projectId || task?.projectId}
-      />
-
-      <DriveFilePicker
-        open={showDriveFilePicker}
-        onOpenChange={setShowDriveFilePicker}
-        onSelect={handleFilesSelected}
-        projectId={projectId || task?.projectId}
-        multiple={true}
-        title="Attach File from Google Drive"
-      />
-
-      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Task</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete "{task?.title}"? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={() => {
-                if (task && onDelete) {
-                  onDelete(task.id);
-                  setShowDeleteConfirm(false);
-                  onOpenChange(false);
-                }
-              }}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              data-testid="button-confirm-delete"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </Dialog>
+
+    <SetReminderDialog
+      open={showReminderDialog}
+      onOpenChange={setShowReminderDialog}
+      linkedItemType="task"
+      linkedItemId={task?.id}
+      linkedItemTitle={task?.title}
+      projectId={projectId || task?.projectId}
+    />
+
+    <DriveFilePicker
+      open={showDriveFilePicker}
+      onOpenChange={setShowDriveFilePicker}
+      onSelect={handleFilesSelected}
+      projectId={projectId || task?.projectId}
+      multiple={true}
+      title="Attach File from Google Drive"
+    />
+
+    <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete Task</AlertDialogTitle>
+          <AlertDialogDescription>
+            Are you sure you want to delete "{task?.title}"? This action cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
+          <AlertDialogAction 
+            onClick={() => {
+              if (task && onDelete) {
+                onDelete(task.id);
+                setShowDeleteConfirm(false);
+                onOpenChange(false);
+              }
+            }}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            data-testid="button-confirm-delete"
+          >
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }
