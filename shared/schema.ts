@@ -410,7 +410,7 @@ export const notes: any = pgTable("notes", {
   contentHtml: text("content_html"), // Rich text HTML content
   contentText: text("content_text"), // Plain text for searching
   category: text("category").notNull().default("General"), // Legacy - will migrate to customFields
-  priority: text("priority").notNull().default("medium"), // Legacy - will migrate to customFields
+  priority: text("priority").notNull().default("low"), // Legacy - will migrate to customFields
   author: text("author").notNull(), // Legacy author field
   ownerId: varchar("owner_id").references(() => users.id),
   ownerName: text("owner_name"), // Cached for performance
