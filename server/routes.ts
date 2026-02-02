@@ -885,6 +885,84 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Bulk task operations
+  app.post("/api/tasks/bulk-action", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { ids, action, status, projectId, copyToTemplates } = req.body;
+      
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ error: "Task IDs required" });
+      }
+      
+      let success = 0;
+      const errors: string[] = [];
+      
+      for (const taskId of ids) {
+        try {
+          switch (action) {
+            case "changeStatus":
+              if (!status) throw new Error("Status required");
+              await storage.updateTask(taskId, { status });
+              success++;
+              break;
+              
+            case "delete":
+              const deleted = await storage.deleteTask(taskId);
+              if (deleted) {
+                emitTaskDeleted(user.companyId, taskId, user.id);
+                success++;
+              }
+              break;
+              
+            case "copyToProject":
+              if (!projectId) throw new Error("Project ID required");
+              const task = await storage.getTask(taskId);
+              if (task) {
+                await storage.createTask({
+                  ...task,
+                  id: undefined,
+                  projectId,
+                  taskContextType: "project",
+                  taskContextId: projectId,
+                  createdAt: undefined,
+                  updatedAt: undefined,
+                } as any);
+                success++;
+              }
+              break;
+              
+            case "copyToBusiness":
+              const businessTask = await storage.getTask(taskId);
+              if (businessTask) {
+                await storage.createTask({
+                  ...businessTask,
+                  id: undefined,
+                  projectId: null,
+                  taskContextType: "business",
+                  taskContextId: user.companyId,
+                  createdAt: undefined,
+                  updatedAt: undefined,
+                } as any);
+                success++;
+              }
+              break;
+              
+            default:
+              throw new Error(`Unknown action: ${action}`);
+          }
+        } catch (err: any) {
+          errors.push(`Task ${taskId}: ${err.message}`);
+        }
+      }
+      
+      res.json({ success, errors });
+    } catch (error) {
+      console.error("[POST /api/tasks/bulk-action] Error:", error);
+      res.status(500).json({ error: "Bulk action failed" });
+    }
+  });
+
   // Cleanup duplicate recurring tasks (production fix endpoint)
   app.post("/api/tasks/cleanup-recurring-duplicates", requireAuth, requireTeamMember, async (req, res) => {
     try {

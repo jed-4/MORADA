@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { type Task, type FieldCategoryWithOptions } from "@shared/schema";
+import { type Task, type FieldCategoryWithOptions, type Project } from "@shared/schema";
 import { useTaskStatusOptions } from "@/hooks/useTaskStatusOptions";
 import { useTaskLabelOptions } from "@/hooks/useTaskLabelOptions";
 import { cn } from "@/lib/utils";
@@ -15,6 +15,10 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import {
   DndContext,
@@ -44,6 +48,12 @@ import {
   User,
   Flag,
   ArrowUpDown,
+  Trash2,
+  Copy,
+  CircleCheck,
+  Building2,
+  FolderOpen,
+  X,
 } from "lucide-react";
 import { format } from "date-fns";
 import SubtaskList from "@/components/SubtaskList";
@@ -241,6 +251,37 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
   const [orderedIds, setOrderedIds] = useState<string[]>([]);
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const { toast } = useToast();
+  
+  // Fetch projects for copy-to-project feature
+  const { data: projects = [] } = useQuery<Project[]>({
+    queryKey: ["/api/projects"],
+  });
+  
+  // Bulk action mutation
+  const bulkActionMutation = useMutation({
+    mutationFn: (data: { ids: string[]; action: string; status?: string; projectId?: string }) =>
+      apiRequest("/api/tasks/bulk-action", "POST", data),
+    onSuccess: (result: { success: number; errors: string[] }, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      setSelectedTasks([]);
+      const actionLabels: Record<string, string> = {
+        changeStatus: "updated",
+        delete: "deleted",
+        copyToProject: "copied",
+        copyToBusiness: "copied to business",
+      };
+      toast({
+        title: `${result.success} task${result.success !== 1 ? "s" : ""} ${actionLabels[variables.action] || "updated"}`,
+        description: result.errors.length > 0 ? `${result.errors.length} failed` : undefined,
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Bulk action failed",
+        variant: "destructive",
+      });
+    },
+  });
   
   // Define default columns
   const defaultColumns: ColumnConfig[] = [
@@ -861,11 +902,85 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
           </div>
           {selectedTasks.length > 0 && (
             <div className="flex items-center gap-2">
-              <Button size="sm" variant="outline">
-                Bulk Edit
+              {/* Change Status */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" variant="outline" data-testid="button-bulk-status">
+                    <CircleCheck className="h-4 w-4 mr-1" />
+                    Change Status
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  {statusOptions.map((status) => (
+                    <DropdownMenuItem
+                      key={status.key}
+                      onClick={() => bulkActionMutation.mutate({ ids: selectedTasks, action: "changeStatus", status: status.key })}
+                    >
+                      <div className="w-2 h-2 rounded-full mr-2" style={{ backgroundColor: status.color || '#6b7280' }} />
+                      {status.name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              
+              {/* Copy To */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" variant="outline" data-testid="button-bulk-copy">
+                    <Copy className="h-4 w-4 mr-1" />
+                    Copy To
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  <DropdownMenuItem
+                    onClick={() => bulkActionMutation.mutate({ ids: selectedTasks, action: "copyToBusiness" })}
+                  >
+                    <Building2 className="h-4 w-4 mr-2" />
+                    Business Tasks
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
+                      <FolderOpen className="h-4 w-4 mr-2" />
+                      Project...
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      {projects.filter(p => p.id !== propProjectId).map((project) => (
+                        <DropdownMenuItem
+                          key={project.id}
+                          onClick={() => bulkActionMutation.mutate({ ids: selectedTasks, action: "copyToProject", projectId: project.id })}
+                        >
+                          {project.name}
+                        </DropdownMenuItem>
+                      ))}
+                      {projects.filter(p => p.id !== propProjectId).length === 0 && (
+                        <div className="px-2 py-1.5 text-sm text-muted-foreground">No other projects</div>
+                      )}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              
+              {/* Delete */}
+              <Button 
+                size="sm" 
+                variant="outline"
+                onClick={() => bulkActionMutation.mutate({ ids: selectedTasks, action: "delete" })}
+                disabled={bulkActionMutation.isPending}
+                data-testid="button-bulk-delete"
+              >
+                <Trash2 className="h-4 w-4 mr-1" />
+                Delete
               </Button>
-              <Button size="sm" variant="outline">
-                Delete Selected
+              
+              {/* Clear Selection */}
+              <Button 
+                size="sm" 
+                variant="ghost"
+                onClick={() => setSelectedTasks([])}
+                data-testid="button-clear-selection"
+              >
+                <X className="h-4 w-4" />
               </Button>
             </div>
           )}

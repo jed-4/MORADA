@@ -98,3 +98,32 @@
 
 ### Current Status
 **Implemented** - Permission check on DELETE /api/tasks/:id endpoint
+
+---
+
+## US-T072 - Bulk Task Operations
+
+**As a** team member  
+**I want to** perform actions on multiple tasks at once  
+**So that** I can efficiently manage my workload
+
+### Acceptance Criteria
+- Select multiple tasks via checkboxes in list view
+- Bulk change status across selected tasks
+- Bulk copy tasks to another project
+- Bulk copy tasks to business tasks
+- Bulk delete selected tasks
+- Clear selection option
+- Show count of selected tasks
+
+### Current Status
+**Implemented** - Bulk toolbar with status change, copy to project/business, delete
+
+---
+
+## Template Naming Conventions
+
+| Location | Name | Purpose |
+|----------|------|---------|
+| Operations > Operational Tasks | Operational Tasks | Recurring workflow templates for daily/weekly scheduling |
+| Resources > Templates > Tasks | Template Tasks | Reusable task templates for general use |
