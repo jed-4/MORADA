@@ -131,15 +131,26 @@ function DraggableGridRow({
       ref={setNodeRef}
       className={cn(
         "grid items-center gap-4 px-4 h-10 border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer",
-        isDragging && "relative z-50 shadow-lg"
+        isDragging && "relative z-50 shadow-lg",
+        isSelected && "bg-blue-50"
       )}
       style={{
-        gridTemplateColumns: "32px 120px 1fr 140px 120px 100px 32px",
+        gridTemplateColumns: "28px 32px 120px 1fr 140px 120px 100px 32px",
         ...style,
       }}
       onClick={onClick}
       data-testid={`task-row-${task.id}`}
     >
+      {/* Selection Checkbox */}
+      <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+        <Checkbox
+          checked={isSelected}
+          onCheckedChange={onSelect}
+          className="flex-shrink-0"
+          data-testid={`select-task-${task.id}`}
+        />
+      </div>
+
       {/* Drag Handle */}
       <div
         {...(canDrag ? attributes : {})}
@@ -999,8 +1010,21 @@ export default function TaskList({ tasks: propTasks, groupedTasks, groupBy, isLo
                 {/* Grid Header */}
                 <div 
                   className="sticky top-0 z-10 bg-background border-b border-gray-200 grid items-center gap-4 px-4 h-9"
-                  style={{ gridTemplateColumns: "32px 120px 1fr 140px 120px 100px 32px" }}
+                  style={{ gridTemplateColumns: "28px 32px 120px 1fr 140px 120px 100px 32px" }}
                 >
+                  <div className="flex items-center justify-center">
+                    <Checkbox
+                      checked={selectedTasks.length > 0 && selectedTasks.length === sortedTasks.length}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setSelectedTasks(sortedTasks.map(t => t.id));
+                        } else {
+                          setSelectedTasks([]);
+                        }
+                      }}
+                      data-testid="select-all-tasks"
+                    />
+                  </div>
                   <div></div>
                   <div className="text-xs font-semibold text-gray-500 uppercase">Status</div>
                   <div className="text-xs font-semibold text-gray-500 uppercase">Task</div>
