@@ -895,6 +895,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Task IDs required" });
       }
       
+      if (!action || !["changeStatus", "delete", "copyToProject", "copyToBusiness"].includes(action)) {
+        return res.status(400).json({ error: "Invalid action" });
+      }
+      
+      // Check permissions based on action
+      const hasDeletePermission = await storage.userHasPermission(user.id, "tasks.manage", "delete");
+      const hasEditPermission = await storage.userHasPermission(user.id, "tasks.manage", "edit");
+      
+      if (action === "delete" && !hasDeletePermission) {
+        return res.status(403).json({ error: "Permission denied: cannot delete tasks" });
+      }
+      
+      if (["changeStatus", "copyToProject", "copyToBusiness"].includes(action) && !hasEditPermission) {
+        return res.status(403).json({ error: "Permission denied: cannot modify tasks" });
+      }
+      
       let success = 0;
       const errors: string[] = [];
       
