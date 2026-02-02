@@ -226,18 +226,34 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
 
   const handleFilesSelected = (files: any[]) => {
     files.forEach(file => {
-      addAttachmentMutation.mutate(file);
+      if (task) {
+        addAttachmentMutation.mutate(file);
+      } else {
+        setPendingAttachments(prev => [...prev, {
+          id: file.id,
+          name: file.name,
+          mimeType: file.mimeType,
+          webViewLink: file.webViewLink,
+        }]);
+        toast({ title: "File queued for attachment", description: "File will be attached when task is saved" });
+      }
     });
   };
 
   const { uploadFile, isUploading } = useUpload({
     onSuccess: (response) => {
-      addAttachmentMutation.mutate({
+      const attachment = {
         id: response.objectPath,
         name: response.metadata.name,
         mimeType: response.metadata.contentType,
         webViewLink: response.objectPath,
-      });
+      };
+      if (task) {
+        addAttachmentMutation.mutate(attachment);
+      } else {
+        setPendingAttachments(prev => [...prev, attachment]);
+        toast({ title: "File queued for attachment", description: "File will be attached when task is saved" });
+      }
     },
     onError: (error) => {
       toast({ title: "Failed to upload file", description: error.message, variant: "destructive" });
@@ -373,7 +389,25 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
         return await apiRequest("/api/tasks", "POST", createPayload);
       }
     },
-    onSuccess: () => {
+    onSuccess: async (newTask: any) => {
+      // Attach any pending files to the newly created task
+      if (!task && pendingAttachments.length > 0 && newTask?.id) {
+        for (const attachment of pendingAttachments) {
+          try {
+            await apiRequest("/api/drive-attachments", "POST", {
+              driveFileId: attachment.id,
+              fileName: attachment.name,
+              mimeType: attachment.mimeType,
+              webViewLink: attachment.webViewLink,
+              attachedToType: "task",
+              attachedToId: newTask.id,
+            });
+          } catch (err) {
+            console.error("Failed to attach pending file:", err);
+          }
+        }
+        setPendingAttachments([]);
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
       toast({ title: task ? "Task updated" : "Task created" });
       onOpenChange(false);
@@ -645,8 +679,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                 <Button
                   variant="ghost"
                   size="icon"
-                  disabled={!task}
-                  title={task ? "Attach File" : "Save task first to attach files"}
+                  title="Attach File"
                   data-testid="button-attach-file"
                 >
                   <Paperclip className="h-4 w-4" />
@@ -958,9 +991,11 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
               </div>
 
             {/* Attachments */}
-            {task && attachments.length > 0 && (
+            {(attachments.length > 0 || pendingAttachments.length > 0) && (
               <div className="space-y-3">
-                <label className="text-sm font-medium text-muted-foreground">Attachments</label>
+                <label className="text-sm font-medium text-muted-foreground">
+                  Attachments {pendingAttachments.length > 0 && !task && `(${pendingAttachments.length} pending)`}
+                </label>
                 <div className="space-y-2">
                   {attachments.map((attachment: any) => (
                     <div
@@ -990,6 +1025,24 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                           <Trash2 className="h-3 w-3 text-destructive" />
                         </button>
                       </div>
+                    </div>
+                  ))}
+                  {pendingAttachments.map((attachment, index) => (
+                    <div
+                      key={`pending-${index}`}
+                      className="flex items-center gap-2 p-2 rounded-md border border-dashed hover:bg-muted/50 group"
+                      data-testid={`pending-attachment-${index}`}
+                    >
+                      <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      <span className="text-sm flex-1 truncate text-muted-foreground">{attachment.name}</span>
+                      <Badge variant="secondary" className="text-xs">Pending</Badge>
+                      <button
+                        onClick={() => setPendingAttachments(prev => prev.filter((_, i) => i !== index))}
+                        className="p-1 hover:bg-destructive/10 rounded opacity-0 group-hover:opacity-100"
+                        data-testid={`button-remove-pending-${index}`}
+                      >
+                        <Trash2 className="h-3 w-3 text-destructive" />
+                      </button>
                     </div>
                   ))}
                 </div>
