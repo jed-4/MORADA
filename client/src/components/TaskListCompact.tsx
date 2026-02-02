@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { type Task, type FieldCategoryWithOptions, type User, type Project } from "@shared/schema";
-import { GripVertical, Calendar as CalendarIcon, Flag, Pencil, User as UserIcon, ArrowUp, ArrowDown, ArrowUpDown, Trash2, MoreVertical, Plus } from "lucide-react";
+import { GripVertical, Calendar as CalendarIcon, Flag, Pencil, User as UserIcon, ArrowUp, ArrowDown, ArrowUpDown, Trash2, MoreVertical, Plus, CircleCheck, Copy, Building2, FolderOpen, X } from "lucide-react";
 import { format } from "date-fns";
 import {
   DndContext,
@@ -44,6 +44,10 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import {
@@ -231,6 +235,8 @@ function SortableTaskRow({
   onToggleComplete,
   isCompleted,
   isSelected,
+  isBulkSelected,
+  onBulkSelect,
   statusOptions,
   priorityOptions,
   users,
@@ -246,6 +252,8 @@ function SortableTaskRow({
   onToggleComplete: (checked: boolean) => void;
   isCompleted: boolean;
   isSelected: boolean;
+  isBulkSelected: boolean;
+  onBulkSelect: () => void;
   statusOptions: any[];
   priorityOptions: any[];
   users: User[];
@@ -303,19 +311,29 @@ function SortableTaskRow({
       ref={setNodeRef}
       style={style}
       className={`h-10 px-2 flex items-center gap-1.5 border-b border-border/50 cursor-pointer transition-all duration-100 ${
-        isSelected ? 'bg-primary/5 border-l-2 border-l-primary' : 'hover:bg-muted/50'
+        isBulkSelected ? 'bg-blue-50 dark:bg-blue-900/20' : isSelected ? 'bg-primary/5 border-l-2 border-l-primary' : 'hover:bg-muted/50'
       } ${isHovered ? 'shadow-sm' : ''}`}
       onClick={onClick}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       data-testid={`task-row-${task.id}`}
     >
+      {/* Bulk Selection Checkbox */}
+      <div onClick={(e) => e.stopPropagation()}>
+        <Checkbox
+          checked={isBulkSelected}
+          onCheckedChange={onBulkSelect}
+          className="h-4 w-4"
+          data-testid={`select-task-${task.id}`}
+        />
+      </div>
+
       {/* Drag handle - ALWAYS visible, subtle */}
       <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing">
         <GripVertical className="h-3 w-3 text-muted-foreground/40 hover:text-muted-foreground" />
       </div>
 
-      {/* Checkbox - compact */}
+      {/* Complete Checkbox - compact */}
       <div onClick={(e) => e.stopPropagation()}>
         <Checkbox
           checked={isCompleted}
@@ -586,6 +604,7 @@ export default function TaskListCompact({
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
   const [taskOrder, setTaskOrder] = useState<string[]>([]);
   const listRef = useRef<HTMLDivElement>(null);
+  const [selectedTasks, setSelectedTasks] = useState<string[]>([]);
   
   // Inline task creation state
   const [isAddingTask, setIsAddingTask] = useState(false);
@@ -688,6 +707,39 @@ export default function TaskListCompact({
       return 0;
     });
   }, [sortConfig]);
+
+  // Toggle task selection
+  const toggleTaskSelection = (taskId: string) => {
+    setSelectedTasks(prev => 
+      prev.includes(taskId) ? prev.filter(id => id !== taskId) : [...prev, taskId]
+    );
+  };
+
+  // Bulk action mutation
+  const bulkActionMutation = useMutation({
+    mutationFn: (data: { ids: string[]; action: string; status?: string; projectId?: string }) =>
+      apiRequest("/api/tasks/bulk-action", "POST", data),
+    onSuccess: (result: { success: number; errors: string[] }, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      setSelectedTasks([]);
+      const actionLabels: Record<string, string> = {
+        changeStatus: "updated",
+        delete: "deleted",
+        copyToProject: "copied",
+        copyToBusiness: "copied to business",
+      };
+      toast({
+        title: `${result.success} task${result.success !== 1 ? "s" : ""} ${actionLabels[variables.action] || "updated"}`,
+        description: result.errors.length > 0 ? `${result.errors.length} failed` : undefined,
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Bulk action failed",
+        variant: "destructive",
+      });
+    },
+  });
 
   // Create sorted and ordered tasks using useMemo
   const orderedTasks = useMemo(() => {
@@ -931,8 +983,22 @@ export default function TaskListCompact({
   // Header row component
   const HeaderRow = () => (
     <div className="h-7 px-2 flex items-center gap-1.5 border-b border-border bg-muted/30 sticky top-0 z-10">
+      <div className="w-4 flex items-center justify-center">
+        <Checkbox
+          checked={selectedTasks.length > 0 && selectedTasks.length === orderedTasks.length}
+          onCheckedChange={(checked) => {
+            if (checked) {
+              setSelectedTasks(orderedTasks.map(t => t.id));
+            } else {
+              setSelectedTasks([]);
+            }
+          }}
+          className="h-4 w-4"
+          data-testid="select-all-tasks"
+        />
+      </div>
       <div className="w-3" /> {/* Drag handle spacer */}
-      <div className="w-4" /> {/* Checkbox spacer */}
+      <div className="w-4" /> {/* Complete checkbox spacer */}
       <div className="flex-1 text-[10px] font-medium text-muted-foreground">Title</div>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleColumnDragEnd}>
         <SortableContext items={columnOrder} strategy={horizontalListSortingStrategy}>
@@ -978,6 +1044,8 @@ export default function TaskListCompact({
                     onToggleComplete={(checked) => handleToggleComplete(task, checked)}
                     isCompleted={isTaskCompleted(task)}
                     isSelected={false}
+                    isBulkSelected={selectedTasks.includes(task.id)}
+                    onBulkSelect={() => toggleTaskSelection(task.id)}
                     statusOptions={statusCategory?.options || []}
                     priorityOptions={priorityCategory?.options || []}
                     users={users}
@@ -1037,6 +1105,100 @@ export default function TaskListCompact({
       tabIndex={0}
       onKeyDown={handleKeyDown}
     >
+      {/* Bulk Action Toolbar */}
+      {selectedTasks.length > 0 && (
+        <div className="h-10 px-3 flex items-center gap-2 border-b border-border bg-blue-50 dark:bg-blue-900/20">
+          <Badge variant="secondary" className="text-xs">
+            {selectedTasks.length} selected
+          </Badge>
+          
+          {/* Change Status */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="outline" className="h-7 text-xs" data-testid="button-bulk-status">
+                <CircleCheck className="h-3.5 w-3.5 mr-1" />
+                Status
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              {(statusCategory?.options || []).map((status) => (
+                <DropdownMenuItem
+                  key={status.key}
+                  onClick={() => bulkActionMutation.mutate({ ids: selectedTasks, action: "changeStatus", status: status.key })}
+                >
+                  <div className="w-2 h-2 rounded-full mr-2" style={{ backgroundColor: status.color || '#6b7280' }} />
+                  {status.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          
+          {/* Copy To */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="outline" className="h-7 text-xs" data-testid="button-bulk-copy">
+                <Copy className="h-3.5 w-3.5 mr-1" />
+                Copy
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem
+                onClick={() => bulkActionMutation.mutate({ ids: selectedTasks, action: "copyToBusiness" })}
+              >
+                <Building2 className="h-4 w-4 mr-2" />
+                Business Tasks
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <FolderOpen className="h-4 w-4 mr-2" />
+                  Project...
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  {projects.filter(p => p.id !== projectId).map((project) => (
+                    <DropdownMenuItem
+                      key={project.id}
+                      onClick={() => bulkActionMutation.mutate({ ids: selectedTasks, action: "copyToProject", projectId: project.id })}
+                    >
+                      {project.name}
+                    </DropdownMenuItem>
+                  ))}
+                  {projects.filter(p => p.id !== projectId).length === 0 && (
+                    <div className="px-2 py-1.5 text-sm text-muted-foreground">No other projects</div>
+                  )}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          
+          {/* Delete */}
+          <Button 
+            size="sm" 
+            variant="outline"
+            className="h-7 text-xs"
+            onClick={() => bulkActionMutation.mutate({ ids: selectedTasks, action: "delete" })}
+            disabled={bulkActionMutation.isPending}
+            data-testid="button-bulk-delete"
+          >
+            <Trash2 className="h-3.5 w-3.5 mr-1" />
+            Delete
+          </Button>
+          
+          <div className="flex-1" />
+          
+          {/* Clear Selection */}
+          <Button 
+            size="sm" 
+            variant="ghost"
+            className="h-7"
+            onClick={() => setSelectedTasks([])}
+            data-testid="button-clear-selection"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+      
       <HeaderRow />
       <div className="max-h-[calc(100vh-280px)] overflow-y-auto">
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -1049,6 +1211,8 @@ export default function TaskListCompact({
                 onToggleComplete={(checked) => handleToggleComplete(task, checked)}
                 isCompleted={isTaskCompleted(task)}
                 isSelected={selectedIndex === idx}
+                isBulkSelected={selectedTasks.includes(task.id)}
+                onBulkSelect={() => toggleTaskSelection(task.id)}
                 statusOptions={statusCategory?.options || []}
                 priorityOptions={priorityCategory?.options || []}
                 users={users}
