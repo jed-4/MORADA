@@ -71,10 +71,12 @@ import {
   Check,
   Upload,
   HardDrive,
+  Lock,
 } from "lucide-react";
 import { useUpload } from "@/hooks/use-upload";
 import { SetReminderDialog } from "@/components/SetReminderDialog";
 import { DriveFilePicker } from "@/components/DriveFilePicker";
+import { Switch } from "@/components/ui/switch";
 
 const taskFormSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -104,6 +106,7 @@ const taskFormSchema = z.object({
   projectId: z.string().optional(),
   scope: z.enum(["personal", "project", "system", "business"]).default("project"),
   color: z.string().optional(),
+  isPrivate: z.boolean().default(false),
 });
 
 type TaskFormData = z.infer<typeof taskFormSchema>;
@@ -306,6 +309,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
       // Priority: existing task scope > legacy detection > defaultScope prop > project if projectId given > project
       scope: (task?.scope as any) || (task && !task.projectId ? "business" : defaultScope || (projectId ? "project" : "project")),
       color: (task as any)?.color || undefined,
+      isPrivate: (task as any)?.isPrivate || false,
     },
   });
 
@@ -336,6 +340,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
         // Priority: existing task scope > legacy detection > defaultScope prop > project if projectId given > project
         scope: (task?.scope as any) || (task && !task.projectId ? "business" : defaultScope || (projectId ? "project" : "project")),
         color: (task as any)?.color || undefined,
+        isPrivate: (task as any)?.isPrivate || false,
       };
       form.reset(newDefaults);
       setTitleValue(newDefaults.title);
@@ -1236,6 +1241,24 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+
+              {/* Private Task Toggle */}
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                  <Lock className="h-3 w-3" />
+                  Private Task
+                </label>
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={form.watch("isPrivate")}
+                    onCheckedChange={(checked) => form.setValue("isPrivate", checked, { shouldDirty: true })}
+                    data-testid="switch-private-task"
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    {form.watch("isPrivate") ? "Only assigned users can see this task" : "Visible to all team members"}
+                  </span>
+                </div>
               </div>
 
               {/* Labels */}

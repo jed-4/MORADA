@@ -63,3 +63,38 @@
 
 ### Current Status
 **Implemented** - Bell icon in task edit modal, reminders in notification system
+
+---
+
+## US-T070 - Private Tasks
+
+**As a** team member  
+**I want to** mark a task as private  
+**So that** only users assigned to the task can see it
+
+### Acceptance Criteria
+- Toggle switch in task modal to mark task as private
+- Private tasks only visible to assigned users
+- Private tasks display a lock icon indicator
+- Private tasks excluded from unassigned user queries
+- Admins/owners can still see all tasks for management purposes
+
+### Current Status
+**Implemented** - Toggle in task modal, filtering in task queries
+
+---
+
+## US-T071 - Task Delete Permissions
+
+**As an** admin  
+**I want to** control who can delete tasks  
+**So that** lower-ranked users cannot accidentally remove important tasks
+
+### Acceptance Criteria
+- Delete action requires `tasks.manage` permission with delete action
+- Users without permission see delete button disabled or hidden
+- Error message shown if unauthorized user attempts delete
+- Admins/owners always have delete access
+
+### Current Status
+**Implemented** - Permission check on DELETE /api/tasks/:id endpoint

@@ -469,6 +469,9 @@ export const notes: any = pgTable("notes", {
   archivedAt: timestamp("archived_at"), // When the note was archived (null = not archived)
   archivedById: varchar("archived_by_id").references(() => users.id), // Who archived the note
   
+  // Privacy
+  isPrivate: boolean("is_private").default(false), // If true, only assigned users can see this task
+  
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -541,6 +544,8 @@ export const insertNoteSchema = createInsertSchema(notes).omit({
   // Archive support (server-managed)
   archivedAt: z.coerce.date().nullable().optional(),
   archivedById: z.string().nullable().optional(),
+  // Privacy
+  isPrivate: z.boolean().optional(),
 });
 
 export type InsertNote = z.infer<typeof insertNoteSchema>;

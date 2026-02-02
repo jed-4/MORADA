@@ -598,6 +598,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Tasks API Routes (with optional date range filtering for calendar performance)
   app.get("/api/tasks", async (req, res) => {
     try {
+      const user = req.user as any;
       const { projectId, status, businessTasks, assigneeId, startDate, endDate } = req.query;
       
       // Optional date range filtering for calendar performance
@@ -606,13 +607,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         endDate: endDate as string | undefined
       } : undefined;
       
-      const tasks = await storage.getTasks(
+      let tasks = await storage.getTasks(
         projectId as string | undefined,
         status as string | undefined,
         businessTasks === 'true',
         assigneeId as string | undefined,
         dateRange
       );
+      
+      // Filter private tasks: only show if user is assigned or is admin
+      if (user?.id) {
+        const userId = String(user.id);
+        const isAdmin = user.roleName?.toLowerCase()?.includes('admin') || 
+                        user.roleName?.toLowerCase()?.includes('owner') ||
+                        user.roleName?.toLowerCase()?.includes('general manager');
+        
+        tasks = tasks.filter((task: any) => {
+          // Not private - show to everyone
+          if (!task.isPrivate) return true;
+          // Admin sees all
+          if (isAdmin) return true;
+          // Check if user is assigned
+          const assigneeIds = task.assigneeIds || [];
+          return assigneeIds.includes(userId) || task.assigneeId === userId;
+        });
+      }
+      
       res.json(tasks);
     } catch (error) {
       console.error("[GET /api/tasks] Error:", error);
@@ -843,7 +863,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/tasks/:id", requireAuth, async (req, res) => {
+  app.delete("/api/tasks/:id", requireAuth, requirePermission("tasks.manage", "delete"), async (req, res) => {
     try {
       const user = req.user as any;
       const taskId = req.params.id;
