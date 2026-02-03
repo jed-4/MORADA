@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { type Task, type FieldCategoryWithOptions, type User, type Project } from "@shared/schema";
-import { GripVertical, Calendar as CalendarIcon, Flag, Pencil, User as UserIcon, ArrowUp, ArrowDown, ArrowUpDown, Trash2, MoreVertical, Plus, CircleCheck, Copy, Building2, FolderOpen, X } from "lucide-react";
+import { GripVertical, Calendar as CalendarIcon, Flag, Pencil, User as UserIcon, ArrowUp, ArrowDown, ArrowUpDown, Trash2, MoreVertical, Plus, CircleCheck, Copy, Building2, FolderOpen, X, CheckSquare } from "lucide-react";
 import { format } from "date-fns";
 import {
   DndContext,
@@ -235,6 +235,7 @@ function SortableTaskRow({
   onToggleComplete,
   isCompleted,
   isSelected,
+  selectionMode,
   isBulkSelected,
   onBulkSelect,
   statusOptions,
@@ -252,6 +253,7 @@ function SortableTaskRow({
   onToggleComplete: (checked: boolean) => void;
   isCompleted: boolean;
   isSelected: boolean;
+  selectionMode: boolean;
   isBulkSelected: boolean;
   onBulkSelect: () => void;
   statusOptions: any[];
@@ -318,15 +320,18 @@ function SortableTaskRow({
       onMouseLeave={() => setIsHovered(false)}
       data-testid={`task-row-${task.id}`}
     >
-      {/* Bulk Selection Checkbox */}
-      <div onClick={(e) => e.stopPropagation()}>
-        <Checkbox
-          checked={isBulkSelected}
-          onCheckedChange={onBulkSelect}
-          className="h-4 w-4"
-          data-testid={`select-task-${task.id}`}
-        />
-      </div>
+      {/* Bulk Selection Checkbox - only shown in selection mode */}
+      {selectionMode && (
+        <div onClick={(e) => e.stopPropagation()} className="w-4 flex items-center justify-center">
+          <Checkbox
+            checked={isBulkSelected}
+            onCheckedChange={onBulkSelect}
+            className="h-4 w-4"
+            data-testid={`select-task-${task.id}`}
+          />
+        </div>
+      )}
+      {!selectionMode && <div className="w-5" />}
 
       {/* Drag handle - ALWAYS visible, subtle */}
       <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing">
@@ -604,6 +609,7 @@ export default function TaskListCompact({
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
   const [taskOrder, setTaskOrder] = useState<string[]>([]);
   const listRef = useRef<HTMLDivElement>(null);
+  const [selectionMode, setSelectionMode] = useState(false);
   const [selectedTasks, setSelectedTasks] = useState<string[]>([]);
   
   // Inline task creation state
@@ -722,6 +728,7 @@ export default function TaskListCompact({
     onSuccess: (result: { success: number; errors: string[] }, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
       setSelectedTasks([]);
+      setSelectionMode(false);
       const actionLabels: Record<string, string> = {
         changeStatus: "updated",
         delete: "deleted",
@@ -980,23 +987,42 @@ export default function TaskListCompact({
     );
   }
 
+  // Toggle selection mode off and clear selections
+  const exitSelectionMode = () => {
+    setSelectionMode(false);
+    setSelectedTasks([]);
+  };
+
   // Header row component
   const HeaderRow = () => (
     <div className="h-7 px-2 flex items-center gap-1.5 border-b border-border bg-muted/30 sticky top-0 z-10">
-      <div className="w-4 flex items-center justify-center">
-        <Checkbox
-          checked={selectedTasks.length > 0 && selectedTasks.length === orderedTasks.length}
-          onCheckedChange={(checked) => {
-            if (checked) {
-              setSelectedTasks(orderedTasks.map(t => t.id));
-            } else {
-              setSelectedTasks([]);
-            }
-          }}
-          className="h-4 w-4"
-          data-testid="select-all-tasks"
-        />
-      </div>
+      {selectionMode ? (
+        <div className="w-4 flex items-center justify-center">
+          <Checkbox
+            checked={selectedTasks.length > 0 && selectedTasks.length === orderedTasks.length}
+            onCheckedChange={(checked) => {
+              if (checked) {
+                setSelectedTasks(orderedTasks.map(t => t.id));
+              } else {
+                setSelectedTasks([]);
+              }
+            }}
+            className="h-4 w-4"
+            data-testid="select-all-tasks"
+          />
+        </div>
+      ) : (
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-5 w-5"
+          onClick={() => setSelectionMode(true)}
+          title="Enable selection mode"
+          data-testid="button-toggle-selection-mode"
+        >
+          <CheckSquare className="h-3.5 w-3.5 text-muted-foreground" />
+        </Button>
+      )}
       <div className="w-3" /> {/* Drag handle spacer */}
       <div className="w-4" /> {/* Complete checkbox spacer */}
       <div className="flex-1 text-[10px] font-medium text-muted-foreground">Title</div>
@@ -1044,6 +1070,7 @@ export default function TaskListCompact({
                     onToggleComplete={(checked) => handleToggleComplete(task, checked)}
                     isCompleted={isTaskCompleted(task)}
                     isSelected={false}
+                    selectionMode={selectionMode}
                     isBulkSelected={selectedTasks.includes(task.id)}
                     onBulkSelect={() => toggleTaskSelection(task.id)}
                     statusOptions={statusCategory?.options || []}
@@ -1105,8 +1132,8 @@ export default function TaskListCompact({
       tabIndex={0}
       onKeyDown={handleKeyDown}
     >
-      {/* Bulk Action Toolbar */}
-      {selectedTasks.length > 0 && (
+      {/* Bulk Action Toolbar - only shows when in selection mode with selections */}
+      {selectionMode && (
         <div className="h-10 px-3 flex items-center gap-2 border-b border-border bg-blue-50 dark:bg-blue-900/20">
           <Badge variant="secondary" className="text-xs">
             {selectedTasks.length} selected
@@ -1115,7 +1142,7 @@ export default function TaskListCompact({
           {/* Change Status */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="outline" className="h-7 text-xs" data-testid="button-bulk-status">
+              <Button size="sm" variant="outline" className="h-7 text-xs" disabled={selectedTasks.length === 0} data-testid="button-bulk-status">
                 <CircleCheck className="h-3.5 w-3.5 mr-1" />
                 Status
               </Button>
@@ -1136,7 +1163,7 @@ export default function TaskListCompact({
           {/* Copy To */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="outline" className="h-7 text-xs" data-testid="button-bulk-copy">
+              <Button size="sm" variant="outline" className="h-7 text-xs" disabled={selectedTasks.length === 0} data-testid="button-bulk-copy">
                 <Copy className="h-3.5 w-3.5 mr-1" />
                 Copy
               </Button>
@@ -1177,7 +1204,7 @@ export default function TaskListCompact({
             variant="outline"
             className="h-7 text-xs"
             onClick={() => bulkActionMutation.mutate({ ids: selectedTasks, action: "delete" })}
-            disabled={bulkActionMutation.isPending}
+            disabled={bulkActionMutation.isPending || selectedTasks.length === 0}
             data-testid="button-bulk-delete"
           >
             <Trash2 className="h-3.5 w-3.5 mr-1" />
@@ -1186,13 +1213,13 @@ export default function TaskListCompact({
           
           <div className="flex-1" />
           
-          {/* Clear Selection */}
+          {/* Exit Selection Mode */}
           <Button 
             size="sm" 
             variant="ghost"
             className="h-7"
-            onClick={() => setSelectedTasks([])}
-            data-testid="button-clear-selection"
+            onClick={exitSelectionMode}
+            data-testid="button-exit-selection-mode"
           >
             <X className="h-4 w-4" />
           </Button>
@@ -1211,6 +1238,7 @@ export default function TaskListCompact({
                 onToggleComplete={(checked) => handleToggleComplete(task, checked)}
                 isCompleted={isTaskCompleted(task)}
                 isSelected={selectedIndex === idx}
+                selectionMode={selectionMode}
                 isBulkSelected={selectedTasks.includes(task.id)}
                 onBulkSelect={() => toggleTaskSelection(task.id)}
                 statusOptions={statusCategory?.options || []}
