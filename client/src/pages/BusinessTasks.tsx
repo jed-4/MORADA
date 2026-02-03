@@ -100,15 +100,18 @@ function SortableViewTab({
     >
       <button
         onClick={onSelect}
-        className={`h-6 w-auto px-2 text-xs border rounded-md cursor-grab active:cursor-grabbing ${
-          isSelected 
-            ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
-            : 'hover-elevate'
-        } active-elevate-2 flex items-center gap-1`}
+        className={`relative h-7 px-2 text-xs flex items-center gap-1 transition-colors cursor-grab active:cursor-grabbing ${
+          isSelected
+            ? 'text-[#bba7db] font-medium'
+            : 'text-muted-foreground hover:text-foreground'
+        }`}
         data-testid={`tab-${view.id}`}
         {...listeners}
       >
-        {view.name}
+        <span>{view.name}</span>
+        {isSelected && (
+          <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#bba7db] rounded-full" />
+        )}
       </button>
       {isSelected && (
         <DropdownMenu>

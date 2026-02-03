@@ -167,9 +167,9 @@ export default function TaskCardCompact({ task, onClick, isDragging = false, dis
             </Badge>
           )}
 
-          {/* Actions menu on hover */}
-          {showActions && isHovered ? (
-            <div onClick={(e) => e.stopPropagation()}>
+          {/* Actions menu - always visible when showActions is true, brighter on hover */}
+          {showActions && (
+            <div onClick={(e) => e.stopPropagation()} className={`transition-opacity ${isHovered ? 'opacity-100' : 'opacity-40'}`}>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="icon" className="h-5 w-5 shrink-0">
@@ -197,9 +197,7 @@ export default function TaskCardCompact({ task, onClick, isDragging = false, dis
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
-          ) : isHovered ? (
-            <Pencil className="h-3 w-3 text-muted-foreground shrink-0" />
-          ) : null}
+          )}
         </div>
 
         {/* Bottom row: Status, Due date & Assignee */}
