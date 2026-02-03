@@ -28,6 +28,7 @@ import TaskEditModal from "@/components/TaskEditModal";
 import { format, isToday, isTomorrow, isBefore, startOfDay, addDays, addWeeks, addMonths, isWithinInterval, endOfWeek, endOfMonth, startOfWeek, startOfMonth } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
 
 type FilterType = 'all' | 'overdue' | 'today' | 'tomorrow' | 'next-3-days' | 'this-week' | 'next-week' | 'next-2-weeks' | 'this-month' | 'no-date' | 'high-priority';
 type GroupByType = 'none' | 'project' | 'dueDate' | 'priority';
@@ -42,6 +43,7 @@ interface WidgetConfig {
 
 export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId }: WidgetProps) {
   const { user } = useAuth();
+  const { effectiveTimezone } = useTimezone();
   const businessLabel = (user as any)?.companyNickname || "Business";
   
   const config = widget.config as WidgetConfig || {};
@@ -203,7 +205,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
     const dueDate = new Date(task.dueDate);
     
     if (isBefore(dueDate, today)) {
-      return { label: format(dueDate, 'MMM d'), color: 'text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30' };
+      return { label: formatInTimezone(dueDate, effectiveTimezone, { month: 'short', day: 'numeric' }), color: 'text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30' };
     }
     if (isToday(dueDate)) {
       return { label: 'Today', color: 'text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30' };
@@ -211,7 +213,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
     if (isTomorrow(dueDate)) {
       return { label: 'Tomorrow', color: 'text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30' };
     }
-    return { label: format(dueDate, 'MMM d'), color: 'text-muted-foreground bg-muted' };
+    return { label: formatInTimezone(dueDate, effectiveTimezone, { month: 'short', day: 'numeric' }), color: 'text-muted-foreground bg-muted' };
   };
 
   const getPriorityColor = (priority: string | null | undefined) => {

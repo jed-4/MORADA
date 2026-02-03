@@ -56,7 +56,7 @@ Preferred communication style: Simple, everyday language.
 - **User View Preferences**: Database-backed persistence for user-specific view settings (column order, visibility, filters).
 - **Optimistic UI Updates**: Implemented for responsiveness.
 - **Searchable Select Components**: Reusable typeahead components for dropdowns.
-- **Calendar System**: Dual personal and business calendars with month/week/day views, drag-and-drop, and Notion-style flexible filtering with saved views.
+- **Calendar System**: Dual personal and business calendars with month/week/day views, drag-and-drop, and Notion-style flexible filtering with saved views. **Timezone Support**: All date/time displays respect user's selected timezone (User Settings > Preferences > Display Timezone). Uses `useTimezone` hook with `formatInTimezone` and `formatDateTimeInTimezone` utilities for consistent formatting across all components.
 - **Roles & Permissions**: Company-isolated user roles with granular control over 25 permissions. Built-in admin roles (General Manager, Admin, Owner) automatically bypass permission checks for full access.
 - **Business Page Reorganization**: Unified navigation with a 2-row header and tab system.
 - **Timesheets System**: Global access, compact table design, configurable columns, tabbed views (Table/Weekly/Calendar), rapid approval modal.

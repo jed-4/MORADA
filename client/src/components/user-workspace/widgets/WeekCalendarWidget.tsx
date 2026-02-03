@@ -23,6 +23,7 @@ import { generateNotionColors } from "@/lib/taskColors";
 import { TaskDetailModal } from "@/components/TaskDetailModal";
 import TaskEditModal from "@/components/TaskEditModal";
 import type { Task } from "@shared/schema";
+import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
 
 type ColorMode = "type" | "project" | "priority";
 type ViewMode = "timeline" | "stacked";
@@ -253,19 +254,24 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const { effectiveTimezone } = useTimezone();
   
-  const [currentTimeMinutes, setCurrentTimeMinutes] = useState(() => {
+  // Get current time in user's timezone
+  const getCurrentTimeInTimezone = () => {
     const now = new Date();
-    return now.getHours() * 60 + now.getMinutes();
-  });
+    const timeStr = formatInTimezone(now, effectiveTimezone, { hour: '2-digit', minute: '2-digit', hour12: false });
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    return hours * 60 + (minutes || 0);
+  };
+  
+  const [currentTimeMinutes, setCurrentTimeMinutes] = useState(() => getCurrentTimeInTimezone());
   
   useEffect(() => {
     const interval = setInterval(() => {
-      const now = new Date();
-      setCurrentTimeMinutes(now.getHours() * 60 + now.getMinutes());
+      setCurrentTimeMinutes(getCurrentTimeInTimezone());
     }, 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, [effectiveTimezone]);
   
   const config = widget.config || {};
   const [configState, setConfigState] = useState({
@@ -483,7 +489,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
   const goToNext = () => setWeekStart(w => addWeeks(w, 1));
 
   const weekEnd = addDays(weekStart, 6);
-  const weekLabel = format(weekStart, "MMM d") + " - " + format(weekEnd, "MMM d, yyyy");
+  const weekLabel = formatInTimezone(weekStart, effectiveTimezone, { month: 'short', day: 'numeric' }) + " - " + formatInTimezone(weekEnd, effectiveTimezone, { month: 'short', day: 'numeric', year: 'numeric' });
   
   // Check if any day has all-day events
   const hasAllDayEvents = allDayEvents.length > 0;
@@ -526,10 +532,10 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
               className={`text-center py-1.5 border-r last:border-r-0 ${isCurrentDay ? 'bg-[#bba7db]/10' : ''} ${isPast && !isCurrentDay ? 'opacity-50' : ''}`}
             >
               <div className="text-[10px] text-muted-foreground uppercase">
-                {format(day, "EEE")}
+                {formatInTimezone(day, effectiveTimezone, { weekday: 'short' })}
               </div>
               <div className={`text-sm font-medium ${isCurrentDay ? 'text-[#bba7db]' : ''}`}>
-                {format(day, "d")}
+                {formatInTimezone(day, effectiveTimezone, { day: 'numeric' })}
               </div>
             </div>
           );
@@ -622,7 +628,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
                   style={{ top: `${(hour - 6) * HOUR_HEIGHT}px`, height: `${HOUR_HEIGHT}px` }}
                 >
                   <span className="absolute left-1 top-1 text-[9px] text-muted-foreground">
-                    {format(new Date().setHours(hour, 0), "ha")}
+                    {formatInTimezone(new Date(new Date().setHours(hour, 0)), effectiveTimezone, { hour: 'numeric', hour12: true })}
                   </span>
                 </div>
               ))}

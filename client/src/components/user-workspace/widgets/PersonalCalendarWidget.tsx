@@ -13,6 +13,7 @@ import { generateNotionColors } from "@/lib/taskColors";
 import { TaskDetailModal } from "@/components/TaskDetailModal";
 import TaskEditModal from "@/components/TaskEditModal";
 import type { Task } from "@shared/schema";
+import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
 
 type ViewMode = "list" | "day" | "week";
 
@@ -100,6 +101,7 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
   const maxEvents = widget.config?.maxEvents || 8;
   const daysAhead = widget.config?.daysAhead || 7;
   const defaultViewMode = (widget.config?.viewMode as ViewMode) || "day";
+  const { effectiveTimezone } = useTimezone();
   
   const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -200,13 +202,13 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
     const date = new Date(dateStr);
     if (isToday(date)) return 'Today';
     if (isTomorrow(date)) return 'Tomorrow';
-    return format(date, 'EEE, MMM d');
+    return formatInTimezone(date, effectiveTimezone, { weekday: 'short', month: 'short', day: 'numeric' });
   };
 
   const getTimeLabel = (event: CalendarEvent) => {
     if (event.allDay) return 'All day';
     if (event.startTime) return event.startTime;
-    return format(new Date(event.start), 'h:mm a');
+    return formatInTimezone(new Date(event.start), effectiveTimezone, { hour: 'numeric', minute: '2-digit', hour12: true });
   };
 
   const goToToday = () => setSelectedDate(new Date());
@@ -318,9 +320,9 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
         )}
         <span className="text-xs font-medium ml-1">
           {viewMode === "week" 
-            ? `${format(weekStart, 'MMM d')} - ${format(weekEnd, 'MMM d')}`
+            ? `${formatInTimezone(weekStart, effectiveTimezone, { month: 'short', day: 'numeric' })} - ${formatInTimezone(weekEnd, effectiveTimezone, { month: 'short', day: 'numeric' })}`
             : viewMode === "day"
-              ? format(selectedDate, 'EEE, MMM d')
+              ? formatInTimezone(selectedDate, effectiveTimezone, { weekday: 'short', month: 'short', day: 'numeric' })
               : `${allEvents.length} upcoming`
           }
         </span>
@@ -445,7 +447,7 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
               style={{ top: `${hour * HOUR_HEIGHT}px` }}
             >
               <span className="absolute left-0 -top-2 text-[9px] text-muted-foreground w-9 text-right pr-1">
-                {format(new Date().setHours(hour, 0), 'ha')}
+                {formatInTimezone(new Date(new Date().setHours(hour, 0)), effectiveTimezone, { hour: 'numeric', hour12: true })}
               </span>
             </div>
           ))}
@@ -560,9 +562,9 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
               key={day.toISOString()} 
               className={`text-center py-1 ${isToday(day) ? 'bg-[#bba7db]/10' : ''}`}
             >
-              <div className="text-[9px] text-muted-foreground">{format(day, 'EEE')}</div>
+              <div className="text-[9px] text-muted-foreground">{formatInTimezone(day, effectiveTimezone, { weekday: 'short' })}</div>
               <div className={`text-xs font-medium ${isToday(day) ? 'text-[#bba7db]' : ''}`}>
-                {format(day, 'd')}
+                {formatInTimezone(day, effectiveTimezone, { day: 'numeric' })}
               </div>
             </div>
           ))}

@@ -23,6 +23,7 @@ import { useToast } from "@/hooks/use-toast";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import type { User, Note } from "@shared/schema";
 import { format } from "date-fns";
+import { useTimezone, formatInTimezone, formatDateTimeInTimezone } from "@/hooks/useTimezone";
 
 interface UserNotesProps {
   user: User;
@@ -31,6 +32,7 @@ interface UserNotesProps {
 
 export default function Memos({ user, isOwnPage }: UserNotesProps) {
   const { toast } = useToast();
+  const { effectiveTimezone } = useTimezone();
   const [searchTerm, setSearchTerm] = useState("");
   const [showPinnedOnly, setShowPinnedOnly] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -386,7 +388,7 @@ export default function Memos({ user, isOwnPage }: UserNotesProps) {
                   <div className="flex-1 min-w-0">
                     <h3 className="font-semibold text-sm truncate">{note.title}</h3>
                     <p className="text-xs text-muted-foreground">
-                      {format(new Date(note.createdAt), "MMM d, yyyy 'at' h:mm a")}
+                      {formatDateTimeInTimezone(new Date(note.createdAt), effectiveTimezone)}
                     </p>
                   </div>
                   

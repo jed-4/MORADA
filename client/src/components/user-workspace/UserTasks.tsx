@@ -151,6 +151,7 @@ function SortableViewTab({
   );
 }
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, addDays, addWeeks } from "date-fns";
+import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
 
 // Helper to resolve preset to display date range
 function getPresetDateRange(preset: DueDatePreset | undefined): { from?: Date; to?: Date; label?: string } | null {
@@ -193,6 +194,7 @@ type GroupByType = "none" | "status" | "priority" | "project" | "labels";
 
 export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
   const { toast } = useToast();
+  const { effectiveTimezone } = useTimezone();
   const searchInputRef = useRef<HTMLInputElement>(null);
   
   const [activeView, setActiveView] = useState<ViewType>("list");
@@ -909,14 +911,14 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                 {(() => {
                   const presetRange = getPresetDateRange(filters.dueDatePreset);
                   const fromDisplay = filters.dueDateFrom 
-                    ? format(new Date(filters.dueDateFrom), 'MMM d, yyyy') 
+                    ? formatInTimezone(new Date(filters.dueDateFrom), effectiveTimezone, { year: 'numeric', month: 'short', day: 'numeric' }) 
                     : presetRange?.from 
-                      ? format(presetRange.from, 'MMM d, yyyy') 
+                      ? formatInTimezone(presetRange.from, effectiveTimezone, { year: 'numeric', month: 'short', day: 'numeric' }) 
                       : 'Any start';
                   const toDisplay = filters.dueDateTo 
-                    ? format(new Date(filters.dueDateTo), 'MMM d, yyyy') 
+                    ? formatInTimezone(new Date(filters.dueDateTo), effectiveTimezone, { year: 'numeric', month: 'short', day: 'numeric' }) 
                     : presetRange?.to 
-                      ? format(presetRange.to, 'MMM d, yyyy') 
+                      ? formatInTimezone(presetRange.to, effectiveTimezone, { year: 'numeric', month: 'short', day: 'numeric' }) 
                       : 'Any end';
                   return (
                     <div className="px-2 py-1 space-y-2">

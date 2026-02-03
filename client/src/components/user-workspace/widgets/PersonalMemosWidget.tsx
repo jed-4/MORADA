@@ -7,6 +7,7 @@ import { WidgetProps } from "@/types/widgets";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
+import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
 
 interface Memo {
   id: string;
@@ -17,6 +18,7 @@ interface Memo {
 }
 
 export default function PersonalMemosWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId }: WidgetProps) {
+  const { effectiveTimezone } = useTimezone();
   const maxMemos = widget.config?.maxMemos || 5;
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const [configMaxMemos, setConfigMaxMemos] = useState(maxMemos);
@@ -164,7 +166,7 @@ export default function PersonalMemosWidget({ widget, onUpdate, isConfiguring, o
                 <div className="flex-1 min-w-0">
                   <p className="text-xs truncate leading-tight">{truncateContent(memo.content)}</p>
                   <span className="text-[10px] text-muted-foreground">
-                    {format(new Date(memo.updatedAt || memo.createdAt), 'MMM d')}
+                    {formatInTimezone(new Date(memo.updatedAt || memo.createdAt), effectiveTimezone, { month: 'short', day: 'numeric' })}
                   </span>
                 </div>
               </div>

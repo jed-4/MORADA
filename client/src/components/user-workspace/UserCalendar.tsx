@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format, isWithinInterval } from "date-fns";
+import { useTimezone, formatInTimezone, formatDateTimeInTimezone } from "@/hooks/useTimezone";
 import {
   Select,
   SelectContent,
@@ -80,6 +81,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const { effectiveTimezone } = useTimezone();
   
   // Initialize with all event types selected by default (including google-calendar)
   const defaultEventTypes = ["task", "schedule", "google-calendar"];
@@ -818,7 +820,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
                   <Popover>
                     <PopoverTrigger asChild>
                       <button className="w-full h-8 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-between">
-                        <span>{filters.dateFrom ? format(filters.dateFrom, "MMM dd, yyyy") : "From date"}</span>
+                        <span>{filters.dateFrom ? formatInTimezone(filters.dateFrom, effectiveTimezone, { month: 'short', day: '2-digit', year: 'numeric' }) : "From date"}</span>
                         <CalendarIcon className="w-3 h-3" />
                       </button>
                     </PopoverTrigger>
@@ -833,7 +835,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
                   <Popover>
                     <PopoverTrigger asChild>
                       <button className="w-full h-8 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-between">
-                        <span>{filters.dateTo ? format(filters.dateTo, "MMM dd, yyyy") : "To date"}</span>
+                        <span>{filters.dateTo ? formatInTimezone(filters.dateTo, effectiveTimezone, { month: 'short', day: '2-digit', year: 'numeric' }) : "To date"}</span>
                         <CalendarIcon className="w-3 h-3" />
                       </button>
                     </PopoverTrigger>
@@ -889,7 +891,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
 
           {/* Current Date Display */}
           <span className="text-xs text-muted-foreground px-2" data-testid="text-current-date">
-            {format(currentDate, 'MMM d, yyyy')}
+            {formatInTimezone(currentDate, effectiveTimezone, { month: 'short', day: 'numeric', year: 'numeric' })}
           </span>
 
           {/* View Mode Selector */}

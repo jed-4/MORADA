@@ -27,6 +27,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { format, isToday, isBefore, startOfDay } from "date-fns";
 import { type Task, type Project } from "@shared/schema";
+import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { TaskDetailModal } from "@/components/TaskDetailModal";
 import TaskEditModal from "@/components/TaskEditModal";
@@ -127,6 +128,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const { effectiveTimezone } = useTimezone();
   const [, setLocation] = useLocation();
   const today = startOfDay(new Date());
 
@@ -430,7 +432,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       {task.dueDate && (
                         <span className="text-[10px] text-muted-foreground w-12 text-right">
-                          {format(new Date(task.dueDate), 'MMM d')}
+                          {formatInTimezone(new Date(task.dueDate), effectiveTimezone, { month: 'short', day: 'numeric' })}
                         </span>
                       )}
                       {project && (
@@ -468,7 +470,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">{format(new Date(), 'EEEE, MMMM d')}</span>
+        <span className="text-xs text-muted-foreground">{formatInTimezone(new Date(), effectiveTimezone, { weekday: 'long', month: 'long', day: 'numeric' })}</span>
         <div className="flex items-center gap-1.5">
           {visibleSections.length > 0 && (
             <Button

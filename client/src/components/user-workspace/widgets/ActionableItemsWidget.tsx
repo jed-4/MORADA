@@ -8,6 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { formatDistanceToNow, format, isToday, isTomorrow, isPast } from "date-fns";
 import type { Estimate, Project, FieldOption, FieldCategory, ScheduleItem, Task } from "@shared/schema";
 import type { Widget } from "@/types/widgets";
+import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
 
 interface ActionableItemsWidgetProps {
   widget: Widget;
@@ -47,6 +48,7 @@ export default function ActionableItemsWidget({
   onCloseConfig,
   userId,
 }: ActionableItemsWidgetProps) {
+  const { effectiveTimezone } = useTimezone();
   const config = (widget.config as {
     showEstimates?: boolean;
     showSchedule?: boolean;
@@ -248,8 +250,8 @@ export default function ActionableItemsWidget({
   const formatDueDate = (date: Date) => {
     if (isToday(date)) return 'Today';
     if (isTomorrow(date)) return 'Tomorrow';
-    if (isPast(date)) return `Overdue: ${format(date, 'MMM d')}`;
-    return format(date, 'MMM d');
+    if (isPast(date)) return `Overdue: ${formatInTimezone(date, effectiveTimezone, { month: 'short', day: 'numeric' })}`;
+    return formatInTimezone(date, effectiveTimezone, { month: 'short', day: 'numeric' });
   };
 
   if (isConfiguring) {

@@ -8,6 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Clock, Calendar, Timer, Play, Square, ChevronLeft, ChevronRight } from "lucide-react";
 import { format, startOfWeek, endOfWeek, eachDayOfInterval, addWeeks, subWeeks, isToday, isSameDay } from "date-fns";
 import type { User, Timesheet, Project } from "@shared/schema";
+import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
 
 interface UserTimeProps {
   user: User;
@@ -17,6 +18,7 @@ interface UserTimeProps {
 export default function UserTime({ user, isOwnPage }: UserTimeProps) {
   const [viewType, setViewType] = useState<"table" | "weekly">("table");
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
+  const { effectiveTimezone } = useTimezone();
   
   const { data: timesheets = [], isLoading } = useQuery<Timesheet[]>({
     queryKey: ["/api/timesheets", { userId: user.id }],
@@ -133,7 +135,7 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
                 <ChevronLeft className="w-3 h-3" />
               </button>
               <span className="text-xs text-muted-foreground px-2">
-                {format(weekStart, 'MMM d')} - {format(weekEnd, 'MMM d')}
+                {formatInTimezone(weekStart, effectiveTimezone, { month: 'short', day: 'numeric' })} - {formatInTimezone(weekEnd, effectiveTimezone, { month: 'short', day: 'numeric' })}
               </span>
               <button
                 onClick={() => setWeekStart(addWeeks(weekStart, 1))}
@@ -162,8 +164,8 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
                       isToday(day) ? 'bg-primary/5' : ''
                     }`}
                   >
-                    <div className="text-xs text-muted-foreground">{format(day, 'EEE')}</div>
-                    <div className="text-sm font-medium">{format(day, 'd')}</div>
+                    <div className="text-xs text-muted-foreground">{formatInTimezone(day, effectiveTimezone, { weekday: 'short' })}</div>
+                    <div className="text-sm font-medium">{formatInTimezone(day, effectiveTimezone, { day: 'numeric' })}</div>
                     <div className={`text-lg font-semibold mt-2 ${hours > 0 ? 'text-primary' : 'text-muted-foreground'}`}>
                       {hours.toFixed(1)}h
                     </div>
@@ -197,7 +199,7 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
                 <tbody>
                   {timesheets.slice(0, 50).map((ts) => (
                     <tr key={ts.id} className="border-b border-border/50 hover:bg-muted/30">
-                      <td className="p-2">{format(new Date(ts.date), 'MMM d, yyyy')}</td>
+                      <td className="p-2">{formatInTimezone(new Date(ts.date), effectiveTimezone, { year: 'numeric', month: 'short', day: 'numeric' })}</td>
                       <td className="p-2">{getProjectName(ts.projectId)}</td>
                       <td className="p-2 font-medium">{parseFloat(String(ts.duration || 0)).toFixed(1)}h</td>
                       <td className="p-2 max-w-[200px] truncate text-muted-foreground">

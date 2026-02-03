@@ -25,6 +25,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format, startOfDay, subDays, isToday, isTomorrow, isBefore, isWithinInterval, addDays, differenceInDays } from "date-fns";
 import { type Task, type Project } from "@shared/schema";
 import { useLocation } from "wouter";
+import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
 
 interface AISummary {
   summary: string;
@@ -51,6 +52,7 @@ interface ScheduleItem {
 }
 
 export default function PersonalAISummaryWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId }: WidgetProps) {
+  const { effectiveTimezone } = useTimezone();
   const showTaskCounts = widget.config?.showTaskCounts ?? true;
   const showSuggestedActions = widget.config?.showSuggestedActions ?? true;
   const [editingTitle, setEditingTitle] = useState(widget.title);
@@ -311,7 +313,7 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <Calendar className="h-3 w-3" />
-            <span>{format(new Date(), 'EEEE, MMMM d')}</span>
+            <span>{formatInTimezone(new Date(), effectiveTimezone, { weekday: 'long', month: 'long', day: 'numeric' })}</span>
           </div>
           <Button
             size="sm"

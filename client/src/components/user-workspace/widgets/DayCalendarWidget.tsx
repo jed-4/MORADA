@@ -13,6 +13,7 @@ import { generateNotionColors } from "@/lib/taskColors";
 import { TaskDetailModal } from "@/components/TaskDetailModal";
 import TaskEditModal from "@/components/TaskEditModal";
 import type { Task } from "@shared/schema";
+import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
 
 const HOUR_HEIGHT = 48;
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
@@ -175,20 +176,25 @@ export default function DayCalendarWidget({ widget, onUpdate, isConfiguring, onC
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const { effectiveTimezone } = useTimezone();
+  
+  // Get current time in user's timezone
+  const getCurrentTimeInTimezone = () => {
+    const now = new Date();
+    const timeStr = formatInTimezone(now, effectiveTimezone, { hour: '2-digit', minute: '2-digit', hour12: false });
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    return hours * 60 + (minutes || 0);
+  };
   
   // Current time state that updates every minute
-  const [currentTimeMinutes, setCurrentTimeMinutes] = useState(() => {
-    const now = new Date();
-    return now.getHours() * 60 + now.getMinutes();
-  });
+  const [currentTimeMinutes, setCurrentTimeMinutes] = useState(() => getCurrentTimeInTimezone());
   
   useEffect(() => {
     const interval = setInterval(() => {
-      const now = new Date();
-      setCurrentTimeMinutes(now.getHours() * 60 + now.getMinutes());
+      setCurrentTimeMinutes(getCurrentTimeInTimezone());
     }, 60000); // Update every minute
     return () => clearInterval(interval);
-  }, []);
+  }, [effectiveTimezone]);
   
   const config = widget.config || {};
   const [configState, setConfigState] = useState({
@@ -356,7 +362,7 @@ export default function DayCalendarWidget({ widget, onUpdate, isConfiguring, onC
           </Button>
         </div>
         <div className="text-xs font-medium">
-          {format(selectedDate, "EEEE, MMM d")}
+          {formatInTimezone(selectedDate, effectiveTimezone, { weekday: 'long', month: 'short', day: 'numeric' })}
           {isToday(selectedDate) && (
             <Badge variant="secondary" className="ml-1.5 text-[10px] px-1 py-0">Today</Badge>
           )}
@@ -395,7 +401,7 @@ export default function DayCalendarWidget({ widget, onUpdate, isConfiguring, onC
                 style={{ top: `${hour * HOUR_HEIGHT}px`, height: `${HOUR_HEIGHT}px` }}
               >
                 <span className="absolute left-2 top-1 text-[10px] text-muted-foreground">
-                  {format(new Date().setHours(hour, 0), "h a")}
+                  {formatInTimezone(new Date(new Date().setHours(hour, 0)), effectiveTimezone, { hour: 'numeric', hour12: true })}
                 </span>
               </div>
             ))}

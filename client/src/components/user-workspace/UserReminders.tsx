@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { format, formatDistanceToNow, isPast, isFuture, addMinutes } from "date-fns";
+import { useTimezone, formatInTimezone, formatDateTimeInTimezone } from "@/hooks/useTimezone";
 import { 
   Bell, Plus, Clock, CheckSquare, ClipboardList, Timer, 
   Wrench, Trash2, Pencil, AlarmClockOff, AlarmClock, AlertTriangle
@@ -97,6 +98,7 @@ const PRIORITY_COLORS: Record<string, string> = {
 
 export default function UserReminders({ user, isOwnPage }: UserRemindersProps) {
   const { toast } = useToast();
+  const { effectiveTimezone } = useTimezone();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingReminder, setEditingReminder] = useState<Reminder | null>(null);
   const [deleteReminder, setDeleteReminder] = useState<Reminder | null>(null);
@@ -287,7 +289,7 @@ export default function UserReminders({ user, isOwnPage }: UserRemindersProps) {
     
     if (reminder.status === "snoozed" && reminder.snoozedUntil) {
       return { 
-        label: `Snoozed until ${format(new Date(reminder.snoozedUntil), "MMM d, h:mm a")}`, 
+        label: `Snoozed until ${formatDateTimeInTimezone(new Date(reminder.snoozedUntil), effectiveTimezone)}`, 
         color: "text-orange-500" 
       };
     }
@@ -481,7 +483,7 @@ export default function UserReminders({ user, isOwnPage }: UserRemindersProps) {
                   {/* Time info */}
                   <div className="text-xs text-muted-foreground mb-1">
                     <Clock className="h-3 w-3 inline mr-1" />
-                    {reminder.triggerAt && format(new Date(reminder.triggerAt), "MMM d, h:mm a")}
+                    {reminder.triggerAt && formatDateTimeInTimezone(new Date(reminder.triggerAt), effectiveTimezone)}
                     <span className={`ml-1 ${timeStatus.color}`}>
                       ({timeStatus.label})
                     </span>
