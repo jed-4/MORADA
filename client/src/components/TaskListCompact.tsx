@@ -1053,6 +1053,100 @@ export default function TaskListCompact({
   if (sortedGroupedTasks) {
     return (
       <div className="border border-border rounded-md bg-background overflow-hidden">
+        {/* Bulk Action Toolbar - shows in grouped view when selection mode is active */}
+        {selectionMode && (
+          <div className="h-10 px-3 flex items-center gap-2 border-b border-border bg-blue-50 dark:bg-blue-900/20">
+            <Badge variant="secondary" className="text-xs">
+              {selectedTasks.length} selected
+            </Badge>
+            
+            {/* Change Status */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline" className="h-7 text-xs" disabled={selectedTasks.length === 0} data-testid="button-bulk-status-grouped">
+                  <CircleCheck className="h-3.5 w-3.5 mr-1" />
+                  Status
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                {(statusCategory?.options || []).map((status) => (
+                  <DropdownMenuItem
+                    key={status.key}
+                    onClick={() => bulkActionMutation.mutate({ ids: selectedTasks, action: "changeStatus", status: status.key })}
+                  >
+                    <div className="w-2 h-2 rounded-full mr-2" style={{ backgroundColor: status.color || '#6b7280' }} />
+                    {status.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            
+            {/* Copy To */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline" className="h-7 text-xs" disabled={selectedTasks.length === 0} data-testid="button-bulk-copy-grouped">
+                  <Copy className="h-3.5 w-3.5 mr-1" />
+                  Copy
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuItem
+                  onClick={() => bulkActionMutation.mutate({ ids: selectedTasks, action: "copyToBusiness" })}
+                >
+                  <Building2 className="h-4 w-4 mr-2" />
+                  Business Tasks
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    <FolderOpen className="h-4 w-4 mr-2" />
+                    Project...
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    {projects.filter(p => p.id !== projectId).map((project) => (
+                      <DropdownMenuItem
+                        key={project.id}
+                        onClick={() => bulkActionMutation.mutate({ ids: selectedTasks, action: "copyToProject", projectId: project.id })}
+                      >
+                        {project.name}
+                      </DropdownMenuItem>
+                    ))}
+                    {projects.filter(p => p.id !== projectId).length === 0 && (
+                      <div className="px-2 py-1.5 text-sm text-muted-foreground">No other projects</div>
+                    )}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            
+            {/* Delete */}
+            <Button 
+              size="sm" 
+              variant="outline"
+              className="h-7 text-xs"
+              onClick={() => bulkActionMutation.mutate({ ids: selectedTasks, action: "delete" })}
+              disabled={bulkActionMutation.isPending || selectedTasks.length === 0}
+              data-testid="button-bulk-delete-grouped"
+            >
+              <Trash2 className="h-3.5 w-3.5 mr-1" />
+              Delete
+            </Button>
+            
+            <div className="flex-1" />
+            
+            {/* Exit Selection Mode */}
+            <Button 
+              size="sm" 
+              variant="ghost"
+              className="h-7 text-xs"
+              onClick={() => { setSelectionMode(false); setSelectedTasks([]); }}
+              data-testid="button-exit-selection-grouped"
+            >
+              <X className="h-3.5 w-3.5 mr-1" />
+              Cancel
+            </Button>
+          </div>
+        )}
         <HeaderRow />
         {Object.entries(sortedGroupedTasks).map(([groupName, groupTasks]) => (
           <div key={groupName}>
