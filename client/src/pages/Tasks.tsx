@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
-import { Plus, Settings, MoreHorizontal, X, Flag, User, Tag, Layers, Eye, Zap, Search, GripVertical, Columns as ColumnsIcon, SlidersHorizontal, Pencil, ChevronDown } from "lucide-react";
+import { Plus, Settings, MoreHorizontal, X, Flag, User, Tag, Layers, Eye, Zap, Search, GripVertical, Columns as ColumnsIcon, SlidersHorizontal, Pencil, ChevronDown, List, LayoutGrid, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -116,15 +116,18 @@ function SortableViewTab({
     >
       <button
         onClick={onSelect}
-        className={`h-6 w-auto px-2 text-xs border rounded-md cursor-grab active:cursor-grabbing ${
-          isSelected 
-            ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
-            : 'hover-elevate'
-        } active-elevate-2 flex items-center gap-1`}
+        className={`relative h-7 px-2 text-xs flex items-center gap-1 transition-colors cursor-grab active:cursor-grabbing ${
+          isSelected
+            ? 'text-[#bba7db] font-medium'
+            : 'text-muted-foreground hover:text-foreground'
+        }`}
         data-testid={`tab-${view.id}`}
         {...listeners}
       >
-        {view.name}
+        <span>{view.name}</span>
+        {isSelected && (
+          <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#bba7db] rounded-full" />
+        )}
       </button>
       {isSelected && (
         <DropdownMenu>
@@ -861,22 +864,13 @@ export default function Tasks() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* UNIFIED 3-ROW HEADER FOR ALL VIEWS */}
-      
-      {/* Row 1 - Project Controls (36px) */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
-        {/* Left: Project Name + Task Count */}
-        <div className="flex items-center gap-3">
+      {/* Header Panel - 2 rows connected to content */}
+      <div className="border border-border rounded-t-lg bg-card flex-shrink-0">
+        {/* Row 1 - Title & Add Task */}
+        <div className="h-8 flex items-center justify-between px-3 border-b border-border/50">
           <h2 className="text-sm font-semibold" data-testid="text-page-title">
-            {params.projectId ? `${currentProject.name} Tasks` : 'All Tasks'}
+            {params.projectId ? `${currentProject.name} Tasks` : 'Tasks'}
           </h2>
-          <Badge variant="secondary" className="text-xs" data-testid="text-task-count">
-            {effectivelyFilteredTasks.length} tasks
-          </Badge>
-        </div>
-
-        {/* Right: Action Buttons */}
-        <div className="flex items-center gap-1.5">
           <button
             className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
             onClick={() => setShowCreateTaskDialog(true)}
@@ -885,102 +879,132 @@ export default function Tasks() {
             <Plus className="w-3 h-3" />
             <span>Add Task</span>
           </button>
-          <button
-            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-            onClick={() => setShowViewSettings(true)}
-            data-testid="button-settings"
-          >
-            <Settings className="w-3 h-3" />
-          </button>
         </div>
-      </div>
 
-      {/* Row 2 - Views & Options (36px) */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
-        {/* Left: View Tabs */}
-        <div className="flex items-center gap-0.5" data-testid="tabs-task-views">
-          {/* Default View Mode Tabs - always one selected */}
-          {defaultViews.map((view) => (
-            <button
-              key={view.id}
-              onClick={() => setActiveView(view.id as "list" | "kanban" | "calendar")}
-              className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                activeView === view.id 
-                  ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
-                  : 'hover-elevate'
-              } active-elevate-2 flex items-center gap-1`}
-              data-testid={`tab-${view.id}`}
-            >
-              {view.name}
-            </button>
-          ))}
-          
-          {/* Separator between default views and saved views */}
-          {taskViews.length > 0 && (
-            <div className="h-4 w-px bg-border mx-1" />
-          )}
-          
-          {/* Saved/Custom Views (Filters) - drag and drop reorderable */}
-          {taskViews.length > 0 && (
-            <DndContext
-              sensors={viewSensors}
-              collisionDetection={closestCenter}
-              onDragEnd={handleViewDragEnd}
-            >
-              <SortableContext
-                items={taskViews.map((v: TaskView) => v.id)}
-                strategy={horizontalListSortingStrategy}
+        {/* Row 2 - View Tabs + Search & Filters */}
+        <div className="h-8 flex items-center justify-between px-3 gap-3">
+          {/* Left: View Tabs */}
+          <div className="flex items-center gap-1" data-testid="tabs-task-views">
+            {/* Default View Mode Tabs */}
+            {(["list", "kanban", "calendar"] as const).map((view) => {
+              const Icon = view === "list" ? List : view === "kanban" ? LayoutGrid : Calendar;
+              const isActive = activeView === view;
+              return (
+                <button
+                  key={view}
+                  onClick={() => setActiveView(view)}
+                  className={`relative h-7 px-2 text-xs flex items-center gap-1 transition-colors ${
+                    isActive
+                      ? 'text-[#bba7db] font-medium'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                  data-testid={`tab-${view}`}
+                >
+                  <Icon className="w-3 h-3" />
+                  <span className="capitalize">{view === "kanban" ? "Board" : view}</span>
+                  {isActive && (
+                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#bba7db] rounded-full" />
+                  )}
+                </button>
+              );
+            })}
+            
+            {/* Separator between default views and saved views */}
+            {taskViews.length > 0 && (
+              <div className="h-4 w-px bg-border mx-1" />
+            )}
+            
+            {/* Saved/Custom Views - drag and drop reorderable */}
+            {taskViews.length > 0 && (
+              <DndContext
+                sensors={viewSensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleViewDragEnd}
               >
-                {taskViews.map((view: TaskView) => (
-                  <SortableViewTab
-                    key={view.id}
-                    view={view}
-                    isSelected={selectedViewId === view.id}
-                    onSelect={() => handleSelectSavedView(view)}
-                    onEditClick={handleEditView}
-                    onDeleteClick={handleDeleteView}
-                  />
-                ))}
-              </SortableContext>
-            </DndContext>
-          )}
-          
-          <button
-            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-            onClick={() => setShowCreateViewDialog(true)}
-            data-testid="button-add-view"
-          >
-            <Plus className="w-3 h-3" />
-          </button>
-        </div>
-
-        {/* Right: More Options */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button 
+                <SortableContext
+                  items={taskViews.map((v: TaskView) => v.id)}
+                  strategy={horizontalListSortingStrategy}
+                >
+                  {taskViews.map((view: TaskView) => (
+                    <SortableViewTab
+                      key={view.id}
+                      view={view}
+                      isSelected={selectedViewId === view.id}
+                      onSelect={() => handleSelectSavedView(view)}
+                      onEditClick={handleEditView}
+                      onDeleteClick={handleDeleteView}
+                    />
+                  ))}
+                </SortableContext>
+              </DndContext>
+            )}
+            
+            <button
               className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-              data-testid="button-view-menu"
+              onClick={() => setShowCreateViewDialog(true)}
+              data-testid="button-add-view"
             >
-              <MoreHorizontal className="w-3 h-3" />
+              <Plus className="w-3 h-3" />
             </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => setShowCreateViewDialog(true)} data-testid="menu-save-view">
-              <Plus className="h-4 w-4 mr-2" />
-              Save View
-            </DropdownMenuItem>
-            <DropdownMenuItem data-testid="menu-manage-views">
-              <Settings className="h-4 w-4 mr-2" />
-              Manage Views
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+          </div>
 
-      {/* Row 3 - Search & Filters (36px) */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
-        {/* Left: Search + Filter Dropdowns */}
-        <div className="flex items-center gap-1.5 flex-1">
+          {/* Right: Search, Filters, and View-specific controls */}
+          <div className="flex items-center gap-1.5 flex-1 justify-end">
+            {/* Calendar Controls (when calendar view) */}
+            {activeView === "calendar" && (
+              <>
+                <button
+                  onClick={() => {
+                    const newDate = new Date(calendarDate);
+                    if (calendarMode === "day") newDate.setDate(newDate.getDate() - 1);
+                    else if (calendarMode === "week") newDate.setDate(newDate.getDate() - 7);
+                    else newDate.setMonth(newDate.getMonth() - 1);
+                    setCalendarDate(newDate);
+                  }}
+                  className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                  data-testid="button-calendar-prev"
+                >
+                  <ChevronLeft className="w-3 h-3" />
+                </button>
+                <button
+                  onClick={() => setCalendarDate(new Date())}
+                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
+                  data-testid="button-calendar-today"
+                >
+                  Today
+                </button>
+                <button
+                  onClick={() => {
+                    const newDate = new Date(calendarDate);
+                    if (calendarMode === "day") newDate.setDate(newDate.getDate() + 1);
+                    else if (calendarMode === "week") newDate.setDate(newDate.getDate() + 7);
+                    else newDate.setMonth(newDate.getMonth() + 1);
+                    setCalendarDate(newDate);
+                  }}
+                  className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                  data-testid="button-calendar-next"
+                >
+                  <ChevronRight className="w-3 h-3" />
+                </button>
+                <div className="flex items-center gap-0.5 ml-1">
+                  {(["day", "week", "month"] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => setCalendarMode(mode)}
+                      className={`h-6 w-auto px-2 text-xs border rounded-md ${
+                        calendarMode === mode
+                          ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
+                          : 'hover-elevate'
+                      } active-elevate-2`}
+                      data-testid={`button-view-${mode}`}
+                    >
+                      <span className="capitalize">{mode}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="h-4 w-px bg-border mx-1" />
+              </>
+            )}
           {/* Search */}
           <div className="relative w-48">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
@@ -1365,9 +1389,10 @@ export default function Tasks() {
             )}
           </div>
         </div>
+      </div>
 
       {/* Content Area - render based on activeView mode, with saved view filters applied */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto border-x border-b border-border rounded-b-lg bg-card">
         {activeView === "kanban" && (
           <div className="h-full p-2">
             <TaskBoard 

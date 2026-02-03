@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Settings, MoreHorizontal, X, Search, ChevronLeft, ChevronRight, Pencil, ChevronDown, SlidersHorizontal } from "lucide-react";
+import { Plus, Settings, MoreHorizontal, X, Search, ChevronLeft, ChevronRight, Pencil, ChevronDown, SlidersHorizontal, List, LayoutGrid, Calendar } from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -723,174 +723,147 @@ export default function BusinessTasks() {
 
   return (
     <div className="flex h-full flex-col" data-testid="business-tasks">
-      {/* Row 2 - Views & Options (36px) */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
-        {/* Left: View Tabs */}
-        <div className="flex items-center gap-0.5" data-testid="tabs-task-views">
-          {/* Default View Mode Tabs */}
+      {/* Header Panel - 2 rows connected to content */}
+      <div className="border border-border rounded-t-lg bg-card flex-shrink-0">
+        {/* Row 1 - Title & Add Task */}
+        <div className="h-8 flex items-center justify-between px-3 border-b border-border/50">
+          <h2 className="text-sm font-semibold" data-testid="text-page-title">
+            Business Tasks
+          </h2>
           <button
-            onClick={() => { setActiveTab("board"); setSelectedViewId(undefined); }}
-            className={`h-6 w-auto px-2 text-xs border rounded-md ${
-              activeTab === "board" && !selectedViewId
-                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
-                : 'hover-elevate'
-            } active-elevate-2 flex items-center gap-1`}
-            data-testid="tab-board"
-          >
-            Board
-          </button>
-          <button
-            onClick={() => { setActiveTab("list"); setSelectedViewId(undefined); }}
-            className={`h-6 w-auto px-2 text-xs border rounded-md ${
-              activeTab === "list" && !selectedViewId
-                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
-                : 'hover-elevate'
-            } active-elevate-2 flex items-center gap-1`}
-            data-testid="tab-list"
-          >
-            List
-          </button>
-          <button
-            onClick={() => { setActiveTab("calendar"); setSelectedViewId(undefined); }}
-            className={`h-6 w-auto px-2 text-xs border rounded-md ${
-              activeTab === "calendar" && !selectedViewId
-                ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
-                : 'hover-elevate'
-            } active-elevate-2 flex items-center gap-1`}
-            data-testid="tab-calendar"
-          >
-            Calendar
-          </button>
-          
-          {/* Separator between default views and saved views */}
-          {taskViews.length > 0 && (
-            <div className="h-4 w-px bg-border mx-1" />
-          )}
-          
-          {/* Saved/Custom Views - drag and drop reorderable */}
-          {taskViews.length > 0 && (
-            <DndContext
-              sensors={viewSensors}
-              collisionDetection={closestCenter}
-              onDragEnd={handleViewDragEnd}
-            >
-              <SortableContext
-                items={taskViews.map((v: TaskView) => v.id)}
-                strategy={horizontalListSortingStrategy}
-              >
-                {taskViews.map((view: TaskView) => (
-                  <SortableViewTab
-                    key={view.id}
-                    view={view}
-                    isSelected={selectedViewId === view.id}
-                    onSelect={() => handleSelectSavedView(view)}
-                    onEditClick={handleEditView}
-                    onDeleteClick={handleDeleteView}
-                  />
-                ))}
-              </SortableContext>
-            </DndContext>
-          )}
-          
-          <button
-            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-            onClick={() => setShowCreateViewDialog(true)}
-            data-testid="button-add-view"
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+            onClick={() => setShowCreateTaskDialog(true)}
+            data-testid="button-add-task"
           >
             <Plus className="w-3 h-3" />
+            <span>Add Task</span>
           </button>
         </div>
 
-        {/* Right: Calendar Controls OR Saved Views */}
-        {activeTab === "calendar" ? (
-          <div className="flex items-center gap-1.5">
-            {/* Calendar Navigation */}
+        {/* Row 2 - View Tabs + Search & Filters */}
+        <div className="h-8 flex items-center justify-between px-3 gap-3">
+          {/* Left: View Tabs */}
+          <div className="flex items-center gap-1" data-testid="tabs-task-views">
+            {/* Default View Mode Tabs */}
+            {(["list", "board", "calendar"] as const).map((view) => {
+              const Icon = view === "list" ? List : view === "board" ? LayoutGrid : Calendar;
+              const isActive = activeTab === view;
+              return (
+                <button
+                  key={view}
+                  onClick={() => { setActiveTab(view); setSelectedViewId(undefined); }}
+                  className={`relative h-7 px-2 text-xs flex items-center gap-1 transition-colors ${
+                    isActive
+                      ? 'text-[#bba7db] font-medium'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                  data-testid={`tab-${view}`}
+                >
+                  <Icon className="w-3 h-3" />
+                  <span className="capitalize">{view}</span>
+                  {isActive && (
+                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#bba7db] rounded-full" />
+                  )}
+                </button>
+              );
+            })}
+            
+            {/* Separator between default views and saved views */}
+            {taskViews.length > 0 && (
+              <div className="h-4 w-px bg-border mx-1" />
+            )}
+            
+            {/* Saved/Custom Views - drag and drop reorderable */}
+            {taskViews.length > 0 && (
+              <DndContext
+                sensors={viewSensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleViewDragEnd}
+              >
+                <SortableContext
+                  items={taskViews.map((v: TaskView) => v.id)}
+                  strategy={horizontalListSortingStrategy}
+                >
+                  {taskViews.map((view: TaskView) => (
+                    <SortableViewTab
+                      key={view.id}
+                      view={view}
+                      isSelected={selectedViewId === view.id}
+                      onSelect={() => handleSelectSavedView(view)}
+                      onEditClick={handleEditView}
+                      onDeleteClick={handleDeleteView}
+                    />
+                  ))}
+                </SortableContext>
+              </DndContext>
+            )}
+            
             <button
-              onClick={() => {
-                const newDate = new Date(calendarDate);
-                if (calendarMode === "day") {
-                  newDate.setDate(newDate.getDate() - 1);
-                } else if (calendarMode === "week") {
-                  newDate.setDate(newDate.getDate() - 7);
-                } else {
-                  newDate.setMonth(newDate.getMonth() - 1);
-                }
-                setCalendarDate(newDate);
-              }}
               className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-              data-testid="button-calendar-prev"
+              onClick={() => setShowCreateViewDialog(true)}
+              data-testid="button-add-view"
             >
-              <ChevronLeft className="w-3 h-3" />
+              <Plus className="w-3 h-3" />
             </button>
-            <button
-              onClick={() => setCalendarDate(new Date())}
-              className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
-              data-testid="button-calendar-today"
-            >
-              Today
-            </button>
-            <button
-              onClick={() => {
-                const newDate = new Date(calendarDate);
-                if (calendarMode === "day") {
-                  newDate.setDate(newDate.getDate() + 1);
-                } else if (calendarMode === "week") {
-                  newDate.setDate(newDate.getDate() + 7);
-                } else {
-                  newDate.setMonth(newDate.getMonth() + 1);
-                }
-                setCalendarDate(newDate);
-              }}
-              className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-              data-testid="button-calendar-next"
-            >
-              <ChevronRight className="w-3 h-3" />
-            </button>
-
-            {/* View Switcher */}
-            <div className="flex items-center gap-0.5 ml-2">
-              <button
-                onClick={() => setCalendarMode("day")}
-                className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                  calendarMode === "day"
-                    ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
-                    : 'hover-elevate'
-                } active-elevate-2`}
-                data-testid="button-view-day"
-              >
-                Day
-              </button>
-              <button
-                onClick={() => setCalendarMode("week")}
-                className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                  calendarMode === "week"
-                    ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
-                    : 'hover-elevate'
-                } active-elevate-2`}
-                data-testid="button-view-week"
-              >
-                Week
-              </button>
-              <button
-                onClick={() => setCalendarMode("month")}
-                className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                  calendarMode === "month"
-                    ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
-                    : 'hover-elevate'
-                } active-elevate-2`}
-                data-testid="button-view-month"
-              >
-                Month
-              </button>
-            </div>
           </div>
-        ) : null}
-      </div>
 
-      {/* Row 3 - Search & Filters (36px) */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
-        {/* Left: Search + Filter Dropdowns */}
-        <div className="flex items-center gap-1.5 flex-1">
+          {/* Right: Search, Filters, and View-specific controls */}
+          <div className="flex items-center gap-1.5 flex-1 justify-end">
+            {/* Calendar Controls (when calendar view) */}
+            {activeTab === "calendar" && (
+              <>
+                <button
+                  onClick={() => {
+                    const newDate = new Date(calendarDate);
+                    if (calendarMode === "day") newDate.setDate(newDate.getDate() - 1);
+                    else if (calendarMode === "week") newDate.setDate(newDate.getDate() - 7);
+                    else newDate.setMonth(newDate.getMonth() - 1);
+                    setCalendarDate(newDate);
+                  }}
+                  className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                  data-testid="button-calendar-prev"
+                >
+                  <ChevronLeft className="w-3 h-3" />
+                </button>
+                <button
+                  onClick={() => setCalendarDate(new Date())}
+                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
+                  data-testid="button-calendar-today"
+                >
+                  Today
+                </button>
+                <button
+                  onClick={() => {
+                    const newDate = new Date(calendarDate);
+                    if (calendarMode === "day") newDate.setDate(newDate.getDate() + 1);
+                    else if (calendarMode === "week") newDate.setDate(newDate.getDate() + 7);
+                    else newDate.setMonth(newDate.getMonth() + 1);
+                    setCalendarDate(newDate);
+                  }}
+                  className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                  data-testid="button-calendar-next"
+                >
+                  <ChevronRight className="w-3 h-3" />
+                </button>
+                <div className="flex items-center gap-0.5 ml-1">
+                  {(["day", "week", "month"] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => setCalendarMode(mode)}
+                      className={`h-6 w-auto px-2 text-xs border rounded-md ${
+                        calendarMode === mode
+                          ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
+                          : 'hover-elevate'
+                      } active-elevate-2`}
+                      data-testid={`button-view-${mode}`}
+                    >
+                      {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                    </button>
+                  ))}
+                </div>
+                <div className="w-px h-4 bg-border mx-1" />
+              </>
+            )}
           {/* Search */}
           <div className="relative w-48">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
@@ -1031,10 +1004,8 @@ export default function BusinessTasks() {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-        </div>
-
-        {/* Right: Navigation + New Task + Settings */}
-        <div className="flex items-center gap-1.5">
+          
+          {/* Board Navigation Arrows */}
           {activeTab === "board" && showNavigation && (
             <>
               <button
@@ -1121,14 +1092,6 @@ export default function BusinessTasks() {
             </Popover>
           )}
           
-          <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
-            onClick={() => setShowCreateTaskDialog(true)}
-            data-testid="button-new-task-header"
-          >
-            <Plus className="w-3 h-3" />
-            <span>New Task</span>
-          </button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button 
@@ -1146,10 +1109,11 @@ export default function BusinessTasks() {
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
+        </div>
       </div>
 
       {/* Content Area - Full Height */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden border-x border-b border-border rounded-b-lg bg-card">
         {activeTab === "board" && (
           <div className="h-full p-4" data-testid="content-board">
             <TaskBoard
