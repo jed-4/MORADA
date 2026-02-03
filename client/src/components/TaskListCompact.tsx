@@ -326,7 +326,7 @@ function SortableTaskRow({
           <Checkbox
             checked={isBulkSelected}
             onCheckedChange={onBulkSelect}
-            className="h-4 w-4"
+            className="h-4 w-4 rounded-full"
             data-testid={`select-task-${task.id}`}
           />
         </div>
@@ -1007,7 +1007,7 @@ export default function TaskListCompact({
                 setSelectedTasks([]);
               }
             }}
-            className="h-4 w-4"
+            className="h-4 w-4 rounded-full"
             data-testid="select-all-tasks"
           />
         </div>
