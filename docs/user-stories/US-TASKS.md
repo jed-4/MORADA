@@ -126,4 +126,4 @@
 | Location | Name | Purpose |
 |----------|------|---------|
 | Operations > Operational Tasks | Operational Tasks | Recurring workflow templates for daily/weekly scheduling |
-| Resources > Templates > Tasks | Template Tasks | Reusable task templates for general use |
+| Resources > Templates > Tasks | Task Templates | Reusable task templates for general use |

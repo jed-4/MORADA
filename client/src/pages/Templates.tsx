@@ -56,7 +56,7 @@ const templateTypes = [
   },
   {
     id: "tasks",
-    title: "Tasks",
+    title: "Task Templates",
     description: "Create task templates for recurring workflows",
     icon: CheckSquare,
     url: "/task-templates",
