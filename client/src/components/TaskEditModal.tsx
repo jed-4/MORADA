@@ -74,9 +74,10 @@ import {
   HardDrive,
   Lock,
   ClipboardList,
+  Copy,
 } from "lucide-react";
 import { useUpload } from "@/hooks/use-upload";
-import { SetReminderDialog } from "@/components/SetReminderDialog";
+import { SetReminderDialog, PendingReminderData } from "@/components/SetReminderDialog";
 import { DriveFilePicker } from "@/components/DriveFilePicker";
 import { Switch } from "@/components/ui/switch";
 
@@ -125,9 +126,11 @@ interface TaskEditModalProps {
   defaultAssigneeId?: string;
   defaultScope?: "personal" | "project" | "system" | "business";
   onDelete?: (taskId: string) => void;
+  onDuplicate?: (taskData: Partial<Task>) => void;
+  initialData?: Partial<Task>;
 }
 
-export default function TaskEditModal({ task: propTask, taskId, open, onOpenChange, projectId, initialStatus, defaultAssigneeId, defaultScope, onDelete }: TaskEditModalProps) {
+export default function TaskEditModal({ task: propTask, taskId, open, onOpenChange, projectId, initialStatus, defaultAssigneeId, defaultScope, onDelete, onDuplicate, initialData }: TaskEditModalProps) {
   // Use taskId from prop or from propTask to always fetch fresh data
   const effectiveTaskId = taskId || propTask?.id;
   
@@ -160,6 +163,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [optimisticCompleted, setOptimisticCompleted] = useState<boolean | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [pendingReminder, setPendingReminder] = useState<PendingReminderData | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const { user } = useAuth();
@@ -293,76 +297,80 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
   const priorityOptions = priorityCategory?.options || [];
   const defaultPriorityFromOptions = priorityOptions.find(opt => opt.isDefault)?.key || priorityOptions[0]?.key;
 
+  // Use initialData for duplicate functionality, falling back to task or defaults
+  const sourceData = task || initialData;
+  
   const form = useForm<TaskFormData>({
     resolver: zodResolver(taskFormSchema),
     defaultValues: {
-      title: task?.title || "New Task",
-      content: task?.content || "",
-      status: task?.status || initialStatus || defaultStatusFromOptions || "todo",
-      priority: (task?.priority as any) || defaultPriorityFromOptions || "low",
-      assigneeId: task?.assigneeId || defaultAssigneeId || undefined,
-      assigneeIds: (task as any)?.assigneeIds || (task?.assigneeId ? [task.assigneeId] : defaultAssigneeId ? [defaultAssigneeId] : []),
-      dueDate: task?.dueDate ? format(new Date(task.dueDate), "yyyy-MM-dd") : undefined,
-      startTime: task?.startTime || undefined,
-      endTime: task?.endTime || undefined,
-      isRecurring: task?.isRecurring || false,
-      recurringType: (task?.recurringType as any) || undefined,
-      recurringDays: (task?.recurringDays as number[]) || [],
-      includeSaturday: task?.includeSaturday || false,
-      includeSunday: task?.includeSunday || false,
-      recurringStartDate: task?.recurringStartDate ? format(new Date(task.recurringStartDate), "yyyy-MM-dd") : undefined,
-      recurringEndDate: task?.recurringEndDate ? format(new Date(task.recurringEndDate), "yyyy-MM-dd") : undefined,
-      dueDayOfMonth: (task as any)?.dueDayOfMonth || 1,
-      recurringSchedule: (task as any)?.recurringSchedule || [],
-      estimatedCost: task?.estimatedCost || undefined,
-      estimatedUnits: task?.estimatedUnits || undefined,
-      projectId: task?.projectId || projectId || undefined,
+      title: sourceData?.title || "New Task",
+      content: sourceData?.content || "",
+      status: sourceData?.status || initialStatus || defaultStatusFromOptions || "todo",
+      priority: (sourceData?.priority as any) || defaultPriorityFromOptions || "low",
+      assigneeId: sourceData?.assigneeId || defaultAssigneeId || undefined,
+      assigneeIds: (sourceData as any)?.assigneeIds || (sourceData?.assigneeId ? [sourceData.assigneeId] : defaultAssigneeId ? [defaultAssigneeId] : []),
+      dueDate: sourceData?.dueDate ? format(new Date(sourceData.dueDate), "yyyy-MM-dd") : undefined,
+      startTime: sourceData?.startTime || undefined,
+      endTime: sourceData?.endTime || undefined,
+      isRecurring: sourceData?.isRecurring || false,
+      recurringType: (sourceData?.recurringType as any) || undefined,
+      recurringDays: (sourceData?.recurringDays as number[]) || [],
+      includeSaturday: sourceData?.includeSaturday || false,
+      includeSunday: sourceData?.includeSunday || false,
+      recurringStartDate: sourceData?.recurringStartDate ? format(new Date(sourceData.recurringStartDate), "yyyy-MM-dd") : undefined,
+      recurringEndDate: sourceData?.recurringEndDate ? format(new Date(sourceData.recurringEndDate), "yyyy-MM-dd") : undefined,
+      dueDayOfMonth: (sourceData as any)?.dueDayOfMonth || 1,
+      recurringSchedule: (sourceData as any)?.recurringSchedule || [],
+      estimatedCost: sourceData?.estimatedCost || undefined,
+      estimatedUnits: sourceData?.estimatedUnits || undefined,
+      projectId: sourceData?.projectId || projectId || undefined,
       // Priority: existing task scope > legacy detection > defaultScope prop > project if projectId given > project
-      scope: (task?.scope as any) || (task && !task.projectId ? "business" : defaultScope || (projectId ? "project" : "project")),
-      color: (task as any)?.color || undefined,
-      isPrivate: (task as any)?.isPrivate || false,
-      checklistInstanceId: (task as any)?.checklistInstanceId || undefined,
+      scope: (sourceData?.scope as any) || (sourceData && !sourceData.projectId ? "business" : defaultScope || (projectId ? "project" : "project")),
+      color: (sourceData as any)?.color || undefined,
+      isPrivate: (sourceData as any)?.isPrivate || false,
+      checklistInstanceId: (sourceData as any)?.checklistInstanceId || undefined,
     },
   });
 
   useEffect(() => {
     if (open) {
+      const effectiveSourceData = task || initialData;
       const newDefaults = {
-        title: task?.title || "New Task",
-        content: task?.content || "",
-        status: task?.status || initialStatus || defaultStatusFromOptions || "todo",
-        priority: (task?.priority as any) || defaultPriorityFromOptions || "low",
-        assigneeId: task?.assigneeId || defaultAssigneeId || undefined,
-        assigneeIds: (task as any)?.assigneeIds || (task?.assigneeId ? [task.assigneeId] : defaultAssigneeId ? [defaultAssigneeId] : []),
-        dueDate: task?.dueDate ? format(new Date(task.dueDate), "yyyy-MM-dd") : undefined,
-        startTime: task?.startTime || undefined,
-        endTime: task?.endTime || undefined,
-        isRecurring: task?.isRecurring || false,
-        recurringType: (task?.recurringType as any) || undefined,
-        recurringDays: (task?.recurringDays as number[]) || [],
-        includeSaturday: task?.includeSaturday || false,
-        includeSunday: task?.includeSunday || false,
-        recurringStartDate: task?.recurringStartDate ? format(new Date(task.recurringStartDate), "yyyy-MM-dd") : undefined,
-        recurringEndDate: task?.recurringEndDate ? format(new Date(task.recurringEndDate), "yyyy-MM-dd") : undefined,
-        dueDayOfMonth: (task as any)?.dueDayOfMonth || 1,
-        recurringSchedule: (task as any)?.recurringSchedule || [],
-        estimatedCost: task?.estimatedCost || undefined,
-        estimatedUnits: task?.estimatedUnits || undefined,
-        projectId: task?.projectId || projectId || undefined,
+        title: effectiveSourceData?.title || "New Task",
+        content: effectiveSourceData?.content || "",
+        status: effectiveSourceData?.status || initialStatus || defaultStatusFromOptions || "todo",
+        priority: (effectiveSourceData?.priority as any) || defaultPriorityFromOptions || "low",
+        assigneeId: effectiveSourceData?.assigneeId || defaultAssigneeId || undefined,
+        assigneeIds: (effectiveSourceData as any)?.assigneeIds || (effectiveSourceData?.assigneeId ? [effectiveSourceData.assigneeId] : defaultAssigneeId ? [defaultAssigneeId] : []),
+        dueDate: effectiveSourceData?.dueDate ? format(new Date(effectiveSourceData.dueDate), "yyyy-MM-dd") : undefined,
+        startTime: effectiveSourceData?.startTime || undefined,
+        endTime: effectiveSourceData?.endTime || undefined,
+        isRecurring: effectiveSourceData?.isRecurring || false,
+        recurringType: (effectiveSourceData?.recurringType as any) || undefined,
+        recurringDays: (effectiveSourceData?.recurringDays as number[]) || [],
+        includeSaturday: effectiveSourceData?.includeSaturday || false,
+        includeSunday: effectiveSourceData?.includeSunday || false,
+        recurringStartDate: effectiveSourceData?.recurringStartDate ? format(new Date(effectiveSourceData.recurringStartDate), "yyyy-MM-dd") : undefined,
+        recurringEndDate: effectiveSourceData?.recurringEndDate ? format(new Date(effectiveSourceData.recurringEndDate), "yyyy-MM-dd") : undefined,
+        dueDayOfMonth: (effectiveSourceData as any)?.dueDayOfMonth || 1,
+        recurringSchedule: (effectiveSourceData as any)?.recurringSchedule || [],
+        estimatedCost: effectiveSourceData?.estimatedCost || undefined,
+        estimatedUnits: effectiveSourceData?.estimatedUnits || undefined,
+        projectId: effectiveSourceData?.projectId || projectId || undefined,
         // Priority: existing task scope > legacy detection > defaultScope prop > project if projectId given > project
-        scope: (task?.scope as any) || (task && !task.projectId ? "business" : defaultScope || (projectId ? "project" : "project")),
-        color: (task as any)?.color || undefined,
-        isPrivate: (task as any)?.isPrivate || false,
-        checklistInstanceId: (task as any)?.checklistInstanceId || undefined,
+        scope: (effectiveSourceData?.scope as any) || (effectiveSourceData && !effectiveSourceData.projectId ? "business" : defaultScope || (projectId ? "project" : "project")),
+        color: (effectiveSourceData as any)?.color || undefined,
+        isPrivate: (effectiveSourceData as any)?.isPrivate || false,
+        checklistInstanceId: (effectiveSourceData as any)?.checklistInstanceId || undefined,
       };
       form.reset(newDefaults);
       setTitleValue(newDefaults.title);
       setShowAdvanced(newDefaults.isRecurring);
-      // Initialize checklist from task - preserve existing IDs, only generate for items without IDs
+      // Initialize checklist from task/initialData - preserve existing IDs, only generate for items without IDs
       // Don't reset if we're in the middle of a mutation (to preserve optimistic updates)
       if (!isChecklistMutating) {
-        if (task) {
-          const taskChecklist = (task.checklist as Array<{ id?: string; text: string; completed: boolean; assigneeId?: string; assigneeName?: string }>) || [];
+        if (effectiveSourceData) {
+          const taskChecklist = (effectiveSourceData.checklist as Array<{ id?: string; text: string; completed: boolean; assigneeId?: string; assigneeName?: string }>) || [];
           setChecklistItems(taskChecklist.map(item => ({
             ...item,
             id: item.id || crypto.randomUUID(), // Only generate ID if item doesn't have one
@@ -376,10 +384,17 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
       setChecklistInput("");
       // Reset optimistic completion state when modal opens
       setOptimisticCompleted(null);
-      // Initialize selected tags from task
-      setSelectedTagIds((task?.tagIds as string[]) || []);
+      // Initialize selected tags from task or initialData (for duplication)
+      setSelectedTagIds((effectiveSourceData?.tagIds as string[]) || []);
+      // Clear pending reminder when opening a new task modal
+      if (!task) {
+        setPendingReminder(null);
+      }
+    } else {
+      // Modal is closing - clear pending reminder to avoid accidental creation
+      setPendingReminder(null);
     }
-  }, [task, open, initialStatus, projectId, defaultAssigneeId, form, isChecklistMutating]);
+  }, [task, open, initialData, initialStatus, projectId, defaultAssigneeId, form, isChecklistMutating]);
 
   useEffect(() => {
     if (isEditingTitle && titleInputRef.current) {
@@ -497,6 +512,34 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
         }
         setPendingAttachments([]);
       }
+      
+      // Create pending reminder for newly created task
+      if (!task && pendingReminder && newTask?.id) {
+        try {
+          await apiRequest("/api/reminders", "POST", {
+            title: pendingReminder.title,
+            description: pendingReminder.description,
+            dueAt: new Date(pendingReminder.triggerAt).toISOString(),
+            priority: pendingReminder.priority,
+            reminderType: "task",
+            linkedItemType: "task",
+            linkedItemId: newTask.id,
+            taskId: newTask.id,
+            projectId: projectId || undefined,
+          });
+          queryClient.invalidateQueries({ queryKey: ["/api/reminders"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
+        } catch (err) {
+          console.error("Failed to create reminder:", err);
+          toast({
+            title: "Task created, but reminder failed",
+            description: "The task was saved but the reminder could not be created.",
+            variant: "destructive",
+          });
+        }
+        setPendingReminder(null);
+      }
+      
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
       toast({ title: task ? "Task updated" : "Task created" });
       onOpenChange(false);
@@ -757,11 +800,10 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
               variant="ghost"
               size="icon"
               onClick={() => setShowReminderDialog(true)}
-              disabled={!task}
-              title={task ? "Set Reminder" : "Save task first to set reminder"}
+              title={pendingReminder ? "Reminder pending" : "Set Reminder"}
               data-testid="button-set-reminder"
             >
-              <Bell className="h-4 w-4" />
+              <Bell className={`h-4 w-4 ${pendingReminder ? "text-amber-500" : ""}`} />
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -812,7 +854,42 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                     Set Reminder
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuItem>Duplicate</DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={() => {
+                    if (task && onDuplicate) {
+                      const duplicateData: Partial<Task> = {
+                        title: `${task.title} (Copy)`,
+                        content: task.content,
+                        status: task.status,
+                        priority: task.priority,
+                        assigneeId: task.assigneeId,
+                        assigneeIds: task.assigneeIds,
+                        tagIds: task.tagIds,
+                        projectId: task.projectId,
+                        dueDate: task.dueDate,
+                        startTime: task.startTime,
+                        endTime: task.endTime,
+                        checklist: task.checklist,
+                        estimatedCost: task.estimatedCost,
+                        estimatedUnits: task.estimatedUnits,
+                        isRecurring: task.isRecurring,
+                        recurringType: task.recurringType,
+                        recurringDays: task.recurringDays,
+                        includeSaturday: task.includeSaturday,
+                        includeSunday: task.includeSunday,
+                        scope: task.scope as any,
+                        checklistInstanceId: task.checklistInstanceId,
+                        isPrivate: task.isPrivate,
+                      };
+                      onOpenChange(false);
+                      onDuplicate(duplicateData);
+                    }
+                  }}
+                  data-testid="menu-item-duplicate"
+                >
+                  <Copy className="h-4 w-4 mr-2" />
+                  Duplicate
+                </DropdownMenuItem>
                 {task && onDelete && (
                   <DropdownMenuItem 
                     className="text-destructive focus:text-destructive"
@@ -1787,8 +1864,12 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
       onOpenChange={setShowReminderDialog}
       linkedItemType="task"
       linkedItemId={task?.id}
-      linkedItemTitle={task?.title}
+      linkedItemTitle={task?.title || form.getValues("title")}
       projectId={projectId || task?.projectId}
+      onPendingReminder={!task ? (data) => {
+        setPendingReminder(data);
+        toast({ title: "Reminder will be set when task is saved" });
+      } : undefined}
     />
 
     <DriveFilePicker

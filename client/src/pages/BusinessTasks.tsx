@@ -153,6 +153,7 @@ export default function BusinessTasks() {
   const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
+  const [duplicateTaskData, setDuplicateTaskData] = useState<Partial<Task> | undefined>(undefined);
   const [listColumnOrder, setListColumnOrder] = useState<('status' | 'priority' | 'assignee' | 'dueDate' | 'project')[]>(['status', 'priority', 'assignee', 'dueDate', 'project']);
   const [listSortConfig, setListSortConfig] = useState<{ column: string; direction: 'asc' | 'desc' | null } | undefined>(undefined);
   const [initialTaskStatus, setInitialTaskStatus] = useState<string>("todo");
@@ -1187,11 +1188,13 @@ export default function BusinessTasks() {
             if (!open) {
               setEditingTask(null);
               setInitialTaskStatus("todo");
+              setDuplicateTaskData(undefined);
             }
           }}
           projectId=""
           initialStatus={initialTaskStatus}
           defaultScope="business"
+          initialData={duplicateTaskData}
         />
       )}
 
@@ -1206,6 +1209,11 @@ export default function BusinessTasks() {
           }}
           projectId={editingTask.projectId || ""}
           onDelete={handleDeleteTaskFromModal}
+          onDuplicate={(taskData) => {
+            setEditingTask(null);
+            setDuplicateTaskData(taskData);
+            setShowCreateTaskDialog(true);
+          }}
         />
       )}
 

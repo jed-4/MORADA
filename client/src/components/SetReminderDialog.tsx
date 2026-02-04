@@ -34,6 +34,13 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
+export interface PendingReminderData {
+  title: string;
+  description?: string;
+  triggerAt: string;
+  priority: "low" | "normal" | "high";
+}
+
 interface SetReminderDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -41,6 +48,7 @@ interface SetReminderDialogProps {
   linkedItemId?: string;
   linkedItemTitle?: string;
   projectId?: string;
+  onPendingReminder?: (data: PendingReminderData) => void;
 }
 
 const QUICK_OPTIONS = [
@@ -71,6 +79,7 @@ export function SetReminderDialog({
   linkedItemId,
   linkedItemTitle,
   projectId,
+  onPendingReminder,
 }: SetReminderDialogProps) {
   const { toast } = useToast();
   const [quickOption, setQuickOption] = useState<string | null>(null);
@@ -145,7 +154,20 @@ export function SetReminderDialog({
   };
 
   const onSubmit = (data: FormValues) => {
-    createMutation.mutate(data);
+    if (onPendingReminder && !linkedItemId) {
+      onPendingReminder({
+        title: data.title,
+        description: data.description,
+        triggerAt: data.triggerAt,
+        priority: data.priority,
+      });
+      onOpenChange(false);
+      form.reset();
+      setQuickOption(null);
+      setShowCustom(false);
+    } else {
+      createMutation.mutate(data);
+    }
   };
 
   return (

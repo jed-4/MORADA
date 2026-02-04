@@ -182,6 +182,7 @@ export default function Tasks() {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [viewToDelete, setViewToDelete] = useState<TaskView | null>(null);
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
+  const [duplicateTaskData, setDuplicateTaskData] = useState<Partial<Task> | undefined>(undefined);
   const [viewToEdit, setViewToEdit] = useState<TaskView | null>(null);
   const [editViewName, setEditViewName] = useState("");
   const [newViewName, setNewViewName] = useState("");
@@ -1574,8 +1575,12 @@ export default function Tasks() {
       {/* Task Creation Dialog */}
       <TaskEditModal 
         open={showCreateTaskDialog}
-        onOpenChange={setShowCreateTaskDialog}
+        onOpenChange={(open) => {
+          setShowCreateTaskDialog(open);
+          if (!open) setDuplicateTaskData(undefined);
+        }}
         projectId={effectiveProjectId}
+        initialData={duplicateTaskData}
       />
 
       {/* Task Editing Dialog */}
@@ -1585,6 +1590,11 @@ export default function Tasks() {
           open={!!editingTask}
           onOpenChange={(open) => !open && setEditingTask(null)}
           projectId={effectiveProjectId}
+          onDuplicate={(taskData) => {
+            setEditingTask(null);
+            setDuplicateTaskData(taskData);
+            setShowCreateTaskDialog(true);
+          }}
         />
       )}
 
