@@ -1,4 +1,4 @@
-import { forwardRef } from "react";
+import { forwardRef, useCallback } from "react";
 import {
   Select,
   SelectContent,
@@ -19,17 +19,10 @@ interface TimeSelectProps {
   "data-testid"?: string;
 }
 
-// Generate time options in 15-minute increments, starting from 7am
+// Generate time options in 15-minute increments (chronological order)
 const generateTimeOptions = () => {
   const options: { value: string; label: string }[] = [];
-  
-  // Start from 7am (hour 7) to 11:45pm, then 12am to 6:45am
-  const hours = [
-    7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
-    0, 1, 2, 3, 4, 5, 6
-  ];
-  
-  for (const hour of hours) {
+  for (let hour = 0; hour < 24; hour++) {
     for (let minute = 0; minute < 60; minute += 15) {
       const value = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
       const hour12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
@@ -43,10 +36,36 @@ const generateTimeOptions = () => {
 
 const TIME_OPTIONS = generateTimeOptions();
 
+// Default scroll position: 7:00 AM is at index 28 (7 hours * 4 quarter-hours)
+const DEFAULT_SCROLL_INDEX = 28;
+
 export const TimeSelect = forwardRef<HTMLButtonElement, TimeSelectProps>(
   ({ value, onChange, placeholder = "Select time", disabled, className, showIcon = true, "data-testid": testId }, ref) => {
     // Find the display label for the current value
     const selectedOption = TIME_OPTIONS.find(opt => opt.value === value);
+    
+    // Scroll to 7am when dropdown opens (if no value selected)
+    const handleContentRef = useCallback((node: HTMLDivElement | null) => {
+      if (node) {
+        // Use requestAnimationFrame to ensure DOM is ready
+        requestAnimationFrame(() => {
+          const viewport = node.querySelector('[data-radix-select-viewport]');
+          if (viewport) {
+            // If there's a selected value, scroll to it; otherwise scroll to 7am
+            const targetIndex = value 
+              ? TIME_OPTIONS.findIndex(opt => opt.value === value)
+              : DEFAULT_SCROLL_INDEX;
+            
+            const scrollIndex = targetIndex >= 0 ? targetIndex : DEFAULT_SCROLL_INDEX;
+            const itemHeight = 32; // Height of each SelectItem
+            // Center the target item in the viewport
+            const viewportHeight = 280;
+            const scrollTop = Math.max(0, (scrollIndex * itemHeight) - (viewportHeight / 2) + (itemHeight / 2));
+            viewport.scrollTop = scrollTop;
+          }
+        });
+      }
+    }, [value]);
     
     return (
       <Select value={value || ""} onValueChange={onChange} disabled={disabled}>
@@ -62,7 +81,7 @@ export const TimeSelect = forwardRef<HTMLButtonElement, TimeSelectProps>(
             </SelectValue>
           </div>
         </SelectTrigger>
-        <SelectContent className="max-h-[280px]">
+        <SelectContent ref={handleContentRef} className="max-h-[280px]">
           {TIME_OPTIONS.map((option) => (
             <SelectItem key={option.value} value={option.value}>
               {option.label}
