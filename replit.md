@@ -47,6 +47,12 @@ Preferred communication style: Simple, everyday language.
 ### Feature Specifications & System Design
 - **Budget Tracking**: Manages estimates, bills, and variations with a calculation engine.
 - **Task Management**: Kanban, List, and Calendar views with drag-and-drop, task templates, inline checklist management, and due date filtering. Polymorphic task context model for consistent handling across projects and business.
+  - **Inline Task Creation Defaults**: When tasks are created inline, the following data is automatically applied based on context:
+    - **Project List View**: `projectId` = current project, `taskContextType` = "project", `status` = "todo"
+    - **Business List View**: `taskContextType` = "business", `status` = "todo", no projectId
+    - **Kanban Column**: Inherits column's status (e.g., creating in "In Progress" column sets `status` = "in_progress")
+    - **Task Modal (via + button)**: `projectId` from prop, `scope` derived (project if projectId given, business otherwise), `status` = "todo", `priority` = "low"
+    - **Server-side auto-derived**: `companyId`, `ownerId`, `ownerName` from authenticated user; `taskContextType`/`taskContextId` from projectId or defaults to business/companyId
 - **Checklist System**: Templates with group functionality and dashboard widget integration, color-coded status indicators. **Terminology mapping**: Database `checklistTemplates` table = UI "Checklist Group" (e.g., "01 Estimation"); Database `checklistTemplateGroups` table = UI "Checklist" (e.g., "EST04 - RFQs Issued"); Database `checklistTemplateItems` table = UI "Checklist Item" (e.g., "Prepare RFQs").
 - **Cost Code Management**: Company-isolated merge functionality.
 - **Import System**: Flexible CSV/Excel import for schedules with column mapping.
