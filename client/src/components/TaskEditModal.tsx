@@ -285,19 +285,21 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
   const statusCategory = fieldCategories.find(cat => cat.key === "task.status");
   const statusOptions = statusCategory?.options || [];
   const completedOption = statusOptions.find(opt => opt.isCompleted);
+  const defaultStatusFromOptions = statusOptions.find(opt => opt.isDefault)?.key || statusOptions[0]?.key;
   // Use optimistic state if set, otherwise derive from task status
   const isCompleted = optimisticCompleted !== null ? optimisticCompleted : task?.status === completedOption?.key;
   
   const priorityCategory = fieldCategories.find(cat => cat.key === "task.priority");
   const priorityOptions = priorityCategory?.options || [];
+  const defaultPriorityFromOptions = priorityOptions.find(opt => opt.isDefault)?.key || priorityOptions[0]?.key;
 
   const form = useForm<TaskFormData>({
     resolver: zodResolver(taskFormSchema),
     defaultValues: {
       title: task?.title || "New Task",
       content: task?.content || "",
-      status: task?.status || initialStatus || "todo",
-      priority: (task?.priority as any) || "low",
+      status: task?.status || initialStatus || defaultStatusFromOptions || "todo",
+      priority: (task?.priority as any) || defaultPriorityFromOptions || "low",
       assigneeId: task?.assigneeId || defaultAssigneeId || undefined,
       assigneeIds: (task as any)?.assigneeIds || (task?.assigneeId ? [task.assigneeId] : defaultAssigneeId ? [defaultAssigneeId] : []),
       dueDate: task?.dueDate ? format(new Date(task.dueDate), "yyyy-MM-dd") : undefined,
@@ -328,8 +330,8 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
       const newDefaults = {
         title: task?.title || "New Task",
         content: task?.content || "",
-        status: task?.status || initialStatus || "todo",
-        priority: (task?.priority as any) || "low",
+        status: task?.status || initialStatus || defaultStatusFromOptions || "todo",
+        priority: (task?.priority as any) || defaultPriorityFromOptions || "low",
         assigneeId: task?.assigneeId || defaultAssigneeId || undefined,
         assigneeIds: (task as any)?.assigneeIds || (task?.assigneeId ? [task.assigneeId] : defaultAssigneeId ? [defaultAssigneeId] : []),
         dueDate: task?.dueDate ? format(new Date(task.dueDate), "yyyy-MM-dd") : undefined,

@@ -554,7 +554,7 @@ export default function BusinessTasks() {
         title,
         content: title,
         taskContextType: "business",
-        status: "todo",
+        status: defaultOption?.key || statusOptions[0]?.key || "todo",
       });
     },
     onSuccess: () => {

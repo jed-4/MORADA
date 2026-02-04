@@ -440,7 +440,7 @@ export default function Tasks() {
         projectId: effectiveProjectId || undefined,
         taskContextType: effectiveProjectId ? "project" : "business",
         taskContextId: effectiveProjectId || undefined,
-        status: "todo",
+        status: defaultStatusOption?.key || statusOptions[0]?.key || "todo",
       });
     },
     onSuccess: () => {
@@ -546,6 +546,7 @@ export default function Tasks() {
   // Extract task status and priority options
   const taskStatusCategory = fieldCategories.find(cat => cat.key === "task.status");
   const statusOptions = taskStatusCategory?.options || [];
+  const defaultStatusOption = taskStatusCategory?.options?.find(opt => opt.isDefault);
   const taskPriorityCategory = fieldCategories.find(cat => cat.key === "task.priority");
   const priorityOptions = taskPriorityCategory?.options || [];
 
