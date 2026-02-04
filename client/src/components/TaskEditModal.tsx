@@ -16,6 +16,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { TimeSelect } from "@/components/ui/time-select";
 import {
   Dialog,
   DialogContent,
@@ -1430,22 +1431,32 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                   Time
                 </label>
                 <div className="flex items-center gap-2">
-                  <Input
-                    type="time"
-                    step="900"
-                    {...form.register("startTime")}
-                    className="h-9 flex-1"
-                    placeholder="Start"
-                    data-testid="input-start-time"
+                  <Controller
+                    name="startTime"
+                    control={form.control}
+                    render={({ field }) => (
+                      <TimeSelect
+                        value={field.value}
+                        onChange={field.onChange}
+                        placeholder="Start"
+                        className="flex-1"
+                        data-testid="input-start-time"
+                      />
+                    )}
                   />
                   <span className="text-muted-foreground">-</span>
-                  <Input
-                    type="time"
-                    step="900"
-                    {...form.register("endTime")}
-                    className="h-9 flex-1"
-                    placeholder="End"
-                    data-testid="input-end-time"
+                  <Controller
+                    name="endTime"
+                    control={form.control}
+                    render={({ field }) => (
+                      <TimeSelect
+                        value={field.value}
+                        onChange={field.onChange}
+                        placeholder="End"
+                        className="flex-1"
+                        data-testid="input-end-time"
+                      />
+                    )}
                   />
                 </div>
               </div>
@@ -1498,12 +1509,19 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                             <div className="flex items-end gap-3">
                               <div className="space-y-1">
                                 <label className="text-[10px] font-medium text-muted-foreground">Time</label>
-                                <Input
-                                  type="time"
-                                  step="900"
-                                  {...form.register("startTime")}
-                                  className="h-8 text-xs w-24"
-                                  data-testid="input-daily-time"
+                                <Controller
+                                  name="startTime"
+                                  control={form.control}
+                                  render={({ field }) => (
+                                    <TimeSelect
+                                      value={field.value}
+                                      onChange={field.onChange}
+                                      placeholder="Time"
+                                      className="h-8 text-xs w-28"
+                                      showIcon={false}
+                                      data-testid="input-daily-time"
+                                    />
+                                  )}
                                 />
                               </div>
                               <div className="flex items-center gap-3 pb-1">
@@ -1563,23 +1581,23 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                                     return (
                                       <div key={dayValue} className="flex items-center gap-1.5 px-2 py-1 bg-muted/30 rounded border">
                                         <span className="text-[10px] font-medium w-6">{dayLabel}</span>
-                                        <Input
-                                          type="time"
-                                          step="900"
+                                        <TimeSelect
                                           value={schedule?.startTime || ""}
-                                          onChange={(e) => {
+                                          onChange={(value) => {
                                             const currentSchedule = form.watch("recurringSchedule") || [];
                                             const existing = currentSchedule.findIndex((s: any) => s.dayOfWeek === dayValue);
                                             let newSchedule;
                                             if (existing >= 0) {
                                               newSchedule = [...currentSchedule];
-                                              newSchedule[existing] = { ...newSchedule[existing], startTime: e.target.value };
+                                              newSchedule[existing] = { ...newSchedule[existing], startTime: value };
                                             } else {
-                                              newSchedule = [...currentSchedule, { dayOfWeek: dayValue, startTime: e.target.value, duration: 60 }];
+                                              newSchedule = [...currentSchedule, { dayOfWeek: dayValue, startTime: value, duration: 60 }];
                                             }
                                             form.setValue("recurringSchedule", newSchedule, { shouldDirty: true, shouldTouch: true });
                                           }}
-                                          className="h-6 text-[10px] flex-1"
+                                          placeholder="Time"
+                                          className="h-7 text-[10px] flex-1"
+                                          showIcon={false}
                                           data-testid={`input-time-${dayLabel.toLowerCase()}`}
                                         />
                                       </div>
@@ -1614,12 +1632,19 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                             </div>
                             <div className="space-y-1">
                               <label className="text-[10px] font-medium text-muted-foreground">Time</label>
-                              <Input
-                                type="time"
-                                step="900"
-                                {...form.register("startTime")}
-                                className="h-8 text-xs w-24"
-                                data-testid="input-monthly-time"
+                              <Controller
+                                name="startTime"
+                                control={form.control}
+                                render={({ field }) => (
+                                  <TimeSelect
+                                    value={field.value}
+                                    onChange={field.onChange}
+                                    placeholder="Time"
+                                    className="h-8 text-xs w-28"
+                                    showIcon={false}
+                                    data-testid="input-monthly-time"
+                                  />
+                                )}
                               />
                             </div>
                           </div>
