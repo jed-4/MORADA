@@ -89,9 +89,10 @@ The Tasks system is the core work management feature of BuildPro, enabling build
 **So that** everyone knows who is responsible for each piece of work
 
 **Acceptance Criteria:**
-- [ ] User can assign one or more team members to a task
-- [ ] Assignees can be selected from a searchable dropdown
-- [ ] Assigned users see the task in their personal task list
+- [x] User can assign one or more team members to a task
+- [x] Assignees can be selected from a searchable dropdown
+- [x] Assignees can be changed inline from list view
+- [x] Assigned users see the task in their personal task list
 - [ ] Assignment changes trigger notifications (if enabled)
 
 **Priority:** Must Have  
@@ -279,7 +280,7 @@ The Tasks system is the core work management feature of BuildPro, enabling build
 **Acceptance Criteria:**
 - [x] User can add multiple checklist items to a task
 - [x] Checklist items can be checked/unchecked
-- [ ] Checklist items can be reordered
+- [x] Checklist items can be reordered (drag-and-drop)
 - [x] Checklist items can be edited and deleted
 - [x] Task shows checklist completion progress
 
@@ -414,18 +415,19 @@ The Tasks system is the core work management feature of BuildPro, enabling build
 ### Implemented Features
 - Full task CRUD operations
 - List, Kanban, and Calendar views
-- Task assignment and priority
+- Task assignment and priority (including inline editing from list view)
 - Business-level and project-level tasks
 - Recurring tasks with templates
-- Checklists within tasks
+- Checklists within tasks with drag-and-drop reordering
 - Personal workspace (My Tasks, My Day, Week Calendar)
 - Saved views with filters
 - Drag-and-drop rescheduling
-- Task reminders
+- Task reminders with notification bell integration
 - Task labels/tags with company-wide tag library
 - Multiple task creation entry points (header, widgets, pages, calendar)
 - Detail modal opens first from calendar (view before edit)
 - Board view grouping by status, priority, labels, or project
+- Task duplication with copied checklist items
 
 ### Known Limitations
 - No real-time collaboration (requires refresh to see others' changes)

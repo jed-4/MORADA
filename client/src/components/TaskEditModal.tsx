@@ -8,6 +8,23 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { type Task, type FieldCategoryWithOptions, type Project, type Reminder } from "@shared/schema";
 import { z } from "zod";
 import { format } from "date-fns";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -115,6 +132,130 @@ const taskFormSchema = z.object({
 });
 
 type TaskFormData = z.infer<typeof taskFormSchema>;
+
+interface ChecklistItemData {
+  id?: string;
+  text: string;
+  completed: boolean;
+  assigneeId?: string;
+  assigneeName?: string;
+}
+
+interface SortableChecklistItemProps {
+  item: ChecklistItemData;
+  onToggle: (id: string) => void;
+  onRemove: (id: string) => void;
+  onAssigneeChange: (id: string, userId: string | undefined, userName: string | undefined) => void;
+  assignees: any[];
+  getUserDisplayName: (user: any) => string;
+  getInitials: (name: string) => string;
+}
+
+function SortableChecklistItem({ 
+  item, 
+  onToggle, 
+  onRemove, 
+  onAssigneeChange,
+  assignees,
+  getUserDisplayName,
+  getInitials,
+}: SortableChecklistItemProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: item.id || '' });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 group"
+      data-testid={`checklist-item-${item.id}`}
+    >
+      <div
+        {...attributes}
+        {...listeners}
+        className="cursor-grab active:cursor-grabbing touch-none"
+      >
+        <GripVertical className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100" />
+      </div>
+      <Checkbox 
+        className="h-4 w-4" 
+        checked={item.completed}
+        onCheckedChange={() => onToggle(item.id!)}
+        data-testid={`checkbox-checklist-${item.id}`}
+      />
+      <span className={`text-sm flex-1 ${item.completed ? 'line-through text-muted-foreground' : ''}`}>
+        {item.text}
+      </span>
+      
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            className="h-5 w-5 rounded-full hover:bg-muted flex items-center justify-center"
+            data-testid={`button-assignee-checklist-${item.id}`}
+          >
+            {item.assigneeId ? (
+              <Avatar className="h-5 w-5 border border-border/50">
+                <AvatarFallback className="text-[10px]">
+                  {getInitials(item.assigneeName || "")}
+                </AvatarFallback>
+              </Avatar>
+            ) : (
+              <User className="h-3 w-3 text-muted-foreground" />
+            )}
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuItem onClick={() => onAssigneeChange(item.id!, undefined, undefined)}>
+            <span className="text-muted-foreground">Unassigned</span>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          {assignees.length > 0 ? (
+            assignees.map((user) => (
+              <DropdownMenuItem
+                key={user.id}
+                onClick={() => onAssigneeChange(item.id!, user.id, getUserDisplayName(user))}
+              >
+                <Avatar className="h-4 w-4 mr-2">
+                  <AvatarFallback className="text-[10px]">
+                    {getInitials(getUserDisplayName(user))}
+                  </AvatarFallback>
+                </Avatar>
+                {getUserDisplayName(user)}
+                {item.assigneeId === user.id && (
+                  <Check className="h-3 w-3 ml-auto" />
+                )}
+              </DropdownMenuItem>
+            ))
+          ) : (
+            <DropdownMenuItem disabled className="text-xs text-muted-foreground">
+              Assign task users first
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      
+      <button
+        onClick={() => onRemove(item.id!)}
+        className="p-1 hover:bg-destructive/10 rounded opacity-0 group-hover:opacity-100"
+        data-testid={`button-remove-checklist-${item.id}`}
+      >
+        <X className="h-3 w-3 text-destructive" />
+      </button>
+    </div>
+  );
+}
 
 interface TaskEditModalProps {
   task?: Task;
@@ -693,6 +834,36 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
     }
   };
 
+  const handleChecklistAssigneeChange = (itemId: string, userId: string | undefined, userName: string | undefined) => {
+    const newChecklist = checklistItems.map(item =>
+      item.id === itemId ? { ...item, assigneeId: userId, assigneeName: userName } : item
+    );
+    setChecklistItems(newChecklist);
+    if (task) updateChecklistMutation.mutate(newChecklist);
+  };
+
+  // Drag-and-drop sensors for checklist reorder
+  const checklistSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const handleChecklistDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = checklistItems.findIndex(item => item.id === active.id);
+    const newIndex = checklistItems.findIndex(item => item.id === over.id);
+
+    if (oldIndex !== -1 && newIndex !== -1) {
+      const newChecklist = arrayMove(checklistItems, oldIndex, newIndex);
+      setChecklistItems(newChecklist);
+      if (task) {
+        updateChecklistMutation.mutate(newChecklist);
+      }
+    }
+  };
+
   const onSubmit = (data: TaskFormData) => {
     saveTaskMutation.mutate(data);
   };
@@ -1154,94 +1325,29 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                   </div>
                   
                   <div className="space-y-1">
-                    {checklistItems.map((item) => (
-                      <div
-                        key={item.id}
-                        className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 group"
-                        data-testid={`checklist-item-${item.id}`}
+                    <DndContext
+                      sensors={checklistSensors}
+                      collisionDetection={closestCenter}
+                      onDragEnd={handleChecklistDragEnd}
+                    >
+                      <SortableContext
+                        items={checklistItems.map(item => item.id || '')}
+                        strategy={verticalListSortingStrategy}
                       >
-                        <Checkbox 
-                          className="h-4 w-4" 
-                          checked={item.completed}
-                          onCheckedChange={() => handleToggleChecklistItem(item.id!)}
-                          data-testid={`checkbox-checklist-${item.id}`}
-                        />
-                        <span className={`text-sm flex-1 ${item.completed ? 'line-through text-muted-foreground' : ''}`}>
-                          {item.text}
-                        </span>
-                        
-                        {/* Checklist item assignee dropdown */}
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <button
-                              className="h-5 w-5 rounded-full hover:bg-muted flex items-center justify-center"
-                              data-testid={`button-assignee-checklist-${item.id}`}
-                            >
-                              {item.assigneeId ? (
-                                <Avatar className="h-5 w-5 border border-border/50">
-                                  <AvatarFallback className="text-[10px]">
-                                    {getInitials(item.assigneeName || "")}
-                                  </AvatarFallback>
-                                </Avatar>
-                              ) : (
-                                <User className="h-3 w-3 text-muted-foreground" />
-                              )}
-                            </button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-48">
-                            <DropdownMenuItem
-                              onClick={() => {
-                                const newChecklist = checklistItems.map(i =>
-                                  i.id === item.id ? { ...i, assigneeId: undefined, assigneeName: undefined } : i
-                                );
-                                setChecklistItems(newChecklist);
-                                if (task) updateChecklistMutation.mutate(newChecklist);
-                              }}
-                            >
-                              <span className="text-muted-foreground">Unassigned</span>
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            {/* Only show users who are assigned to the task */}
-                            {assignees.length > 0 ? (
-                              assignees.map((user) => (
-                                <DropdownMenuItem
-                                  key={user.id}
-                                  onClick={() => {
-                                    const newChecklist = checklistItems.map(i =>
-                                      i.id === item.id ? { ...i, assigneeId: user.id, assigneeName: getUserDisplayName(user) } : i
-                                    );
-                                    setChecklistItems(newChecklist);
-                                    if (task) updateChecklistMutation.mutate(newChecklist);
-                                  }}
-                                >
-                                  <Avatar className="h-4 w-4 mr-2">
-                                    <AvatarFallback className="text-[10px]">
-                                      {getInitials(getUserDisplayName(user))}
-                                    </AvatarFallback>
-                                  </Avatar>
-                                  {getUserDisplayName(user)}
-                                  {item.assigneeId === user.id && (
-                                    <Check className="h-3 w-3 ml-auto" />
-                                  )}
-                                </DropdownMenuItem>
-                              ))
-                            ) : (
-                              <DropdownMenuItem disabled className="text-xs text-muted-foreground">
-                                Assign task users first
-                              </DropdownMenuItem>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                        
-                        <button
-                          onClick={() => handleRemoveChecklistItem(item.id!)}
-                          className="p-1 hover:bg-destructive/10 rounded opacity-0 group-hover:opacity-100"
-                          data-testid={`button-remove-checklist-${item.id}`}
-                        >
-                          <X className="h-3 w-3 text-destructive" />
-                        </button>
-                      </div>
-                    ))}
+                        {checklistItems.map((item) => (
+                          <SortableChecklistItem
+                            key={item.id}
+                            item={item}
+                            onToggle={handleToggleChecklistItem}
+                            onRemove={handleRemoveChecklistItem}
+                            onAssigneeChange={handleChecklistAssigneeChange}
+                            assignees={assignees}
+                            getUserDisplayName={getUserDisplayName}
+                            getInitials={getInitials}
+                          />
+                        ))}
+                      </SortableContext>
+                    </DndContext>
 
                     {showChecklistInput && (
                       <div className="flex items-center gap-2 p-2">

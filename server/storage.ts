@@ -6682,8 +6682,26 @@ export class DbStorage implements IStorage {
   }
 
   async updateTask(id: string, taskData: Partial<InsertTask>): Promise<Task | undefined> {
+    // If assigneeId is being updated, look up the assignee name
+    let updateData: any = { ...taskData };
+    if ('assigneeId' in taskData) {
+      if (taskData.assigneeId) {
+        // Fetch the user to get their name
+        const [user] = await db.select()
+          .from(schema.users)
+          .where(eq(schema.users.id, taskData.assigneeId))
+          .limit(1);
+        if (user) {
+          updateData.assigneeName = `${user.firstName} ${user.lastName}`.trim();
+        }
+      } else {
+        // assigneeId is being cleared
+        updateData.assigneeName = null;
+      }
+    }
+    
     const [task] = await db.update(schema.notes).set({
-      ...taskData,
+      ...updateData,
       updatedAt: new Date()
     }).where(eq(schema.notes.id, id)).returning();
     return task as Task;
