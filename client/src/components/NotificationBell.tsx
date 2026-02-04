@@ -178,7 +178,12 @@ export function NotificationBell() {
     }
     if (notification.link) {
       setIsOpen(false);
-      navigate(notification.link);
+      // Use full navigation for links with query params (e.g., taskId) to ensure component remounts
+      if (notification.link.includes('?')) {
+        window.location.href = notification.link;
+      } else {
+        navigate(notification.link);
+      }
     }
   };
 

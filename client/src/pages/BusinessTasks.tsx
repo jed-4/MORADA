@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
+import { useLocation } from "wouter";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Settings, MoreHorizontal, X, Search, ChevronLeft, ChevronRight, Pencil, ChevronDown, SlidersHorizontal, List, LayoutGrid, Calendar } from "lucide-react";
@@ -147,6 +148,7 @@ function SortableViewTab({
 }
 
 export default function BusinessTasks() {
+  const [location] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<"board" | "list" | "calendar">("board");
@@ -285,6 +287,26 @@ export default function BusinessTasks() {
       return response.json();
     },
   });
+
+  // Handle taskId from URL query params for notification links
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const taskId = urlParams.get('taskId');
+    
+    if (taskId && allTasks.length > 0 && !editingTask) {
+      const taskToOpen = allTasks.find(t => t.id === taskId);
+      if (taskToOpen) {
+        // BusinessTasks uses showCreateTaskDialog for both create and edit modals
+        setEditingTask(taskToOpen);
+        setShowCreateTaskDialog(true);
+        // Clear taskId while preserving other query params
+        urlParams.delete('taskId');
+        const newSearch = urlParams.toString();
+        const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : '');
+        window.history.replaceState({}, '', newUrl);
+      }
+    }
+  }, [allTasks, editingTask, location]);
 
   // Fetch saved task views
   const { data: taskViews = [] } = useQuery<TaskView[]>({

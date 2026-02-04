@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -167,7 +167,7 @@ export default function Tasks() {
   const { currentProject } = useProject();
   const { toast } = useToast();
   const params = useParams<TasksParams>();
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const searchInputRef = useRef<HTMLInputElement>(null);
   
   // Use projectId from URL params if available, otherwise fall back to currentProject
@@ -538,6 +538,24 @@ export default function Tasks() {
     },
     enabled: !!effectiveProjectId
   });
+
+  // Handle taskId from URL query params for notification links
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const taskId = urlParams.get('taskId');
+    
+    if (taskId && allTasks.length > 0 && !editingTask) {
+      const taskToOpen = allTasks.find(t => t.id === taskId);
+      if (taskToOpen) {
+        setEditingTask(taskToOpen);
+        // Clear taskId while preserving other query params
+        urlParams.delete('taskId');
+        const newSearch = urlParams.toString();
+        const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : '');
+        window.history.replaceState({}, '', newUrl);
+      }
+    }
+  }, [allTasks, editingTask, location]);
 
   // Fetch task status options from field categories
   const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
