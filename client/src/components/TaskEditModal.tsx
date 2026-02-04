@@ -72,6 +72,7 @@ import {
   Upload,
   HardDrive,
   Lock,
+  ClipboardList,
 } from "lucide-react";
 import { useUpload } from "@/hooks/use-upload";
 import { SetReminderDialog } from "@/components/SetReminderDialog";
@@ -107,6 +108,8 @@ const taskFormSchema = z.object({
   scope: z.enum(["personal", "project", "system", "business"]).default("project"),
   color: z.string().optional(),
   isPrivate: z.boolean().default(false),
+  checklistInstanceId: z.string().nullable().optional(),
+  checklistInstanceName: z.string().nullable().optional(),
 });
 
 type TaskFormData = z.infer<typeof taskFormSchema>;
@@ -176,6 +179,11 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
   const { data: subtasks = [] } = useQuery<Task[]>({
     queryKey: ["/api/tasks", task?.id, "subtasks"],
     enabled: !!task?.id,
+  });
+
+  // Fetch active checklist instances for linking to tasks
+  const { data: checklistInstances = [] } = useQuery<any[]>({
+    queryKey: ["/api/checklist-instances"],
   });
 
   const labelCategory = fieldCategories.find(cat => cat.key === "task.labels");
@@ -310,6 +318,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
       scope: (task?.scope as any) || (task && !task.projectId ? "business" : defaultScope || (projectId ? "project" : "project")),
       color: (task as any)?.color || undefined,
       isPrivate: (task as any)?.isPrivate || false,
+      checklistInstanceId: (task as any)?.checklistInstanceId || undefined,
     },
   });
 
@@ -341,6 +350,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
         scope: (task?.scope as any) || (task && !task.projectId ? "business" : defaultScope || (projectId ? "project" : "project")),
         color: (task as any)?.color || undefined,
         isPrivate: (task as any)?.isPrivate || false,
+        checklistInstanceId: (task as any)?.checklistInstanceId || undefined,
       };
       form.reset(newDefaults);
       setTitleValue(newDefaults.title);
@@ -375,16 +385,43 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
     }
   }, [isEditingTitle]);
 
+  // Auto-set endTime to 15 minutes after startTime when startTime is first set
+  const startTimeValue = form.watch("startTime");
+  const endTimeValue = form.watch("endTime");
+  
+  useEffect(() => {
+    // Only auto-populate if startTime is set and endTime is not set
+    if (startTimeValue && !endTimeValue) {
+      try {
+        const [hours, minutes] = startTimeValue.split(":").map(Number);
+        const totalMinutes = hours * 60 + minutes + 15; // Add 15 minutes
+        const newHours = Math.floor(totalMinutes / 60) % 24; // Handle overflow past midnight
+        const newMinutes = totalMinutes % 60;
+        const newEndTime = `${String(newHours).padStart(2, "0")}:${String(newMinutes).padStart(2, "0")}`;
+        form.setValue("endTime", newEndTime, { shouldDirty: true });
+      } catch (e) {
+        // Ignore parsing errors
+      }
+    }
+  }, [startTimeValue]); // Only trigger when startTime changes
+
   const saveTaskMutation = useMutation({
     mutationFn: async (data: TaskFormData) => {
       // Build assigneeNames from assigneeIds for caching
       const selectedAssignees = users.filter(u => (data.assigneeIds || []).includes(u.id));
       const assigneeNames = selectedAssignees.map(u => getUserDisplayName(u));
       
+      // Get linked checklist instance name for caching
+      const linkedChecklist = data.checklistInstanceId 
+        ? checklistInstances.find(c => c.id === data.checklistInstanceId)
+        : null;
+      const checklistInstanceName = linkedChecklist?.name || null;
+      
       const payload = { 
         ...data, 
         tagIds: selectedTagIds,
         assigneeNames, // Cache names for display
+        checklistInstanceName, // Cache checklist name for display
       };
       if (task) {
         return await apiRequest(`/api/tasks/${task.id}`, "PATCH", payload);
@@ -1189,6 +1226,36 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                     )}
                   </DropdownMenuContent>
                 </DropdownMenu>
+              </div>
+
+              {/* Linked Checklist */}
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                  <ClipboardList className="h-3 w-3" />
+                  Linked Checklist
+                </label>
+                <Select
+                  value={form.watch("checklistInstanceId") || "none"}
+                  onValueChange={(value) => form.setValue("checklistInstanceId", value === "none" ? null : value, { shouldDirty: true, shouldTouch: true })}
+                >
+                  <SelectTrigger className="h-9" data-testid="select-linked-checklist">
+                    <SelectValue placeholder="Select checklist..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">
+                      <span className="text-muted-foreground">None</span>
+                    </SelectItem>
+                    {checklistInstances.length > 0 && <div className="h-px bg-border my-1" />}
+                    {checklistInstances.map((instance) => (
+                      <SelectItem key={instance.id} value={instance.id}>
+                        <div className="flex items-center gap-2">
+                          <ClipboardList className="h-3 w-3 text-muted-foreground" />
+                          <span className="truncate">{instance.name}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* Status */}

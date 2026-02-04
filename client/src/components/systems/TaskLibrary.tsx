@@ -273,8 +273,8 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
     },
   });
 
-  // Regenerate tasks mutation
-  const regenerateTasksMutation = useMutation({
+  // Update tasks mutation (syncs template changes to existing tasks)
+  const updateTasksMutation = useMutation({
     mutationFn: (id: string) => apiRequest(`/api/systems/task-templates/${id}/regenerate`, "POST"),
     onSuccess: (data: { deleted: number; generated: number }) => {
       // Invalidate all task and note queries to refresh all views
@@ -285,12 +285,12 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
         }
       });
       toast({ 
-        title: "Tasks regenerated successfully",
-        description: `Deleted ${data.deleted} old tasks, generated ${data.generated} new tasks`
+        title: "Tasks updated successfully",
+        description: `Synced ${data.generated} tasks with template changes`
       });
     },
     onError: () => {
-      toast({ title: "Failed to regenerate tasks", variant: "destructive" });
+      toast({ title: "Failed to update tasks", variant: "destructive" });
     },
   });
 
@@ -1082,11 +1082,11 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                         </DropdownMenuItem>
                         {template.isRecurringTemplate && (
                           <DropdownMenuItem
-                            onClick={() => regenerateTasksMutation.mutate(template.id)}
-                            data-testid="menu-regenerate-tasks"
+                            onClick={() => updateTasksMutation.mutate(template.id)}
+                            data-testid="menu-update-tasks"
                           >
                             <RefreshCw className="h-4 w-4 mr-2" />
-                            Regenerate Tasks
+                            Update Tasks
                           </DropdownMenuItem>
                         )}
                         <DropdownMenuItem

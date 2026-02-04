@@ -472,6 +472,10 @@ export const notes: any = pgTable("notes", {
   // Privacy
   isPrivate: boolean("is_private").default(false), // If true, only assigned users can see this task
   
+  // Linked checklist instance - allows attaching a formal checklist to a task
+  checklistInstanceId: varchar("checklist_instance_id"), // FK to checklist_instances.id
+  checklistInstanceName: text("checklist_instance_name"), // Cached name for display
+  
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -546,6 +550,9 @@ export const insertNoteSchema = createInsertSchema(notes).omit({
   archivedById: z.string().nullable().optional(),
   // Privacy
   isPrivate: z.boolean().optional(),
+  // Linked checklist instance
+  checklistInstanceId: z.string().nullable().optional(),
+  checklistInstanceName: z.string().nullable().optional(),
 });
 
 export type InsertNote = z.infer<typeof insertNoteSchema>;

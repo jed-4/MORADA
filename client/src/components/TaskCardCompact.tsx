@@ -10,7 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Calendar, Flag, Pencil, DollarSign, GripVertical, MoreHorizontal, Trash2, FolderKanban } from "lucide-react";
+import { Calendar, Flag, Pencil, DollarSign, GripVertical, MoreHorizontal, Trash2, FolderKanban, ClipboardList } from "lucide-react";
 import { Task, type FieldCategoryWithOptions } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -232,6 +232,17 @@ export default function TaskCardCompact({ task, onClick, isDragging = false, dis
               >
                 <FolderKanban className="h-2 w-2 mr-0.5 shrink-0" />
                 <span className="truncate">{(task as any).projectName}</span>
+              </Badge>
+            )}
+
+            {/* Linked Checklist indicator */}
+            {(task as any).checklistInstanceId && (
+              <Badge 
+                variant="outline" 
+                className="text-[10px] px-1.5 py-0 h-4 rounded-full bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-500/20 no-default-hover-elevate no-default-active-elevate max-w-[100px] truncate"
+              >
+                <ClipboardList className="h-2 w-2 mr-0.5 shrink-0" />
+                <span className="truncate">{(task as any).checklistInstanceName || 'Checklist'}</span>
               </Badge>
             )}
           </div>
