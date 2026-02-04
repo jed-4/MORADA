@@ -416,6 +416,40 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
     prevStartTimeRef.current = startTimeValue;
   }, [startTimeValue]); // Only trigger when startTime changes
 
+  // Get the current linked checklist ID from form (must be after form initialization)
+  const linkedChecklistId = form.watch("checklistInstanceId");
+
+  // Fetch linked checklist items when a checklist is linked
+  const { data: linkedChecklistItems = [], isLoading: isLoadingLinkedChecklist, isError: isLinkedChecklistError } = useQuery<any[]>({
+    queryKey: ["/api/checklist-instances", linkedChecklistId, "items"],
+    queryFn: async () => {
+      if (!linkedChecklistId) return [];
+      const response = await fetch(`/api/checklist-instances/${linkedChecklistId}/items`, { credentials: "include" });
+      if (!response.ok) {
+        throw new Error("Failed to fetch checklist items");
+      }
+      return response.json();
+    },
+    enabled: !!linkedChecklistId,
+  });
+
+  // Mutation to update linked checklist item status
+  const updateLinkedChecklistItemMutation = useMutation({
+    mutationFn: async ({ itemId, status }: { itemId: string; status: string }) => {
+      return await apiRequest(`/api/checklist-instance-items/${itemId}`, "PATCH", { status });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances", linkedChecklistId, "items"] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to update checklist item",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const saveTaskMutation = useMutation({
     mutationFn: async (data: TaskFormData) => {
       // Build assigneeNames from assigneeIds for caching
@@ -904,144 +938,212 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
               </div>
             )}
 
-            {/* Checklist */}
+            {/* Checklist - shows linked checklist items OR inline checklist */}
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-medium text-muted-foreground">Checklist</label>
-                  <div className="flex items-center gap-2">
-                    {checklistItems.length > 0 && (
+              {linkedChecklistId ? (
+                <>
+                  {/* Linked Checklist View */}
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                      <ClipboardList className="h-4 w-4" />
+                      Linked Checklist
+                    </label>
+                    {!isLoadingLinkedChecklist && (
                       <span className="text-xs text-muted-foreground">
-                        {checklistItems.filter(i => i.completed).length}/{checklistItems.length}
+                        {linkedChecklistItems.filter(i => i.status === "completed").length}/{linkedChecklistItems.length}
                       </span>
                     )}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 px-2 text-xs"
-                      onClick={() => setShowChecklistInput(true)}
-                      data-testid="button-add-checklist-item"
-                    >
-                      <Plus className="h-3 w-3 mr-1" />
-                      Add
-                    </Button>
                   </div>
-                </div>
-                
-                <div className="space-y-1">
-                  {checklistItems.map((item) => (
-                    <div
-                      key={item.id}
-                      className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 group"
-                      data-testid={`checklist-item-${item.id}`}
-                    >
-                      <Checkbox 
-                        className="h-4 w-4" 
-                        checked={item.completed}
-                        onCheckedChange={() => handleToggleChecklistItem(item.id!)}
-                        data-testid={`checkbox-checklist-${item.id}`}
-                      />
-                      <span className={`text-sm flex-1 ${item.completed ? 'line-through text-muted-foreground' : ''}`}>
-                        {item.text}
-                      </span>
-                      
-                      {/* Checklist item assignee dropdown */}
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            className="h-5 w-5 rounded-full hover:bg-muted flex items-center justify-center"
-                            data-testid={`button-assignee-checklist-${item.id}`}
+                  
+                  <div className="space-y-1 max-h-[300px] overflow-y-auto">
+                    {isLoadingLinkedChecklist ? (
+                      <div className="flex items-center gap-2 py-4 justify-center text-muted-foreground">
+                        <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full" />
+                        <span className="text-xs">Loading checklist...</span>
+                      </div>
+                    ) : isLinkedChecklistError ? (
+                      <div className="py-4 text-center">
+                        <p className="text-xs text-destructive">Failed to load checklist items</p>
+                        <p className="text-xs text-muted-foreground mt-1">Please try again later</p>
+                      </div>
+                    ) : (
+                      <>
+                        {linkedChecklistItems.map((item) => (
+                          <div
+                            key={item.id}
+                            className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 group"
+                            data-testid={`linked-checklist-item-${item.id}`}
                           >
-                            {item.assigneeId ? (
-                              <Avatar className="h-5 w-5 border border-border/50">
-                                <AvatarFallback className="text-[10px]">
-                                  {getInitials(item.assigneeName || "")}
-                                </AvatarFallback>
-                              </Avatar>
-                            ) : (
-                              <User className="h-3 w-3 text-muted-foreground" />
-                            )}
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-48">
-                          <DropdownMenuItem
-                            onClick={() => {
-                              const newChecklist = checklistItems.map(i =>
-                                i.id === item.id ? { ...i, assigneeId: undefined, assigneeName: undefined } : i
-                              );
-                              setChecklistItems(newChecklist);
-                              if (task) updateChecklistMutation.mutate(newChecklist);
-                            }}
-                          >
-                            <span className="text-muted-foreground">Unassigned</span>
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          {/* Only show users who are assigned to the task */}
-                          {assignees.length > 0 ? (
-                            assignees.map((user) => (
-                              <DropdownMenuItem
-                                key={user.id}
-                                onClick={() => {
-                                  const newChecklist = checklistItems.map(i =>
-                                    i.id === item.id ? { ...i, assigneeId: user.id, assigneeName: getUserDisplayName(user) } : i
-                                  );
-                                  setChecklistItems(newChecklist);
-                                  if (task) updateChecklistMutation.mutate(newChecklist);
-                                }}
-                              >
-                                <Avatar className="h-4 w-4 mr-2">
+                            <Checkbox 
+                              className="h-4 w-4" 
+                              checked={item.status === "completed"}
+                              onCheckedChange={(checked) => {
+                                updateLinkedChecklistItemMutation.mutate({
+                                  itemId: item.id,
+                                  status: checked ? "completed" : "pending"
+                                });
+                              }}
+                              data-testid={`checkbox-linked-checklist-${item.id}`}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <span className={`text-sm block ${item.status === "completed" ? 'line-through text-muted-foreground' : ''}`}>
+                                {item.description}
+                              </span>
+                              {item.groupName && (
+                                <span className="text-xs text-muted-foreground">{item.groupName}</span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                        
+                        {linkedChecklistItems.length === 0 && (
+                          <p className="text-xs text-muted-foreground italic py-2">No checklist items</p>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Inline Checklist View */}
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-muted-foreground">Checklist</label>
+                    <div className="flex items-center gap-2">
+                      {checklistItems.length > 0 && (
+                        <span className="text-xs text-muted-foreground">
+                          {checklistItems.filter(i => i.completed).length}/{checklistItems.length}
+                        </span>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => setShowChecklistInput(true)}
+                        data-testid="button-add-checklist-item"
+                      >
+                        <Plus className="h-3 w-3 mr-1" />
+                        Add
+                      </Button>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-1">
+                    {checklistItems.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 group"
+                        data-testid={`checklist-item-${item.id}`}
+                      >
+                        <Checkbox 
+                          className="h-4 w-4" 
+                          checked={item.completed}
+                          onCheckedChange={() => handleToggleChecklistItem(item.id!)}
+                          data-testid={`checkbox-checklist-${item.id}`}
+                        />
+                        <span className={`text-sm flex-1 ${item.completed ? 'line-through text-muted-foreground' : ''}`}>
+                          {item.text}
+                        </span>
+                        
+                        {/* Checklist item assignee dropdown */}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              className="h-5 w-5 rounded-full hover:bg-muted flex items-center justify-center"
+                              data-testid={`button-assignee-checklist-${item.id}`}
+                            >
+                              {item.assigneeId ? (
+                                <Avatar className="h-5 w-5 border border-border/50">
                                   <AvatarFallback className="text-[10px]">
-                                    {getInitials(getUserDisplayName(user))}
+                                    {getInitials(item.assigneeName || "")}
                                   </AvatarFallback>
                                 </Avatar>
-                                {getUserDisplayName(user)}
-                                {item.assigneeId === user.id && (
-                                  <Check className="h-3 w-3 ml-auto" />
-                                )}
-                              </DropdownMenuItem>
-                            ))
-                          ) : (
-                            <DropdownMenuItem disabled className="text-xs text-muted-foreground">
-                              Assign task users first
+                              ) : (
+                                <User className="h-3 w-3 text-muted-foreground" />
+                              )}
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-48">
+                            <DropdownMenuItem
+                              onClick={() => {
+                                const newChecklist = checklistItems.map(i =>
+                                  i.id === item.id ? { ...i, assigneeId: undefined, assigneeName: undefined } : i
+                                );
+                                setChecklistItems(newChecklist);
+                                if (task) updateChecklistMutation.mutate(newChecklist);
+                              }}
+                            >
+                              <span className="text-muted-foreground">Unassigned</span>
                             </DropdownMenuItem>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                      
-                      <button
-                        onClick={() => handleRemoveChecklistItem(item.id!)}
-                        className="p-1 hover:bg-destructive/10 rounded opacity-0 group-hover:opacity-100"
-                        data-testid={`button-remove-checklist-${item.id}`}
-                      >
-                        <X className="h-3 w-3 text-destructive" />
-                      </button>
-                    </div>
-                  ))}
+                            <DropdownMenuSeparator />
+                            {/* Only show users who are assigned to the task */}
+                            {assignees.length > 0 ? (
+                              assignees.map((user) => (
+                                <DropdownMenuItem
+                                  key={user.id}
+                                  onClick={() => {
+                                    const newChecklist = checklistItems.map(i =>
+                                      i.id === item.id ? { ...i, assigneeId: user.id, assigneeName: getUserDisplayName(user) } : i
+                                    );
+                                    setChecklistItems(newChecklist);
+                                    if (task) updateChecklistMutation.mutate(newChecklist);
+                                  }}
+                                >
+                                  <Avatar className="h-4 w-4 mr-2">
+                                    <AvatarFallback className="text-[10px]">
+                                      {getInitials(getUserDisplayName(user))}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  {getUserDisplayName(user)}
+                                  {item.assigneeId === user.id && (
+                                    <Check className="h-3 w-3 ml-auto" />
+                                  )}
+                                </DropdownMenuItem>
+                              ))
+                            ) : (
+                              <DropdownMenuItem disabled className="text-xs text-muted-foreground">
+                                Assign task users first
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                        
+                        <button
+                          onClick={() => handleRemoveChecklistItem(item.id!)}
+                          className="p-1 hover:bg-destructive/10 rounded opacity-0 group-hover:opacity-100"
+                          data-testid={`button-remove-checklist-${item.id}`}
+                        >
+                          <X className="h-3 w-3 text-destructive" />
+                        </button>
+                      </div>
+                    ))}
 
-                  {showChecklistInput && (
-                    <div className="flex items-center gap-2 p-2">
-                      <Input
-                        value={checklistInput}
-                        onChange={(e) => setChecklistInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") handleAddChecklistItem();
-                          if (e.key === "Escape") {
-                            setShowChecklistInput(false);
-                            setChecklistInput("");
-                          }
-                        }}
-                        placeholder="Checklist item..."
-                        className="h-8 text-sm"
-                        autoFocus
-                        data-testid="input-add-checklist-item"
-                      />
-                    </div>
-                  )}
+                    {showChecklistInput && (
+                      <div className="flex items-center gap-2 p-2">
+                        <Input
+                          value={checklistInput}
+                          onChange={(e) => setChecklistInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleAddChecklistItem();
+                            if (e.key === "Escape") {
+                              setShowChecklistInput(false);
+                              setChecklistInput("");
+                            }
+                          }}
+                          placeholder="Checklist item..."
+                          className="h-8 text-sm"
+                          autoFocus
+                          data-testid="input-add-checklist-item"
+                        />
+                      </div>
+                    )}
 
-                  {checklistItems.length === 0 && !showChecklistInput && (
-                    <p className="text-xs text-muted-foreground italic py-2">No checklist items yet</p>
-                  )}
-                </div>
-              </div>
+                    {checklistItems.length === 0 && !showChecklistInput && (
+                      <p className="text-xs text-muted-foreground italic py-2">No checklist items yet</p>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
 
             {/* Attachments */}
             {(attachments.length > 0 || pendingAttachments.length > 0) && (
@@ -1239,36 +1341,6 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                 </DropdownMenu>
               </div>
 
-              {/* Linked Checklist */}
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                  <ClipboardList className="h-3 w-3" />
-                  Linked Checklist
-                </label>
-                <Select
-                  value={form.watch("checklistInstanceId") || "none"}
-                  onValueChange={(value) => form.setValue("checklistInstanceId", value === "none" ? null : value, { shouldDirty: true, shouldTouch: true })}
-                >
-                  <SelectTrigger className="h-9" data-testid="select-linked-checklist">
-                    <SelectValue placeholder="Select checklist..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">
-                      <span className="text-muted-foreground">None</span>
-                    </SelectItem>
-                    {checklistInstances.length > 0 && <div className="h-px bg-border my-1" />}
-                    {checklistInstances.map((instance) => (
-                      <SelectItem key={instance.id} value={instance.id}>
-                        <div className="flex items-center gap-2">
-                          <ClipboardList className="h-3 w-3 text-muted-foreground" />
-                          <span className="truncate">{instance.name}</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
               {/* Status */}
               <div className="space-y-2">
                 <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
@@ -1459,6 +1531,36 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                     )}
                   />
                 </div>
+              </div>
+
+              {/* Linked Checklist */}
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                  <ClipboardList className="h-3 w-3" />
+                  Linked Checklist
+                </label>
+                <Select
+                  value={form.watch("checklistInstanceId") || "none"}
+                  onValueChange={(value) => form.setValue("checklistInstanceId", value === "none" ? null : value, { shouldDirty: true, shouldTouch: true })}
+                >
+                  <SelectTrigger className="h-9" data-testid="select-linked-checklist">
+                    <SelectValue placeholder="Select checklist..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">
+                      <span className="text-muted-foreground">None</span>
+                    </SelectItem>
+                    {checklistInstances.length > 0 && <div className="h-px bg-border my-1" />}
+                    {checklistInstances.map((instance) => (
+                      <SelectItem key={instance.id} value={instance.id}>
+                        <div className="flex items-center gap-2">
+                          <ClipboardList className="h-3 w-3 text-muted-foreground" />
+                          <span className="truncate">{instance.name}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* Advanced Options - Collapsible */}
