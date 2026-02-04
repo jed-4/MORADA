@@ -447,63 +447,63 @@ function SortableTaskRow({
         if (col === 'assignee') {
           return (
             <div key={col} style={{ width: `${columnWidths[col]}px` }} className="flex-shrink-0">
-              {editingField === 'assigneeId' ? (
-                <Popover open={editingField === 'assigneeId'} onOpenChange={(open) => !open && setEditingField(null)}>
-                  <PopoverTrigger onClick={(e) => e.stopPropagation()} />
-                  <PopoverContent className="w-48 p-1" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex flex-col gap-1">
-                      {users.map((user) => (
-                        <div
-                          key={user.id}
-                          className="px-2 py-1 text-xs hover:bg-muted rounded cursor-pointer flex items-center gap-2"
-                          onClick={() => {
-                            onUpdate('assigneeId', user.id);
-                            setEditingField(null);
-                          }}
-                        >
-                          <Avatar className="h-4 w-4">
-                            <AvatarFallback className="text-[8px]">
-                              {getInitials(user.firstName && user.lastName 
-                                ? `${user.firstName} ${user.lastName}` 
-                                : user.firstName || user.email || '')}
-                            </AvatarFallback>
-                          </Avatar>
-                          <span>
-                            {user.firstName && user.lastName 
-                              ? `${user.firstName} ${user.lastName}` 
-                              : user.firstName || user.email}
-                          </span>
-                        </div>
-                      ))}
+              <Popover open={editingField === 'assigneeId'} onOpenChange={(open) => !open && setEditingField(null)}>
+                <PopoverTrigger asChild onClick={(e) => e.stopPropagation()}>
+                  {task.assigneeName ? (
+                    <div
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingField('assigneeId');
+                      }}
+                      className="cursor-pointer hover:opacity-80 flex items-center gap-1"
+                    >
+                      <Avatar className="h-5 w-5">
+                        <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
+                          {getInitials(task.assigneeName)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="text-xs truncate">{task.assigneeName.split(' ')[0]}</span>
                     </div>
-                  </PopoverContent>
-                </Popover>
-              ) : task.assigneeName ? (
-                <div
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setEditingField('assigneeId');
-                  }}
-                  className="cursor-pointer hover:opacity-80 flex items-center gap-1"
-                >
-                  <Avatar className="h-5 w-5">
-                    <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
-                      {getInitials(task.assigneeName)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <span className="text-xs truncate">{task.assigneeName.split(' ')[0]}</span>
-                </div>
-              ) : (
-                <div
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setEditingField('assigneeId');
-                  }}
-                  className="w-5 h-5 rounded-full border border-dashed border-muted-foreground/30 cursor-pointer hover:border-muted-foreground/60 flex items-center justify-center"
-                >
-                  <UserIcon className="h-2.5 w-2.5 text-muted-foreground/40" />
-                </div>
-              )}
+                  ) : (
+                    <div
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingField('assigneeId');
+                      }}
+                      className="w-5 h-5 rounded-full border border-dashed border-muted-foreground/30 cursor-pointer hover:border-muted-foreground/60 flex items-center justify-center"
+                    >
+                      <UserIcon className="h-2.5 w-2.5 text-muted-foreground/40" />
+                    </div>
+                  )}
+                </PopoverTrigger>
+                <PopoverContent className="w-48 p-1" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex flex-col gap-1">
+                    {users.map((user) => (
+                      <div
+                        key={user.id}
+                        className="px-2 py-1 text-xs hover:bg-muted rounded cursor-pointer flex items-center gap-2"
+                        onClick={() => {
+                          onUpdate('assigneeId', user.id);
+                          setEditingField(null);
+                        }}
+                      >
+                        <Avatar className="h-4 w-4">
+                          <AvatarFallback className="text-[8px]">
+                            {getInitials(user.firstName && user.lastName 
+                              ? `${user.firstName} ${user.lastName}` 
+                              : user.firstName || user.email || '')}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span>
+                          {user.firstName && user.lastName 
+                            ? `${user.firstName} ${user.lastName}` 
+                            : user.firstName || user.email}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
           );
         }
