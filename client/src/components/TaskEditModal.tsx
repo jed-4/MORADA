@@ -388,21 +388,31 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
   // Auto-set endTime to 15 minutes after startTime when startTime is first set
   const startTimeValue = form.watch("startTime");
   const endTimeValue = form.watch("endTime");
+  const prevStartTimeRef = useRef<string | undefined>(task?.startTime || undefined);
   
   useEffect(() => {
-    // Only auto-populate if startTime is set and endTime is not set
-    if (startTimeValue && !endTimeValue) {
+    // Only auto-populate if:
+    // 1. startTime is set and has actually changed from previous value
+    // 2. endTime is not set (empty, null, or undefined)
+    // 3. This is a new task OR the user is changing the start time
+    const startTimeChanged = startTimeValue !== prevStartTimeRef.current;
+    const endTimeEmpty = !endTimeValue || endTimeValue === "";
+    
+    if (startTimeValue && startTimeChanged && endTimeEmpty) {
       try {
         const [hours, minutes] = startTimeValue.split(":").map(Number);
-        const totalMinutes = hours * 60 + minutes + 15; // Add 15 minutes
-        const newHours = Math.floor(totalMinutes / 60) % 24; // Handle overflow past midnight
-        const newMinutes = totalMinutes % 60;
-        const newEndTime = `${String(newHours).padStart(2, "0")}:${String(newMinutes).padStart(2, "0")}`;
-        form.setValue("endTime", newEndTime, { shouldDirty: true });
+        if (!isNaN(hours) && !isNaN(minutes)) {
+          const totalMinutes = hours * 60 + minutes + 15; // Add 15 minutes
+          const newHours = Math.floor(totalMinutes / 60) % 24; // Handle overflow past midnight
+          const newMinutes = totalMinutes % 60;
+          const newEndTime = `${String(newHours).padStart(2, "0")}:${String(newMinutes).padStart(2, "0")}`;
+          form.setValue("endTime", newEndTime, { shouldDirty: true });
+        }
       } catch (e) {
         // Ignore parsing errors
       }
     }
+    prevStartTimeRef.current = startTimeValue;
   }, [startTimeValue]); // Only trigger when startTime changes
 
   const saveTaskMutation = useMutation({
