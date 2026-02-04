@@ -1,0 +1,56 @@
+Notes:
+
+1. Add tasks from - appropriate widgets on dashboards, global header ‘New’ button, tasks page
+2. Opens a modal from calendar, and editable from there
+3. Has custom field available to add tracking (Activated Labels)
+4. Able to add a checklist to tasks (currently only has checklists in task templates
+5. Recurring - When clicking a task, when on the tasks page it opens with the full edit modal, when clicking on tasks from other pages, widgets, calendar etc, it opens with a detail modal, and has an edit button to open the full modal
+6. Detail modal has edit button, and it changes to the edit modal to make any changes to task
+7. Edit Task - other viewers see updates in real time
+8. Delete task - always has a confirmation button appear ie Are you sure?
+9. Assign a task - users get a notification when they are assigned a task from another team member
+10. US-T011 - boards to be able to be selected by different groups, status, priority, user etc
+11. US-T011 - Option to select which information is displayed on the cards. a visibility popover oto select with data is shown
+12. US-T013 - Saved views to be saved filters, which are crossed over with the view style
+13. US-T020 - ‘Tasks can be created without a project assignment’ should be tasks can be assign to the business rather than a project
+14. US-T020 - Business tasks are accessible in the business section of the app
+15. US-T030 - Operations>Task Templates are their own tasks that form the repeated operations for the business. They are also able to be viewed in the default diary view of the operations.
+16. I think we should create a new name for Task Templates, which options would you suggest?
+17. Task templates, should be different to the tasks in the Templates section in the sidebar. Tasks in the templates section, should be there and available to be accessed when creating a new task and when creating Workflows in the Operations section
+18. US-T031 - Is for standard tasks, different to Task Templates, and is a simple repeating task
+19. US-T031 - applies to standard tasks, not task templates. They operate the same but come from a different place
+20. Task templates, when adding recurring function, the daily option should have an option whether to include weekends or not
+21. Task templates that are selected as business, are created without being assigned to the business in the edit modal. Why would that be? Once created they should be assigned to the business, 
+22. Task templates, checklist items should have drag and drop grab on the left and be able to reorder them
+23. Tasks - when in filter, you click one option and the popover disappears, it should stay there until you click somewhere, allowing you to click multiple options
+24. New views should be able to be drag and drop reordered
+25. Project > Tasks, cant drag cards in board view
+26. Have an ‘Add Task’ line at the bottom of the table
+27. Task templates, and tasks that recur should have the same function, in the way that they recur. Though a standard task, should only have the recurring options appear in the edit modal, the assign, status etc should just copy whats in the standard task to edit
+28. We should be able to add multiple users to a task
+29. US-T040 - We are currently only able to add checklists to Operations Task Templates. They should be able to be added to all tasks anywhere. Perhaps they just don’t appear in the edit modal?
+30. US-T040 - We should be able to assign a checklist item to a user, the user would need to be assigned to the task, then can be assigned to checklist items
+31. US-T050 - ‘**I want to** see all tasks assigned to me across all projects’ and the business. Specify in the user story
+32. US-T060 - This is good, how do we set a task reminder? How does a user get a notification?
+33. Users stories should have a permissions section
+34. Could we create an option, toggle or otherwise, to make a task private? so only users that it is assigned to can see it? 
+35. Create - All users can create tasks
+36. Read - all users should be able to see the tasks
+37. Update - All users can update tasks
+38. Delete - Permission toggle to be able to delete tasks (lower ranked users cant delete)
+39. Can we add a tasks section in roles & permissions?
+40. Should haves - Task templates, these should be the templates that are visible in the Resources>Templates>Tasks. There should be a distinction between the Operations>Task Templates (we should have a better name for them) and the general tasks in templates
+41. Should haves - Bulk operations. Yes how should this work?
+42. Should haves - File atttachments
+43. Default priority = low
+44. board view, 3 dot menu doesnt work on cards
+45. Tasks pages dont look identical across, business, personal and project tasks
+46. Add a roles and permissions and notifications for each section of the app
+47. Operational tasks, should get updated, not regenerated. eg changing a task from the default 60mins to 30 mins, hit generate tasks (maybe change to update tasks? would htat be more appropriate for its function?) and then all those existing operational tasks change form 60 mins to the new 30 mins
+48. Task auto time duration and text box to select. Just created a task and it only had the start time done. Require a finish time to save task
+49. Attach checklists to Tasks
+50. Task list view, inline editing doesn’t work for assignee, the popover appears and i click on a user but it select them
+51. Create user story section for inline task conditions when created
+52. Duplicate task. open new modal with same details.
+53. Task reminder should send a notification
+54. Cant set a reminder on a task when creating. only editing. Should be able to set on creation. and the reminder should = task name
