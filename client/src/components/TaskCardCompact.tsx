@@ -169,7 +169,12 @@ export default function TaskCardCompact({ task, onClick, isDragging = false, dis
 
           {/* Actions menu - always visible when showActions is true, brighter on hover */}
           {showActions && (
-            <div onClick={(e) => e.stopPropagation()} className={`transition-opacity ${isHovered ? 'opacity-100' : 'opacity-40'}`}>
+            <div 
+              onClick={(e) => e.stopPropagation()} 
+              onPointerDown={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              className={`transition-opacity ${isHovered ? 'opacity-100' : 'opacity-40'}`}
+            >
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="icon" className="h-5 w-5 shrink-0">
