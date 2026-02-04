@@ -5,7 +5,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { type Task, type FieldCategoryWithOptions, type Project } from "@shared/schema";
+import { type Task, type FieldCategoryWithOptions, type Project, type Reminder } from "@shared/schema";
 import { z } from "zod";
 import { format } from "date-fns";
 
@@ -448,6 +448,18 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
       return response.json();
     },
     enabled: !!linkedChecklistId,
+  });
+
+  // Fetch reminders linked to this task
+  const { data: taskReminders = [] } = useQuery<Reminder[]>({
+    queryKey: ["/api/reminders/for-item", "task", task?.id],
+    queryFn: async () => {
+      if (!task?.id) return [];
+      const response = await fetch(`/api/reminders/for-item/task/${task.id}`, { credentials: "include" });
+      if (!response.ok) return [];
+      return response.json();
+    },
+    enabled: !!task?.id,
   });
 
   // Mutation to update linked checklist item status
