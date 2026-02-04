@@ -1,4 +1,4 @@
-import { forwardRef } from "react";
+import { forwardRef, useRef } from "react";
 import {
   Select,
   SelectContent,
@@ -16,6 +16,7 @@ interface TimeSelectProps {
   disabled?: boolean;
   className?: string;
   showIcon?: boolean;
+  defaultScrollTime?: string; // Time to scroll to when opening (e.g., "07:00")
   "data-testid"?: string;
 }
 
@@ -36,10 +37,24 @@ const generateTimeOptions = () => {
 
 const TIME_OPTIONS = generateTimeOptions();
 
+// Find index of time option (defaults to 7:00 AM = index 28)
+const DEFAULT_SCROLL_INDEX = 28; // 7:00 AM
+
 export const TimeSelect = forwardRef<HTMLButtonElement, TimeSelectProps>(
-  ({ value, onChange, placeholder = "Select time", disabled, className, showIcon = true, "data-testid": testId }, ref) => {
+  ({ value, onChange, placeholder = "Select time", disabled, className, showIcon = true, defaultScrollTime = "07:00", "data-testid": testId }, ref) => {
     // Find the display label for the current value
     const selectedOption = TIME_OPTIONS.find(opt => opt.value === value);
+    const contentRef = useRef<HTMLDivElement>(null);
+    
+    // Calculate scroll index based on value or default
+    const getScrollIndex = () => {
+      if (value) {
+        const idx = TIME_OPTIONS.findIndex(opt => opt.value === value);
+        return idx >= 0 ? idx : DEFAULT_SCROLL_INDEX;
+      }
+      const idx = TIME_OPTIONS.findIndex(opt => opt.value === defaultScrollTime);
+      return idx >= 0 ? idx : DEFAULT_SCROLL_INDEX;
+    };
     
     return (
       <Select value={value || ""} onValueChange={onChange} disabled={disabled}>
@@ -55,7 +70,21 @@ export const TimeSelect = forwardRef<HTMLButtonElement, TimeSelectProps>(
             </SelectValue>
           </div>
         </SelectTrigger>
-        <SelectContent className="max-h-[280px]">
+        <SelectContent 
+          ref={contentRef}
+          className="max-h-[280px]"
+          onOpenAutoFocus={() => {
+            // Scroll to the appropriate time when dropdown opens
+            setTimeout(() => {
+              const scrollIndex = getScrollIndex();
+              const viewport = contentRef.current?.querySelector('[data-radix-select-viewport]');
+              if (viewport) {
+                const itemHeight = 32; // Approximate height of each item
+                viewport.scrollTop = Math.max(0, scrollIndex * itemHeight - 64); // Center it a bit
+              }
+            }, 0);
+          }}
+        >
           {TIME_OPTIONS.map((option) => (
             <SelectItem key={option.value} value={option.value}>
               {option.label}
