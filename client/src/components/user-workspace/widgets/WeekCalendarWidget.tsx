@@ -23,7 +23,7 @@ import { generateNotionColors } from "@/lib/taskColors";
 import { TaskDetailModal } from "@/components/TaskDetailModal";
 import TaskEditModal from "@/components/TaskEditModal";
 import type { Task } from "@shared/schema";
-import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
+import { useTimezone, formatInTimezone, isTodayInTimezone, getCurrentTimeInTimezone as getTimeInTimezone } from "@/hooks/useTimezone";
 
 type ColorMode = "type" | "project" | "priority";
 type ViewMode = "timeline" | "stacked";
@@ -256,19 +256,11 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
   const scrollRef = useRef<HTMLDivElement>(null);
   const { effectiveTimezone } = useTimezone();
   
-  // Get current time in user's timezone
-  const getCurrentTimeInTimezone = () => {
-    const now = new Date();
-    const timeStr = formatInTimezone(now, effectiveTimezone, { hour: '2-digit', minute: '2-digit', hour12: false });
-    const [hours, minutes] = timeStr.split(':').map(Number);
-    return hours * 60 + (minutes || 0);
-  };
-  
-  const [currentTimeMinutes, setCurrentTimeMinutes] = useState(() => getCurrentTimeInTimezone());
+  const [currentTimeMinutes, setCurrentTimeMinutes] = useState(() => getTimeInTimezone(effectiveTimezone).totalMinutes);
   
   useEffect(() => {
     const interval = setInterval(() => {
-      setCurrentTimeMinutes(getCurrentTimeInTimezone());
+      setCurrentTimeMinutes(getTimeInTimezone(effectiveTimezone).totalMinutes);
     }, 60000);
     return () => clearInterval(interval);
   }, [effectiveTimezone]);
@@ -334,15 +326,15 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
   // Auto-scroll to current time on mount (only for timeline view)
   useEffect(() => {
     if (scrollRef.current && !isLoading && viewMode === "timeline") {
-      const now = new Date();
-      const currentHour = now.getHours();
+      // Get current time in user's timezone
+      const { hours: currentHour, minutes: currentMinute } = getTimeInTimezone(effectiveTimezone);
       
       // Check if current week contains today
-      const todayInWeek = weekDays.some(d => isToday(d));
+      const todayInWeek = weekDays.some(d => isTodayInTimezone(d, effectiveTimezone));
       
       if (todayInWeek && currentHour >= 6) {
         const containerHeight = scrollRef.current.clientHeight;
-        const currentTimePosition = (currentHour - 6 + now.getMinutes() / 60) * HOUR_HEIGHT;
+        const currentTimePosition = (currentHour - 6 + currentMinute / 60) * HOUR_HEIGHT;
         const targetScroll = Math.max(0, currentTimePosition - containerHeight / 3);
         scrollRef.current.scrollTop = targetScroll;
       } else {
@@ -350,7 +342,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
         scrollRef.current.scrollTop = (8 - 6) * HOUR_HEIGHT;
       }
     }
-  }, [isLoading, weekDays, viewMode]);
+  }, [isLoading, weekDays, viewMode, effectiveTimezone]);
 
   if (isConfiguring) {
     const handleSaveConfig = () => {
@@ -524,7 +516,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
       <div className={`flex-shrink-0 grid border-b bg-background sticky top-0 z-10 ${viewMode === "timeline" ? "grid-cols-[40px_repeat(7,1fr)]" : "grid-cols-7"}`}>
         {viewMode === "timeline" && <div className="border-r border-border/30" />}
         {weekDays.map((day) => {
-          const isCurrentDay = isToday(day);
+          const isCurrentDay = isTodayInTimezone(day, effectiveTimezone);
           const isPast = isBefore(day, startOfDay(new Date()));
           return (
             <div 
@@ -588,7 +580,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
           /* Stacked view - events listed under each day */
           <div className="grid grid-cols-7 h-full">
             {weekDays.map((day) => {
-              const isCurrentDay = isToday(day);
+              const isCurrentDay = isTodayInTimezone(day, effectiveTimezone);
               const isPast = isBefore(day, startOfDay(new Date()));
               const dayTimedEvents = getEventsForDay(day, timedEvents);
               
@@ -636,7 +628,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
 
             {/* Day columns */}
             {weekDays.map((day) => {
-              const isCurrentDay = isToday(day);
+              const isCurrentDay = isTodayInTimezone(day, effectiveTimezone);
               const isPast = isBefore(day, startOfDay(new Date()));
               const dayTimedEvents = getEventsForDay(day, timedEvents);
               

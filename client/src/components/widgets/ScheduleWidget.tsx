@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { useTimezone, formatInTimezone, isTodayInTimezone, getCurrentTimeInTimezone as getTimeInTimezone } from "@/hooks/useTimezone";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -98,6 +99,7 @@ function parseTime(timeStr: string | null | undefined): number | null {
 
 export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
   const { currentProject } = useProject();
+  const { effectiveTimezone } = useTimezone();
   const [, navigate] = useLocation();
   
   const viewMode = (widget.config?.viewMode as ViewMode) || "list";
@@ -113,10 +115,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedItem, setSelectedItem] = useState<ScheduleItem | null>(null);
-  const [currentTimeMinutes, setCurrentTimeMinutes] = useState(() => {
-    const now = new Date();
-    return now.getHours() * 60 + now.getMinutes();
-  });
+  const [currentTimeMinutes, setCurrentTimeMinutes] = useState(() => getTimeInTimezone(effectiveTimezone).totalMinutes);
   
   useEffect(() => {
     setEditingTitle(widget.title);
@@ -128,12 +127,11 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
     if (displayMode !== "timeline") return;
     
     const interval = setInterval(() => {
-      const now = new Date();
-      setCurrentTimeMinutes(now.getHours() * 60 + now.getMinutes());
+      setCurrentTimeMinutes(getTimeInTimezone(effectiveTimezone).totalMinutes);
     }, 60000);
     
     return () => clearInterval(interval);
-  }, [viewMode, displayMode]);
+  }, [viewMode, displayMode, effectiveTimezone]);
 
   const { data: tasks = [], isLoading: tasksLoading } = useQuery<any[]>({
     queryKey: ["/api/projects", currentProject?.id, "tasks"],
@@ -594,7 +592,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
             <span className="text-xs font-medium">
               {format(currentDate, "EEEE, MMM d")}
             </span>
-            {isToday(currentDate) && (
+            {isTodayInTimezone(currentDate, effectiveTimezone) && (
               <Badge variant="secondary" className="text-[10px] px-1 py-0">Today</Badge>
             )}
           </div>
@@ -654,7 +652,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
               ))}
 
               {/* Current time indicator */}
-              {isToday(currentDate) && (
+              {isTodayInTimezone(currentDate, effectiveTimezone) && (
                 <div
                   className="absolute left-10 right-0 border-t-2 border-red-500 z-20 pointer-events-none"
                   style={{ top: `${(currentTimeMinutes / 60) * HOUR_HEIGHT}px` }}

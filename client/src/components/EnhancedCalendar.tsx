@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { format, startOfWeek, endOfWeek, eachDayOfInterval, addWeeks, subWeeks, addDays, subDays, startOfMonth, endOfMonth, addMonths, subMonths, isSameDay, isToday, isPast, isSameMonth, getDay } from "date-fns";
+import { useTimezone, formatInTimezone, isTodayInTimezone, getCurrentTimeInTimezone as getTimeInTimezone } from "@/hooks/useTimezone";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -271,6 +272,7 @@ export function EnhancedCalendar({
   onViewChange,
   hideInternalHeader = false
 }: EnhancedCalendarProps) {
+  const { effectiveTimezone } = useTimezone();
   const [internalCurrentDate, setInternalCurrentDate] = useState(new Date());
   const [internalView, setInternalView] = useState<"month" | "week" | "day" | "roster">(initialView);
   const [activeEvent, setActiveEvent] = useState<CalendarEvent | null>(null);
@@ -311,18 +313,14 @@ export function EnhancedCalendar({
   const displayEvents = events;
   
   // Current time state for time indicator - updates every minute
-  const [currentTimeMinutes, setCurrentTimeMinutes] = useState(() => {
-    const now = new Date();
-    return now.getHours() * 60 + now.getMinutes();
-  });
+  const [currentTimeMinutes, setCurrentTimeMinutes] = useState(() => getTimeInTimezone(effectiveTimezone).totalMinutes);
   
   useEffect(() => {
     const interval = setInterval(() => {
-      const now = new Date();
-      setCurrentTimeMinutes(now.getHours() * 60 + now.getMinutes());
+      setCurrentTimeMinutes(getTimeInTimezone(effectiveTimezone).totalMinutes);
     }, 60000); // Update every minute
     return () => clearInterval(interval);
-  }, []);
+  }, [effectiveTimezone]);
   
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const allDayScrollRef = useRef<HTMLDivElement>(null);
@@ -1151,7 +1149,7 @@ export function EnhancedCalendar({
                         })()}
                         
                         {/* Current time indicator - red line for today */}
-                        {isToday(date) && (
+                        {isTodayInTimezone(date, effectiveTimezone) && (
                           <div
                             className="absolute left-0 right-0 z-30 pointer-events-none"
                             style={{ top: `${(currentTimeMinutes / 60) * HOUR_HEIGHT}px` }}

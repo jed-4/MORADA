@@ -13,7 +13,7 @@ import { generateNotionColors } from "@/lib/taskColors";
 import { TaskDetailModal } from "@/components/TaskDetailModal";
 import TaskEditModal from "@/components/TaskEditModal";
 import type { Task } from "@shared/schema";
-import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
+import { useTimezone, formatInTimezone, isTodayInTimezone, getCurrentTimeInTimezone as getTimeInTimezone } from "@/hooks/useTimezone";
 
 const HOUR_HEIGHT = 48;
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
@@ -178,20 +178,12 @@ export default function DayCalendarWidget({ widget, onUpdate, isConfiguring, onC
   const scrollRef = useRef<HTMLDivElement>(null);
   const { effectiveTimezone } = useTimezone();
   
-  // Get current time in user's timezone
-  const getCurrentTimeInTimezone = () => {
-    const now = new Date();
-    const timeStr = formatInTimezone(now, effectiveTimezone, { hour: '2-digit', minute: '2-digit', hour12: false });
-    const [hours, minutes] = timeStr.split(':').map(Number);
-    return hours * 60 + (minutes || 0);
-  };
-  
   // Current time state that updates every minute
-  const [currentTimeMinutes, setCurrentTimeMinutes] = useState(() => getCurrentTimeInTimezone());
+  const [currentTimeMinutes, setCurrentTimeMinutes] = useState(() => getTimeInTimezone(effectiveTimezone).totalMinutes);
   
   useEffect(() => {
     const interval = setInterval(() => {
-      setCurrentTimeMinutes(getCurrentTimeInTimezone());
+      setCurrentTimeMinutes(getTimeInTimezone(effectiveTimezone).totalMinutes);
     }, 60000); // Update every minute
     return () => clearInterval(interval);
   }, [effectiveTimezone]);
@@ -240,11 +232,11 @@ export default function DayCalendarWidget({ widget, onUpdate, isConfiguring, onC
         }
       });
       
-      const now = new Date();
-      if (isToday(selectedDate)) {
-        // For today, scroll to show current time near the top third of the visible area
+      if (isTodayInTimezone(selectedDate, effectiveTimezone)) {
+        // For today, scroll to show current time near the top third of the visible area (in user's timezone)
+        const { hours: currentHour, minutes: currentMinute } = getTimeInTimezone(effectiveTimezone);
         const containerHeight = scrollRef.current.clientHeight;
-        const currentTimePosition = (now.getHours() + now.getMinutes() / 60) * HOUR_HEIGHT;
+        const currentTimePosition = (currentHour + currentMinute / 60) * HOUR_HEIGHT;
         // Position the current time about 1/3 from the top of the view
         const targetScroll = Math.max(0, currentTimePosition - containerHeight / 3);
         // But don't scroll past earliest event
@@ -255,7 +247,7 @@ export default function DayCalendarWidget({ widget, onUpdate, isConfiguring, onC
         scrollRef.current.scrollTop = earliestHour * HOUR_HEIGHT;
       }
     }
-  }, [selectedDate, isLoading, timedEvents]);
+  }, [selectedDate, isLoading, timedEvents, effectiveTimezone]);
 
   if (isConfiguring) {
     const handleSaveConfig = () => {
@@ -363,7 +355,7 @@ export default function DayCalendarWidget({ widget, onUpdate, isConfiguring, onC
         </div>
         <div className="text-xs font-medium">
           {formatInTimezone(selectedDate, effectiveTimezone, { weekday: 'long', month: 'short', day: 'numeric' })}
-          {isToday(selectedDate) && (
+          {isTodayInTimezone(selectedDate, effectiveTimezone) && (
             <Badge variant="secondary" className="ml-1.5 text-[10px] px-1 py-0">Today</Badge>
           )}
         </div>
@@ -406,7 +398,7 @@ export default function DayCalendarWidget({ widget, onUpdate, isConfiguring, onC
               </div>
             ))}
 
-            {isToday(selectedDate) && (
+            {isTodayInTimezone(selectedDate, effectiveTimezone) && (
               <div
                 className="absolute left-10 right-0 border-t-2 border-red-500 z-20 pointer-events-none"
                 style={{ top: `${(currentTimeMinutes / 60) * HOUR_HEIGHT}px` }}

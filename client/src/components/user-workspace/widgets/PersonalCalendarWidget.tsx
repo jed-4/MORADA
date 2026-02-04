@@ -13,7 +13,7 @@ import { generateNotionColors } from "@/lib/taskColors";
 import { TaskDetailModal } from "@/components/TaskDetailModal";
 import TaskEditModal from "@/components/TaskEditModal";
 import type { Task } from "@shared/schema";
-import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
+import { useTimezone, formatInTimezone, isTodayInTimezone, getCurrentTimeInTimezone as getTimeInTimezone } from "@/hooks/useTimezone";
 
 type ViewMode = "list" | "day" | "week";
 
@@ -429,9 +429,8 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
   // Render Day View
   const renderDayView = () => {
     const dayEvents = getEventsForDate(selectedDate);
-    const now = new Date();
-    const currentMinutes = now.getHours() * 60 + now.getMinutes();
-    const showCurrentTime = isToday(selectedDate);
+    const currentMinutes = getTimeInTimezone(effectiveTimezone).totalMinutes;
+    const showCurrentTime = isTodayInTimezone(selectedDate, effectiveTimezone);
 
     return (
       <div 
@@ -483,8 +482,7 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
 
   // Render Week View with timeline and overlap handling (like EnhancedCalendar)
   const renderWeekView = () => {
-    const now = new Date();
-    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const currentMinutes = getTimeInTimezone(effectiveTimezone).totalMinutes;
     
     // Helper to check if two events overlap in time
     type EventPosition = {
@@ -628,7 +626,7 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
                   })}
                   
                   {/* Current time indicator for today */}
-                  {isToday(day) && (
+                  {isTodayInTimezone(day, effectiveTimezone) && (
                     <div
                       className="absolute left-0 right-0 z-30 pointer-events-none"
                       style={{ top: `${(currentMinutes / 60) * HOUR_HEIGHT}px` }}

@@ -1,6 +1,7 @@
 import { useState, useEffect, forwardRef, useImperativeHandle, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
+import { useTimezone, formatInTimezone, getDayOfWeekInTimezone, getCurrentTimeInTimezone as getTimeInTimezone } from "@/hooks/useTimezone";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -81,6 +82,7 @@ function getContrastTextColor(hexColor: string | null | undefined): string {
 export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
   function DefaultDiary({ searchQuery = "" }, ref) {
     const { user: currentUser } = useAuth();
+    const { effectiveTimezone } = useTimezone();
     const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
 
     const { data: users = [], isLoading: usersLoading } = useQuery<UserType[]>({
@@ -195,12 +197,10 @@ export const DefaultDiary = forwardRef<DefaultDiaryHandle, DefaultDiaryProps>(
     };
 
     const isLoading = usersLoading || templatesLoading;
-    const today = new Date().getDay();
+    const today = getDayOfWeekInTimezone(effectiveTimezone);
 
-    // Get current time for the time indicator
-    const now = new Date();
-    const currentHour = now.getHours();
-    const currentMinutes = now.getMinutes();
+    // Get current time for the time indicator (in user's timezone)
+    const { hours: currentHour, minutes: currentMinutes } = getTimeInTimezone(effectiveTimezone);
     const currentTimeTop = (currentHour + currentMinutes / 60) * HOUR_HEIGHT;
 
     return (
