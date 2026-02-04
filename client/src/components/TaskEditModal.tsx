@@ -1533,36 +1533,6 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                 </div>
               </div>
 
-              {/* Linked Checklist */}
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                  <ClipboardList className="h-3 w-3" />
-                  Linked Checklist
-                </label>
-                <Select
-                  value={form.watch("checklistInstanceId") || "none"}
-                  onValueChange={(value) => form.setValue("checklistInstanceId", value === "none" ? null : value, { shouldDirty: true, shouldTouch: true })}
-                >
-                  <SelectTrigger className="h-9" data-testid="select-linked-checklist">
-                    <SelectValue placeholder="Select checklist..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">
-                      <span className="text-muted-foreground">None</span>
-                    </SelectItem>
-                    {checklistGroups.length > 0 && <div className="h-px bg-border my-1" />}
-                    {checklistGroups.map((group) => (
-                      <SelectItem key={group.id} value={group.id}>
-                        <div className="flex items-center gap-2">
-                          <ClipboardList className="h-3 w-3 text-muted-foreground" />
-                          <span className="truncate">{group.instanceName} / {group.name}</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
               {/* Advanced Options - Collapsible */}
               <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
                 <CollapsibleTrigger asChild>
@@ -1575,6 +1545,36 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                   </Button>
                 </CollapsibleTrigger>
                 <CollapsibleContent className="space-y-4 pt-3">
+                  {/* Linked Checklist */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                      <ClipboardList className="h-3 w-3" />
+                      Linked Checklist
+                    </label>
+                    <Select
+                      value={form.watch("checklistInstanceId") || "none"}
+                      onValueChange={(value) => form.setValue("checklistInstanceId", value === "none" ? null : value, { shouldDirty: true, shouldTouch: true })}
+                    >
+                      <SelectTrigger className="h-9" data-testid="select-linked-checklist">
+                        <SelectValue placeholder="Select checklist..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">
+                          <span className="text-muted-foreground">None</span>
+                        </SelectItem>
+                        {checklistGroups.length > 0 && <div className="h-px bg-border my-1" />}
+                        {checklistGroups.map((group) => (
+                          <SelectItem key={group.id} value={group.id}>
+                            <div className="flex items-center gap-2">
+                              <ClipboardList className="h-3 w-3 text-muted-foreground" />
+                              <span className="truncate">{group.instanceName} / {group.name}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
                   {/* Recurring */}
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
