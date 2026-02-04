@@ -540,6 +540,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
             projectId: projectId || undefined,
           });
           queryClient.invalidateQueries({ queryKey: ["/api/reminders"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/reminders/for-item", "task", newTask.id] });
           queryClient.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
         } catch (err) {
           console.error("Failed to create reminder:", err);
@@ -970,6 +971,40 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                 )}
               />
             </div>
+
+            {/* Reminders linked to this task */}
+            {task && taskReminders.length > 0 && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
+                  <Bell className="h-3.5 w-3.5" />
+                  Reminders
+                </label>
+                <div className="space-y-1">
+                  {taskReminders.map((reminder) => (
+                    <div
+                      key={reminder.id}
+                      className="flex items-center gap-2 p-2 rounded-md bg-muted/30 text-sm"
+                    >
+                      <Bell className={`h-3.5 w-3.5 flex-shrink-0 ${
+                        reminder.status === 'completed' || reminder.status === 'dismissed' 
+                          ? 'text-muted-foreground' 
+                          : 'text-amber-500'
+                      }`} />
+                      <span className={`flex-1 ${
+                        reminder.status === 'completed' || reminder.status === 'dismissed' 
+                          ? 'line-through text-muted-foreground' 
+                          : ''
+                      }`}>
+                        {reminder.title}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {reminder.dueAt ? format(new Date(reminder.dueAt), "MMM d, h:mm a") : ""}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Subtasks */}
             {task && (

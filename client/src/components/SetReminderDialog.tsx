@@ -124,6 +124,10 @@ export function SetReminderDialog({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/reminders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
+      // Invalidate task-specific reminders query if this reminder is linked to a task
+      if (linkedItemType === "task" && linkedItemId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/reminders/for-item", "task", linkedItemId] });
+      }
       toast({ title: "Reminder set successfully" });
       onOpenChange(false);
       form.reset();
