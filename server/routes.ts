@@ -12734,6 +12734,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Checklist Instance Group routes (these are "Checklists" in user terminology)
+  // Get all checklist groups across all instances for the company (for task linking)
+  app.get("/api/checklist-instance-groups", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      // Get all instances for the company first (filtered by companyId)
+      const allInstances = await storage.getChecklistInstances();
+      const companyInstances = allInstances.filter(i => i.companyId === user.companyId);
+      
+      // Get groups for each instance and flatten
+      const allGroups = await Promise.all(
+        companyInstances.map(async (instance) => {
+          const groups = await storage.getChecklistInstanceGroups(instance.id);
+          return groups.map(g => ({
+            ...g,
+            instanceName: instance.name, // Include parent instance name for context
+          }));
+        })
+      );
+      
+      res.json(allGroups.flat());
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch checklist groups",
+        details: error.message 
+      });
+    }
+  });
+
   app.get("/api/checklist-instances/:instanceId/groups", async (req, res) => {
     try {
       const groups = await storage.getChecklistInstanceGroups(req.params.instanceId);

@@ -182,9 +182,9 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
     enabled: !!task?.id,
   });
 
-  // Fetch active checklist instances for linking to tasks
-  const { data: checklistInstances = [] } = useQuery<any[]>({
-    queryKey: ["/api/checklist-instances"],
+  // Fetch checklist groups (individual checklists) for linking to tasks
+  const { data: checklistGroups = [] } = useQuery<any[]>({
+    queryKey: ["/api/checklist-instance-groups"],
   });
 
   const labelCategory = fieldCategories.find(cat => cat.key === "task.labels");
@@ -419,12 +419,12 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
   // Get the current linked checklist ID from form (must be after form initialization)
   const linkedChecklistId = form.watch("checklistInstanceId");
 
-  // Fetch linked checklist items when a checklist is linked
+  // Fetch linked checklist items when a checklist group is linked
   const { data: linkedChecklistItems = [], isLoading: isLoadingLinkedChecklist, isError: isLinkedChecklistError } = useQuery<any[]>({
-    queryKey: ["/api/checklist-instances", linkedChecklistId, "items"],
+    queryKey: ["/api/checklist-instance-groups", linkedChecklistId, "items"],
     queryFn: async () => {
       if (!linkedChecklistId) return [];
-      const response = await fetch(`/api/checklist-instances/${linkedChecklistId}/items`, { credentials: "include" });
+      const response = await fetch(`/api/checklist-instance-groups/${linkedChecklistId}/items`, { credentials: "include" });
       if (!response.ok) {
         throw new Error("Failed to fetch checklist items");
       }
@@ -439,7 +439,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
       return await apiRequest(`/api/checklist-instance-items/${itemId}`, "PATCH", { status });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances", linkedChecklistId, "items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/checklist-instance-groups", linkedChecklistId, "items"] });
     },
     onError: (error: any) => {
       toast({
@@ -456,9 +456,9 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
       const selectedAssignees = users.filter(u => (data.assigneeIds || []).includes(u.id));
       const assigneeNames = selectedAssignees.map(u => getUserDisplayName(u));
       
-      // Get linked checklist instance name for caching
+      // Get linked checklist group name for caching
       const linkedChecklist = data.checklistInstanceId 
-        ? checklistInstances.find(c => c.id === data.checklistInstanceId)
+        ? checklistGroups.find(g => g.id === data.checklistInstanceId)
         : null;
       const checklistInstanceName = linkedChecklist?.name || null;
       
@@ -1550,12 +1550,12 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                     <SelectItem value="none">
                       <span className="text-muted-foreground">None</span>
                     </SelectItem>
-                    {checklistInstances.length > 0 && <div className="h-px bg-border my-1" />}
-                    {checklistInstances.map((instance) => (
-                      <SelectItem key={instance.id} value={instance.id}>
+                    {checklistGroups.length > 0 && <div className="h-px bg-border my-1" />}
+                    {checklistGroups.map((group) => (
+                      <SelectItem key={group.id} value={group.id}>
                         <div className="flex items-center gap-2">
                           <ClipboardList className="h-3 w-3 text-muted-foreground" />
-                          <span className="truncate">{instance.name}</span>
+                          <span className="truncate">{group.instanceName} / {group.name}</span>
                         </div>
                       </SelectItem>
                     ))}
