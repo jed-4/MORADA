@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams } from "wouter";
-import { Plus, Clock, Filter, Search, Calendar as CalendarIcon, User, Check, X, CalendarRange, Download, ChevronDown, Settings2, RotateCcw, Table2, Users2, CalendarDays, ChevronLeft, ChevronRight, Zap } from "lucide-react";
+import { Plus, Clock, Filter, Search, Calendar as CalendarIcon, User, Check, X, CalendarRange, Download, ChevronDown, Settings2, RotateCcw, Table2, Users2, CalendarDays, ChevronLeft, ChevronRight, Zap, Play, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import * as XLSX from "xlsx";
 import { Input } from "@/components/ui/input";
@@ -27,8 +27,11 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { TimesheetDialog } from "@/components/TimesheetDialog";
 import { RapidApprovalModal } from "@/components/RapidApprovalModal";
+import { ProjectSelect } from "@/components/ProjectSelect";
+import { CostCodeSelect } from "@/components/CostCodeSelect";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import type { Timesheet, Project, User as UserType, CostCode } from "@shared/schema";
 import { DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 
@@ -60,8 +63,19 @@ const COLUMNS_STORAGE_KEY = 'timesheets-columns-config';
 
 export default function Timesheets() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const { projectId } = useParams<{ projectId?: string }>();
   const [searchTerm, setSearchTerm] = useState("");
+  
+  // Permission check for editing timesheets
+  const canEditTimesheet = (timesheet: Timesheet): boolean => {
+    if (!user) return false;
+    // User can edit their own timesheets
+    if (timesheet.userId === user.id) return true;
+    // Admins, owners, and managers can edit all timesheets
+    if (user.role === "owner" || user.role === "admin" || user.role === "manager") return true;
+    return false;
+  };
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
@@ -82,6 +96,12 @@ export default function Timesheets() {
   
   // Calendar view state
   const [calendarWeek, setCalendarWeek] = useState<Date>(startOfWeek(new Date(), { weekStartsOn: 1 }));
+
+  // Clock-in state
+  const [isClockInOpen, setIsClockInOpen] = useState(false);
+  const [clockInProjectId, setClockInProjectId] = useState<string>("");
+  const [clockInCostCodeId, setClockInCostCodeId] = useState<string>("");
+  const [elapsedTime, setElapsedTime] = useState<string>("00:00:00");
 
   // Column configuration state
   const [columns, setColumns] = useState<TimesheetColumnConfig[]>(() => {
@@ -148,6 +168,97 @@ export default function Timesheets() {
   // Fetch cost codes for display
   const { data: costCodes = [] } = useQuery<CostCode[]>({
     queryKey: ["/api/cost-codes"],
+  });
+
+  // Fetch active timesheet for clock-in/out
+  const { data: activeTimesheet } = useQuery<Timesheet | null>({
+    queryKey: ["/api/timesheets/active"],
+  });
+
+  // Calculate elapsed time for active timesheet
+  useEffect(() => {
+    if (activeTimesheet?.clockInTime) {
+      const updateElapsed = () => {
+        const now = new Date();
+        const clockIn = new Date(activeTimesheet.clockInTime!);
+        const diffMs = now.getTime() - clockIn.getTime();
+        
+        const hours = Math.floor(diffMs / (1000 * 60 * 60));
+        const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
+        
+        setElapsedTime(
+          `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+        );
+      };
+
+      updateElapsed();
+      const interval = setInterval(updateElapsed, 1000);
+      return () => clearInterval(interval);
+    } else {
+      setElapsedTime("00:00:00");
+    }
+  }, [activeTimesheet?.clockInTime]);
+
+  // Clock-in mutation
+  const clockInMutation = useMutation({
+    mutationFn: async () => {
+      if (!clockInProjectId) {
+        throw new Error("Please select a project");
+      }
+      return apiRequest("/api/timesheets/clock-in", "POST", {
+        projectId: clockInProjectId,
+        costCodeId: clockInCostCodeId || undefined,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/timesheets/active"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
+      toast({
+        title: "Clocked In",
+        description: "Timer started successfully",
+      });
+      setIsClockInOpen(false);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to clock in",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Clock-out mutation
+  const clockOutMutation = useMutation({
+    mutationFn: async () => {
+      if (!activeTimesheet) {
+        throw new Error("No active timesheet");
+      }
+      return apiRequest("/api/timesheets/clock-out", "POST", {
+        timesheetId: activeTimesheet.id,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/timesheets/active"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
+      if (projectId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "timesheets"] });
+      }
+      toast({
+        title: "Clocked Out",
+        description: "Timer stopped successfully",
+      });
+      setClockInProjectId("");
+      setClockInCostCodeId("");
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to clock out",
+        variant: "destructive",
+      });
+    },
   });
 
   // Status workflow mutations
@@ -413,6 +524,65 @@ export default function Timesheets() {
               Approve ({pendingTimesheets.length})
             </button>
           )}
+          {activeTimesheet ? (
+            <button
+              onClick={() => clockOutMutation.mutate()}
+              disabled={clockOutMutation.isPending}
+              className="h-6 w-auto px-2 text-xs border rounded-md bg-red-500 text-white border-red-500/20 hover:bg-red-600 active-elevate-2 flex items-center gap-1"
+              data-testid="button-clock-out"
+            >
+              <Square className="w-3 h-3" />
+              <span className="font-mono">{elapsedTime}</span>
+              <span>Stop</span>
+            </button>
+          ) : (
+            <Popover open={isClockInOpen} onOpenChange={setIsClockInOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  className="h-6 w-auto px-2 text-xs border rounded-md bg-green-600 text-white border-green-600/20 hover:bg-green-700 active-elevate-2 flex items-center gap-0.5"
+                  data-testid="button-clock-in"
+                >
+                  <Play className="w-3 h-3" />
+                  Clock In
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-72" align="end">
+                <div className="space-y-3">
+                  <h4 className="font-medium text-sm">Start Timer</h4>
+                  <div>
+                    <label className="text-xs font-medium mb-1 block">
+                      Project <span className="text-destructive">*</span>
+                    </label>
+                    <ProjectSelect
+                      value={clockInProjectId}
+                      onValueChange={setClockInProjectId}
+                      placeholder="Select a project"
+                      allowNone={false}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium mb-1 block">
+                      Cost Code (Optional)
+                    </label>
+                    <CostCodeSelect
+                      value={clockInCostCodeId}
+                      onValueChange={setClockInCostCodeId}
+                      placeholder="Select a cost code"
+                    />
+                  </div>
+                  <Button
+                    onClick={() => clockInMutation.mutate()}
+                    disabled={!clockInProjectId || clockInMutation.isPending}
+                    className="w-full bg-green-600 hover:bg-green-700"
+                    size="sm"
+                  >
+                    <Play className="w-3 h-3 mr-1" />
+                    {clockInMutation.isPending ? "Starting..." : "Start Timer"}
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
           <button
             onClick={() => {
               setSelectedTimesheet(undefined);
@@ -421,8 +591,8 @@ export default function Timesheets() {
             className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
             data-testid="button-add-timesheet"
           >
-            <Clock className="w-3 h-3" />
-            Clock In
+            <Plus className="w-3 h-3" />
+            Add Entry
           </button>
         </div>
       </div>
@@ -1233,6 +1403,7 @@ export default function Timesheets() {
         onOpenChange={setIsDialogOpen}
         timesheet={selectedTimesheet}
         defaultProjectId={projectId}
+        readonly={selectedTimesheet ? !canEditTimesheet(selectedTimesheet) : false}
       />
 
       <RapidApprovalModal

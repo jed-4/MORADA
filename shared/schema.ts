@@ -2760,6 +2760,8 @@ export const timesheets = pgTable("timesheets", {
   endTime: text("end_time"), // HH:mm format, nullable
   duration: numeric("duration", { precision: 10, scale: 2 }).notNull().default("0"), // In hours (e.g., 8.5)
   breakDuration: numeric("break_duration", { precision: 10, scale: 2 }).notNull().default("0"), // In hours
+  breakStartTime: text("break_start_time"), // HH:mm format, nullable
+  breakEndTime: text("break_end_time"), // HH:mm format, nullable
   description: text("description"),
   status: timesheetStatusEnum("status").notNull().default("draft"),
   hourlyRate: numeric("hourly_rate", { precision: 10, scale: 2 }).notNull().default("0"),

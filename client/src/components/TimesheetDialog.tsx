@@ -52,6 +52,8 @@ const timesheetSchema = z.object({
   endTime: z.string().min(1, "End time is required"),
   duration: z.string().optional(),
   breakDuration: z.string().optional(),
+  breakStartTime: z.string().optional(),
+  breakEndTime: z.string().optional(),
   description: z.string().optional(),
   hourlyRate: z.string().optional(),
   costCodeId: z.string().optional(), // Validated in mutation based on split mode
@@ -73,6 +75,7 @@ interface TimesheetDialogProps {
   onOpenChange: (open: boolean) => void;
   timesheet?: Timesheet;
   defaultProjectId?: string;
+  readonly?: boolean;
 }
 
 export function TimesheetDialog({
@@ -80,6 +83,7 @@ export function TimesheetDialog({
   onOpenChange,
   timesheet,
   defaultProjectId,
+  readonly = false,
 }: TimesheetDialogProps) {
   const { toast } = useToast();
   const [isSplit, setIsSplit] = useState(false);
@@ -146,6 +150,8 @@ export function TimesheetDialog({
       endTime: "",
       duration: "",
       breakDuration: "0",
+      breakStartTime: "",
+      breakEndTime: "",
       description: "",
       hourlyRate: "50",
       costCodeId: "",
@@ -217,6 +223,24 @@ export function TimesheetDialog({
     }
   }, [form.watch("startTime"), form.watch("endTime"), form.watch("duration"), form.watch("breakDuration"), lastEditedField]);
 
+  // Auto-calculate break duration from break start/end times
+  useEffect(() => {
+    const breakStartTime = form.watch("breakStartTime");
+    const breakEndTime = form.watch("breakEndTime");
+    
+    if (breakStartTime && breakEndTime) {
+      const startMinutes = timeToMinutes(breakStartTime);
+      const endMinutes = timeToMinutes(breakEndTime);
+      
+      let totalMinutes = endMinutes - startMinutes;
+      if (totalMinutes < 0) totalMinutes += 24 * 60; // Handle overnight
+      
+      const hours = Math.round((totalMinutes / 60) * 4) / 4; // Round to nearest 0.25
+      form.setValue("breakDuration", hours.toString());
+      setLastEditedField("breakDuration"); // Trigger duration recalculation
+    }
+  }, [form.watch("breakStartTime"), form.watch("breakEndTime")]);
+
   // Create/Update mutation
   const createMutation = useMutation({
     mutationFn: async (data: TimesheetFormData) => {
@@ -240,6 +264,8 @@ export function TimesheetDialog({
         endTime: data.endTime || null,
         duration: duration.toString(),
         breakDuration: data.breakDuration || "0",
+        breakStartTime: data.breakStartTime || null,
+        breakEndTime: data.breakEndTime || null,
         description: data.description || null,
         hourlyRate: hourlyRate.toString(),
         total: total,
@@ -368,12 +394,18 @@ export function TimesheetDialog({
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle data-testid="heading-timesheet-dialog">
-            {timesheet ? "Edit Timesheet" : "Add Timesheet"}
+            {readonly ? "View Timesheet" : timesheet ? "Edit Timesheet" : "Add Timesheet"}
           </DialogTitle>
+          {readonly && (
+            <p className="text-sm text-muted-foreground">
+              You don't have permission to edit this timesheet.
+            </p>
+          )}
         </DialogHeader>
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit((data) => createMutation.mutate(data))} className="space-y-6">
+            <fieldset disabled={readonly} className="space-y-6">
             {/* Basic Info */}
             <div className="grid gap-4 md:grid-cols-2">
               <FormField
@@ -568,6 +600,45 @@ export function TimesheetDialog({
                       />
                     </FormControl>
                     <p className="text-xs text-muted-foreground">Auto-calculated or enter manually</p>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            {/* Break Start/End Times */}
+            <div className="grid gap-4 md:grid-cols-2">
+              <FormField
+                control={form.control}
+                name="breakStartTime"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Break Start</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="time"
+                        {...field}
+                        data-testid="input-break-start-time"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="breakEndTime"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Break End</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="time"
+                        {...field}
+                        data-testid="input-break-end-time"
+                      />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -775,6 +846,7 @@ export function TimesheetDialog({
                 </FormItem>
               )}
             />
+            </fieldset>
 
             <DialogFooter className="gap-2">
               {timesheet && (
@@ -796,11 +868,13 @@ export function TimesheetDialog({
                 onClick={() => onOpenChange(false)}
                 data-testid="button-cancel"
               >
-                Cancel
+                {readonly ? "Close" : "Cancel"}
               </Button>
-              <Button type="submit" disabled={createMutation.isPending} data-testid="button-save-timesheet">
-                {createMutation.isPending ? "Saving..." : timesheet ? "Update" : "Create"}
-              </Button>
+              {!readonly && (
+                <Button type="submit" disabled={createMutation.isPending} data-testid="button-save-timesheet">
+                  {createMutation.isPending ? "Saving..." : timesheet ? "Update" : "Create"}
+                </Button>
+              )}
             </DialogFooter>
           </form>
         </Form>

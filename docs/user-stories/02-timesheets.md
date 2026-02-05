@@ -57,12 +57,13 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 **So that** my hours are accurately recorded without manual entry
 
 **Acceptance Criteria:**
-- [ ] "Clock In" button available on Timesheets page
-- [ ] Clock in creates a timesheet with current timestamp
-- [ ] Active clock-in shows running timer
-- [ ] Clock out records end time and calculates duration
-- [ ] Break duration can be recorded
-- [ ] Clock-in widget available on dashboard
+- [x] "Clock In" button available on Timesheets page (green button with popover)
+- [x] Clock in creates a timesheet with current timestamp
+- [x] Active clock-in shows running timer with elapsed time display
+- [x] Clock out records end time and calculates duration (red Stop button)
+- [x] Break duration can be recorded (hours field)
+- [x] Break start/end times can be recorded (auto-calculates break duration)
+- [x] Clock-in widget available on dashboard header
 
 **Priority:** Must Have  
 **Status:** Implemented
@@ -75,10 +76,13 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 **So that** I can correct mistakes or add details
 
 **Acceptance Criteria:**
-- [ ] User can edit draft timesheet entries
-- [ ] All fields can be modified
-- [ ] Changes are saved immediately
-- [ ] Approved entries cannot be edited (or require re-approval)
+- [x] User can edit draft timesheet entries
+- [x] All fields can be modified
+- [x] Changes are saved immediately
+- [x] Approved entries cannot be edited (or require re-approval)
+- [x] Permission-based editing: users can edit their own timesheets
+- [x] Admins/owners/managers can edit all timesheets
+- [x] View-only mode shown for users without edit permission
 
 **Priority:** Must Have  
 **Status:** Implemented
@@ -420,10 +424,13 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 ### Implemented Features
 - Timesheet entry creation and editing
 - Create timesheets from global header "New" menu
-- Clock in/out functionality with dashboard widget
+- Clock in/out functionality on Timesheets page with timer display
+- Clock-in widget available on dashboard header
 - Bi-directional time calculation (start+end calculates duration, start+duration calculates end)
+- Break period tracking with start/end times (auto-calculates break duration)
 - Required fields: project, user, date, cost code, start/end time
 - Custom labels for categorizing time entries (Regular, Overtime, Travel, etc.)
+- Permission-based editing: own timesheets + admins/owners/managers can edit all
 - Split time across multiple cost codes
 - Three views: Table, Weekly, Calendar
 - Filtering by project, user, status, date range
@@ -499,3 +506,6 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 7. ~~Add Timesheet button~~ - Disregarded (Clock In button sufficient)
 8. Bi-directional time calculation - Implemented ✓
 9. Labels for timesheets - Implemented ✓
+10. Clock In button on Timesheets page - Implemented ✓
+11. Break period start/finish time tracking - Implemented ✓
+12. Permission-based editing for timesheets - Implemented ✓
