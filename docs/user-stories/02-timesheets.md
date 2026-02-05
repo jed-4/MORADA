@@ -36,12 +36,15 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 **So that** my time is recorded for billing and payroll purposes
 
 **Acceptance Criteria:**
-- [ ] User can create a timesheet entry from the Timesheets page
-- [ ] Entry requires: project, user, date
-- [ ] Entry has optional fields: start time, end time, break duration, description, cost code, hourly rate
-- [ ] Two entry modes available: Time-based (start/end) or Duration-based (hours)
-- [ ] Entry is saved and appears in the timesheets list
-- [ ] Default status is "Draft"
+- [x] User can create a timesheet entry from the Timesheets page
+- [x] User can create a timesheet from global header "New" menu
+- [x] Entry requires: project, user, date, cost code
+- [x] Time mode requires: start time, end time
+- [x] Duration mode requires: duration (hours)
+- [x] Optional fields: break duration, description, hourly rate
+- [x] Two entry modes available: Time-based (start/end) or Duration-based (hours)
+- [x] Entry is saved and appears in the timesheets list
+- [x] Default status is "Draft"
 
 **Priority:** Must Have  
 **Status:** Implemented
@@ -306,16 +309,20 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 #### US-TS050: Assign Cost Code to Timesheet
 **As a** site supervisor  
 **I want to** assign a cost code to my timesheet entry  
-**So that** labour hours are categorized correctly for reporting
+**So that** labour hours are categorized correctly for reporting and linked to the budget
 
 **Acceptance Criteria:**
-- [ ] Cost code dropdown in timesheet entry form
-- [ ] Only cost codes available for timesheets shown
-- [ ] Cost code displayed in timesheet table
+- [x] Cost code is required for all timesheet entries
+- [x] Cost code dropdown in timesheet entry form
+- [x] Option to split time across multiple cost codes
+- [x] Cost code displayed in timesheet table
+- [x] Timesheet hours roll up to budget via cost code
 - [ ] Filter by cost code available
 
-**Priority:** Should Have  
+**Priority:** Must Have  
 **Status:** Implemented
+
+**Note:** Timesheets link to budget labour hours through cost codes. When time is logged with a cost code, those hours automatically appear in the budget tracking for that cost code.
 
 ---
 
@@ -360,10 +367,10 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 **So that** I can use the data for payroll or external reporting
 
 **Acceptance Criteria:**
-- [ ] Export button on Timesheets page
-- [ ] Exports currently filtered entries
-- [ ] Excel format with all columns
-- [ ] Filename includes project name and date
+- [x] Export button on Timesheets page
+- [x] Exports currently filtered entries
+- [x] Excel format with columns: Date, User, Project, Start Time, End Time, Break, Duration, Hourly Rate, Total, Status, Invoiced, Description
+- [x] Filename includes project name (if filtered) and date
 
 **Priority:** Should Have  
 **Status:** Implemented
@@ -392,8 +399,10 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 
 ### Implemented Features
 - Timesheet entry creation and editing
-- Clock in/out functionality
-- Time entry modes: time-based and duration-based
+- Create timesheets from global header "New" menu
+- Clock in/out functionality with dashboard widget
+- Time entry modes: time-based (start/end required) and duration-based
+- Required fields: project, user, date, cost code, start/end time (or duration)
 - Split time across multiple cost codes
 - Three views: Table, Weekly, Calendar
 - Filtering by project, user, status, date range
@@ -401,14 +410,15 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 - Approval workflow (submit, approve, reject)
 - Rapid approval modal for batch processing
 - Project-specific timesheet views
-- Cost code assignment
+- Cost code assignment with budget integration
 - Hourly rate and total calculation
-- Excel export
+- Excel export with all fields
 - Invoiced status tracking
 - Configurable table columns
-- Labour hours budget tracking on projects
+- Labour hours budget tracking via cost codes
 
 ### Known Limitations
+- [ ] No import from CSV/Excel
 - [ ] No mobile-optimized clock in/out
 - [ ] No geolocation for clock-in verification
 - [ ] No approval notifications
@@ -453,15 +463,16 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 | Date | Changes |
 |------|---------|
 | 2026-02-04 | Initial user story document created based on current implementation |
+| 2026-02-05 | Updated per user notes: clarified required fields (start/end time, cost code), confirmed budget integration via cost codes, confirmed export functionality, added global header "New" menu access |
 
 ---
 
-## Review Notes
+## User Notes Addressed
 
-**This is an initial draft based on code review.** Please provide your numbered notes for:
-- Features that are missing or described incorrectly
-- Behaviors that should work differently
-- New requirements or enhancements needed
-- Any bugs or issues you've observed
-
-*Format your notes like the Tasks notes (1, 2, 3...) and I'll incorporate them all into the final comprehensive document.*
+1. ~~Links to budget labour hours~~ - Works via cost codes ✓
+2. ~~Link to estimate~~ - Unnecessary (covered by cost codes)
+3. Export timesheets - Confirmed working ✓
+4. ~~Import timesheets~~ - Not implemented (deferred)
+5. ~~Quick Actions / Global 'New'~~ - Global header confirmed working ✓
+6. Require start/end time and cost code - Implemented ✓
+7. ~~Add Timesheet button~~ - Disregarded (Clock In button sufficient)
