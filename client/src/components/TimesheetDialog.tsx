@@ -55,7 +55,31 @@ const timesheetSchema = z.object({
   breakDuration: z.string().optional(),
   description: z.string().optional(),
   hourlyRate: z.string().optional(),
-  costCodeId: z.string().optional(),
+  costCodeId: z.string().optional(), // Validated in mutation based on split mode
+}).refine((data) => {
+  if (data.timeEntryMode === "time") {
+    return data.startTime && data.startTime.length > 0;
+  }
+  return true;
+}, {
+  message: "Start time is required",
+  path: ["startTime"],
+}).refine((data) => {
+  if (data.timeEntryMode === "time") {
+    return data.endTime && data.endTime.length > 0;
+  }
+  return true;
+}, {
+  message: "End time is required",
+  path: ["endTime"],
+}).refine((data) => {
+  if (data.timeEntryMode === "duration") {
+    return data.duration && parseFloat(data.duration) > 0;
+  }
+  return true;
+}, {
+  message: "Duration is required",
+  path: ["duration"],
 });
 
 type TimesheetFormData = z.infer<typeof timesheetSchema>;
