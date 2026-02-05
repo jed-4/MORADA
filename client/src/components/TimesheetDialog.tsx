@@ -4,7 +4,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon, Plus, Trash2, Clock, Bell } from "lucide-react";
+import { Calendar as CalendarIcon, Plus, Trash2, Clock, Bell, Check } from "lucide-react";
+import { useTimesheetLabelOptions } from "@/hooks/useTimesheetLabelOptions";
 import { SetReminderDialog } from "@/components/SetReminderDialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,7 +34,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
@@ -48,38 +48,14 @@ const timesheetSchema = z.object({
   projectId: z.string().min(1, "Project is required"),
   userId: z.string().min(1, "User is required"),
   date: z.date(),
-  timeEntryMode: z.enum(["time", "duration"]),
-  startTime: z.string().optional(),
-  endTime: z.string().optional(),
+  startTime: z.string().min(1, "Start time is required"),
+  endTime: z.string().min(1, "End time is required"),
   duration: z.string().optional(),
   breakDuration: z.string().optional(),
   description: z.string().optional(),
   hourlyRate: z.string().optional(),
   costCodeId: z.string().optional(), // Validated in mutation based on split mode
-}).refine((data) => {
-  if (data.timeEntryMode === "time") {
-    return data.startTime && data.startTime.length > 0;
-  }
-  return true;
-}, {
-  message: "Start time is required",
-  path: ["startTime"],
-}).refine((data) => {
-  if (data.timeEntryMode === "time") {
-    return data.endTime && data.endTime.length > 0;
-  }
-  return true;
-}, {
-  message: "End time is required",
-  path: ["endTime"],
-}).refine((data) => {
-  if (data.timeEntryMode === "duration") {
-    return data.duration && parseFloat(data.duration) > 0;
-  }
-  return true;
-}, {
-  message: "Duration is required",
-  path: ["duration"],
+  labels: z.array(z.string()).optional(),
 });
 
 type TimesheetFormData = z.infer<typeof timesheetSchema>;
@@ -106,8 +82,8 @@ export function TimesheetDialog({
   defaultProjectId,
 }: TimesheetDialogProps) {
   const { toast } = useToast();
-  const [timeEntryMode, setTimeEntryMode] = useState<"time" | "duration">("time");
   const [isSplit, setIsSplit] = useState(false);
+  const [lastEditedField, setLastEditedField] = useState<"startTime" | "endTime" | "duration" | "breakDuration" | null>(null);
   const [costCodeSplits, setCostCodeSplits] = useState<CostCodeSplit[]>([]);
   const startTimeViewportRef = useRef<HTMLDivElement>(null);
   const endTimeViewportRef = useRef<HTMLDivElement>(null);
@@ -166,7 +142,6 @@ export function TimesheetDialog({
       projectId: defaultProjectId || "",
       userId: "",
       date: new Date(),
-      timeEntryMode: "time",
       startTime: "",
       endTime: "",
       duration: "",
@@ -174,8 +149,21 @@ export function TimesheetDialog({
       description: "",
       hourlyRate: "50",
       costCodeId: "",
+      labels: [],
     },
   });
+  
+  const { labelOptions } = useTimesheetLabelOptions();
+  const watchedLabels = form.watch("labels") || [];
+  
+  const toggleLabel = (labelKey: string) => {
+    const current = form.getValues("labels") || [];
+    if (current.includes(labelKey)) {
+      form.setValue("labels", current.filter(l => l !== labelKey));
+    } else {
+      form.setValue("labels", [...current, labelKey]);
+    }
+  };
 
   // Auto-select project when dialog opens if on a project page
   useEffect(() => {
@@ -184,31 +172,50 @@ export function TimesheetDialog({
     }
   }, [open, defaultProjectId, timesheet, form]);
 
-  // Calculate duration from start/end time
-  useEffect(() => {
-    if (timeEntryMode === "time") {
-      const startTime = form.watch("startTime");
-      const endTime = form.watch("endTime");
-      const breakDuration = parseFloat(form.watch("breakDuration") || "0");
+  // Helper: Parse time string to minutes
+  const timeToMinutes = (time: string): number => {
+    const [hour, min] = time.split(":").map(Number);
+    return hour * 60 + min;
+  };
 
-      if (startTime && endTime) {
-        const [startHour, startMin] = startTime.split(":").map(Number);
-        const [endHour, endMin] = endTime.split(":").map(Number);
-        
-        const startMinutes = startHour * 60 + startMin;
-        const endMinutes = endHour * 60 + endMin;
-        
-        let totalMinutes = endMinutes - startMinutes;
-        if (totalMinutes < 0) totalMinutes += 24 * 60; // Handle overnight shifts
-        
-        // Subtract break and round to nearest 0.25 hours
-        const hours = (totalMinutes / 60) - breakDuration;
-        const roundedHours = Math.max(0, Math.round(hours * 4) / 4);
-        
-        form.setValue("duration", roundedHours.toString());
-      }
+  // Helper: Convert minutes to time string (handles >24h)
+  const minutesToTime = (totalMinutes: number): string => {
+    let minutes = totalMinutes % (24 * 60);
+    if (minutes < 0) minutes += 24 * 60;
+    const hour = Math.floor(minutes / 60);
+    const min = minutes % 60;
+    return `${hour.toString().padStart(2, '0')}:${String(Math.round(min / 15) * 15).padStart(2, '0')}`;
+  };
+
+  // Bi-directional time calculation
+  useEffect(() => {
+    const startTime = form.watch("startTime");
+    const endTime = form.watch("endTime");
+    const duration = form.watch("duration");
+    const breakDuration = parseFloat(form.watch("breakDuration") || "0");
+
+    // Calculate duration from start + end (when start or end or break changes)
+    if ((lastEditedField === "startTime" || lastEditedField === "endTime" || lastEditedField === "breakDuration") && startTime && endTime) {
+      const startMinutes = timeToMinutes(startTime);
+      const endMinutes = timeToMinutes(endTime);
+      
+      let totalMinutes = endMinutes - startMinutes;
+      if (totalMinutes < 0) totalMinutes += 24 * 60; // Handle overnight shifts
+      
+      const hours = (totalMinutes / 60) - breakDuration;
+      const roundedHours = Math.max(0, Math.round(hours * 4) / 4);
+      
+      form.setValue("duration", roundedHours.toString());
     }
-  }, [form.watch("startTime"), form.watch("endTime"), form.watch("breakDuration"), timeEntryMode]);
+    // Calculate end time from start + duration
+    else if (lastEditedField === "duration" && startTime && duration) {
+      const durationHours = parseFloat(duration) || 0;
+      const startMinutes = timeToMinutes(startTime);
+      const endMinutes = startMinutes + ((durationHours + breakDuration) * 60);
+      const calculatedEnd = minutesToTime(endMinutes);
+      form.setValue("endTime", calculatedEnd);
+    }
+  }, [form.watch("startTime"), form.watch("endTime"), form.watch("duration"), form.watch("breakDuration"), lastEditedField]);
 
   // Create/Update mutation
   const createMutation = useMutation({
@@ -229,8 +236,8 @@ export function TimesheetDialog({
         projectId: data.projectId,
         userId: data.userId,
         date: data.date,
-        startTime: data.timeEntryMode === "time" ? data.startTime : null,
-        endTime: data.timeEntryMode === "time" ? data.endTime : null,
+        startTime: data.startTime || null,
+        endTime: data.endTime || null,
         duration: duration.toString(),
         breakDuration: data.breakDuration || "0",
         description: data.description || null,
@@ -238,6 +245,7 @@ export function TimesheetDialog({
         total: total,
         status: "draft",
         invoiced: false,
+        labels: data.labels || [],
       };
 
       if (timesheet) {
@@ -442,119 +450,105 @@ export function TimesheetDialog({
               )}
             />
 
-            {/* Time Entry Mode */}
-            <div className="space-y-4">
-              <Label>Time Entry Mode</Label>
-              <RadioGroup
-                value={timeEntryMode}
-                onValueChange={(value: "time" | "duration") => {
-                  setTimeEntryMode(value);
-                  form.setValue("timeEntryMode", value);
-                }}
-                className="flex gap-4"
-              >
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="time" id="time" data-testid="radio-time-mode" />
-                  <Label htmlFor="time">Start/End Time</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="duration" id="duration" data-testid="radio-duration-mode" />
-                  <Label htmlFor="duration">Duration</Label>
-                </div>
-              </RadioGroup>
-            </div>
-
-            {/* Time Entry Fields */}
-            {timeEntryMode === "time" ? (
-              <div className="grid gap-4 md:grid-cols-3">
-                <FormField
-                  control={form.control}
-                  name="startTime"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Start Time</FormLabel>
-                      <Select 
-                        value={field.value} 
-                        onValueChange={field.onChange}
-                        onOpenChange={(open) => {
-                          if (open && !field.value) {
-                            const defaultTime = companySettings?.standardWorkStart || "07:00";
-                            scrollToTime(startTimeViewportRef, defaultTime);
-                          }
-                        }}
-                      >
-                        <FormControl>
-                          <SelectTrigger data-testid="select-start-time">
-                            <SelectValue placeholder="Select start time" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent className="max-h-[300px]" ref={startTimeViewportRef}>
-                          {timeOptions.map((time) => (
-                            <SelectItem key={time} value={time}>
-                              {time}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="endTime"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>End Time</FormLabel>
-                      <Select 
-                        value={field.value} 
-                        onValueChange={field.onChange}
-                        onOpenChange={(open) => {
-                          if (open && !field.value) {
-                            const defaultTime = companySettings?.standardWorkEnd || "15:30";
-                            scrollToTime(endTimeViewportRef, defaultTime);
-                          }
-                        }}
-                      >
-                        <FormControl>
-                          <SelectTrigger data-testid="select-end-time">
-                            <SelectValue placeholder="Select end time" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent className="max-h-[300px]" ref={endTimeViewportRef}>
-                          {timeOptions.map((time) => (
-                            <SelectItem key={time} value={time}>
-                              {time}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="breakDuration"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Break (hours)</FormLabel>
+            {/* Time Entry Fields - All fields shown with bi-directional calculation */}
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <FormField
+                control={form.control}
+                name="startTime"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Start Time</FormLabel>
+                    <Select 
+                      value={field.value} 
+                      onValueChange={(value) => {
+                        setLastEditedField("startTime");
+                        field.onChange(value);
+                      }}
+                      onOpenChange={(open) => {
+                        if (open && !field.value) {
+                          const defaultTime = companySettings?.standardWorkStart || "07:00";
+                          scrollToTime(startTimeViewportRef, defaultTime);
+                        }
+                      }}
+                    >
                       <FormControl>
-                        <Input
-                          type="number"
-                          step="0.25"
-                          {...field}
-                          data-testid="input-break-duration"
-                        />
+                        <SelectTrigger data-testid="select-start-time">
+                          <SelectValue placeholder="Select start time" />
+                        </SelectTrigger>
                       </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-            ) : (
+                      <SelectContent className="max-h-[300px]" ref={startTimeViewportRef}>
+                        {timeOptions.map((time) => (
+                          <SelectItem key={time} value={time}>
+                            {time}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="endTime"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>End Time</FormLabel>
+                    <Select 
+                      value={field.value} 
+                      onValueChange={(value) => {
+                        setLastEditedField("endTime");
+                        field.onChange(value);
+                      }}
+                      onOpenChange={(open) => {
+                        if (open && !field.value) {
+                          const defaultTime = companySettings?.standardWorkEnd || "15:30";
+                          scrollToTime(endTimeViewportRef, defaultTime);
+                        }
+                      }}
+                    >
+                      <FormControl>
+                        <SelectTrigger data-testid="select-end-time">
+                          <SelectValue placeholder="Select end time" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent className="max-h-[300px]" ref={endTimeViewportRef}>
+                        {timeOptions.map((time) => (
+                          <SelectItem key={time} value={time}>
+                            {time}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="breakDuration"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Break (hours)</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        step="0.25"
+                        {...field}
+                        onChange={(e) => {
+                          setLastEditedField("breakDuration");
+                          field.onChange(e);
+                        }}
+                        data-testid="input-break-duration"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
               <FormField
                 control={form.control}
                 name="duration"
@@ -566,23 +560,18 @@ export function TimesheetDialog({
                         type="number"
                         step="0.25"
                         {...field}
+                        onChange={(e) => {
+                          setLastEditedField("duration");
+                          field.onChange(e);
+                        }}
                         data-testid="input-duration"
                       />
                     </FormControl>
+                    <p className="text-xs text-muted-foreground">Auto-calculated or enter manually</p>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-            )}
-
-            {/* Calculated Duration Display */}
-            <div className="p-3 bg-muted rounded-md">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Total Duration:</span>
-                <span className="text-lg font-bold">
-                  {form.watch("duration") || "0"} hours
-                </span>
-              </div>
             </div>
 
             {/* Rate & Total */}
@@ -734,6 +723,37 @@ export function TimesheetDialog({
                     </CardContent>
                   </Card>
                 )}
+              </div>
+            )}
+
+            {/* Labels */}
+            {labelOptions.length > 0 && (
+              <div className="space-y-2">
+                <Label>Labels</Label>
+                <div className="flex flex-wrap gap-2">
+                  {labelOptions.map((option) => {
+                    const isSelected = watchedLabels?.includes(option.key);
+                    return (
+                      <Button
+                        key={option.key}
+                        type="button"
+                        variant={isSelected ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => toggleLabel(option.key)}
+                        className="text-xs"
+                        style={{
+                          backgroundColor: isSelected ? option.color || undefined : undefined,
+                          borderColor: option.color || undefined,
+                          color: isSelected ? "#ffffff" : option.color || undefined,
+                        }}
+                        data-testid={`timesheet-label-${option.key}`}
+                      >
+                        {option.name}
+                        {isSelected && <Check className="h-3 w-3 ml-1" />}
+                      </Button>
+                    );
+                  })}
+                </div>
               </div>
             )}
 

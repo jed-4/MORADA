@@ -39,10 +39,10 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 - [x] User can create a timesheet entry from the Timesheets page
 - [x] User can create a timesheet from global header "New" menu
 - [x] Entry requires: project, user, date, cost code
-- [x] Time mode requires: start time, end time
-- [x] Duration mode requires: duration (hours)
-- [x] Optional fields: break duration, description, hourly rate
-- [x] Two entry modes available: Time-based (start/end) or Duration-based (hours)
+- [x] All time entries show: start time, end time, break, duration fields together
+- [x] Bi-directional time calculation: filling start+end auto-calculates duration (minus break)
+- [x] Bi-directional time calculation: filling start+duration auto-calculates end time
+- [x] Optional fields: break duration, description, hourly rate, labels
 - [x] Entry is saved and appears in the timesheets list
 - [x] Default status is "Draft"
 
@@ -395,14 +395,35 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 
 ---
 
+### 10. Labels & Categorization
+
+#### US-TS090: Add Labels to Timesheets
+**As a** team member  
+**I want to** add labels to my timesheet entries  
+**So that** I can categorize different types of work (regular, overtime, travel, etc.)
+
+**Acceptance Criteria:**
+- [x] Labels field available in timesheet dialog
+- [x] Multiple labels can be selected per entry
+- [x] Default label options: Regular Hours, Overtime, Travel Time, Meeting, Training, Site Visit
+- [x] Labels are configurable in Settings > Field Categories
+- [x] Labels display with color coding
+- [x] Toggle labels on/off in the form
+
+**Priority:** Nice to Have  
+**Status:** Implemented
+
+---
+
 ## Current State Summary
 
 ### Implemented Features
 - Timesheet entry creation and editing
 - Create timesheets from global header "New" menu
 - Clock in/out functionality with dashboard widget
-- Time entry modes: time-based (start/end required) and duration-based
-- Required fields: project, user, date, cost code, start/end time (or duration)
+- Bi-directional time calculation (start+end calculates duration, start+duration calculates end)
+- Required fields: project, user, date, cost code, start/end time
+- Custom labels for categorizing time entries (Regular, Overtime, Travel, etc.)
 - Split time across multiple cost codes
 - Three views: Table, Weekly, Calendar
 - Filtering by project, user, status, date range
@@ -476,3 +497,5 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 5. ~~Quick Actions / Global 'New'~~ - Global header confirmed working ✓
 6. Require start/end time and cost code - Implemented ✓
 7. ~~Add Timesheet button~~ - Disregarded (Clock In button sufficient)
+8. Bi-directional time calculation - Implemented ✓
+9. Labels for timesheets - Implemented ✓
