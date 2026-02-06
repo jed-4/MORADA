@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams } from "wouter";
-import { Plus, Clock, Filter, Search, Calendar as CalendarIcon, User, Check, X, CalendarRange, Download, ChevronDown, Settings2, RotateCcw, Table2, Users2, CalendarDays, ChevronLeft, ChevronRight, Zap, Play, Square, GripVertical, ArrowUp, ArrowDown } from "lucide-react";
+import { Plus, Clock, Filter, Search, Calendar as CalendarIcon, User, Check, X, CalendarRange, Download, ChevronDown, Settings2, RotateCcw, Table2, Users2, CalendarDays, ChevronLeft, ChevronRight, Zap, Play, Square, ArrowUp, ArrowDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import * as XLSX from "xlsx";
 import { Input } from "@/components/ui/input";
@@ -105,31 +105,28 @@ function SortableColumnHeader({
       ref={setNodeRef}
       style={style}
       className={`text-[10px] font-medium text-muted-foreground py-1 h-7 px-2 ${column.id === 'total' ? 'text-right' : ''}`}
+      {...attributes}
+      {...listeners}
     >
-      <div className="flex items-center gap-0.5">
-        <GripVertical
-          className="w-2.5 h-2.5 text-muted-foreground/30 flex-shrink-0 cursor-grab"
-          {...attributes}
-          {...listeners}
-        />
-        {isSortable ? (
-          <button
-            type="button"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={() => onSort(column.id)}
-            className={`inline-flex items-center gap-0.5 select-none cursor-pointer ${isActive ? 'text-foreground' : 'hover:text-foreground'}`}
-          >
-            <span>{children}</span>
+      {isSortable ? (
+        <button
+          type="button"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => onSort(column.id)}
+          className={`inline-flex items-center gap-0.5 select-none cursor-pointer ${isActive ? 'text-foreground' : 'hover:text-foreground'}`}
+        >
+          <span>{children}</span>
+          <span className="w-2.5 h-2.5 inline-flex items-center justify-center flex-shrink-0">
             {isActive && sortDirection === 'asc' ? (
               <ArrowUp className="w-2.5 h-2.5" />
             ) : isActive && sortDirection === 'desc' ? (
               <ArrowDown className="w-2.5 h-2.5" />
             ) : null}
-          </button>
-        ) : (
-          <span className="select-none">{children}</span>
-        )}
-      </div>
+          </span>
+        </button>
+      ) : (
+        <span className="select-none">{children}</span>
+      )}
     </TableHead>
   );
 }
