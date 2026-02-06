@@ -24,6 +24,7 @@ import { TaskDetailModal } from "@/components/TaskDetailModal";
 import TaskEditModal from "@/components/TaskEditModal";
 import type { Task } from "@shared/schema";
 import { useTimezone, formatInTimezone, isTodayInTimezone, getCurrentTimeInTimezone as getTimeInTimezone } from "@/hooks/useTimezone";
+import { useWeekStartDay } from "@/hooks/useWeekStartDay";
 
 type ColorMode = "type" | "project" | "priority";
 type ViewMode = "timeline" | "stacked";
@@ -249,7 +250,8 @@ function StackedEventChip({ event, colorMode, onClick }: { event: CalendarItem; 
 }
 
 export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId }: WidgetProps) {
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
+  const weekStartDay = useWeekStartDay();
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: weekStartDay }));
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -299,6 +301,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
     userId,
     date: weekStart,
     range: "week",
+    weekStartDay,
     ...configState,
   });
 
@@ -476,7 +479,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
     );
   }
 
-  const goToThisWeek = () => setWeekStart(startOfWeek(new Date(), { weekStartsOn: 1 }));
+  const goToThisWeek = () => setWeekStart(startOfWeek(new Date(), { weekStartsOn: weekStartDay }));
   const goToPrev = () => setWeekStart(w => subWeeks(w, 1));
   const goToNext = () => setWeekStart(w => addWeeks(w, 1));
 

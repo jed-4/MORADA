@@ -72,6 +72,7 @@ import { useProject } from "@/contexts/ProjectContext";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useKeyboardShortcuts, CASVA_SHORTCUTS } from "@/hooks/useKeyboardShortcuts";
+import { useWeekStartDay } from "@/hooks/useWeekStartDay";
 
 interface TasksParams {
   projectId?: string;
@@ -166,6 +167,7 @@ export default function Tasks() {
   // All hooks MUST be called at the top level before any conditional logic
   const { currentProject } = useProject();
   const { toast } = useToast();
+  const weekStartDay = useWeekStartDay();
   const params = useParams<TasksParams>();
   const [location, setLocation] = useLocation();
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -687,7 +689,7 @@ export default function Tasks() {
     ];
     const allViews = [...defaultViews, ...taskViews];
     const filterOptions = extractFilterOptions(allTasks);
-    const filteredTasks = applyTaskFilters(allTasks, filters);
+    const filteredTasks = applyTaskFilters(allTasks, filters, weekStartDay);
     
     const getCurrentViewFilters = () => {
       if (!selectedViewId) return {};
@@ -703,7 +705,7 @@ export default function Tasks() {
       ...filters,
     };
     
-    const effectivelyFilteredTasks = applyTaskFilters(allTasks, effectiveFilters);
+    const effectivelyFilteredTasks = applyTaskFilters(allTasks, effectiveFilters, weekStartDay);
     
     // For list view without grouping, return all tasks
     if (activeView === 'list') {
@@ -840,7 +842,7 @@ export default function Tasks() {
   const filterOptions = extractFilterOptions(allTasks);
 
   // Apply filters to tasks
-  const filteredTasks = applyTaskFilters(allTasks, filters);
+  const filteredTasks = applyTaskFilters(allTasks, filters, weekStartDay);
 
   // Get current view filters for custom views
   const getCurrentViewFilters = () => {
@@ -858,7 +860,7 @@ export default function Tasks() {
     ...filters,
   };
 
-  const effectivelyFilteredTasks = applyTaskFilters(allTasks, effectiveFilters);
+  const effectivelyFilteredTasks = applyTaskFilters(allTasks, effectiveFilters, weekStartDay);
 
   // Convert tasks to calendar events
   const tasksToCalendarEvents = (tasks: Task[]): CalendarEvent[] => {

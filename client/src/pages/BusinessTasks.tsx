@@ -61,6 +61,7 @@ import { applyTaskFilters, extractFilterOptions } from "@/utils/taskFilters";
 import { useToast } from "@/hooks/use-toast";
 import { type FilterState } from "@/components/FilterPanel";
 import { useTaskPriorityOptions } from "@/hooks/useTaskPriorityOptions";
+import { useWeekStartDay } from "@/hooks/useWeekStartDay";
 
 // Sortable View Tab component for drag-and-drop reordering
 function SortableViewTab({ 
@@ -150,6 +151,7 @@ function SortableViewTab({
 export default function BusinessTasks() {
   const [location] = useLocation();
   const { toast } = useToast();
+  const weekStartDay = useWeekStartDay();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<"board" | "list" | "calendar">("board");
   const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
@@ -509,7 +511,7 @@ export default function BusinessTasks() {
   ];
 
   // Apply filters to get filtered tasks
-  const filteredTasks = applyTaskFilters(allTasks, filters);
+  const filteredTasks = applyTaskFilters(allTasks, filters, weekStartDay);
 
   // Group tasks based on selected grouping
   const groupedTasks = React.useMemo(() => {

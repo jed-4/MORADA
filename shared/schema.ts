@@ -954,6 +954,9 @@ export const companySettings = pgTable("company_settings", {
   // System settings
   taxRate: numeric("tax_rate", { precision: 5, scale: 2 }).notNull().default("10.00"), // Tax rate as percentage (e.g., 10.00 for 10%)
   
+  // Calendar & week settings
+  weekStartDay: integer("week_start_day").notNull().default(1), // 0 = Sunday, 1 = Monday (default)
+  
   // Timesheet defaults
   standardWorkStart: text("standard_work_start").default("07:00"), // Default work start time (e.g., "07:00")
   standardWorkEnd: text("standard_work_end").default("15:30"), // Default work end time (e.g., "15:30")

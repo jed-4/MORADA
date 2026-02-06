@@ -50,6 +50,7 @@ import {
   getDay
 } from "date-fns";
 import { generateNotionColors } from "@/lib/taskColors";
+import { useWeekStartDay } from "@/hooks/useWeekStartDay";
 
 type ViewMode = "list" | "day" | "week" | "month";
 
@@ -100,6 +101,7 @@ function parseTime(timeStr: string | null | undefined): number | null {
 export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
   const { currentProject } = useProject();
   const { effectiveTimezone } = useTimezone();
+  const weekStartDay = useWeekStartDay();
   const [, navigate] = useLocation();
   
   const viewMode = (widget.config?.viewMode as ViewMode) || "list";
@@ -750,7 +752,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
   };
 
   const renderWeekView = () => {
-    const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
+    const weekStart = startOfWeek(currentDate, { weekStartsOn: weekStartDay });
     const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
     
     // Get all-day items for the week
@@ -953,7 +955,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
   const renderMonthView = () => {
     const monthStart = startOfMonth(currentDate);
     const monthEnd = endOfMonth(currentDate);
-    const startDate = startOfWeek(monthStart, { weekStartsOn: 1 });
+    const startDate = startOfWeek(monthStart, { weekStartsOn: weekStartDay });
     
     const weeks: Date[][] = [];
     let day = startDate;

@@ -14,6 +14,7 @@ import { TaskDetailModal } from "@/components/TaskDetailModal";
 import TaskEditModal from "@/components/TaskEditModal";
 import type { Task } from "@shared/schema";
 import { useTimezone, formatInTimezone, isTodayInTimezone, getCurrentTimeInTimezone as getTimeInTimezone } from "@/hooks/useTimezone";
+import { useWeekStartDay } from "@/hooks/useWeekStartDay";
 
 type ViewMode = "list" | "day" | "week";
 
@@ -98,6 +99,7 @@ function parseTimeFromDate(dateStr: string): number | null {
 }
 
 export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId }: WidgetProps) {
+  const weekStartDay = useWeekStartDay();
   const maxEvents = widget.config?.maxEvents || 8;
   const daysAhead = widget.config?.daysAhead || 7;
   const defaultViewMode = (widget.config?.viewMode as ViewMode) || "day";
@@ -220,8 +222,8 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
     return allEvents.filter(event => isSameDay(new Date(event.start), date));
   };
 
-  const weekStart = startOfWeek(selectedDate, { weekStartsOn: 1 });
-  const weekEnd = endOfWeek(selectedDate, { weekStartsOn: 1 });
+  const weekStart = startOfWeek(selectedDate, { weekStartsOn: weekStartDay });
+  const weekEnd = endOfWeek(selectedDate, { weekStartsOn: weekStartDay });
   const weekDays = eachDayOfInterval({ start: weekStart, end: weekEnd });
 
   if (isConfiguring) {

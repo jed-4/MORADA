@@ -10619,8 +10619,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Company Settings routes (protected - admin access only)
-  app.get("/api/company-settings", requireAuth, requireAdmin, async (req, res) => {
+  // Company Settings routes (read: all authenticated users, write: admin only)
+  app.get("/api/company-settings", requireAuth, async (req, res) => {
     try {
       const settings = await storage.getCompanySettings();
       res.json(settings || {});

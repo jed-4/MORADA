@@ -9,6 +9,7 @@ import { Clock, Calendar, Timer, Play, Square, ChevronLeft, ChevronRight } from 
 import { format, startOfWeek, endOfWeek, eachDayOfInterval, addWeeks, subWeeks, isToday, isSameDay } from "date-fns";
 import type { User, Timesheet, Project } from "@shared/schema";
 import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
+import { useWeekStartDay } from "@/hooks/useWeekStartDay";
 
 interface UserTimeProps {
   user: User;
@@ -17,7 +18,8 @@ interface UserTimeProps {
 
 export default function UserTime({ user, isOwnPage }: UserTimeProps) {
   const [viewType, setViewType] = useState<"table" | "weekly">("table");
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
+  const weekStartDay = useWeekStartDay();
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: weekStartDay }));
   const { effectiveTimezone } = useTimezone();
   
   const { data: timesheets = [], isLoading } = useQuery<Timesheet[]>({
@@ -35,7 +37,7 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
     queryKey: ["/api/projects"],
   });
 
-  const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 });
+  const weekEnd = endOfWeek(weekStart, { weekStartsOn: weekStartDay });
   const daysOfWeek = eachDayOfInterval({ start: weekStart, end: weekEnd });
 
   const weeklyTimesheets = useMemo(() => {

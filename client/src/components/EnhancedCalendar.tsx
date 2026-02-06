@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useWeekStartDay } from "@/hooks/useWeekStartDay";
 import { generateNotionColors } from "@/lib/taskColors";
 import {
   DndContext,
@@ -272,6 +273,7 @@ export function EnhancedCalendar({
   onViewChange,
   hideInternalHeader = false
 }: EnhancedCalendarProps) {
+  const weekStartDay = useWeekStartDay();
   const { effectiveTimezone } = useTimezone();
   const [internalCurrentDate, setInternalCurrentDate] = useState(new Date());
   const [internalView, setInternalView] = useState<"month" | "week" | "day" | "roster">(initialView);
@@ -327,8 +329,8 @@ export function EnhancedCalendar({
   const timeGridScrollRef = useRef<HTMLDivElement>(null);
   
   // For infinite scrolling - track expanded date range
-  const [weekRangeStart, setWeekRangeStart] = useState(() => startOfWeek(subWeeks(new Date(), 4), { weekStartsOn: 1 }));
-  const [weekRangeEnd, setWeekRangeEnd] = useState(() => endOfWeek(addWeeks(new Date(), 4), { weekStartsOn: 1 }));
+  const [weekRangeStart, setWeekRangeStart] = useState(() => startOfWeek(subWeeks(new Date(), 4), { weekStartsOn: weekStartDay }));
+  const [weekRangeEnd, setWeekRangeEnd] = useState(() => endOfWeek(addWeeks(new Date(), 4), { weekStartsOn: weekStartDay }));
   const [monthRangeStart, setMonthRangeStart] = useState(() => startOfMonth(subMonths(new Date(), 2)));
   const [monthRangeEnd, setMonthRangeEnd] = useState(() => endOfMonth(addMonths(new Date(), 2)));
 
@@ -336,11 +338,11 @@ export function EnhancedCalendar({
   useEffect(() => {
     if (isDateControlled && externalCurrentDate) {
       // Check if date is outside week range and recenter if needed
-      const weekStart = startOfWeek(externalCurrentDate, { weekStartsOn: 1 });
-      const weekEnd = endOfWeek(externalCurrentDate, { weekStartsOn: 1 });
+      const weekStart = startOfWeek(externalCurrentDate, { weekStartsOn: weekStartDay });
+      const weekEnd = endOfWeek(externalCurrentDate, { weekStartsOn: weekStartDay });
       if (weekStart < weekRangeStart || weekEnd > weekRangeEnd) {
-        setWeekRangeStart(startOfWeek(subWeeks(externalCurrentDate, 4), { weekStartsOn: 1 }));
-        setWeekRangeEnd(endOfWeek(addWeeks(externalCurrentDate, 4), { weekStartsOn: 1 }));
+        setWeekRangeStart(startOfWeek(subWeeks(externalCurrentDate, 4), { weekStartsOn: weekStartDay }));
+        setWeekRangeEnd(endOfWeek(addWeeks(externalCurrentDate, 4), { weekStartsOn: weekStartDay }));
       }
       
       // Check if date is outside month range and recenter if needed
@@ -371,13 +373,13 @@ export function EnhancedCalendar({
   const dateRange = useMemo(() => {
     if (view === "month") {
       // Infinite scrolling - use expanded range with week alignment
-      const weekStart = startOfWeek(monthRangeStart, { weekStartsOn: 1 });
-      const weekEnd = endOfWeek(monthRangeEnd, { weekStartsOn: 1 });
+      const weekStart = startOfWeek(monthRangeStart, { weekStartsOn: weekStartDay });
+      const weekEnd = endOfWeek(monthRangeEnd, { weekStartsOn: weekStartDay });
       return eachDayOfInterval({ start: weekStart, end: weekEnd });
     } else if (view === "week") {
       // Show exactly 1 week (Mon-Sun) for better column visibility
-      const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
-      const weekEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
+      const weekStart = startOfWeek(currentDate, { weekStartsOn: weekStartDay });
+      const weekEnd = endOfWeek(currentDate, { weekStartsOn: weekStartDay });
       return eachDayOfInterval({ start: weekStart, end: weekEnd });
     } else if (view === "roster") {
       // Roster view uses infinite scrolling range
@@ -408,9 +410,9 @@ export function EnhancedCalendar({
   // Expand date range when scrolling near edges for infinite scroll
   const expandWeekRange = useCallback((direction: 'start' | 'end') => {
     if (direction === 'start') {
-      setWeekRangeStart(prev => startOfWeek(subWeeks(prev, 2), { weekStartsOn: 1 }));
+      setWeekRangeStart(prev => startOfWeek(subWeeks(prev, 2), { weekStartsOn: weekStartDay }));
     } else {
-      setWeekRangeEnd(prev => endOfWeek(addWeeks(prev, 2), { weekStartsOn: 1 }));
+      setWeekRangeEnd(prev => endOfWeek(addWeeks(prev, 2), { weekStartsOn: weekStartDay }));
     }
   }, []);
 
@@ -1214,9 +1216,9 @@ export function EnhancedCalendar({
             </div>
             <h2 className="text-sm font-semibold min-w-[140px] sm:min-w-[180px]">
               {view === "month" && format(currentDate, "MMMM yyyy")}
-              {view === "week" && `Week of ${format(startOfWeek(currentDate, { weekStartsOn: 1 }), "MMM d")}`}
+              {view === "week" && `Week of ${format(startOfWeek(currentDate, { weekStartsOn: weekStartDay }), "MMM d")}`}
               {view === "day" && format(currentDate, "MMMM d, yyyy")}
-              {view === "roster" && `Roster - Week of ${format(startOfWeek(currentDate, { weekStartsOn: 1 }), "MMM d")}`}
+              {view === "roster" && `Roster - Week of ${format(startOfWeek(currentDate, { weekStartsOn: weekStartDay }), "MMM d")}`}
             </h2>
           </div>
           

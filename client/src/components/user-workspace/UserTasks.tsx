@@ -65,6 +65,7 @@ import { applyTaskFilters, extractFilterOptions, deserializeFilters } from "@/ut
 import { useToast } from "@/hooks/use-toast";
 import { type FilterState, type DueDatePreset } from "@/components/FilterPanel";
 import { useTaskPriorityOptions } from "@/hooks/useTaskPriorityOptions";
+import { useWeekStartDay } from "@/hooks/useWeekStartDay";
 
 // Sortable View Tab component for drag-and-drop reordering
 function SortableViewTab({ 
@@ -154,7 +155,7 @@ import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, end
 import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
 
 // Helper to resolve preset to display date range
-function getPresetDateRange(preset: DueDatePreset | undefined): { from?: Date; to?: Date; label?: string } | null {
+function getPresetDateRange(preset: DueDatePreset | undefined, weekStartDay: 0 | 1 = 1): { from?: Date; to?: Date; label?: string } | null {
   if (!preset) return null;
   const today = startOfDay(new Date());
   
@@ -167,13 +168,13 @@ function getPresetDateRange(preset: DueDatePreset | undefined): { from?: Date; t
       const tomorrow = addDays(today, 1);
       return { from: tomorrow, to: endOfDay(tomorrow), label: 'Tomorrow' };
     case 'this-week':
-      return { from: startOfWeek(today, { weekStartsOn: 1 }), to: endOfWeek(today, { weekStartsOn: 1 }), label: 'This Week' };
+      return { from: startOfWeek(today, { weekStartsOn: weekStartDay }), to: endOfWeek(today, { weekStartsOn: weekStartDay }), label: 'This Week' };
     case 'last-week-to-today':
-      const lastWeekStart = startOfWeek(addWeeks(today, -1), { weekStartsOn: 1 });
+      const lastWeekStart = startOfWeek(addWeeks(today, -1), { weekStartsOn: weekStartDay });
       return { from: lastWeekStart, to: endOfDay(today), label: 'Last Week to Today' };
     case 'next-week':
-      const nextWeekStart = startOfWeek(addWeeks(today, 1), { weekStartsOn: 1 });
-      return { from: nextWeekStart, to: endOfWeek(nextWeekStart, { weekStartsOn: 1 }), label: 'Next Week' };
+      const nextWeekStart = startOfWeek(addWeeks(today, 1), { weekStartsOn: weekStartDay });
+      return { from: nextWeekStart, to: endOfWeek(nextWeekStart, { weekStartsOn: weekStartDay }), label: 'Next Week' };
     case 'this-month':
       return { from: startOfMonth(today), to: endOfMonth(today), label: 'This Month' };
     case 'no-date':
@@ -195,6 +196,7 @@ type GroupByType = "none" | "status" | "priority" | "project" | "labels";
 export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
   const { toast } = useToast();
   const { effectiveTimezone } = useTimezone();
+  const weekStartDay = useWeekStartDay();
   const searchInputRef = useRef<HTMLInputElement>(null);
   
   const [activeView, setActiveView] = useState<ViewType>("list");
@@ -545,8 +547,8 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
   };
 
   const filteredTasks = useMemo(() => {
-    return applyTaskFilters(tasks, filters);
-  }, [tasks, filters]);
+    return applyTaskFilters(tasks, filters, weekStartDay);
+  }, [tasks, filters, weekStartDay]);
 
   const tasksWithProjects = useMemo(() => {
     return filteredTasks.map(task => ({
@@ -909,7 +911,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
                 <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground border-t mt-1 pt-1.5">Due Date Range</div>
                 {/* Date Range Inputs - show preset label if active, otherwise show manual dates */}
                 {(() => {
-                  const presetRange = getPresetDateRange(filters.dueDatePreset);
+                  const presetRange = getPresetDateRange(filters.dueDatePreset, weekStartDay);
                   const fromDisplay = filters.dueDateFrom 
                     ? formatInTimezone(new Date(filters.dueDateFrom), effectiveTimezone, { year: 'numeric', month: 'short', day: 'numeric' }) 
                     : presetRange?.from 

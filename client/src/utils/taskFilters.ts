@@ -3,7 +3,7 @@ import { type FilterState, type DueDatePreset } from "@/components/FilterPanel";
 import { startOfDay, endOfDay, addDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isBefore, addWeeks } from "date-fns";
 
 // Calculate date range from preset
-function getDateRangeFromPreset(preset: DueDatePreset): { from?: Date; to?: Date } | { noDate: true } | null {
+function getDateRangeFromPreset(preset: DueDatePreset, weekStartDay: 0 | 1 = 1): { from?: Date; to?: Date } | { noDate: true } | null {
   const today = startOfDay(new Date());
   
   switch (preset) {
@@ -19,13 +19,13 @@ function getDateRangeFromPreset(preset: DueDatePreset): { from?: Date; to?: Date
     case 'next-3-days':
       return { from: today, to: endOfDay(addDays(today, 2)) };
     case 'this-week':
-      return { from: startOfWeek(today, { weekStartsOn: 1 }), to: endOfWeek(today, { weekStartsOn: 1 }) };
+      return { from: startOfWeek(today, { weekStartsOn: weekStartDay }), to: endOfWeek(today, { weekStartsOn: weekStartDay }) };
     case 'last-week-to-today':
-      const lastWeekStart = startOfWeek(addWeeks(today, -1), { weekStartsOn: 1 });
+      const lastWeekStart = startOfWeek(addWeeks(today, -1), { weekStartsOn: weekStartDay });
       return { from: lastWeekStart, to: endOfDay(today) };
     case 'next-week':
-      const nextWeekStart = startOfWeek(addWeeks(today, 1), { weekStartsOn: 1 });
-      return { from: nextWeekStart, to: endOfWeek(nextWeekStart, { weekStartsOn: 1 }) };
+      const nextWeekStart = startOfWeek(addWeeks(today, 1), { weekStartsOn: weekStartDay });
+      return { from: nextWeekStart, to: endOfWeek(nextWeekStart, { weekStartsOn: weekStartDay }) };
     case 'next-2-weeks':
       return { from: today, to: endOfDay(addDays(today, 13)) };
     case 'this-month':
@@ -37,7 +37,7 @@ function getDateRangeFromPreset(preset: DueDatePreset): { from?: Date; to?: Date
   }
 }
 
-export function applyTaskFilters(tasks: Task[], filters: FilterState): Task[] {
+export function applyTaskFilters(tasks: Task[], filters: FilterState, weekStartDay: 0 | 1 = 1): Task[] {
   return tasks.filter(task => {
     // Search filter
     if (filters.search) {
@@ -113,7 +113,7 @@ export function applyTaskFilters(tasks: Task[], filters: FilterState): Task[] {
 
     // Due date filter (preset takes priority over manual from/to)
     if (filters.dueDatePreset && filters.dueDatePreset !== 'all') {
-      const range = getDateRangeFromPreset(filters.dueDatePreset);
+      const range = getDateRangeFromPreset(filters.dueDatePreset, weekStartDay);
       
       if (range && 'noDate' in range) {
         // Filter for tasks with no due date

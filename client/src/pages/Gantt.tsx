@@ -54,6 +54,7 @@ import { useScheduleItemStatusOptions } from "@/hooks/useScheduleItemStatusOptio
 import { ScheduleColorPicker } from "@/components/schedule/ScheduleColorPicker";
 import { ActivityNotesPopover } from "@/components/ActivityNotesPopover";
 import type { ScheduleItem } from "@shared/schema";
+import { useWeekStartDay } from "@/hooks/useWeekStartDay";
 
 type ZoomLevel = 'day' | 'week' | 'month';
 
@@ -142,6 +143,7 @@ function SortableTaskRow({
 export default function Gantt({ onEditItem }: GanttProps = {}) {
   const { projectId } = useParams();
   const { toast } = useToast();
+  const weekStartDay = useWeekStartDay();
   const { getStatusInfo, statusOptions } = useScheduleItemStatusOptions();
   const {
     schedule,
@@ -743,7 +745,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
   const projectStartDate = useMemo(() => {
     if (allItems.length === 0) return timelineStart;
     const allStartDates = allItems.map(item => new Date(item.startDate).getTime());
-    return startOfWeek(new Date(Math.min(...allStartDates)), { weekStartsOn: 1 });
+    return startOfWeek(new Date(Math.min(...allStartDates)), { weekStartsOn: weekStartDay });
   }, [allItems, timelineStart]);
 
   // Create week-grouped headers for double-row display (ClickUp style)
@@ -757,7 +759,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
       days: Array<{ date: Date; label: string; widthPx: number; isWeekend: boolean }>;
     }> = [];
     
-    let currentWeekStart = startOfWeek(days[0], { weekStartsOn: 1 }); // Monday
+    let currentWeekStart = startOfWeek(days[0], { weekStartsOn: weekStartDay }); // Monday
     let currentWeekDays: Array<{ date: Date; label: string; widthPx: number; isWeekend: boolean }> = [];
     
     // Calculate week number relative to project start
@@ -767,7 +769,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     };
     
     days.forEach((day, idx) => {
-      const weekStart = startOfWeek(day, { weekStartsOn: 1 });
+      const weekStart = startOfWeek(day, { weekStartsOn: weekStartDay });
       const dayOfWeek = getDay(day);
       const isWeekend = dayOfWeek === 0 || dayOfWeek === 6; // Sunday or Saturday
       

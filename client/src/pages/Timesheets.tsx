@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams } from "wouter";
-import { Plus, Clock, Filter, Search, Calendar as CalendarIcon, User, Check, X, CalendarRange, Download, ChevronDown, Settings2, RotateCcw, Table2, Users2, CalendarDays, ChevronLeft, ChevronRight, Zap, Play, Square } from "lucide-react";
+import { Plus, Clock, Filter, Search, Calendar as CalendarIcon, User, Check, X, CalendarRange, Download, ChevronDown, Settings2, RotateCcw, Table2, Users2, CalendarDays, ChevronLeft, ChevronRight, Zap, Play, Square, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import * as XLSX from "xlsx";
 import { Input } from "@/components/ui/input";
@@ -34,6 +34,10 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import type { Timesheet, Project, User as UserType, CostCode } from "@shared/schema";
 import { DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, horizontalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { useWeekStartDay } from "@/hooks/useWeekStartDay";
 
 // Column configuration type
 interface TimesheetColumnConfig {
@@ -49,7 +53,8 @@ const DEFAULT_COLUMNS: TimesheetColumnConfig[] = [
   { id: 'user', label: 'User', visible: true, width: 100, minWidth: 80 },
   { id: 'project', label: 'Project', visible: true, width: 120, minWidth: 80 },
   { id: 'costCode', label: 'Cost Code', visible: true, width: 100, minWidth: 70 },
-  { id: 'time', label: 'Time', visible: true, width: 85, minWidth: 70 },
+  { id: 'startTime', label: 'Start', visible: true, width: 60, minWidth: 50 },
+  { id: 'endTime', label: 'End', visible: true, width: 60, minWidth: 50 },
   { id: 'break', label: 'Break', visible: true, width: 45, minWidth: 40 },
   { id: 'hours', label: 'Hours', visible: true, width: 50, minWidth: 45 },
   { id: 'rate', label: 'Rate', visible: true, width: 50, minWidth: 45 },
@@ -61,9 +66,39 @@ const DEFAULT_COLUMNS: TimesheetColumnConfig[] = [
 
 const COLUMNS_STORAGE_KEY = 'timesheets-columns-config';
 
+function SortableColumnHeader({ column, children }: { column: TimesheetColumnConfig; children: React.ReactNode }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: column.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <TableHead
+      ref={setNodeRef}
+      style={style}
+      className={`text-[10px] font-medium text-muted-foreground w-[${column.width}px] px-2 cursor-grab ${column.id === 'total' ? 'text-right' : ''}`}
+      {...attributes}
+      {...listeners}
+    >
+      {children}
+    </TableHead>
+  );
+}
+
 export default function Timesheets() {
   const { toast } = useToast();
   const { user } = useAuth();
+  const weekStartDay = useWeekStartDay();
   const { projectId } = useParams<{ projectId?: string }>();
   const [searchTerm, setSearchTerm] = useState("");
   
@@ -92,10 +127,10 @@ export default function Timesheets() {
   const [activeView, setActiveView] = useState<"table" | "weekly" | "calendar">("table");
   
   // Weekly view state
-  const [weeklyViewDate, setWeeklyViewDate] = useState<Date>(startOfWeek(new Date(), { weekStartsOn: 1 }));
+  const [weeklyViewDate, setWeeklyViewDate] = useState<Date>(startOfWeek(new Date(), { weekStartsOn: weekStartDay }));
   
   // Calendar view state
-  const [calendarWeek, setCalendarWeek] = useState<Date>(startOfWeek(new Date(), { weekStartsOn: 1 }));
+  const [calendarWeek, setCalendarWeek] = useState<Date>(startOfWeek(new Date(), { weekStartsOn: weekStartDay }));
 
   // Clock-in state
   const [isClockInOpen, setIsClockInOpen] = useState(false);
@@ -108,7 +143,13 @@ export default function Timesheets() {
     try {
       const saved = localStorage.getItem(COLUMNS_STORAGE_KEY);
       if (saved) {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved) as TimesheetColumnConfig[];
+        const hasOldTimeColumn = parsed.some(c => c.id === 'time');
+        const hasNewStartTime = parsed.some(c => c.id === 'startTime');
+        if (hasOldTimeColumn && !hasNewStartTime) {
+          return DEFAULT_COLUMNS;
+        }
+        return parsed;
       }
     } catch (e) {
       console.error('Failed to load column config:', e);
@@ -143,6 +184,23 @@ export default function Timesheets() {
 
   // Get visible columns
   const visibleColumns = columns.filter(col => col.visible);
+
+  // DnD sensors for column reordering
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setColumns((prev) => {
+        const oldIndex = prev.findIndex((col) => col.id === active.id);
+        const newIndex = prev.findIndex((col) => col.id === over.id);
+        return arrayMove(prev, oldIndex, newIndex);
+      });
+    }
+  };
 
   // Fetch timesheets - project-specific or all
   const { data: timesheets = [], isLoading: loadingTimesheets } = useQuery<Timesheet[]>({
@@ -306,14 +364,14 @@ export default function Timesheets() {
     switch (dateRangeType) {
       case "this-week":
         return {
-          start: startOfWeek(now, { weekStartsOn: 1 }), // Monday
-          end: endOfWeek(now, { weekStartsOn: 1 }), // Sunday
+          start: startOfWeek(now, { weekStartsOn: weekStartDay }),
+          end: endOfWeek(now, { weekStartsOn: weekStartDay }),
         };
       case "last-week":
         const lastWeek = addWeeks(now, -1);
         return {
-          start: startOfWeek(lastWeek, { weekStartsOn: 1 }),
-          end: endOfWeek(lastWeek, { weekStartsOn: 1 }),
+          start: startOfWeek(lastWeek, { weekStartsOn: weekStartDay }),
+          end: endOfWeek(lastWeek, { weekStartsOn: weekStartDay }),
         };
       case "custom":
         if (customStartDate && customEndDate) {
@@ -975,7 +1033,7 @@ export default function Timesheets() {
                   variant="ghost"
                   size="sm"
                   className="h-7 text-xs"
-                  onClick={() => setWeeklyViewDate(startOfWeek(new Date(), { weekStartsOn: 1 }))}
+                  onClick={() => setWeeklyViewDate(startOfWeek(new Date(), { weekStartsOn: weekStartDay }))}
                 >
                   Today
                 </Button>
@@ -1123,7 +1181,7 @@ export default function Timesheets() {
                       variant="ghost"
                       size="sm"
                       className="h-7 text-xs"
-                      onClick={() => setCalendarWeek(startOfWeek(new Date(), { weekStartsOn: 1 }))}
+                      onClick={() => setCalendarWeek(startOfWeek(new Date(), { weekStartsOn: weekStartDay }))}
                     >
                       Today
                     </Button>
@@ -1234,166 +1292,161 @@ export default function Timesheets() {
           </div>
         ) : (
           <div className="m-3 border-2 border-border rounded-md overflow-hidden bg-card">
-            <Table>
-              <TableHeader>
-                <TableRow className="h-7 bg-muted/30 dark:bg-muted/10 hover:bg-muted/30 dark:hover:bg-muted/10 border-b-2 border-border">
-                  {columns.find(c => c.id === 'date')?.visible && (
-                    <TableHead className="text-[10px] font-medium text-muted-foreground w-[70px] px-2">Date</TableHead>
-                  )}
-                  {columns.find(c => c.id === 'user')?.visible && (
-                    <TableHead className="text-[10px] font-medium text-muted-foreground w-[100px] px-2">User</TableHead>
-                  )}
-                  {columns.find(c => c.id === 'project')?.visible && (
-                    <TableHead className="text-[10px] font-medium text-muted-foreground w-[120px] px-2">Project</TableHead>
-                  )}
-                  {columns.find(c => c.id === 'costCode')?.visible && (
-                    <TableHead className="text-[10px] font-medium text-muted-foreground w-[100px] px-2">Cost Code</TableHead>
-                  )}
-                  {columns.find(c => c.id === 'time')?.visible && (
-                    <TableHead className="text-[10px] font-medium text-muted-foreground w-[85px] px-2">Time</TableHead>
-                  )}
-                  {columns.find(c => c.id === 'break')?.visible && (
-                    <TableHead className="text-[10px] font-medium text-muted-foreground w-[45px] px-2">Break</TableHead>
-                  )}
-                  {columns.find(c => c.id === 'hours')?.visible && (
-                    <TableHead className="text-[10px] font-medium text-muted-foreground w-[50px] px-2">Hours</TableHead>
-                  )}
-                  {columns.find(c => c.id === 'rate')?.visible && (
-                    <TableHead className="text-[10px] font-medium text-muted-foreground w-[50px] px-2">Rate</TableHead>
-                  )}
-                  {columns.find(c => c.id === 'total')?.visible && (
-                    <TableHead className="text-[10px] font-medium text-muted-foreground w-[60px] px-2 text-right">Total</TableHead>
-                  )}
-                  {columns.find(c => c.id === 'status')?.visible && (
-                    <TableHead className="text-[10px] font-medium text-muted-foreground w-[70px] px-2">Status</TableHead>
-                  )}
-                  {columns.find(c => c.id === 'description')?.visible && (
-                    <TableHead className="text-[10px] font-medium text-muted-foreground px-2">Description</TableHead>
-                  )}
-                  {columns.find(c => c.id === 'actions')?.visible && (
-                    <TableHead className="text-[10px] font-medium text-muted-foreground w-[80px] px-2">Actions</TableHead>
-                  )}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredTimesheets.map((timesheet, index) => (
-                  <TableRow 
-                    key={timesheet.id}
-                    className={`h-7 cursor-pointer hover:bg-muted/20 dark:hover:bg-muted/10 transition-colors ${
-                      index !== filteredTimesheets.length - 1 ? "border-b border-border" : ""
-                    }`}
-                    onClick={() => {
-                      setSelectedTimesheet(timesheet);
-                      setIsDialogOpen(true);
-                    }}
-                    data-testid={`row-timesheet-${timesheet.id}`}
-                  >
-                    {columns.find(c => c.id === 'date')?.visible && (
-                      <TableCell className="text-[11px] font-medium px-2 py-1">
-                        {format(new Date(timesheet.date), "dd MMM")}
-                      </TableCell>
-                    )}
-                    {columns.find(c => c.id === 'user')?.visible && (
-                      <TableCell className="text-[11px] truncate max-w-[100px] px-2 py-1">
-                        {getUserName(timesheet.userId)}
-                      </TableCell>
-                    )}
-                    {columns.find(c => c.id === 'project')?.visible && (
-                      <TableCell className="text-[11px] truncate max-w-[120px] text-muted-foreground px-2 py-1">
-                        {getProjectName(timesheet.projectId)}
-                      </TableCell>
-                    )}
-                    {columns.find(c => c.id === 'costCode')?.visible && (
-                      <TableCell className="text-[11px] truncate max-w-[100px] text-muted-foreground px-2 py-1">
-                        {getCostCodeName(timesheet.costCodeId)}
-                      </TableCell>
-                    )}
-                    {columns.find(c => c.id === 'time')?.visible && (
-                      <TableCell className="text-[11px] text-muted-foreground tabular-nums px-2 py-1">
-                        {timesheet.startTime && timesheet.endTime
-                          ? `${timesheet.startTime}-${timesheet.endTime}`
-                          : "-"}
-                      </TableCell>
-                    )}
-                    {columns.find(c => c.id === 'break')?.visible && (
-                      <TableCell className="text-[11px] text-muted-foreground tabular-nums px-2 py-1">
-                        {timesheet.breakDuration ? formatDuration(parseFloat(timesheet.breakDuration)) : "-"}
-                      </TableCell>
-                    )}
-                    {columns.find(c => c.id === 'hours')?.visible && (
-                      <TableCell className="text-[11px] font-medium tabular-nums px-2 py-1">
-                        {formatDuration(getNetHours(timesheet))}
-                      </TableCell>
-                    )}
-                    {columns.find(c => c.id === 'rate')?.visible && (
-                      <TableCell className="text-[11px] text-muted-foreground tabular-nums px-2 py-1">
-                        ${timesheet.hourlyRate ? parseFloat(timesheet.hourlyRate).toFixed(0) : "0"}
-                      </TableCell>
-                    )}
-                    {columns.find(c => c.id === 'total')?.visible && (
-                      <TableCell className="text-[11px] font-semibold text-right tabular-nums px-2 py-1">
-                        ${timesheet.total ? parseFloat(timesheet.total).toFixed(2) : "0.00"}
-                      </TableCell>
-                    )}
-                    {columns.find(c => c.id === 'status')?.visible && (
-                      <TableCell className="px-2 py-1">
-                        {timesheet.status === "approved" ? (
-                          <Badge variant="outline" className="text-[10px] font-medium bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800">
-                            Approved
-                          </Badge>
-                        ) : (timesheet.status === "submitted" || timesheet.status === "draft") ? (
-                          <Badge variant="outline" className="text-[10px] font-medium bg-slate-50 dark:bg-slate-900/20 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800">
-                            Draft
-                          </Badge>
-                        ) : timesheet.status === "rejected" ? (
-                          <Badge variant="outline" className="text-[10px] font-medium bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800">
-                            Rejected
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary" className="text-[10px] font-medium">
-                            Draft
-                          </Badge>
-                        )}
-                      </TableCell>
-                    )}
-                    {columns.find(c => c.id === 'description')?.visible && (
-                      <TableCell className="text-[11px] text-muted-foreground truncate max-w-[180px] px-2 py-1">
-                        {timesheet.description || "-"}
-                      </TableCell>
-                    )}
-                    {columns.find(c => c.id === 'actions')?.visible && (
-                      <TableCell className="px-2 py-1" onClick={(e) => e.stopPropagation()}>
-                        {(timesheet.status === "draft" || timesheet.status === "submitted") && (
-                          <div className="flex items-center gap-1">
-                            <Button
-                              size="icon"
-                              variant="outline"
-                              onClick={() => approveMutation.mutate(timesheet.id)}
-                              data-testid={`button-approve-${timesheet.id}`}
-                              className="h-6 w-6 bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 border-green-200 dark:border-green-800 hover:bg-green-100 dark:hover:bg-green-900/40"
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="outline"
-                              onClick={() => rejectMutation.mutate(timesheet.id)}
-                              data-testid={`button-reject-${timesheet.id}`}
-                              className="h-6 w-6 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/40"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </Button>
-                          </div>
-                        )}
-                        {(timesheet.status === "approved" || timesheet.status === "rejected") && (
-                          <span className="text-[10px] text-muted-foreground/50">-</span>
-                        )}
-                      </TableCell>
-                    )}
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <Table>
+                <TableHeader>
+                  <TableRow className="h-7 bg-muted/30 dark:bg-muted/10 hover:bg-muted/30 dark:hover:bg-muted/10 border-b-2 border-border">
+                    <SortableContext items={visibleColumns.map(c => c.id)} strategy={horizontalListSortingStrategy}>
+                      {visibleColumns.map((col) => (
+                        <SortableColumnHeader key={col.id} column={col}>
+                          {col.label}
+                        </SortableColumnHeader>
+                      ))}
+                    </SortableContext>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {filteredTimesheets.map((timesheet, index) => (
+                    <TableRow 
+                      key={timesheet.id}
+                      className={`h-7 cursor-pointer hover:bg-muted/20 dark:hover:bg-muted/10 transition-colors ${
+                        index !== filteredTimesheets.length - 1 ? "border-b border-border" : ""
+                      }`}
+                      onClick={() => {
+                        setSelectedTimesheet(timesheet);
+                        setIsDialogOpen(true);
+                      }}
+                      data-testid={`row-timesheet-${timesheet.id}`}
+                    >
+                      {visibleColumns.map((col) => {
+                        switch (col.id) {
+                          case 'date':
+                            return (
+                              <TableCell key={col.id} className="text-[11px] font-medium px-2 py-1">
+                                {format(new Date(timesheet.date), "dd MMM")}
+                              </TableCell>
+                            );
+                          case 'user':
+                            return (
+                              <TableCell key={col.id} className="text-[11px] truncate max-w-[100px] px-2 py-1">
+                                {getUserName(timesheet.userId)}
+                              </TableCell>
+                            );
+                          case 'project':
+                            return (
+                              <TableCell key={col.id} className="text-[11px] truncate max-w-[120px] text-muted-foreground px-2 py-1">
+                                {getProjectName(timesheet.projectId)}
+                              </TableCell>
+                            );
+                          case 'costCode':
+                            return (
+                              <TableCell key={col.id} className="text-[11px] truncate max-w-[100px] text-muted-foreground px-2 py-1">
+                                {getCostCodeName(timesheet.costCodeId)}
+                              </TableCell>
+                            );
+                          case 'startTime':
+                            return (
+                              <TableCell key={col.id} className="text-[11px] text-muted-foreground tabular-nums px-2 py-1">
+                                {timesheet.startTime || "-"}
+                              </TableCell>
+                            );
+                          case 'endTime':
+                            return (
+                              <TableCell key={col.id} className="text-[11px] text-muted-foreground tabular-nums px-2 py-1">
+                                {timesheet.endTime || "-"}
+                              </TableCell>
+                            );
+                          case 'break':
+                            return (
+                              <TableCell key={col.id} className="text-[11px] text-muted-foreground tabular-nums px-2 py-1">
+                                {timesheet.breakDuration ? formatDuration(parseFloat(timesheet.breakDuration)) : "-"}
+                              </TableCell>
+                            );
+                          case 'hours':
+                            return (
+                              <TableCell key={col.id} className="text-[11px] font-medium tabular-nums px-2 py-1">
+                                {formatDuration(getNetHours(timesheet))}
+                              </TableCell>
+                            );
+                          case 'rate':
+                            return (
+                              <TableCell key={col.id} className="text-[11px] text-muted-foreground tabular-nums px-2 py-1">
+                                ${timesheet.hourlyRate ? parseFloat(timesheet.hourlyRate).toFixed(0) : "0"}
+                              </TableCell>
+                            );
+                          case 'total':
+                            return (
+                              <TableCell key={col.id} className="text-[11px] font-semibold text-right tabular-nums px-2 py-1">
+                                ${timesheet.total ? parseFloat(timesheet.total).toFixed(2) : "0.00"}
+                              </TableCell>
+                            );
+                          case 'status':
+                            return (
+                              <TableCell key={col.id} className="px-2 py-1">
+                                {timesheet.status === "approved" ? (
+                                  <Badge variant="outline" className="text-[10px] font-medium bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800">
+                                    Approved
+                                  </Badge>
+                                ) : (timesheet.status === "submitted" || timesheet.status === "draft") ? (
+                                  <Badge variant="outline" className="text-[10px] font-medium bg-slate-50 dark:bg-slate-900/20 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800">
+                                    Draft
+                                  </Badge>
+                                ) : timesheet.status === "rejected" ? (
+                                  <Badge variant="outline" className="text-[10px] font-medium bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800">
+                                    Rejected
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="secondary" className="text-[10px] font-medium">
+                                    Draft
+                                  </Badge>
+                                )}
+                              </TableCell>
+                            );
+                          case 'description':
+                            return (
+                              <TableCell key={col.id} className="text-[11px] text-muted-foreground truncate max-w-[180px] px-2 py-1">
+                                {timesheet.description || "-"}
+                              </TableCell>
+                            );
+                          case 'actions':
+                            return (
+                              <TableCell key={col.id} className="px-2 py-1" onClick={(e) => e.stopPropagation()}>
+                                {(timesheet.status === "draft" || timesheet.status === "submitted") && (
+                                  <div className="flex items-center gap-1">
+                                    <Button
+                                      size="icon"
+                                      variant="outline"
+                                      onClick={() => approveMutation.mutate(timesheet.id)}
+                                      data-testid={`button-approve-${timesheet.id}`}
+                                      className="h-6 w-6 bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 border-green-200 dark:border-green-800 hover:bg-green-100 dark:hover:bg-green-900/40"
+                                    >
+                                      <Check className="w-3.5 h-3.5" />
+                                    </Button>
+                                    <Button
+                                      size="icon"
+                                      variant="outline"
+                                      onClick={() => rejectMutation.mutate(timesheet.id)}
+                                      data-testid={`button-reject-${timesheet.id}`}
+                                      className="h-6 w-6 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/40"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </Button>
+                                  </div>
+                                )}
+                                {(timesheet.status === "approved" || timesheet.status === "rejected") && (
+                                  <span className="text-[10px] text-muted-foreground/50">-</span>
+                                )}
+                              </TableCell>
+                            );
+                          default:
+                            return null;
+                        }
+                      })}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </DndContext>
           </div>
         )}
       </div>

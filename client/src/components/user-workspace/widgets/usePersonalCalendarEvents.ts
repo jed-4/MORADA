@@ -38,6 +38,7 @@ interface UsePersonalCalendarEventsOptions {
   includeTimesheets?: boolean;
   includeGoogleCalendar?: boolean;
   includeReminders?: boolean;
+  weekStartDay?: 0 | 1;
 }
 
 export function usePersonalCalendarEvents({
@@ -49,9 +50,10 @@ export function usePersonalCalendarEvents({
   includeTimesheets = true,
   includeGoogleCalendar = true,
   includeReminders = true,
+  weekStartDay = 1,
 }: UsePersonalCalendarEventsOptions) {
-  const rangeStart = range === "day" ? startOfDay(date) : startOfWeek(date, { weekStartsOn: 1 });
-  const rangeEnd = range === "day" ? endOfDay(date) : endOfWeek(date, { weekStartsOn: 1 });
+  const rangeStart = range === "day" ? startOfDay(date) : startOfWeek(date, { weekStartsOn: weekStartDay });
+  const rangeEnd = range === "day" ? endOfDay(date) : endOfWeek(date, { weekStartsOn: weekStartDay });
 
   const REFETCH_INTERVAL = 15000; // Refresh every 15 seconds for real-time updates
 

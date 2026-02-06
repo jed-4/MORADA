@@ -198,6 +198,7 @@ const companyInfoSchema = z.object({
   website: z.string().url("Invalid website URL").optional().or(z.literal("")),
   address: z.string().optional(),
   taxRate: z.coerce.number().min(0).max(100).default(10),
+  weekStartDay: z.coerce.number().min(0).max(1).default(1),
   standardWorkStart: z.string().optional(),
   standardWorkEnd: z.string().optional(),
   facebook: z.string().optional(),
@@ -225,6 +226,7 @@ export default function Settings() {
       website: "",
       address: "",
       taxRate: 10,
+      weekStartDay: 1,
       standardWorkStart: "07:00",
       standardWorkEnd: "15:30",
       facebook: "",
@@ -259,6 +261,7 @@ export default function Settings() {
         website: companySettings.website || "",
         address: companySettings.address || "",
         taxRate: companySettings.taxRate ? parseFloat(companySettings.taxRate as string) : 10,
+        weekStartDay: companySettings.weekStartDay ?? 1,
         standardWorkStart: companySettings.standardWorkStart || "07:00",
         standardWorkEnd: companySettings.standardWorkEnd || "15:30",
         facebook: companySettings.facebook || "",
@@ -776,6 +779,32 @@ export default function Settings() {
                 )}
               />
               
+              <FormField
+                control={companyForm.control}
+                name="weekStartDay"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Week Start Day</FormLabel>
+                    <Select
+                      onValueChange={(value) => field.onChange(parseInt(value))}
+                      value={String(field.value)}
+                      disabled={!isEditing}
+                    >
+                      <FormControl>
+                        <SelectTrigger data-testid="week-start-day-select">
+                          <SelectValue placeholder="Select week start day" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="1">Monday</SelectItem>
+                        <SelectItem value="0">Sunday</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField
                   control={companyForm.control}
