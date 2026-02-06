@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams } from "wouter";
-import { Plus, Clock, Filter, Search, Calendar as CalendarIcon, User, Check, X, CalendarRange, Download, ChevronDown, Settings2, RotateCcw, Table2, Users2, CalendarDays, ChevronLeft, ChevronRight, Zap, Play, Square, GripVertical } from "lucide-react";
+import { Plus, Clock, Filter, Search, Calendar as CalendarIcon, User, Check, X, CalendarRange, Download, ChevronDown, Settings2, RotateCcw, Table2, Users2, CalendarDays, ChevronLeft, ChevronRight, Zap, Play, Square, GripVertical, ArrowUp, ArrowDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import * as XLSX from "xlsx";
 import { Input } from "@/components/ui/input";
@@ -66,7 +66,22 @@ const DEFAULT_COLUMNS: TimesheetColumnConfig[] = [
 
 const COLUMNS_STORAGE_KEY = 'timesheets-columns-config';
 
-function SortableColumnHeader({ column, children }: { column: TimesheetColumnConfig; children: React.ReactNode }) {
+type SortDirection = 'asc' | 'desc' | null;
+const SORTABLE_COLUMNS = ['date', 'user', 'project', 'costCode', 'hours', 'status'];
+
+function SortableColumnHeader({ 
+  column, 
+  children, 
+  sortColumn, 
+  sortDirection, 
+  onSort 
+}: { 
+  column: TimesheetColumnConfig; 
+  children: React.ReactNode;
+  sortColumn: string | null;
+  sortDirection: SortDirection;
+  onSort: (columnId: string) => void;
+}) {
   const {
     attributes,
     listeners,
@@ -82,15 +97,38 @@ function SortableColumnHeader({ column, children }: { column: TimesheetColumnCon
     opacity: isDragging ? 0.5 : 1,
   };
 
+  const isSortable = SORTABLE_COLUMNS.includes(column.id);
+  const isActive = sortColumn === column.id;
+
   return (
     <TableHead
       ref={setNodeRef}
       style={style}
-      className={`text-[10px] font-medium text-muted-foreground w-[${column.width}px] px-2 cursor-grab ${column.id === 'total' ? 'text-right' : ''}`}
-      {...attributes}
-      {...listeners}
+      className={`text-[10px] font-medium text-muted-foreground py-1 h-7 px-2 ${column.id === 'total' ? 'text-right' : ''}`}
     >
-      {children}
+      <div className="flex items-center gap-1">
+        <span
+          className="cursor-grab select-none"
+          {...attributes}
+          {...listeners}
+        >
+          {children}
+        </span>
+        {isSortable && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onSort(column.id); }}
+            className={`inline-flex items-center justify-center w-3 h-3 rounded-sm ${isActive ? 'text-foreground' : 'text-muted-foreground/40 hover:text-muted-foreground'}`}
+          >
+            {isActive && sortDirection === 'asc' ? (
+              <ArrowUp className="w-2.5 h-2.5" />
+            ) : isActive && sortDirection === 'desc' ? (
+              <ArrowDown className="w-2.5 h-2.5" />
+            ) : (
+              <ArrowUp className="w-2.5 h-2.5" />
+            )}
+          </button>
+        )}
+      </div>
     </TableHead>
   );
 }
@@ -137,6 +175,21 @@ export default function Timesheets() {
   const [clockInProjectId, setClockInProjectId] = useState<string>("");
   const [clockInCostCodeId, setClockInCostCodeId] = useState<string>("");
   const [elapsedTime, setElapsedTime] = useState<string>("00:00:00");
+
+  // Sort state
+  const [sortColumn, setSortColumn] = useState<string | null>('date');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+
+  const handleSort = (columnId: string) => {
+    if (sortColumn === columnId) {
+      if (sortDirection === 'asc') setSortDirection('desc');
+      else if (sortDirection === 'desc') { setSortColumn(null); setSortDirection(null); }
+      else { setSortDirection('asc'); }
+    } else {
+      setSortColumn(columnId);
+      setSortDirection('asc');
+    }
+  };
 
   // Column configuration state
   const [columns, setColumns] = useState<TimesheetColumnConfig[]>(() => {
@@ -383,8 +436,36 @@ export default function Timesheets() {
     }
   };
 
+  const getProjectName = (pId: string) => {
+    const project = projects.find((p) => p.id === pId);
+    return project?.name || "Unknown Project";
+  };
+
+  const getUserName = (userId: string) => {
+    const u = users.find((usr) => usr.id === userId);
+    return u ? `${u.firstName} ${u.lastName}`.trim() || u.username : "Unknown User";
+  };
+
+  const getCostCodeName = (costCodeId: string | null) => {
+    if (!costCodeId) return "-";
+    const costCode = costCodes.find((c) => c.id === costCodeId);
+    return costCode ? costCode.name : "-";
+  };
+
+  const formatDuration = (hours: number | null) => {
+    if (!hours) return "0:00";
+    const h = Math.floor(hours);
+    const m = Math.round((hours - h) * 60);
+    return `${h}:${m.toString().padStart(2, '0')}`;
+  };
+
+  const getNetHours = (timesheet: Timesheet): number => {
+    const duration = parseFloat(timesheet.duration) || 0;
+    const breakDuration = parseFloat(timesheet.breakDuration || "0") || 0;
+    return Math.max(0, duration - breakDuration);
+  };
+
   // Filter timesheets
-  // Get project's system phase for filtering
   const getProjectPhase = (projId: string): string => {
     const project = projects.find((p) => p.id === projId);
     return project?.currentSystemPhase || "lead";
@@ -417,41 +498,34 @@ export default function Timesheets() {
     });
 
     return matchesSearch && matchesProject && matchesUser && matchesStatus && matchesPhase && matchesInvoiced && matchesDateRange;
+  }).sort((a, b) => {
+    if (!sortColumn || !sortDirection) return 0;
+    let cmp = 0;
+    switch (sortColumn) {
+      case 'date':
+        cmp = new Date(a.date as unknown as string).getTime() - new Date(b.date as unknown as string).getTime();
+        break;
+      case 'user':
+        cmp = getUserName(a.userId).localeCompare(getUserName(b.userId));
+        break;
+      case 'project':
+        cmp = getProjectName(a.projectId).localeCompare(getProjectName(b.projectId));
+        break;
+      case 'costCode':
+        cmp = getCostCodeName(a.costCodeId).localeCompare(getCostCodeName(b.costCodeId));
+        break;
+      case 'hours':
+        cmp = getNetHours(a) - getNetHours(b);
+        break;
+      case 'status': {
+        const sa = a.status === "submitted" ? "draft" : a.status;
+        const sb = b.status === "submitted" ? "draft" : b.status;
+        cmp = sa.localeCompare(sb);
+        break;
+      }
+    }
+    return sortDirection === 'desc' ? -cmp : cmp;
   });
-
-  // Get project name
-  const getProjectName = (projectId: string) => {
-    const project = projects.find((p) => p.id === projectId);
-    return project?.name || "Unknown Project";
-  };
-
-  // Get user name
-  const getUserName = (userId: string) => {
-    const user = users.find((u) => u.id === userId);
-    return user ? `${user.firstName} ${user.lastName}`.trim() || user.username : "Unknown User";
-  };
-
-  // Get cost code name
-  const getCostCodeName = (costCodeId: string | null) => {
-    if (!costCodeId) return "-";
-    const costCode = costCodes.find((c) => c.id === costCodeId);
-    return costCode ? costCode.name : "-";
-  };
-
-  // Format duration (decimal hours to HH:MM)
-  const formatDuration = (hours: number | null) => {
-    if (!hours) return "0:00";
-    const h = Math.floor(hours);
-    const m = Math.round((hours - h) * 60);
-    return `${h}:${m.toString().padStart(2, '0')}`;
-  };
-
-  // Calculate net hours (duration - break) for a timesheet
-  const getNetHours = (timesheet: Timesheet): number => {
-    const duration = parseFloat(timesheet.duration) || 0;
-    const breakDuration = parseFloat(timesheet.breakDuration || "0") || 0;
-    return Math.max(0, duration - breakDuration);
-  };
 
   // Get current project if in project context
   const currentProject = projectId ? projects.find(p => p.id === projectId) : null;
@@ -1298,7 +1372,7 @@ export default function Timesheets() {
                   <TableRow className="h-7 bg-muted/30 dark:bg-muted/10 hover:bg-muted/30 dark:hover:bg-muted/10 border-b-2 border-border">
                     <SortableContext items={visibleColumns.map(c => c.id)} strategy={horizontalListSortingStrategy}>
                       {visibleColumns.map((col) => (
-                        <SortableColumnHeader key={col.id} column={col}>
+                        <SortableColumnHeader key={col.id} column={col} sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSort}>
                           {col.label}
                         </SortableColumnHeader>
                       ))}
