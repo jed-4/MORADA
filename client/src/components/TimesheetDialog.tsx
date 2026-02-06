@@ -128,16 +128,20 @@ export function TimesheetDialog({
 
   const timeOptions = generateTimeOptions();
 
-  // Scroll to default time in Select dropdown
   const scrollToTime = (viewportRef: React.RefObject<HTMLDivElement>, time: string) => {
     if (!viewportRef.current) return;
     
-    setTimeout(() => {
-      const selectedItem = viewportRef.current?.querySelector(`[data-value="${time}"]`);
-      if (selectedItem) {
-        selectedItem.scrollIntoView({ block: 'center', behavior: 'instant' });
+    requestAnimationFrame(() => {
+      const viewport = viewportRef.current?.querySelector('[data-radix-select-viewport]');
+      if (viewport) {
+        const targetIndex = timeOptions.indexOf(time);
+        const scrollIndex = targetIndex >= 0 ? targetIndex : 28;
+        const itemHeight = 32;
+        const viewportHeight = 300;
+        const scrollTop = Math.max(0, (scrollIndex * itemHeight) - (viewportHeight / 2) + (itemHeight / 2));
+        viewport.scrollTop = scrollTop;
       }
-    }, 0);
+    });
   };
 
   const form = useForm<TimesheetFormData>({
@@ -497,9 +501,9 @@ export function TimesheetDialog({
                         field.onChange(value);
                       }}
                       onOpenChange={(open) => {
-                        if (open && !field.value) {
-                          const defaultTime = companySettings?.standardWorkStart || "07:00";
-                          scrollToTime(startTimeViewportRef, defaultTime);
+                        if (open) {
+                          const targetTime = field.value || companySettings?.standardWorkStart || "07:00";
+                          scrollToTime(startTimeViewportRef, targetTime);
                         }
                       }}
                     >
@@ -534,9 +538,9 @@ export function TimesheetDialog({
                         field.onChange(value);
                       }}
                       onOpenChange={(open) => {
-                        if (open && !field.value) {
-                          const defaultTime = companySettings?.standardWorkEnd || "15:30";
-                          scrollToTime(endTimeViewportRef, defaultTime);
+                        if (open) {
+                          const targetTime = field.value || companySettings?.standardWorkEnd || "15:30";
+                          scrollToTime(endTimeViewportRef, targetTime);
                         }
                       }}
                     >
