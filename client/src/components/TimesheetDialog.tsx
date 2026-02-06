@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -89,8 +89,8 @@ export function TimesheetDialog({
   const [isSplit, setIsSplit] = useState(false);
   const [lastEditedField, setLastEditedField] = useState<"startTime" | "endTime" | "duration" | "breakDuration" | null>(null);
   const [costCodeSplits, setCostCodeSplits] = useState<CostCodeSplit[]>([]);
-  const startTimeViewportRef = useRef<HTMLDivElement>(null);
-  const endTimeViewportRef = useRef<HTMLDivElement>(null);
+  const startTimeScrollTarget = useRef<string | null>(null);
+  const endTimeScrollTarget = useRef<string | null>(null);
   const [showReminderDialog, setShowReminderDialog] = useState(false);
 
   // Fetch projects
@@ -128,11 +128,22 @@ export function TimesheetDialog({
 
   const timeOptions = generateTimeOptions();
 
-  const scrollToTime = (viewportRef: React.RefObject<HTMLDivElement>, time: string) => {
-    if (!viewportRef.current) return;
-    
+  const breakDurationOptions = (() => {
+    const options: { value: string; label: string }[] = [];
+    for (let minutes = 0; minutes <= 600; minutes += 15) {
+      const hours = minutes / 60;
+      const h = Math.floor(minutes / 60);
+      const m = minutes % 60;
+      const label = h === 0 && m === 0 ? "None" : h === 0 ? `${m}m` : m === 0 ? `${h}h` : `${h}h ${m}m`;
+      options.push({ value: hours.toString(), label });
+    }
+    return options;
+  })();
+
+  const scrollViewportToTime = (node: HTMLDivElement | null, time: string) => {
+    if (!node) return;
     requestAnimationFrame(() => {
-      const viewport = viewportRef.current?.querySelector('[data-radix-select-viewport]');
+      const viewport = node.querySelector('[data-radix-select-viewport]');
       if (viewport) {
         const targetIndex = timeOptions.indexOf(time);
         const scrollIndex = targetIndex >= 0 ? targetIndex : 28;
@@ -143,6 +154,20 @@ export function TimesheetDialog({
       }
     });
   };
+
+  const startTimeContentRef = useCallback((node: HTMLDivElement | null) => {
+    if (node && startTimeScrollTarget.current) {
+      scrollViewportToTime(node, startTimeScrollTarget.current);
+      startTimeScrollTarget.current = null;
+    }
+  }, []);
+
+  const endTimeContentRef = useCallback((node: HTMLDivElement | null) => {
+    if (node && endTimeScrollTarget.current) {
+      scrollViewportToTime(node, endTimeScrollTarget.current);
+      endTimeScrollTarget.current = null;
+    }
+  }, []);
 
   const form = useForm<TimesheetFormData>({
     resolver: zodResolver(timesheetSchema),
@@ -502,8 +527,7 @@ export function TimesheetDialog({
                       }}
                       onOpenChange={(open) => {
                         if (open) {
-                          const targetTime = field.value || companySettings?.standardWorkStart || "07:00";
-                          scrollToTime(startTimeViewportRef, targetTime);
+                          startTimeScrollTarget.current = field.value || companySettings?.standardWorkStart || "07:00";
                         }
                       }}
                     >
@@ -512,7 +536,7 @@ export function TimesheetDialog({
                           <SelectValue placeholder="Select start time" />
                         </SelectTrigger>
                       </FormControl>
-                      <SelectContent className="max-h-[300px]" ref={startTimeViewportRef}>
+                      <SelectContent className="max-h-[300px]" ref={startTimeContentRef}>
                         {timeOptions.map((time) => (
                           <SelectItem key={time} value={time}>
                             {time}
@@ -539,8 +563,7 @@ export function TimesheetDialog({
                       }}
                       onOpenChange={(open) => {
                         if (open) {
-                          const targetTime = field.value || companySettings?.standardWorkEnd || "15:30";
-                          scrollToTime(endTimeViewportRef, targetTime);
+                          endTimeScrollTarget.current = field.value || companySettings?.standardWorkEnd || "15:30";
                         }
                       }}
                     >
@@ -549,7 +572,7 @@ export function TimesheetDialog({
                           <SelectValue placeholder="Select end time" />
                         </SelectTrigger>
                       </FormControl>
-                      <SelectContent className="max-h-[300px]" ref={endTimeViewportRef}>
+                      <SelectContent className="max-h-[300px]" ref={endTimeContentRef}>
                         {timeOptions.map((time) => (
                           <SelectItem key={time} value={time}>
                             {time}
@@ -567,19 +590,27 @@ export function TimesheetDialog({
                 name="breakDuration"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Break (hours)</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        step="0.25"
-                        {...field}
-                        onChange={(e) => {
-                          setLastEditedField("breakDuration");
-                          field.onChange(e);
-                        }}
-                        data-testid="input-break-duration"
-                      />
-                    </FormControl>
+                    <FormLabel>Break</FormLabel>
+                    <Select
+                      value={field.value || "0"}
+                      onValueChange={(value) => {
+                        setLastEditedField("breakDuration");
+                        field.onChange(value);
+                      }}
+                    >
+                      <FormControl>
+                        <SelectTrigger data-testid="input-break-duration">
+                          <SelectValue placeholder="Select break" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent className="max-h-[300px]">
+                        {breakDurationOptions.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )}
