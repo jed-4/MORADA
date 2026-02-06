@@ -208,8 +208,8 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 **So that** I can find entries related to specific work
 
 **Acceptance Criteria:**
-- [ ] Search box filters by description text
-- [ ] Real-time filtering as user types
+- [x] Search box filters by description text
+- [x] Real-time filtering as user types
 
 **Priority:** Should Have  
 **Status:** Implemented
