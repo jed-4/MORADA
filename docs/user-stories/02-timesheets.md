@@ -274,10 +274,10 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 
 **Acceptance Criteria:**
 - [x] "Rapid Approval" button shows count of pending entries (only visible with timesheets.approve permission)
-- [x] Modal displays all pending timesheets
-- [ ] Checkbox to select entries for approval
-- [x] "Approve Selected" or "Approve All" options
-- [x] Batch approval processes all selected entries
+- [x] Modal displays all pending timesheets with navigation (prev/next)
+- [x] Individual approve/reject per entry with inline editing
+- [x] "Approve All" option for batch processing
+- [x] Batch approval processes all pending entries at once
 
 **Priority:** Should Have  
 **Status:** Implemented
@@ -308,10 +308,10 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 **So that** I can monitor project profitability
 
 **Acceptance Criteria:**
-- [ ] Project shows pending hours (unapproved)
-- [ ] Project shows approved hours
-- [ ] Comparison to estimated labour hours
-- [ ] Warning when approaching or exceeding budget
+- [x] Project shows pending hours (unapproved)
+- [x] Project shows approved hours
+- [x] Comparison to estimated labour hours (budgeted vs actual with variance)
+- [x] Warning when approaching or exceeding budget (red colour coding + progress bars)
 
 **Priority:** Should Have  
 **Status:** Implemented

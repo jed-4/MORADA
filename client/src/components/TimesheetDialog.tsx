@@ -6,6 +6,7 @@ import { z } from "zod";
 import { format } from "date-fns";
 import { Calendar as CalendarIcon, Plus, Trash2, Bell, Check } from "lucide-react";
 import { useTimesheetLabelOptions } from "@/hooks/useTimesheetLabelOptions";
+import { useAuth } from "@/hooks/use-auth";
 import { SetReminderDialog } from "@/components/SetReminderDialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -57,7 +58,7 @@ const timesheetSchema = z.object({
   breakEndTime: z.string().optional(),
   description: z.string().optional(),
   hourlyRate: z.string().optional(),
-  costCodeId: z.string().optional(), // Validated in mutation based on split mode
+  costCodeId: z.string().optional(),
   labels: z.array(z.string()).optional(),
 });
 
@@ -87,6 +88,7 @@ export function TimesheetDialog({
   readonly = false,
 }: TimesheetDialogProps) {
   const { toast } = useToast();
+  const { user: currentUser } = useAuth();
   const [isSplit, setIsSplit] = useState(false);
   const [lastEditedField, setLastEditedField] = useState<"startTime" | "endTime" | "duration" | "breakDuration" | null>(null);
   const [costCodeSplits, setCostCodeSplits] = useState<CostCodeSplit[]>([]);
@@ -155,12 +157,18 @@ export function TimesheetDialog({
     }
   };
 
-  // Auto-select project when dialog opens if on a project page
+  // Auto-select project and user when dialog opens for a new timesheet
   useEffect(() => {
-    if (open && defaultProjectId && !timesheet) {
-      form.setValue("projectId", defaultProjectId);
+    if (open && !timesheet) {
+      if (defaultProjectId) {
+        form.setValue("projectId", defaultProjectId);
+      }
+      const currentUserId = form.getValues("userId");
+      if (!currentUserId && currentUser?.id) {
+        form.setValue("userId", currentUser.id);
+      }
     }
-  }, [open, defaultProjectId, timesheet, form]);
+  }, [open, defaultProjectId, timesheet, form, currentUser]);
 
   // Helper: Parse time string to minutes
   const timeToMinutes = (time: string): number => {
@@ -228,8 +236,8 @@ export function TimesheetDialog({
   // Create/Update mutation
   const createMutation = useMutation({
     mutationFn: async (data: TimesheetFormData) => {
-      // Validate cost code
       if (!isSplit && !data.costCodeId) {
+        form.setError("costCodeId", { message: "Cost code is required" });
         throw new Error("Please select a cost code");
       }
       if (isSplit && costCodeSplits.length === 0) {
@@ -375,7 +383,7 @@ export function TimesheetDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle data-testid="heading-timesheet-dialog">
             {readonly ? "View Timesheet" : timesheet ? "Edit Timesheet" : "Add Timesheet"}
@@ -388,7 +396,8 @@ export function TimesheetDialog({
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit((data) => createMutation.mutate(data))} className="space-y-6">
+          <form onSubmit={form.handleSubmit((data) => createMutation.mutate(data))} className="flex flex-col flex-1 min-h-0">
+            <div className="flex-1 overflow-y-auto px-1 space-y-6">
             <fieldset disabled={readonly} className="space-y-6">
             {/* Basic Info */}
             <div className="grid gap-4 md:grid-cols-2">
@@ -813,8 +822,9 @@ export function TimesheetDialog({
               )}
             />
             </fieldset>
+            </div>
 
-            <DialogFooter className="gap-2">
+            <DialogFooter className="gap-2 border-t pt-4 mt-4 shrink-0">
               {timesheet && (
                 <Button
                   type="button"
