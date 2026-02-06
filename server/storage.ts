@@ -590,6 +590,7 @@ export interface IStorage {
   getBillApprovals(billId: string): Promise<BillApproval[]>;
   createBillApproval(approval: InsertBillApproval): Promise<BillApproval>;
   canUserApproveBills(userId: string): Promise<boolean>;
+  canUserApproveTimesheets(userId: string): Promise<boolean>;
 
   // Variations CRUD
   getVariations(projectId?: string, status?: string): Promise<Variation[]>;
@@ -751,7 +752,6 @@ export interface IStorage {
   createTimesheet(timesheet: InsertTimesheet): Promise<Timesheet>;
   updateTimesheet(id: string, timesheet: Partial<InsertTimesheet>): Promise<Timesheet | undefined>;
   deleteTimesheet(id: string): Promise<boolean>;
-  submitTimesheet(id: string): Promise<Timesheet | undefined>; // Changes status from draft to submitted
   approveTimesheet(id: string): Promise<Timesheet | undefined>; // Changes status from submitted to approved
   rejectTimesheet(id: string): Promise<Timesheet | undefined>; // Changes status from submitted to rejected
 
@@ -11901,6 +11901,48 @@ export class DbStorage implements IStorage {
     }
   }
 
+  async canUserApproveTimesheets(userId: string): Promise<boolean> {
+    try {
+      const user = await db.select()
+        .from(schema.users)
+        .where(eq(schema.users.id, userId))
+        .limit(1);
+
+      if (!user.length || !user[0].roleId) {
+        return false;
+      }
+
+      const timesheetsApprovePermission = await db.select()
+        .from(schema.permissions)
+        .where(eq(schema.permissions.key, 'timesheets.approve'))
+        .limit(1);
+
+      if (!timesheetsApprovePermission.length) {
+        return false;
+      }
+
+      const rolePermission = await db.select()
+        .from(schema.rolePermissions)
+        .where(
+          and(
+            eq(schema.rolePermissions.roleId, user[0].roleId),
+            eq(schema.rolePermissions.permissionId, timesheetsApprovePermission[0].id)
+          )
+        )
+        .limit(1);
+
+      if (!rolePermission.length) {
+        return false;
+      }
+
+      const allowedActions = rolePermission[0].allowedActions as string[];
+      return allowedActions && allowedActions.includes('approve');
+    } catch (error) {
+      console.error("Database error in canUserApproveTimesheets:", error);
+      return false;
+    }
+  }
+
   // Variations CRUD operations
   async getVariations(projectId?: string, status?: string): Promise<Variation[]> {
     try {
@@ -13649,19 +13691,6 @@ export class DbStorage implements IStorage {
       return result.length > 0;
     } catch (error) {
       console.error("Database error in deleteTimesheet:", error);
-      throw error;
-    }
-  }
-
-  async submitTimesheet(id: string): Promise<Timesheet | undefined> {
-    try {
-      const result = await db.update(schema.timesheets)
-        .set({ status: "submitted", updatedAt: new Date() })
-        .where(eq(schema.timesheets.id, id))
-        .returning();
-      return result[0];
-    } catch (error) {
-      console.error("Database error in submitTimesheet:", error);
       throw error;
     }
   }

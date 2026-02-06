@@ -44,7 +44,7 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 - [x] Bi-directional time calculation: filling start+duration auto-calculates end time
 - [x] Optional fields: break duration, description, hourly rate, labels
 - [x] Entry is saved and appears in the timesheets list
-- [x] Default status is "Draft"
+- [x] Default status is "Submitted" (simplified flow - no separate submission step)
 
 **Priority:** Must Have  
 **Status:** Implemented
@@ -76,7 +76,7 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 **So that** I can correct mistakes or add details
 
 **Acceptance Criteria:**
-- [x] User can edit draft timesheet entries
+- [x] User can edit submitted timesheet entries
 - [x] All fields can be modified
 - [x] Changes are saved immediately
 - [x] Approved entries cannot be edited (or require re-approval)
@@ -95,7 +95,7 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 **So that** I can remove mistakes before submission
 
 **Acceptance Criteria:**
-- [ ] User can delete draft timesheet entries
+- [ ] User can delete submitted timesheet entries
 - [ ] Confirmation required before deletion
 - [ ] Approved entries cannot be deleted (or require manager action)
 - [ ] Delete action respects permissions (`timesheets.delete_own` or `timesheets.delete_all`)
@@ -188,7 +188,7 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 **Acceptance Criteria:**
 - [ ] Filter by project
 - [ ] Filter by user
-- [ ] Filter by status (draft, submitted, approved, rejected)
+- [ ] Filter by status (submitted, approved, rejected)
 - [ ] Filter by date range (this week, last week, this month, custom)
 - [ ] "This week" and "Last week" respect company week start setting (Monday or Sunday)
 - [ ] Filter by invoiced status
@@ -218,30 +218,30 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 
 ### 4. Approval Workflow
 
-#### US-TS030: Submit Timesheet for Approval
+#### US-TS030: Simplified Timesheet Submission
 **As a** team member  
-**I want to** submit my timesheet entries for approval  
-**So that** my manager can review and approve my hours
+**I want** my timesheet entries to be automatically submitted when created  
+**So that** my manager can review and approve my hours without an extra submission step
 
 **Acceptance Criteria:**
-- [ ] User can submit draft entries
-- [ ] Status changes from "Draft" to "Submitted"
-- [ ] Submitted entries can be recalled before approval
-- [ ] Manager receives notification of pending approvals
+- [x] New timesheets are created with "Submitted" status (no separate submission step)
+- [x] Flow is Submitted -> Approved/Rejected
+- [x] "Draft" status removed from UI - all new entries are immediately "Submitted"
 
 **Priority:** Must Have  
 **Status:** Implemented
 
 ---
 
-#### US-TS031: Approve Timesheet
-**As a** manager  
+#### US-TS031: Approve Timesheet (Permission-Based)
+**As a** manager with approval permission  
 **I want to** approve submitted timesheets  
 **So that** hours are confirmed for billing and payroll
 
 **Acceptance Criteria:**
-- [ ] Approve button available for submitted entries
-- [ ] Status changes from "Submitted" to "Approved"
+- [x] Approve button available for submitted entries (only for users with timesheets.approve permission)
+- [x] Status changes from "Submitted" to "Approved"
+- [x] Server-side permission check on approve endpoint (403 if no permission)
 - [ ] Approved hours update project labour totals
 - [ ] Approval is logged with timestamp and user
 
@@ -250,14 +250,15 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 
 ---
 
-#### US-TS032: Reject Timesheet
-**As a** manager  
+#### US-TS032: Reject Timesheet (Permission-Based)
+**As a** manager with approval permission  
 **I want to** reject incorrect timesheets  
 **So that** team members can correct and resubmit
 
 **Acceptance Criteria:**
-- [ ] Reject button available for submitted entries
-- [ ] Status changes from "Submitted" to "Rejected"
+- [x] Reject button available for submitted entries (only for users with timesheets.approve permission)
+- [x] Status changes from "Submitted" to "Rejected"
+- [x] Server-side permission check on reject endpoint (403 if no permission)
 - [ ] Optional rejection reason/comment
 - [ ] Team member notified of rejection
 
@@ -266,17 +267,17 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 
 ---
 
-#### US-TS033: Rapid Approval
-**As a** manager  
+#### US-TS033: Rapid Approval (Permission-Based)
+**As a** manager with approval permission  
 **I want to** quickly approve multiple timesheets at once  
 **So that** I can efficiently process pending approvals
 
 **Acceptance Criteria:**
-- [ ] "Rapid Approval" button shows count of pending entries
-- [ ] Modal displays all pending timesheets
+- [x] "Rapid Approval" button shows count of pending entries (only visible with timesheets.approve permission)
+- [x] Modal displays all pending timesheets
 - [ ] Checkbox to select entries for approval
-- [ ] "Approve Selected" or "Approve All" options
-- [ ] Batch approval processes all selected entries
+- [x] "Approve Selected" or "Approve All" options
+- [x] Batch approval processes all selected entries
 
 **Priority:** Should Have  
 **Status:** Implemented
@@ -490,11 +491,11 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 - `timesheets.clock_in` - Use clock in/out feature
 
 #### Edit Permissions
-- `timesheets.edit_own` - Edit own timesheet entries (draft status only)
+- `timesheets.edit_own` - Edit own timesheet entries (submitted status only)
 - `timesheets.edit_all` - Edit any timesheet entries regardless of owner
 
 #### Delete Permissions
-- `timesheets.delete_own` - Delete own draft timesheet entries
+- `timesheets.delete_own` - Delete own submitted timesheet entries
 - `timesheets.delete_all` - Delete any timesheet entries (admin only)
 
 #### Approval Permissions

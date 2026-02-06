@@ -296,6 +296,10 @@ export default function Timesheets() {
     queryKey: ["/api/cost-codes"],
   });
 
+  const { data: canApproveTimesheets = false } = useQuery<boolean>({
+    queryKey: ["/api/user/can-approve-timesheets"],
+  });
+
   // Fetch active timesheet for clock-in/out
   const { data: activeTimesheet } = useQuery<Timesheet | null>({
     queryKey: ["/api/timesheets/active"],
@@ -495,10 +499,8 @@ export default function Timesheets() {
     const matchesUser = selectedUsers.length > 0 
       ? selectedUsers.includes(timesheet.userId) 
       : true;
-    // Treat "submitted" same as "draft" in UI since we simplified the flow
-    const effectiveStatus = timesheet.status === "submitted" ? "draft" : timesheet.status;
     const matchesStatus = selectedStatuses.length > 0 
-      ? selectedStatuses.includes(effectiveStatus) 
+      ? selectedStatuses.includes(timesheet.status) 
       : true;
     const matchesPhase = selectedPhases.length > 0 
       ? selectedPhases.includes(getProjectPhase(timesheet.projectId)) 
@@ -533,9 +535,7 @@ export default function Timesheets() {
         cmp = getNetHours(a) - getNetHours(b);
         break;
       case 'status': {
-        const sa = a.status === "submitted" ? "draft" : a.status;
-        const sb = b.status === "submitted" ? "draft" : b.status;
-        cmp = sa.localeCompare(sb);
+        cmp = a.status.localeCompare(b.status);
         break;
       }
     }
@@ -545,8 +545,7 @@ export default function Timesheets() {
   // Get current project if in project context
   const currentProject = projectId ? projects.find(p => p.id === projectId) : null;
 
-  // Get pending (draft + submitted) timesheets for rapid approval
-  const pendingTimesheets = timesheets.filter(ts => ts.status === "draft" || ts.status === "submitted");
+  const pendingTimesheets = timesheets.filter(ts => ts.status === "submitted");
 
   // Weekly view calculations
   const weekDays = eachDayOfInterval({
@@ -661,7 +660,7 @@ export default function Timesheets() {
             <Download className="w-3 h-3" />
             Export
           </button>
-          {pendingTimesheets.length > 0 && (
+          {canApproveTimesheets && pendingTimesheets.length > 0 && (
             <button
               onClick={() => setIsRapidApprovalOpen(true)}
               className="h-6 w-auto px-2 text-xs border rounded-md bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/30 active-elevate-2 flex items-center gap-0.5"
@@ -864,7 +863,7 @@ export default function Timesheets() {
             </DropdownMenuTrigger>
             <DropdownMenuContent>
               {[
-                { key: "draft", name: "Draft" },
+                { key: "submitted", name: "Submitted" },
                 { key: "approved", name: "Approved" },
                 { key: "rejected", name: "Rejected" },
               ].map((status) => (
@@ -1338,7 +1337,7 @@ export default function Timesheets() {
                                   className={`text-[9px] px-1 py-0.5 mb-0.5 rounded cursor-pointer truncate ${
                                     ts.status === "approved" 
                                       ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
-                                      : ts.status === "draft" || ts.status === "submitted"
+                                      : ts.status === "submitted"
                                       ? "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400"
                                       : "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400"
                                   }`}
@@ -1476,9 +1475,9 @@ export default function Timesheets() {
                                   <Badge variant="outline" className="text-[10px] font-medium bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800">
                                     Approved
                                   </Badge>
-                                ) : (timesheet.status === "submitted" || timesheet.status === "draft") ? (
+                                ) : timesheet.status === "submitted" ? (
                                   <Badge variant="outline" className="text-[10px] font-medium bg-slate-50 dark:bg-slate-900/20 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800">
-                                    Draft
+                                    Submitted
                                   </Badge>
                                 ) : timesheet.status === "rejected" ? (
                                   <Badge variant="outline" className="text-[10px] font-medium bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800">
@@ -1486,7 +1485,7 @@ export default function Timesheets() {
                                   </Badge>
                                 ) : (
                                   <Badge variant="secondary" className="text-[10px] font-medium">
-                                    Draft
+                                    {timesheet.status}
                                   </Badge>
                                 )}
                               </TableCell>
@@ -1500,7 +1499,7 @@ export default function Timesheets() {
                           case 'actions':
                             return (
                               <TableCell key={col.id} className="px-2 py-1" onClick={(e) => e.stopPropagation()}>
-                                {(timesheet.status === "draft" || timesheet.status === "submitted") && (
+                                {canApproveTimesheets && timesheet.status === "submitted" && (
                                   <div className="flex items-center gap-1">
                                     <Button
                                       size="icon"

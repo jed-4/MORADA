@@ -28,7 +28,7 @@ export default function BusinessTimesheetsWidget({ widget }: WidgetProps) {
     return date >= weekStart && date <= weekEnd;
   });
 
-  const pendingTimesheets = timesheets.filter(t => t.status === "pending" || t.status === "draft");
+  const pendingTimesheets = timesheets.filter(t => t.status === "submitted");
   const approvedThisWeek = thisWeekTimesheets.filter(t => t.status === "approved");
   const totalHoursThisWeek = approvedThisWeek.reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
 
@@ -47,7 +47,7 @@ export default function BusinessTimesheetsWidget({ widget }: WidgetProps) {
     switch (status) {
       case "approved":
         return <CheckCircle className="h-3.5 w-3.5 text-green-500" />;
-      case "pending":
+      case "submitted":
         return <AlertCircle className="h-3.5 w-3.5 text-yellow-500" />;
       case "rejected":
         return <XCircle className="h-3.5 w-3.5 text-red-500" />;
@@ -59,7 +59,7 @@ export default function BusinessTimesheetsWidget({ widget }: WidgetProps) {
   const getStatusColor = (status: string) => {
     switch (status) {
       case "approved": return "bg-green-500/10 text-green-700 dark:text-green-400";
-      case "pending": return "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400";
+      case "submitted": return "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400";
       case "rejected": return "bg-red-500/10 text-red-700 dark:text-red-400";
       default: return "bg-gray-500/10 text-gray-700 dark:text-gray-400";
     }

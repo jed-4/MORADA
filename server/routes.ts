@@ -5533,6 +5533,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/user/can-approve-timesheets", async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.json(false);
+      }
+      const canApprove = await storage.canUserApproveTimesheets(req.user.id);
+      res.json(canApprove);
+    } catch (error) {
+      console.error("Error checking timesheet approval permission:", error);
+      res.json(false);
+    }
+  });
+
   // User Management Routes
   app.get("/api/users", requireTeamMember, requirePermission("admin.users", "view"), async (req, res) => {
     try {
@@ -13253,23 +13266,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/timesheets/:id/submit", async (req, res) => {
-    try {
-      const timesheet = await storage.submitTimesheet(req.params.id);
-      if (!timesheet) {
-        return res.status(404).json({ error: "Timesheet not found" });
-      }
-      res.json(timesheet);
-    } catch (error: any) {
-      res.status(500).json({
-        error: "Failed to submit timesheet",
-        details: error.message
-      });
-    }
-  });
 
   app.post("/api/timesheets/:id/approve", async (req, res) => {
     try {
+      if (!req.user) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const canApprove = await storage.canUserApproveTimesheets(req.user.id);
+      if (!canApprove) {
+        return res.status(403).json({ error: "You do not have permission to approve timesheets" });
+      }
+
       const timesheet = await storage.approveTimesheet(req.params.id);
       if (!timesheet) {
         return res.status(404).json({ error: "Timesheet not found" });
@@ -13285,6 +13293,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/timesheets/:id/reject", async (req, res) => {
     try {
+      if (!req.user) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const canApprove = await storage.canUserApproveTimesheets(req.user.id);
+      if (!canApprove) {
+        return res.status(403).json({ error: "You do not have permission to reject timesheets" });
+      }
+
       const timesheet = await storage.rejectTimesheet(req.params.id);
       if (!timesheet) {
         return res.status(404).json({ error: "Timesheet not found" });

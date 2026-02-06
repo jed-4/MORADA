@@ -2766,7 +2766,7 @@ export const timesheets = pgTable("timesheets", {
   breakStartTime: text("break_start_time"), // HH:mm format, nullable
   breakEndTime: text("break_end_time"), // HH:mm format, nullable
   description: text("description"),
-  status: timesheetStatusEnum("status").notNull().default("draft"),
+  status: timesheetStatusEnum("status").notNull().default("submitted"),
   hourlyRate: numeric("hourly_rate", { precision: 10, scale: 2 }).notNull().default("0"),
   total: numeric("total", { precision: 10, scale: 2 }).notNull().default("0"), // duration × hourlyRate
   invoiced: boolean("invoiced").notNull().default(false),
@@ -2801,7 +2801,7 @@ export const insertTimesheetSchema = createInsertSchema(timesheets).omit({
   breakDuration: z.number().min(0).default(0),
   hourlyRate: z.number().min(0).default(0),
   total: z.number().min(0).default(0),
-  status: z.enum(["draft", "submitted", "approved", "rejected"]).default("draft"),
+  status: z.enum(["draft", "submitted", "approved", "rejected"]).default("submitted"),
   invoiced: z.boolean().default(false),
 });
 

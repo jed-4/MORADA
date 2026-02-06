@@ -253,7 +253,7 @@ export function TimesheetDialog({
         description: data.description || null,
         hourlyRate: hourlyRate.toString(),
         total: total,
-        status: "draft",
+        status: "submitted",
         invoiced: false,
         labels: data.labels || [],
       };
