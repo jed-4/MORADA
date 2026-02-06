@@ -106,27 +106,28 @@ function SortableColumnHeader({
       style={style}
       className={`text-[10px] font-medium text-muted-foreground py-1 h-7 px-2 ${column.id === 'total' ? 'text-right' : ''}`}
     >
-      <div className="flex items-center gap-1">
-        <span
-          className="cursor-grab select-none"
+      <div className="flex items-center gap-0.5">
+        <GripVertical
+          className="w-2.5 h-2.5 text-muted-foreground/30 flex-shrink-0 cursor-grab"
           {...attributes}
           {...listeners}
-        >
-          {children}
-        </span>
-        {isSortable && (
+        />
+        {isSortable ? (
           <button
-            onClick={(e) => { e.stopPropagation(); onSort(column.id); }}
-            className={`inline-flex items-center justify-center w-3 h-3 rounded-sm ${isActive ? 'text-foreground' : 'text-muted-foreground/40 hover:text-muted-foreground'}`}
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => onSort(column.id)}
+            className={`inline-flex items-center gap-0.5 select-none cursor-pointer ${isActive ? 'text-foreground' : 'hover:text-foreground'}`}
           >
+            <span>{children}</span>
             {isActive && sortDirection === 'asc' ? (
               <ArrowUp className="w-2.5 h-2.5" />
             ) : isActive && sortDirection === 'desc' ? (
               <ArrowDown className="w-2.5 h-2.5" />
-            ) : (
-              <ArrowUp className="w-2.5 h-2.5" />
-            )}
+            ) : null}
           </button>
+        ) : (
+          <span className="select-none">{children}</span>
         )}
       </div>
     </TableHead>
