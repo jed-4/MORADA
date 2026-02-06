@@ -47,7 +47,7 @@ import { TimeSelect } from "@/components/ui/time-select";
 import type { Timesheet, Project, User as UserType, CostCode, TimesheetCostCode, CompanySettings } from "@shared/schema";
 
 const timesheetSchema = z.object({
-  projectId: z.string().min(1, "Project is required"),
+  projectId: z.string().optional(),
   userId: z.string().min(1, "User is required"),
   date: z.date(),
   startTime: z.string().min(1, "Start time is required"),
@@ -249,7 +249,7 @@ export function TimesheetDialog({
       const total = (duration * hourlyRate).toFixed(2);
 
       const timesheetData = {
-        projectId: data.projectId,
+        projectId: data.projectId || null,
         userId: data.userId,
         date: data.date,
         startTime: data.startTime || null,
@@ -409,10 +409,10 @@ export function TimesheetDialog({
                     <FormLabel>Project</FormLabel>
                     <FormControl>
                       <ProjectSelect
-                        value={field.value}
-                        onValueChange={field.onChange}
-                        placeholder="Select project"
-                        allowNone={false}
+                        value={field.value || "none"}
+                        onValueChange={(val) => field.onChange(val === "none" ? "" : val)}
+                        placeholder="Select project or Business"
+                        allowNone={true}
                         data-testid="select-project"
                       />
                     </FormControl>
@@ -491,7 +491,7 @@ export function TimesheetDialog({
                           field.onChange(value);
                         }}
                         placeholder="Select start time"
-                        defaultScrollTime={companySettings?.standardWorkStart || "07:00"}
+                        defaultScrollTime={companySettings?.standardWorkStart || "06:00"}
                         showIcon={false}
                         data-testid="select-start-time"
                       />

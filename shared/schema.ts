@@ -2756,7 +2756,7 @@ export const timesheetStatusEnum = pgEnum("timesheet_status", ["draft", "submitt
 
 export const timesheets = pgTable("timesheets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }), // Nullable for business-level timesheets
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   date: timestamp("date").notNull(),
   startTime: text("start_time"), // HH:mm format, nullable

@@ -60,7 +60,8 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
 
   const totalWeekHours = Object.values(dailyHours).reduce((sum, h) => sum + h, 0);
 
-  const getProjectName = (projectId: string) => {
+  const getProjectName = (projectId: string | null) => {
+    if (!projectId) return 'Business';
     return projects.find(p => p.id === projectId)?.name || 'Unknown Project';
   };
 

@@ -455,7 +455,8 @@ export default function Timesheets() {
     }
   };
 
-  const getProjectName = (pId: string) => {
+  const getProjectName = (pId: string | null) => {
+    if (!pId) return "Business";
     const project = projects.find((p) => p.id === pId);
     return project?.name || "Unknown Project";
   };
@@ -485,7 +486,8 @@ export default function Timesheets() {
   };
 
   // Filter timesheets
-  const getProjectPhase = (projId: string): string => {
+  const getProjectPhase = (projId: string | null): string => {
+    if (!projId) return "business";
     const project = projects.find((p) => p.id === projId);
     return project?.currentSystemPhase || "lead";
   };
@@ -494,7 +496,7 @@ export default function Timesheets() {
     const matchesSearch = searchTerm === "" || 
       timesheet.description?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesProject = !projectId && selectedProjects.length > 0 
-      ? selectedProjects.includes(timesheet.projectId) 
+      ? selectedProjects.includes(timesheet.projectId || "business") 
       : true;
     const matchesUser = selectedUsers.length > 0 
       ? selectedUsers.includes(timesheet.userId) 

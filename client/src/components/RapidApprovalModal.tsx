@@ -165,7 +165,7 @@ export function RapidApprovalModal({
       setEditedBreakStart(""); // Not stored in DB yet
       setEditedBreak(currentTimesheet.breakDuration || "0");
       setEditedDate(new Date(currentTimesheet.date));
-      setEditedProjectId(currentTimesheet.projectId);
+      setEditedProjectId(currentTimesheet.projectId || "");
       setEditedCostCodeId(currentTimesheet.costCodeId || "");
       setEditedDescription(currentTimesheet.description || "");
       setRejectionComment("");
@@ -223,7 +223,7 @@ export function RapidApprovalModal({
       duration: string; 
       breakDuration: string;
       date?: string;
-      projectId?: string;
+      projectId?: string | null;
       costCodeId?: string | null;
       description?: string;
     }) => {
@@ -248,7 +248,7 @@ export function RapidApprovalModal({
         editedEndTime !== (currentTimesheet.endTime || "") ||
         editedBreak !== (currentTimesheet.breakDuration || "0") ||
         format(editedDate!, "yyyy-MM-dd") !== currentTimesheet.date ||
-        editedProjectId !== currentTimesheet.projectId ||
+        editedProjectId !== (currentTimesheet.projectId || "") ||
         editedCostCodeId !== (currentTimesheet.costCodeId || "") ||
         editedDescription !== (currentTimesheet.description || "")
       );
@@ -261,7 +261,7 @@ export function RapidApprovalModal({
           duration: calculatedDuration.toFixed(2),
           breakDuration: editedBreak,
           date: format(editedDate, "yyyy-MM-dd"),
-          projectId: editedProjectId,
+          projectId: editedProjectId || null,
           costCodeId: editedCostCodeId || null,
           description: editedDescription,
         });
@@ -430,11 +430,12 @@ export function RapidApprovalModal({
 
             <div>
               <Label className="text-[10px] text-muted-foreground">Project</Label>
-              <Select value={editedProjectId} onValueChange={setEditedProjectId}>
+              <Select value={editedProjectId || "business"} onValueChange={(val) => setEditedProjectId(val === "business" ? "" : val)}>
                 <SelectTrigger className="h-7 text-[11px]">
                   <SelectValue placeholder="Select" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="business" className="text-[11px] text-muted-foreground">Business (No Project)</SelectItem>
                   {projects.map((project) => (
                     <SelectItem key={project.id} value={project.id} className="text-[11px]">
                       {project.name}

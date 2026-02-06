@@ -36,7 +36,7 @@ export function ProjectSelect({
     if (allowNone) {
       opts.push({
         value: "none",
-        label: "None",
+        label: "Business (No Project)",
       });
     }
     

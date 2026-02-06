@@ -38,7 +38,7 @@ export default function BusinessTimesheetsWidget({ widget }: WidgetProps) {
   };
 
   const getProjectName = (projectId: string | null) => {
-    if (!projectId) return "No Project";
+    if (!projectId) return "Business";
     const project = projects.find(p => p.id === projectId);
     return project?.name || "Unknown Project";
   };
