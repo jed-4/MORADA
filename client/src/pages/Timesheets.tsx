@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams } from "wouter";
 import { Plus, Clock, Filter, Search, Calendar as CalendarIcon, User, Check, X, CalendarRange, Download, ChevronDown, Settings2, RotateCcw, Table2, Users2, CalendarDays, ChevronLeft, ChevronRight, Zap, Play, Square, ArrowUp, ArrowDown } from "lucide-react";
@@ -91,6 +91,9 @@ function SortableColumnHeader({
     isDragging,
   } = useSortable({ id: column.id });
 
+  const pointerStart = useRef<{ x: number; y: number } | null>(null);
+  const wasDragged = useRef(false);
+
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -100,22 +103,38 @@ function SortableColumnHeader({
   const isSortable = SORTABLE_COLUMNS.includes(column.id);
   const isActive = sortColumn === column.id;
 
+  const combinedOnPointerDown = (e: React.PointerEvent) => {
+    pointerStart.current = { x: e.clientX, y: e.clientY };
+    wasDragged.current = false;
+    if (listeners?.onPointerDown) {
+      (listeners as any).onPointerDown(e);
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (pointerStart.current) {
+      const dx = Math.abs(e.clientX - pointerStart.current.x);
+      const dy = Math.abs(e.clientY - pointerStart.current.y);
+      if (dx < 5 && dy < 5 && isSortable) {
+        onSort(column.id);
+      }
+    }
+    pointerStart.current = null;
+  };
+
   return (
     <TableHead
       ref={setNodeRef}
       style={style}
-      className={`text-[10px] font-medium text-muted-foreground py-1 h-7 px-2 ${column.id === 'total' ? 'text-right' : ''}`}
+      className={`text-[10px] font-medium text-muted-foreground py-1 h-7 px-2 select-none ${column.id === 'total' ? 'text-right' : ''} ${isSortable ? 'cursor-pointer' : ''}`}
       {...attributes}
       {...listeners}
+      onPointerDown={combinedOnPointerDown}
+      onPointerUp={handlePointerUp}
     >
-      {isSortable ? (
-        <button
-          type="button"
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={() => onSort(column.id)}
-          className={`inline-flex items-center gap-0.5 select-none cursor-pointer ${isActive ? 'text-foreground' : 'hover:text-foreground'}`}
-        >
-          <span>{children}</span>
+      <div className={`inline-flex items-center gap-0.5 ${isActive ? 'text-foreground' : isSortable ? 'hover:text-foreground' : ''}`}>
+        <span>{children}</span>
+        {isSortable && (
           <span className="w-2.5 h-2.5 inline-flex items-center justify-center flex-shrink-0">
             {isActive && sortDirection === 'asc' ? (
               <ArrowUp className="w-2.5 h-2.5" />
@@ -123,10 +142,8 @@ function SortableColumnHeader({
               <ArrowDown className="w-2.5 h-2.5" />
             ) : null}
           </span>
-        </button>
-      ) : (
-        <span className="select-none">{children}</span>
-      )}
+        )}
+      </div>
     </TableHead>
   );
 }
