@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon, Plus, Trash2, Clock, Bell, Check } from "lucide-react";
+import { Calendar as CalendarIcon, Plus, Trash2, Bell, Check } from "lucide-react";
 import { useTimesheetLabelOptions } from "@/hooks/useTimesheetLabelOptions";
 import { SetReminderDialog } from "@/components/SetReminderDialog";
 import { Button } from "@/components/ui/button";
@@ -42,6 +42,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ProjectSelect } from "@/components/ProjectSelect";
 import { UserSelect } from "@/components/UserSelect";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
+import { TimeSelect } from "@/components/ui/time-select";
 import type { Timesheet, Project, User as UserType, CostCode, TimesheetCostCode, CompanySettings } from "@shared/schema";
 
 const timesheetSchema = z.object({
@@ -89,8 +90,6 @@ export function TimesheetDialog({
   const [isSplit, setIsSplit] = useState(false);
   const [lastEditedField, setLastEditedField] = useState<"startTime" | "endTime" | "duration" | "breakDuration" | null>(null);
   const [costCodeSplits, setCostCodeSplits] = useState<CostCodeSplit[]>([]);
-  const startTimeScrollTarget = useRef<string | null>(null);
-  const endTimeScrollTarget = useRef<string | null>(null);
   const [showReminderDialog, setShowReminderDialog] = useState(false);
 
   // Fetch projects
@@ -113,21 +112,6 @@ export function TimesheetDialog({
     queryKey: ["/api/company-settings"],
   });
 
-  // Generate 15-minute interval time options
-  const generateTimeOptions = () => {
-    const options: string[] = [];
-    for (let hour = 0; hour < 24; hour++) {
-      for (let minute = 0; minute < 60; minute += 15) {
-        const hourStr = hour.toString().padStart(2, '0');
-        const minStr = minute.toString().padStart(2, '0');
-        options.push(`${hourStr}:${minStr}`);
-      }
-    }
-    return options;
-  };
-
-  const timeOptions = generateTimeOptions();
-
   const breakDurationOptions = (() => {
     const options: { value: string; label: string }[] = [];
     for (let minutes = 0; minutes <= 600; minutes += 15) {
@@ -139,35 +123,6 @@ export function TimesheetDialog({
     }
     return options;
   })();
-
-  const scrollViewportToTime = (node: HTMLDivElement | null, time: string) => {
-    if (!node) return;
-    requestAnimationFrame(() => {
-      const viewport = node.querySelector('[data-radix-select-viewport]');
-      if (viewport) {
-        const targetIndex = timeOptions.indexOf(time);
-        const scrollIndex = targetIndex >= 0 ? targetIndex : 28;
-        const itemHeight = 32;
-        const viewportHeight = 300;
-        const scrollTop = Math.max(0, (scrollIndex * itemHeight) - (viewportHeight / 2) + (itemHeight / 2));
-        viewport.scrollTop = scrollTop;
-      }
-    });
-  };
-
-  const startTimeContentRef = useCallback((node: HTMLDivElement | null) => {
-    if (node && startTimeScrollTarget.current) {
-      scrollViewportToTime(node, startTimeScrollTarget.current);
-      startTimeScrollTarget.current = null;
-    }
-  }, []);
-
-  const endTimeContentRef = useCallback((node: HTMLDivElement | null) => {
-    if (node && endTimeScrollTarget.current) {
-      scrollViewportToTime(node, endTimeScrollTarget.current);
-      endTimeScrollTarget.current = null;
-    }
-  }, []);
 
   const form = useForm<TimesheetFormData>({
     resolver: zodResolver(timesheetSchema),
@@ -519,31 +474,19 @@ export function TimesheetDialog({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Start Time</FormLabel>
-                    <Select 
-                      value={field.value} 
-                      onValueChange={(value) => {
-                        setLastEditedField("startTime");
-                        field.onChange(value);
-                      }}
-                      onOpenChange={(open) => {
-                        if (open) {
-                          startTimeScrollTarget.current = field.value || companySettings?.standardWorkStart || "07:00";
-                        }
-                      }}
-                    >
-                      <FormControl>
-                        <SelectTrigger data-testid="select-start-time">
-                          <SelectValue placeholder="Select start time" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent className="max-h-[300px]" ref={startTimeContentRef}>
-                        {timeOptions.map((time) => (
-                          <SelectItem key={time} value={time}>
-                            {time}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <FormControl>
+                      <TimeSelect
+                        value={field.value}
+                        onChange={(value) => {
+                          setLastEditedField("startTime");
+                          field.onChange(value);
+                        }}
+                        placeholder="Select start time"
+                        defaultScrollTime={companySettings?.standardWorkStart || "07:00"}
+                        showIcon={false}
+                        data-testid="select-start-time"
+                      />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -555,31 +498,19 @@ export function TimesheetDialog({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>End Time</FormLabel>
-                    <Select 
-                      value={field.value} 
-                      onValueChange={(value) => {
-                        setLastEditedField("endTime");
-                        field.onChange(value);
-                      }}
-                      onOpenChange={(open) => {
-                        if (open) {
-                          endTimeScrollTarget.current = field.value || companySettings?.standardWorkEnd || "15:30";
-                        }
-                      }}
-                    >
-                      <FormControl>
-                        <SelectTrigger data-testid="select-end-time">
-                          <SelectValue placeholder="Select end time" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent className="max-h-[300px]" ref={endTimeContentRef}>
-                        {timeOptions.map((time) => (
-                          <SelectItem key={time} value={time}>
-                            {time}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <FormControl>
+                      <TimeSelect
+                        value={field.value}
+                        onChange={(value) => {
+                          setLastEditedField("endTime");
+                          field.onChange(value);
+                        }}
+                        placeholder="Select end time"
+                        defaultScrollTime={companySettings?.standardWorkEnd || "15:30"}
+                        showIcon={false}
+                        data-testid="select-end-time"
+                      />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}

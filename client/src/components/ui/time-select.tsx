@@ -16,6 +16,7 @@ interface TimeSelectProps {
   disabled?: boolean;
   className?: string;
   showIcon?: boolean;
+  defaultScrollTime?: string;
   "data-testid"?: string;
 }
 
@@ -40,32 +41,32 @@ const TIME_OPTIONS = generateTimeOptions();
 const DEFAULT_SCROLL_INDEX = 28;
 
 export const TimeSelect = forwardRef<HTMLButtonElement, TimeSelectProps>(
-  ({ value, onChange, placeholder = "Select time", disabled, className, showIcon = true, "data-testid": testId }, ref) => {
-    // Find the display label for the current value
+  ({ value, onChange, placeholder = "Select time", disabled, className, showIcon = true, defaultScrollTime, "data-testid": testId }, ref) => {
     const selectedOption = TIME_OPTIONS.find(opt => opt.value === value);
     
-    // Scroll to 7am when dropdown opens (if no value selected)
+    const defaultIndex = defaultScrollTime
+      ? TIME_OPTIONS.findIndex(opt => opt.value === defaultScrollTime)
+      : DEFAULT_SCROLL_INDEX;
+    const fallbackIndex = defaultIndex >= 0 ? defaultIndex : DEFAULT_SCROLL_INDEX;
+
     const handleContentRef = useCallback((node: HTMLDivElement | null) => {
       if (node) {
-        // Use requestAnimationFrame to ensure DOM is ready
         requestAnimationFrame(() => {
           const viewport = node.querySelector('[data-radix-select-viewport]');
           if (viewport) {
-            // If there's a selected value, scroll to it; otherwise scroll to 7am
             const targetIndex = value 
               ? TIME_OPTIONS.findIndex(opt => opt.value === value)
-              : DEFAULT_SCROLL_INDEX;
+              : fallbackIndex;
             
-            const scrollIndex = targetIndex >= 0 ? targetIndex : DEFAULT_SCROLL_INDEX;
-            const itemHeight = 32; // Height of each SelectItem
-            // Center the target item in the viewport
+            const scrollIndex = targetIndex >= 0 ? targetIndex : fallbackIndex;
+            const itemHeight = 32;
             const viewportHeight = 280;
             const scrollTop = Math.max(0, (scrollIndex * itemHeight) - (viewportHeight / 2) + (itemHeight / 2));
             viewport.scrollTop = scrollTop;
           }
         });
       }
-    }, [value]);
+    }, [value, fallbackIndex]);
     
     return (
       <Select value={value || ""} onValueChange={onChange} disabled={disabled}>
