@@ -211,11 +211,17 @@ export default function Timesheets() {
     try {
       const saved = localStorage.getItem(COLUMNS_STORAGE_KEY);
       if (saved) {
-        const parsed = JSON.parse(saved) as TimesheetColumnConfig[];
+        let parsed = JSON.parse(saved) as TimesheetColumnConfig[];
         const hasOldTimeColumn = parsed.some(c => c.id === 'time');
         const hasNewStartTime = parsed.some(c => c.id === 'startTime');
         if (hasOldTimeColumn && !hasNewStartTime) {
           return DEFAULT_COLUMNS;
+        }
+        const missingCols = DEFAULT_COLUMNS.filter(dc => !parsed.some(p => p.id === dc.id));
+        if (missingCols.length > 0) {
+          const projectIdx = parsed.findIndex(c => c.id === 'project');
+          const insertAt = projectIdx >= 0 ? projectIdx + 1 : 3;
+          parsed = [...parsed.slice(0, insertAt), ...missingCols, ...parsed.slice(insertAt)];
         }
         return parsed;
       }
