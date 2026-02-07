@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, json, jsonb, integer, boolean, pgEnum, numeric, index, uniqueIndex, date } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, json, jsonb, integer, boolean, pgEnum, numeric, index, uniqueIndex, date, doublePrecision } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -843,14 +843,14 @@ export const estimateItems = pgTable("estimate_items", {
   allowance: text("allowance").notNull().default("None"), // "None" | "Prime Cost" | "Provisional Sum"
   allowanceStatus: text("allowance_status").notNull().default("pending"), // "pending" | "in_progress" | "finalized"
   pcMarkupPercent: integer("pc_markup_percent"), // Markup % for PC items (separate from estimate markup)
-  quantity: integer("quantity").notNull().default(1),
+  quantity: doublePrecision("quantity").notNull().default(1),
   wastagePercent: integer("wastage_percent").notNull().default(0), // Wastage percentage (0, 10, 15, 20, etc.)
   unitType: text("unit_type").notNull().default("each"), // "each" | "m" | "m2" | etc (configurable)
   status: text("status").notNull().default("incomplete"), // "incomplete" | "not relevant" | "done" (configurable)
-  unitCostExTax: integer("unit_cost_ex_tax").notNull().default(0), // Unit price in cents (renamed from priceExTax)
+  unitCostExTax: doublePrecision("unit_cost_ex_tax").notNull().default(0), // Unit price ex tax in dollars
   markupPercent: integer("markup_percent"), // Optional item-specific markup percentage (10 = 10%). Falls back to project markup if null
-  taxAmount: integer("tax_amount").notNull().default(0), // Calculated tax amount in cents
-  priceIncTax: integer("price_inc_tax").notNull().default(0), // Total price in cents
+  taxAmount: doublePrecision("tax_amount").notNull().default(0), // Calculated tax amount in dollars
+  priceIncTax: doublePrecision("price_inc_tax").notNull().default(0), // Total price inc tax in dollars
   description: text("description"),
   notes: text("notes"),
   attachmentUrl: text("attachment_url"), // File attachment path/URL

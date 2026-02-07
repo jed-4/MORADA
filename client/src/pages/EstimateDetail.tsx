@@ -1934,17 +1934,14 @@ export default function EstimateDetail() {
     // Set initial value based on field type
     switch (field) {
       case 'quantity':
-        // Convert from stored precision (cents) to actual value
-        setEditingValue((item.quantity / 100).toFixed(2));
+        setEditingValue(item.quantity.toFixed(2));
         break;
       case 'unitCostExTax':
-        // Convert cents to dollars for display
-        setEditingValue((item.unitCostExTax / 100).toFixed(2));
+        setEditingValue(item.unitCostExTax.toFixed(2));
         break;
       case 'unitCostIncTax':
-        // Convert cents to dollars for display (calculated value)
         const unitCostIncTax = calculatePricingValues(item).unitCostIncTax;
-        setEditingValue((unitCostIncTax / 100).toFixed(2));
+        setEditingValue(unitCostIncTax.toFixed(2));
         break;
       case 'markupPercent':
         // Show markup percentage (10 = 10%)
@@ -1987,10 +1984,10 @@ export default function EstimateDetail() {
         });
         // Reset to original value
         if (field === 'unitCostExTax') {
-          setEditingValue(((item as any)[field] / 100).toFixed(2));
+          setEditingValue(((item as any)[field]).toFixed(2));
         } else if (field === 'unitCostIncTax') {
           const unitCostIncTax = calculatePricingValues(item).unitCostIncTax;
-          setEditingValue((unitCostIncTax / 100).toFixed(2));
+          setEditingValue(unitCostIncTax.toFixed(2));
         } else if (field === 'markupPercent') {
           setEditingValue(item.markupPercent ?? estimate?.projectMarkupPercent ?? 0);
         } else {
@@ -2034,7 +2031,7 @@ export default function EstimateDetail() {
       const calculatedExTax = incTaxValue / (1 + taxRate / 100);
       
       // Check if the calculated ex-tax value is different from current
-      const currentIncTax = calculatePricingValues(item).unitCostIncTax / 100;
+      const currentIncTax = calculatePricingValues(item).unitCostIncTax;
       if (Math.abs(incTaxValue - currentIncTax) < 0.01) {
         setEditingCell(null);
         return;
@@ -2341,7 +2338,7 @@ export default function EstimateDetail() {
             row.push(escapeCsvField(item.shownAs || ''));
             break;
           case 'quantity':
-            row.push(((item.quantity || 0) / 100).toFixed(2));
+            row.push((item.quantity || 0).toFixed(2));
             break;
           case 'allowance':
             row.push(escapeCsvField(item.allowance || 'None'));
@@ -2350,19 +2347,19 @@ export default function EstimateDetail() {
             row.push(escapeCsvField(item.unitType || ''));
             break;
           case 'unitCostExTax':
-            row.push((item.unitCostExTax / 100).toFixed(2));
+            row.push(item.unitCostExTax.toFixed(2));
             break;
           case 'unitCostIncTax':
             const pricingValsUnit = calculatePricingValues(item);
-            row.push((pricingValsUnit.unitCostIncTax / 100).toFixed(2));
+            row.push(pricingValsUnit.unitCostIncTax.toFixed(2));
             break;
           case 'builderCost':
             const pricingVals = calculatePricingValues(item);
-            row.push((pricingVals.builderCost / 100).toFixed(2));
+            row.push(pricingVals.builderCost.toFixed(2));
             break;
           case 'builderCostIncTax':
             const pricingValsIncTax = calculatePricingValues(item);
-            row.push((pricingValsIncTax.builderCostIncTax / 100).toFixed(2));
+            row.push(pricingValsIncTax.builderCostIncTax.toFixed(2));
             break;
           case 'markup':
             const pricingValues = calculatePricingValues(item);
@@ -2370,15 +2367,15 @@ export default function EstimateDetail() {
             break;
           case 'clientPriceExTax':
             const pricing1 = calculatePricingValues(item);
-            row.push((pricing1.clientPriceExTax / 100).toFixed(2));
+            row.push(pricing1.clientPriceExTax.toFixed(2));
             break;
           case 'clientTax':
             const pricing2 = calculatePricingValues(item);
-            row.push((pricing2.clientTax / 100).toFixed(2));
+            row.push(pricing2.clientTax.toFixed(2));
             break;
           case 'clientPriceIncTax':
             const pricing3 = calculatePricingValues(item);
-            row.push((pricing3.clientPriceIncTax / 100).toFixed(2));
+            row.push(pricing3.clientPriceIncTax.toFixed(2));
             break;
           case 'notes':
             row.push(escapeCsvField(item.notes || ''));
@@ -2533,53 +2530,51 @@ export default function EstimateDetail() {
   }, [resizingColumn, resizeStartX, resizeStartWidth]);
 
   const formatCurrency = (amount: number) => {
-    const dollars = amount / 100;
-    // Check if it's a whole number
-    const isWholeNumber = dollars % 1 === 0;
+    const isWholeNumber = amount % 1 === 0;
     
     return new Intl.NumberFormat('en-AU', {
       style: 'currency',
       currency: 'AUD',
       minimumFractionDigits: isWholeNumber ? 0 : 2,
       maximumFractionDigits: 2
-    }).format(dollars);
+    }).format(amount);
   };
 
   // Helper function to calculate two-tier pricing values
   const calculatePricingValues = (item: EstimateItem) => {
     // Unit cost with tax
     const taxRate = estimate?.taxRate ?? 10;
-    const unitCostTax = Math.round((item.unitCostExTax * taxRate) / 100); // in cents
-    const unitCostIncTax = item.unitCostExTax + unitCostTax; // in cents
+    const unitCostTax = Math.round(item.unitCostExTax * taxRate) / 100;
+    const unitCostIncTax = Math.round((item.unitCostExTax + unitCostTax) * 100) / 100;
     
     // Builder's cost (what builder pays)
-    const builderCost = Math.round((item.unitCostExTax * item.quantity) / 100); // in cents
+    const builderCost = Math.round(item.unitCostExTax * item.quantity * 100) / 100;
     
     // Builder's cost with tax
-    const builderCostTax = Math.round((builderCost * taxRate) / 100); // in cents
-    const builderCostIncTax = builderCost + builderCostTax; // in cents
+    const builderCostTax = Math.round(builderCost * taxRate) / 100;
+    const builderCostIncTax = Math.round((builderCost + builderCostTax) * 100) / 100;
     
     // Markup percentage (item level or project level)
     const markupPercent = item.markupPercent ?? estimate?.projectMarkupPercent ?? 0;
     
     // Client pricing (calculated by backend, or fallback for legacy items)
-    const clientTax = item.taxAmount ?? 0; // in cents
-    const clientPriceIncTax = item.priceIncTax ?? 0; // in cents
-    const clientPriceExTax = clientPriceIncTax - clientTax; // in cents
+    const clientTax = item.taxAmount ?? 0; // in dollars
+    const clientPriceIncTax = item.priceIncTax ?? 0; // in dollars
+    const clientPriceExTax = clientPriceIncTax - clientTax; // in dollars
     
     return {
-      unitCostIncTax, // in cents
-      builderCost, // in cents
-      builderCostIncTax, // in cents
+      unitCostIncTax, // in dollars
+      builderCost, // in dollars
+      builderCostIncTax, // in dollars
       markupPercent, // percentage (10 = 10%)
-      clientPriceExTax, // in cents
-      clientTax, // in cents
-      clientPriceIncTax // in cents
+      clientPriceExTax, // in dollars
+      clientTax, // in dollars
+      clientPriceIncTax // in dollars
     };
   };
 
   const formatQuantity = (quantity: number, unitType: string | null) => {
-    const actualQty = (quantity / 100).toFixed(2).replace(/\.?0+$/, '');
+    const actualQty = quantity.toFixed(2).replace(/\.?0+$/, '');
     return `${actualQty}${unitType ? ` ${unitType}` : ''}`;
   };
 
@@ -2705,9 +2700,9 @@ export default function EstimateDetail() {
           name: item.name,
           description: item.description || '',
           type: item.type,
-          quantity: item.quantity / 100,  // Convert from stored hundredths to actual quantity
+          quantity: item.quantity,
           unitType: item.unitType || 'ea',
-          unitCostExTax: item.unitCostExTax / 100,  // Convert from cents to dollars for display
+          unitCostExTax: item.unitCostExTax,
           markupPercent: item.markupPercent || undefined,
           groupId: item.groupId || undefined,
           costCode: item.costCode || '',
@@ -3811,7 +3806,7 @@ export default function EstimateDetail() {
           );
         }
         // Calculate quantity with wastage
-        const baseQuantity = item.quantity / 100;
+        const baseQuantity = item.quantity;
         const wastage = (item as any).wastagePercent || 0;
         const adjustedQuantity = baseQuantity * (1 + wastage / 100);
         const displayQuantity = wastage > 0 ? adjustedQuantity : baseQuantity;

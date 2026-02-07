@@ -13568,8 +13568,7 @@ export class DbStorage implements IStorage {
           costCodeId: costCodeId
         };
 
-        const hours = (item.quantity || 0) / 100;
-        existing.budgetedHours += hours;
+        existing.budgetedHours += item.quantity || 0;
 
         costCodeMap.set(mapKey, existing);
       }

@@ -64,13 +64,12 @@ export function EstimateSection({
   const sortedGroups = [...groups].sort((a, b) => a.order - b.order);
 
   // Helper function to format currency
-  const formatCurrency = (cents: number) => {
-    return `$${(cents / 100).toFixed(2)}`;
+  const formatCurrency = (amount: number) => {
+    return `$${amount.toFixed(2)}`;
   };
 
-  // Helper function to format quantity
-  const formatQuantity = (cents: number) => {
-    return (cents / 100).toFixed(2);
+  const formatQuantity = (qty: number) => {
+    return qty.toFixed(2).replace(/\.?0+$/, '');
   };
 
   // Calculate group subtotals
@@ -205,7 +204,8 @@ export function EstimateSection({
       return null;
     }
 
-    const unitCostIncTax = item.unitCostExTax + Math.round((item.unitCostExTax * (estimate.taxRate || 10)) / 100);
+    const unitCostTax = Math.round(item.unitCostExTax * (estimate.taxRate || 10)) / 100;
+    const unitCostIncTax = Math.round((item.unitCostExTax + unitCostTax) * 100) / 100;
 
     return (
       <View key={item.id} style={styles.tableRow}>

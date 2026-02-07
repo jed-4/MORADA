@@ -45,7 +45,7 @@ Preferred communication style: Simple, everyday language.
 - **Project Structure**: Monorepo with client, server, and shared code.
 
 ### Feature Specifications & System Design
-- **Budget Tracking**: Manages estimates, bills, and variations with a calculation engine.
+- **Budget Tracking**: Manages estimates, bills, and variations with a calculation engine. Estimate item values (quantity, unitCostExTax, taxAmount, priceIncTax) are stored as real dollar values (doublePrecision), not cents. Pricing formula: builderCost = qty × unitCost, then markup %, then tax %. Labour hours budget aggregates quantity from labour estimate items and hours from timesheets.
 - **Task Management**: Kanban, List, and Calendar views with drag-and-drop, task templates, inline checklist management, and due date filtering. Polymorphic task context model for consistent handling across projects and business.
   - **Inline Task Creation Defaults**: When tasks are created inline, the following data is automatically applied based on context:
     - **Project List View**: `projectId` = current project, `taskContextType` = "project", `status` = default from field categories (or first option)
