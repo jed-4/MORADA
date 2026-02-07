@@ -160,22 +160,24 @@ export function TimesheetDialog({
   // Populate form when editing an existing timesheet
   useEffect(() => {
     if (open && timesheet) {
+      setLastEditedField(null);
       form.reset({
         projectId: timesheet.projectId || "",
         userId: timesheet.userId || "",
         date: new Date(timesheet.date),
         startTime: timesheet.startTime || "",
         endTime: timesheet.endTime || "",
-        duration: timesheet.duration?.toString() || "",
-        breakDuration: timesheet.breakDuration?.toString() || "0",
+        duration: timesheet.duration ? parseFloat(timesheet.duration.toString()).toString() : "",
+        breakDuration: timesheet.breakDuration ? parseFloat(timesheet.breakDuration.toString()).toString() : "0",
         breakStartTime: timesheet.breakStartTime || "",
         breakEndTime: timesheet.breakEndTime || "",
         description: timesheet.description || "",
-        hourlyRate: timesheet.hourlyRate?.toString() || "50",
+        hourlyRate: timesheet.hourlyRate ? parseFloat(timesheet.hourlyRate.toString()).toString() : "50",
         costCodeId: timesheet.costCodeId || "",
         labels: (timesheet.labels as string[]) || [],
       });
     } else if (open && !timesheet) {
+      setLastEditedField(null);
       form.reset({
         projectId: defaultProjectId || "",
         userId: currentUser?.id || "",
