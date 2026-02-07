@@ -268,25 +268,23 @@ export function TimesheetDialog({
 
       if (timesheet) {
         const res = await apiRequest(
-          "PATCH",
           `/api/timesheets/${timesheet.id}`,
+          "PATCH",
           timesheetData
         );
-        return await res.json();
+        return res;
       } else {
-        const res = await apiRequest(
-          "POST",
+        const created = await apiRequest(
           "/api/timesheets",
+          "POST",
           timesheetData
         );
-        const created = await res.json();
         
-        // If split, create cost code splits
         if (isSplit && costCodeSplits.length > 0) {
           for (const split of costCodeSplits) {
             await apiRequest(
-              "POST",
               `/api/timesheets/${created.id}/cost-codes`,
+              "POST",
               {
                 costCodeId: split.costCodeId,
                 duration: split.duration,
@@ -296,10 +294,9 @@ export function TimesheetDialog({
             );
           }
         } else {
-          // Create a single cost code entry for the primary cost code
           await apiRequest(
-            "POST",
             `/api/timesheets/${created.id}/cost-codes`,
+            "POST",
             {
               costCodeId: data.costCodeId,
               duration: duration.toString(),
@@ -383,7 +380,7 @@ export function TimesheetDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
+      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle data-testid="heading-timesheet-dialog">
             {readonly ? "View Timesheet" : timesheet ? "Edit Timesheet" : "Add Timesheet"}
@@ -397,10 +394,10 @@ export function TimesheetDialog({
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit((data) => createMutation.mutate(data))} className="flex flex-col flex-1 min-h-0">
-            <div className="flex-1 overflow-y-auto px-1 space-y-6">
-            <fieldset disabled={readonly} className="space-y-6">
-            {/* Basic Info */}
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="flex-1 overflow-y-auto px-1 space-y-4">
+            <fieldset disabled={readonly} className="space-y-4">
+            {/* Row 1: Project, User, Date */}
+            <div className="grid gap-3 md:grid-cols-3">
               <FormField
                 control={form.control}
                 name="projectId"
@@ -440,43 +437,43 @@ export function TimesheetDialog({
                   </FormItem>
                 )}
               />
+
+              <FormField
+                control={form.control}
+                name="date"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Date</FormLabel>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <FormControl>
+                          <Button
+                            variant="outline"
+                            className="w-full justify-start"
+                            data-testid="button-select-date"
+                          >
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {field.value ? format(field.value, "PPP") : "Select date"}
+                          </Button>
+                        </FormControl>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0">
+                        <Calendar
+                          mode="single"
+                          selected={field.value}
+                          onSelect={field.onChange}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
 
-            <FormField
-              control={form.control}
-              name="date"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Date</FormLabel>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <FormControl>
-                        <Button
-                          variant="outline"
-                          className="w-full justify-start"
-                          data-testid="button-select-date"
-                        >
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {field.value ? format(field.value, "PPP") : "Select date"}
-                        </Button>
-                      </FormControl>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                      <Calendar
-                        mode="single"
-                        selected={field.value}
-                        onSelect={field.onChange}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Time Entry Fields - All fields shown with bi-directional calculation */}
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            {/* Row 2: Start, End, Break, Duration */}
+            <div className="grid gap-3 md:grid-cols-4">
               <FormField
                 control={form.control}
                 name="startTime"
@@ -490,7 +487,7 @@ export function TimesheetDialog({
                           setLastEditedField("startTime");
                           field.onChange(value);
                         }}
-                        placeholder="Select start time"
+                        placeholder="Start"
                         defaultScrollTime={companySettings?.standardWorkStart || "06:00"}
                         showIcon={false}
                         data-testid="select-start-time"
@@ -514,7 +511,7 @@ export function TimesheetDialog({
                           setLastEditedField("endTime");
                           field.onChange(value);
                         }}
-                        placeholder="Select end time"
+                        placeholder="End"
                         defaultScrollTime={companySettings?.standardWorkEnd || "15:30"}
                         showIcon={false}
                         data-testid="select-end-time"
@@ -540,7 +537,7 @@ export function TimesheetDialog({
                     >
                       <FormControl>
                         <SelectTrigger data-testid="input-break-duration">
-                          <SelectValue placeholder="Select break" />
+                          <SelectValue placeholder="Break" />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent className="max-h-[300px]">
@@ -561,7 +558,7 @@ export function TimesheetDialog({
                 name="duration"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Duration (hours)</FormLabel>
+                    <FormLabel>Duration (hrs)</FormLabel>
                     <FormControl>
                       <Input
                         type="number"
@@ -574,60 +571,84 @@ export function TimesheetDialog({
                         data-testid="input-duration"
                       />
                     </FormControl>
-                    <p className="text-xs text-muted-foreground">Auto-calculated or enter manually</p>
                     <FormMessage />
                   </FormItem>
                 )}
               />
             </div>
 
-            {/* Break Start/End Times */}
-            <div className="grid gap-4 md:grid-cols-2">
-              <FormField
-                control={form.control}
-                name="breakStartTime"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Break Start</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="time"
-                        {...field}
-                        data-testid="input-break-start-time"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            {/* Row 3: Break Start/End (optional detail) */}
+            <details className="group">
+              <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
+                Break start/end times (optional)
+              </summary>
+              <div className="grid gap-3 md:grid-cols-2 mt-2">
+                <FormField
+                  control={form.control}
+                  name="breakStartTime"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Break Start</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="time"
+                          {...field}
+                          data-testid="input-break-start-time"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="breakEndTime"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Break End</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="time"
+                          {...field}
+                          data-testid="input-break-end-time"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            </details>
 
-              <FormField
-                control={form.control}
-                name="breakEndTime"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Break End</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="time"
-                        {...field}
-                        data-testid="input-break-end-time"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
+            {/* Row 4: Cost Code, Rate, Total */}
+            <div className="grid gap-3 md:grid-cols-[2fr_1fr_1fr]">
+              {!isSplit && (
+                <FormField
+                  control={form.control}
+                  name="costCodeId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Cost Code</FormLabel>
+                      <FormControl>
+                        <CostCodeSelect
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          placeholder="Select cost code"
+                          data-testid="select-cost-code"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
-            {/* Rate & Total */}
-            <div className="grid gap-4 md:grid-cols-2">
               <FormField
                 control={form.control}
                 name="hourlyRate"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Hourly Rate ($)</FormLabel>
+                    <FormLabel>Rate ($)</FormLabel>
                     <FormControl>
                       <Input
                         type="number"
@@ -642,42 +663,20 @@ export function TimesheetDialog({
               />
 
               <div className="space-y-2">
-                <Label>Total Cost</Label>
-                <div className="p-3 bg-primary/10 rounded-md border">
-                  <span className="text-2xl font-bold text-primary">
+                <Label>Total</Label>
+                <div className="p-2 bg-primary/10 rounded-md border flex items-center justify-center">
+                  <span className="text-lg font-bold text-primary">
                     ${((parseFloat(form.watch("duration") || "0") * parseFloat(form.watch("hourlyRate") || "0"))).toFixed(2)}
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* Cost Code */}
-            {!isSplit && (
-              <FormField
-                control={form.control}
-                name="costCodeId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Cost Code</FormLabel>
-                    <FormControl>
-                      <CostCodeSelect
-                        value={field.value}
-                        onValueChange={field.onChange}
-                        placeholder="Select cost code"
-                        data-testid="select-cost-code"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
-
             {/* Cost Code Split */}
             {!timesheet && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <Label>Split Across Cost Codes</Label>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <Label className="text-xs text-muted-foreground">Split Across Cost Codes</Label>
                   <Button
                     type="button"
                     variant={isSplit ? "default" : "outline"}
@@ -696,11 +695,11 @@ export function TimesheetDialog({
 
                 {isSplit && (
                   <Card>
-                    <CardContent className="p-4 space-y-3">
+                    <CardContent className="p-3 space-y-2">
                       {costCodeSplits.map((split) => (
-                        <div key={split.id} className="grid gap-3 md:grid-cols-[2fr_1fr_1fr_1fr_auto] items-end">
-                          <div className="space-y-2">
-                            <Label>Cost Code</Label>
+                        <div key={split.id} className="grid gap-2 md:grid-cols-[2fr_1fr_1fr_1fr_auto] items-end">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Cost Code</Label>
                             <CostCodeSelect
                               value={split.costCodeId}
                               onValueChange={(value) => updateCostCodeSplit(split.id, "costCodeId", value)}
@@ -710,8 +709,8 @@ export function TimesheetDialog({
                             />
                           </div>
 
-                          <div className="space-y-2">
-                            <Label>Hours</Label>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Hours</Label>
                             <Input
                               type="number"
                               step="0.25"
@@ -721,8 +720,8 @@ export function TimesheetDialog({
                             />
                           </div>
 
-                          <div className="space-y-2">
-                            <Label>Rate ($)</Label>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Rate ($)</Label>
                             <Input
                               type="number"
                               step="0.01"
@@ -732,9 +731,9 @@ export function TimesheetDialog({
                             />
                           </div>
 
-                          <div className="space-y-2">
-                            <Label>Total</Label>
-                            <div className="p-2 bg-muted rounded-md text-center font-medium">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Total</Label>
+                            <div className="p-2 bg-muted rounded-md text-center text-sm font-medium">
                               ${split.total}
                             </div>
                           </div>
@@ -751,7 +750,7 @@ export function TimesheetDialog({
                         </div>
                       ))}
 
-                      <div className="flex items-center justify-between pt-3 border-t">
+                      <div className="flex items-center justify-between gap-2 pt-2 border-t">
                         <Button
                           type="button"
                           variant="outline"
@@ -759,10 +758,10 @@ export function TimesheetDialog({
                           onClick={addCostCodeSplit}
                           data-testid="button-add-split"
                         >
-                          <Plus className="h-4 w-4 mr-2" />
+                          <Plus className="h-4 w-4 mr-1" />
                           Add Split
                         </Button>
-                        <div className="text-lg font-bold">
+                        <div className="text-sm font-bold">
                           Total: ${calculateSplitTotal()}
                         </div>
                       </div>
@@ -774,9 +773,9 @@ export function TimesheetDialog({
 
             {/* Labels */}
             {labelOptions.length > 0 && (
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <Label>Labels</Label>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-1.5">
                   {labelOptions.map((option) => {
                     const isSelected = watchedLabels?.includes(option.key);
                     return (
@@ -813,6 +812,7 @@ export function TimesheetDialog({
                   <FormControl>
                     <Textarea
                       {...field}
+                      rows={2}
                       placeholder="What did you work on?"
                       data-testid="textarea-description"
                     />

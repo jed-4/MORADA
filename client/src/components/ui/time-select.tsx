@@ -61,7 +61,7 @@ export const TimeSelect = forwardRef<HTMLButtonElement, TimeSelectProps>(
             const scrollIndex = targetIndex >= 0 ? targetIndex : fallbackIndex;
             const itemHeight = 32;
             const viewportHeight = 280;
-            const scrollTop = Math.max(0, (scrollIndex * itemHeight) - (viewportHeight / 2) + (itemHeight / 2));
+            const scrollTop = Math.max(0, scrollIndex * itemHeight);
             viewport.scrollTop = scrollTop;
           }
         });
