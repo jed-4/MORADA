@@ -480,9 +480,7 @@ export default function Timesheets() {
   };
 
   const getNetHours = (timesheet: Timesheet): number => {
-    const duration = parseFloat(timesheet.duration) || 0;
-    const breakDuration = parseFloat(timesheet.breakDuration || "0") || 0;
-    return Math.max(0, duration - breakDuration);
+    return parseFloat(timesheet.duration) || 0;
   };
 
   // Filter timesheets

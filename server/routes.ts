@@ -13107,11 +13107,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Helper: enrich timesheets with costCodeId from timesheet_cost_codes join table (batch query)
+  async function enrichTimesheetsWithCostCodes(timesheets: any[]) {
+    const idsNeedingCostCode = timesheets.filter(ts => !ts.costCodeId).map(ts => ts.id);
+    if (idsNeedingCostCode.length === 0) return timesheets;
+
+    const allCostCodes = await Promise.all(
+      idsNeedingCostCode.map(id => storage.getTimesheetCostCodes(id))
+    );
+    const costCodeMap = new Map<string, string>();
+    idsNeedingCostCode.forEach((id, idx) => {
+      const codes = allCostCodes[idx];
+      if (codes.length >= 1) {
+        costCodeMap.set(id, codes[0].costCodeId);
+      }
+    });
+
+    return timesheets.map(ts => {
+      if (!ts.costCodeId && costCodeMap.has(ts.id)) {
+        return { ...ts, costCodeId: costCodeMap.get(ts.id) };
+      }
+      return ts;
+    });
+  }
+
   // Timesheet routes
   app.get("/api/projects/:projectId/timesheets", async (req, res) => {
     try {
       const timesheets = await storage.getTimesheets(req.params.projectId);
-      res.json(timesheets);
+      const enriched = await enrichTimesheetsWithCostCodes(timesheets);
+      res.json(enriched);
     } catch (error: any) {
       res.status(500).json({
         error: "Failed to get project timesheets",
@@ -13134,7 +13159,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           invoiced: invoiced ? invoiced === 'true' : undefined,
         }
       );
-      res.json(timesheets);
+      const enriched = await enrichTimesheetsWithCostCodes(timesheets);
+      res.json(enriched);
     } catch (error: any) {
       res.status(500).json({
         error: "Failed to get timesheets",
