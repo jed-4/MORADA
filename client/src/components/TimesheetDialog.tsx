@@ -157,18 +157,42 @@ export function TimesheetDialog({
     }
   };
 
-  // Auto-select project and user when dialog opens for a new timesheet
+  // Populate form when editing an existing timesheet
   useEffect(() => {
-    if (open && !timesheet) {
-      if (defaultProjectId) {
-        form.setValue("projectId", defaultProjectId);
-      }
-      const currentUserId = form.getValues("userId");
-      if (!currentUserId && currentUser?.id) {
-        form.setValue("userId", currentUser.id);
-      }
+    if (open && timesheet) {
+      form.reset({
+        projectId: timesheet.projectId || "",
+        userId: timesheet.userId || "",
+        date: new Date(timesheet.date),
+        startTime: timesheet.startTime || "",
+        endTime: timesheet.endTime || "",
+        duration: timesheet.duration?.toString() || "",
+        breakDuration: timesheet.breakDuration?.toString() || "0",
+        breakStartTime: timesheet.breakStartTime || "",
+        breakEndTime: timesheet.breakEndTime || "",
+        description: timesheet.description || "",
+        hourlyRate: timesheet.hourlyRate?.toString() || "50",
+        costCodeId: timesheet.costCodeId || "",
+        labels: (timesheet.labels as string[]) || [],
+      });
+    } else if (open && !timesheet) {
+      form.reset({
+        projectId: defaultProjectId || "",
+        userId: currentUser?.id || "",
+        date: new Date(),
+        startTime: "",
+        endTime: "",
+        duration: "",
+        breakDuration: "0",
+        breakStartTime: "",
+        breakEndTime: "",
+        description: "",
+        hourlyRate: "50",
+        costCodeId: "",
+        labels: [],
+      });
     }
-  }, [open, defaultProjectId, timesheet, form, currentUser]);
+  }, [open, timesheet, defaultProjectId, currentUser, form]);
 
   // Helper: Parse time string to minutes
   const timeToMinutes = (time: string): number => {
