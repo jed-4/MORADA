@@ -13568,9 +13568,10 @@ export class DbStorage implements IStorage {
           costCodeId: costCodeId
         };
 
-        const hours = item.quantity || 0;
-        const roundedHours = Math.round(hours * 4) / 4;
-        existing.budgetedHours += roundedHours;
+        const unitType = (item.unitType || "").toLowerCase();
+        const isHourBased = unitType === "hour" || unitType === "hours" || unitType === "hr" || unitType === "hrs";
+        const hours = isHourBased ? (item.quantity || 0) : 0;
+        existing.budgetedHours += hours;
 
         costCodeMap.set(mapKey, existing);
       }
