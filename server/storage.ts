@@ -13564,12 +13564,34 @@ export class DbStorage implements IStorage {
       const timesheetIds = timesheets.map(t => t.id);
       const timesheetCostCodes = timesheetIds.length > 0 ? await db.select()
         .from(schema.timesheetCostCodes)
-        .where(sql`${schema.timesheetCostCodes.timesheetId} = ANY(${timesheetIds})`) : [];
+        .where(inArray(schema.timesheetCostCodes.timesheetId, timesheetIds)) : [];
 
-      // Map pending and approved hours by cost code
+      // Track which timesheets are covered by the join table
+      const timesheetsWithSplits = new Set(timesheetCostCodes.map(tcc => tcc.timesheetId));
+
+      // Map pending and approved hours by cost code key
       const pendingHoursMap = new Map<string, number>();
       const approvedHoursMap = new Map<string, number>();
 
+      // Helper to add hours to the correct map
+      const addHours = (costCodeKey: string, duration: number, status: string, costCodeId: string | null) => {
+        if (status === "submitted") {
+          pendingHoursMap.set(costCodeKey, (pendingHoursMap.get(costCodeKey) || 0) + duration);
+        } else if (status === "approved") {
+          approvedHoursMap.set(costCodeKey, (approvedHoursMap.get(costCodeKey) || 0) + duration);
+        }
+        if (!costCodeMap.has(costCodeKey)) {
+          const cc = costCodes.find(c => c.id === costCodeId || c.code === costCodeKey);
+          costCodeMap.set(costCodeKey, {
+            budgetedHours: 0,
+            costCodeTitle: cc?.title || costCodeKey,
+            categoryTitle: "General",
+            costCodeId: cc?.id || costCodeId
+          });
+        }
+      };
+
+      // Process hours from join table splits
       for (const split of timesheetCostCodes) {
         const timesheet = timesheets.find(t => t.id === split.timesheetId);
         if (!timesheet) continue;
@@ -13578,10 +13600,21 @@ export class DbStorage implements IStorage {
         const costCode = costCodes.find(cc => cc.id === split.costCodeId);
         const costCodeKey = costCode?.code || "uncategorized";
 
-        if (timesheet.status === "submitted") {
-          pendingHoursMap.set(costCodeKey, (pendingHoursMap.get(costCodeKey) || 0) + duration);
-        } else if (timesheet.status === "approved") {
-          approvedHoursMap.set(costCodeKey, (approvedHoursMap.get(costCodeKey) || 0) + duration);
+        addHours(costCodeKey, duration, timesheet.status, split.costCodeId);
+      }
+
+      // Process timesheets NOT in the join table (cost code stored directly on timesheet)
+      for (const ts of timesheets) {
+        if (timesheetsWithSplits.has(ts.id)) continue;
+        const duration = parseFloat(ts.duration || "0");
+        if (duration <= 0) continue;
+
+        if (ts.costCodeId) {
+          const costCode = costCodes.find(cc => cc.id === ts.costCodeId);
+          const costCodeKey = costCode?.code || "uncategorized";
+          addHours(costCodeKey, duration, ts.status, ts.costCodeId);
+        } else {
+          addHours("uncategorized", duration, ts.status, null);
         }
       }
 
@@ -13596,6 +13629,7 @@ export class DbStorage implements IStorage {
       for (const [costCodeKey, data] of costCodeMap.entries()) {
         const pendingHours = pendingHoursMap.get(costCodeKey) || 0;
         const approvedHours = approvedHoursMap.get(costCodeKey) || 0;
+        if (data.budgetedHours === 0 && pendingHours === 0 && approvedHours === 0) continue;
 
         const result = await db.insert(schema.labourHoursBudget)
           .values({
