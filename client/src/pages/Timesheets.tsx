@@ -475,7 +475,7 @@ export default function Timesheets() {
   const getCostCodeName = (costCodeId: string | null) => {
     if (!costCodeId) return "-";
     const costCode = costCodes.find((c) => c.id === costCodeId);
-    return costCode ? costCode.name : "-";
+    return costCode ? costCode.title : "-";
   };
 
   const formatDuration = (hours: number | null) => {
