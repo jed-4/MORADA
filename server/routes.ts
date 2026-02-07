@@ -13226,7 +13226,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/timesheets", async (req, res) => {
     try {
-      const timesheet = await storage.createTimesheet(req.body);
+      const body = { ...req.body };
+      if (body.date && typeof body.date === "string") {
+        body.date = new Date(body.date);
+      }
+      const timesheet = await storage.createTimesheet(body);
       res.json(timesheet);
     } catch (error: any) {
       res.status(500).json({
@@ -13238,7 +13242,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/timesheets/:id", async (req, res) => {
     try {
-      const timesheet = await storage.updateTimesheet(req.params.id, req.body);
+      const body = { ...req.body };
+      if (body.date && typeof body.date === "string") {
+        body.date = new Date(body.date);
+      }
+      const timesheet = await storage.updateTimesheet(req.params.id, body);
       if (!timesheet) {
         return res.status(404).json({ error: "Timesheet not found" });
       }
