@@ -13506,28 +13506,24 @@ export class DbStorage implements IStorage {
 
   async recalculateLabourHoursBudget(projectId: string): Promise<LabourHoursBudget[]> {
     try {
-      // Get all cost codes
+      // Get project's company for scoping cost codes
+      const projectRows = await db.select().from(schema.projects).where(eq(schema.projects.id, projectId)).limit(1);
+      if (!projectRows[0] || !projectRows[0].companyId) {
+        return [];
+      }
+      const companyId = projectRows[0].companyId;
+
       const costCodes = await db.select()
         .from(schema.costCodes)
-        .where(eq(schema.costCodes.isActive, true));
+        .where(and(
+          eq(schema.costCodes.isActive, true),
+          eq(schema.costCodes.companyId, companyId)
+        ));
 
-      // Get estimates for this project
-      const estimates = await db.select()
-        .from(schema.estimates)
-        .where(eq(schema.estimates.projectId, projectId));
+      // Build cost code lookup by ID for fast matching
+      const costCodeById = new Map(costCodes.map(cc => [cc.id, cc]));
 
-      // Get estimate items that are flagged for labour hours tracking
-      const estimateItems = estimates.length > 0 ? await db.select()
-        .from(schema.estimateItems)
-        .where(
-          and(
-            eq(schema.estimateItems.estimateId, estimates[0].id),
-            eq(schema.estimateItems.type, "Labour"),
-            eq(schema.estimateItems.trackLabourHours, true)
-          )
-        ) : [];
-
-      // Group hours by cost code
+      // Initialize costCodeMap with ALL active cost codes (so they all appear in budget)
       const costCodeMap = new Map<string, {
         budgetedHours: number;
         costCodeTitle: string;
@@ -13535,24 +13531,48 @@ export class DbStorage implements IStorage {
         costCodeId: string | null;
       }>();
 
-      // Calculate budgeted hours from flagged estimate items (rounded to 0.25)
-      for (const item of estimateItems) {
-        const costCodeKey = item.costCode || "uncategorized";
-        const costCode = costCodes.find(cc => cc.code === costCodeKey);
-        
-        const existing = costCodeMap.get(costCodeKey) || { 
+      for (const cc of costCodes) {
+        costCodeMap.set(cc.id, {
           budgetedHours: 0,
-          costCodeTitle: costCode?.title || item.costCode || "Uncategorized",
+          costCodeTitle: cc.title,
           categoryTitle: "General",
-          costCodeId: costCode?.id || null
+          costCodeId: cc.id
+        });
+      }
+
+      // Get estimates for this project
+      const estimates = await db.select()
+        .from(schema.estimates)
+        .where(eq(schema.estimates.projectId, projectId));
+
+      // Get labour estimate items (case-insensitive type check, no trackLabourHours filter)
+      const estimateItems = estimates.length > 0 ? await db.select()
+        .from(schema.estimateItems)
+        .where(
+          and(
+            eq(schema.estimateItems.estimateId, estimates[0].id),
+            sql`LOWER(${schema.estimateItems.type}) = 'labour'`
+          )
+        ) : [];
+
+      // Calculate budgeted hours from labour estimate items, grouped by cost code ID
+      for (const item of estimateItems) {
+        const costCodeId = item.costCode || null;
+        const mapKey = costCodeId || "uncategorized";
+        const cc = costCodeId ? costCodeById.get(costCodeId) : null;
+
+        const existing = costCodeMap.get(mapKey) || {
+          budgetedHours: 0,
+          costCodeTitle: cc?.title || "Uncategorized",
+          categoryTitle: "General",
+          costCodeId: costCodeId
         };
-        
-        // Round hours to nearest 0.25
+
         const hours = item.quantity || 0;
         const roundedHours = Math.round(hours * 4) / 4;
         existing.budgetedHours += roundedHours;
-        
-        costCodeMap.set(costCodeKey, existing);
+
+        costCodeMap.set(mapKey, existing);
       }
 
       // Get timesheets for this project
@@ -13569,24 +13589,24 @@ export class DbStorage implements IStorage {
       // Track which timesheets are covered by the join table
       const timesheetsWithSplits = new Set(timesheetCostCodes.map(tcc => tcc.timesheetId));
 
-      // Map pending and approved hours by cost code key
+      // Map pending and approved hours by cost code ID
       const pendingHoursMap = new Map<string, number>();
       const approvedHoursMap = new Map<string, number>();
 
       // Helper to add hours to the correct map
-      const addHours = (costCodeKey: string, duration: number, status: string, costCodeId: string | null) => {
+      const addHours = (mapKey: string, duration: number, status: string, costCodeId: string | null) => {
         if (status === "submitted") {
-          pendingHoursMap.set(costCodeKey, (pendingHoursMap.get(costCodeKey) || 0) + duration);
+          pendingHoursMap.set(mapKey, (pendingHoursMap.get(mapKey) || 0) + duration);
         } else if (status === "approved") {
-          approvedHoursMap.set(costCodeKey, (approvedHoursMap.get(costCodeKey) || 0) + duration);
+          approvedHoursMap.set(mapKey, (approvedHoursMap.get(mapKey) || 0) + duration);
         }
-        if (!costCodeMap.has(costCodeKey)) {
-          const cc = costCodes.find(c => c.id === costCodeId || c.code === costCodeKey);
-          costCodeMap.set(costCodeKey, {
+        if (!costCodeMap.has(mapKey)) {
+          const cc = costCodeId ? costCodeById.get(costCodeId) : null;
+          costCodeMap.set(mapKey, {
             budgetedHours: 0,
-            costCodeTitle: cc?.title || costCodeKey,
+            costCodeTitle: cc?.title || "Uncategorized",
             categoryTitle: "General",
-            costCodeId: cc?.id || costCodeId
+            costCodeId: costCodeId
           });
         }
       };
@@ -13597,10 +13617,8 @@ export class DbStorage implements IStorage {
         if (!timesheet) continue;
 
         const duration = parseFloat(split.duration);
-        const costCode = costCodes.find(cc => cc.id === split.costCodeId);
-        const costCodeKey = costCode?.code || "uncategorized";
-
-        addHours(costCodeKey, duration, timesheet.status, split.costCodeId);
+        const mapKey = split.costCodeId || "uncategorized";
+        addHours(mapKey, duration, timesheet.status, split.costCodeId);
       }
 
       // Process timesheets NOT in the join table (cost code stored directly on timesheet)
@@ -13609,43 +13627,39 @@ export class DbStorage implements IStorage {
         const duration = parseFloat(ts.duration || "0");
         if (duration <= 0) continue;
 
-        if (ts.costCodeId) {
-          const costCode = costCodes.find(cc => cc.id === ts.costCodeId);
-          const costCodeKey = costCode?.code || "uncategorized";
-          addHours(costCodeKey, duration, ts.status, ts.costCodeId);
-        } else {
-          addHours("uncategorized", duration, ts.status, null);
-        }
+        const mapKey = ts.costCodeId || "uncategorized";
+        addHours(mapKey, duration, ts.status, ts.costCodeId);
       }
 
       // Delete existing labour hours budget for this project
       await db.delete(schema.labourHoursBudget)
         .where(eq(schema.labourHoursBudget.projectId, projectId));
 
-      // Create new labour hours budget entries
-      const labourHoursBudget: LabourHoursBudget[] = [];
+      // Build all rows and batch insert
       let sortOrder = 0;
+      const valuesToInsert = [];
 
-      for (const [costCodeKey, data] of costCodeMap.entries()) {
-        const pendingHours = pendingHoursMap.get(costCodeKey) || 0;
-        const approvedHours = approvedHoursMap.get(costCodeKey) || 0;
-        if (data.budgetedHours === 0 && pendingHours === 0 && approvedHours === 0) continue;
+      for (const [mapKey, data] of costCodeMap.entries()) {
+        const pendingHours = pendingHoursMap.get(mapKey) || 0;
+        const approvedHours = approvedHoursMap.get(mapKey) || 0;
 
-        const result = await db.insert(schema.labourHoursBudget)
-          .values({
-            projectId,
-            costCodeId: data.costCodeId,
-            costCodeTitle: data.costCodeTitle,
-            categoryTitle: data.categoryTitle,
-            budgetedHours: data.budgetedHours.toString(),
-            pendingHours: pendingHours.toString(),
-            approvedHours: approvedHours.toString(),
-            sortOrder: sortOrder++
-          })
-          .returning();
-        
-        labourHoursBudget.push(result[0]);
+        valuesToInsert.push({
+          projectId,
+          costCodeId: data.costCodeId,
+          costCodeTitle: data.costCodeTitle,
+          categoryTitle: data.categoryTitle,
+          budgetedHours: data.budgetedHours.toString(),
+          pendingHours: pendingHours.toString(),
+          approvedHours: approvedHours.toString(),
+          sortOrder: sortOrder++
+        });
       }
+
+      if (valuesToInsert.length === 0) return [];
+
+      const labourHoursBudget = await db.insert(schema.labourHoursBudget)
+        .values(valuesToInsert)
+        .returning();
 
       return labourHoursBudget;
     } catch (error) {

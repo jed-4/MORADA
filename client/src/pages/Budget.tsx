@@ -14,7 +14,10 @@ import {
   TableHeader, 
   TableRow 
 } from "@/components/ui/table";
-import { RefreshCw, TrendingUp, TrendingDown, DollarSign, Target, AlertCircle, Clock } from "lucide-react";
+import { RefreshCw, TrendingUp, TrendingDown, DollarSign, Target, AlertCircle, Clock, EyeOff, Eye } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Budget, BudgetLineItem, LabourHoursBudget, Project } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
@@ -32,6 +35,12 @@ export default function BudgetPage() {
   const { toast } = useToast();
   const pageTitle = usePageTitle({ pageName: "Budget" });
   const [activeTab, setActiveTab] = useState<"costs" | "hours">("costs");
+  const [hideEmptyCostCodes, setHideEmptyCostCodes] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('budget-hide-empty-cost-codes');
+      return saved ? JSON.parse(saved) : false;
+    } catch { return false; }
+  });
 
   // Fetch project to get current phase
   const { data: project } = useQuery<Project>({
@@ -149,6 +158,20 @@ export default function BudgetPage() {
   const totalActualHours = totalPendingHours + totalApprovedHours;
   const hoursRemaining = totalBudgetedHours - totalActualHours;
   const hoursPercentUsed = totalBudgetedHours > 0 ? Math.round((totalActualHours / totalBudgetedHours) * 100) : 0;
+
+  const filteredLabourHours = hideEmptyCostCodes
+    ? labourHours.filter(item => {
+        const budgeted = parseFloat(item.budgetedHours || "0");
+        const pending = parseFloat(item.pendingHours || "0");
+        const approved = parseFloat(item.approvedHours || "0");
+        return budgeted !== 0 || pending !== 0 || approved !== 0;
+      })
+    : labourHours;
+
+  const handleToggleEmpty = (checked: boolean) => {
+    setHideEmptyCostCodes(checked);
+    try { localStorage.setItem('budget-hide-empty-cost-codes', JSON.stringify(checked)); } catch {}
+  };
 
   const handleRecalculate = () => {
     if (activeTab === "costs") {
@@ -497,8 +520,24 @@ export default function BudgetPage() {
             {/* Labour Hours Breakdown Table */}
             <Card>
               <CardHeader className="py-2 px-3">
-                <CardTitle className="text-sm">Hours by Cost Code</CardTitle>
-                <CardDescription className="text-xs">Labour hours budget vs actual by cost code</CardDescription>
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div>
+                    <CardTitle className="text-sm">Hours by Cost Code</CardTitle>
+                    <CardDescription className="text-xs">Labour hours budget vs actual by cost code</CardDescription>
+                  </div>
+                  {labourHours.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        id="hide-empty"
+                        checked={hideEmptyCostCodes}
+                        onCheckedChange={handleToggleEmpty}
+                      />
+                      <Label htmlFor="hide-empty" className="text-xs text-muted-foreground cursor-pointer whitespace-nowrap">
+                        Hide empty
+                      </Label>
+                    </div>
+                  )}
+                </div>
               </CardHeader>
               <CardContent className="p-0">
                 {labourHoursLoading ? (
@@ -512,7 +551,7 @@ export default function BudgetPage() {
                     <Clock className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
                     <h3 className="text-sm font-semibold mb-1">No labour hours budget</h3>
                     <p className="text-xs text-muted-foreground mb-3">
-                      Mark labour estimate items as "Track Hours" and click "Recalculate".
+                      Click "Recalculate" to generate hours budget from estimates and timesheets.
                     </p>
                   </div>
                 ) : (
@@ -530,7 +569,14 @@ export default function BudgetPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {labourHours.map((item) => {
+                        {filteredLabourHours.length === 0 && (
+                          <TableRow>
+                            <TableCell colSpan={7} className="text-center text-xs text-muted-foreground py-8">
+                              {hideEmptyCostCodes ? "All cost codes have zero hours. Turn off \"Hide empty\" to see all." : "No labour hours data available."}
+                            </TableCell>
+                          </TableRow>
+                        )}
+                        {filteredLabourHours.map((item) => {
                           const budgeted = parseFloat(item.budgetedHours || "0");
                           const pending = parseFloat(item.pendingHours || "0");
                           const approved = parseFloat(item.approvedHours || "0");
