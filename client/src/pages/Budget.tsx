@@ -558,14 +558,14 @@ export default function BudgetPage() {
                   <div className="overflow-x-auto">
                     <Table>
                       <TableHeader>
-                        <TableRow>
-                          <TableHead className="text-xs">Cost Code</TableHead>
-                          <TableHead className="text-xs text-right">Budgeted</TableHead>
-                          <TableHead className="text-xs text-right">Pending</TableHead>
-                          <TableHead className="text-xs text-right">Approved</TableHead>
-                          <TableHead className="text-xs text-right">Total</TableHead>
-                          <TableHead className="text-xs text-right">Variance</TableHead>
-                          <TableHead className="text-xs text-right">% Used</TableHead>
+                        <TableRow className="h-8">
+                          <TableHead className="text-xs py-1.5">Cost Code</TableHead>
+                          <TableHead className="text-xs text-right py-1.5">Budgeted</TableHead>
+                          <TableHead className="text-xs text-right py-1.5">Pending</TableHead>
+                          <TableHead className="text-xs text-right py-1.5">Approved</TableHead>
+                          <TableHead className="text-xs text-right py-1.5">Total</TableHead>
+                          <TableHead className="text-xs text-right py-1.5">Variance</TableHead>
+                          <TableHead className="text-xs text-right py-1.5">% Used</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -585,33 +585,28 @@ export default function BudgetPage() {
                           const percentUsed = budgeted > 0 ? Math.round((total / budgeted) * 100) : 0;
 
                           return (
-                            <TableRow key={item.id} data-testid={`row-labour-hours-${item.id}`}>
-                              <TableCell className="text-xs">
-                                <div>
-                                  <div className="font-medium">{item.costCodeTitle || "Uncategorized"}</div>
-                                  {item.categoryTitle && (
-                                    <div className="text-[10px] text-muted-foreground">{item.categoryTitle}</div>
-                                  )}
-                                </div>
+                            <TableRow key={item.id} data-testid={`row-labour-hours-${item.id}`} className="h-8">
+                              <TableCell className="text-sm py-1.5">
+                                <span className="font-medium">{item.costCodeTitle || "Uncategorized"}</span>
                               </TableCell>
-                              <TableCell className="text-xs text-right" data-testid={`text-budgeted-${item.id}`}>
+                              <TableCell className="text-sm text-right py-1.5" data-testid={`text-budgeted-${item.id}`}>
                                 {formatHours(budgeted)}
                               </TableCell>
-                              <TableCell className="text-xs text-right text-amber-600 dark:text-amber-400" data-testid={`text-pending-${item.id}`}>
+                              <TableCell className="text-sm text-right py-1.5 text-amber-600 dark:text-amber-400" data-testid={`text-pending-${item.id}`}>
                                 {formatHours(pending)}
                               </TableCell>
-                              <TableCell className="text-xs text-right" data-testid={`text-approved-${item.id}`}>
+                              <TableCell className="text-sm text-right py-1.5" data-testid={`text-approved-${item.id}`}>
                                 {formatHours(approved)}
                               </TableCell>
-                              <TableCell className="text-xs text-right font-medium" data-testid={`text-total-${item.id}`}>
+                              <TableCell className="text-sm text-right py-1.5 font-medium" data-testid={`text-total-${item.id}`}>
                                 {formatHours(total)}
                               </TableCell>
-                              <TableCell className={`text-xs text-right ${getVarianceColor(variance)}`} data-testid={`text-variance-${item.id}`}>
+                              <TableCell className={`text-sm text-right py-1.5 ${getVarianceColor(variance)}`} data-testid={`text-variance-${item.id}`}>
                                 {formatHours(variance)}
                               </TableCell>
-                              <TableCell className="text-right">
+                              <TableCell className="text-right py-1.5">
                                 <div className="flex items-center justify-end gap-1">
-                                  <span className="text-xs">{percentUsed}%</span>
+                                  <span className="text-sm">{percentUsed}%</span>
                                   <Progress value={percentUsed} className="w-12 h-1.5" />
                                 </div>
                               </TableCell>
