@@ -790,16 +790,19 @@ export default function Timesheets() {
               </DropdownMenuTrigger>
               <DropdownMenuContent>
                 {projects.map((project) => (
-                  <DropdownMenuItem key={project.id} className="flex items-center">
+                  <DropdownMenuItem
+                    key={project.id}
+                    className="flex items-center"
+                    onSelect={() => {
+                      const newProjects = selectedProjects.includes(project.id)
+                        ? selectedProjects.filter(p => p !== project.id)
+                        : [...selectedProjects, project.id];
+                      setSelectedProjects(newProjects);
+                    }}
+                  >
                     <Checkbox
                       checked={selectedProjects.includes(project.id)}
-                      onCheckedChange={() => {
-                        const newProjects = selectedProjects.includes(project.id)
-                          ? selectedProjects.filter(p => p !== project.id)
-                          : [...selectedProjects, project.id];
-                        setSelectedProjects(newProjects);
-                      }}
-                      className="mr-2"
+                      className="mr-2 pointer-events-none"
                     />
                     {project.name}
                   </DropdownMenuItem>
