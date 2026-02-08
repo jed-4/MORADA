@@ -10,6 +10,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -1546,6 +1547,53 @@ export default function Timesheets() {
                     </TableRow>
                   ))}
                 </TableBody>
+                {filteredTimesheets.length > 0 && (() => {
+                  const submittedTs = filteredTimesheets.filter(ts => ts.status === "submitted");
+                  const approvedTs = filteredTimesheets.filter(ts => ts.status === "approved");
+                  const submittedHours = submittedTs.reduce((sum, ts) => sum + getNetHours(ts), 0);
+                  const approvedHours = approvedTs.reduce((sum, ts) => sum + getNetHours(ts), 0);
+                  const totalHours = filteredTimesheets.reduce((sum, ts) => sum + getNetHours(ts), 0);
+                  const submittedTotal = submittedTs.reduce((sum, ts) => sum + parseFloat(ts.total || "0"), 0);
+                  const approvedTotal = approvedTs.reduce((sum, ts) => sum + parseFloat(ts.total || "0"), 0);
+                  const grandTotal = filteredTimesheets.reduce((sum, ts) => sum + parseFloat(ts.total || "0"), 0);
+
+                  const renderSummaryRow = (label: string, hours: number, total: number, isFinal?: boolean) => (
+                    <TableRow className={`h-7 ${isFinal ? "bg-muted/40 dark:bg-muted/20 border-t-2 border-border" : "bg-muted/20 dark:bg-muted/10 border-t border-border"}`}>
+                      {visibleColumns.map((col) => {
+                        switch (col.id) {
+                          case 'hours':
+                            return (
+                              <TableCell key={col.id} className={`text-[11px] ${isFinal ? "font-bold" : "font-medium"} tabular-nums px-2 py-1`}>
+                                {formatDuration(hours)}
+                              </TableCell>
+                            );
+                          case 'total':
+                            return (
+                              <TableCell key={col.id} className={`text-[11px] ${isFinal ? "font-bold" : "font-semibold"} text-right tabular-nums px-2 py-1`}>
+                                ${total.toFixed(2)}
+                              </TableCell>
+                            );
+                          case 'status':
+                            return (
+                              <TableCell key={col.id} className={`text-[10px] ${isFinal ? "font-bold" : "font-medium"} text-muted-foreground px-2 py-1`}>
+                                {label}
+                              </TableCell>
+                            );
+                          default:
+                            return <TableCell key={col.id} className="px-2 py-1" />;
+                        }
+                      })}
+                    </TableRow>
+                  );
+
+                  return (
+                    <TableFooter className="bg-transparent border-t-0">
+                      {renderSummaryRow("Submitted", submittedHours, submittedTotal)}
+                      {renderSummaryRow("Approved", approvedHours, approvedTotal)}
+                      {renderSummaryRow("Total", totalHours, grandTotal, true)}
+                    </TableFooter>
+                  );
+                })()}
               </Table>
             </DndContext>
           </div>
