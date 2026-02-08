@@ -754,6 +754,7 @@ export interface IStorage {
   deleteTimesheet(id: string): Promise<boolean>;
   approveTimesheet(id: string): Promise<Timesheet | undefined>; // Changes status from submitted to approved
   rejectTimesheet(id: string): Promise<Timesheet | undefined>; // Changes status from submitted to rejected
+  getAllActiveTimesheets(): Promise<Timesheet[]>;
 
   // Timesheet Cost Codes (for split timesheets)
   getTimesheetCostCodes(timesheetId: string): Promise<TimesheetCostCode[]>;
@@ -13831,6 +13832,18 @@ export class DbStorage implements IStorage {
       return result[0];
     } catch (error) {
       console.error("Database error in getActiveTimesheet:", error);
+      throw error;
+    }
+  }
+
+  async getAllActiveTimesheets(): Promise<Timesheet[]> {
+    try {
+      const result = await db.select()
+        .from(schema.timesheets)
+        .where(eq(schema.timesheets.isActive, true));
+      return result;
+    } catch (error) {
+      console.error("Database error in getAllActiveTimesheets:", error);
       throw error;
     }
   }

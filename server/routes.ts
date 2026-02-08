@@ -13335,6 +13335,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "You do not have permission to approve timesheets" });
       }
 
+      if (req.user.companyId) {
+        const settings = await storage.getCompanySettings();
+        if (settings?.timesheetAutoRound) {
+          const existing = await storage.getTimesheet(req.params.id);
+          if (existing) {
+            const roundTo15 = (time: string): string => {
+              const [h, m] = time.split(":").map(Number);
+              const rounded = Math.round(m / 15) * 15;
+              let finalH = rounded === 60 ? h + 1 : h;
+              let finalM = rounded === 60 ? 0 : rounded;
+              if (finalH >= 24) {
+                finalH = 23;
+                finalM = 45;
+              }
+              return `${String(finalH).padStart(2, "0")}:${String(finalM).padStart(2, "0")}`;
+            };
+            const updates: Record<string, string> = {};
+            if (existing.startTime) updates.startTime = roundTo15(existing.startTime);
+            if (existing.endTime) updates.endTime = roundTo15(existing.endTime);
+            if (Object.keys(updates).length > 0) {
+              await storage.updateTimesheet(req.params.id, updates);
+            }
+          }
+        }
+      }
+
       const timesheet = await storage.approveTimesheet(req.params.id);
       if (!timesheet) {
         return res.status(404).json({ error: "Timesheet not found" });

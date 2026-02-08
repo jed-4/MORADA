@@ -958,8 +958,12 @@ export const companySettings = pgTable("company_settings", {
   weekStartDay: integer("week_start_day").notNull().default(1), // 0 = Sunday, 1 = Monday (default)
   
   // Timesheet defaults
-  standardWorkStart: text("standard_work_start").default("07:00"), // Default work start time (e.g., "07:00")
-  standardWorkEnd: text("standard_work_end").default("15:30"), // Default work end time (e.g., "15:30")
+  standardWorkStart: text("standard_work_start").default("07:00"),
+  standardWorkEnd: text("standard_work_end").default("15:30"),
+  timesheetReminderEnabled: boolean("timesheet_reminder_enabled").notNull().default(true),
+  timesheetReminderThresholdHours: numeric("timesheet_reminder_threshold_hours", { precision: 4, scale: 1 }).notNull().default("10.0"),
+  timesheetAutoRound: boolean("timesheet_auto_round").notNull().default(false),
+  timesheetDefaultBreak: numeric("timesheet_default_break", { precision: 4, scale: 2 }).notNull().default("0.00"),
   
   // Proposal branding
   proposalPrimaryColor: text("proposal_primary_color").default("#3B82F6"), // Primary brand color for proposals

@@ -57,7 +57,8 @@ import {
   FileCheck,
   ClipboardList,
   Folder,
-  MoreHorizontal
+  MoreHorizontal,
+  Clock
 } from "lucide-react";
 import {
   DndContext,
@@ -116,6 +117,14 @@ const SETTINGS_CATEGORIES = [
     description: "Manage project statuses, task options, and custom fields",
     group: "fields",
     navigateTo: "/field-settings"
+  },
+  // Timesheet section
+  {
+    id: "timesheet-settings",
+    label: "Timesheet Settings",
+    icon: Clock,
+    description: "Clock-in reminders, rounding, and default break durations",
+    group: "general"
   },
   // Schedule section
   {
@@ -201,6 +210,10 @@ const companyInfoSchema = z.object({
   weekStartDay: z.coerce.number().min(0).max(1).default(1),
   standardWorkStart: z.string().optional(),
   standardWorkEnd: z.string().optional(),
+  timesheetReminderEnabled: z.boolean().default(true),
+  timesheetReminderThresholdHours: z.coerce.number().min(1).max(24).default(10),
+  timesheetAutoRound: z.boolean().default(false),
+  timesheetDefaultBreak: z.coerce.number().min(0).max(4).default(0),
   facebook: z.string().optional(),
   linkedin: z.string().optional(), 
   twitter: z.string().optional(),
@@ -229,6 +242,10 @@ export default function Settings() {
       weekStartDay: 1,
       standardWorkStart: "07:00",
       standardWorkEnd: "15:30",
+      timesheetReminderEnabled: true,
+      timesheetReminderThresholdHours: 10,
+      timesheetAutoRound: false,
+      timesheetDefaultBreak: 0,
       facebook: "",
       linkedin: "",
       twitter: "",
@@ -264,6 +281,10 @@ export default function Settings() {
         weekStartDay: companySettings.weekStartDay ?? 1,
         standardWorkStart: companySettings.standardWorkStart || "07:00",
         standardWorkEnd: companySettings.standardWorkEnd || "15:30",
+        timesheetReminderEnabled: companySettings.timesheetReminderEnabled ?? true,
+        timesheetReminderThresholdHours: companySettings.timesheetReminderThresholdHours ? parseFloat(companySettings.timesheetReminderThresholdHours as string) : 10,
+        timesheetAutoRound: companySettings.timesheetAutoRound ?? false,
+        timesheetDefaultBreak: companySettings.timesheetDefaultBreak ? parseFloat(companySettings.timesheetDefaultBreak as string) : 0,
         facebook: companySettings.facebook || "",
         linkedin: companySettings.linkedin || "",
         twitter: companySettings.twitter || "",
@@ -1130,6 +1151,7 @@ export default function Settings() {
 
             {/* Content based on active section */}
             {activeSection === "branding" && <CompanyInfoSection />}
+            {activeSection === "timesheet-settings" && <TimesheetSettingsSection />}
             {activeSection === "field-settings" && <FieldCategoriesSection />}
             {activeSection === "integrations" && <IntegrationsSection />}
             {activeSection === "schedule-settings" && <ScheduleSettingsSection />}
@@ -1139,7 +1161,7 @@ export default function Settings() {
             {activeSection === "maintenance" && <MaintenanceSection />}
             
             {/* Coming Soon placeholder for unimplemented sections */}
-            {!["branding", "field-settings", "integrations", "schedule-settings", "default-values", "terms-conditions", "activity", "maintenance"].includes(activeSection) && (
+            {!["branding", "timesheet-settings", "field-settings", "integrations", "schedule-settings", "default-values", "terms-conditions", "activity", "maintenance"].includes(activeSection) && (
               <Card className="border-2">
                 <CardContent className="text-center py-16">
                   <div className="mx-auto w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
@@ -1162,6 +1184,169 @@ export default function Settings() {
 }
 
 // Schedule Settings Section
+function TimesheetSettingsSection() {
+  const { toast } = useToast();
+  const { data: companySettings } = useQuery<CompanySettings>({
+    queryKey: ["/api/company-settings"],
+  });
+
+  const [reminderEnabled, setReminderEnabled] = useState(true);
+  const [thresholdHours, setThresholdHours] = useState("10");
+  const [autoRound, setAutoRound] = useState(false);
+  const [defaultBreak, setDefaultBreak] = useState("0");
+  const [standardStart, setStandardStart] = useState("07:00");
+  const [standardEnd, setStandardEnd] = useState("15:30");
+
+  useEffect(() => {
+    if (companySettings) {
+      setReminderEnabled(companySettings.timesheetReminderEnabled ?? true);
+      setThresholdHours(companySettings.timesheetReminderThresholdHours ? String(parseFloat(companySettings.timesheetReminderThresholdHours as string)) : "10");
+      setAutoRound(companySettings.timesheetAutoRound ?? false);
+      setDefaultBreak(companySettings.timesheetDefaultBreak ? String(parseFloat(companySettings.timesheetDefaultBreak as string)) : "0");
+      setStandardStart(companySettings.standardWorkStart || "07:00");
+      setStandardEnd(companySettings.standardWorkEnd || "15:30");
+    }
+  }, [companySettings]);
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("PATCH", "/api/company-settings", {
+        timesheetReminderEnabled: reminderEnabled,
+        timesheetReminderThresholdHours: thresholdHours,
+        timesheetAutoRound: autoRound,
+        timesheetDefaultBreak: defaultBreak,
+        standardWorkStart: standardStart,
+        standardWorkEnd: standardEnd,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
+      toast({ title: "Timesheet settings saved" });
+    },
+    onError: () => {
+      toast({ title: "Failed to save settings", variant: "destructive" });
+    },
+  });
+
+  return (
+    <div className="space-y-6">
+      <Card className="border-2">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-base font-semibold">Standard Work Hours</CardTitle>
+          <p className="text-sm text-muted-foreground">Default start and end times used when creating timesheets</p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-4 max-w-md">
+            <div>
+              <Label className="text-sm font-medium">Start Time</Label>
+              <Input
+                type="time"
+                step="900"
+                value={standardStart}
+                onChange={(e) => setStandardStart(e.target.value)}
+                data-testid="ts-standard-start"
+              />
+            </div>
+            <div>
+              <Label className="text-sm font-medium">End Time</Label>
+              <Input
+                type="time"
+                step="900"
+                value={standardEnd}
+                onChange={(e) => setStandardEnd(e.target.value)}
+                data-testid="ts-standard-end"
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-2">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-base font-semibold">Overtime Reminder</CardTitle>
+          <p className="text-sm text-muted-foreground">Notify team members when their timesheet has been recording beyond a set number of hours, in case they forgot to clock out</p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <Label className="text-sm font-medium">Enable overtime reminder</Label>
+            <Switch
+              checked={reminderEnabled}
+              onCheckedChange={setReminderEnabled}
+              data-testid="ts-reminder-toggle"
+            />
+          </div>
+          {reminderEnabled && (
+            <div className="max-w-xs">
+              <Label className="text-sm font-medium">Remind after (hours)</Label>
+              <p className="text-[11px] text-muted-foreground mb-1.5">
+                Send a notification when a timesheet has been recording for longer than this
+              </p>
+              <Input
+                type="number"
+                min="1"
+                max="24"
+                step="0.5"
+                value={thresholdHours}
+                onChange={(e) => setThresholdHours(e.target.value)}
+                data-testid="ts-reminder-threshold"
+              />
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="border-2">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-base font-semibold">Time Rounding</CardTitle>
+          <p className="text-sm text-muted-foreground">Automatically round start and end times to the nearest 15 minutes when approving timesheets</p>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <Label className="text-sm font-medium">Auto-round on approval</Label>
+            <Switch
+              checked={autoRound}
+              onCheckedChange={setAutoRound}
+              data-testid="ts-auto-round-toggle"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-2">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-base font-semibold">Default Break Duration</CardTitle>
+          <p className="text-sm text-muted-foreground">Automatically apply this break duration to new timesheets</p>
+        </CardHeader>
+        <CardContent>
+          <div className="max-w-xs">
+            <Label className="text-sm font-medium">Break duration (hours)</Label>
+            <Input
+              type="number"
+              min="0"
+              max="4"
+              step="0.25"
+              value={defaultBreak}
+              onChange={(e) => setDefaultBreak(e.target.value)}
+              data-testid="ts-default-break"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="flex justify-end">
+        <Button
+          onClick={() => saveMutation.mutate()}
+          disabled={saveMutation.isPending}
+          data-testid="ts-settings-save"
+        >
+          <Save className="h-4 w-4 mr-2" />
+          {saveMutation.isPending ? "Saving..." : "Save Timesheet Settings"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function ScheduleSettingsSection() {
   const { toast } = useToast();
   const [workDays, setWorkDays] = useState({

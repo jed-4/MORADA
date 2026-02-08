@@ -1,11 +1,13 @@
 import { storage } from "../storage";
 import { sendReminderEmail } from "./email";
-import { addDays, addWeeks, addMonths, differenceInMinutes, startOfDay, format } from "date-fns";
+import { addDays, addWeeks, addMonths, differenceInMinutes, differenceInHours, startOfDay, format } from "date-fns";
+import { emitNotification } from "../socketManager";
 
 let isProcessorRunning = false;
 let lastInsuranceCheckDate: string | null = null;
 let lastRecurringTasksCheckDate: string | null = null;
 let processorInterval: NodeJS.Timeout | null = null;
+const timesheetReminderSent = new Map<string, number>();
 
 export async function processReminders() {
   if (isProcessorRunning) {
@@ -187,6 +189,7 @@ export async function processReminders() {
     
     await processInsuranceExpiryReminders();
     await processRecurringTaskTemplates();
+    await processTimesheetOvertimeReminders();
   } catch (error) {
     console.error("[ReminderProcessor] Error processing reminders:", error);
   } finally {
@@ -466,5 +469,77 @@ export async function processRecurringTaskTemplates() {
     console.log(`[ReminderProcessor] Recurring task processing completed. Total generated: ${totalGenerated}`);
   } catch (error) {
     console.error("[ReminderProcessor] Error in recurring task processing:", error);
+  }
+}
+
+export async function processTimesheetOvertimeReminders() {
+  try {
+    const settings = await storage.getCompanySettings();
+    if (!settings || !settings.timesheetReminderEnabled) {
+      return;
+    }
+
+    const thresholdHours = parseFloat(settings.timesheetReminderThresholdHours as string) || 10;
+    const activeTimesheets = await storage.getAllActiveTimesheets();
+    
+    if (activeTimesheets.length === 0) return;
+
+    const now = new Date();
+    let notified = 0;
+
+    for (const ts of activeTimesheets) {
+      if (!ts.clockInTime) continue;
+
+      const clockIn = new Date(ts.clockInTime);
+      const hoursElapsed = (now.getTime() - clockIn.getTime()) / (1000 * 60 * 60);
+
+      if (hoursElapsed < thresholdHours) continue;
+
+      const lastNotified = timesheetReminderSent.get(ts.id);
+      if (lastNotified && (now.getTime() - lastNotified) < 60 * 60 * 1000) {
+        continue;
+      }
+
+      try {
+        const user = await storage.getUser(ts.userId);
+        if (!user?.companyId) continue;
+
+        const hoursStr = Math.floor(hoursElapsed).toString();
+
+        await storage.createNotification({
+          userId: ts.userId,
+          companyId: user.companyId,
+          type: "timesheet_overtime",
+          title: "Timesheet still recording",
+          message: `Your timesheet has been recording for over ${hoursStr} hours. Did you forget to clock out?`,
+          link: "/timesheets",
+          entityType: "timesheet",
+          entityId: ts.id,
+        });
+
+        emitNotification(ts.userId, {
+          type: "timesheet_overtime",
+          title: "Timesheet still recording",
+          message: `Your timesheet has been recording for over ${hoursStr} hours. Did you forget to clock out?`,
+        });
+
+        timesheetReminderSent.set(ts.id, now.getTime());
+        notified++;
+      } catch (err) {
+        console.error(`[ReminderProcessor] Error sending overtime notification for timesheet ${ts.id}:`, err);
+      }
+    }
+
+    if (notified > 0) {
+      console.log(`[ReminderProcessor] Sent ${notified} timesheet overtime reminder(s)`);
+    }
+
+    for (const [tsId] of timesheetReminderSent) {
+      if (!activeTimesheets.find(t => t.id === tsId)) {
+        timesheetReminderSent.delete(tsId);
+      }
+    }
+  } catch (error) {
+    console.error("[ReminderProcessor] Error in timesheet overtime reminders:", error);
   }
 }
