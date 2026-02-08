@@ -1548,46 +1548,47 @@ export default function Timesheets() {
                 </TableBody>
               </Table>
             </DndContext>
-            {filteredTimesheets.length > 0 && (() => {
-              const clockedInTs = filteredTimesheets.filter(ts => ts.isActive);
-              const clockedInHours = clockedInTs.reduce((sum, ts) => sum + getNetHours(ts), 0);
-
-              const statusGroups = [
-                { key: "submitted", label: "Submitted", bgClass: "bg-slate-100 dark:bg-slate-800", textClass: "text-slate-700 dark:text-slate-300" },
-                { key: "approved", label: "Approved", bgClass: "bg-green-100 dark:bg-green-900/30", textClass: "text-green-700 dark:text-green-300" },
-                { key: "rejected", label: "Rejected", bgClass: "bg-red-100 dark:bg-red-900/30", textClass: "text-red-700 dark:text-red-300" },
-              ];
-
-              return (
-                <div className="flex items-center justify-end gap-4 px-3 py-2 border-t border-border bg-muted/30 dark:bg-muted/10">
-                  <div className="flex items-center gap-1.5">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
-                      Clocked in
-                    </span>
-                    <span className="text-[11px] font-medium tabular-nums text-foreground">
-                      {formatDuration(clockedInHours)}
-                    </span>
-                  </div>
-                  {statusGroups.map(({ key, label, bgClass, textClass }) => {
-                    const entries = filteredTimesheets.filter(ts => ts.status === key);
-                    const totalHours = entries.reduce((sum, ts) => sum + getNetHours(ts), 0);
-                    return (
-                      <div key={key} className="flex items-center gap-1.5">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold ${bgClass} ${textClass}`}>
-                          {label}
-                        </span>
-                        <span className="text-[11px] font-medium tabular-nums text-foreground">
-                          {formatDuration(totalHours)}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })()}
           </div>
         )}
       </div>
+
+      {filteredTimesheets.length > 0 && (() => {
+        const clockedInTs = filteredTimesheets.filter(ts => ts.isActive);
+        const clockedInHours = clockedInTs.reduce((sum, ts) => sum + getNetHours(ts), 0);
+
+        const statusGroups = [
+          { key: "submitted", label: "Submitted", bgClass: "bg-slate-100 dark:bg-slate-800", textClass: "text-slate-700 dark:text-slate-300" },
+          { key: "approved", label: "Approved", bgClass: "bg-green-100 dark:bg-green-900/30", textClass: "text-green-700 dark:text-green-300" },
+          { key: "rejected", label: "Rejected", bgClass: "bg-red-100 dark:bg-red-900/30", textClass: "text-red-700 dark:text-red-300" },
+        ];
+
+        return (
+          <div className="sticky bottom-0 z-50 flex items-center justify-end gap-4 px-3 py-2 border-t border-border bg-card">
+            <div className="flex items-center gap-1.5">
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
+                Clocked in
+              </span>
+              <span className="text-[11px] font-medium tabular-nums text-foreground">
+                {formatDuration(clockedInHours)}
+              </span>
+            </div>
+            {statusGroups.map(({ key, label, bgClass, textClass }) => {
+              const entries = filteredTimesheets.filter(ts => ts.status === key);
+              const totalHours = entries.reduce((sum, ts) => sum + getNetHours(ts), 0);
+              return (
+                <div key={key} className="flex items-center gap-1.5">
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold ${bgClass} ${textClass}`}>
+                    {label}
+                  </span>
+                  <span className="text-[11px] font-medium tabular-nums text-foreground">
+                    {formatDuration(totalHours)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       <TimesheetDialog
         open={isDialogOpen}
