@@ -328,7 +328,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
   });
 
   // Fetch checklist groups (individual checklists) for linking to tasks
-  const { data: checklistGroups = [] } = useQuery<any[]>({
+  const { data: allChecklistGroups = [] } = useQuery<any[]>({
     queryKey: ["/api/checklist-instance-groups"],
   });
 
@@ -472,6 +472,11 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
       checklistInstanceId: (sourceData as any)?.checklistInstanceId || undefined,
     },
   });
+
+  const watchedProjectId = form.watch("projectId");
+  const checklistGroups = allChecklistGroups.filter(
+    (g: any) => watchedProjectId && g.projectId === watchedProjectId
+  );
 
   useEffect(() => {
     if (open) {

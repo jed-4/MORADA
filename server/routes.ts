@@ -12878,6 +12878,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return groups.map(g => ({
             ...g,
             instanceName: instance.name, // Include parent instance name for context
+            projectId: instance.projectId, // Include projectId for filtering in task modal
           }));
         })
       );

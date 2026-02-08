@@ -57,6 +57,16 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
+  const deleteTaskMutation = useMutation({
+    mutationFn: async (taskId: string) => {
+      await apiRequest(`/api/tasks/${taskId}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      setSelectedTaskId(null);
+    },
+  });
+
   const toggleTaskMutation = useMutation({
     mutationFn: async (task: Task) => {
       const newStatus = task.status === 'done' || task.status === 'complete' ? 'todo' : 'done';
@@ -295,6 +305,7 @@ export default function TasksWidget({ widget, onUpdate, isConfiguring, onCloseCo
           onOpenChange={(open) => !open && setSelectedTaskId(null)}
           task={allTasks.find(t => t.id === selectedTaskId)}
           taskId={selectedTaskId || undefined}
+          onDelete={(taskId) => deleteTaskMutation.mutate(taskId)}
         />
         
         {filteredAndSortedTasks.length === 0 && (

@@ -186,6 +186,17 @@ export default function PersonalCalendar() {
     },
   });
 
+  const deleteTaskMutation = useMutation({
+    mutationFn: async (taskId: string) => {
+      await apiRequest(`/api/tasks/${taskId}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      setEditingTask(null);
+      toast({ title: "Task deleted" });
+    },
+  });
+
   const createDefaultViewMutation = useMutation({
     mutationFn: async () => {
       return await apiRequest("/api/calendar-views", "POST", {
@@ -1057,6 +1068,7 @@ export default function PersonalCalendar() {
         task={editingTask || undefined}
         open={!!editingTask}
         onOpenChange={(open) => !open && setEditingTask(null)}
+        onDelete={(taskId) => deleteTaskMutation.mutate(taskId)}
       />
 
       {/* Create View Dialog */}

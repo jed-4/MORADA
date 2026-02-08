@@ -102,6 +102,16 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
     },
   });
 
+  const deleteTaskMutation = useMutation({
+    mutationFn: async (taskId: string) => {
+      await apiRequest(`/api/tasks/${taskId}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      setEditingTask(null);
+    },
+  });
+
   const filteredTasks = useMemo(() => {
     let result = tasks;
 
@@ -421,6 +431,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
         task={editingTask || undefined}
         open={!!editingTask}
         onOpenChange={(open) => !open && setEditingTask(null)}
+        onDelete={(taskId) => deleteTaskMutation.mutate(taskId)}
       />
       
       <ScrollArea className="flex-1 min-h-0">

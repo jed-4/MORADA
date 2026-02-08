@@ -14,6 +14,8 @@ import { TaskDetailModal } from "@/components/TaskDetailModal";
 import TaskEditModal from "@/components/TaskEditModal";
 import type { Task } from "@shared/schema";
 import { useTimezone, formatInTimezone, isTodayInTimezone, getCurrentTimeInTimezone as getTimeInTimezone } from "@/hooks/useTimezone";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 const HOUR_HEIGHT = 48;
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
@@ -177,6 +179,16 @@ export default function DayCalendarWidget({ widget, onUpdate, isConfiguring, onC
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { effectiveTimezone } = useTimezone();
+
+  const deleteTaskMutation = useMutation({
+    mutationFn: async (taskId: string) => {
+      await apiRequest(`/api/tasks/${taskId}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      setEditingTask(null);
+    },
+  });
   
   // Current time state that updates every minute
   const [currentTimeMinutes, setCurrentTimeMinutes] = useState(() => getTimeInTimezone(effectiveTimezone).totalMinutes);
@@ -436,6 +448,7 @@ export default function DayCalendarWidget({ widget, onUpdate, isConfiguring, onC
         task={editingTask || undefined}
         open={!!editingTask}
         onOpenChange={(open) => !open && setEditingTask(null)}
+        onDelete={(taskId) => deleteTaskMutation.mutate(taskId)}
       />
     </div>
   );

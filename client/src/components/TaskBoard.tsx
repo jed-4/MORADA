@@ -708,6 +708,12 @@ export default function TaskBoard({ tasks: propTasks, isLoading: propIsLoading, 
                   if (!open) setSelectedTask(null);
                 }}
                 projectId={projectId}
+                onDelete={(taskId) => {
+                  const task = (propTasks || tasks).find(t => t.id === taskId) || selectedTask;
+                  if (task) (onDelete || handleDeleteTask)(task);
+                  setIsTaskModalOpen(false);
+                  setSelectedTask(null);
+                }}
               />
             )}
           </>

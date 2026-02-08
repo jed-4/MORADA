@@ -25,6 +25,8 @@ import TaskEditModal from "@/components/TaskEditModal";
 import type { Task } from "@shared/schema";
 import { useTimezone, formatInTimezone, isTodayInTimezone, getCurrentTimeInTimezone as getTimeInTimezone } from "@/hooks/useTimezone";
 import { useWeekStartDay } from "@/hooks/useWeekStartDay";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 type ColorMode = "type" | "project" | "priority";
 type ViewMode = "timeline" | "stacked";
@@ -257,6 +259,16 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { effectiveTimezone } = useTimezone();
+
+  const deleteTaskMutation = useMutation({
+    mutationFn: async (taskId: string) => {
+      await apiRequest(`/api/tasks/${taskId}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      setEditingTask(null);
+    },
+  });
   
   const [currentTimeMinutes, setCurrentTimeMinutes] = useState(() => getTimeInTimezone(effectiveTimezone).totalMinutes);
   
@@ -689,6 +701,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
         task={editingTask || undefined}
         open={!!editingTask}
         onOpenChange={(open) => !open && setEditingTask(null)}
+        onDelete={(taskId) => deleteTaskMutation.mutate(taskId)}
       />
     </div>
   );

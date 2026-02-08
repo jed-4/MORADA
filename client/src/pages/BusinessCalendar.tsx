@@ -198,6 +198,18 @@ export default function BusinessCalendar() {
   }, [views, selectedViewId]);
 
   // Update task status mutation
+  const deleteTaskMutation = useMutation({
+    mutationFn: async (taskId: string) => {
+      await apiRequest(`/api/tasks/${taskId}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      setEditingTask(null);
+      setShowTaskDialog(false);
+      toast({ title: "Task deleted" });
+    },
+  });
+
   const updateTaskMutation = useMutation({
     mutationFn: async ({ taskId, status }: { taskId: string; status: string }) => {
       return await apiRequest(`/api/tasks/${taskId}`, "PATCH", { status });
@@ -1204,6 +1216,7 @@ export default function BusinessCalendar() {
             if (!open) setEditingTask(null);
           }}
           projectId={editingTask.projectId || ""}
+          onDelete={(taskId) => deleteTaskMutation.mutate(taskId)}
         />
       )}
     </div>

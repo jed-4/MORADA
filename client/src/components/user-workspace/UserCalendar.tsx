@@ -158,6 +158,16 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
     },
   });
 
+  const deleteTaskMutation = useMutation({
+    mutationFn: async (taskId: string) => {
+      await apiRequest(`/api/tasks/${taskId}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      setEditingTask(null);
+    },
+  });
+
   // Handler for task completion from calendar
   const handleEventComplete = (eventId: string, isCompleted: boolean) => {
     toggleTaskCompleteMutation.mutate({ taskId: eventId, isCompleted });
@@ -960,6 +970,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
         task={editingTask || undefined}
         open={!!editingTask}
         onOpenChange={(open) => !open && setEditingTask(null)}
+        onDelete={(taskId) => deleteTaskMutation.mutate(taskId)}
       />
 
       {/* Create View Dialog */}

@@ -1610,6 +1610,10 @@ export default function Tasks() {
           open={!!editingTask}
           onOpenChange={(open) => !open && setEditingTask(null)}
           projectId={effectiveProjectId}
+          onDelete={(taskId) => {
+            const task = allTasks.find(t => t.id === taskId) || editingTask;
+            if (task) handleDeleteTask(task);
+          }}
           onDuplicate={(taskData) => {
             setEditingTask(null);
             setDuplicateTaskData(taskData);

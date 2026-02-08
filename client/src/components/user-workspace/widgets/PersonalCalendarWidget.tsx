@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Calendar, Clock, ChevronLeft, ChevronRight, List, CalendarDays, CheckSquare, Timer, Bell } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { format, isToday, isTomorrow, addDays, subDays, startOfWeek, endOfWeek, isSameDay, eachDayOfInterval, isBefore } from "date-fns";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -15,6 +15,7 @@ import TaskEditModal from "@/components/TaskEditModal";
 import type { Task } from "@shared/schema";
 import { useTimezone, formatInTimezone, isTodayInTimezone, getCurrentTimeInTimezone as getTimeInTimezone } from "@/hooks/useTimezone";
 import { useWeekStartDay } from "@/hooks/useWeekStartDay";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 type ViewMode = "list" | "day" | "week";
 
@@ -115,6 +116,16 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [, setLocation] = useLocation();
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const deleteTaskMutation = useMutation({
+    mutationFn: async (taskId: string) => {
+      await apiRequest(`/api/tasks/${taskId}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      setEditingTask(null);
+    },
+  });
 
   useEffect(() => {
     setEditingTitle(widget.title);
@@ -677,6 +688,7 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
         task={editingTask || undefined}
         open={!!editingTask}
         onOpenChange={(open) => !open && setEditingTask(null)}
+        onDelete={(taskId) => deleteTaskMutation.mutate(taskId)}
       />
     </>
   );

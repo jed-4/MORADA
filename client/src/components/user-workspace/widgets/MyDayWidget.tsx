@@ -209,6 +209,16 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
     return isBefore(new Date(t.dueDate), today);
   }), [tasks, today]);
 
+  const deleteTaskMutation = useMutation({
+    mutationFn: async (taskId: string) => {
+      await apiRequest(`/api/tasks/${taskId}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      setEditingTask(null);
+    },
+  });
+
   const toggleTaskMutation = useMutation({
     mutationFn: async (task: Task) => {
       const newStatus = task.status === 'done' || task.status === 'complete' ? 'todo' : 'done';
@@ -526,6 +536,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
         task={editingTask || undefined}
         open={!!editingTask}
         onOpenChange={(open) => !open && setEditingTask(null)}
+        onDelete={(taskId) => deleteTaskMutation.mutate(taskId)}
       />
     </div>
   );
