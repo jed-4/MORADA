@@ -1389,7 +1389,7 @@ export default function Timesheets() {
             </Button>
           </div>
         ) : (
-          <div className="overflow-hidden">
+          <div className="m-3 border-2 border-border rounded-md overflow-hidden bg-card">
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <Table>
                 <TableHeader>
