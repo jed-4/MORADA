@@ -1385,11 +1385,11 @@ export default function Timesheets() {
             </Button>
           </div>
         ) : (
-          <div className="m-3 border-2 border-border rounded-md overflow-hidden bg-card">
+          <div className="overflow-hidden">
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <Table>
                 <TableHeader>
-                  <TableRow className="h-7 bg-muted/30 dark:bg-muted/10 hover:bg-muted/30 dark:hover:bg-muted/10 border-b-2 border-border">
+                  <TableRow className="h-7 bg-muted/30 dark:bg-muted/10 hover:bg-muted/30 dark:hover:bg-muted/10 border-b border-border">
                     <SortableContext items={visibleColumns.map(c => c.id)} strategy={horizontalListSortingStrategy}>
                       {visibleColumns.map((col) => (
                         <SortableColumnHeader key={col.id} column={col} sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSort}>
