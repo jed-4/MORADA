@@ -214,15 +214,17 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
   }, [searchQuery, phaseProjects, activeProjects]);
 
   const handleProjectSelect = (project: Project) => {
-    setCurrentProject(project);
     setIsOpen(false);
     setSearchQuery("");
     
-    if (project.isBusiness) {
-      navigate('/business');
-    } else {
-      navigate(`/projects/${project.id}`);
-    }
+    requestAnimationFrame(() => {
+      setCurrentProject(project);
+      if (project.isBusiness) {
+        navigate('/business');
+      } else {
+        navigate(`/projects/${project.id}`);
+      }
+    });
   };
 
   const handleViewAllProjects = () => {
