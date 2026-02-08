@@ -101,8 +101,6 @@ function SortableColumnHeader({
     transition,
     opacity: isDragging ? 0.5 : 1,
     width: column.width,
-    minWidth: column.minWidth,
-    maxWidth: column.width,
     position: 'relative' as const,
   };
 
@@ -1450,9 +1448,9 @@ export default function Timesheets() {
             </Button>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto" style={{ overscrollBehaviorX: 'contain' }}>
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              <Table style={{ tableLayout: 'fixed', minWidth: visibleColumns.reduce((sum, c) => sum + c.width, 0) + 40 }}>
+              <Table style={{ tableLayout: 'fixed', width: visibleColumns.reduce((sum, c) => sum + c.width, 0) + 40 }}>
                 <TableHeader>
                   <TableRow className="h-6 bg-muted/30 dark:bg-muted/10 hover:bg-muted/30 dark:hover:bg-muted/10 border-b border-border">
                     <TableHead className="w-8 px-2 py-0.5 h-6">
@@ -1504,7 +1502,7 @@ export default function Timesheets() {
                         />
                       </TableCell>
                       {visibleColumns.map((col) => {
-                        const cellStyle = { width: col.width, minWidth: col.minWidth, maxWidth: col.width };
+                        const cellStyle = { width: col.width };
                         switch (col.id) {
                           case 'date':
                             return (
