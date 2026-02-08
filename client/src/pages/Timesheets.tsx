@@ -59,6 +59,7 @@ const DEFAULT_COLUMNS: TimesheetColumnConfig[] = [
   { id: 'hours', label: 'Hours', visible: true, width: 50, minWidth: 45 },
   { id: 'rate', label: 'Rate', visible: true, width: 50, minWidth: 45 },
   { id: 'total', label: 'Total', visible: true, width: 60, minWidth: 50 },
+  { id: 'labels', label: 'Labels', visible: true, width: 100, minWidth: 70 },
   { id: 'status', label: 'Status', visible: true, width: 70, minWidth: 60 },
   { id: 'description', label: 'Description', visible: true, width: 180, minWidth: 100 },
   { id: 'actions', label: 'Actions', visible: true, width: 80, minWidth: 60 },
@@ -1479,6 +1480,22 @@ export default function Timesheets() {
                             return (
                               <TableCell key={col.id} className="text-[11px] font-semibold text-right tabular-nums px-2 py-1">
                                 ${timesheet.total ? parseFloat(timesheet.total).toFixed(2) : "0.00"}
+                              </TableCell>
+                            );
+                          case 'labels':
+                            return (
+                              <TableCell key={col.id} className="px-2 py-1">
+                                {Array.isArray(timesheet.labels) && (timesheet.labels as string[]).length > 0 ? (
+                                  <div className="flex items-center gap-1 flex-wrap">
+                                    {(timesheet.labels as string[]).map((label, i) => (
+                                      <Badge key={i} variant="secondary" className="text-[10px] font-medium">
+                                        {label}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <span className="text-[11px] text-muted-foreground/50">&mdash;</span>
+                                )}
                               </TableCell>
                             );
                           case 'status':
