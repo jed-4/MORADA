@@ -793,7 +793,7 @@ export default function Timesheets() {
                   <DropdownMenuItem
                     key={project.id}
                     className="flex items-center"
-                    onSelect={() => {
+                    onClick={() => {
                       const newProjects = selectedProjects.includes(project.id)
                         ? selectedProjects.filter(p => p !== project.id)
                         : [...selectedProjects, project.id];
