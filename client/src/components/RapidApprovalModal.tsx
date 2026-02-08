@@ -370,6 +370,11 @@ export function RapidApprovalModal({
             <div className="flex items-center gap-1">
               <span className="text-[11px] text-muted-foreground">Time:</span>
               <span className="text-[11px] font-medium">{editedStartTime || "--:--"} - {editedEndTime || "--:--"}</span>
+              {currentTimesheet.actualStartTime && (
+                <span className="text-[10px] text-muted-foreground ml-1">
+                  (actual: {currentTimesheet.actualStartTime}{currentTimesheet.actualEndTime ? ` - ${currentTimesheet.actualEndTime}` : ""})
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-1.5">
               <button

@@ -13718,8 +13718,9 @@ export class DbStorage implements IStorage {
 
   async updateTimesheet(id: string, timesheet: Partial<InsertTimesheet>): Promise<Timesheet | undefined> {
     try {
+      const { actualStartTime, actualEndTime, ...safeFields } = timesheet as any;
       const result = await db.update(schema.timesheets)
-        .set({ ...timesheet, updatedAt: new Date() })
+        .set({ ...safeFields, updatedAt: new Date() })
         .where(eq(schema.timesheets.id, id))
         .returning();
       return result[0];
@@ -13852,6 +13853,7 @@ export class DbStorage implements IStorage {
           userId,
           date: now,
           startTime,
+          actualStartTime: startTime,
           isActive: true,
           clockInTime: now,
           costCodeId: costCodeId || null,
@@ -13900,6 +13902,7 @@ export class DbStorage implements IStorage {
       const result = await db.update(schema.timesheets)
         .set({
           endTime,
+          actualEndTime: endTime,
           duration: duration.toFixed(2),
           isActive: false,
           updatedAt: now,

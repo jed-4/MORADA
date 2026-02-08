@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon, Plus, Trash2, Bell, Check } from "lucide-react";
+import { Calendar as CalendarIcon, Plus, Trash2, Bell, Check, Clock } from "lucide-react";
 import { useTimesheetLabelOptions } from "@/hooks/useTimesheetLabelOptions";
 import { useAuth } from "@/hooks/use-auth";
 import { SetReminderDialog } from "@/components/SetReminderDialog";
@@ -848,6 +848,18 @@ export function TimesheetDialog({
               )}
             />
             </fieldset>
+
+            {timesheet?.actualStartTime && (
+              <div className="flex items-center gap-3 px-1 py-2 text-[11px] text-muted-foreground border-t border-dashed border-border mt-3">
+                <Clock className="h-3 w-3 flex-shrink-0" />
+                <span>
+                  Clocked in: <span className="font-medium text-foreground">{timesheet.actualStartTime}</span>
+                  {timesheet.actualEndTime && (
+                    <> / Clocked out: <span className="font-medium text-foreground">{timesheet.actualEndTime}</span></>
+                  )}
+                </span>
+              </div>
+            )}
             </div>
 
             <DialogFooter className="gap-2 border-t pt-4 mt-4 shrink-0">

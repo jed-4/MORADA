@@ -2773,6 +2773,8 @@ export const timesheets = pgTable("timesheets", {
   workItemId: varchar("work_item_id").references(() => estimateItems.id, { onDelete: "set null" }), // Optional link to labour estimate item
   isActive: boolean("is_active").notNull().default(false), // True when timer is running
   clockInTime: timestamp("clock_in_time"), // Actual timestamp when clocked in (for real-time calculation)
+  actualStartTime: text("actual_start_time"), // Exact clock-in time HH:mm (permanent record, read-only after creation)
+  actualEndTime: text("actual_end_time"), // Exact clock-out time HH:mm (permanent record, read-only after creation)
   costCodeId: varchar("cost_code_id").references(() => costCodes.id, { onDelete: "set null" }), // Cost code for clock-in widget
   attachments: json("attachments").default([]), // Array of attachment URLs
   labels: json("labels").default([]), // Array of label strings
