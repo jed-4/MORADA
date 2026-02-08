@@ -650,9 +650,10 @@ export default function Timesheets() {
   };
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Row 1: Title + Action Buttons */}
-      <div className="h-9 bg-background flex items-center justify-between px-3 border-b border-border">
+    <div className="flex flex-col h-full p-3">
+      <div className="flex flex-col flex-1 min-h-0 border-2 border-border rounded-md overflow-hidden bg-card">
+        {/* Row 1: Title + Action Buttons */}
+        <div className="h-9 flex items-center justify-between px-3 border-b border-border">
         <h1 className="text-sm font-semibold">
           {currentProject ? `${currentProject.name} - Timesheets` : "All Items - Timesheets"}
         </h1>
@@ -750,7 +751,7 @@ export default function Timesheets() {
       </div>
 
       {/* Row 2: Filters */}
-      <div className="h-9 bg-background flex items-center gap-2 px-3 border-b border-border flex-shrink-0">
+      <div className="h-9 flex items-center gap-2 px-3 border-b border-border flex-shrink-0">
         {/* Left: Search + Filter Chips */}
         <div className="flex items-center gap-2 flex-1">
           {/* Search */}
@@ -1102,7 +1103,7 @@ export default function Timesheets() {
           </div>
         ) : activeView === "weekly" ? (
           /* Weekly Team Hours View */
-          <div className="m-3">
+          <div className="p-3">
             {/* Week Navigation */}
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
@@ -1139,7 +1140,7 @@ export default function Timesheets() {
             </div>
 
             {/* Weekly Matrix */}
-            <div className="border-2 border-border rounded-md overflow-hidden bg-card">
+            <div className="border border-border rounded-md overflow-hidden">
               <Table>
                 <TableHeader>
                   <TableRow className="h-7 bg-muted/30 dark:bg-muted/10 border-b-2 border-border">
@@ -1250,7 +1251,7 @@ export default function Timesheets() {
             const calendarUsers = Array.from(userCalendarMap.values()).sort((a, b) => a.userName.localeCompare(b.userName));
             
             return (
-              <div className="m-3">
+              <div className="p-3">
                 {/* Week Navigation */}
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
@@ -1287,7 +1288,7 @@ export default function Timesheets() {
                 </div>
 
                 {/* Week Calendar Grid - User Rows */}
-                <div className="border-2 border-border rounded-md overflow-hidden bg-card">
+                <div className="border border-border rounded-md overflow-hidden">
                   {/* Day Headers */}
                   <div className="grid grid-cols-8 bg-muted/30 dark:bg-muted/10 border-b-2 border-border">
                     <div className="text-[10px] font-medium text-muted-foreground px-2 py-2 border-r border-border">
@@ -1389,7 +1390,7 @@ export default function Timesheets() {
             </Button>
           </div>
         ) : (
-          <div className="m-3 border-2 border-border rounded-md overflow-hidden bg-card">
+          <div className="overflow-hidden">
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <Table>
                 <TableHeader>
@@ -1547,6 +1548,7 @@ export default function Timesheets() {
             </DndContext>
           </div>
         )}
+      </div>
       </div>
 
       <TimesheetDialog
