@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams } from "wouter";
-import { Plus, Clock, Filter, Search, Calendar as CalendarIcon, User, Check, X, CalendarRange, Download, ChevronDown, Settings2, RotateCcw, Table2, Users2, CalendarDays, ChevronLeft, ChevronRight, Zap, Play, Square, ArrowUp, ArrowDown, CircleCheck, Trash2 } from "lucide-react";
+import { Plus, Clock, Filter, Search, Calendar as CalendarIcon, User, Check, X, CalendarRange, Download, ChevronDown, Settings2, RotateCcw, Table2, Users2, CalendarDays, ChevronLeft, ChevronRight, Zap, Play, Square, ArrowUp, ArrowDown, CircleCheck, Trash2, HardHat } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import * as XLSX from "xlsx";
 import { Input } from "@/components/ui/input";
@@ -23,10 +23,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { format, startOfWeek, endOfWeek, addWeeks, isWithinInterval, parseISO, eachDayOfInterval, isSameDay, addDays, subWeeks, startOfMonth, endOfMonth, addMonths, subMonths, getDay } from "date-fns";
+import { useTimesheetDateFormat, formatTimesheetDate } from "@/hooks/useTimesheetDateFormat";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { TimesheetDialog } from "@/components/TimesheetDialog";
 import { RapidApprovalModal } from "@/components/RapidApprovalModal";
+import { SubcontractorPODialog } from "@/components/SubcontractorPODialog";
 import { ProjectSelect } from "@/components/ProjectSelect";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -61,6 +63,7 @@ const DEFAULT_COLUMNS: TimesheetColumnConfig[] = [
   { id: 'total', label: 'Total', visible: true, width: 60, minWidth: 50 },
   { id: 'labels', label: 'Labels', visible: true, width: 100, minWidth: 70 },
   { id: 'status', label: 'Status', visible: true, width: 70, minWidth: 60 },
+  { id: 'poStatus', label: 'PO Status', visible: true, width: 90, minWidth: 70 },
   { id: 'description', label: 'Description', visible: true, width: 180, minWidth: 100 },
 ];
 
@@ -167,6 +170,7 @@ export default function Timesheets() {
   const { toast } = useToast();
   const { user } = useAuth();
   const weekStartDay = useWeekStartDay();
+  const tsDateFormat = useTimesheetDateFormat();
   const { projectId } = useParams<{ projectId?: string }>();
   const [searchTerm, setSearchTerm] = useState("");
   
@@ -187,6 +191,7 @@ export default function Timesheets() {
   const [showInvoicedOnly, setShowInvoicedOnly] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isRapidApprovalOpen, setIsRapidApprovalOpen] = useState(false);
+  const [isSubPODialogOpen, setIsSubPODialogOpen] = useState(false);
   const [selectedTimesheet, setSelectedTimesheet] = useState<Timesheet | undefined>();
   const [dateRangeType, setDateRangeType] = useState<string>("all");
   const [customStartDate, setCustomStartDate] = useState<Date | undefined>();
@@ -734,6 +739,14 @@ export default function Timesheets() {
               Approve ({pendingTimesheets.length})
             </button>
           )}
+          <button
+            onClick={() => setIsSubPODialogOpen(true)}
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/30 active-elevate-2 flex items-center gap-0.5"
+            data-testid="button-generate-sub-po"
+          >
+            <HardHat className="w-3 h-3" />
+            Sub PO
+          </button>
           {activeTimesheet ? (
             <button
               onClick={() => clockOutMutation.mutate()}
@@ -1507,7 +1520,7 @@ export default function Timesheets() {
                           case 'date':
                             return (
                               <TableCell key={col.id} style={cellStyle} className="text-[11px] font-medium px-2 py-1 truncate">
-                                {format(new Date(timesheet.date), "dd MMM")}
+                                {formatTimesheetDate(timesheet.date, tsDateFormat)}
                               </TableCell>
                             );
                           case 'user':
@@ -1599,6 +1612,26 @@ export default function Timesheets() {
                                   <Badge variant="secondary" className="text-[10px] font-medium">
                                     {timesheet.status}
                                   </Badge>
+                                )}
+                              </TableCell>
+                            );
+                          case 'poStatus':
+                            return (
+                              <TableCell key={col.id} style={cellStyle} className="px-2 py-1">
+                                {timesheet.poStatus === "awaiting_po" ? (
+                                  <Badge variant="outline" className="text-[10px] font-medium bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800">
+                                    Awaiting PO
+                                  </Badge>
+                                ) : timesheet.poStatus === "on_po" ? (
+                                  <Badge variant="outline" className="text-[10px] font-medium bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800">
+                                    On PO
+                                  </Badge>
+                                ) : timesheet.poStatus === "paid" ? (
+                                  <Badge variant="outline" className="text-[10px] font-medium bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800">
+                                    Paid
+                                  </Badge>
+                                ) : (
+                                  <span className="text-[11px] text-muted-foreground/50">&mdash;</span>
                                 )}
                               </TableCell>
                             );
@@ -1718,6 +1751,11 @@ export default function Timesheets() {
         projects={projects}
         users={users}
         costCodes={costCodes}
+      />
+
+      <SubcontractorPODialog
+        open={isSubPODialogOpen}
+        onOpenChange={setIsSubPODialogOpen}
       />
     </div>
   );

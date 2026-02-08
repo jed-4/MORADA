@@ -9883,6 +9883,140 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ============================================
+  // SUBCONTRACTOR TIMESHEET → PO GENERATION
+  // ============================================
+
+  app.get("/api/timesheets/subcontractor/awaiting-po", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const allTimesheets = await storage.getTimesheets(undefined, req.user.companyId);
+      const awaitingPo = allTimesheets.filter((t: any) => t.poStatus === "awaiting_po");
+      res.json(awaitingPo);
+    } catch (error) {
+      console.error("Failed to fetch awaiting PO timesheets:", error);
+      res.status(500).json({ error: "Failed to fetch timesheets" });
+    }
+  });
+
+  app.post("/api/purchase-orders/generate-from-timesheets", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const { timesheetIds, projectId, supplierId, supplierName } = req.body;
+      if (!timesheetIds || !Array.isArray(timesheetIds) || timesheetIds.length === 0) {
+        return res.status(400).json({ error: "At least one timesheet ID is required" });
+      }
+      if (!projectId) {
+        return res.status(400).json({ error: "Project ID is required" });
+      }
+
+      const timesheets = [];
+      for (const id of timesheetIds) {
+        const ts = await storage.getTimesheet(id);
+        if (ts && ts.poStatus === "awaiting_po") {
+          timesheets.push(ts);
+        }
+      }
+      if (timesheets.length === 0) {
+        return res.status(400).json({ error: "No valid timesheets found with 'Awaiting PO' status" });
+      }
+
+      const subUser = await storage.getUser(timesheets[0].userId);
+      const poNumber = await storage.getNextPONumber(req.user.companyId, "main");
+      
+      let subtotalCents = 0;
+      const lineItems: Array<{
+        description: string;
+        quantity: string;
+        unit: string;
+        unitPrice: number;
+        total: number;
+        costCodeId: string | null;
+        sourceTimesheetId: string;
+        displayOrder: number;
+      }> = [];
+
+      const allProjects = await storage.getProjects(req.user.companyId);
+      const allCostCodes = await storage.getCostCodes(req.user.companyId);
+
+      for (let i = 0; i < timesheets.length; i++) {
+        const ts = timesheets[i];
+        const project = allProjects.find((p: any) => p.id === ts.projectId);
+        const costCode = ts.costCodeId ? allCostCodes.find((cc: any) => cc.id === ts.costCodeId) : null;
+
+        const netHours = parseFloat(ts.duration || "0");
+        const payRate = subUser?.hourlyRate ? parseFloat(subUser.hourlyRate) : 0;
+        const lineTotal = Math.round(netHours * payRate * 100);
+
+        const dateStr = ts.date ? new Date(ts.date).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "2-digit" }) : "";
+        const projectName = project?.name || "Unknown";
+        const timeRange = `${ts.startTime || "?"} - ${ts.endTime || "?"}`;
+        const breakStr = ts.breakDuration ? ` (${ts.breakDuration}hr break)` : "";
+        const costCodeStr = costCode ? `${costCode.code} - ${costCode.name}` : "";
+        const descParts = [`${dateStr} -- ${projectName} -- ${timeRange}${breakStr}`];
+        if (costCodeStr) descParts.push(costCodeStr);
+        if (ts.description) descParts.push(ts.description);
+
+        lineItems.push({
+          description: descParts.join("\n"),
+          quantity: netHours.toFixed(2),
+          unit: "hours",
+          unitPrice: Math.round(payRate * 100),
+          total: lineTotal,
+          costCodeId: ts.costCodeId || null,
+          sourceTimesheetId: ts.id,
+          displayOrder: i,
+        });
+        subtotalCents += lineTotal;
+      }
+
+      const gstAmount = Math.round(subtotalCents * 0.1);
+      const totalCents = subtotalCents + gstAmount;
+
+      const po = await storage.createPurchaseOrder({
+        companyId: req.user.companyId,
+        projectId,
+        poNumber,
+        poType: "main",
+        supplierId: supplierId || null,
+        supplierName: supplierName || (subUser ? `${subUser.firstName || ""} ${subUser.lastName || ""}`.trim() : "Subcontractor"),
+        title: `Subcontractor Timesheet PO - ${subUser ? `${subUser.firstName || ""} ${subUser.lastName || ""}`.trim() : "Subcontractor"}`,
+        poDate: new Date(),
+        gstMode: "exclusive",
+        subtotal: subtotalCents,
+        gstAmount,
+        total: totalCents,
+        status: "draft",
+        createdById: req.user.id,
+      });
+
+      for (const item of lineItems) {
+        await storage.createPurchaseOrderItem({
+          purchaseOrderId: po.id,
+          ...item,
+        });
+      }
+
+      for (const ts of timesheets) {
+        await storage.updateTimesheet(ts.id, {
+          poStatus: "on_po",
+          linkedPurchaseOrderId: po.id,
+        });
+      }
+
+      const updatedPo = await storage.getPurchaseOrder(po.id);
+      res.status(201).json(updatedPo);
+    } catch (error: any) {
+      console.error("Failed to generate PO from timesheets:", error);
+      res.status(500).json({ error: "Failed to generate purchase order", details: error.message });
+    }
+  });
+
   // Client Invoices API Routes
   app.get("/api/client-invoices", async (req, res) => {
     try {
@@ -13365,6 +13499,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!timesheet) {
         return res.status(404).json({ error: "Timesheet not found" });
       }
+
+      const timesheetUser = await storage.getUser(timesheet.userId);
+      if (timesheetUser?.isSubcontractor) {
+        await storage.updateTimesheet(req.params.id, { poStatus: "awaiting_po" });
+        timesheet.poStatus = "awaiting_po";
+      }
+
       res.json(timesheet);
     } catch (error: any) {
       res.status(500).json({

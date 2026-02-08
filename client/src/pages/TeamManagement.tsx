@@ -14,7 +14,8 @@ import {
   Users,
   Clock,
   Send,
-  XCircle
+  XCircle,
+  HardHat,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import InviteUserDialog from "@/components/InviteUserDialog";
@@ -249,6 +250,19 @@ function TeamMemberCard({
             >
               {user.role?.name || "No Role"}
             </Badge>
+            {user.isSubcontractor && (
+              <Badge 
+                className="text-[10px] px-1.5 py-0 h-4 rounded-full border no-default-hover-elevate no-default-active-elevate shrink-0"
+                style={{
+                  backgroundColor: '#f59e0b15',
+                  color: '#f59e0b',
+                  borderColor: '#f59e0b30'
+                }}
+              >
+                <HardHat className="w-2.5 h-2.5 mr-0.5" />
+                Sub
+              </Badge>
+            )}
           </div>
 
           <div className="flex items-center gap-2 text-[10px] text-muted-foreground">

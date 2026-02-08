@@ -1196,6 +1196,7 @@ function TimesheetSettingsSection() {
   const [defaultBreak, setDefaultBreak] = useState("0");
   const [standardStart, setStandardStart] = useState("07:00");
   const [standardEnd, setStandardEnd] = useState("15:30");
+  const [dateFormat, setDateFormat] = useState<"short" | "long">("short");
 
   useEffect(() => {
     if (companySettings) {
@@ -1205,6 +1206,7 @@ function TimesheetSettingsSection() {
       setDefaultBreak(companySettings.timesheetDefaultBreak ? String(parseFloat(companySettings.timesheetDefaultBreak as string)) : "0");
       setStandardStart(companySettings.standardWorkStart || "07:00");
       setStandardEnd(companySettings.standardWorkEnd || "15:30");
+      setDateFormat((companySettings.timesheetDateFormat as "short" | "long") || "short");
     }
   }, [companySettings]);
 
@@ -1217,6 +1219,7 @@ function TimesheetSettingsSection() {
         timesheetDefaultBreak: defaultBreak,
         standardWorkStart: standardStart,
         standardWorkEnd: standardEnd,
+        timesheetDateFormat: dateFormat,
       });
     },
     onSuccess: () => {
@@ -1230,6 +1233,31 @@ function TimesheetSettingsSection() {
 
   return (
     <div className="space-y-6">
+      <Card className="border-2">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-base font-semibold">Date Display Format</CardTitle>
+          <p className="text-sm text-muted-foreground">Choose how dates are displayed in timesheets</p>
+        </CardHeader>
+        <CardContent>
+          <div className="flex gap-3 max-w-md">
+            <Button
+              variant={dateFormat === "long" ? "default" : "outline"}
+              className="flex-1"
+              onClick={() => setDateFormat("long")}
+            >
+              Mon 1 Jan
+            </Button>
+            <Button
+              variant={dateFormat === "short" ? "default" : "outline"}
+              className="flex-1"
+              onClick={() => setDateFormat("short")}
+            >
+              1/1/26
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card className="border-2">
         <CardHeader className="pb-4">
           <CardTitle className="text-base font-semibold">Standard Work Hours</CardTitle>

@@ -55,6 +55,8 @@ import {
   Loader2,
   Pencil,
   KeyRound,
+  HardHat,
+  DollarSign,
 } from "lucide-react";
 
 const userEditSchema = z.object({
@@ -76,6 +78,9 @@ export default function UserProfileView() {
   const [showDisableDialog, setShowDisableDialog] = useState(false);
   const [showRemoveDialog, setShowRemoveDialog] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [subcontractorHourlyRate, setSubcontractorHourlyRate] = useState("");
+  const [subcontractorChargeRate, setSubcontractorChargeRate] = useState("");
+  const [subRatesInitialized, setSubRatesInitialized] = useState(false);
 
   const editForm = useForm<UserEditFormValues>({
     resolver: zodResolver(userEditSchema),
@@ -232,6 +237,32 @@ export default function UserProfileView() {
       });
     },
   });
+
+  const updateSubcontractorMutation = useMutation({
+    mutationFn: async (data: { isSubcontractor?: boolean; hourlyRate?: string | null; chargeRate?: string | null }) => {
+      return await apiRequest(`/api/users/${userId}`, "PATCH", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users", userId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      toast({
+        title: "Subcontractor settings updated",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update subcontractor settings.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  if (user && !subRatesInitialized) {
+    setSubcontractorHourlyRate(user.hourlyRate || "");
+    setSubcontractorChargeRate(user.chargeRate || "");
+    setSubRatesInitialized(true);
+  }
 
   const handleOpenEditDialog = () => {
     if (user) {
@@ -426,6 +457,111 @@ export default function UserProfileView() {
             )}
           </CardContent>
         </Card>
+
+        {/* Subcontractor Settings - Only for admins */}
+        {isAdmin && !isCurrentUser && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <HardHat className="h-5 w-5" />
+                Subcontractor Settings
+              </CardTitle>
+              <CardDescription>Configure subcontractor status and rates for this user</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <label className="text-sm font-medium">Subcontractor</label>
+                  <p className="text-xs text-muted-foreground">
+                    Mark this user as a subcontractor. Their timesheet costs will flow through purchase orders instead of payroll.
+                  </p>
+                </div>
+                <Switch
+                  checked={user.isSubcontractor || false}
+                  onCheckedChange={(checked) => {
+                    updateSubcontractorMutation.mutate({ isSubcontractor: checked });
+                  }}
+                  disabled={updateSubcontractorMutation.isPending}
+                  data-testid="switch-subcontractor"
+                />
+              </div>
+
+              {user.isSubcontractor && (
+                <>
+                  <Separator />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium flex items-center gap-1.5">
+                        <DollarSign className="h-3.5 w-3.5 text-muted-foreground" />
+                        Pay Rate ($/hr)
+                      </label>
+                      <p className="text-xs text-muted-foreground">
+                        What you pay the subcontractor per hour
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          placeholder="0.00"
+                          className="w-full md:w-[200px]"
+                          value={subcontractorHourlyRate}
+                          onChange={(e) => setSubcontractorHourlyRate(e.target.value)}
+                          data-testid="input-hourly-rate"
+                        />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={updateSubcontractorMutation.isPending}
+                          onClick={() => {
+                            updateSubcontractorMutation.mutate({
+                              hourlyRate: subcontractorHourlyRate || null,
+                            });
+                          }}
+                        >
+                          Save
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium flex items-center gap-1.5">
+                        <DollarSign className="h-3.5 w-3.5 text-muted-foreground" />
+                        Charge Rate ($/hr)
+                      </label>
+                      <p className="text-xs text-muted-foreground">
+                        What you charge the client for this subcontractor per hour
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          placeholder="0.00"
+                          className="w-full md:w-[200px]"
+                          value={subcontractorChargeRate}
+                          onChange={(e) => setSubcontractorChargeRate(e.target.value)}
+                          data-testid="input-charge-rate"
+                        />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={updateSubcontractorMutation.isPending}
+                          onClick={() => {
+                            updateSubcontractorMutation.mutate({
+                              chargeRate: subcontractorChargeRate || null,
+                            });
+                          }}
+                        >
+                          Save
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Account Settings - Only for admins */}
         {isAdmin && !isCurrentUser && (

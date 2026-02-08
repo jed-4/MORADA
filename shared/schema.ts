@@ -100,6 +100,11 @@ export const users = pgTable("users", {
   // User preferences
   timezone: text("timezone"), // User's preferred display timezone (null = use company timezone)
   
+  // Subcontractor & rate fields (management-only visibility)
+  isSubcontractor: boolean("is_subcontractor").notNull().default(false),
+  hourlyRate: numeric("hourly_rate", { precision: 10, scale: 2 }), // Pay rate - cost to company per hour
+  chargeRate: numeric("charge_rate", { precision: 10, scale: 2 }), // Charge rate - what you charge the client per hour
+  
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -958,6 +963,7 @@ export const companySettings = pgTable("company_settings", {
   weekStartDay: integer("week_start_day").notNull().default(1), // 0 = Sunday, 1 = Monday (default)
   
   // Timesheet defaults
+  timesheetDateFormat: text("timesheet_date_format").notNull().default("short"), // "short" = "1/1/26", "long" = "Mon 1 Jan"
   standardWorkStart: text("standard_work_start").default("07:00"),
   standardWorkEnd: text("standard_work_end").default("15:30"),
   timesheetReminderEnabled: boolean("timesheet_reminder_enabled").notNull().default(true),
@@ -2782,6 +2788,11 @@ export const timesheets = pgTable("timesheets", {
   costCodeId: varchar("cost_code_id").references(() => costCodes.id, { onDelete: "set null" }), // Cost code for clock-in widget
   attachments: json("attachments").default([]), // Array of attachment URLs
   labels: json("labels").default([]), // Array of label strings
+  
+  // Subcontractor PO tracking
+  poStatus: text("po_status"), // null for employees, "awaiting_po" | "on_po" | "paid" for subcontractors
+  linkedPurchaseOrderId: varchar("linked_purchase_order_id"), // Reference to PO when status is on_po or paid
+  
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -4447,6 +4458,9 @@ export const purchaseOrderItems = pgTable("purchase_order_items", {
   
   // Source tracking (if imported from estimate)
   sourceEstimateItemId: varchar("source_estimate_item_id").references(() => estimateItems.id),
+  
+  // Source tracking (if generated from subcontractor timesheet)
+  sourceTimesheetId: varchar("source_timesheet_id"),
   
   // Order for drag-and-drop reordering
   displayOrder: integer("display_order").notNull().default(0),

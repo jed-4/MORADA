@@ -13,6 +13,7 @@ import { AlertTriangle, Check, X, Clock, ChevronLeft, ChevronRight, RotateCcw, P
 import { format } from "date-fns";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useTimesheetDateFormat, formatTimesheetDate } from "@/hooks/useTimesheetDateFormat";
 import type { Timesheet, Project, User as UserType, CostCode } from "@shared/schema";
 
 interface RapidApprovalModalProps {
@@ -125,6 +126,7 @@ export function RapidApprovalModal({
   onComplete,
 }: RapidApprovalModalProps) {
   const { toast } = useToast();
+  const tsDateFormat = useTimesheetDateFormat();
   
   const [processedIds, setProcessedIds] = useState<Set<string>>(new Set());
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -419,7 +421,7 @@ export function RapidApprovalModal({
               <Popover>
                 <PopoverTrigger asChild>
                   <button className="flex items-center justify-between w-full h-7 px-2 text-[11px] bg-background border border-input rounded-md hover:bg-accent hover:text-accent-foreground">
-                    <span>{editedDate ? format(editedDate, "dd MMM") : "Select"}</span>
+                    <span>{editedDate ? formatTimesheetDate(editedDate, tsDateFormat) : "Select"}</span>
                   </button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
