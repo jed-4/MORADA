@@ -9124,6 +9124,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!po) {
         return res.status(404).json({ error: "Purchase order not found" });
       }
+
+      if (po.status === "billed" && existingPo.status !== "billed") {
+        try {
+          const poItems = await storage.getPurchaseOrderItems(po.id);
+          for (const item of poItems) {
+            if (item.sourceTimesheetId) {
+              await storage.updateTimesheet(item.sourceTimesheetId, { poStatus: "paid" });
+            }
+          }
+        } catch (err) {
+          console.error("Failed to update linked timesheet PO statuses:", err);
+        }
+      }
+
       res.json(po);
     } catch (error) {
       console.error("Failed to update purchase order:", error);

@@ -271,7 +271,9 @@ export function TimesheetDialog({
       }
 
       const duration = parseFloat(data.duration || "0");
-      const hourlyRate = parseFloat(data.hourlyRate || "0");
+      const selectedUser = users.find((u: any) => u.id === data.userId);
+      const isSubcontractor = selectedUser?.isSubcontractor === true;
+      const hourlyRate = isSubcontractor ? 0 : parseFloat(data.hourlyRate || "0");
       const total = (duration * hourlyRate).toFixed(2);
 
       const timesheetData = {
