@@ -10,7 +10,6 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -1547,55 +1546,45 @@ export default function Timesheets() {
                     </TableRow>
                   ))}
                 </TableBody>
-                {filteredTimesheets.length > 0 && (() => {
-                  const submittedTs = filteredTimesheets.filter(ts => ts.status === "submitted");
-                  const approvedTs = filteredTimesheets.filter(ts => ts.status === "approved");
-                  const submittedHours = submittedTs.reduce((sum, ts) => sum + getNetHours(ts), 0);
-                  const approvedHours = approvedTs.reduce((sum, ts) => sum + getNetHours(ts), 0);
-                  const totalHours = filteredTimesheets.reduce((sum, ts) => sum + getNetHours(ts), 0);
-                  const submittedTotal = submittedTs.reduce((sum, ts) => sum + parseFloat(ts.total || "0"), 0);
-                  const approvedTotal = approvedTs.reduce((sum, ts) => sum + parseFloat(ts.total || "0"), 0);
-                  const grandTotal = filteredTimesheets.reduce((sum, ts) => sum + parseFloat(ts.total || "0"), 0);
-
-                  const renderSummaryRow = (label: string, hours: number, total: number, isFinal?: boolean) => (
-                    <TableRow className={`h-7 ${isFinal ? "bg-muted/40 dark:bg-muted/20 border-t-2 border-border" : "bg-muted/20 dark:bg-muted/10 border-t border-border"}`}>
-                      {visibleColumns.map((col) => {
-                        switch (col.id) {
-                          case 'hours':
-                            return (
-                              <TableCell key={col.id} className={`text-[11px] ${isFinal ? "font-bold" : "font-medium"} tabular-nums px-2 py-1`}>
-                                {formatDuration(hours)}
-                              </TableCell>
-                            );
-                          case 'total':
-                            return (
-                              <TableCell key={col.id} className={`text-[11px] ${isFinal ? "font-bold" : "font-semibold"} text-right tabular-nums px-2 py-1`}>
-                                ${total.toFixed(2)}
-                              </TableCell>
-                            );
-                          case 'status':
-                            return (
-                              <TableCell key={col.id} className={`text-[10px] ${isFinal ? "font-bold" : "font-medium"} text-muted-foreground px-2 py-1`}>
-                                {label}
-                              </TableCell>
-                            );
-                          default:
-                            return <TableCell key={col.id} className="px-2 py-1" />;
-                        }
-                      })}
-                    </TableRow>
-                  );
-
-                  return (
-                    <TableFooter className="bg-transparent border-t-0">
-                      {renderSummaryRow("Submitted", submittedHours, submittedTotal)}
-                      {renderSummaryRow("Approved", approvedHours, approvedTotal)}
-                      {renderSummaryRow("Total", totalHours, grandTotal, true)}
-                    </TableFooter>
-                  );
-                })()}
               </Table>
             </DndContext>
+            {filteredTimesheets.length > 0 && (() => {
+              const clockedInTs = filteredTimesheets.filter(ts => ts.isActive);
+              const clockedInHours = clockedInTs.reduce((sum, ts) => sum + getNetHours(ts), 0);
+
+              const statusGroups = [
+                { key: "submitted", label: "Submitted", bgClass: "bg-slate-100 dark:bg-slate-800", textClass: "text-slate-700 dark:text-slate-300" },
+                { key: "approved", label: "Approved", bgClass: "bg-green-100 dark:bg-green-900/30", textClass: "text-green-700 dark:text-green-300" },
+                { key: "rejected", label: "Rejected", bgClass: "bg-red-100 dark:bg-red-900/30", textClass: "text-red-700 dark:text-red-300" },
+              ];
+
+              return (
+                <div className="flex items-center justify-end gap-4 px-3 py-2 border-t border-border bg-muted/30 dark:bg-muted/10">
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
+                      Clocked in
+                    </span>
+                    <span className="text-[11px] font-medium tabular-nums text-foreground">
+                      {formatDuration(clockedInHours)}
+                    </span>
+                  </div>
+                  {statusGroups.map(({ key, label, bgClass, textClass }) => {
+                    const entries = filteredTimesheets.filter(ts => ts.status === key);
+                    const totalHours = entries.reduce((sum, ts) => sum + getNetHours(ts), 0);
+                    return (
+                      <div key={key} className="flex items-center gap-1.5">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold ${bgClass} ${textClass}`}>
+                          {label}
+                        </span>
+                        <span className="text-[11px] font-medium tabular-nums text-foreground">
+                          {formatDuration(totalHours)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
         )}
       </div>
