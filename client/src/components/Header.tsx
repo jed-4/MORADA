@@ -55,6 +55,7 @@ export default function Header() {
   const [isDark, setIsDark] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [isProjectSearchOpen, setIsProjectSearchOpen] = useState(false);
+  const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
   const [selectedPhaseIndex, setSelectedPhaseIndex] = useState<number>(() => {
     try {
       const saved = localStorage.getItem(SELECTED_PHASE_KEY);
@@ -266,7 +267,7 @@ export default function Header() {
         </button>
 
         {/* Projects Dropdown with Phase Selector */}
-        <DropdownMenu>
+        <DropdownMenu open={isProjectDropdownOpen} onOpenChange={setIsProjectDropdownOpen}>
           <DropdownMenuTrigger asChild>
             <button
               className="h-7 w-7 border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
@@ -348,8 +349,9 @@ export default function Header() {
                       <div key={project.id} className="group flex items-center">
                         <button
                           onClick={() => {
-                            setCurrentProject(project);
+                            setIsProjectDropdownOpen(false);
                             setSearchQuery("");
+                            setCurrentProject(project);
                             if (project.isBusiness) {
                               navigate('/business');
                             } else {
