@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams } from "wouter";
 import { Plus, Clock, Filter, Search, Calendar as CalendarIcon, User, Check, X, CalendarRange, Download, ChevronDown, Settings2, RotateCcw, Table2, Users2, CalendarDays, ChevronLeft, ChevronRight, Zap, Play, Square, ArrowUp, ArrowDown, CircleCheck, Trash2 } from "lucide-react";
@@ -74,13 +74,15 @@ function SortableColumnHeader({
   children, 
   sortColumn, 
   sortDirection, 
-  onSort 
+  onSort,
+  onResizeStart,
 }: { 
   column: TimesheetColumnConfig; 
   children: React.ReactNode;
   sortColumn: string | null;
   sortDirection: SortDirection;
   onSort: (columnId: string) => void;
+  onResizeStart: (e: React.MouseEvent, columnId: string) => void;
 }) {
   const {
     attributes,
@@ -94,10 +96,14 @@ function SortableColumnHeader({
   const pointerStart = useRef<{ x: number; y: number } | null>(null);
   const wasDragged = useRef(false);
 
-  const style = {
+  const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
+    width: column.width,
+    minWidth: column.minWidth,
+    maxWidth: column.width,
+    position: 'relative' as const,
   };
 
   const isSortable = SORTABLE_COLUMNS.includes(column.id);
@@ -126,14 +132,14 @@ function SortableColumnHeader({
     <TableHead
       ref={setNodeRef}
       style={style}
-      className={`text-[10px] font-medium text-muted-foreground py-1 h-7 px-2 select-none ${column.id === 'total' ? 'text-right' : ''} ${isSortable ? 'cursor-pointer' : ''}`}
+      className={`text-[10px] font-medium text-muted-foreground py-0.5 h-6 px-2 select-none group/resize ${column.id === 'total' ? 'text-right' : ''} ${isSortable ? 'cursor-pointer' : ''}`}
       {...attributes}
       {...listeners}
       onPointerDown={combinedOnPointerDown}
       onPointerUp={handlePointerUp}
     >
       <div className={`inline-flex items-center gap-0.5 ${isActive ? 'text-foreground' : isSortable ? 'hover:text-foreground' : ''}`}>
-        <span>{children}</span>
+        <span className="truncate">{children}</span>
         {isSortable && (
           <span className="w-2.5 h-2.5 inline-flex items-center justify-center flex-shrink-0">
             {isActive && sortDirection === 'asc' ? (
@@ -143,6 +149,21 @@ function SortableColumnHeader({
             ) : null}
           </span>
         )}
+      </div>
+      <div
+        className="absolute right-0 top-0 bottom-0 w-[3px] cursor-col-resize opacity-0 group-hover/resize:opacity-100 hover:!opacity-100 transition-opacity z-10"
+        onMouseDown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onResizeStart(e, column.id);
+        }}
+        onPointerDown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="absolute right-0 top-1 bottom-1 w-[1px] bg-border hover:bg-primary transition-colors" />
       </div>
     </TableHead>
   );
@@ -240,6 +261,52 @@ export default function Timesheets() {
       console.error('Failed to save column config:', e);
     }
   }, [columns]);
+
+  // Column resize state
+  const resizeRef = useRef<{ columnId: string; startX: number; startWidth: number } | null>(null);
+  const [isResizing, setIsResizing] = useState(false);
+
+  const handleResizeStart = useCallback((e: React.MouseEvent, columnId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const col = columns.find(c => c.id === columnId);
+    if (!col) return;
+    resizeRef.current = { columnId, startX: e.clientX, startWidth: col.width };
+    setIsResizing(true);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, [columns]);
+
+  useEffect(() => {
+    if (!isResizing) return;
+    const handleMove = (e: MouseEvent | PointerEvent) => {
+      if (!resizeRef.current) return;
+      const { columnId, startX, startWidth } = resizeRef.current;
+      const delta = e.clientX - startX;
+      const col = columns.find(c => c.id === columnId);
+      const min = col?.minWidth || 40;
+      const newWidth = Math.max(min, Math.min(600, startWidth + delta));
+      setColumns(prev => prev.map(c => c.id === columnId ? { ...c, width: newWidth } : c));
+    };
+    const handleEnd = () => {
+      resizeRef.current = null;
+      setIsResizing(false);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', handleEnd);
+    document.addEventListener('pointermove', handleMove);
+    document.addEventListener('pointerup', handleEnd);
+    document.addEventListener('pointercancel', handleEnd);
+    return () => {
+      document.removeEventListener('mousemove', handleMove);
+      document.removeEventListener('mouseup', handleEnd);
+      document.removeEventListener('pointermove', handleMove);
+      document.removeEventListener('pointerup', handleEnd);
+      document.removeEventListener('pointercancel', handleEnd);
+    };
+  }, [isResizing, columns, setColumns]);
 
   // Toggle column visibility
   const toggleColumnVisibility = (columnId: string) => {
@@ -399,43 +466,6 @@ export default function Timesheets() {
   });
 
   // Status workflow mutations
-  const approveMutation = useMutation({
-    mutationFn: async (timesheetId: string) => {
-      const res = await apiRequest(`/api/timesheets/${timesheetId}/approve`, "POST", {});
-      return await res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
-      if (projectId) {
-        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "timesheets"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "labour-hours-budget"] });
-      }
-      queryClient.invalidateQueries({ queryKey: ["/api/projects"] }); // Refresh labour hours
-      toast({
-        title: "Timesheet approved",
-        description: "The timesheet has been approved.",
-      });
-    },
-  });
-
-  const rejectMutation = useMutation({
-    mutationFn: async (timesheetId: string) => {
-      const res = await apiRequest(`/api/timesheets/${timesheetId}/reject`, "POST", {});
-      return await res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
-      if (projectId) {
-        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "timesheets"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "labour-hours-budget"] });
-      }
-      toast({
-        title: "Timesheet rejected",
-        description: "The timesheet has been rejected.",
-      });
-    },
-  });
-
   const bulkActionMutation = useMutation({
     mutationFn: (data: { ids: string[]; action: string; status?: string }) =>
       apiRequest("/api/timesheets/bulk-action", "POST", data),
@@ -1422,12 +1452,12 @@ export default function Timesheets() {
             </Button>
           </div>
         ) : (
-          <div className="overflow-hidden">
+          <div className="overflow-x-auto">
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              <Table>
+              <Table style={{ tableLayout: 'fixed' }}>
                 <TableHeader>
-                  <TableRow className="h-7 bg-muted/30 dark:bg-muted/10 hover:bg-muted/30 dark:hover:bg-muted/10 border-b border-border">
-                    <TableHead className="w-8 px-2 py-1">
+                  <TableRow className="h-6 bg-muted/30 dark:bg-muted/10 hover:bg-muted/30 dark:hover:bg-muted/10 border-b border-border">
+                    <TableHead className="w-8 px-2 py-0.5 h-6">
                       <Checkbox
                         checked={selectedTimesheets.length > 0 && selectedTimesheets.length === filteredTimesheets.length}
                         onCheckedChange={(checked) => {
@@ -1442,7 +1472,7 @@ export default function Timesheets() {
                     </TableHead>
                     <SortableContext items={visibleColumns.map(c => c.id)} strategy={horizontalListSortingStrategy}>
                       {visibleColumns.map((col) => (
-                        <SortableColumnHeader key={col.id} column={col} sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSort}>
+                        <SortableColumnHeader key={col.id} column={col} sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSort} onResizeStart={handleResizeStart}>
                           {col.label}
                         </SortableColumnHeader>
                       ))}
@@ -1453,7 +1483,7 @@ export default function Timesheets() {
                   {filteredTimesheets.map((timesheet, index) => (
                     <TableRow 
                       key={timesheet.id}
-                      className={`h-7 cursor-pointer hover:bg-muted/20 dark:hover:bg-muted/10 transition-colors ${
+                      className={`h-6 cursor-pointer hover:bg-muted/20 dark:hover:bg-muted/10 transition-colors ${
                         index !== filteredTimesheets.length - 1 ? "border-b border-border" : ""
                       } ${selectedTimesheets.includes(timesheet.id) ? "bg-muted/30 dark:bg-muted/20" : ""}`}
                       onClick={() => {
@@ -1476,70 +1506,71 @@ export default function Timesheets() {
                         />
                       </TableCell>
                       {visibleColumns.map((col) => {
+                        const cellStyle = { width: col.width, minWidth: col.minWidth, maxWidth: col.width };
                         switch (col.id) {
                           case 'date':
                             return (
-                              <TableCell key={col.id} className="text-[11px] font-medium px-2 py-1">
+                              <TableCell key={col.id} style={cellStyle} className="text-[11px] font-medium px-2 py-1 truncate">
                                 {format(new Date(timesheet.date), "dd MMM")}
                               </TableCell>
                             );
                           case 'user':
                             return (
-                              <TableCell key={col.id} className="text-[11px] truncate max-w-[100px] px-2 py-1">
+                              <TableCell key={col.id} style={cellStyle} className="text-[11px] truncate px-2 py-1">
                                 {getUserName(timesheet.userId)}
                               </TableCell>
                             );
                           case 'project':
                             return (
-                              <TableCell key={col.id} className="text-[11px] truncate max-w-[120px] text-muted-foreground px-2 py-1">
+                              <TableCell key={col.id} style={cellStyle} className="text-[11px] truncate text-muted-foreground px-2 py-1">
                                 {getProjectName(timesheet.projectId)}
                               </TableCell>
                             );
                           case 'costCode':
                             return (
-                              <TableCell key={col.id} className="text-[11px] truncate max-w-[100px] text-muted-foreground px-2 py-1">
+                              <TableCell key={col.id} style={cellStyle} className="text-[11px] truncate text-muted-foreground px-2 py-1">
                                 {getCostCodeName(timesheet.costCodeId)}
                               </TableCell>
                             );
                           case 'startTime':
                             return (
-                              <TableCell key={col.id} className="text-[11px] text-muted-foreground tabular-nums px-2 py-1">
+                              <TableCell key={col.id} style={cellStyle} className="text-[11px] text-muted-foreground tabular-nums px-2 py-1">
                                 {timesheet.startTime || "-"}
                               </TableCell>
                             );
                           case 'endTime':
                             return (
-                              <TableCell key={col.id} className="text-[11px] text-muted-foreground tabular-nums px-2 py-1">
+                              <TableCell key={col.id} style={cellStyle} className="text-[11px] text-muted-foreground tabular-nums px-2 py-1">
                                 {timesheet.endTime || "-"}
                               </TableCell>
                             );
                           case 'break':
                             return (
-                              <TableCell key={col.id} className="text-[11px] text-muted-foreground tabular-nums px-2 py-1">
+                              <TableCell key={col.id} style={cellStyle} className="text-[11px] text-muted-foreground tabular-nums px-2 py-1">
                                 {timesheet.breakDuration ? formatDuration(parseFloat(timesheet.breakDuration)) : "-"}
                               </TableCell>
                             );
                           case 'hours':
                             return (
-                              <TableCell key={col.id} className="text-[11px] font-medium tabular-nums px-2 py-1">
+                              <TableCell key={col.id} style={cellStyle} className="text-[11px] font-medium tabular-nums px-2 py-1">
                                 {formatDuration(getNetHours(timesheet))}
                               </TableCell>
                             );
                           case 'rate':
                             return (
-                              <TableCell key={col.id} className="text-[11px] text-muted-foreground tabular-nums px-2 py-1">
+                              <TableCell key={col.id} style={cellStyle} className="text-[11px] text-muted-foreground tabular-nums px-2 py-1">
                                 ${timesheet.hourlyRate ? parseFloat(timesheet.hourlyRate).toFixed(0) : "0"}
                               </TableCell>
                             );
                           case 'total':
                             return (
-                              <TableCell key={col.id} className="text-[11px] font-semibold text-right tabular-nums px-2 py-1">
+                              <TableCell key={col.id} style={cellStyle} className="text-[11px] font-semibold text-right tabular-nums px-2 py-1">
                                 ${timesheet.total ? parseFloat(timesheet.total).toFixed(2) : "0.00"}
                               </TableCell>
                             );
                           case 'labels':
                             return (
-                              <TableCell key={col.id} className="px-2 py-1">
+                              <TableCell key={col.id} style={cellStyle} className="px-2 py-1 overflow-hidden">
                                 {Array.isArray(timesheet.labels) && (timesheet.labels as string[]).length > 0 ? (
                                   <div className="flex items-center gap-1 flex-wrap">
                                     {(timesheet.labels as string[]).map((label, i) => (
@@ -1555,7 +1586,7 @@ export default function Timesheets() {
                             );
                           case 'status':
                             return (
-                              <TableCell key={col.id} className="px-2 py-1">
+                              <TableCell key={col.id} style={cellStyle} className="px-2 py-1">
                                 {timesheet.status === "approved" ? (
                                   <Badge variant="outline" className="text-[10px] font-medium bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800">
                                     Approved
@@ -1577,7 +1608,7 @@ export default function Timesheets() {
                             );
                           case 'description':
                             return (
-                              <TableCell key={col.id} className="text-[11px] text-muted-foreground truncate max-w-[180px] px-2 py-1">
+                              <TableCell key={col.id} style={cellStyle} className="text-[11px] text-muted-foreground truncate px-2 py-1">
                                 {timesheet.description || "-"}
                               </TableCell>
                             );
