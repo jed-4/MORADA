@@ -13855,7 +13855,7 @@ export class DbStorage implements IStorage {
           isActive: true,
           clockInTime: now,
           costCodeId: costCodeId || null,
-          status: "draft",
+          status: "submitted",
           duration: "0",
           breakDuration: "0",
           hourlyRate: "0",

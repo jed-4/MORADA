@@ -13133,6 +13133,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Bulk action route for timesheets
+  app.post("/api/timesheets/bulk-action", async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: "User not authenticated" });
+      }
+      const user = (req.user as any).dbUser;
+      if (!user?.id || !user?.companyId) {
+        return res.status(401).json({ error: "User not found in database" });
+      }
+
+      const { ids, action, status } = req.body;
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ error: "ids array is required" });
+      }
+      if (!["changeStatus", "delete"].includes(action)) {
+        return res.status(400).json({ error: "Invalid action" });
+      }
+      const validStatuses = ["submitted", "approved", "rejected"];
+      if (action === "changeStatus" && (!status || !validStatuses.includes(status))) {
+        return res.status(400).json({ error: "Invalid status" });
+      }
+
+      const isAdmin = user.role === "owner" || user.role === "admin" || user.role === "manager";
+
+      let successCount = 0;
+      const errors: string[] = [];
+
+      for (const id of ids) {
+        try {
+          const timesheet = await storage.getTimesheet(id);
+          if (!timesheet) {
+            errors.push(`Timesheet ${id} not found`);
+            continue;
+          }
+          if (timesheet.userId !== user.id && !isAdmin) {
+            errors.push(`Not authorized for timesheet ${id}`);
+            continue;
+          }
+
+          if (action === "changeStatus") {
+            await storage.updateTimesheet(id, { status });
+            successCount++;
+          } else if (action === "delete") {
+            await storage.deleteTimesheet(id);
+            successCount++;
+          }
+        } catch (err: any) {
+          errors.push(`Failed for ${id}: ${err.message}`);
+        }
+      }
+
+      res.json({ success: successCount, errors });
+    } catch (error: any) {
+      console.error("Error in bulk timesheet action:", error);
+      res.status(500).json({ error: "Failed to perform bulk action" });
+    }
+  });
+
   // Clock-in/out routes - must be before :id routes
   app.get("/api/timesheets/active", async (req, res) => {
     try {

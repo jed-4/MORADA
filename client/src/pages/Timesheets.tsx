@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams } from "wouter";
-import { Plus, Clock, Filter, Search, Calendar as CalendarIcon, User, Check, X, CalendarRange, Download, ChevronDown, Settings2, RotateCcw, Table2, Users2, CalendarDays, ChevronLeft, ChevronRight, Zap, Play, Square, ArrowUp, ArrowDown } from "lucide-react";
+import { Plus, Clock, Filter, Search, Calendar as CalendarIcon, User, Check, X, CalendarRange, Download, ChevronDown, Settings2, RotateCcw, Table2, Users2, CalendarDays, ChevronLeft, ChevronRight, Zap, Play, Square, ArrowUp, ArrowDown, CircleCheck, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import * as XLSX from "xlsx";
 import { Input } from "@/components/ui/input";
@@ -62,7 +62,6 @@ const DEFAULT_COLUMNS: TimesheetColumnConfig[] = [
   { id: 'labels', label: 'Labels', visible: true, width: 100, minWidth: 70 },
   { id: 'status', label: 'Status', visible: true, width: 70, minWidth: 60 },
   { id: 'description', label: 'Description', visible: true, width: 180, minWidth: 100 },
-  { id: 'actions', label: 'Actions', visible: true, width: 80, minWidth: 60 },
 ];
 
 const COLUMNS_STORAGE_KEY = 'timesheets-columns-config';
@@ -165,6 +164,7 @@ export default function Timesheets() {
     if (user.role === "owner" || user.role === "admin" || user.role === "manager") return true;
     return false;
   };
+  const [selectedTimesheets, setSelectedTimesheets] = useState<string[]>([]);
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
@@ -432,6 +432,35 @@ export default function Timesheets() {
       toast({
         title: "Timesheet rejected",
         description: "The timesheet has been rejected.",
+      });
+    },
+  });
+
+  const bulkActionMutation = useMutation({
+    mutationFn: (data: { ids: string[]; action: string; status?: string }) =>
+      apiRequest("/api/timesheets/bulk-action", "POST", data),
+    onSuccess: async (res: Response, variables) => {
+      const result = await res.json();
+      queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
+      if (projectId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "timesheets"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "labour-hours-budget"] });
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      setSelectedTimesheets([]);
+      const actionLabels: Record<string, string> = {
+        changeStatus: "updated",
+        delete: "deleted",
+      };
+      toast({
+        title: `${result.success} timesheet${result.success !== 1 ? "s" : ""} ${actionLabels[variables.action] || "updated"}`,
+        description: result.errors?.length > 0 ? `${result.errors.length} failed` : undefined,
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Bulk action failed",
+        variant: "destructive",
       });
     },
   });
@@ -1398,6 +1427,19 @@ export default function Timesheets() {
               <Table>
                 <TableHeader>
                   <TableRow className="h-7 bg-muted/30 dark:bg-muted/10 hover:bg-muted/30 dark:hover:bg-muted/10 border-b border-border">
+                    <TableHead className="w-8 px-2 py-1">
+                      <Checkbox
+                        checked={selectedTimesheets.length > 0 && selectedTimesheets.length === filteredTimesheets.length}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setSelectedTimesheets(filteredTimesheets.map(t => t.id));
+                          } else {
+                            setSelectedTimesheets([]);
+                          }
+                        }}
+                        className="h-3.5 w-3.5"
+                      />
+                    </TableHead>
                     <SortableContext items={visibleColumns.map(c => c.id)} strategy={horizontalListSortingStrategy}>
                       {visibleColumns.map((col) => (
                         <SortableColumnHeader key={col.id} column={col} sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSort}>
@@ -1413,13 +1455,26 @@ export default function Timesheets() {
                       key={timesheet.id}
                       className={`h-7 cursor-pointer hover:bg-muted/20 dark:hover:bg-muted/10 transition-colors ${
                         index !== filteredTimesheets.length - 1 ? "border-b border-border" : ""
-                      }`}
+                      } ${selectedTimesheets.includes(timesheet.id) ? "bg-muted/30 dark:bg-muted/20" : ""}`}
                       onClick={() => {
                         setSelectedTimesheet(timesheet);
                         setIsDialogOpen(true);
                       }}
                       data-testid={`row-timesheet-${timesheet.id}`}
                     >
+                      <TableCell className="w-8 px-2 py-1" onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          checked={selectedTimesheets.includes(timesheet.id)}
+                          onCheckedChange={() => {
+                            setSelectedTimesheets(current =>
+                              current.includes(timesheet.id)
+                                ? current.filter(id => id !== timesheet.id)
+                                : [...current, timesheet.id]
+                            );
+                          }}
+                          className="h-3.5 w-3.5"
+                        />
+                      </TableCell>
                       {visibleColumns.map((col) => {
                         switch (col.id) {
                           case 'date':
@@ -1526,36 +1581,6 @@ export default function Timesheets() {
                                 {timesheet.description || "-"}
                               </TableCell>
                             );
-                          case 'actions':
-                            return (
-                              <TableCell key={col.id} className="px-2 py-1" onClick={(e) => e.stopPropagation()}>
-                                {canApproveTimesheets && timesheet.status === "submitted" && (
-                                  <div className="flex items-center gap-1">
-                                    <Button
-                                      size="icon"
-                                      variant="outline"
-                                      onClick={() => approveMutation.mutate(timesheet.id)}
-                                      data-testid={`button-approve-${timesheet.id}`}
-                                      className="h-6 w-6 bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 border-green-200 dark:border-green-800 hover:bg-green-100 dark:hover:bg-green-900/40"
-                                    >
-                                      <Check className="w-3.5 h-3.5" />
-                                    </Button>
-                                    <Button
-                                      size="icon"
-                                      variant="outline"
-                                      onClick={() => rejectMutation.mutate(timesheet.id)}
-                                      data-testid={`button-reject-${timesheet.id}`}
-                                      className="h-6 w-6 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/40"
-                                    >
-                                      <X className="w-3.5 h-3.5" />
-                                    </Button>
-                                  </div>
-                                )}
-                                {(timesheet.status === "approved" || timesheet.status === "rejected") && (
-                                  <span className="text-[10px] text-muted-foreground/50">-</span>
-                                )}
-                              </TableCell>
-                            );
                           default:
                             return null;
                         }
@@ -1569,43 +1594,97 @@ export default function Timesheets() {
         )}
       </div>
 
-      {filteredTimesheets.length > 0 && (() => {
-        const clockedInTs = filteredTimesheets.filter(ts => ts.isActive);
-        const clockedInHours = clockedInTs.reduce((sum, ts) => sum + getNetHours(ts), 0);
-
-        const statusGroups = [
-          { key: "submitted", label: "Submitted", bgClass: "bg-slate-100 dark:bg-slate-800", textClass: "text-slate-700 dark:text-slate-300" },
-          { key: "approved", label: "Approved", bgClass: "bg-green-100 dark:bg-green-900/30", textClass: "text-green-700 dark:text-green-300" },
-          { key: "rejected", label: "Rejected", bgClass: "bg-red-100 dark:bg-red-900/30", textClass: "text-red-700 dark:text-red-300" },
-        ];
-
-        return (
-          <div className="sticky bottom-0 z-50 flex items-center justify-end gap-4 px-3 py-2 border-t border-border bg-card">
-            <div className="flex items-center gap-1.5">
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
-                Clocked in
-              </span>
-              <span className="text-[11px] font-medium tabular-nums text-foreground">
-                {formatDuration(clockedInHours)}
-              </span>
+      {filteredTimesheets.length > 0 && (
+        <div className="sticky bottom-0 z-50 border-t border-border bg-card">
+          {selectedTimesheets.length > 0 ? (
+            <div className="flex items-center justify-between gap-4 px-3 py-2">
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary" className="text-[11px]">
+                  {selectedTimesheets.length} selected
+                </Badge>
+              </div>
+              <div className="flex items-center gap-2">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="sm" variant="outline">
+                      <CircleCheck className="h-3.5 w-3.5 mr-1" />
+                      Change Status
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    <DropdownMenuItem onClick={() => bulkActionMutation.mutate({ ids: selectedTimesheets, action: "changeStatus", status: "submitted" })}>
+                      <div className="w-2 h-2 rounded-full mr-2 bg-slate-500" />
+                      Submitted
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => bulkActionMutation.mutate({ ids: selectedTimesheets, action: "changeStatus", status: "approved" })}>
+                      <div className="w-2 h-2 rounded-full mr-2 bg-green-500" />
+                      Approved
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => bulkActionMutation.mutate({ ids: selectedTimesheets, action: "changeStatus", status: "rejected" })}>
+                      <div className="w-2 h-2 rounded-full mr-2 bg-red-500" />
+                      Rejected
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => bulkActionMutation.mutate({ ids: selectedTimesheets, action: "delete" })}
+                  disabled={bulkActionMutation.isPending}
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-1" />
+                  Delete
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setSelectedTimesheets([])}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
             </div>
-            {statusGroups.map(({ key, label, bgClass, textClass }) => {
-              const entries = filteredTimesheets.filter(ts => ts.status === key);
-              const totalHours = entries.reduce((sum, ts) => sum + getNetHours(ts), 0);
-              return (
-                <div key={key} className="flex items-center gap-1.5">
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold ${bgClass} ${textClass}`}>
-                    {label}
-                  </span>
-                  <span className="text-[11px] font-medium tabular-nums text-foreground">
-                    {formatDuration(totalHours)}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        );
-      })()}
+          ) : (
+            <div className="flex items-center justify-end gap-4 px-3 py-2">
+              {(() => {
+                const clockedInTs = filteredTimesheets.filter(ts => ts.isActive);
+                const clockedInHours = clockedInTs.reduce((sum, ts) => sum + getNetHours(ts), 0);
+                const statusGroups = [
+                  { key: "submitted", label: "Submitted", bgClass: "bg-slate-100 dark:bg-slate-800", textClass: "text-slate-700 dark:text-slate-300" },
+                  { key: "approved", label: "Approved", bgClass: "bg-green-100 dark:bg-green-900/30", textClass: "text-green-700 dark:text-green-300" },
+                  { key: "rejected", label: "Rejected", bgClass: "bg-red-100 dark:bg-red-900/30", textClass: "text-red-700 dark:text-red-300" },
+                ];
+                return (
+                  <>
+                    <div className="flex items-center gap-1.5">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
+                        Clocked in
+                      </span>
+                      <span className="text-[11px] font-medium tabular-nums text-foreground">
+                        {formatDuration(clockedInHours)}
+                      </span>
+                    </div>
+                    {statusGroups.map(({ key, label, bgClass, textClass }) => {
+                      const entries = filteredTimesheets.filter(ts => ts.status === key);
+                      const totalHours = entries.reduce((sum, ts) => sum + getNetHours(ts), 0);
+                      return (
+                        <div key={key} className="flex items-center gap-1.5">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold ${bgClass} ${textClass}`}>
+                            {label}
+                          </span>
+                          <span className="text-[11px] font-medium tabular-nums text-foreground">
+                            {formatDuration(totalHours)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </>
+                );
+              })()}
+            </div>
+          )}
+        </div>
+      )}
 
       <TimesheetDialog
         open={isDialogOpen}
