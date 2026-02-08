@@ -650,10 +650,11 @@ export default function Timesheets() {
   };
 
   return (
-    <div className="flex flex-col h-full p-3">
-      <div className="flex flex-col flex-1 min-h-0 border-2 border-border rounded-md overflow-hidden bg-card">
+    <div className="flex flex-col h-full">
+      {/* Header Panel - 2 rows connected to content */}
+      <div className="border border-border rounded-t-lg bg-card flex-shrink-0">
         {/* Row 1: Title + Action Buttons */}
-        <div className="h-9 flex items-center justify-between px-3 border-b border-border">
+        <div className="h-8 flex items-center justify-between px-3 border-b border-border/50">
         <h1 className="text-sm font-semibold">
           {currentProject ? `${currentProject.name} - Timesheets` : "All Items - Timesheets"}
         </h1>
@@ -750,8 +751,8 @@ export default function Timesheets() {
         </div>
       </div>
 
-      {/* Row 2: Filters */}
-      <div className="h-9 flex items-center gap-2 px-3 border-b border-border flex-shrink-0">
+        {/* Row 2: Filters */}
+        <div className="h-8 flex items-center gap-2 px-3">
         {/* Left: Search + Filter Chips */}
         <div className="flex items-center gap-2 flex-1">
           {/* Search */}
@@ -1094,9 +1095,10 @@ export default function Timesheets() {
           </DropdownMenu>
         </div>
       </div>
+      </div>
 
       {/* Content Area */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto border-x border-b border-border rounded-b-lg bg-card">
         {loadingTimesheets ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-sm text-muted-foreground">Loading timesheets...</div>
@@ -1548,7 +1550,6 @@ export default function Timesheets() {
             </DndContext>
           </div>
         )}
-      </div>
       </div>
 
       <TimesheetDialog
