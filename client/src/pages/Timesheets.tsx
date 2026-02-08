@@ -82,7 +82,7 @@ function SortableColumnHeader({
   sortColumn: string | null;
   sortDirection: SortDirection;
   onSort: (columnId: string) => void;
-  onResizeStart: (e: React.MouseEvent, columnId: string) => void;
+  onResizeStart: (e: React.PointerEvent, columnId: string) => void;
 }) {
   const {
     attributes,
@@ -151,19 +151,15 @@ function SortableColumnHeader({
         )}
       </div>
       <div
-        className="absolute right-0 top-0 bottom-0 w-[3px] cursor-col-resize opacity-0 group-hover/resize:opacity-100 hover:!opacity-100 transition-opacity z-10"
-        onMouseDown={(e) => {
+        className="absolute right-0 top-0 bottom-0 w-[5px] cursor-col-resize opacity-0 group-hover/resize:opacity-100 hover:!opacity-100 transition-opacity z-10"
+        onPointerDown={(e) => {
           e.preventDefault();
           e.stopPropagation();
           onResizeStart(e, column.id);
         }}
-        onPointerDown={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-        }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="absolute right-0 top-1 bottom-1 w-[1px] bg-border hover:bg-primary transition-colors" />
+        <div className="absolute right-0 top-1 bottom-1 w-[2px] bg-border hover:bg-primary transition-colors" />
       </div>
     </TableHead>
   );
@@ -239,6 +235,8 @@ export default function Timesheets() {
         if (hasOldTimeColumn && !hasNewStartTime) {
           return DEFAULT_COLUMNS;
         }
+        const validIds = new Set(DEFAULT_COLUMNS.map(dc => dc.id));
+        parsed = parsed.filter(c => validIds.has(c.id));
         const missingCols = DEFAULT_COLUMNS.filter(dc => !parsed.some(p => p.id === dc.id));
         if (missingCols.length > 0) {
           const projectIdx = parsed.findIndex(c => c.id === 'project');
@@ -266,7 +264,7 @@ export default function Timesheets() {
   const resizeRef = useRef<{ columnId: string; startX: number; startWidth: number } | null>(null);
   const [isResizing, setIsResizing] = useState(false);
 
-  const handleResizeStart = useCallback((e: React.MouseEvent, columnId: string) => {
+  const handleResizeStart = useCallback((e: React.PointerEvent, columnId: string) => {
     e.preventDefault();
     e.stopPropagation();
     const col = columns.find(c => c.id === columnId);
@@ -722,11 +720,11 @@ export default function Timesheets() {
           <button
             onClick={handleExport}
             disabled={filteredTimesheets.length === 0}
-            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5 disabled:opacity-50 disabled:pointer-events-none"
+            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center disabled:opacity-50 disabled:pointer-events-none"
             data-testid="button-export-timesheets"
+            title="Export to Excel"
           >
             <Download className="w-3 h-3" />
-            Export
           </button>
           {canApproveTimesheets && pendingTimesheets.length > 0 && (
             <button
@@ -1454,7 +1452,7 @@ export default function Timesheets() {
         ) : (
           <div className="overflow-x-auto">
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              <Table style={{ tableLayout: 'fixed' }}>
+              <Table style={{ tableLayout: 'fixed', minWidth: visibleColumns.reduce((sum, c) => sum + c.width, 0) + 40 }}>
                 <TableHeader>
                   <TableRow className="h-6 bg-muted/30 dark:bg-muted/10 hover:bg-muted/30 dark:hover:bg-muted/10 border-b border-border">
                     <TableHead className="w-8 px-2 py-0.5 h-6">
@@ -1678,8 +1676,6 @@ export default function Timesheets() {
           ) : (
             <div className="flex items-center justify-end gap-4 px-3 py-2">
               {(() => {
-                const clockedInTs = filteredTimesheets.filter(ts => ts.isActive);
-                const clockedInHours = clockedInTs.reduce((sum, ts) => sum + getNetHours(ts), 0);
                 const statusGroups = [
                   { key: "submitted", label: "Submitted", bgClass: "bg-slate-100 dark:bg-slate-800", textClass: "text-slate-700 dark:text-slate-300" },
                   { key: "approved", label: "Approved", bgClass: "bg-green-100 dark:bg-green-900/30", textClass: "text-green-700 dark:text-green-300" },
@@ -1687,14 +1683,6 @@ export default function Timesheets() {
                 ];
                 return (
                   <>
-                    <div className="flex items-center gap-1.5">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
-                        Clocked in
-                      </span>
-                      <span className="text-[11px] font-medium tabular-nums text-foreground">
-                        {formatDuration(clockedInHours)}
-                      </span>
-                    </div>
                     {statusGroups.map(({ key, label, bgClass, textClass }) => {
                       const entries = filteredTimesheets.filter(ts => ts.status === key);
                       const totalHours = entries.reduce((sum, ts) => sum + getNetHours(ts), 0);
