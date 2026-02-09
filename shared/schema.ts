@@ -2791,6 +2791,11 @@ export const timesheets = pgTable("timesheets", {
   attachments: json("attachments").default([]), // Array of attachment URLs
   labels: json("labels").default([]), // Array of label strings
   
+  // Approval tracking
+  approvedById: varchar("approved_by_id").references(() => users.id, { onDelete: "set null" }),
+  approvedAt: timestamp("approved_at"),
+  rejectionReason: text("rejection_reason"),
+
   // Subcontractor PO tracking
   poStatus: text("po_status"), // null for employees, "awaiting_po" | "on_po" | "paid" for subcontractors
   linkedPurchaseOrderId: varchar("linked_purchase_order_id"), // Reference to PO when status is on_po or paid

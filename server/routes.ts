@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { db, pool } from "./db";
 import { google } from "googleapis";
 import { randomBytes, randomUUID } from "crypto";
+import { format } from "date-fns";
 import { setupAuth, isAuthenticated, sessionMiddleware, ensureLegacySessionFields } from "./auth";
 import { sendInvitationEmail, initializeEmailServices } from "./utils/email";
 import { GoogleOAuthService } from "./services/googleOAuthService";
@@ -13377,6 +13378,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const updateData: any = { status };
             if (status === "approved") {
               updateData.approvedById = user.id;
+              updateData.approvedAt = new Date();
+              updateData.rejectionReason = null;
+            }
+            if (status === "rejected") {
+              updateData.approvedById = user.id;
+              updateData.approvedAt = new Date();
+              updateData.rejectionReason = req.body.rejectionReason || null;
+              try {
+                const rejectorName = user.firstName && user.lastName
+                  ? `${user.firstName} ${user.lastName}`
+                  : user.username || "Manager";
+                const tsDate = timesheet.date ? format(new Date(timesheet.date as unknown as string), "dd MMM yyyy") : "unknown date";
+                const reasonText = updateData.rejectionReason ? `: ${updateData.rejectionReason}` : "";
+                await storage.createNotification({
+                  userId: timesheet.userId,
+                  companyId: user.companyId!,
+                  type: "timesheet_rejected",
+                  title: "Timesheet Rejected",
+                  message: `${rejectorName} rejected your timesheet for ${tsDate}${reasonText}`,
+                  link: timesheet.projectId 
+                    ? `/projects/${timesheet.projectId}/timesheets` 
+                    : `/business/timesheets`,
+                  entityType: "timesheet",
+                  entityId: timesheet.id,
+                  isRead: false,
+                  createdByUserId: user.id,
+                });
+              } catch (notifError) {
+                console.error("Failed to create rejection notification:", notifError);
+              }
             }
             await storage.updateTimesheet(id, updateData);
             successCount++;
@@ -13565,6 +13596,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      await storage.updateTimesheet(req.params.id, { 
+        approvedById: req.user.id, 
+        approvedAt: new Date(),
+        rejectionReason: null,
+      });
+
       const timesheet = await storage.approveTimesheet(req.params.id);
       if (!timesheet) {
         return res.status(404).json({ error: "Timesheet not found" });
@@ -13596,10 +13633,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "You do not have permission to reject timesheets" });
       }
 
+      const rejectionReason = req.body.comment || req.body.rejectionReason || null;
+
+      await storage.updateTimesheet(req.params.id, {
+        rejectionReason,
+        approvedById: req.user.id,
+        approvedAt: new Date(),
+      });
+
       const timesheet = await storage.rejectTimesheet(req.params.id);
       if (!timesheet) {
         return res.status(404).json({ error: "Timesheet not found" });
       }
+
+      try {
+        const rejectorName = req.user.firstName && req.user.lastName
+          ? `${req.user.firstName} ${req.user.lastName}`
+          : req.user.username || "Manager";
+        const tsDate = timesheet.date ? format(new Date(timesheet.date as unknown as string), "dd MMM yyyy") : "unknown date";
+        const reasonText = rejectionReason ? `: ${rejectionReason}` : "";
+
+        await storage.createNotification({
+          userId: timesheet.userId,
+          companyId: req.user.companyId!,
+          type: "timesheet_rejected",
+          title: "Timesheet Rejected",
+          message: `${rejectorName} rejected your timesheet for ${tsDate}${reasonText}`,
+          link: timesheet.projectId 
+            ? `/projects/${timesheet.projectId}/timesheets` 
+            : `/business/timesheets`,
+          entityType: "timesheet",
+          entityId: timesheet.id,
+          isRead: false,
+          createdByUserId: req.user.id,
+        });
+      } catch (notifError) {
+        console.error("Failed to create rejection notification:", notifError);
+      }
+
       res.json(timesheet);
     } catch (error: any) {
       res.status(500).json({

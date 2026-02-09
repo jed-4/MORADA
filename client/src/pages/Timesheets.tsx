@@ -188,6 +188,7 @@ export default function Timesheets() {
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [selectedPhases, setSelectedPhases] = useState<string[]>([]);
+  const [selectedCostCodes, setSelectedCostCodes] = useState<string[]>([]);
   const [showInvoicedOnly, setShowInvoicedOnly] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isRapidApprovalOpen, setIsRapidApprovalOpen] = useState(false);
@@ -572,6 +573,9 @@ export default function Timesheets() {
     const matchesPhase = selectedPhases.length > 0 
       ? selectedPhases.includes(getProjectPhase(timesheet.projectId)) 
       : true;
+    const matchesCostCode = selectedCostCodes.length > 0 
+      ? selectedCostCodes.includes(timesheet.costCodeId || "") 
+      : true;
     const matchesInvoiced = !showInvoicedOnly || timesheet.invoiced;
 
     // Date range filter
@@ -581,7 +585,7 @@ export default function Timesheets() {
       end: dateRange.end,
     });
 
-    return matchesSearch && matchesProject && matchesUser && matchesStatus && matchesPhase && matchesInvoiced && matchesDateRange;
+    return matchesSearch && matchesProject && matchesUser && matchesStatus && matchesPhase && matchesCostCode && matchesInvoiced && matchesDateRange;
   }).sort((a, b) => {
     if (!sortColumn || !sortDirection) return 0;
     let cmp = 0;
@@ -960,6 +964,49 @@ export default function Timesheets() {
                     className="mr-2"
                   />
                   {status.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Cost Code Filter */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button 
+                className={`h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5 ${
+                  selectedCostCodes.length > 0 
+                    ? "bg-[#bba7db]/10 text-[#8b7ab8] border-[#bba7db]/40" 
+                    : ""
+                }`}
+                data-testid="button-filter-cost-code"
+              >
+                <span>Cost Code</span>
+                {selectedCostCodes.length > 0 && (
+                  <Badge variant="secondary" className="h-4 px-1 text-[10px] bg-[#bba7db]/20 text-[#8b7ab8]">
+                    {selectedCostCodes.length}
+                  </Badge>
+                )}
+                <ChevronDown className="w-3 h-3 opacity-50" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              {costCodes.map((costCode) => (
+                <DropdownMenuItem
+                  key={costCode.id}
+                  className="flex items-center"
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    const newCostCodes = selectedCostCodes.includes(costCode.id)
+                      ? selectedCostCodes.filter(c => c !== costCode.id)
+                      : [...selectedCostCodes, costCode.id];
+                    setSelectedCostCodes(newCostCodes);
+                  }}
+                >
+                  <Checkbox
+                    checked={selectedCostCodes.includes(costCode.id)}
+                    className="mr-2 pointer-events-none"
+                  />
+                  {costCode.code} - {costCode.name}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>

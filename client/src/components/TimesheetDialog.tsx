@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon, Plus, Trash2, Bell, Check, Clock } from "lucide-react";
+import { Calendar as CalendarIcon, Plus, Trash2, Bell, Check, Clock, AlertTriangle } from "lucide-react";
 import { useTimesheetLabelOptions } from "@/hooks/useTimesheetLabelOptions";
 import { useAuth } from "@/hooks/use-auth";
 import { SetReminderDialog } from "@/components/SetReminderDialog";
@@ -860,6 +860,41 @@ export function TimesheetDialog({
                     <> / Clocked out: <span className="font-medium text-foreground">{timesheet.actualEndTime}</span></>
                   )}
                 </span>
+              </div>
+            )}
+
+            {timesheet && (timesheet.status === "approved" || timesheet.status === "rejected") && timesheet.approvedById && (
+              <div className={`flex flex-col gap-1 px-2 py-2 text-[11px] rounded-md mt-3 ${
+                timesheet.status === "approved" 
+                  ? "bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800" 
+                  : "bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800"
+              }`}>
+                <div className="flex items-center gap-1.5">
+                  {timesheet.status === "approved" ? (
+                    <Check className="h-3 w-3 text-green-600 dark:text-green-400 flex-shrink-0" />
+                  ) : (
+                    <AlertTriangle className="h-3 w-3 text-red-600 dark:text-red-400 flex-shrink-0" />
+                  )}
+                  <span className={timesheet.status === "approved" ? "text-green-700 dark:text-green-300" : "text-red-700 dark:text-red-300"}>
+                    {timesheet.status === "approved" ? "Approved" : "Rejected"} by{" "}
+                    <span className="font-medium">
+                      {(() => {
+                        const approver = users.find(u => u.id === timesheet.approvedById);
+                        return approver 
+                          ? `${approver.firstName || ""} ${approver.lastName || ""}`.trim() || approver.username 
+                          : "Unknown";
+                      })()}
+                    </span>
+                    {timesheet.approvedAt && (
+                      <> on {format(new Date(timesheet.approvedAt), "dd MMM yyyy 'at' h:mm a")}</>
+                    )}
+                  </span>
+                </div>
+                {timesheet.status === "rejected" && timesheet.rejectionReason && (
+                  <div className="text-red-600 dark:text-red-400 pl-[18px]">
+                    Reason: {timesheet.rejectionReason}
+                  </div>
+                )}
               </div>
             )}
             </div>
