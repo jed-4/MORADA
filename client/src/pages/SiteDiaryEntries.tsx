@@ -866,24 +866,28 @@ function EntryFormFields({
                   {templateField.title}
                   {templateField.required && " *"}
                 </FormLabel>
-                <FormControl>
-                  {templateField.type === 'text' && (
+                {templateField.type === 'text' && (
+                  <FormControl>
                     <Input 
                       {...field} 
                       value={field.value as string || ''} 
                       className="h-8 text-sm"
                       data-testid={`input-field-${templateField.id}`}
                     />
-                  )}
-                  {templateField.type === 'textarea' && (
+                  </FormControl>
+                )}
+                {templateField.type === 'textarea' && (
+                  <FormControl>
                     <Textarea 
                       {...field} 
                       value={field.value as string || ''} 
                       className="text-sm min-h-[60px]"
                       data-testid={`textarea-field-${templateField.id}`}
                     />
-                  )}
-                  {templateField.type === 'number' && (
+                  </FormControl>
+                )}
+                {templateField.type === 'number' && (
+                  <FormControl>
                     <Input 
                       type="number" 
                       {...field} 
@@ -891,8 +895,10 @@ function EntryFormFields({
                       className="h-8 text-sm"
                       data-testid={`input-number-${templateField.id}`}
                     />
-                  )}
-                  {templateField.type === 'date' && (
+                  </FormControl>
+                )}
+                {templateField.type === 'date' && (
+                  <FormControl>
                     <Input 
                       type="date" 
                       {...field} 
@@ -900,8 +906,10 @@ function EntryFormFields({
                       className="h-8 text-sm"
                       data-testid={`input-date-${templateField.id}`}
                     />
-                  )}
-                  {templateField.type === 'select' && (
+                  </FormControl>
+                )}
+                {templateField.type === 'select' && (
+                  <FormControl>
                     <Select 
                       value={field.value as string || ''} 
                       onValueChange={field.onChange}
@@ -917,8 +925,10 @@ function EntryFormFields({
                         ))}
                       </SelectContent>
                     </Select>
-                  )}
-                  {templateField.type === 'checkbox' && (
+                  </FormControl>
+                )}
+                {templateField.type === 'checkbox' && (
+                  <FormControl>
                     <div className="flex items-center space-x-2">
                       <Checkbox
                         checked={field.value as boolean || false}
@@ -926,8 +936,10 @@ function EntryFormFields({
                         data-testid={`checkbox-field-${templateField.id}`}
                       />
                     </div>
-                  )}
-                  {(templateField.type === 'file' || templateField.type === 'photo-gallery') && (
+                  </FormControl>
+                )}
+                {(templateField.type === 'file' || templateField.type === 'photo-gallery') && (
+                  <FormControl>
                     <SiteDiaryFileUpload
                       fieldId={templateField.id}
                       type={templateField.type}
@@ -935,8 +947,8 @@ function EntryFormFields({
                       onChange={field.onChange}
                       maxFiles={templateField.type === 'photo-gallery' ? 3 : 1}
                     />
-                  )}
-                </FormControl>
+                  </FormControl>
+                )}
                 <FormMessage />
               </FormItem>
             )}
