@@ -11272,6 +11272,73 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Export site diary templates to Excel
+  app.get("/api/site-diary-templates/export", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const templates = await storage.getSiteDiaryTemplates();
+      const companyTemplates = templates.filter((t: any) => t.companyId === user.companyId && !t.isArchived);
+
+      const XLSX = await import("xlsx");
+      const rows: any[] = [];
+
+      for (const template of companyTemplates) {
+        const fields = (template.fields as any[]) || [];
+        if (fields.length === 0) {
+          rows.push({
+            "Template Name": template.name,
+            "Item Number": "1.0",
+            "Field Title": "(No fields)",
+            "Field Type": "Text",
+            "Field Options": "",
+          });
+        } else {
+          fields.forEach((field: any, index: number) => {
+            const typeMap: Record<string, string> = {
+              text: "Text",
+              textarea: "Textarea",
+              number: "Number",
+              date: "Date",
+              select: "Multiple Choice",
+              checkbox: "Checkbox",
+              file: "File",
+              "photo-gallery": "Photo Gallery",
+            };
+            const options = field.options
+              ? field.options.map((o: any) => o.label).join("|")
+              : "";
+            rows.push({
+              "Template Name": template.name,
+              "Item Number": `${index + 1}.0`,
+              "Field Title": field.title,
+              "Field Type": typeMap[field.type] || "Text",
+              "Field Options": options,
+            });
+          });
+        }
+      }
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(rows);
+      XLSX.utils.book_append_sheet(wb, ws, "Site Diary Templates");
+      const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="site-diary-templates-${new Date().toISOString().split('T')[0]}.xlsx"`);
+      res.send(buffer);
+    } catch (error: any) {
+      console.error("Error exporting site diary templates:", error);
+      res.status(500).json({
+        error: "Failed to export templates",
+        details: error.message,
+      });
+    }
+  });
+
   // Site Diary Entry routes
   app.get("/api/projects/:projectId/site-diary-entries", async (req, res) => {
     try {
@@ -11371,7 +11438,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/site-diary-entries/:id", async (req, res) => {
+  app.delete("/api/site-diary-entries/:id", requireAuth, requireTeamMember, requirePermission("projects.site_diary", "delete"), async (req, res) => {
     try {
       const success = await storage.deleteSiteDiaryEntry(req.params.id);
       if (!success) {

@@ -45,10 +45,9 @@ import {
   Cloud,
   Thermometer,
   ChevronDown,
-  Bell
 } from "lucide-react";
-import { SetReminderDialog } from "@/components/SetReminderDialog";
 import { format } from "date-fns";
+import { useUpload } from "@/hooks/use-upload";
 import type { 
   Project, 
   SiteDiaryTemplate, 
@@ -58,6 +57,7 @@ import type {
 } from "@shared/schema";
 import { insertSiteDiaryEntrySchema } from "@shared/schema";
 import { z } from "zod";
+import { Image as ImageIcon } from "lucide-react";
 
 export default function SiteDiaryEntries() {
   const { toast } = useToast();
@@ -99,10 +99,20 @@ export default function SiteDiaryEntries() {
   }).filter((entry) => {
     if (!searchTerm) return true;
     const searchLower = searchTerm.toLowerCase();
-    return (
+    if (
       entry.title.toLowerCase().includes(searchLower) ||
       entry.templateName?.toLowerCase().includes(searchLower)
-    );
+    ) return true;
+    const fieldValues = entry.fieldValues as Record<string, any> || {};
+    for (const value of Object.values(fieldValues)) {
+      if (!value) continue;
+      if (typeof value === 'string' || typeof value === 'number') {
+        if (String(value).toLowerCase().includes(searchLower)) return true;
+      } else if (typeof value === 'object' && 'checkedByName' in value) {
+        if (value.checkedByName && String(value.checkedByName).toLowerCase().includes(searchLower)) return true;
+      }
+    }
+    return false;
   });
 
   const handleAddEntry = () => {
@@ -309,9 +319,28 @@ export default function SiteDiaryEntries() {
 }
 
 function SiteDiaryCard({ entry }: { entry: SiteDiaryEntry }) {
-  const [showReminderDialog, setShowReminderDialog] = useState(false);
+  const { toast } = useToast();
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const fieldValues = entry.fieldValues as Record<string, any> || {};
   
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest(`/api/site-diary-entries/${entry.id}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", entry.projectId, "site-diary-entries"] });
+      toast({ title: "Entry deleted" });
+    },
+    onError: (error: any) => {
+      const msg = error?.message || "";
+      if (msg.includes("403") || msg.includes("permission")) {
+        toast({ title: "Permission denied", description: "You don't have permission to delete site diary entries.", variant: "destructive" });
+      } else {
+        toast({ title: "Failed to delete entry", description: msg, variant: "destructive" });
+      }
+    },
+  });
+
   const getWeatherDisplay = () => {
     const weather = fieldValues.weather || fieldValues.weatherConditions;
     if (weather) return weather;
@@ -328,6 +357,7 @@ function SiteDiaryCard({ entry }: { entry: SiteDiaryEntry }) {
   const temperature = getTemperatureDisplay();
 
   return (
+    <>
     <div 
       className="group border rounded-md p-2 bg-card hover-elevate transition-all cursor-pointer"
       data-testid={`site-diary-card-${entry.id}`}
@@ -343,6 +373,22 @@ function SiteDiaryCard({ entry }: { entry: SiteDiaryEntry }) {
               {fieldValues.notes || fieldValues.description || fieldValues.summary}
             </p>
           ) : null}
+          {/* Checkbox accountability indicators */}
+          {(() => {
+            const checkboxEntries = Object.entries(fieldValues).filter(
+              ([, v]) => v && typeof v === 'object' && 'checkedBy' in v && v.value === true
+            );
+            if (checkboxEntries.length === 0) return null;
+            return (
+              <div className="flex flex-wrap gap-1 mt-1">
+                {checkboxEntries.map(([key, v]: [string, any]) => (
+                  <span key={key} className="text-[9px] text-muted-foreground">
+                    {v.checkedByName} {v.checkedAt ? format(new Date(v.checkedAt), "h:mm a") : ""}
+                  </span>
+                ))}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Metadata Column */}
@@ -397,11 +443,11 @@ function SiteDiaryCard({ entry }: { entry: SiteDiaryEntry }) {
                 <Edit className="h-4 w-4 mr-2" />
                 Edit
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setShowReminderDialog(true)} data-testid={`entry-set-reminder-${entry.id}`}>
-                <Bell className="h-4 w-4 mr-2" />
-                Set Reminder
-              </DropdownMenuItem>
-              <DropdownMenuItem className="text-destructive" data-testid={`entry-delete-${entry.id}`}>
+              <DropdownMenuItem 
+                className="text-destructive" 
+                onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(true); }}
+                data-testid={`entry-delete-${entry.id}`}
+              >
                 <Trash2 className="h-4 w-4 mr-2" />
                 Delete
               </DropdownMenuItem>
@@ -409,17 +455,33 @@ function SiteDiaryCard({ entry }: { entry: SiteDiaryEntry }) {
           </DropdownMenu>
         </div>
       </div>
-
-      {/* Set Reminder Dialog */}
-      <SetReminderDialog
-        open={showReminderDialog}
-        onOpenChange={setShowReminderDialog}
-        linkedItemType="site_diary"
-        linkedItemId={entry.id}
-        linkedItemTitle={entry.title}
-        projectId={entry.projectId}
-      />
     </div>
+
+    {/* Delete Confirmation Dialog */}
+    {showDeleteConfirm && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowDeleteConfirm(false)}>
+        <div className="bg-background border rounded-lg p-4 max-w-sm mx-4 shadow-lg" onClick={(e) => e.stopPropagation()}>
+          <h3 className="font-semibold text-sm mb-2">Delete Site Diary Entry</h3>
+          <p className="text-xs text-muted-foreground mb-4">
+            Are you sure you want to delete "{entry.title}"? This cannot be undone.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => setShowDeleteConfirm(false)}>
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive" 
+              size="sm" 
+              onClick={() => { deleteMutation.mutate(); setShowDeleteConfirm(false); }}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+            </Button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 
@@ -500,6 +562,135 @@ function EntryFormWithTemplateSelector({
   );
 }
 
+interface UploadedFile {
+  name: string;
+  objectPath: string;
+  size: number;
+  contentType: string;
+  uploadedAt: string;
+}
+
+function SiteDiaryFileUpload({
+  fieldId,
+  type,
+  value,
+  onChange,
+  maxFiles,
+}: {
+  fieldId: string;
+  type: 'file' | 'photo-gallery';
+  value: UploadedFile[];
+  onChange: (files: UploadedFile[]) => void;
+  maxFiles: number;
+}) {
+  const { toast } = useToast();
+  const [uploadingCount, setUploadingCount] = useState(0);
+  const { uploadFile, isUploading, progress } = useUpload({
+    onSuccess: (response) => {
+      const newFile: UploadedFile = {
+        name: response.metadata.name,
+        objectPath: response.objectPath,
+        size: response.metadata.size,
+        contentType: response.metadata.contentType,
+        uploadedAt: new Date().toISOString(),
+      };
+      onChange([...(value || []), newFile]);
+    },
+    onError: (error) => {
+      toast({ title: "Upload failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const currentCount = (value || []).length;
+    const remainingSlots = maxFiles - currentCount;
+    const filesToUpload = Array.from(files).slice(0, remainingSlots);
+    setUploadingCount(filesToUpload.length);
+    for (const file of filesToUpload) {
+      await uploadFile(file);
+    }
+    setUploadingCount(0);
+    e.target.value = "";
+  };
+
+  const removeFile = (index: number) => {
+    const updated = [...(value || [])];
+    updated.splice(index, 1);
+    onChange(updated);
+  };
+
+  const currentFiles = value || [];
+  const canAddMore = currentFiles.length < maxFiles;
+  const isPhoto = type === 'photo-gallery';
+  const acceptAttr = isPhoto ? "image/*" : undefined;
+
+  return (
+    <div className="space-y-2" data-testid={`upload-field-${fieldId}`}>
+      {currentFiles.length > 0 && (
+        <div className={isPhoto ? "grid grid-cols-3 gap-2" : "space-y-1"}>
+          {currentFiles.map((f, i) => (
+            <div key={i} className="relative group border rounded-md overflow-hidden">
+              {isPhoto ? (
+                <div className="aspect-square bg-muted flex items-center justify-center">
+                  <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                  <span className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[9px] px-1 py-0.5 truncate">
+                    {f.name}
+                  </span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 p-1.5 text-xs">
+                  <FileText className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+                  <span className="truncate flex-1">{f.name}</span>
+                  <span className="text-muted-foreground text-[10px]">{(f.size / 1024).toFixed(0)}KB</span>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => removeFile(i)}
+                className="absolute top-0.5 right-0.5 h-4 w-4 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <X className="h-2.5 w-2.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {canAddMore && (
+        <label className="border-2 border-dashed rounded-md p-3 text-center cursor-pointer block hover-elevate">
+          <input
+            type="file"
+            className="hidden"
+            accept={acceptAttr}
+            multiple={maxFiles > 1}
+            onChange={handleFileSelect}
+            disabled={isUploading}
+          />
+          {isUploading ? (
+            <>
+              <div className="h-1 bg-muted rounded-full overflow-hidden mb-1">
+                <div className="h-full bg-primary transition-all" style={{ width: `${progress}%` }} />
+              </div>
+              <p className="text-xs text-muted-foreground">Uploading... {progress}%</p>
+            </>
+          ) : (
+            <>
+              <Upload className="h-5 w-5 mx-auto text-muted-foreground mb-1" />
+              <p className="text-xs text-muted-foreground">
+                {isPhoto 
+                  ? `Upload photos (${currentFiles.length}/${maxFiles})` 
+                  : "Upload file"}
+              </p>
+            </>
+          )}
+        </label>
+      )}
+    </div>
+  );
+}
+
 function EntryFormFields({ 
   template, 
   projectId, 
@@ -510,13 +701,25 @@ function EntryFormFields({
   onSuccess: () => void;
 }) {
   const { toast } = useToast();
+  const { user: currentUser } = useAuth();
   const templateFields = (template.fields as TemplateFieldDefinition[]) || [];
 
   const buildFormSchema = () => {
     const fieldSchemas: Record<string, z.ZodTypeAny> = {};
     
     templateFields.forEach(field => {
-      if (field.required) {
+      if (field.type === 'file' || field.type === 'photo-gallery') {
+        const fileSchema = z.object({
+          name: z.string(),
+          objectPath: z.string(),
+          size: z.number(),
+          contentType: z.string(),
+          uploadedAt: z.string(),
+        });
+        fieldSchemas[field.id] = field.required 
+          ? z.array(fileSchema).min(1, "At least one file is required")
+          : z.array(fileSchema).optional();
+      } else if (field.required) {
         if (field.type === 'number') {
           fieldSchemas[field.id] = z.string()
             .min(1, "Required")
@@ -564,7 +767,9 @@ function EntryFormFields({
       title: "",
       entryDateTime: new Date().toISOString().split('T')[0],
       ...templateFields.reduce((acc, field) => {
-        acc[field.id] = field.type === 'checkbox' ? false : '';
+        if (field.type === 'checkbox') acc[field.id] = false;
+        else if (field.type === 'file' || field.type === 'photo-gallery') acc[field.id] = [];
+        else acc[field.id] = '';
         return acc;
       }, {} as Record<string, any>),
     },
@@ -574,7 +779,17 @@ function EntryFormFields({
     mutationFn: async (data: FormData) => {
       const fieldValues: Record<string, any> = {};
       templateFields.forEach(field => {
-        fieldValues[field.id] = data[field.id as keyof FormData];
+        const val = data[field.id as keyof FormData];
+        if (field.type === 'checkbox') {
+          fieldValues[field.id] = {
+            value: val === true || val === "true",
+            checkedBy: val ? currentUser?.id : null,
+            checkedByName: val ? (currentUser?.fullName || currentUser?.email || "Unknown") : null,
+            checkedAt: val ? new Date().toISOString() : null,
+          };
+        } else {
+          fieldValues[field.id] = val;
+        }
       });
 
       const entryData: InsertSiteDiaryEntry = {
@@ -713,14 +928,13 @@ function EntryFormFields({
                     </div>
                   )}
                   {(templateField.type === 'file' || templateField.type === 'photo-gallery') && (
-                    <div className="border-2 border-dashed rounded-md p-3 text-center">
-                      <Upload className="h-6 w-6 mx-auto text-muted-foreground mb-1" />
-                      <p className="text-xs text-muted-foreground">
-                        {templateField.type === 'photo-gallery' 
-                          ? "Photo upload (max 3) - Coming soon" 
-                          : "File upload - Coming soon"}
-                      </p>
-                    </div>
+                    <SiteDiaryFileUpload
+                      fieldId={templateField.id}
+                      type={templateField.type}
+                      value={field.value as any[] || []}
+                      onChange={field.onChange}
+                      maxFiles={templateField.type === 'photo-gallery' ? 3 : 1}
+                    />
                   )}
                 </FormControl>
                 <FormMessage />

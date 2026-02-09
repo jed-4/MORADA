@@ -32,6 +32,7 @@ import {
   Copy,
   Star,
   Upload,
+  Download,
   FileSpreadsheet,
   Loader2,
 } from "lucide-react";
@@ -216,6 +217,16 @@ export default function SiteDiaryTemplates() {
 
         {/* Right: Action Buttons */}
         <div className="flex items-center gap-1.5">
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+            onClick={() => {
+              window.open("/api/site-diary-templates/export", "_blank");
+            }}
+            data-testid="button-export-templates"
+          >
+            <Download className="w-3 h-3" />
+            <span>Export</span>
+          </button>
           <button
             className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
             onClick={() => setIsImportDialogOpen(true)}

@@ -3,7 +3,9 @@
 ## Epic Overview
 
 ### Description
-The Site Diary system provides a structured way to record daily site activities, conditions, and progress. Company-wide templates define the data structure, and project-specific entries capture field information. The system supports customizable fields, weather tracking, photo galleries, and client sharing capabilities.
+The Site Diary system provides a structured way to record daily site activities, conditions, and progress. Company-wide templates define the form structure (data layout), and project-specific entries (the actual "site diaries") capture field information. The system supports customizable fields, weather tracking, photo galleries, file uploads, and client sharing capabilities.
+
+**Terminology Note:** A "Site Diary Template" is the form layout that defines what fields appear. A "Site Diary" (entry) is the actual diary record created from a template.
 
 ### Business Value
 - Consistent documentation across all projects
@@ -12,6 +14,7 @@ The Site Diary system provides a structured way to record daily site activities,
 - Weather documentation for delay claims
 - Photo evidence of site conditions and progress
 - Flexible templates to match different project types
+- Accountability tracking on checkbox items (who ticked, when)
 
 ---
 
@@ -34,15 +37,15 @@ The Site Diary system provides a structured way to record daily site activities,
 #### US-SD001: Create Site Diary Template
 **As a** builder/admin  
 **I want to** create a site diary template with custom fields  
-**So that** my team has a consistent structure for recording site information
+**So that** my team has a consistent form structure for recording site information
 
 **Acceptance Criteria:**
-- [ ] Create template with name and description
-- [ ] Add multiple field types: text, textarea, number, date, select, checkbox, file, photo-gallery
-- [ ] Mark fields as required or optional
-- [ ] Define select field options
-- [ ] Set field order via drag-and-drop
-- [ ] Template is company-wide (available on all projects)
+- [x] Create template with name and description
+- [x] Add multiple field types: text, textarea, number, date, select, checkbox, file, photo-gallery
+- [x] Mark fields as required or optional
+- [x] Define select field options
+- [x] Set field order via drag-and-drop
+- [x] Template is company-wide (available on all projects)
 
 **Priority:** Must Have  
 **Status:** Implemented
@@ -52,13 +55,15 @@ The Site Diary system provides a structured way to record daily site activities,
 #### US-SD002: Edit Site Diary Template
 **As a** builder/admin  
 **I want to** modify existing templates  
-**So that** I can improve the data capture structure over time
+**So that** I can improve the form structure over time
 
 **Acceptance Criteria:**
-- [ ] Edit template name and description
-- [ ] Add, remove, or reorder fields
-- [ ] Changes apply to new entries (existing entries retain original structure)
+- [x] Edit template name and description
+- [x] Add, remove, or reorder fields
+- [x] Changes apply to new entries (existing entries retain original structure)
 - [ ] Confirmation when editing template with existing entries
+
+**Implementation Note:** The template is just the form layout. The "site diary" is the entry created from that template. Users "create a site diary from a template".
 
 **Priority:** Must Have  
 **Status:** Implemented
@@ -71,10 +76,10 @@ The Site Diary system provides a structured way to record daily site activities,
 **So that** new entries automatically use my preferred structure
 
 **Acceptance Criteria:**
-- [ ] "Set as Default" option on template
-- [ ] Only one template can be default at a time
-- [ ] Default template pre-selected when creating new entries
-- [ ] Visual indicator shows which template is default
+- [x] "Set as Default" option on template
+- [x] Only one template can be default at a time
+- [x] Default template pre-selected when creating new entries
+- [x] Visual indicator (star icon) shows which template is default
 
 **Priority:** Should Have  
 **Status:** Implemented
@@ -87,10 +92,10 @@ The Site Diary system provides a structured way to record daily site activities,
 **So that** I can create variations without starting from scratch
 
 **Acceptance Criteria:**
-- [ ] "Duplicate" option in template menu
-- [ ] Copy created with "(Copy)" suffix
-- [ ] All fields and settings copied
-- [ ] User can immediately edit the duplicate
+- [x] "Duplicate" option in template menu
+- [x] Copy created with "(Copy)" suffix
+- [x] All fields and settings copied
+- [x] User can immediately edit the duplicate
 
 **Priority:** Should Have  
 **Status:** Implemented
@@ -103,9 +108,9 @@ The Site Diary system provides a structured way to record daily site activities,
 **So that** the template list stays manageable
 
 **Acceptance Criteria:**
-- [ ] Delete/Archive option in template menu
-- [ ] Archived templates hidden from selection
-- [ ] Existing entries using archived template remain viewable
+- [x] Delete/Archive option in template menu
+- [x] Archived templates hidden from selection
+- [x] Existing entries using archived template remain viewable
 - [ ] Confirmation required before archiving
 
 **Priority:** Should Have  
@@ -113,19 +118,21 @@ The Site Diary system provides a structured way to record daily site activities,
 
 ---
 
-#### US-SD006: Import Templates
+#### US-SD006: Import & Export Templates
 **As a** builder/admin  
-**I want to** import templates from a file  
-**So that** I can quickly set up templates from another system or project
+**I want to** import and export templates  
+**So that** I can share templates between systems or back them up
 
 **Acceptance Criteria:**
-- [ ] Import from CSV/Excel format
+- [x] Import from Excel format (.xlsx/.xls)
+- [x] Drag-and-drop file upload zone
+- [x] Validation of field structure
+- [x] Success/error feedback on import
+- [x] Export templates to Excel format
 - [ ] Preview imported templates before confirming
-- [ ] Validation of field structure
-- [ ] Success/error feedback on import
 
 **Priority:** Nice to Have  
-**Status:** Implemented
+**Status:** Implemented (import working, export added)
 
 ---
 
@@ -133,16 +140,16 @@ The Site Diary system provides a structured way to record daily site activities,
 
 #### US-SD010: Create Site Diary Entry
 **As a** site supervisor  
-**I want to** create a new site diary entry  
+**I want to** create a new site diary entry from a template  
 **So that** I can document today's site activities
 
 **Acceptance Criteria:**
-- [ ] Select project (if not already in project context)
-- [ ] Select template (default template pre-selected)
-- [ ] Enter title and date/time
-- [ ] Fill in template fields based on type
-- [ ] Required fields must be completed before saving
-- [ ] Entry saved with creator name and timestamp
+- [x] Select project (if not already in project context)
+- [x] Select template (default template pre-selected)
+- [x] Enter title and date/time
+- [x] Fill in template fields based on type
+- [x] Required fields must be completed before saving
+- [x] Entry saved with creator name and timestamp
 
 **Priority:** Must Have  
 **Status:** Implemented
@@ -184,14 +191,16 @@ The Site Diary system provides a structured way to record daily site activities,
 ---
 
 #### US-SD013: Delete Site Diary Entry
-**As a** site supervisor  
+**As a** site supervisor with delete permission  
 **I want to** delete incorrect entries  
 **So that** records remain accurate
 
 **Acceptance Criteria:**
-- [ ] Delete option in entry menu
-- [ ] Confirmation required
-- [ ] Deleted entries cannot be recovered
+- [x] Delete option in entry menu
+- [x] Confirmation required
+- [x] Permission check: requires `projects.site_diary` delete permission
+- [x] Server-side permission validation (403 if no permission)
+- [x] Delete button hidden when user lacks permission
 - [ ] Associated attachments are cleaned up
 
 **Priority:** Must Have  
@@ -210,8 +219,8 @@ The Site Diary system provides a structured way to record daily site activities,
 - [ ] Reminder creates notification at specified time
 - [ ] Notification links back to the entry
 
-**Priority:** Should Have  
-**Status:** Implemented
+**Priority:** Low  
+**Status:** Hidden (feature available but removed from UI per user decision - considered unnecessary)
 
 ---
 
@@ -223,8 +232,8 @@ The Site Diary system provides a structured way to record daily site activities,
 **So that** users can enter short text responses
 
 **Acceptance Criteria:**
-- [ ] Single-line text input
-- [ ] Optional required validation
+- [x] Single-line text input
+- [x] Optional required validation
 - [ ] Placeholder text support
 
 **Priority:** Must Have  
@@ -238,9 +247,9 @@ The Site Diary system provides a structured way to record daily site activities,
 **So that** users can enter longer descriptions
 
 **Acceptance Criteria:**
-- [ ] Multi-line text input
-- [ ] Expandable text area
-- [ ] Optional required validation
+- [x] Multi-line text input
+- [x] Expandable text area
+- [x] Optional required validation
 
 **Priority:** Must Have  
 **Status:** Implemented
@@ -253,9 +262,9 @@ The Site Diary system provides a structured way to record daily site activities,
 **So that** users can enter numeric values (counts, measurements)
 
 **Acceptance Criteria:**
-- [ ] Numeric input validation
+- [x] Numeric input validation
 - [ ] Optional min/max constraints
-- [ ] Decimal support
+- [x] Decimal support
 
 **Priority:** Must Have  
 **Status:** Implemented
@@ -268,9 +277,9 @@ The Site Diary system provides a structured way to record daily site activities,
 **So that** users can select dates for scheduling or tracking
 
 **Acceptance Criteria:**
-- [ ] Date picker component
-- [ ] Standard date format display
-- [ ] Optional required validation
+- [x] Date picker component
+- [x] Standard date format display
+- [x] Optional required validation
 
 **Priority:** Must Have  
 **Status:** Implemented
@@ -283,24 +292,27 @@ The Site Diary system provides a structured way to record daily site activities,
 **So that** users can choose from predefined options
 
 **Acceptance Criteria:**
-- [ ] Define list of options (label/value pairs)
-- [ ] Single selection dropdown
-- [ ] Optional required validation
+- [x] Define list of options (label/value pairs)
+- [x] Single selection dropdown
+- [x] Optional required validation
 
 **Priority:** Must Have  
 **Status:** Implemented
 
 ---
 
-#### US-SD025: Checkbox Field
+#### US-SD025: Checkbox Field with Accountability
 **As a** template creator  
-**I want to** add checkbox fields  
-**So that** users can toggle yes/no options
+**I want to** add checkbox fields that track who checks them  
+**So that** there is accountability for sign-offs and completions
 
 **Acceptance Criteria:**
-- [ ] Boolean checkbox input
-- [ ] Optional "must be checked" validation
-- [ ] Clear label display
+- [x] Boolean checkbox input
+- [x] Optional "must be checked" validation
+- [x] Clear label display
+- [x] Records which user checked the box
+- [x] Records timestamp when checkbox was ticked
+- [x] Displays checker name and time alongside the checkbox
 
 **Priority:** Must Have  
 **Status:** Implemented
@@ -310,13 +322,15 @@ The Site Diary system provides a structured way to record daily site activities,
 #### US-SD026: File Attachment Field
 **As a** template creator  
 **I want to** add file attachment fields  
-**So that** users can upload documents
+**So that** users can upload documents and photos
 
 **Acceptance Criteria:**
-- [ ] File upload to object storage
-- [ ] Support common file types (PDF, Word, etc.)
-- [ ] File name and size display
-- [ ] Download capability
+- [x] File upload to object storage via presigned URLs
+- [x] Support common file types (PDF, Word, images, etc.)
+- [x] Multiple photo upload from phone camera or computer file system
+- [x] File name and size display
+- [x] Download capability
+- [x] Photo preview thumbnails
 
 **Priority:** Should Have  
 **Status:** Implemented
@@ -329,10 +343,11 @@ The Site Diary system provides a structured way to record daily site activities,
 **So that** users can capture site photos for specific items
 
 **Acceptance Criteria:**
-- [ ] Multiple photo upload per field
-- [ ] Configurable max photos (default 3)
-- [ ] Photo preview thumbnails
-- [ ] Full-size photo viewing
+- [x] Multiple photo upload per field
+- [x] Configurable max photos (default 3)
+- [x] Photo preview thumbnails
+- [x] Full-size photo viewing
+- [x] Upload from phone camera or computer
 
 **Priority:** Should Have  
 **Status:** Implemented
@@ -347,13 +362,14 @@ The Site Diary system provides a structured way to record daily site activities,
 **So that** weather-related delays are documented
 
 **Acceptance Criteria:**
-- [ ] Weather data fields: temperature, condition, humidity, wind, precipitation
-- [ ] Weather icon display
-- [ ] Manual entry or auto-fetch option
-- [ ] Weather displayed on entry card
+- [x] Weather data fields: temperature, condition, humidity, wind, precipitation
+- [x] Weather icon display
+- [ ] Auto-fetch weather from API (requires API key)
+- [x] Manual entry option
+- [x] Weather displayed on entry card
 
 **Priority:** Should Have  
-**Status:** Implemented
+**Status:** Partial (manual entry works, auto-fetch pending)
 
 ---
 
@@ -371,7 +387,7 @@ The Site Diary system provides a structured way to record daily site activities,
 - [ ] Photos stored in object storage
 
 **Priority:** Must Have  
-**Status:** Implemented
+**Status:** Implemented (data structure exists)
 
 ---
 
@@ -383,9 +399,9 @@ The Site Diary system provides a structured way to record daily site activities,
 **So that** I can view specific types of diary entries
 
 **Acceptance Criteria:**
-- [ ] Template filter dropdown
-- [ ] "All" option to show all templates
-- [ ] Filter persists during session
+- [x] Template filter dropdown
+- [x] "All" option to show all templates
+- [x] Filter persists during session
 
 **Priority:** Should Have  
 **Status:** Implemented
@@ -398,9 +414,10 @@ The Site Diary system provides a structured way to record daily site activities,
 **So that** I can find specific information quickly
 
 **Acceptance Criteria:**
-- [ ] Search by entry title
-- [ ] Search by template name
-- [ ] Real-time filtering as user types
+- [x] Search by entry title
+- [x] Search by template name
+- [x] Search within template form field values (secondary search)
+- [x] Real-time filtering as user types
 
 **Priority:** Should Have  
 **Status:** Implemented
@@ -415,10 +432,10 @@ The Site Diary system provides a structured way to record daily site activities,
 **So that** they can see site progress
 
 **Acceptance Criteria:**
-- [ ] "Share with Client" toggle on entry
+- [x] "Share with Client" toggle on entry
 - [ ] Shared entries visible in client portal
-- [ ] Control over which entries are shared
-- [ ] Visual indicator for shared entries
+- [x] Control over which entries are shared
+- [x] Visual indicator for shared entries (badge)
 
 **Priority:** Should Have  
 **Status:** Partial (field exists, client portal pending)
@@ -451,10 +468,10 @@ The Site Diary system provides a structured way to record daily site activities,
 **So that** I can review project documentation
 
 **Acceptance Criteria:**
-- [ ] Site Diary accessible from project navigation
-- [ ] Shows only entries for that project
-- [ ] Entry count displayed
-- [ ] Same functionality as company-wide view
+- [x] Site Diary accessible from project navigation
+- [x] Shows only entries for that project
+- [x] Entry count displayed
+- [x] Same functionality as company-wide view
 
 **Priority:** Must Have  
 **Status:** Implemented
@@ -466,30 +483,32 @@ The Site Diary system provides a structured way to record daily site activities,
 ### Implemented Features
 - Company-wide template creation and management
 - Template field types: text, textarea, number, date, select, checkbox, file, photo-gallery
-- Set default template
+- Set default template (star indicator)
 - Duplicate and archive templates
-- Import templates from file
-- Create, edit, view, delete diary entries
-- Template selection when creating entries
+- Import templates from Excel
+- Export templates to Excel
+- Create site diary entries from templates
+- Template selection when creating entries (default pre-selected)
 - Required field validation
-- Weather data recording
-- Overall photo gallery (unlimited)
-- Field-specific photo galleries (configurable limit)
+- Weather data recording (manual)
 - Filter by template
-- Search by title/template name
-- Set reminders on entries
+- Search by title, template name, and field values
+- Delete entries with permission checks
 - Labels support (data structure)
 - Project-specific diary views
 - Share with client flag
+- Checkbox accountability (who checked, when)
+- File and photo uploads via Object Storage
 
 ### Known Limitations
 - [ ] No calendar view for entries
-- [ ] No export to PDF/Excel
+- [ ] No PDF export for entries
 - [ ] No offline entry creation (mobile)
 - [ ] No auto-fetch weather (requires API key)
 - [ ] Client portal not yet implemented
-- [ ] No entry duplication
+- [ ] No entry duplication / quick-fill from previous day
 - [ ] No bulk operations
+- [ ] No voice notes / audio recording
 
 ---
 
@@ -497,25 +516,31 @@ The Site Diary system provides a structured way to record daily site activities,
 
 | Enhancement | Description | Priority |
 |-------------|-------------|----------|
-| Calendar View | View entries on a calendar | Should Have |
-| PDF Export | Generate PDF reports from entries | Should Have |
-| Auto Weather | Fetch weather from weather API | Nice to Have |
-| Offline Mode | Create entries offline on mobile | Should Have |
+| Calendar View | View entries on a calendar with date navigation | Should Have |
+| PDF Export | Generate formatted PDF reports from diary entries | Should Have |
+| Auto Weather | Fetch weather automatically from weather API based on project location | Nice to Have |
+| Offline Mode | Create entries offline on mobile, sync when connected | Should Have |
 | Client Portal | Client-facing view for shared entries | Should Have |
-| Entry Templates | Quick-fill from previous day | Nice to Have |
-| Voice Notes | Audio recording on entries | Nice to Have |
+| Entry Templates / Quick-Fill | Quick-fill from previous day's entry to speed up daily recording | Nice to Have |
+| Voice Notes | Audio recording capability on entries | Nice to Have |
+| Camera Access | Direct camera access from mobile browser for photo capture | Should Have |
 
 ---
 
 ## Permissions Reference
 
-### Site Diary Permissions
-- `site_diary.create` - Create diary entries
-- `site_diary.read` - View diary entries
-- `site_diary.update` - Edit diary entries
-- `site_diary.delete` - Delete diary entries
-- `site_diary.templates` - Manage templates
-- `site_diary.share` - Share entries with clients
+### Site Diary Permissions (Roles & Permissions page)
+
+Permission ID: `46dc059b-7125-4549-bac0-a40f4052155e` (Category: Projects)
+
+CRUD permissions for site diary entries:
+- **View** - View site diary entries
+- **Add** - Create new site diary entries
+- **Edit** - Edit site diary entries
+- **Delete** - Delete site diary entries
+
+#### Built-in Admin Bypass
+Built-in admin roles (General Manager, Admin, Owner) automatically bypass all permission checks and have full access to all site diary operations.
 
 ---
 
@@ -524,15 +549,25 @@ The Site Diary system provides a structured way to record daily site activities,
 | Date | Changes |
 |------|---------|
 | 2026-02-04 | Initial user story document created based on current implementation |
+| 2026-02-09 | Comprehensive review with user notes. Updated terminology (template = form, entry = site diary). Ticked implemented criteria for US-SD003, US-SD004. Added export to US-SD006. Updated US-SD013 with permission requirements. Hidden US-SD014 (reminder deemed unnecessary). Added checkbox accountability to US-SD025. Updated US-SD026 with upload requirements. Added search within field values to US-SD051. Added future enhancements: Calendar View, PDF Export, Auto Weather, Offline Mode, Client Portal, Entry Templates, Voice Notes, Camera Access. |
 
 ---
 
-## Review Notes
+## User Notes Addressed
 
-**This is an initial draft based on code review.** Please provide your numbered notes for:
-- Features that are missing or described incorrectly
-- Behaviors that should work differently
-- New requirements or enhancements needed
-- Any bugs or issues you've observed
-
-*Format your notes like the Tasks notes (1, 2, 3...) and I'll incorporate them all into the final comprehensive document.*
+1. US-SD002: Template terminology clarified - template is the form, entry is the site diary. Users "create a site diary from a template" ✓
+2. US-SD003: Set Default Template - Confirmed working (star icon, pre-selection) ✓
+3. US-SD004: Duplicate Template - Confirmed working (Copy suffix) ✓
+4. US-SD006: Import exists, export added ✓
+5. US-SD013: Delete needs to work with permission checks - Implemented ✓
+6. US-SD014: Reminder considered unnecessary - Hidden from UI ✓
+7. US-SD025: Checkbox accountability - Track who checks and when ✓
+8. US-SD026: File attachments - Upload from phone/computer with Object Storage ✓
+9. US-SD051: Search within field values (secondary search) ✓
+10. Calendar View - Added to future enhancements
+11. PDF Export - Added to future enhancements
+12. Auto Weather - Added to future enhancements
+13. Offline Mode - Added to future enhancements
+14. Client Portal - Added to future enhancements
+15. Entry Templates / Quick-fill - Added to future enhancements
+16. Voice Notes - Added to future enhancements
