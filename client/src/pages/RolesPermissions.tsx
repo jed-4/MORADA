@@ -63,7 +63,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-type PermissionAction = "view" | "add" | "edit" | "delete";
+type PermissionAction = "view" | "add" | "edit" | "delete" | "approve";
 
 interface PermissionMatrix {
   [roleId: string]: {
@@ -362,6 +362,7 @@ export default function RolesPermissions() {
     tasks: "TASKS",
     projects: "PROJECT MANAGEMENT",
     financial: "FINANCIAL",
+    timesheets: "TIMESHEETS",
     files: "FILES",
     admin: "ADMIN",
     sales: "SALES",
@@ -512,45 +513,57 @@ export default function RolesPermissions() {
                         {categoryDisplayNames[category] || category.toUpperCase()}
                       </h3>
                       
-                      <div className="space-y-3">
-                        {/* Header row */}
-                        <div className="grid grid-cols-[1fr,80px,80px,80px,80px] gap-4 pb-2 border-b">
-                          <div></div>
-                          <div className="text-xs font-medium text-center">View</div>
-                          <div className="text-xs font-medium text-center">Add</div>
-                          <div className="text-xs font-medium text-center">Edit</div>
-                          <div className="text-xs font-medium text-center">Delete</div>
-                        </div>
-
-                        {/* Permission rows */}
-                        {categoryPermissions.map((permission) => (
-                          <div
-                            key={permission.id}
-                            className="grid grid-cols-[1fr,80px,80px,80px,80px] gap-4 items-center"
-                          >
-                            <div className="text-sm">{permission.name}</div>
-                            
-                            {["view", "add", "edit", "delete"].map((action) => {
-                              const isAvailable = (permission.actions as PermissionAction[]).includes(action as PermissionAction);
-                              return (
-                                <div key={action} className="flex justify-center">
-                                  {isAvailable ? (
-                                    <Checkbox
-                                      checked={isPermissionEnabled(permission.id, action as PermissionAction)}
-                                      onCheckedChange={() =>
-                                        togglePermission(permission.id, action as PermissionAction)
-                                      }
-                                      data-testid={`checkbox-${permission.key}-${action}`}
-                                    />
-                                  ) : (
-                                    <div className="h-4 w-4" />
-                                  )}
-                                </div>
-                              );
-                            })}
+                      {(() => {
+                        const hasApproveAction = categoryPermissions.some(
+                          (p) => (p.actions as string[]).includes("approve")
+                        );
+                        const actionColumns: { key: PermissionAction; label: string }[] = [
+                          { key: "view", label: "View" },
+                          { key: "add", label: "Add" },
+                          { key: "edit", label: "Edit" },
+                          { key: "delete", label: "Delete" },
+                          ...(hasApproveAction ? [{ key: "approve" as PermissionAction, label: "Approve" }] : []),
+                        ];
+                        const gridCols = hasApproveAction
+                          ? "grid-cols-[1fr,80px,80px,80px,80px,80px]"
+                          : "grid-cols-[1fr,80px,80px,80px,80px]";
+                        return (
+                          <div className="space-y-3">
+                            <div className={`grid ${gridCols} gap-4 pb-2 border-b`}>
+                              <div></div>
+                              {actionColumns.map((col) => (
+                                <div key={col.key} className="text-xs font-medium text-center">{col.label}</div>
+                              ))}
+                            </div>
+                            {categoryPermissions.map((permission) => (
+                              <div
+                                key={permission.id}
+                                className={`grid ${gridCols} gap-4 items-center`}
+                              >
+                                <div className="text-sm">{permission.name}</div>
+                                {actionColumns.map(({ key: action }) => {
+                                  const isAvailable = (permission.actions as string[]).includes(action);
+                                  return (
+                                    <div key={action} className="flex justify-center">
+                                      {isAvailable ? (
+                                        <Checkbox
+                                          checked={isPermissionEnabled(permission.id, action)}
+                                          onCheckedChange={() =>
+                                            togglePermission(permission.id, action)
+                                          }
+                                          data-testid={`checkbox-${permission.key}-${action}`}
+                                        />
+                                      ) : (
+                                        <div className="h-4 w-4" />
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
+                        );
+                      })()}
                     </CardContent>
                   </Card>
                 ))}

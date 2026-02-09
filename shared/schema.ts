@@ -382,7 +382,7 @@ export type UserWithRole = User & {
   permissions?: Permission[];
 };
 
-export type PermissionAction = "view" | "add" | "edit" | "delete";
+export type PermissionAction = "view" | "add" | "edit" | "delete" | "approve";
 export type UserCategory = "team" | "supplier" | "client";
 
 // Note Groups for organizing notes

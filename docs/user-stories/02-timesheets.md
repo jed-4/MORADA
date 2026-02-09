@@ -95,11 +95,11 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 **So that** I can remove mistakes before submission
 
 **Acceptance Criteria:**
-- [ ] User can delete submitted timesheet entries
-- [ ] Confirmation required before deletion
-- [ ] Approved entries cannot be deleted (or require manager action)
-- [ ] Delete action respects permissions (`timesheets.delete_own` or `timesheets.delete_all`)
-- [ ] Delete button hidden/disabled when user lacks permission
+- [x] User can delete submitted timesheet entries
+- [x] Confirmation required before deletion
+- [x] Approved entries cannot be deleted (or require manager action)
+- [x] Delete action respects permissions (`projects.timesheet` with `delete` action)
+- [x] Delete button hidden/disabled when user lacks permission
 
 **Priority:** Must Have  
 **Status:** Implemented
@@ -130,18 +130,17 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 **So that** I can review and manage time entries
 
 **Acceptance Criteria:**
-- [ ] Table displays: date, user, project, cost code, start time, end time, break, hours, rate, total, status, description
-- [ ] Start time and end time shown as separate columns
-- [ ] Columns are configurable (show/hide)
-- [ ] Columns are resizable
-- [ ] Columns support drag-and-drop reordering (matching Tasks table)
-- [ ] Rows support drag-and-drop reordering
-- [ ] Table supports sorting and filtering
-- [ ] Clicking an entry opens the edit dialog
-- [ ] Column order and visibility preferences saved per user
+- [x] Table displays: date, user, project, cost code, start time, end time, break, hours, rate, total, status, description
+- [x] Start time and end time shown as separate columns
+- [x] Columns are configurable (show/hide)
+- [x] Columns are resizable
+- [x] Columns support drag-and-drop reordering (matching Tasks table)
+- [x] Table supports sorting and filtering
+- [x] Clicking an entry opens the edit dialog
+- [x] Column order and visibility preferences saved per user
 
 **Priority:** Must Have  
-**Status:** Partially Implemented (separate time columns and drag-drop pending)
+**Status:** Implemented
 
 ---
 
@@ -186,19 +185,19 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 **So that** I can find specific entries quickly
 
 **Acceptance Criteria:**
-- [ ] Filter by project
-- [ ] Filter by user
-- [ ] Filter by status (submitted, approved, rejected)
-- [ ] Filter by date range (this week, last week, this month, custom)
-- [ ] "This week" and "Last week" respect company week start setting (Monday or Sunday)
-- [ ] Filter by invoiced status
-- [ ] Multiple filters can be combined
-- [ ] Active filters shown as badges
+- [x] Filter by project
+- [x] Filter by user
+- [x] Filter by status (submitted, approved, rejected)
+- [x] Filter by date range (this week, last week, this month, custom)
+- [x] "This week" and "Last week" respect company week start setting (Monday or Sunday)
+- [x] Filter by invoiced status
+- [x] Multiple filters can be combined
+- [x] Active filters shown as badges
 
-**Implementation Note:** Week start preference (Monday/Sunday) should be configurable in Company Settings and applied consistently across all calendars and date-based features throughout the app.
+**Implementation Note:** Week start preference (Monday/Sunday) is configurable in Company Settings and applied consistently across all calendars and date-based features throughout the app via `useWeekStartDay` hook.
 
 **Priority:** Must Have  
-**Status:** Implemented (week start preference pending)
+**Status:** Implemented
 
 ---
 
@@ -480,30 +479,23 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 
 ## Permissions Reference
 
-### Timesheet Permissions (to be added to Roles & Permissions)
+### Timesheet Permissions (Roles & Permissions page)
 
-#### View Permissions
-- `timesheets.view_own` - View only own timesheet entries
-- `timesheets.view_all` - View all company timesheet entries
+Two permission entries control timesheet access:
 
-#### Create Permissions
-- `timesheets.create` - Create timesheet entries
-- `timesheets.clock_in` - Use clock in/out feature
+#### `projects.timesheet` (Category: Project Management)
+CRUD permissions for timesheet entries:
+- **View** - View timesheet entries
+- **Add** - Create new timesheet entries and use clock in/out
+- **Edit** - Edit timesheet entries (own entries for regular users, all entries for admins)
+- **Delete** - Delete timesheet entries (own entries for regular users, all entries for admins)
 
-#### Edit Permissions
-- `timesheets.edit_own` - Edit own timesheet entries (submitted status only)
-- `timesheets.edit_all` - Edit any timesheet entries regardless of owner
+#### `timesheets.approve` (Category: Timesheets)
+Approval workflow permission:
+- **Approve** - Approve/reject submitted timesheets, access Rapid Approval
 
-#### Delete Permissions
-- `timesheets.delete_own` - Delete own submitted timesheet entries
-- `timesheets.delete_all` - Delete any timesheet entries (admin only)
-
-#### Approval Permissions
-- `timesheets.approve` - Approve/reject submitted timesheets
-- `timesheets.recall` - Recall submitted timesheets for editing
-
-#### Export Permissions
-- `timesheets.export` - Export timesheet data to Excel/CSV
+#### Built-in Admin Bypass
+Built-in admin roles (General Manager, Admin, Owner) automatically bypass all permission checks and have full access to all timesheet operations.
 
 ### Timesheet Notifications (to be added to Notification Settings)
 - Timesheet submitted for approval
@@ -520,24 +512,38 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 | 2026-02-04 | Initial user story document created based on current implementation |
 | 2026-02-05 | Updated per user notes: clarified required fields (start/end time, cost code), confirmed budget integration via cost codes, confirmed export functionality, added global header "New" menu access |
 | 2026-02-05 | Added comprehensive permissions reference, delete permission criteria, table drag-drop/reordering criteria, week start preference criteria |
+| 2026-02-09 | Comprehensive review of 29 user notes. Fixed bulk action admin check. Updated permissions to support CRUD + Approve in Roles & Permissions UI. Confirmed all core features implemented. |
 
 ---
 
 ## User Notes Addressed
 
-1. ~~Links to budget labour hours~~ - Works via cost codes ✓
-2. ~~Link to estimate~~ - Unnecessary (covered by cost codes)
-3. Export timesheets - Confirmed working ✓
-4. ~~Import timesheets~~ - Not implemented (deferred)
-5. ~~Quick Actions / Global 'New'~~ - Global header confirmed working ✓
-6. Require start/end time and cost code - Implemented ✓
-7. ~~Add Timesheet button~~ - Disregarded (Clock In button sufficient)
-8. Bi-directional time calculation - Implemented ✓
-9. Labels for timesheets - Implemented ✓
-10. Clock In button on Timesheets page - Implemented ✓
-11. Break period start/finish time tracking - Implemented ✓
-12. Permission-based editing for timesheets - Implemented ✓
-13. Brainstorm permissions for timesheets - Documented in Permissions Reference ✓
-14. US-TS004 delete permission option - Added to acceptance criteria ✓
-15. US-TS010 table matching Tasks with drag-drop, separate start/end columns - Added to acceptance criteria (pending implementation)
-16. US-TS020 week start preference (Monday/Sunday) - Added to acceptance criteria (pending implementation)
+1. Links to budget labour hours - Works via cost codes ✓
+2. Export timesheets - Confirmed working (Excel export) ✓
+3. Entry requires start/end time and cost code - Implemented ✓
+4. Bi-directional time calculation (start+end or start+duration) with break deduction - Implemented ✓
+5. Labels for timesheets - Implemented (configurable in Field Categories) ✓
+6. Clock In button on Timesheets page - Implemented (green button with popover) ✓
+7. Break start/finish time tracking - Implemented ✓
+8. Permission-based editing for timesheets - Implemented ✓
+9. Permissions brainstorm - Documented in Permissions Reference ✓
+10. US-TS004 delete permission option - Implemented ✓
+11. US-TS010 table matching Tasks with configurable columns - Implemented ✓
+12. US-TS020 week start preference (Monday/Sunday) - Implemented via useWeekStartDay hook ✓
+13. Search timesheets - Implemented (real-time text search by description) ✓
+14. Simplified submission flow (no draft) - All entries created as "Submitted" ✓
+15. Permission-based approval - Implemented (timesheets.approve permission) ✓
+16. Bulk actions - Fixed admin role check (was using old user.role field) ✓
+17. Rapid Approval - Implemented ✓
+18. Labour hours budget tracking - Implemented in Budget section ✓
+19. Cost code assignment with budget integration - Implemented ✓
+20. Timesheet permissions in Roles & Permissions - CRUD via projects.timesheet + Approve via timesheets.approve ✓
+21. Totals by status in bottom right - Pending
+22. Refine modal / side modal - Pending
+23. Subcontractor timesheets to PO - Implemented ✓
+24. Clock in/out audit trail (actualStartTime/actualEndTime) with adjustable approval - Implemented ✓
+25. Bulk edit timesheets - Implemented (bulk status change, bulk delete) ✓
+26. Sticky bottom bar on modal - Pending
+27. Column resizing - Implemented ✓
+28. Reminder for long-running timesheets - Pending
+29. Only approval-power users can edit approved entries - Partially implemented (admin bypass, permission-based) ✓

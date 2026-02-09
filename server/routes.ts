@@ -13305,7 +13305,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Invalid status" });
       }
 
-      const isAdmin = user.role === "owner" || user.role === "admin" || user.role === "manager";
+      const userRoleName = user.roleName?.toLowerCase() || '';
+      const isAdmin = userRoleName.includes('admin') || userRoleName.includes('owner') || userRoleName.includes('general manage');
 
       let successCount = 0;
       const errors: string[] = [];

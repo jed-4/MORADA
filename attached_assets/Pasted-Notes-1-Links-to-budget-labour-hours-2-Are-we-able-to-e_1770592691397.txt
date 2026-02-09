@@ -1,0 +1,31 @@
+Notes:
+
+1. Links to budget labour hours?
+2. Are we able to export timesheets?
+3. US-TS001 - Entry also require start and end time, and cost code
+4. US-TS001 - Two entry modes available: Time-based (start/end) or Duration-based (hours) - the start and date time should require start and end time, auto fill duration based on start and finish times, and deduct break time. Not just enter a duration, times required. Also, if you fill start time, and enter the duration, it automatically calculates the end time and vice versa.
+5. Do we have labels for timesheets? Could we create them, to be like custom labels in tasks.
+6. US-TS002 - Clock in button doesn’t seem to be available in the timesheets page?
+7. US-TS002 - can start and finish the break period
+8. US-TS003: Edit Timesheet Entry - permission based to edit timesheets
+9. Brainstorm permissions possible for timesheets
+10. US-TS004: Delete Timesheet Entry - permissions option available
+11. US-TS010: View Timesheets in Table Format - table to match tasks table, same drag and drop, reordering etc
+12. US-TS020: Filter Timesheets - this week, last week, is either Monday to Sunday, or Sunday to Sunday. Can create an option in company settings, to show whether week starts on Sunday or Monday, and apply that to all calendars and anything else necessary through the app
+13. US-TS021: Search Timesheets - is this implemented
+14. US-TS030: Submit Timesheet for Approval - so a user can have draft timesheets,  are they visible for PMs etc to approve? otherwise employees would often only create drafts and not submit them, adding another step and possible repeat failure point
+15. US-TS031: Approve Timesheet - permissions based for which users can approve timesheets
+16. Add permissions section in settings for timesheets
+17. US-TS033: Rapid Approval - Does this work as expected?
+18. US-TS041: Labour Hours Budget Tracking - this appears in the budget section?
+19. US-TS050: Assign Cost Code to Timesheet - as the owner i want all hours tracked and accounted for, and allocated the the appropriate project or even the business as necessary
+20. Can we have it so timesheets require a cost code
+21. In the bottom right corner show timesheet totals, by status
+22. Refine modal. Side modal?
+23. Subcontractor timesheets to PO
+24. Desired flow. Clock ins are recorded as the minute of clock in and out, then when getting approved they can be adjustd to 15mins, but somewhere the actual clockin and out time are recorded for futrue reference or for possible disputes. How could we make this work?
+25. Bulk edit timesheets, to match tasks
+26. The modal needs a sticky bottom bar
+27. Resizing columns
+28. Reminder for user timesheets still recording past a certain time. Add settings for timesheets
+29. Once approved, only users with approval power can adjust them

@@ -91,7 +91,7 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
 /**
  * Role-based permission checker
  */
-export function requirePermission(permissionKey: string, action: 'view' | 'add' | 'edit' | 'delete') {
+export function requirePermission(permissionKey: string, action: 'view' | 'add' | 'edit' | 'delete' | 'approve') {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     // Development bypass
     if (process.env.NODE_ENV === 'development') {
