@@ -167,7 +167,8 @@ export interface IStorage {
   createRolePermission(rolePermission: InsertRolePermission): Promise<RolePermission>;
   updateRolePermission(id: string, rolePermission: Partial<InsertRolePermission>): Promise<RolePermission | undefined>;
   deleteRolePermission(id: string): Promise<boolean>;
-  setRolePermissions(roleId: string, permissions: { permissionId: string, allowedActions: PermissionAction[] }[]): Promise<void>;
+  setRolePermissions(roleId: string, permissions: { permissionId: string, allowedActions: PermissionAction[], viewScope?: string, viewableRoleIds?: string[] }[]): Promise<void>;
+  getUserTimesheetViewScope(userId: string): Promise<{ viewScope: string; viewableRoleIds: string[] }>;
   checkUserPermission(userId: string, permissionKey: string, action: string): Promise<boolean>;
 
   // User Project Access operations
@@ -2323,8 +2324,7 @@ export class MemStorage implements IStorage {
     return this.rolePermissions.delete(id);
   }
 
-  async setRolePermissions(roleId: string, permissions: { permissionId: string, allowedActions: PermissionAction[] }[]): Promise<void> {
-    // Remove existing role permissions
+  async setRolePermissions(roleId: string, permissions: { permissionId: string, allowedActions: PermissionAction[], viewScope?: string, viewableRoleIds?: string[] }[]): Promise<void> {
     const existingRolePermissions = Array.from(this.rolePermissions.values())
       .filter(rp => rp.roleId === roleId);
     
@@ -2332,17 +2332,22 @@ export class MemStorage implements IStorage {
       this.rolePermissions.delete(rp.id);
     }
 
-    // Add new role permissions
     for (const perm of permissions) {
       const rolePermission: RolePermission = {
         id: randomUUID(),
         roleId,
         permissionId: perm.permissionId,
         allowedActions: perm.allowedActions,
+        viewScope: perm.viewScope || "own",
+        viewableRoleIds: perm.viewableRoleIds || [],
         createdAt: new Date(),
       };
       this.rolePermissions.set(rolePermission.id, rolePermission);
     }
+  }
+
+  async getUserTimesheetViewScope(userId: string): Promise<{ viewScope: string; viewableRoleIds: string[] }> {
+    return { viewScope: "own", viewableRoleIds: [] };
   }
 
   // User Project Access operations
@@ -7102,24 +7107,85 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async setRolePermissions(roleId: string, permissions: { permissionId: string, allowedActions: PermissionAction[] }[]): Promise<void> {
+  async setRolePermissions(roleId: string, permissions: { permissionId: string, allowedActions: PermissionAction[], viewScope?: string, viewableRoleIds?: string[] }[]): Promise<void> {
     try {
-      // Delete existing permissions for this role
       await db.delete(schema.rolePermissions)
         .where(eq(schema.rolePermissions.roleId, roleId));
 
-      // Insert new permissions
       if (permissions.length > 0) {
         await db.insert(schema.rolePermissions)
           .values(permissions.map(p => ({
             roleId,
             permissionId: p.permissionId,
             allowedActions: p.allowedActions,
+            viewScope: p.viewScope || "own",
+            viewableRoleIds: p.viewableRoleIds || [],
           })));
       }
     } catch (error) {
       console.error("Database error in setRolePermissions:", error);
       throw error;
+    }
+  }
+
+  async getUserTimesheetViewScope(userId: string): Promise<{ viewScope: string; viewableRoleIds: string[] }> {
+    try {
+      const user = await db.select()
+        .from(schema.users)
+        .where(eq(schema.users.id, userId))
+        .limit(1);
+
+      if (!user.length || !user[0].roleId) {
+        return { viewScope: "own", viewableRoleIds: [] };
+      }
+
+      const role = await db.select()
+        .from(schema.userRoles)
+        .where(eq(schema.userRoles.id, user[0].roleId))
+        .limit(1);
+
+      if (role.length) {
+        const roleName = role[0].name?.toLowerCase() || '';
+        const isAdminRole = 
+          roleName.includes('admin') || 
+          roleName.includes('general manage') || 
+          roleName.includes('owner') ||
+          roleName === 'general manager';
+        if (isAdminRole) {
+          return { viewScope: "all", viewableRoleIds: [] };
+        }
+      }
+
+      const timesheetPermission = await db.select()
+        .from(schema.permissions)
+        .where(eq(schema.permissions.key, 'projects.timesheet'))
+        .limit(1);
+
+      if (!timesheetPermission.length) {
+        return { viewScope: "own", viewableRoleIds: [] };
+      }
+
+      const rolePermission = await db.select()
+        .from(schema.rolePermissions)
+        .where(
+          and(
+            eq(schema.rolePermissions.roleId, user[0].roleId),
+            eq(schema.rolePermissions.permissionId, timesheetPermission[0].id)
+          )
+        )
+        .limit(1);
+
+      if (!rolePermission.length) {
+        return { viewScope: "own", viewableRoleIds: [] };
+      }
+
+      return {
+        viewScope: (rolePermission[0].viewScope as string) || "own",
+        viewableRoleIds: (rolePermission[0].viewableRoleIds as string[]) || [],
+      };
+    } catch (error) {
+      console.error("Database error in getUserTimesheetViewScope:", error);
+      return { viewScope: "own", viewableRoleIds: [] };
     }
   }
 

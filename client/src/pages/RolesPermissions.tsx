@@ -71,6 +71,13 @@ interface PermissionMatrix {
   };
 }
 
+interface ViewScopeData {
+  [permissionId: string]: {
+    viewScope: "own" | "selected_roles" | "all";
+    viewableRoleIds: string[];
+  };
+}
+
 // Sortable Role Item Component
 function SortableRoleItem({
   role,
@@ -139,6 +146,7 @@ export default function RolesPermissions() {
   const [isEditRoleOpen, setIsEditRoleOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [permissionMatrix, setPermissionMatrix] = useState<PermissionMatrix>({});
+  const [viewScopeData, setViewScopeData] = useState<ViewScopeData>({});
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [localRoles, setLocalRoles] = useState<UserRole[]>([]);
 
@@ -171,17 +179,20 @@ export default function RolesPermissions() {
     enabled: !!selectedRoleId,
   });
 
-  // Initialize permission matrix when role permissions load
   useEffect(() => {
-    if (selectedRoleId && rolePermissions.length > 0) {
+    if (selectedRoleId) {
       const matrix: PermissionMatrix = {};
-      if (!matrix[selectedRoleId]) {
-        matrix[selectedRoleId] = {};
-      }
+      matrix[selectedRoleId] = {};
+      const scopeData: ViewScopeData = {};
       rolePermissions.forEach((rp) => {
         matrix[selectedRoleId][rp.permissionId] = rp.allowedActions as PermissionAction[];
+        scopeData[rp.permissionId] = {
+          viewScope: ((rp as any).viewScope as "own" | "selected_roles" | "all") || "own",
+          viewableRoleIds: ((rp as any).viewableRoleIds as string[]) || [],
+        };
       });
       setPermissionMatrix(matrix);
+      setViewScopeData(scopeData);
       setHasUnsavedChanges(false);
     }
   }, [selectedRoleId, rolePermissions]);
@@ -220,6 +231,8 @@ export default function RolesPermissions() {
         .map(([permissionId, allowedActions]) => ({
           permissionId,
           allowedActions,
+          viewScope: viewScopeData[permissionId]?.viewScope || "own",
+          viewableRoleIds: viewScopeData[permissionId]?.viewableRoleIds || [],
         }));
 
       return await apiRequest(
@@ -535,32 +548,98 @@ export default function RolesPermissions() {
                                 <div key={col.key} className="text-xs font-medium text-center">{col.label}</div>
                               ))}
                             </div>
-                            {categoryPermissions.map((permission) => (
-                              <div
-                                key={permission.id}
-                                className={`grid ${gridCols} gap-4 items-center`}
-                              >
-                                <div className="text-sm">{permission.name}</div>
-                                {actionColumns.map(({ key: action }) => {
-                                  const isAvailable = (permission.actions as string[]).includes(action);
-                                  return (
-                                    <div key={action} className="flex justify-center">
-                                      {isAvailable ? (
-                                        <Checkbox
-                                          checked={isPermissionEnabled(permission.id, action)}
-                                          onCheckedChange={() =>
-                                            togglePermission(permission.id, action)
-                                          }
-                                          data-testid={`checkbox-${permission.key}-${action}`}
-                                        />
-                                      ) : (
-                                        <div className="h-4 w-4" />
+                            {categoryPermissions.map((permission) => {
+                              const hasViewScope = permission.key === "projects.timesheet";
+                              const viewEnabled = isPermissionEnabled(permission.id, "view");
+                              const currentScope = viewScopeData[permission.id]?.viewScope || "own";
+                              const currentViewableRoleIds = viewScopeData[permission.id]?.viewableRoleIds || [];
+                              return (
+                                <div key={permission.id}>
+                                  <div className={`grid ${gridCols} gap-4 items-center`}>
+                                    <div className="text-sm">{permission.name}</div>
+                                    {actionColumns.map(({ key: action }) => {
+                                      const isAvailable = (permission.actions as string[]).includes(action);
+                                      return (
+                                        <div key={action} className="flex justify-center">
+                                          {isAvailable ? (
+                                            <Checkbox
+                                              checked={isPermissionEnabled(permission.id, action)}
+                                              onCheckedChange={() =>
+                                                togglePermission(permission.id, action)
+                                              }
+                                              data-testid={`checkbox-${permission.key}-${action}`}
+                                            />
+                                          ) : (
+                                            <div className="h-4 w-4" />
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                  {hasViewScope && viewEnabled && (
+                                    <div className="ml-4 mt-2 mb-1 flex items-center gap-3 flex-wrap">
+                                      <span className="text-xs text-muted-foreground">View scope:</span>
+                                      <Select
+                                        value={currentScope}
+                                        onValueChange={(value: "own" | "selected_roles" | "all") => {
+                                          setViewScopeData(prev => ({
+                                            ...prev,
+                                            [permission.id]: {
+                                              ...prev[permission.id],
+                                              viewScope: value,
+                                              viewableRoleIds: value === "selected_roles" ? (prev[permission.id]?.viewableRoleIds || []) : [],
+                                            },
+                                          }));
+                                          setHasUnsavedChanges(true);
+                                        }}
+                                      >
+                                        <SelectTrigger className="w-[160px] h-8 text-xs">
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="own">Own Only</SelectItem>
+                                          <SelectItem value="selected_roles">Selected Roles</SelectItem>
+                                          <SelectItem value="all">All</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                      {currentScope === "selected_roles" && (
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          {localRoles.map(role => {
+                                            if (role.id === selectedRoleId) return null;
+                                            const isChecked = currentViewableRoleIds.includes(role.id);
+                                            return (
+                                              <label key={role.id} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                                                <Checkbox
+                                                  checked={isChecked}
+                                                  onCheckedChange={(checked) => {
+                                                    setViewScopeData(prev => {
+                                                      const existing = prev[permission.id]?.viewableRoleIds || [];
+                                                      const updated = checked
+                                                        ? [...existing, role.id]
+                                                        : existing.filter(id => id !== role.id);
+                                                      return {
+                                                        ...prev,
+                                                        [permission.id]: {
+                                                          ...prev[permission.id],
+                                                          viewScope: "selected_roles",
+                                                          viewableRoleIds: updated,
+                                                        },
+                                                      };
+                                                    });
+                                                    setHasUnsavedChanges(true);
+                                                  }}
+                                                />
+                                                <span>{role.name}</span>
+                                              </label>
+                                            );
+                                          })}
+                                        </div>
                                       )}
                                     </div>
-                                  );
-                                })}
-                              </div>
-                            ))}
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         );
                       })()}

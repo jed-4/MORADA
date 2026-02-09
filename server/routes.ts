@@ -6540,10 +6540,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Permissions must be an array" });
       }
 
-      // Validate each permission object
       const permissionSchema = z.object({
         permissionId: z.string(),
-        allowedActions: z.array(z.enum(["view", "add", "edit", "delete"]))
+        allowedActions: z.array(z.enum(["view", "add", "edit", "delete", "approve"])),
+        viewScope: z.enum(["own", "selected_roles", "all"]).optional(),
+        viewableRoleIds: z.array(z.string()).optional(),
       });
       
       const validationResult = z.array(permissionSchema).safeParse(permissions);
@@ -13221,6 +13222,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Helper: enrich timesheets with costCodeId from timesheet_cost_codes join table (batch query)
+  async function filterTimesheetsByViewScope(timesheets: any[], user: any): Promise<any[]> {
+    if (!user) return [];
+    const userId = user.id;
+    const scope = await storage.getUserTimesheetViewScope(userId);
+
+    if (scope.viewScope === "all") {
+      return timesheets;
+    }
+
+    if (scope.viewScope === "selected_roles") {
+      const allUsers = await storage.getUsersByCompany(user.companyId);
+      const allowedUserIds = new Set<string>();
+      allowedUserIds.add(userId);
+      for (const u of allUsers) {
+        if (u.roleId && scope.viewableRoleIds.includes(u.roleId)) {
+          allowedUserIds.add(u.id);
+        }
+      }
+      return timesheets.filter(ts => allowedUserIds.has(ts.userId));
+    }
+
+    return timesheets.filter(ts => ts.userId === userId);
+  }
+
   async function enrichTimesheetsWithCostCodes(timesheets: any[]) {
     const idsNeedingCostCode = timesheets.filter(ts => !ts.costCodeId).map(ts => ts.id);
     if (idsNeedingCostCode.length === 0) return timesheets;
@@ -13245,10 +13270,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }
 
   // Timesheet routes
+  app.get("/api/user/timesheet-view-scope", async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.json({ viewScope: "own", viewableRoleIds: [] });
+      }
+      const scope = await storage.getUserTimesheetViewScope(req.user.id);
+      res.json(scope);
+    } catch (error) {
+      console.error("Error fetching timesheet view scope:", error);
+      res.json({ viewScope: "own", viewableRoleIds: [] });
+    }
+  });
+
   app.get("/api/projects/:projectId/timesheets", async (req, res) => {
     try {
       const timesheets = await storage.getTimesheets(req.params.projectId);
-      const enriched = await enrichTimesheetsWithCostCodes(timesheets);
+      const filtered = await filterTimesheetsByViewScope(timesheets, req.user);
+      const enriched = await enrichTimesheetsWithCostCodes(filtered);
       res.json(enriched);
     } catch (error: any) {
       res.status(500).json({
@@ -13272,7 +13311,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           invoiced: invoiced ? invoiced === 'true' : undefined,
         }
       );
-      const enriched = await enrichTimesheetsWithCostCodes(timesheets);
+      const filtered = await filterTimesheetsByViewScope(timesheets, req.user);
+      const enriched = await enrichTimesheetsWithCostCodes(filtered);
       res.json(enriched);
     } catch (error: any) {
       res.status(500).json({

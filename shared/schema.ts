@@ -126,7 +126,9 @@ export const rolePermissions = pgTable("role_permissions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   roleId: varchar("role_id").notNull().references(() => userRoles.id, { onDelete: "cascade" }),
   permissionId: varchar("permission_id").notNull().references(() => permissions.id, { onDelete: "cascade" }),
-  allowedActions: json("allowed_actions").notNull().default(['view']), // Which actions are allowed: ["view", "add", "edit", "delete"]
+  allowedActions: json("allowed_actions").notNull().default(['view']),
+  viewScope: text("view_scope").default("own"),
+  viewableRoleIds: json("viewable_role_ids").default([]),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
