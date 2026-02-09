@@ -242,7 +242,7 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 - [x] Status changes from "Submitted" to "Approved"
 - [x] Server-side permission check on approve endpoint (403 if no permission)
 - [ ] Approved hours update project labour totals
-- [ ] Approval is logged with timestamp and user
+- [x] Approval is logged with timestamp and user (approvedById, approvedAt fields)
 
 **Priority:** Must Have  
 **Status:** Implemented
@@ -258,8 +258,8 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 - [x] Reject button available for submitted entries (only for users with timesheets.approve permission)
 - [x] Status changes from "Submitted" to "Rejected"
 - [x] Server-side permission check on reject endpoint (403 if no permission)
-- [ ] Optional rejection reason/comment
-- [ ] Team member notified of rejection
+- [x] Optional rejection reason/comment (rejectionReason field, supported in individual reject and rapid approval)
+- [x] Team member notified of rejection (notification with rejector name, date, and reason)
 
 **Priority:** Must Have  
 **Status:** Implemented
@@ -330,7 +330,7 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 - [x] Option to split time across multiple cost codes
 - [x] Cost code displayed in timesheet table
 - [x] Timesheet hours roll up to budget via cost code
-- [ ] Filter by cost code available
+- [x] Filter by cost code available (multi-select dropdown in filter bar)
 
 **Priority:** Must Have  
 **Status:** Implemented
@@ -442,9 +442,10 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 - Permission-based editing: own timesheets + admins/owners/managers can edit all
 - Split time across multiple cost codes
 - Three views: Table, Weekly, Calendar
-- Filtering by project, user, status, date range
+- Filtering by project, user, status, date range, cost code
 - Search by description
-- Approval workflow (submit, approve, reject)
+- Approval workflow (submit, approve, reject) with approval/rejection tracking (who, when, reason)
+- Rejection notifications sent to team members
 - Rapid approval modal for batch processing
 - Project-specific timesheet views
 - Cost code assignment with budget integration
@@ -458,7 +459,7 @@ The Timesheets system enables time tracking for labour hours across projects. Te
 - [ ] No import from CSV/Excel
 - [ ] No mobile-optimized clock in/out
 - [ ] No geolocation for clock-in verification
-- [ ] No approval notifications
+- [x] ~~No approval notifications~~ Rejection notifications implemented
 - [ ] No overtime calculations
 - [ ] No timesheet templates for recurring entries
 
@@ -513,6 +514,7 @@ Built-in admin roles (General Manager, Admin, Owner) automatically bypass all pe
 | 2026-02-05 | Updated per user notes: clarified required fields (start/end time, cost code), confirmed budget integration via cost codes, confirmed export functionality, added global header "New" menu access |
 | 2026-02-05 | Added comprehensive permissions reference, delete permission criteria, table drag-drop/reordering criteria, week start preference criteria |
 | 2026-02-09 | Comprehensive review of 29 user notes. Fixed bulk action admin check. Updated permissions to support CRUD + Approve in Roles & Permissions UI. Confirmed all core features implemented. |
+| 2026-02-09 | Implemented: cost code filter (US-TS050), rejection reason/comment (US-TS032), rejection notifications (US-TS032), approval/rejection tracking with approver info (US-TS031), approval/rejection info display in TimesheetDialog. |
 
 ---
 
