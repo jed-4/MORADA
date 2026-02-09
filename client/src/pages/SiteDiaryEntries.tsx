@@ -70,6 +70,8 @@ export default function SiteDiaryEntries() {
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [isCreating, setIsCreating] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [viewingEntry, setViewingEntry] = useState<SiteDiaryEntry | null>(null);
+  const [editingEntry, setEditingEntry] = useState<SiteDiaryEntry | null>(null);
 
   useEffect(() => {
     if (projectIdFromUrl) {
@@ -126,6 +128,39 @@ export default function SiteDiaryEntries() {
     }
     setIsCreating(true);
   };
+
+  if (viewingEntry) {
+    const entryTemplate = templates.find(t => t.id === viewingEntry.templateId);
+    return (
+      <div className="flex flex-col h-full p-2">
+        <EntryViewDetail
+          entry={viewingEntry}
+          template={entryTemplate || null}
+          onClose={() => setViewingEntry(null)}
+          onEdit={() => { setEditingEntry(viewingEntry); setViewingEntry(null); }}
+        />
+      </div>
+    );
+  }
+
+  if (editingEntry && selectedProjectId) {
+    const entryTemplate = templates.find(t => t.id === editingEntry.templateId);
+    return (
+      <div className="flex flex-col h-full p-2">
+        <EntryEditForm
+          entry={editingEntry}
+          template={entryTemplate || null}
+          onCancel={() => setEditingEntry(null)}
+          onSuccess={() => {
+            setEditingEntry(null);
+            queryClient.invalidateQueries({ 
+              queryKey: ["/api/projects", selectedProjectId, "site-diary-entries"] 
+            });
+          }}
+        />
+      </div>
+    );
+  }
 
   if (isCreating && selectedProjectId) {
     return (
@@ -309,7 +344,12 @@ export default function SiteDiaryEntries() {
         ) : (
           <div className="space-y-1">
             {filteredEntries.map((entry) => (
-              <SiteDiaryCard key={entry.id} entry={entry} />
+              <SiteDiaryCard 
+                key={entry.id} 
+                entry={entry} 
+                onView={() => setViewingEntry(entry)}
+                onEdit={() => setEditingEntry(entry)}
+              />
             ))}
           </div>
         )}
@@ -318,7 +358,7 @@ export default function SiteDiaryEntries() {
   );
 }
 
-function SiteDiaryCard({ entry }: { entry: SiteDiaryEntry }) {
+function SiteDiaryCard({ entry, onView, onEdit }: { entry: SiteDiaryEntry; onView: () => void; onEdit: () => void }) {
   const { toast } = useToast();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const fieldValues = entry.fieldValues as Record<string, any> || {};
@@ -360,6 +400,7 @@ function SiteDiaryCard({ entry }: { entry: SiteDiaryEntry }) {
     <>
     <div 
       className="group border rounded-md p-2 bg-card hover-elevate transition-all cursor-pointer"
+      onClick={onView}
       data-testid={`site-diary-card-${entry.id}`}
     >
       <div className="flex items-start gap-2">
@@ -435,11 +476,11 @@ function SiteDiaryCard({ entry }: { entry: SiteDiaryEntry }) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem data-testid={`entry-view-${entry.id}`}>
+              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onView(); }} data-testid={`entry-view-${entry.id}`}>
                 <Eye className="h-4 w-4 mr-2" />
                 View
               </DropdownMenuItem>
-              <DropdownMenuItem data-testid={`entry-edit-${entry.id}`}>
+              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit(); }} data-testid={`entry-edit-${entry.id}`}>
                 <Edit className="h-4 w-4 mr-2" />
                 Edit
               </DropdownMenuItem>
@@ -967,5 +1008,399 @@ function EntryFormFields({
         </div>
       </form>
     </Form>
+  );
+}
+
+function EntryViewDetail({
+  entry,
+  template,
+  onClose,
+  onEdit,
+}: {
+  entry: SiteDiaryEntry;
+  template: SiteDiaryTemplate | null;
+  onClose: () => void;
+  onEdit: () => void;
+}) {
+  const fieldValues = (entry.fieldValues as Record<string, any>) || {};
+  const templateFields = (template?.fields as TemplateFieldDefinition[]) || [];
+
+  const renderFieldValue = (field: TemplateFieldDefinition) => {
+    const val = fieldValues[field.id];
+    if (val === undefined || val === null || val === "") {
+      return <span className="text-muted-foreground italic text-xs">Not set</span>;
+    }
+
+    if (field.type === "checkbox") {
+      if (typeof val === "object" && "value" in val) {
+        return (
+          <div className="flex items-center gap-2">
+            <Checkbox checked={val.value} disabled />
+            {val.value && val.checkedByName && (
+              <span className="text-xs text-muted-foreground">
+                by {val.checkedByName}
+                {val.checkedAt && ` at ${format(new Date(val.checkedAt), "MMM d, h:mm a")}`}
+              </span>
+            )}
+          </div>
+        );
+      }
+      return <Checkbox checked={!!val} disabled />;
+    }
+
+    if (field.type === "file" || field.type === "photo-gallery") {
+      const files = Array.isArray(val) ? val : [];
+      if (files.length === 0) return <span className="text-muted-foreground italic text-xs">No files</span>;
+      return (
+        <div className="space-y-1">
+          {files.map((file: any, i: number) => (
+            <div key={i} className="flex items-center gap-2 text-xs border rounded-md p-1.5">
+              {field.type === "photo-gallery" && file.objectPath ? (
+                <img src={`/api/uploads/file/${encodeURIComponent(file.objectPath)}`} alt={file.name} className="h-10 w-10 rounded object-cover" />
+              ) : (
+                <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+              )}
+              <span className="truncate">{file.name}</span>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    if (field.type === "textarea") {
+      return <p className="text-sm whitespace-pre-wrap">{String(val)}</p>;
+    }
+
+    if (field.type === "date") {
+      try {
+        return <span className="text-sm">{format(new Date(val), "MMM d, yyyy")}</span>;
+      } catch {
+        return <span className="text-sm">{String(val)}</span>;
+      }
+    }
+
+    return <span className="text-sm">{String(val)}</span>;
+  };
+
+  return (
+    <Card>
+      <CardHeader className="py-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            <CardTitle className="text-base truncate">{entry.title}</CardTitle>
+            <div className="flex items-center gap-2 mt-1">
+              <Badge variant="default" className="text-[10px]">{entry.templateName}</Badge>
+              <span className="text-xs text-muted-foreground">
+                {format(new Date(entry.entryDateTime), "EEEE, MMM d, yyyy")}
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon" onClick={onEdit} data-testid="button-edit-entry">
+              <Edit className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="icon" onClick={onClose} data-testid="button-close-view">
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="py-2 space-y-4">
+        {templateFields.length > 0 ? (
+          templateFields.map((field) => (
+            <div key={field.id} className="space-y-1">
+              <Label className="text-xs font-medium text-muted-foreground">{field.title}</Label>
+              {renderFieldValue(field)}
+            </div>
+          ))
+        ) : (
+          Object.entries(fieldValues).map(([key, val]) => (
+            <div key={key} className="space-y-1">
+              <Label className="text-xs font-medium text-muted-foreground capitalize">{key.replace(/([A-Z])/g, " $1").trim()}</Label>
+              <p className="text-sm">{typeof val === "object" ? JSON.stringify(val) : String(val)}</p>
+            </div>
+          ))
+        )}
+        {entry.createdBy && (
+          <div className="pt-2 border-t">
+            <span className="text-xs text-muted-foreground">
+              Created by {entry.createdByName || entry.createdBy}
+              {entry.createdAt && ` on ${format(new Date(entry.createdAt), "MMM d, yyyy h:mm a")}`}
+            </span>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function EntryEditForm({
+  entry,
+  template,
+  onCancel,
+  onSuccess,
+}: {
+  entry: SiteDiaryEntry;
+  template: SiteDiaryTemplate | null;
+  onCancel: () => void;
+  onSuccess: () => void;
+}) {
+  const { toast } = useToast();
+  const { user: currentUser } = useAuth();
+  const fieldValues = (entry.fieldValues as Record<string, any>) || {};
+  const templateFields = (template?.fields as TemplateFieldDefinition[]) || [];
+
+  const buildFormSchema = () => {
+    const fieldSchemas: Record<string, z.ZodTypeAny> = {};
+    templateFields.forEach((field) => {
+      if (field.type === "file" || field.type === "photo-gallery") {
+        const fileSchema = z.object({
+          name: z.string(),
+          objectPath: z.string(),
+          size: z.number(),
+          contentType: z.string(),
+          uploadedAt: z.string(),
+        });
+        fieldSchemas[field.id] = field.required
+          ? z.array(fileSchema).min(1, "At least one file is required")
+          : z.array(fileSchema).optional();
+      } else if (field.required) {
+        if (field.type === "number") {
+          fieldSchemas[field.id] = z.string().min(1, "Required").transform((val) => Number(val)).pipe(z.number());
+        } else if (field.type === "checkbox") {
+          fieldSchemas[field.id] = z.any().transform((val) => val === true || val === "true").pipe(z.boolean());
+        } else {
+          fieldSchemas[field.id] = z.string().min(1, "Required");
+        }
+      } else {
+        if (field.type === "number") {
+          fieldSchemas[field.id] = z.string().transform((val) => (val === "" ? undefined : Number(val))).pipe(z.number().optional());
+        } else if (field.type === "checkbox") {
+          fieldSchemas[field.id] = z.any().transform((val) => val === true || val === "true").pipe(z.boolean().optional());
+        } else {
+          fieldSchemas[field.id] = z.string().optional();
+        }
+      }
+    });
+    return z.object({
+      title: z.string().min(1, "Title is required"),
+      entryDateTime: z.string().min(1, "Date is required"),
+      ...fieldSchemas,
+    });
+  };
+
+  const formSchema = buildFormSchema();
+  type FormData = z.infer<typeof formSchema>;
+
+  const getDefaultValue = (field: TemplateFieldDefinition) => {
+    const val = fieldValues[field.id];
+    if (field.type === "checkbox") {
+      if (typeof val === "object" && "value" in val) return val.value;
+      return !!val;
+    }
+    if (field.type === "file" || field.type === "photo-gallery") {
+      return Array.isArray(val) ? val : [];
+    }
+    if (field.type === "number") {
+      return val !== undefined && val !== null ? String(val) : "";
+    }
+    return val !== undefined && val !== null ? String(val) : "";
+  };
+
+  const form = useForm<FormData>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      title: entry.title,
+      entryDateTime: entry.entryDateTime
+        ? new Date(entry.entryDateTime).toISOString().split("T")[0]
+        : new Date().toISOString().split("T")[0],
+      ...templateFields.reduce((acc, field) => {
+        acc[field.id] = getDefaultValue(field);
+        return acc;
+      }, {} as Record<string, any>),
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async (data: FormData) => {
+      const newFieldValues: Record<string, any> = {};
+      templateFields.forEach((field) => {
+        const val = data[field.id as keyof FormData];
+        if (field.type === "checkbox") {
+          const existingVal = fieldValues[field.id];
+          const wasChecked = typeof existingVal === "object" && existingVal?.value === true
+            ? true
+            : existingVal === true;
+          const isNowChecked = val === true || val === "true";
+          if (isNowChecked && !wasChecked) {
+            newFieldValues[field.id] = {
+              value: true,
+              checkedBy: currentUser?.id,
+              checkedByName: currentUser?.fullName || currentUser?.email || "Unknown",
+              checkedAt: new Date().toISOString(),
+            };
+          } else if (!isNowChecked) {
+            newFieldValues[field.id] = { value: false, checkedBy: null, checkedByName: null, checkedAt: null };
+          } else if (typeof existingVal === "object" && "value" in existingVal) {
+            newFieldValues[field.id] = existingVal;
+          } else {
+            newFieldValues[field.id] = {
+              value: true,
+              checkedBy: currentUser?.id,
+              checkedByName: currentUser?.fullName || currentUser?.email || "Unknown",
+              checkedAt: new Date().toISOString(),
+            };
+          }
+        } else {
+          newFieldValues[field.id] = val;
+        }
+      });
+
+      const response = await apiRequest(`/api/site-diary-entries/${entry.id}`, "PATCH", {
+        title: data.title,
+        entryDateTime: new Date(data.entryDateTime),
+        fieldValues: newFieldValues,
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Entry updated successfully" });
+      onSuccess();
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to update entry", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const onSubmit = (data: FormData) => {
+    updateMutation.mutate(data);
+  };
+
+  return (
+    <Card>
+      <CardHeader className="py-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex-1">
+            <CardTitle className="text-base">Edit Site Diary Entry</CardTitle>
+            <div className="flex items-center gap-2 mt-1">
+              <Badge variant="default" className="text-[10px]">{entry.templateName}</Badge>
+            </div>
+          </div>
+          <Button variant="ghost" size="icon" onClick={onCancel} data-testid="button-cancel-edit">
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="py-2">
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
+            <FormField
+              control={form.control}
+              name="title"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-xs">Entry Title *</FormLabel>
+                  <FormControl>
+                    <Input className="h-8 text-sm" {...field} data-testid="input-edit-title" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="entryDateTime"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-xs">Entry Date *</FormLabel>
+                  <FormControl>
+                    <Input type="date" className="h-8 text-sm" {...field} data-testid="input-edit-date" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            {templateFields.map((templateField) => (
+              <FormField
+                key={templateField.id}
+                control={form.control}
+                name={templateField.id as any}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-xs">
+                      {templateField.title}
+                      {templateField.required && " *"}
+                    </FormLabel>
+                    {templateField.type === "text" && (
+                      <FormControl>
+                        <Input {...field} value={(field.value as string) || ""} className="h-8 text-sm" />
+                      </FormControl>
+                    )}
+                    {templateField.type === "textarea" && (
+                      <FormControl>
+                        <Textarea {...field} value={(field.value as string) || ""} className="text-sm min-h-[60px]" />
+                      </FormControl>
+                    )}
+                    {templateField.type === "number" && (
+                      <FormControl>
+                        <Input type="number" {...field} value={(field.value as number) || ""} className="h-8 text-sm" />
+                      </FormControl>
+                    )}
+                    {templateField.type === "date" && (
+                      <FormControl>
+                        <Input type="date" {...field} value={(field.value as string) || ""} className="h-8 text-sm" />
+                      </FormControl>
+                    )}
+                    {templateField.type === "select" && (
+                      <FormControl>
+                        <Select value={(field.value as string) || ""} onValueChange={field.onChange}>
+                          <SelectTrigger className="h-8 text-sm">
+                            <SelectValue placeholder="Select an option" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {templateField.options?.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FormControl>
+                    )}
+                    {templateField.type === "checkbox" && (
+                      <FormControl>
+                        <div className="flex items-center space-x-2">
+                          <Checkbox checked={(field.value as boolean) || false} onCheckedChange={field.onChange} />
+                        </div>
+                      </FormControl>
+                    )}
+                    {(templateField.type === "file" || templateField.type === "photo-gallery") && (
+                      <FormControl>
+                        <SiteDiaryFileUpload
+                          fieldId={templateField.id}
+                          type={templateField.type}
+                          value={(field.value as any[]) || []}
+                          onChange={field.onChange}
+                          maxFiles={templateField.type === "photo-gallery" ? 3 : 1}
+                        />
+                      </FormControl>
+                    )}
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            ))}
+            <div className="flex gap-2 pt-2">
+              <Button type="submit" size="sm" disabled={updateMutation.isPending} data-testid="button-save-entry">
+                {updateMutation.isPending ? "Saving..." : "Save Changes"}
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={onCancel}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        </Form>
+      </CardContent>
+    </Card>
   );
 }
