@@ -11913,6 +11913,23 @@ export class DbStorage implements IStorage {
         return false;
       }
 
+      const role = await db.select()
+        .from(schema.userRoles)
+        .where(eq(schema.userRoles.id, user[0].roleId))
+        .limit(1);
+
+      if (role.length) {
+        const roleName = role[0].name?.toLowerCase() || '';
+        const isAdminRole = 
+          roleName.includes('admin') || 
+          roleName.includes('general manage') || 
+          roleName.includes('owner') ||
+          roleName === 'general manager';
+        if (isAdminRole) {
+          return true;
+        }
+      }
+
       const timesheetsApprovePermission = await db.select()
         .from(schema.permissions)
         .where(eq(schema.permissions.key, 'timesheets.approve'))

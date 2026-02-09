@@ -13305,8 +13305,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Invalid status" });
       }
 
+      const canApprove = await storage.canUserApproveTimesheets(req.user.id);
       const userRoleName = user.roleName?.toLowerCase() || '';
       const isAdmin = userRoleName.includes('admin') || userRoleName.includes('owner') || userRoleName.includes('general manage');
+      const hasApprovalAccess = isAdmin || canApprove;
+
+      if (action === "changeStatus" && (status === "approved" || status === "rejected") && !hasApprovalAccess) {
+        return res.status(403).json({ error: "You do not have permission to approve or reject timesheets" });
+      }
 
       let successCount = 0;
       const errors: string[] = [];
@@ -13318,13 +13324,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
             errors.push(`Timesheet ${id} not found`);
             continue;
           }
-          if (timesheet.userId !== user.id && !isAdmin) {
+          if (timesheet.companyId !== user.companyId) {
+            errors.push(`Not authorized for timesheet ${id}`);
+            continue;
+          }
+          if (timesheet.userId !== user.id && !hasApprovalAccess) {
             errors.push(`Not authorized for timesheet ${id}`);
             continue;
           }
 
           if (action === "changeStatus") {
-            await storage.updateTimesheet(id, { status });
+            const updateData: any = { status };
+            if (status === "approved") {
+              updateData.approvedById = user.id;
+            }
+            await storage.updateTimesheet(id, updateData);
             successCount++;
           } else if (action === "delete") {
             await storage.deleteTimesheet(id);
