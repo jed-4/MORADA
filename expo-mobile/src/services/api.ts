@@ -1,14 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
-import Constants from 'expo-constants';
 
-const getBaseUrl = (): string => {
-  const debuggerHost = Constants.expoConfig?.hostUri;
-  if (debuggerHost) {
-    const host = debuggerHost.split(':')[0];
-    return `http://${host}:5000`;
-  }
-  return 'http://localhost:5000';
-};
+const API_BASE_URL = 'https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev';
 
 let sessionId: string | null = null;
 
@@ -45,7 +37,7 @@ export const apiRequest = async (
   method: string = 'GET',
   body?: any,
 ): Promise<Response> => {
-  const url = `${getBaseUrl()}${path}`;
+  const url = `${API_BASE_URL}${path}`;
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'X-Client': 'mobile',
