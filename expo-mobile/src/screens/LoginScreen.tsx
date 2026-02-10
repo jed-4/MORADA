@@ -9,47 +9,69 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  Linking,
 } from 'react-native';
-import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
-import Constants from 'expo-constants';
 import { useAuth } from '../contexts/AuthContext';
-
-WebBrowser.maybeCompleteAuthSession();
-
-const GOOGLE_CLIENT_ID = Constants.expoConfig?.extra?.googleClientId || '';
+import { API_BASE_URL } from '../services/api';
 
 export default function LoginScreen() {
-  const { login, loginWithGoogle } = useAuth();
+  const { login, loginWithSession } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    expoClientId: GOOGLE_CLIENT_ID,
-    iosClientId: GOOGLE_CLIENT_ID,
-    webClientId: GOOGLE_CLIENT_ID,
-    responseType: 'id_token',
-    shouldAutoExchangeCode: false,
-  });
-
   useEffect(() => {
-    if (response?.type === 'success') {
-      const { id_token } = response.params;
-      if (id_token) {
-        handleGoogleToken(id_token);
-      }
-    }
-  }, [response]);
+    const handleDeepLink = (event: { url: string }) => {
+      const url = event.url;
+      if (url.startsWith('buildpro://auth')) {
+        const params = new URL(url.replace('buildpro://', 'https://placeholder/')).searchParams;
+        const sessionId = params.get('sessionId');
+        const error = params.get('error');
 
-  const handleGoogleToken = async (idToken: string) => {
+        if (sessionId) {
+          handleSessionLogin(sessionId);
+        } else if (error) {
+          setIsGoogleLoading(false);
+          Alert.alert('Google Login Failed', `Authentication error: ${error}`);
+        }
+      }
+    };
+
+    const subscription = Linking.addEventListener('url', handleDeepLink);
+
+    Linking.getInitialURL().then((url) => {
+      if (url) {
+        handleDeepLink({ url });
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
+  const handleSessionLogin = async (sessionId: string) => {
     setIsGoogleLoading(true);
-    const result = await loginWithGoogle(idToken);
+    const result = await loginWithSession(sessionId);
     setIsGoogleLoading(false);
 
     if (!result.success) {
-      Alert.alert('Google Login Failed', result.error || 'Could not sign in with Google');
+      Alert.alert('Login Failed', result.error || 'Could not complete sign in');
+    }
+  };
+
+  const handleGooglePress = async () => {
+    setIsGoogleLoading(true);
+    try {
+      const googleAuthUrl = `${API_BASE_URL}/api/auth/google?mobile=true`;
+      await WebBrowser.openAuthSessionAsync(googleAuthUrl, 'buildpro://auth');
+    } catch (err) {
+      console.error('Google auth browser error:', err);
+      Alert.alert('Error', 'Could not open Google sign-in');
+    } finally {
+      setIsGoogleLoading(false);
     }
   };
 
@@ -68,12 +90,6 @@ export default function LoginScreen() {
     }
   };
 
-  const handleGooglePress = () => {
-    if (request) {
-      promptAsync();
-    }
-  };
-
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -86,9 +102,9 @@ export default function LoginScreen() {
         </View>
 
         <TouchableOpacity
-          style={[styles.googleButton, (isGoogleLoading || !request) && styles.buttonDisabled]}
+          style={[styles.googleButton, isGoogleLoading && styles.buttonDisabled]}
           onPress={handleGooglePress}
-          disabled={isGoogleLoading || !request}
+          disabled={isGoogleLoading}
           activeOpacity={0.8}
         >
           {isGoogleLoading ? (

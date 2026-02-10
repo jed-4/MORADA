@@ -195,6 +195,11 @@ export async function setupAuth(app: Express) {
       (req.session as any).authRedirect = redirectTo;
     }
 
+    const isMobileFlow = req.query.mobile === 'true';
+    if (isMobileFlow) {
+      (req.session as any).mobileOAuth = true;
+    }
+
     const authUrl = oauth2Client.generateAuthUrl({
       access_type: 'offline',
       scope: ['openid', 'email', 'profile'],
@@ -214,27 +219,36 @@ export async function setupAuth(app: Express) {
   app.get('/api/auth/google/callback', async (req: Request, res: Response) => {
     try {
       const { code, error, state } = req.query;
+      const isMobileOAuth = (req.session as any).mobileOAuth;
+
+      const errorRedirect = (errCode: string) => {
+        if (isMobileOAuth) {
+          delete (req.session as any).mobileOAuth;
+          return res.redirect(`buildpro://auth?error=${errCode}`);
+        }
+        return res.redirect(`/auth?error=${errCode}`);
+      };
 
       if (error) {
         console.error('[Auth] Google OAuth error:', error);
-        return res.redirect('/auth?error=google_auth_failed');
+        return errorRedirect('google_auth_failed');
       }
 
       // Verify CSRF state token
       const storedState = (req.session as any).oauthState;
       if (!state || !storedState || state !== storedState) {
         console.error('[Auth] OAuth state mismatch - possible CSRF attack');
-        return res.redirect('/auth?error=invalid_state');
+        return errorRedirect('invalid_state');
       }
       // Clear the state after verification
       delete (req.session as any).oauthState;
 
       if (!code || typeof code !== 'string') {
-        return res.redirect('/auth?error=no_code');
+        return errorRedirect('no_code');
       }
 
       if (!googleClientId || !googleClientSecret) {
-        return res.redirect('/auth?error=not_configured');
+        return errorRedirect('not_configured');
       }
 
       // Use https in production (behind proxy) or respect x-forwarded-proto header
@@ -254,7 +268,7 @@ export async function setupAuth(app: Express) {
 
       const payload = ticket.getPayload();
       if (!payload) {
-        return res.redirect('/auth?error=invalid_token');
+        return errorRedirect('invalid_token');
       }
 
       const googleId = payload.sub;
@@ -303,15 +317,23 @@ export async function setupAuth(app: Express) {
       (req.session as any).companyId = user.companyId;
       (req.session as any).roleId = user.roleId;
 
+      delete (req.session as any).mobileOAuth;
       const redirectPath = (req.session as any).authRedirect || '/';
       delete (req.session as any).authRedirect;
 
       req.session.save((err) => {
         if (err) {
           console.error('[Auth] Session save error:', err);
+          if (isMobileOAuth) {
+            return res.redirect('buildpro://auth?error=session_failed');
+          }
           return res.redirect('/auth?error=session_failed');
         }
-        console.log(`✅ [Auth] Google login successful: ${user!.email}`);
+        console.log(`[Auth] Google login successful: ${user!.email}`);
+
+        if (isMobileOAuth) {
+          return res.redirect(`buildpro://auth?sessionId=${req.sessionID}`);
+        }
         res.redirect(redirectPath);
       });
     } catch (error) {
