@@ -1,7 +1,7 @@
 {
   "name": "buildpro-mobile",
   "version": "1.0.0",
-  "main": "App.tsx",
+  "main": "node_modules/expo/AppEntry.js",
   "scripts": {
     "start": "npx expo start --tunnel --port 8081",
     "android": "npx expo start --android",
