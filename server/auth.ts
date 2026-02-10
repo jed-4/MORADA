@@ -320,6 +320,90 @@ export async function setupAuth(app: Express) {
     }
   });
 
+  app.post('/api/auth/google/mobile', async (req: Request, res: Response) => {
+    try {
+      const { idToken } = req.body;
+      if (!idToken) {
+        return res.status(400).json({ message: 'ID token is required' });
+      }
+
+      if (!googleClientId) {
+        return res.status(500).json({ message: 'Google OAuth not configured' });
+      }
+
+      const oauth2Client = new OAuth2Client(googleClientId);
+      const ticket = await oauth2Client.verifyIdToken({
+        idToken,
+        audience: googleClientId,
+      });
+
+      const payload = ticket.getPayload();
+      if (!payload) {
+        return res.status(401).json({ message: 'Invalid token' });
+      }
+
+      const googleId = payload.sub;
+      const email = payload.email;
+      const firstName = payload.given_name || payload.name?.split(' ')[0];
+      const lastName = payload.family_name || payload.name?.split(' ').slice(1).join(' ');
+      const profileImageUrl = payload.picture;
+
+      let user = await storage.getUserByGoogleId(googleId);
+
+      if (!user && email) {
+        user = await storage.getUserByEmail(email);
+        if (user) {
+          await storage.linkGoogleAccount(user.id, googleId);
+        }
+      }
+
+      if (!user) {
+        user = await storage.createUser({
+          email: email || null,
+          googleId,
+          firstName: firstName || null,
+          lastName: lastName || null,
+          profileImageUrl: profileImageUrl || null,
+        });
+      } else {
+        if (profileImageUrl && profileImageUrl !== user.profileImageUrl) {
+          await storage.updateUser(user.id, { profileImageUrl });
+        }
+      }
+
+      if (payload.email_verified === false) {
+        return res.status(401).json({ message: 'Email not verified with Google' });
+      }
+
+      await storage.updateUserLastLogin(user.id);
+
+      (req.session as any).userId = user.id;
+      (req.session as any).companyId = user.companyId;
+      (req.session as any).roleId = user.roleId;
+
+      req.session.save((err) => {
+        if (err) {
+          console.error('[Auth] Mobile Google session save error:', err);
+          return res.status(500).json({ message: 'Session failed' });
+        }
+        console.log(`[Auth] Mobile Google login successful: ${user!.email}`);
+        res.json({
+          user: {
+            id: user!.id,
+            email: user!.email,
+            firstName: user!.firstName,
+            lastName: user!.lastName,
+            companyId: user!.companyId,
+          },
+          sessionId: req.sessionID,
+        });
+      });
+    } catch (error) {
+      console.error('[Auth] Mobile Google auth error:', error);
+      res.status(401).json({ message: 'Google authentication failed' });
+    }
+  });
+
   // GET logout for convenience
   app.get('/api/logout', (req: Request, res: Response) => {
     req.session.destroy((err) => {

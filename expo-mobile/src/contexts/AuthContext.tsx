@@ -18,6 +18,7 @@ interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  loginWithGoogle: (idToken: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -76,6 +77,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const loginWithGoogle = async (idToken: string) => {
+    try {
+      const response = await apiRequest('/api/auth/google/mobile', 'POST', { idToken });
+      const data = await response.json();
+
+      if (response.ok && data.sessionId) {
+        await saveSession(data.sessionId);
+        const userData = await apiFetch<User>('/api/auth/user');
+        setUser(userData);
+        return { success: true };
+      }
+
+      if (response.ok && !data.sessionId) {
+        return { success: false, error: 'Session not returned. Please try again.' };
+      }
+
+      return { success: false, error: data.message || 'Google login failed' };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Network error. Check your connection.' };
+    }
+  };
+
   const logout = async () => {
     try {
       await apiRequest('/api/auth/logout', 'POST');
@@ -91,6 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         isAuthenticated: !!user,
         login,
+        loginWithGoogle,
         logout,
         refreshUser,
       }}

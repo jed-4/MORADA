@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,13 +10,48 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import * as Google from 'expo-auth-session/providers/google';
+import * as WebBrowser from 'expo-web-browser';
+import Constants from 'expo-constants';
 import { useAuth } from '../contexts/AuthContext';
 
+WebBrowser.maybeCompleteAuthSession();
+
+const GOOGLE_CLIENT_ID = Constants.expoConfig?.extra?.googleClientId || '';
+
 export default function LoginScreen() {
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    expoClientId: GOOGLE_CLIENT_ID,
+    iosClientId: GOOGLE_CLIENT_ID,
+    webClientId: GOOGLE_CLIENT_ID,
+    responseType: 'id_token',
+    shouldAutoExchangeCode: false,
+  });
+
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { id_token } = response.params;
+      if (id_token) {
+        handleGoogleToken(id_token);
+      }
+    }
+  }, [response]);
+
+  const handleGoogleToken = async (idToken: string) => {
+    setIsGoogleLoading(true);
+    const result = await loginWithGoogle(idToken);
+    setIsGoogleLoading(false);
+
+    if (!result.success) {
+      Alert.alert('Google Login Failed', result.error || 'Could not sign in with Google');
+    }
+  };
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
@@ -33,6 +68,12 @@ export default function LoginScreen() {
     }
   };
 
+  const handleGooglePress = () => {
+    if (request) {
+      promptAsync();
+    }
+  };
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -42,6 +83,28 @@ export default function LoginScreen() {
         <View style={styles.header}>
           <Text style={styles.logo}>BuildPro</Text>
           <Text style={styles.subtitle}>Project Management for Builders</Text>
+        </View>
+
+        <TouchableOpacity
+          style={[styles.googleButton, (isGoogleLoading || !request) && styles.buttonDisabled]}
+          onPress={handleGooglePress}
+          disabled={isGoogleLoading || !request}
+          activeOpacity={0.8}
+        >
+          {isGoogleLoading ? (
+            <ActivityIndicator color="#333" />
+          ) : (
+            <>
+              <Text style={styles.googleIcon}>G</Text>
+              <Text style={styles.googleButtonText}>Sign in with Google</Text>
+            </>
+          )}
+        </TouchableOpacity>
+
+        <View style={styles.divider}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>or</Text>
+          <View style={styles.dividerLine} />
         </View>
 
         <View style={styles.form}>
@@ -100,7 +163,7 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: 'center',
-    marginBottom: 48,
+    marginBottom: 40,
   },
   logo: {
     fontSize: 36,
@@ -112,6 +175,40 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#94a3b8',
     marginTop: 8,
+  },
+  googleButton: {
+    backgroundColor: '#ffffff',
+    borderRadius: 8,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  googleIcon: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#4285F4',
+  },
+  googleButtonText: {
+    color: '#333333',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 24,
+    gap: 12,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#334155',
+  },
+  dividerText: {
+    color: '#64748b',
+    fontSize: 13,
   },
   form: {
     gap: 4,
