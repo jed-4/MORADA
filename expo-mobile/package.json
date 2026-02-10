@@ -1,0 +1,11 @@
+{
+  "name": "buildpro-mobile",
+  "version": "1.0.0",
+  "main": "App.tsx",
+  "scripts": {
+    "start": "npx expo start --tunnel --port 8081",
+    "android": "npx expo start --android",
+    "ios": "npx expo start --ios"
+  },
+  "private": true
+}

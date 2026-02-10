@@ -4,6 +4,7 @@ import type { Express, RequestHandler, Request, Response, NextFunction } from 'e
 import connectPg from 'connect-pg-simple';
 import { storage } from './storage';
 import { OAuth2Client } from 'google-auth-library';
+import * as signature from 'cookie-signature';
 
 const SALT_ROUNDS = 12;
 
@@ -45,8 +46,25 @@ export const sessionMiddleware = (() => {
   });
 })();
 
+export const mobileSessionMiddleware: RequestHandler = (req: Request, res: Response, next: NextFunction) => {
+  const mobileSessionId = req.headers['x-session-id'] as string;
+  if (mobileSessionId && req.headers['x-client'] === 'mobile') {
+    if (!/^[a-zA-Z0-9_-]{20,}$/.test(mobileSessionId)) {
+      return next();
+    }
+    const sessionSecret = process.env.SESSION_SECRET;
+    if (sessionSecret) {
+      const signed = 's:' + signature.sign(mobileSessionId, sessionSecret);
+      const encoded = encodeURIComponent(signed);
+      req.headers.cookie = `connect.sid=${encoded}`;
+    }
+  }
+  next();
+};
+
 export async function setupAuth(app: Express) {
   app.set('trust proxy', 1);
+  app.use(mobileSessionMiddleware);
   app.use(sessionMiddleware);
 
   const googleClientId = process.env.GOOGLE_OAUTH_CLIENT_ID || process.env.GOOGLE_CLIENT_ID;
@@ -143,7 +161,11 @@ export async function setupAuth(app: Express) {
           return res.status(500).json({ message: 'Failed to create session' });
         }
         console.log(`✅ [Auth] User logged in: ${user.email}`);
-        res.json({ user: sanitizeUser(user) });
+        const isMobile = req.headers['x-client'] === 'mobile';
+        res.json({ 
+          user: sanitizeUser(user),
+          ...(isMobile && { sessionId: req.sessionID }),
+        });
       });
     } catch (error) {
       console.error('[Auth] Login error:', error);

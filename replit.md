@@ -81,12 +81,25 @@ Preferred communication style: Simple, everyday language.
 - **Actionable Status Flag**: `isActionable` boolean flag for status categories to filter and highlight items requiring action in widgets.
 - **Suppliers Migration**: Unified `suppliers` into `contacts` with `contactType='supplier'`, updating all related references. Includes contact merging and dedicated `contactInsurances` table with UI for supplier-type contacts.
 
-### Mobile App (Capacitor-based)
+### Mobile App (Capacitor-based) [Legacy]
 - **Framework**: React with Capacitor.
 - **Location**: `/mobile` directory.
+- **Status**: Legacy, being replaced by Expo/React Native app.
 - **Features Implemented**: ProjectTasks, ProjectScope, ProjectNotes, ProjectMinutes, ProjectDefects, ProjectTimesheets, ProjectSiteDiary.
 - **Shared Components**: `SwipeableCard`, `BottomSheet`, `PullToRefresh`, mobile-optimized forms.
 - **UX Patterns**: Pull-to-refresh, haptic feedback, FAB, search/filter chips.
+
+### Mobile App (Expo/React Native)
+- **Framework**: React Native with Expo SDK 52.
+- **Location**: `/expo-mobile` directory.
+- **Status**: Initial version with core screens.
+- **Start Command**: `cd expo-mobile && npx expo start --tunnel --port 8081`
+- **Testing**: Install Expo Go on phone, scan QR code from terminal.
+- **Auth**: Uses X-Session-ID header with mobileSessionMiddleware in server/auth.ts to reconstruct signed cookies.
+- **Screens**: Login, Dashboard, Projects List, Project Detail.
+- **Navigation**: React Navigation with bottom tabs (Dashboard, Projects) and native stack.
+- **Dark Mode**: Automatic via useColorScheme.
+- **Backend Connection**: Same Express API on port 5000, session-based auth via X-Session-ID header.
 
 ## External Dependencies
 
