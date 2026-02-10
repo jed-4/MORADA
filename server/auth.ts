@@ -198,6 +198,10 @@ export async function setupAuth(app: Express) {
     const isMobileFlow = req.query.mobile === 'true';
     if (isMobileFlow) {
       (req.session as any).mobileOAuth = true;
+      const mobileRedirectUri = req.query.redirect_uri as string;
+      if (mobileRedirectUri) {
+        (req.session as any).mobileRedirectUri = mobileRedirectUri;
+      }
     }
 
     const authUrl = oauth2Client.generateAuthUrl({
@@ -220,11 +224,21 @@ export async function setupAuth(app: Express) {
     try {
       const { code, error, state } = req.query;
       const isMobileOAuth = (req.session as any).mobileOAuth;
+      const mobileRedirectUri = (req.session as any).mobileRedirectUri;
+
+      const getMobileRedirect = (params: string) => {
+        if (mobileRedirectUri) {
+          const separator = mobileRedirectUri.includes('?') ? '&' : '?';
+          return `${mobileRedirectUri}${separator}${params}`;
+        }
+        return `buildpro://auth?${params}`;
+      };
 
       const errorRedirect = (errCode: string) => {
         if (isMobileOAuth) {
           delete (req.session as any).mobileOAuth;
-          return res.redirect(`buildpro://auth?error=${errCode}`);
+          delete (req.session as any).mobileRedirectUri;
+          return res.redirect(getMobileRedirect(`error=${errCode}`));
         }
         return res.redirect(`/auth?error=${errCode}`);
       };
@@ -318,6 +332,7 @@ export async function setupAuth(app: Express) {
       (req.session as any).roleId = user.roleId;
 
       delete (req.session as any).mobileOAuth;
+      delete (req.session as any).mobileRedirectUri;
       const redirectPath = (req.session as any).authRedirect || '/';
       delete (req.session as any).authRedirect;
 
@@ -325,14 +340,14 @@ export async function setupAuth(app: Express) {
         if (err) {
           console.error('[Auth] Session save error:', err);
           if (isMobileOAuth) {
-            return res.redirect('buildpro://auth?error=session_failed');
+            return res.redirect(getMobileRedirect('error=session_failed'));
           }
           return res.redirect('/auth?error=session_failed');
         }
         console.log(`[Auth] Google login successful: ${user!.email}`);
 
         if (isMobileOAuth) {
-          return res.redirect(`buildpro://auth?sessionId=${req.sessionID}`);
+          return res.redirect(getMobileRedirect(`sessionId=${req.sessionID}`));
         }
         res.redirect(redirectPath);
       });

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   View,
   Text,
@@ -9,11 +9,13 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
-  Linking,
 } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
+import { makeRedirectUri } from 'expo-auth-session';
 import { useAuth } from '../contexts/AuthContext';
 import { API_BASE_URL } from '../services/api';
+
+WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginScreen() {
   const { login, loginWithSession } = useAuth();
@@ -22,51 +24,29 @@ export default function LoginScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
-  useEffect(() => {
-    const handleDeepLink = (event: { url: string }) => {
-      const url = event.url;
-      if (url.startsWith('buildpro://auth')) {
-        const params = new URL(url.replace('buildpro://', 'https://placeholder/')).searchParams;
+  const handleGooglePress = async () => {
+    setIsGoogleLoading(true);
+    try {
+      const redirectUri = makeRedirectUri({ preferLocalhost: false });
+      const googleAuthUrl = `${API_BASE_URL}/api/auth/google?mobile=true&redirect_uri=${encodeURIComponent(redirectUri)}`;
+
+      const result = await WebBrowser.openAuthSessionAsync(googleAuthUrl, redirectUri);
+
+      if (result.type === 'success' && result.url) {
+        const url = result.url;
+        const params = new URL(url).searchParams;
         const sessionId = params.get('sessionId');
         const error = params.get('error');
 
         if (sessionId) {
-          handleSessionLogin(sessionId);
+          const loginResult = await loginWithSession(sessionId);
+          if (!loginResult.success) {
+            Alert.alert('Login Failed', loginResult.error || 'Could not complete sign in');
+          }
         } else if (error) {
-          setIsGoogleLoading(false);
           Alert.alert('Google Login Failed', `Authentication error: ${error}`);
         }
       }
-    };
-
-    const subscription = Linking.addEventListener('url', handleDeepLink);
-
-    Linking.getInitialURL().then((url) => {
-      if (url) {
-        handleDeepLink({ url });
-      }
-    });
-
-    return () => {
-      subscription.remove();
-    };
-  }, []);
-
-  const handleSessionLogin = async (sessionId: string) => {
-    setIsGoogleLoading(true);
-    const result = await loginWithSession(sessionId);
-    setIsGoogleLoading(false);
-
-    if (!result.success) {
-      Alert.alert('Login Failed', result.error || 'Could not complete sign in');
-    }
-  };
-
-  const handleGooglePress = async () => {
-    setIsGoogleLoading(true);
-    try {
-      const googleAuthUrl = `${API_BASE_URL}/api/auth/google?mobile=true`;
-      await WebBrowser.openAuthSessionAsync(googleAuthUrl, 'buildpro://auth');
     } catch (err) {
       console.error('Google auth browser error:', err);
       Alert.alert('Error', 'Could not open Google sign-in');
