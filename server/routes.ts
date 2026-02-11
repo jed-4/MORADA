@@ -2046,9 +2046,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Filter projects by company for multi-tenant isolation
       const allProjects = await storage.getProjects();
       const companyProjects = allProjects.filter(p => p.companyId === user.companyId);
+
+      // Check if user is admin (admins see all company projects)
+      const isAdmin = user.roleName?.toLowerCase()?.includes('admin') ||
+                      user.roleName?.toLowerCase()?.includes('owner') ||
+                      user.roleName?.toLowerCase()?.includes('general manager');
+
+      let visibleProjects = companyProjects;
+
+      if (!isAdmin) {
+        // Non-admin users only see projects they have been granted access to, or that they own
+        const userAccess = await storage.getUserProjectAccess(String(user.id));
+        const accessibleProjectIds = new Set(userAccess.map(a => a.projectId));
+
+        visibleProjects = companyProjects.filter(p =>
+          accessibleProjectIds.has(p.id) || p.ownerId === String(user.id)
+        );
+      }
       
       // Debug: Log phase distribution
-      const phaseDistribution = companyProjects.reduce((acc, p) => {
+      const phaseDistribution = visibleProjects.reduce((acc, p) => {
         const phase = p.currentSystemPhase || 'null';
         acc[phase] = (acc[phase] || 0) + 1;
         return acc;
@@ -2058,7 +2075,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Prevent caching to ensure fresh data after updates
       res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
       res.set('Pragma', 'no-cache');
-      res.json(companyProjects);
+      res.json(visibleProjects);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch projects" });
     }

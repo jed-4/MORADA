@@ -7233,7 +7233,18 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async getUserProjectAccess(userId: string): Promise<UserProjectAccess[]> { return []; }
+  async getUserProjectAccess(userId: string): Promise<UserProjectAccess[]> {
+    try {
+      const results = await db
+        .select()
+        .from(schema.userProjectAccess)
+        .where(eq(schema.userProjectAccess.userId, userId));
+      return results;
+    } catch (error) {
+      console.error("Database error in getUserProjectAccess:", error);
+      return [];
+    }
+  }
   async createUserProjectAccess(access: InsertUserProjectAccess): Promise<UserProjectAccess> { throw new Error("Not implemented"); }
   async updateUserProjectAccess(id: string, access: Partial<InsertUserProjectAccess>): Promise<UserProjectAccess | undefined> { return undefined; }
   async deleteUserProjectAccess(id: string): Promise<boolean> { return false; }
