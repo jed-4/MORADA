@@ -73,6 +73,8 @@ Preferred communication style: Simple, everyday language.
 ### Mobile App (Expo/React Native)
 - **Framework**: React Native with Expo SDK 52.
 - **Location**: `/expo-mobile` directory.
+- **Dashboard**: ClickUp-style home screen with greeting, horizontally scrollable category cards (Messages, Activity, Mentions, Assigned), collapsible sections (My Tasks, Recent Activity, Calendar, Favourites, Timesheet), notification bell with unread badge, user menu with logout.
+- **Site Diary**: Template selector with pre-fetching and auto-select default in both Projects and More > Site Diary screens. Calendar popover with entry count dots.
 - **Screens**: Login, Dashboard, Projects List, Project Detail, Timesheets (clock in/out, log hours, week navigation, detail/edit/delete).
 - **Navigation**: React Navigation with bottom tabs and native stack.
 - **Dark Mode**: Automatic via useColorScheme.

@@ -150,6 +150,9 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
   const [offlineEntries, setOfflineEntries] = useState<SiteDiaryEntry[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [template, setTemplate] = useState<SiteDiaryTemplate | null>(null);
+  const [allTemplates, setAllTemplates] = useState<SiteDiaryTemplate[]>([]);
+  const [activeTemplate, setActiveTemplate] = useState<SiteDiaryTemplate | null>(null);
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [networkOnline, setNetworkOnline] = useState(true);
@@ -235,14 +238,21 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
   const fetchData = useCallback(async () => {
     try {
       const dateStr = getDateStr(currentDate);
-      const [entriesData, projectsData] = await Promise.all([
+      const [entriesData, projectsData, templatesData] = await Promise.all([
         apiFetch<SiteDiaryEntry[]>(`/api/company/site-diary-entries?date=${dateStr}`).catch(() => []),
         apiFetch<Project[]>('/api/projects').catch(() => []),
+        user?.companyId
+          ? apiFetch<SiteDiaryTemplate[]>(`/api/site-diary-templates?companyId=${user.companyId}`).catch(() => [])
+          : Promise.resolve([]),
       ]);
       setEntries(entriesData || []);
       setProjects(projectsData || []);
-
-      if (!template && user?.companyId) {
+      if (templatesData && templatesData.length > 0) {
+        setAllTemplates(templatesData);
+        const defaultTpl = templatesData.find(t => t.isDefault) || templatesData[0];
+        if (!template) setTemplate(defaultTpl);
+        if (!activeTemplate) setActiveTemplate(defaultTpl);
+      } else if (!template && user?.companyId) {
         apiFetch<SiteDiaryTemplate>(`/api/site-diary-templates/default/${user.companyId}`)
           .then(t => { if (t) setTemplate(t); })
           .catch(() => {});
@@ -462,7 +472,7 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
       if (!online) {
         const offlineEntry: SiteDiaryEntry = {
           id: `_offline_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-          templateId: template?.id || '',
+          templateId: activeTemplate?.id || template?.id || '',
           projectId: quickAddProjectId,
           title: quickAddTitle.trim(),
           entryDateTime,
@@ -481,7 +491,7 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
       }
 
       const body: any = {
-        templateId: template?.id || null,
+        templateId: activeTemplate?.id || template?.id || null,
         projectId: quickAddProjectId,
         title: quickAddTitle.trim(),
         entryDateTime,
@@ -513,7 +523,12 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Site Diary</Text>
         <TouchableOpacity
-          onPress={() => { resetQuickAdd(); setShowQuickAdd(true); }}
+          onPress={() => {
+            resetQuickAdd();
+            const defaultTpl = allTemplates.find(t => t.isDefault) || allTemplates[0] || template;
+            setActiveTemplate(defaultTpl);
+            setShowQuickAdd(true);
+          }}
           style={[styles.addBtn, { backgroundColor: colors.accent }]}
         >
           <Ionicons name="add" size={22} color="#ffffff" />
@@ -727,6 +742,19 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
                 <Ionicons name="close" size={24} color={isDark ? '#94a3b8' : '#64748b'} />
               </TouchableOpacity>
             </View>
+
+            {allTemplates.length > 1 && (
+              <TouchableOpacity
+                style={[styles.templateBar, { borderBottomColor: isDark ? '#334155' : '#e2e8f0' }]}
+                onPress={() => setShowTemplatePicker(true)}
+              >
+                <Ionicons name="document-text-outline" size={18} color={colors.accent} />
+                <Text style={[styles.templateBarText, { color: isDark ? '#f1f5f9' : '#0f172a' }]} numberOfLines={1}>
+                  {activeTemplate?.name || 'Select Template'}
+                </Text>
+                <Ionicons name="chevron-forward" size={18} color={isDark ? '#94a3b8' : '#64748b'} />
+              </TouchableOpacity>
+            )}
 
             <ScrollView style={styles.quickAddBody} keyboardShouldPersistTaps="handled">
               <Text style={[styles.fieldLabel, { color: isDark ? '#f1f5f9' : '#0f172a' }]}>Title *</Text>
@@ -974,6 +1002,48 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
               <Ionicons name="today-outline" size={18} color="#ffffff" style={{ marginRight: 6 }} />
               <Text style={styles.calendarTodayBtnText}>Today</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={showTemplatePicker} transparent animationType="slide">
+        <View style={[styles.tpOverlay, { justifyContent: 'flex-end' }]}>
+          <View style={[styles.tpSheet, { backgroundColor: isDark ? '#1e293b' : '#ffffff' }]}>
+            <View style={[styles.tpHeader, { borderBottomColor: isDark ? '#334155' : '#e2e8f0' }]}>
+              <Text style={[styles.tpHeaderTitle, { color: isDark ? '#f1f5f9' : '#0f172a' }]}>
+                Select Template
+              </Text>
+              <TouchableOpacity onPress={() => setShowTemplatePicker(false)}>
+                <Ionicons name="close" size={24} color={isDark ? '#94a3b8' : '#64748b'} />
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={allTemplates}
+              keyExtractor={item => item.id}
+              contentContainerStyle={{ paddingBottom: 40 }}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[styles.tpRow, { borderBottomColor: isDark ? '#334155' : '#f1f5f9' }]}
+                  onPress={() => {
+                    setActiveTemplate(item);
+                    setShowTemplatePicker(false);
+                  }}
+                >
+                  <Ionicons name="document-text-outline" size={18} color={colors.accent} />
+                  <View style={styles.tpRowContent}>
+                    <Text style={[styles.tpRowName, { color: isDark ? '#f1f5f9' : '#0f172a' }]} numberOfLines={1}>
+                      {item.name}
+                    </Text>
+                    {item.isDefault && (
+                      <Text style={[styles.tpRowBadge, { color: colors.accent }]}>Default</Text>
+                    )}
+                  </View>
+                  {activeTemplate?.id === item.id && (
+                    <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
+                  )}
+                </TouchableOpacity>
+              )}
+            />
           </View>
         </View>
       </Modal>
@@ -1411,6 +1481,64 @@ const styles = StyleSheet.create({
   calendarTodayBtnText: {
     color: '#ffffff',
     fontSize: 15,
+    fontWeight: '600',
+  },
+  templateBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 8,
+    borderBottomWidth: 1,
+  },
+  templateBarText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  tpOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  tpSheet: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '60%',
+    minHeight: 200,
+  },
+  tpHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+  },
+  tpHeaderTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+  },
+  tpRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    gap: 12,
+  },
+  tpRowContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  tpRowName: {
+    fontSize: 15,
+    fontWeight: '500',
+    flexShrink: 1,
+  },
+  tpRowBadge: {
+    fontSize: 11,
     fontWeight: '600',
   },
 });
