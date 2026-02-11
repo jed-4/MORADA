@@ -36,7 +36,6 @@ const phases = [
   { key: 'lead', label: 'Leads' },
   { key: 'pre_construction', label: 'Pre-Con' },
   { key: 'construction', label: 'Construction' },
-  { key: 'completed', label: 'Completed' },
 ];
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
