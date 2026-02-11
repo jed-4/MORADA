@@ -6,7 +6,7 @@ const QUEUE_KEY = 'buildpro_offline_queue';
 
 export interface QueuedAction {
   id: string;
-  type: 'clock-in' | 'clock-out' | 'log-hours' | 'edit-timesheet' | 'delete-timesheet';
+  type: 'clock-in' | 'clock-out' | 'log-hours' | 'edit-timesheet' | 'delete-timesheet' | 'create-diary-entry' | 'edit-diary-entry' | 'delete-diary-entry';
   payload: any;
   photoUri?: string;
   createdAt: string;
@@ -116,6 +116,47 @@ const processAction = async (action: QueuedAction): Promise<boolean> => {
       case 'delete-timesheet': {
         const res = await apiRequest(`/api/timesheets/${action.payload.id}`, 'DELETE');
         if (!res.ok) throw new Error('Delete failed');
+        return true;
+      }
+      case 'create-diary-entry': {
+        const { localPhotos, ...entryData } = action.payload;
+        const fieldValues = { ...entryData.fieldValues };
+        for (const [key, val] of Object.entries(fieldValues)) {
+          if (Array.isArray(val)) {
+            const uploaded: string[] = [];
+            for (const uri of val) {
+              if (typeof uri === 'string' && (uri.startsWith('file://') || uri.startsWith('content://'))) {
+                try {
+                  const { objectPath } = await uploadPhoto(uri);
+                  uploaded.push(objectPath);
+                } catch { uploaded.push(uri); }
+              } else { uploaded.push(uri); }
+            }
+            fieldValues[key] = uploaded;
+          }
+        }
+        let overallPhotos: string[] = [];
+        if (entryData.overallPhotos?.length) {
+          for (const uri of entryData.overallPhotos) {
+            if (uri.startsWith('file://') || uri.startsWith('content://')) {
+              try { const { objectPath } = await uploadPhoto(uri); overallPhotos.push(objectPath); }
+              catch { overallPhotos.push(uri); }
+            } else { overallPhotos.push(uri); }
+          }
+        }
+        const res = await apiRequest('/api/site-diary-entries', 'POST', { ...entryData, fieldValues, overallPhotos });
+        if (!res.ok) throw new Error('Create diary entry failed');
+        return true;
+      }
+      case 'edit-diary-entry': {
+        const { id, ...data } = action.payload;
+        const res = await apiRequest(`/api/site-diary-entries/${id}`, 'PATCH', data);
+        if (!res.ok) throw new Error('Edit diary entry failed');
+        return true;
+      }
+      case 'delete-diary-entry': {
+        const res = await apiRequest(`/api/site-diary-entries/${action.payload.id}`, 'DELETE');
+        if (!res.ok) throw new Error('Delete diary entry failed');
         return true;
       }
       default:

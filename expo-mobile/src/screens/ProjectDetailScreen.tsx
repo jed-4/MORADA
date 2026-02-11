@@ -228,6 +228,21 @@ export default function ProjectDetailScreen({ navigation, route }: Props) {
           )}
         </View>
 
+        <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.cardTitle, { color: colors.text }]}>Quick Actions</Text>
+          <TouchableOpacity
+            style={[styles.actionButton, { backgroundColor: colors.accent + '15', borderColor: colors.accent + '30' }]}
+            onPress={() => navigation.navigate('SiteDiary', { projectId, projectName: project.name })}
+          >
+            <Ionicons name="book-outline" size={20} color={colors.accent} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.actionButtonText, { color: colors.text }]}>Site Diary</Text>
+              <Text style={[styles.actionButtonSub, { color: colors.secondary }]}>Record daily activities</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.secondary} />
+          </TouchableOpacity>
+        </View>
+
         {tasks.length > 0 && (
           <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={[styles.cardTitle, { color: colors.text }]}>Tasks ({tasks.length})</Text>
@@ -299,4 +314,14 @@ const styles = StyleSheet.create({
   taskTitle: { flex: 1, fontSize: 14 },
   taskStatus: { fontSize: 12 },
   moreText: { fontSize: 13, fontWeight: '500', marginTop: 10, textAlign: 'center' },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  actionButtonText: { fontSize: 15, fontWeight: '600' },
+  actionButtonSub: { fontSize: 12, marginTop: 1 },
 });

@@ -10,6 +10,7 @@ import DashboardScreen from '../screens/DashboardScreen';
 import ProjectsScreen from '../screens/ProjectsScreen';
 import ProjectDetailScreen from '../screens/ProjectDetailScreen';
 import TimesheetsScreen from '../screens/TimesheetsScreen';
+import SiteDiaryScreen from '../screens/SiteDiaryScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -33,6 +34,11 @@ function ProjectsStack() {
         name="ProjectDetail"
         component={ProjectDetailScreen}
         options={({ route }: any) => ({ title: route.params?.projectName || 'Project' })}
+      />
+      <Stack.Screen
+        name="SiteDiary"
+        component={SiteDiaryScreen}
+        options={({ route }: any) => ({ title: `${route.params?.projectName || 'Project'} - Site Diary` })}
       />
     </Stack.Navigator>
   );
