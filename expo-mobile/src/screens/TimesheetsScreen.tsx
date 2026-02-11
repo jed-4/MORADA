@@ -200,8 +200,8 @@ export default function TimesheetsScreen() {
   }, [fetchData]);
 
   const handleClockIn = async () => {
-    if (!clockInProjectId) {
-      Alert.alert('Select Project', 'Please select a project to clock in.');
+    if (!clockInProjectId || !clockInCostCodeId) {
+      Alert.alert('Missing Fields', 'Please select a project and cost code to clock in.');
       return;
     }
     setClockingIn(true);
@@ -510,22 +510,22 @@ export default function TimesheetsScreen() {
                   onPress={() => setShowClockInCostCodePicker(true)}
                 >
                   <Text style={[styles.projectSelectorText, { color: clockInCostCodeId ? colors.text : colors.secondary }]}>
-                    {clockInCostCodeId ? getCostCodeName(clockInCostCodeId) : 'Select cost code (optional)...'}
+                    {clockInCostCodeId ? getCostCodeName(clockInCostCodeId) : 'Select cost code...'}
                   </Text>
                   <Ionicons name="chevron-down" size={18} color={colors.secondary} />
                 </TouchableOpacity>
               ) : null}
               <TouchableOpacity
-                style={[styles.clockButton, { backgroundColor: clockInProjectId ? colors.green : colors.border, opacity: clockingIn ? 0.7 : 1 }]}
+                style={[styles.clockButton, { backgroundColor: (clockInProjectId && clockInCostCodeId) ? colors.green : colors.border, opacity: clockingIn ? 0.7 : 1 }]}
                 onPress={handleClockIn}
-                disabled={!clockInProjectId || clockingIn}
+                disabled={!clockInProjectId || !clockInCostCodeId || clockingIn}
               >
                 {clockingIn ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
                   <>
-                    <Ionicons name="play" size={22} color={clockInProjectId ? '#fff' : colors.secondary} />
-                    <Text style={[styles.clockButtonText, { color: clockInProjectId ? '#fff' : colors.secondary }]}>Clock In</Text>
+                    <Ionicons name="play" size={22} color={(clockInProjectId && clockInCostCodeId) ? '#fff' : colors.secondary} />
+                    <Text style={[styles.clockButtonText, { color: (clockInProjectId && clockInCostCodeId) ? '#fff' : colors.secondary }]}>Clock In</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -879,7 +879,7 @@ export default function TimesheetsScreen() {
         showClockInCostCodePicker,
         () => setShowClockInCostCodePicker(false),
         'Select Cost Code',
-        [{ id: '', label: 'None' }, ...costCodes.map(cc => ({ id: cc.id, label: `${cc.code} - ${cc.title}` }))],
+        costCodes.map(cc => ({ id: cc.id, label: `${cc.code} - ${cc.title}` })),
         clockInCostCodeId,
         setClockInCostCodeId,
       )}
