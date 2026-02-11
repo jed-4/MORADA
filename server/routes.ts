@@ -11389,6 +11389,90 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Export site diary templates as JSON
+  app.get("/api/site-diary-templates/export-json", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const templates = await storage.getSiteDiaryTemplates();
+      const companyTemplates = templates.filter((t: any) => t.companyId === user.companyId && !t.isArchived);
+
+      const exportData = companyTemplates.map((t: any) => ({
+        name: t.name,
+        description: t.description,
+        fields: t.fields,
+        isDefault: t.isDefault,
+      }));
+
+      res.setHeader("Content-Type", "application/json");
+      res.setHeader("Content-Disposition", `attachment; filename="site-diary-templates-${new Date().toISOString().split('T')[0]}.json"`);
+      res.json(exportData);
+    } catch (error: any) {
+      console.error("Error exporting site diary templates as JSON:", error);
+      res.status(500).json({ error: "Failed to export templates", details: error.message });
+    }
+  });
+
+  // Import site diary templates from JSON
+  app.post("/api/site-diary-templates/import-json", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const templatesData = req.body;
+      if (!Array.isArray(templatesData)) {
+        return res.status(400).json({ error: "Expected an array of templates" });
+      }
+
+      let created = 0;
+      const errors: string[] = [];
+
+      for (const tpl of templatesData) {
+        try {
+          if (!tpl.name || typeof tpl.name !== 'string') {
+            errors.push(`Invalid template: missing or invalid name`);
+            continue;
+          }
+          if (!Array.isArray(tpl.fields)) {
+            errors.push(`Template "${tpl.name}": fields must be an array`);
+            continue;
+          }
+          const validFields = tpl.fields.every((f: any) =>
+            f && typeof f === 'object' && typeof f.id === 'string' && typeof f.title === 'string' && typeof f.type === 'string'
+          );
+          if (!validFields) {
+            errors.push(`Template "${tpl.name}": each field must have id, title, and type`);
+            continue;
+          }
+          await storage.createSiteDiaryTemplate({
+            name: tpl.name,
+            description: tpl.description || "",
+            fields: tpl.fields,
+            companyId: user.companyId,
+            isDefault: false,
+          });
+          created++;
+        } catch (e: any) {
+          errors.push(`Failed to import "${tpl.name}": ${e.message}`);
+        }
+      }
+
+      res.json({
+        message: `Imported ${created} template${created !== 1 ? 's' : ''}`,
+        templatesCreated: created,
+        errors,
+      });
+    } catch (error: any) {
+      console.error("Error importing JSON templates:", error);
+      res.status(500).json({ error: "Failed to import templates", details: error.message });
+    }
+  });
+
   // Company-wide Site Diary Entries (all projects)
   app.get("/api/company/site-diary-entries", requireAuth, requireTeamMember, async (req: any, res) => {
     try {

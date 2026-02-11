@@ -45,8 +45,12 @@ import {
   Cloud,
   Thermometer,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  Loader2,
 } from "lucide-react";
-import { format } from "date-fns";
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isSameMonth, addMonths, subMonths, getDay, startOfWeek, endOfWeek } from "date-fns";
 import { useUpload } from "@/hooks/use-upload";
 import type { 
   Project, 
@@ -72,6 +76,9 @@ export default function SiteDiaryEntries() {
   const [searchTerm, setSearchTerm] = useState("");
   const [viewingEntry, setViewingEntry] = useState<SiteDiaryEntry | null>(null);
   const [editingEntry, setEditingEntry] = useState<SiteDiaryEntry | null>(null);
+  const [viewMode, setViewMode] = useState<"list" | "calendar">("list");
+  const [calendarMonth, setCalendarMonth] = useState(new Date());
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
 
   useEffect(() => {
     if (projectIdFromUrl) {
@@ -127,6 +134,33 @@ export default function SiteDiaryEntries() {
       return;
     }
     setIsCreating(true);
+  };
+
+  const handleExportPdf = async () => {
+    if (filteredEntries.length === 0) return;
+    setIsExportingPdf(true);
+    try {
+      const { pdf } = await import("@react-pdf/renderer");
+      const { SiteDiaryPdfDocument } = await import("@/components/site-diary/SiteDiaryPdfDocument");
+      const projectName = selectedProject?.name || "Site Diary";
+      const blob = await pdf(
+        SiteDiaryPdfDocument({ entries: filteredEntries, templates, projectName })
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `site-diary-${projectName.replace(/\s+/g, "-").toLowerCase()}-${format(new Date(), "yyyy-MM-dd")}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast({ title: "PDF exported successfully" });
+    } catch (error: any) {
+      console.error("PDF export error:", error);
+      toast({ title: "Failed to export PDF", description: error.message, variant: "destructive" });
+    } finally {
+      setIsExportingPdf(false);
+    }
   };
 
   if (viewingEntry) {
@@ -195,6 +229,17 @@ export default function SiteDiaryEntries() {
         </div>
 
         <div className="flex items-center gap-1.5">
+          {selectedProjectId && filteredEntries.length > 0 && (
+            <button
+              className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+              onClick={() => handleExportPdf()}
+              disabled={isExportingPdf}
+              data-testid="button-export-pdf"
+            >
+              {isExportingPdf ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+              <span>PDF</span>
+            </button>
+          )}
           <button
             className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
             onClick={handleAddEntry}
@@ -211,11 +256,20 @@ export default function SiteDiaryEntries() {
       <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-1.5">
           <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
+            className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 ${viewMode === "list" ? "bg-[#bba7db] text-white border-[#bba7db]/20" : "hover-elevate active-elevate-2"}`}
+            onClick={() => setViewMode("list")}
             data-testid="button-list-view"
           >
             <LayoutList className="w-3 h-3" />
             <span>List</span>
+          </button>
+          <button
+            className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 ${viewMode === "calendar" ? "bg-[#bba7db] text-white border-[#bba7db]/20" : "hover-elevate active-elevate-2"}`}
+            onClick={() => setViewMode("calendar")}
+            data-testid="button-calendar-view"
+          >
+            <CalendarIcon className="w-3 h-3" />
+            <span>Calendar</span>
           </button>
 
           <div className="w-px h-4 bg-border mx-1" />
@@ -324,13 +378,20 @@ export default function SiteDiaryEntries() {
           <div className="flex items-center justify-center h-64">
             <p className="text-muted-foreground text-sm">Loading entries...</p>
           </div>
+        ) : viewMode === "calendar" ? (
+          <SiteDiaryCalendarView
+            entries={filteredEntries}
+            currentMonth={calendarMonth}
+            onMonthChange={setCalendarMonth}
+            onViewEntry={setViewingEntry}
+          />
         ) : filteredEntries.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 gap-4">
             <FileText className="h-12 w-12 text-muted-foreground" />
             <p className="text-muted-foreground text-sm">
               {entries.length === 0 ? "No site diary entries yet" : "No matching entries"}
             </p>
-            {entries.length === 0 && selectedTemplateId && selectedTemplateId !== "all" && (
+            {entries.length === 0 && (
               <button
                 className="h-7 px-3 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
                 onClick={handleAddEntry}
@@ -353,6 +414,89 @@ export default function SiteDiaryEntries() {
             ))}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function SiteDiaryCalendarView({
+  entries,
+  currentMonth,
+  onMonthChange,
+  onViewEntry,
+}: {
+  entries: SiteDiaryEntry[];
+  currentMonth: Date;
+  onMonthChange: (d: Date) => void;
+  onViewEntry: (entry: SiteDiaryEntry) => void;
+}) {
+  const monthStart = startOfMonth(currentMonth);
+  const monthEnd = endOfMonth(currentMonth);
+  const calendarStart = startOfWeek(monthStart, { weekStartsOn: 1 });
+  const calendarEnd = endOfWeek(monthEnd, { weekStartsOn: 1 });
+  const days = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
+
+  const getEntriesForDay = (day: Date) => {
+    return entries.filter((entry) => {
+      const entryDate = new Date(entry.entryDateTime);
+      return isSameDay(entryDate, day);
+    });
+  };
+
+  const weekDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+  return (
+    <div className="flex flex-col h-full" data-testid="calendar-view">
+      <div className="flex items-center justify-between mb-3">
+        <Button variant="ghost" size="icon" onClick={() => onMonthChange(subMonths(currentMonth, 1))}>
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
+        <h3 className="text-sm font-semibold">{format(currentMonth, "MMMM yyyy")}</h3>
+        <Button variant="ghost" size="icon" onClick={() => onMonthChange(addMonths(currentMonth, 1))}>
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-7 gap-px bg-border rounded-md overflow-visible flex-1">
+        {weekDays.map((day) => (
+          <div key={day} className="bg-muted px-2 py-1.5 text-center text-[10px] font-medium text-muted-foreground">
+            {day}
+          </div>
+        ))}
+        {days.map((day) => {
+          const dayEntries = getEntriesForDay(day);
+          const isCurrentMonth = isSameMonth(day, currentMonth);
+          const isToday = isSameDay(day, new Date());
+
+          return (
+            <div
+              key={day.toISOString()}
+              className={`bg-card min-h-[80px] p-1 ${!isCurrentMonth ? "opacity-40" : ""}`}
+            >
+              <div className={`text-[10px] font-medium mb-0.5 w-5 h-5 flex items-center justify-center rounded-full ${isToday ? "bg-[#bba7db] text-white" : "text-muted-foreground"}`}>
+                {format(day, "d")}
+              </div>
+              <div className="space-y-0.5">
+                {dayEntries.slice(0, 3).map((entry) => (
+                  <Badge
+                    key={entry.id}
+                    variant="secondary"
+                    className="w-full justify-start text-[9px] px-1 py-0 cursor-pointer truncate bg-[#bba7db]/10 text-[#bba7db] border-0"
+                    onClick={() => onViewEntry(entry)}
+                    title={entry.title}
+                  >
+                    {entry.title}
+                  </Badge>
+                ))}
+                {dayEntries.length > 3 && (
+                  <span className="text-[9px] text-muted-foreground px-1">
+                    +{dayEntries.length - 3} more
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

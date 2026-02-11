@@ -48,6 +48,7 @@ export default function SiteDiaryTemplates() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const jsonFileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -164,6 +165,59 @@ export default function SiteDiaryTemplates() {
     },
   });
 
+  const importJsonMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const text = await file.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error("Invalid JSON file. Please check the file format and try again.");
+      }
+      if (!Array.isArray(data)) {
+        throw new Error("Expected a JSON array of templates. The file may be in the wrong format.");
+      }
+      const response = await apiRequest("/api/site-diary-templates/import-json", "POST", data);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/site-diary-templates"] });
+      toast({
+        title: "Import successful",
+        description: data.message || `Imported ${data.templatesCreated} templates`,
+      });
+      if (data.errors && data.errors.length > 0) {
+        toast({
+          title: "Some templates had errors",
+          description: data.errors.join(", "),
+          variant: "destructive",
+        });
+      }
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Import failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleJsonFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.name.endsWith(".json")) {
+      toast({
+        title: "Invalid file type",
+        description: "Please upload a JSON file (.json)",
+        variant: "destructive",
+      });
+      return;
+    }
+    importJsonMutation.mutate(file);
+    e.target.value = "";
+  };
+
   const handleFileSelect = (file: File) => {
     if (!file.name.endsWith(".xlsx") && !file.name.endsWith(".xls")) {
       toast({
@@ -217,24 +271,48 @@ export default function SiteDiaryTemplates() {
 
         {/* Right: Action Buttons */}
         <div className="flex items-center gap-1.5">
-          <button
-            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
-            onClick={() => {
-              window.open("/api/site-diary-templates/export", "_blank");
-            }}
-            data-testid="button-export-templates"
-          >
-            <Download className="w-3 h-3" />
-            <span>Export</span>
-          </button>
-          <button
-            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
-            onClick={() => setIsImportDialogOpen(true)}
-            data-testid="button-import-templates"
-          >
-            <Upload className="w-3 h-3" />
-            <span>Import</span>
-          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+                data-testid="button-export-templates"
+              >
+                <Download className="w-3 h-3" />
+                <span>Export</span>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => window.open("/api/site-diary-templates/export", "_blank")}>
+                <FileSpreadsheet className="h-4 w-4 mr-2" />
+                Export as Excel
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => window.open("/api/site-diary-templates/export-json", "_blank")}>
+                <FileText className="h-4 w-4 mr-2" />
+                Export as JSON
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+                data-testid="button-import-templates"
+              >
+                <Upload className="w-3 h-3" />
+                <span>Import</span>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setIsImportDialogOpen(true)}>
+                <FileSpreadsheet className="h-4 w-4 mr-2" />
+                Import from Excel
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => jsonFileInputRef.current?.click()}>
+                <FileText className="h-4 w-4 mr-2" />
+                Import from JSON
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <button
             className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
             onClick={() => setIsAddingTemplate(true)}
@@ -444,6 +522,14 @@ export default function SiteDiaryTemplates() {
               accept=".xlsx,.xls"
               className="hidden"
               data-testid="input-file-upload"
+            />
+            <input
+              type="file"
+              ref={jsonFileInputRef}
+              onChange={handleJsonFileSelect}
+              accept=".json"
+              className="hidden"
+              data-testid="input-json-upload"
             />
 
             {/* Drop zone */}

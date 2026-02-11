@@ -46,7 +46,7 @@ Preferred communication style: Simple, everyday language.
 ### Feature Specifications & System Design
 - **Budget Tracking**: Manages estimates, bills, and variations with a calculation engine, storing real dollar values.
 - **Task Management**: Kanban, List, and Calendar views with drag-and-drop, task templates, inline checklist management, and due date filtering. Supports inline creation with contextual defaults, task duplication, and reminder setting. Reminders generate notifications with deep links.
-- **Site Diary System**: Company-wide templates define form structure, project-specific entries record daily activities. Features include template import/export, search, checkbox accountability, file/photo uploads, and weather data recording.
+- **Site Diary System**: Company-wide templates define form structure, project-specific entries record daily activities. Features include template import/export (Excel and JSON), search, checkbox accountability, file/photo uploads, weather data recording, calendar view for entries, and PDF export for reports.
 - **Checklist System**: Templates with group functionality, dashboard widget integration, and color-coded status indicators.
 - **Cost Code Management**: Company-isolated merge functionality.
 - **Import System**: Flexible CSV/Excel import for schedules with column mapping.
