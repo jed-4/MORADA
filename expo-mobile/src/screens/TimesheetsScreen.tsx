@@ -121,7 +121,9 @@ export default function TimesheetsScreen() {
   const [elapsedTime, setElapsedTime] = useState('00:00:00');
 
   const [clockInProjectId, setClockInProjectId] = useState('');
+  const [clockInCostCodeId, setClockInCostCodeId] = useState('');
   const [showProjectPicker, setShowProjectPicker] = useState(false);
+  const [showClockInCostCodePicker, setShowClockInCostCodePicker] = useState(false);
   const [clockingIn, setClockingIn] = useState(false);
   const [clockingOut, setClockingOut] = useState(false);
 
@@ -204,9 +206,10 @@ export default function TimesheetsScreen() {
     }
     setClockingIn(true);
     try {
-      await apiRequest('/api/timesheets/clock-in', 'POST', { projectId: clockInProjectId });
+      await apiRequest('/api/timesheets/clock-in', 'POST', { projectId: clockInProjectId, costCodeId: clockInCostCodeId || undefined });
       await fetchData();
       setClockInProjectId('');
+      setClockInCostCodeId('');
     } catch (e: any) {
       Alert.alert('Error', 'Could not clock in. Please try again.');
     } finally {
@@ -501,6 +504,17 @@ export default function TimesheetsScreen() {
                 </Text>
                 <Ionicons name="chevron-down" size={18} color={colors.secondary} />
               </TouchableOpacity>
+              {clockInProjectId ? (
+                <TouchableOpacity
+                  style={[styles.projectSelector, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
+                  onPress={() => setShowClockInCostCodePicker(true)}
+                >
+                  <Text style={[styles.projectSelectorText, { color: clockInCostCodeId ? colors.text : colors.secondary }]}>
+                    {clockInCostCodeId ? getCostCodeName(clockInCostCodeId) : 'Select cost code (optional)...'}
+                  </Text>
+                  <Ionicons name="chevron-down" size={18} color={colors.secondary} />
+                </TouchableOpacity>
+              ) : null}
               <TouchableOpacity
                 style={[styles.clockButton, { backgroundColor: clockInProjectId ? colors.green : colors.border, opacity: clockingIn ? 0.7 : 1 }]}
                 onPress={handleClockIn}
@@ -858,6 +872,16 @@ export default function TimesheetsScreen() {
         costCodes.map(cc => ({ id: cc.id, label: `${cc.code} - ${cc.title}` })),
         formCostCodeId,
         setFormCostCodeId,
+      )}
+
+      {/* Clock-In Cost Code Picker */}
+      {renderPickerModal(
+        showClockInCostCodePicker,
+        () => setShowClockInCostCodePicker(false),
+        'Select Cost Code',
+        [{ id: '', label: 'None' }, ...costCodes.map(cc => ({ id: cc.id, label: `${cc.code} - ${cc.title}` }))],
+        clockInCostCodeId,
+        setClockInCostCodeId,
       )}
     </View>
   );
