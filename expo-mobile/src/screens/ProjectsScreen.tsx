@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,8 @@ import {
   RefreshControl,
   ActivityIndicator,
   useColorScheme,
+  Dimensions,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { apiFetch } from '../services/api';
@@ -29,15 +31,26 @@ type Props = {
   navigation: NativeStackNavigationProp<any>;
 };
 
+const phases = [
+  { key: 'all', label: 'All' },
+  { key: 'lead', label: 'Leads' },
+  { key: 'pre_construction', label: 'Pre-Con' },
+  { key: 'construction', label: 'Construction' },
+  { key: 'completed', label: 'Completed' },
+];
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
+
 export default function ProjectsScreen({ navigation }: Props) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const [projects, setProjects] = useState<Project[]>([]);
-  const [filteredProjects, setFilteredProjects] = useState<Project[]>([]);
   const [search, setSearch] = useState('');
-  const [activeFilter, setActiveFilter] = useState<string>('all');
+  const [activeIndex, setActiveIndex] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const pagerRef = useRef<FlatList>(null);
+  const indicatorAnim = useRef(new Animated.Value(0)).current;
 
   const colors = isDark
     ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#3b82f6', inputBg: '#1e293b' }
@@ -57,24 +70,6 @@ export default function ProjectsScreen({ navigation }: Props) {
   useEffect(() => {
     fetchProjects();
   }, [fetchProjects]);
-
-  useEffect(() => {
-    let filtered = projects;
-    if (activeFilter !== 'all') {
-      filtered = filtered.filter(p => p.currentSystemPhase === activeFilter);
-    }
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      filtered = filtered.filter(
-        p =>
-          p.name?.toLowerCase().includes(q) ||
-          p.clientName?.toLowerCase().includes(q) ||
-          p.projectNumber?.toLowerCase().includes(q) ||
-          p.address?.toLowerCase().includes(q)
-      );
-    }
-    setFilteredProjects(filtered);
-  }, [projects, search, activeFilter]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -102,16 +97,60 @@ export default function ProjectsScreen({ navigation }: Props) {
     }
   };
 
-  const filters = [
-    { key: 'all', label: 'All' },
-    { key: 'lead', label: 'Leads' },
-    { key: 'pre_construction', label: 'Pre-Con' },
-    { key: 'construction', label: 'Construction' },
-    { key: 'completed', label: 'Completed' },
-  ];
+  const getFilteredProjects = (phaseKey: string) => {
+    let filtered = projects;
+    if (phaseKey !== 'all') {
+      filtered = filtered.filter(p => p.currentSystemPhase === phaseKey);
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      filtered = filtered.filter(
+        p =>
+          p.name?.toLowerCase().includes(q) ||
+          p.clientName?.toLowerCase().includes(q) ||
+          p.projectNumber?.toLowerCase().includes(q) ||
+          p.address?.toLowerCase().includes(q)
+      );
+    }
+    return filtered;
+  };
 
-  const renderProject = ({ item }: { item: Project }) => (
+  const getPhaseCount = (phaseKey: string) => {
+    if (phaseKey === 'all') return projects.length;
+    return projects.filter(p => p.currentSystemPhase === phaseKey).length;
+  };
+
+  const onTabPress = (index: number) => {
+    setActiveIndex(index);
+    pagerRef.current?.scrollToIndex({ index, animated: true });
+    Animated.spring(indicatorAnim, {
+      toValue: index,
+      useNativeDriver: true,
+      tension: 68,
+      friction: 12,
+    }).start();
+  };
+
+  const onPageScroll = (e: any) => {
+    const offset = e.nativeEvent.contentOffset.x;
+    const index = offset / SCREEN_WIDTH;
+    indicatorAnim.setValue(index);
+  };
+
+  const onMomentumScrollEnd = (e: any) => {
+    const index = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
+    setActiveIndex(index);
+  };
+
+  const tabWidth = SCREEN_WIDTH / phases.length;
+  const indicatorTranslateX = indicatorAnim.interpolate({
+    inputRange: phases.map((_, i) => i),
+    outputRange: phases.map((_, i) => i * tabWidth),
+  });
+
+  const renderProjectCard = (item: Project) => (
     <TouchableOpacity
+      key={item.id}
       style={[styles.projectCard, { backgroundColor: colors.card, borderColor: colors.border }]}
       onPress={() => navigation.navigate('ProjectDetail', { projectId: item.id, projectName: item.name })}
       activeOpacity={0.7}
@@ -172,48 +211,84 @@ export default function ProjectsScreen({ navigation }: Props) {
         </View>
       </View>
 
-      <View style={styles.filterRow}>
-        <FlatList
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          data={filters}
-          keyExtractor={(item) => item.key}
-          contentContainerStyle={styles.filterContent}
-          renderItem={({ item }) => (
-            <TouchableOpacity
+      <View style={[styles.tabBar, { borderBottomColor: colors.border }]}>
+        {phases.map((phase, index) => (
+          <TouchableOpacity
+            key={phase.key}
+            style={styles.tab}
+            onPress={() => onTabPress(index)}
+            activeOpacity={0.7}
+          >
+            <Text
               style={[
-                styles.filterChip,
-                {
-                  backgroundColor: activeFilter === item.key ? colors.accent : colors.card,
-                  borderColor: activeFilter === item.key ? colors.accent : colors.border,
-                },
+                styles.tabLabel,
+                { color: activeIndex === index ? colors.accent : colors.secondary },
               ]}
-              onPress={() => setActiveFilter(item.key)}
+              numberOfLines={1}
             >
-              <Text
-                style={[
-                  styles.filterText,
-                  { color: activeFilter === item.key ? '#ffffff' : colors.secondary },
-                ]}
-              >
-                {item.label}
-              </Text>
-            </TouchableOpacity>
-          )}
+              {phase.label}
+            </Text>
+            <Text
+              style={[
+                styles.tabCount,
+                { color: activeIndex === index ? colors.accent : colors.secondary },
+              ]}
+            >
+              {getPhaseCount(phase.key)}
+            </Text>
+          </TouchableOpacity>
+        ))}
+        <Animated.View
+          style={[
+            styles.tabIndicator,
+            {
+              backgroundColor: colors.accent,
+              width: tabWidth - 16,
+              transform: [{ translateX: Animated.add(indicatorTranslateX, 8) }],
+            },
+          ]}
         />
       </View>
 
       <FlatList
-        data={filteredProjects}
-        keyExtractor={(item) => item.id}
-        renderItem={renderProject}
-        contentContainerStyle={styles.list}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
-        ListEmptyComponent={
-          <Text style={[styles.emptyText, { color: colors.secondary }]}>
-            {search ? 'No projects match your search' : 'No projects found'}
-          </Text>
-        }
+        ref={pagerRef}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        data={phases}
+        keyExtractor={(item) => item.key}
+        onScroll={onPageScroll}
+        onMomentumScrollEnd={onMomentumScrollEnd}
+        scrollEventThrottle={16}
+        getItemLayout={(_, index) => ({
+          length: SCREEN_WIDTH,
+          offset: SCREEN_WIDTH * index,
+          index,
+        })}
+        renderItem={({ item: phase }) => {
+          const phaseProjects = getFilteredProjects(phase.key);
+          return (
+            <View style={{ width: SCREEN_WIDTH }}>
+              <FlatList
+                data={phaseProjects}
+                keyExtractor={(p) => p.id}
+                contentContainerStyle={styles.list}
+                refreshControl={
+                  <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
+                }
+                renderItem={({ item }) => renderProjectCard(item)}
+                ListEmptyComponent={
+                  <View style={styles.emptyContainer}>
+                    <Ionicons name="folder-open-outline" size={48} color={colors.secondary} />
+                    <Text style={[styles.emptyText, { color: colors.secondary }]}>
+                      {search ? 'No projects match your search' : `No ${phase.label.toLowerCase()} projects`}
+                    </Text>
+                  </View>
+                }
+              />
+            </View>
+          );
+        }}
       />
     </View>
   );
@@ -232,16 +307,32 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   searchText: { flex: 1, fontSize: 15, paddingVertical: 10 },
-  filterRow: { marginBottom: 4 },
-  filterContent: { paddingHorizontal: 16, paddingVertical: 8, gap: 8 },
-  filterChip: {
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderWidth: 1,
+  tabBar: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    position: 'relative',
   },
-  filterText: { fontSize: 13, fontWeight: '500' },
-  list: { paddingHorizontal: 16, paddingBottom: 20 },
+  tab: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  tabLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  tabCount: {
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  tabIndicator: {
+    position: 'absolute',
+    bottom: 0,
+    height: 2.5,
+    borderRadius: 2,
+  },
+  list: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 20 },
   projectCard: {
     borderRadius: 10,
     padding: 14,
@@ -261,5 +352,6 @@ const styles = StyleSheet.create({
   phaseBadgeText: { fontSize: 11, fontWeight: '500' },
   detailRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },
   detailText: { fontSize: 13 },
-  emptyText: { fontSize: 14, textAlign: 'center', paddingVertical: 40 },
+  emptyContainer: { alignItems: 'center', paddingVertical: 60 },
+  emptyText: { fontSize: 14, textAlign: 'center', marginTop: 12 },
 });
