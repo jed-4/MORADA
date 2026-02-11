@@ -13,7 +13,19 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Save, Settings, Palette, Info, Archive, Users, Plus, Trash2, AlertTriangle, DollarSign, MapPin, Calendar, FileText, TrendingUp, LayoutGrid, Check } from "lucide-react";
+import { Save, Settings, Palette, Info, Archive, Users, Plus, Trash2, AlertTriangle, DollarSign, MapPin, Calendar, FileText, TrendingUp, LayoutGrid, Check, UserPlus, Search, X } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { getUserDisplayName, getUserInitials } from "@/lib/utils";
 
 const dashboardBackgroundOptions = [
   { id: "default", name: "Default", value: "bg-background", preview: "bg-slate-100 dark:bg-slate-900" },
@@ -98,6 +110,67 @@ export default function ProjectSettings() {
       return result || [];
     },
   });
+
+  const { data: teamMembers = [], isLoading: teamLoading } = useQuery<any[]>({
+    queryKey: ['/api/projects', currentProject?.id, 'team'],
+    queryFn: async () => {
+      const response = await fetch(`/api/projects/${currentProject?.id}/team`, { credentials: 'include' });
+      if (!response.ok) throw new Error("Failed to fetch team");
+      return response.json();
+    },
+    enabled: !!currentProject?.id,
+  });
+
+  const { data: allCompanyUsers = [] } = useQuery<any[]>({
+    queryKey: ['/api/users'],
+  });
+
+  const [teamSearchQuery, setTeamSearchQuery] = useState("");
+  const [isTeamPopoverOpen, setIsTeamPopoverOpen] = useState(false);
+
+  const activeCompanyUsers = allCompanyUsers.filter((u: any) => u.isActive !== false);
+  const teamMemberIds = teamMembers.map((m: any) => String(m.id));
+
+  const filteredUsersForTeam = activeCompanyUsers.filter((u: any) => {
+    if (!teamSearchQuery) return true;
+    const search = teamSearchQuery.toLowerCase();
+    const name = `${u.firstName || ''} ${u.lastName || ''}`.toLowerCase();
+    return name.includes(search) || u.email?.toLowerCase().includes(search);
+  });
+
+  const addTeamMemberMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      return await apiRequest(`/api/projects/${currentProject?.id}/team/${userId}`, "POST", { accessLevel: "edit" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/projects', currentProject?.id, 'team'] });
+      toast({ title: "Team member added" });
+    },
+    onError: () => {
+      toast({ title: "Failed to add team member", variant: "destructive" });
+    },
+  });
+
+  const removeTeamMemberMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      return await apiRequest(`/api/projects/${currentProject?.id}/team/${userId}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/projects', currentProject?.id, 'team'] });
+      toast({ title: "Team member removed" });
+    },
+    onError: () => {
+      toast({ title: "Failed to remove team member", variant: "destructive" });
+    },
+  });
+
+  const handleToggleTeamMember = (userId: string) => {
+    if (teamMemberIds.includes(userId)) {
+      removeTeamMemberMutation.mutate(userId);
+    } else {
+      addTeamMemberMutation.mutate(userId);
+    }
+  };
 
   // Filter high-level (phase) and detailed (status) options
   const phaseOptions = useMemo(() => 
@@ -963,6 +1036,137 @@ export default function ProjectSettings() {
                 {company?.name || company?.nickname || currentProject.companyId}
               </div>
             </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Team Members */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                Team Members
+              </CardTitle>
+              <CardDescription>
+                Users assigned to this project ({teamMembers.length})
+              </CardDescription>
+            </div>
+            <Popover open={isTeamPopoverOpen} onOpenChange={setIsTeamPopoverOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <UserPlus className="h-4 w-4 mr-1.5" />
+                  Add Members
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-80 p-0" align="end">
+                <div className="p-3 border-b">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input
+                      placeholder="Search users..."
+                      value={teamSearchQuery}
+                      onChange={(e) => setTeamSearchQuery(e.target.value)}
+                      className="pl-8 h-8 text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="max-h-64 overflow-y-auto p-1">
+                  {filteredUsersForTeam.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                      No users found
+                    </p>
+                  ) : (
+                    filteredUsersForTeam.map((user: any) => {
+                      const isAssigned = teamMemberIds.includes(String(user.id));
+                      return (
+                        <label
+                          key={user.id}
+                          className="flex items-center gap-2.5 px-2.5 py-2 rounded-md cursor-pointer hover-elevate"
+                        >
+                          <Checkbox
+                            checked={isAssigned}
+                            onCheckedChange={() => handleToggleTeamMember(String(user.id))}
+                            disabled={addTeamMemberMutation.isPending || removeTeamMemberMutation.isPending}
+                          />
+                          <Avatar className="h-6 w-6">
+                            <AvatarFallback className="text-[10px] bg-[#bba7db]/10 text-[#bba7db]">
+                              {getUserInitials(user)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium truncate">
+                              {getUserDisplayName(user)}
+                            </div>
+                            <div className="text-xs text-muted-foreground truncate">
+                              {user.role?.name || "No Role"}
+                            </div>
+                          </div>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {teamLoading ? (
+            <p className="text-sm text-muted-foreground text-center py-8">Loading team members...</p>
+          ) : teamMembers.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">
+              No team members assigned to this project yet
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>User</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {teamMembers.map((member: any) => (
+                  <TableRow key={member.id}>
+                    <TableCell>
+                      <div className="flex items-center gap-2.5">
+                        <Avatar className="h-7 w-7">
+                          <AvatarFallback className="text-xs bg-[#bba7db]/10 text-[#bba7db]">
+                            {getUserInitials(member)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium truncate">{getUserDisplayName(member)}</div>
+                          <div className="text-xs text-muted-foreground truncate">{member.email}</div>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="text-xs">
+                        {member.role?.name || "No Role"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => {
+                          if (confirm(`Remove ${getUserDisplayName(member)} from this project?`)) {
+                            removeTeamMemberMutation.mutate(String(member.id));
+                          }
+                        }}
+                        disabled={removeTeamMemberMutation.isPending}
+                      >
+                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           )}
         </CardContent>
       </Card>

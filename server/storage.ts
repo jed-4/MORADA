@@ -7245,10 +7245,126 @@ export class DbStorage implements IStorage {
       return [];
     }
   }
-  async createUserProjectAccess(access: InsertUserProjectAccess): Promise<UserProjectAccess> { throw new Error("Not implemented"); }
-  async updateUserProjectAccess(id: string, access: Partial<InsertUserProjectAccess>): Promise<UserProjectAccess | undefined> { return undefined; }
-  async deleteUserProjectAccess(id: string): Promise<boolean> { return false; }
-  async grantProjectAccess(userId: string, projectId: string, accessLevel: string, grantedBy: string): Promise<UserProjectAccess> { throw new Error("Not implemented"); }
+  async createUserProjectAccess(access: InsertUserProjectAccess): Promise<UserProjectAccess> {
+    try {
+      const [result] = await db
+        .insert(schema.userProjectAccess)
+        .values(access)
+        .returning();
+      return result;
+    } catch (error) {
+      console.error("Database error in createUserProjectAccess:", error);
+      throw error;
+    }
+  }
+
+  async updateUserProjectAccess(id: string, access: Partial<InsertUserProjectAccess>): Promise<UserProjectAccess | undefined> {
+    try {
+      const [result] = await db
+        .update(schema.userProjectAccess)
+        .set(access)
+        .where(eq(schema.userProjectAccess.id, id))
+        .returning();
+      return result;
+    } catch (error) {
+      console.error("Database error in updateUserProjectAccess:", error);
+      return undefined;
+    }
+  }
+
+  async deleteUserProjectAccess(id: string): Promise<boolean> {
+    try {
+      const result = await db
+        .delete(schema.userProjectAccess)
+        .where(eq(schema.userProjectAccess.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteUserProjectAccess:", error);
+      return false;
+    }
+  }
+
+  async grantProjectAccess(userId: string, projectId: string, accessLevel: string, grantedBy: string): Promise<UserProjectAccess> {
+    try {
+      const existing = await db
+        .select()
+        .from(schema.userProjectAccess)
+        .where(and(
+          eq(schema.userProjectAccess.userId, userId),
+          eq(schema.userProjectAccess.projectId, projectId)
+        ));
+      if (existing.length > 0) {
+        const [updated] = await db
+          .update(schema.userProjectAccess)
+          .set({ accessLevel, grantedBy })
+          .where(eq(schema.userProjectAccess.id, existing[0].id))
+          .returning();
+        return updated;
+      }
+      const [result] = await db
+        .insert(schema.userProjectAccess)
+        .values({ userId, projectId, accessLevel, grantedBy })
+        .returning();
+      return result;
+    } catch (error) {
+      console.error("Database error in grantProjectAccess:", error);
+      throw error;
+    }
+  }
+
+  async revokeProjectAccess(userId: string, projectId: string): Promise<boolean> {
+    try {
+      await db
+        .delete(schema.userProjectAccess)
+        .where(and(
+          eq(schema.userProjectAccess.userId, userId),
+          eq(schema.userProjectAccess.projectId, projectId)
+        ));
+      return true;
+    } catch (error) {
+      console.error("Database error in revokeProjectAccess:", error);
+      return false;
+    }
+  }
+
+  async getProjectTeamMembers(projectId: string): Promise<UserWithRole[]> {
+    try {
+      const accessRecords = await db
+        .select()
+        .from(schema.userProjectAccess)
+        .where(eq(schema.userProjectAccess.projectId, projectId));
+
+      if (accessRecords.length === 0) return [];
+
+      const userIds = accessRecords.map(a => a.userId);
+      const users = await db
+        .select()
+        .from(schema.users)
+        .where(inArray(schema.users.id, userIds));
+
+      const activeUsers = users.filter(u => u.isActive);
+      const roleIds = activeUsers.map(u => u.roleId).filter(Boolean) as string[];
+
+      let rolesMap: Record<string, any> = {};
+      if (roleIds.length > 0) {
+        const roles = await db
+          .select()
+          .from(schema.userRoles)
+          .where(inArray(schema.userRoles.id, roleIds));
+        rolesMap = Object.fromEntries(roles.map(r => [r.id, r]));
+      }
+
+      return activeUsers.map(user => ({
+        ...user,
+        role: user.roleId ? rolesMap[user.roleId] : undefined,
+        userCategory: accessRecords.find(a => a.userId === user.id)?.accessLevel === 'supplier' ? 'supplier' as const : 'team' as const,
+      })) as UserWithRole[];
+    } catch (error) {
+      console.error("Database error in getProjectTeamMembers:", error);
+      return [];
+    }
+  }
+
   async getUserInvitations(status?: string): Promise<UserInvitation[]> {
     try {
       const conditions = [];

@@ -6680,6 +6680,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.put("/api/users/:userId/project-access/bulk", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const targetUserId = req.params.userId;
+      const { projectIds } = req.body;
+      const currentUser = req.user as any;
+
+      if (!Array.isArray(projectIds)) {
+        return res.status(400).json({ error: "projectIds must be an array" });
+      }
+
+      const currentAccess = await storage.getUserProjectAccess(targetUserId);
+      const currentProjectIds = new Set(currentAccess.map(a => a.projectId));
+      const desiredProjectIds = new Set(projectIds as string[]);
+
+      const toGrant = projectIds.filter((id: string) => !currentProjectIds.has(id));
+      const toRevoke = currentAccess.filter(a => !desiredProjectIds.has(a.projectId));
+
+      for (const projectId of toGrant) {
+        await storage.grantProjectAccess(targetUserId, projectId, "edit", String(currentUser.id));
+      }
+
+      for (const access of toRevoke) {
+        await storage.revokeProjectAccess(targetUserId, access.projectId);
+      }
+
+      const updatedAccess = await storage.getUserProjectAccess(targetUserId);
+      res.json(updatedAccess);
+    } catch (error) {
+      console.error("Error in bulk project access update:", error);
+      res.status(500).json({ error: "Failed to update project access" });
+    }
+  });
+
   // User Invitation Routes
   app.get("/api/invitations", requireTeamMember, requirePermission("admin.users", "view"), async (req, res) => {
     try {
