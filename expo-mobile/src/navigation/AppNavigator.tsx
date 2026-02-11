@@ -26,7 +26,7 @@ function ProjectsStack() {
         headerTintColor: isDark ? '#f1f5f9' : '#0f172a',
         headerTitleStyle: { fontWeight: '600' },
         headerShadowVisible: false,
-        headerBackTitleVisible: false,
+        headerBackButtonDisplayMode: 'minimal',
       }}
     >
       <Stack.Screen name="ProjectsList" component={ProjectsScreen} options={{ title: 'Projects' }} />

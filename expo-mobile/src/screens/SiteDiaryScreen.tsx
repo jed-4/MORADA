@@ -24,6 +24,8 @@ import NetInfo from '@react-native-community/netinfo';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest, uploadPhoto, API_BASE_URL } from '../services/api';
 import { isOnline, addToQueue } from '../services/offlineQueue';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RouteProp } from '@react-navigation/native';
 
 interface TemplateField {
   id: string;
@@ -64,8 +66,8 @@ interface SiteDiaryEntry {
 }
 
 type Props = {
-  navigation: any;
-  route: { params: { projectId: string; projectName: string } };
+  navigation: NativeStackNavigationProp<any>;
+  route: RouteProp<any>;
 };
 
 function formatDateTime(dateStr: string): string {
@@ -112,7 +114,7 @@ function countPhotos(entry: SiteDiaryEntry): number {
 const OFFLINE_KEY_PREFIX = 'buildpro_diary_offline_';
 
 export default function SiteDiaryScreen({ navigation, route }: Props) {
-  const { projectId, projectName } = route.params;
+  const { projectId, projectName } = route.params as { projectId: string; projectName: string };
   const { user } = useAuth();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
