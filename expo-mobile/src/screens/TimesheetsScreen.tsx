@@ -14,10 +14,14 @@ import {
   KeyboardAvoidingView,
   Platform,
   FlatList,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import NetInfo from '@react-native-community/netinfo';
 import { useAuth } from '../contexts/AuthContext';
-import { apiFetch, apiRequest } from '../services/api';
+import { apiFetch, apiRequest, uploadPhoto, API_BASE_URL } from '../services/api';
+import { addToQueue, syncQueue, getQueueCount, isOnline, getQueue, clearFailedActions, addSyncListener } from '../services/offlineQueue';
 
 interface Timesheet {
   id: string;
@@ -122,10 +126,14 @@ export default function TimesheetsScreen() {
 
   const [clockInProjectId, setClockInProjectId] = useState('');
   const [clockInCostCodeId, setClockInCostCodeId] = useState('');
+  const [clockInPhotoUri, setClockInPhotoUri] = useState<string | null>(null);
   const [showProjectPicker, setShowProjectPicker] = useState(false);
   const [showClockInCostCodePicker, setShowClockInCostCodePicker] = useState(false);
   const [clockingIn, setClockingIn] = useState(false);
   const [clockingOut, setClockingOut] = useState(false);
+  const [networkOnline, setNetworkOnline] = useState(true);
+  const [pendingQueueCount, setPendingQueueCount] = useState(0);
+  const [syncing, setSyncing] = useState(false);
 
   const [showLogSheet, setShowLogSheet] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
@@ -193,11 +201,66 @@ export default function TimesheetsScreen() {
     return () => clearInterval(interval);
   }, [activeTimesheet?.clockInTime]);
 
+  useEffect(() => {
+    const unsubscribeNet = NetInfo.addEventListener(state => {
+      const online = !!(state.isConnected && state.isInternetReachable !== false);
+      setNetworkOnline(online);
+      if (online) {
+        handleSync();
+      }
+    });
+    const unsubscribeQueue = addSyncListener(() => {
+      getQueueCount().then(setPendingQueueCount);
+    });
+    getQueueCount().then(setPendingQueueCount);
+    return () => {
+      unsubscribeNet();
+      unsubscribeQueue();
+    };
+  }, []);
+
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      const { synced, failed } = await syncQueue();
+      if (synced > 0) {
+        await fetchData();
+      }
+      if (failed > 0) {
+        Alert.alert('Sync Issue', `${failed} action(s) could not be synced. They may need to be re-entered.`);
+        await clearFailedActions();
+      }
+    } catch {
+    } finally {
+      setSyncing(false);
+      getQueueCount().then(setPendingQueueCount);
+    }
+  };
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await fetchData();
+    if (await isOnline()) {
+      await handleSync();
+    }
     setRefreshing(false);
   }, [fetchData]);
+
+  const handleTakePhoto = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Required', 'Camera access is needed to take a site photo.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      quality: 0.7,
+      allowsEditing: false,
+    });
+    if (!result.canceled && result.assets[0]) {
+      setClockInPhotoUri(result.assets[0].uri);
+    }
+  };
 
   const handleClockIn = async () => {
     if (!clockInProjectId || !clockInCostCodeId) {
@@ -206,12 +269,47 @@ export default function TimesheetsScreen() {
     }
     setClockingIn(true);
     try {
-      await apiRequest('/api/timesheets/clock-in', 'POST', { projectId: clockInProjectId, costCodeId: clockInCostCodeId || undefined });
+      const online = await isOnline();
+      if (!online) {
+        await addToQueue({
+          type: 'clock-in',
+          payload: { projectId: clockInProjectId, costCodeId: clockInCostCodeId },
+          photoUri: clockInPhotoUri || undefined,
+        });
+        Alert.alert('Saved Offline', 'Your clock-in has been queued and will sync when you have a connection.');
+        setClockInProjectId('');
+        setClockInCostCodeId('');
+        setClockInPhotoUri(null);
+        return;
+      }
+
+      const res = await apiRequest('/api/timesheets/clock-in', 'POST', { projectId: clockInProjectId, costCodeId: clockInCostCodeId });
+      const timesheet = await res.json();
+
+      if (clockInPhotoUri && timesheet?.id) {
+        try {
+          const { objectPath } = await uploadPhoto(clockInPhotoUri);
+          const attachments = [{ type: 'photo', path: objectPath, name: `Site photo - ${new Date().toLocaleDateString()}`, uploadedAt: new Date().toISOString() }];
+          await apiRequest(`/api/timesheets/${timesheet.id}`, 'PATCH', { attachments });
+        } catch (photoErr) {
+          console.warn('Photo upload failed, timesheet still created:', photoErr);
+        }
+      }
+
       await fetchData();
       setClockInProjectId('');
       setClockInCostCodeId('');
+      setClockInPhotoUri(null);
     } catch (e: any) {
-      Alert.alert('Error', 'Could not clock in. Please try again.');
+      await addToQueue({
+        type: 'clock-in',
+        payload: { projectId: clockInProjectId, costCodeId: clockInCostCodeId },
+        photoUri: clockInPhotoUri || undefined,
+      });
+      Alert.alert('Saved Offline', 'Clock-in saved and will sync when connection is restored.');
+      setClockInProjectId('');
+      setClockInCostCodeId('');
+      setClockInPhotoUri(null);
     } finally {
       setClockingIn(false);
     }
@@ -221,10 +319,23 @@ export default function TimesheetsScreen() {
     if (!activeTimesheet) return;
     setClockingOut(true);
     try {
+      const online = await isOnline();
+      if (!online) {
+        await addToQueue({
+          type: 'clock-out',
+          payload: { timesheetId: activeTimesheet.id },
+        });
+        Alert.alert('Saved Offline', 'Your clock-out has been queued and will sync when you have a connection.');
+        return;
+      }
       await apiRequest('/api/timesheets/clock-out', 'POST', { timesheetId: activeTimesheet.id });
       await fetchData();
     } catch (e: any) {
-      Alert.alert('Error', 'Could not clock out. Please try again.');
+      await addToQueue({
+        type: 'clock-out',
+        payload: { timesheetId: activeTimesheet.id },
+      });
+      Alert.alert('Saved Offline', 'Clock-out saved and will sync when connection is restored.');
     } finally {
       setClockingOut(false);
     }
@@ -303,8 +414,19 @@ export default function TimesheetsScreen() {
         breakDuration: formBreakDuration,
         hourlyRate: formHourlyRate,
         description: formDescription,
+        costCodeId: formCostCodeId,
         status: 'draft',
       };
+
+      const online = await isOnline();
+
+      if (!online && !isEditMode) {
+        await addToQueue({ type: 'log-hours', payload: body });
+        Alert.alert('Saved Offline', 'Your timesheet entry has been queued and will sync when you have a connection.');
+        setShowLogSheet(false);
+        resetForm();
+        return;
+      }
 
       if (isEditMode && editingId) {
         await apiRequest(`/api/timesheets/${editingId}`, 'PATCH', body);
@@ -339,7 +461,31 @@ export default function TimesheetsScreen() {
       resetForm();
       await fetchData();
     } catch (e: any) {
-      Alert.alert('Error', 'Could not save timesheet. Please try again.');
+      if (!isEditMode) {
+        const duration = timeEntryMode === 'time'
+          ? calculateDuration(formStartTime, formEndTime, formBreakDuration)
+          : formDuration;
+        await addToQueue({
+          type: 'log-hours',
+          payload: {
+            projectId: formProjectId,
+            date: new Date(formDate).toISOString(),
+            startTime: timeEntryMode === 'time' ? formStartTime : null,
+            endTime: timeEntryMode === 'time' ? formEndTime : null,
+            duration,
+            breakDuration: formBreakDuration,
+            hourlyRate: formHourlyRate,
+            description: formDescription,
+            costCodeId: formCostCodeId,
+            status: 'draft',
+          },
+        });
+        Alert.alert('Saved Offline', 'Timesheet saved and will sync when connection is restored.');
+        setShowLogSheet(false);
+        resetForm();
+      } else {
+        Alert.alert('Error', 'Could not save timesheet. Please try again when online.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -445,6 +591,28 @@ export default function TimesheetsScreen() {
         </TouchableOpacity>
       </View>
 
+      {!networkOnline && (
+        <View style={[styles.offlineBanner, { backgroundColor: '#fef3c7' }]}>
+          <Ionicons name="cloud-offline" size={16} color="#92400e" />
+          <Text style={{ color: '#92400e', fontSize: 13, marginLeft: 6, flex: 1 }}>
+            You're offline. Actions will be saved and synced when connected.
+          </Text>
+        </View>
+      )}
+
+      {pendingQueueCount > 0 && networkOnline && (
+        <TouchableOpacity
+          style={[styles.offlineBanner, { backgroundColor: '#dbeafe' }]}
+          onPress={handleSync}
+          disabled={syncing}
+        >
+          <Ionicons name={syncing ? 'sync' : 'cloud-upload'} size={16} color="#1e40af" />
+          <Text style={{ color: '#1e40af', fontSize: 13, marginLeft: 6, flex: 1 }}>
+            {syncing ? 'Syncing...' : `${pendingQueueCount} pending action(s) to sync`}
+          </Text>
+        </TouchableOpacity>
+      )}
+
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
@@ -514,6 +682,30 @@ export default function TimesheetsScreen() {
                   </Text>
                   <Ionicons name="chevron-down" size={18} color={colors.secondary} />
                 </TouchableOpacity>
+              ) : null}
+              {clockInProjectId && clockInCostCodeId ? (
+                <View style={styles.photoRow}>
+                  <TouchableOpacity
+                    style={[styles.photoButton, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
+                    onPress={handleTakePhoto}
+                  >
+                    <Ionicons name="camera-outline" size={20} color={colors.accent} />
+                    <Text style={[styles.photoButtonText, { color: colors.text }]}>
+                      {clockInPhotoUri ? 'Retake Photo' : 'Site Photo (optional)'}
+                    </Text>
+                  </TouchableOpacity>
+                  {clockInPhotoUri ? (
+                    <View style={styles.photoPreviewContainer}>
+                      <Image source={{ uri: clockInPhotoUri }} style={styles.photoPreview} />
+                      <TouchableOpacity
+                        style={styles.photoRemove}
+                        onPress={() => setClockInPhotoUri(null)}
+                      >
+                        <Ionicons name="close-circle" size={22} color={colors.red} />
+                      </TouchableOpacity>
+                    </View>
+                  ) : null}
+                </View>
               ) : null}
               <TouchableOpacity
                 style={[styles.clockButton, { backgroundColor: (clockInProjectId && clockInCostCodeId) ? colors.green : colors.border, opacity: clockingIn ? 0.7 : 1 }]}
@@ -909,6 +1101,12 @@ const styles = StyleSheet.create({
   },
   scroll: { flex: 1 },
   scrollContent: { padding: 16, paddingBottom: 32 },
+  offlineBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
 
   clockCard: {
     borderRadius: 12,
@@ -941,6 +1139,41 @@ const styles = StyleSheet.create({
   clockButtonText: { color: '#fff', fontSize: 17, fontWeight: '600' },
   clockInRow: { flexDirection: 'row', alignItems: 'center', gap: 8, width: '100%', marginBottom: 10 },
   clockInLabel: { fontSize: 13 },
+  photoRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 10,
+  },
+  photoButton: {
+    flex: 1,
+    height: 44,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  photoButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  photoPreviewContainer: {
+    position: 'relative',
+  },
+  photoPreview: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+  },
+  photoRemove: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+  },
   projectSelector: {
     width: '100%',
     height: 44,

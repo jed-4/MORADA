@@ -67,3 +67,24 @@ export const apiFetch = async <T>(path: string): Promise<T> => {
   }
   return response.json();
 };
+
+export const uploadPhoto = async (localUri: string): Promise<{ uploadURL: string; objectPath: string }> => {
+  const presignRes = await apiRequest('/api/uploads/request-url', 'POST', {
+    name: `timesheet-photo-${Date.now()}.jpg`,
+    contentType: 'image/jpeg',
+  });
+  if (!presignRes.ok) throw new Error('Failed to get upload URL');
+  const { uploadURL, objectPath } = await presignRes.json();
+
+  const photoResponse = await fetch(localUri);
+  const blob = await photoResponse.blob();
+
+  const uploadRes = await fetch(uploadURL, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'image/jpeg' },
+    body: blob,
+  });
+  if (!uploadRes.ok) throw new Error('Failed to upload photo');
+
+  return { uploadURL, objectPath };
+};
