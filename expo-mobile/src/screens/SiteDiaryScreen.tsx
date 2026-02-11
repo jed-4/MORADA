@@ -141,8 +141,6 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
   const [formDateTime, setFormDateTime] = useState(new Date().toISOString());
   const [formFieldValues, setFormFieldValues] = useState<Record<string, any>>({});
   const [formOverallPhotos, setFormOverallPhotos] = useState<string[]>([]);
-  const [formWeatherTemp, setFormWeatherTemp] = useState('');
-  const [formWeatherCondition, setFormWeatherCondition] = useState('');
   const [formVoiceNotes, setFormVoiceNotes] = useState<string[]>([]);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
@@ -299,8 +297,6 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
     setFormDateTime(new Date().toISOString());
     setFormFieldValues({});
     setFormOverallPhotos([]);
-    setFormWeatherTemp('');
-    setFormWeatherCondition('');
     setFormVoiceNotes([]);
     setIsEditMode(false);
     setSelectedEntry(null);
@@ -340,8 +336,6 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
     setFormDateTime(entry.entryDateTime);
     setFormFieldValues(entry.fieldValues || {});
     setFormOverallPhotos(entry.overallPhotos || []);
-    setFormWeatherTemp(entry.weather?.temp?.toString() || '');
-    setFormWeatherCondition(entry.weather?.condition || '');
     setFormVoiceNotes(entry.fieldValues?._voiceNotes || []);
     const entryTemplate = allTemplates.find(t => t.id === entry.templateId) || template;
     setActiveTemplate(entryTemplate);
@@ -595,10 +589,6 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
     setSubmitting(true);
     try {
       const online = await isOnline();
-      const weather: any = {};
-      if (formWeatherTemp) weather.temp = parseFloat(formWeatherTemp);
-      if (formWeatherCondition) weather.condition = formWeatherCondition;
-
       if (!online) {
         const entryId = (isEditMode && selectedEntry?.id.startsWith('_offline_'))
           ? selectedEntry.id
@@ -617,7 +607,6 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
           entryDateTime: formDateTime,
           fieldValues: offlineFieldValues,
           overallPhotos: formOverallPhotos,
-          weather: Object.keys(weather).length > 0 ? weather : undefined,
           createdBy: user?.id,
           createdByName: user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : undefined,
           createdAt: selectedEntry?.createdAt || new Date().toISOString(),
@@ -636,7 +625,6 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
               entryDateTime: formDateTime,
               fieldValues: formFieldValues,
               overallPhotos: formOverallPhotos,
-              weather: Object.keys(weather).length > 0 ? weather : undefined,
             },
           });
           Alert.alert('Queued for Sync', 'Your edit will be synced when you reconnect.');
@@ -685,7 +673,6 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
         entryDateTime: formDateTime,
         fieldValues: uploadedFieldValues,
         overallPhotos: uploadedOverallPhotos,
-        weather: Object.keys(weather).length > 0 ? weather : undefined,
       };
 
       if (isEditMode && selectedEntry && !selectedEntry.id.startsWith('_offline_')) {
@@ -1113,34 +1100,6 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
               <Text style={[styles.fieldLabel, { color: colors.text }]}>Date / Time</Text>
               <View style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.border, justifyContent: 'center' }]}>
                 <Text style={{ color: colors.text }}>{formatDateTime(formDateTime)}</Text>
-              </View>
-            </View>
-
-            <View style={[styles.sectionDivider, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Weather</Text>
-            </View>
-
-            <View style={styles.weatherRow}>
-              <View style={[styles.weatherField, { flex: 1 }]}>
-                <Text style={[styles.fieldLabel, { color: colors.text }]}>Temp (°C)</Text>
-                <TextInput
-                  style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
-                  value={formWeatherTemp}
-                  onChangeText={setFormWeatherTemp}
-                  placeholder="e.g. 25"
-                  placeholderTextColor={colors.secondary}
-                  keyboardType="numeric"
-                />
-              </View>
-              <View style={[styles.weatherField, { flex: 2, marginLeft: 12 }]}>
-                <Text style={[styles.fieldLabel, { color: colors.text }]}>Condition</Text>
-                <TextInput
-                  style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
-                  value={formWeatherCondition}
-                  onChangeText={setFormWeatherCondition}
-                  placeholder="e.g. Sunny, Cloudy"
-                  placeholderTextColor={colors.secondary}
-                />
               </View>
             </View>
 

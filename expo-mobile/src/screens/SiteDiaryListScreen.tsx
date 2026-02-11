@@ -170,8 +170,6 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [quickAddTitle, setQuickAddTitle] = useState('');
   const [quickAddProjectId, setQuickAddProjectId] = useState('');
-  const [quickAddWeatherCondition, setQuickAddWeatherCondition] = useState('');
-  const [quickAddWeatherTemp, setQuickAddWeatherTemp] = useState('');
   const [quickAddNotes, setQuickAddNotes] = useState('');
   const [showQuickAddProjectPicker, setShowQuickAddProjectPicker] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -462,8 +460,6 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
   const resetQuickAdd = () => {
     setQuickAddTitle('');
     setQuickAddProjectId('');
-    setQuickAddWeatherCondition('');
-    setQuickAddWeatherTemp('');
     setQuickAddNotes('');
   };
 
@@ -480,10 +476,6 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
     setSubmitting(true);
     try {
       const online = await isOnline();
-      const weather: any = {};
-      if (quickAddWeatherTemp) weather.temp = parseFloat(quickAddWeatherTemp);
-      if (quickAddWeatherCondition) weather.condition = quickAddWeatherCondition;
-
       const entryDateTime = new Date().toISOString();
       const fieldValues: Record<string, any> = {};
 
@@ -499,7 +491,6 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
           title: quickAddTitle.trim(),
           entryDateTime,
           fieldValues,
-          weather: Object.keys(weather).length > 0 ? weather : undefined,
           createdBy: user?.id,
           createdByName: user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : undefined,
           createdAt: entryDateTime,
@@ -518,7 +509,6 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
         title: quickAddTitle.trim(),
         entryDateTime,
         fieldValues,
-        weather: Object.keys(weather).length > 0 ? weather : undefined,
       };
 
       const res = await apiRequest('/api/site-diary-entries', 'POST', body);
@@ -798,30 +788,6 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
                 </Text>
                 <Ionicons name="chevron-down" size={18} color={colors.secondary} />
               </TouchableOpacity>
-
-              <View style={styles.weatherRow}>
-                <View style={styles.weatherField}>
-                  <Text style={[styles.fieldLabel, { color: isDark ? '#f1f5f9' : '#0f172a' }]}>Weather</Text>
-                  <TextInput
-                    style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
-                    value={quickAddWeatherCondition}
-                    onChangeText={setQuickAddWeatherCondition}
-                    placeholder="e.g. Sunny"
-                    placeholderTextColor={colors.muted}
-                  />
-                </View>
-                <View style={styles.tempField}>
-                  <Text style={[styles.fieldLabel, { color: isDark ? '#f1f5f9' : '#0f172a' }]}>Temp</Text>
-                  <TextInput
-                    style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
-                    value={quickAddWeatherTemp}
-                    onChangeText={setQuickAddWeatherTemp}
-                    placeholder="\u00B0C"
-                    placeholderTextColor={colors.muted}
-                    keyboardType="numeric"
-                  />
-                </View>
-              </View>
 
               <Text style={[styles.fieldLabel, { color: isDark ? '#f1f5f9' : '#0f172a' }]}>Notes</Text>
               <TextInput
