@@ -14,6 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest } from '../services/api';
+import CustomizeHomeScreen from './CustomizeHomeScreen';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 interface Project {
@@ -117,12 +118,37 @@ export default function DashboardScreen({ navigation }: Props) {
   const [showUserMenu, setShowUserMenu] = useState(false);
 
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({
-    tasks: false,
-    activity: false,
+    todayTasks: false,
+    overdueTasks: false,
+    upcomingTasks: false,
+    recentActivity: false,
     calendar: false,
     favourites: false,
     timesheet: false,
   });
+  const [showCustomize, setShowCustomize] = useState(false);
+
+  interface LayoutItem { key: string; visible: boolean; }
+  interface LayoutPrefs { tiles: LayoutItem[]; sections: LayoutItem[]; }
+
+  const defaultLayout: LayoutPrefs = {
+    tiles: [
+      { key: 'messages', visible: true },
+      { key: 'activity', visible: true },
+      { key: 'mentions', visible: true },
+      { key: 'assigned', visible: true },
+    ],
+    sections: [
+      { key: 'todayTasks', visible: true },
+      { key: 'overdueTasks', visible: true },
+      { key: 'upcomingTasks', visible: true },
+      { key: 'recentActivity', visible: true },
+      { key: 'calendar', visible: true },
+      { key: 'favourites', visible: true },
+      { key: 'timesheet', visible: true },
+    ],
+  };
+  const [layoutPrefs, setLayoutPrefs] = useState<LayoutPrefs>(defaultLayout);
 
   const colors = isDark
     ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#3b82f6', muted: '#475569', cardHover: '#253449' }
@@ -130,21 +156,37 @@ export default function DashboardScreen({ navigation }: Props) {
 
   const fetchData = useCallback(async () => {
     try {
-      const [projectsData, tasksData, notifData, unreadData, timesheetData] = await Promise.all([
+      const [projectsData, tasksData, notifData, unreadData, timesheetData, prefsData] = await Promise.all([
         apiFetch<Project[]>('/api/projects').catch(() => []),
         apiFetch<Task[]>('/api/tasks').catch(() => []),
         apiFetch<Notification[]>('/api/notifications?limit=20').catch(() => []),
         apiFetch<{ count: number }>('/api/notifications/unread-count').catch(() => ({ count: 0 })),
         apiFetch<ActiveTimesheet | null>('/api/timesheets/active').catch(() => null),
+        apiFetch<any>('/api/user-view-preferences/mobile-dashboard-layout').catch(() => null),
       ]);
       setProjects(projectsData || []);
-      const myTasks = (tasksData || []).filter((t: any) =>
-        t.assignees?.some?.((a: any) => a.userId === user?.id) || t.ownerId === user?.id
-      );
+      const myTasks = (tasksData || []).filter((t: any) => {
+        const ids = t.assigneeIds || [];
+        return ids.includes(user?.id) || t.ownerId === user?.id || t.assigneeId === user?.id;
+      });
       setTasks(myTasks);
       setNotifications(notifData || []);
       setUnreadCount(unreadData?.count || 0);
       setActiveTimesheet(timesheetData || null);
+      if (prefsData?.preferences?.tiles && prefsData?.preferences?.sections) {
+        const saved = prefsData.preferences as LayoutPrefs;
+        const savedTileKeys = new Set(saved.tiles.map((t: LayoutItem) => t.key));
+        const savedSectionKeys = new Set(saved.sections.map((s: LayoutItem) => s.key));
+        const mergedTiles = [
+          ...saved.tiles,
+          ...defaultLayout.tiles.filter(t => !savedTileKeys.has(t.key)),
+        ];
+        const mergedSections = [
+          ...saved.sections,
+          ...defaultLayout.sections.filter(s => !savedSectionKeys.has(s.key)),
+        ];
+        setLayoutPrefs({ tiles: mergedTiles, sections: mergedSections });
+      }
     } catch (e) {
       console.error('Failed to fetch dashboard data:', e);
     } finally {
@@ -238,12 +280,15 @@ export default function DashboardScreen({ navigation }: Props) {
     }
   };
 
-  const categoryCards = [
-    { key: 'messages', icon: 'chatbubble-outline' as const, label: 'Messages', count: 0 },
-    { key: 'activity', icon: 'pulse-outline' as const, label: 'Activity', count: recentNotifications.length },
-    { key: 'mentions', icon: 'at-outline' as const, label: 'Mentions', count: mentionCount },
-    { key: 'assigned', icon: 'person-outline' as const, label: 'Assigned', count: tasks.filter(t => t.status !== 'completed').length },
-  ];
+  const allCategoryCards: Record<string, { icon: keyof typeof Ionicons.glyphMap; label: string; count: number }> = {
+    messages: { icon: 'chatbubble-outline', label: 'Messages', count: 0 },
+    activity: { icon: 'pulse-outline', label: 'Activity', count: recentNotifications.length },
+    mentions: { icon: 'at-outline', label: 'Mentions', count: mentionCount },
+    assigned: { icon: 'person-outline', label: 'Assigned', count: tasks.filter(t => t.status !== 'completed').length },
+  };
+
+  const visibleTiles = layoutPrefs.tiles.filter(t => t.visible).map(t => ({ key: t.key, ...allCategoryCards[t.key] })).filter(t => t.icon);
+  const visibleSections = layoutPrefs.sections.filter(s => s.visible);
 
   const renderSectionHeader = (title: string, key: string, count?: number) => (
     <TouchableOpacity
@@ -267,6 +312,208 @@ export default function DashboardScreen({ navigation }: Props) {
     </TouchableOpacity>
   );
 
+  const renderSection = (key: string) => {
+    switch (key) {
+      case 'todayTasks':
+        return (
+          <View key={key} style={styles.section}>
+            {renderSectionHeader("Today's Tasks", 'todayTasks', todayTasks.length)}
+            {!collapsed.todayTasks && (
+              <View>
+                {todayTasks.length === 0 ? (
+                  <View style={[styles.emptySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <Ionicons name="checkmark-circle-outline" size={28} color={colors.muted} />
+                    <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No tasks due today</Text>
+                  </View>
+                ) : (
+                  todayTasks.map(task => (
+                    <View key={task.id} style={[styles.taskRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                      <View style={[styles.priorityStrip, { backgroundColor: getPriorityColor(task.priority) }]} />
+                      <View style={styles.taskContent}>
+                        <Text style={[styles.taskTitle, { color: colors.text }]} numberOfLines={1}>{task.title}</Text>
+                        <Text style={[styles.taskDue, { color: colors.accent }]}>Today</Text>
+                      </View>
+                    </View>
+                  ))
+                )}
+              </View>
+            )}
+          </View>
+        );
+      case 'overdueTasks':
+        return (
+          <View key={key} style={styles.section}>
+            {renderSectionHeader('Overdue Tasks', 'overdueTasks', overdueTasks.length)}
+            {!collapsed.overdueTasks && (
+              <View>
+                {overdueTasks.length === 0 ? (
+                  <View style={[styles.emptySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <Ionicons name="checkmark-circle-outline" size={28} color={colors.muted} />
+                    <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No overdue tasks</Text>
+                  </View>
+                ) : (
+                  overdueTasks.slice(0, 5).map(task => (
+                    <View key={task.id} style={[styles.taskRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                      <View style={[styles.priorityStrip, { backgroundColor: getPriorityColor(task.priority) }]} />
+                      <View style={styles.taskContent}>
+                        <Text style={[styles.taskTitle, { color: colors.text }]} numberOfLines={1}>{task.title}</Text>
+                        <Text style={[styles.taskDue, { color: '#ef4444' }]}>{getRelativeDate(task.dueDate!)}</Text>
+                      </View>
+                    </View>
+                  ))
+                )}
+              </View>
+            )}
+          </View>
+        );
+      case 'upcomingTasks':
+        return (
+          <View key={key} style={styles.section}>
+            {renderSectionHeader('Upcoming Tasks', 'upcomingTasks', upcomingTasks.length)}
+            {!collapsed.upcomingTasks && (
+              <View>
+                {upcomingTasks.length === 0 ? (
+                  <View style={[styles.emptySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <Ionicons name="checkmark-circle-outline" size={28} color={colors.muted} />
+                    <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No upcoming tasks</Text>
+                  </View>
+                ) : (
+                  upcomingTasks.map(task => (
+                    <View key={task.id} style={[styles.taskRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                      <View style={[styles.priorityStrip, { backgroundColor: getPriorityColor(task.priority) }]} />
+                      <View style={styles.taskContent}>
+                        <Text style={[styles.taskTitle, { color: colors.text }]} numberOfLines={1}>{task.title}</Text>
+                        <Text style={[styles.taskDue, { color: colors.secondary }]}>{getRelativeDate(task.dueDate!)}</Text>
+                      </View>
+                    </View>
+                  ))
+                )}
+              </View>
+            )}
+          </View>
+        );
+      case 'recentActivity':
+        return (
+          <View key={key} style={styles.section}>
+            {renderSectionHeader('Recent Activity', 'recentActivity', unreadNotifications.length)}
+            {!collapsed.recentActivity && (
+              <View>
+                {recentNotifications.length === 0 ? (
+                  <View style={[styles.emptySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <Ionicons name="pulse-outline" size={28} color={colors.muted} />
+                    <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No recent activity</Text>
+                  </View>
+                ) : (
+                  recentNotifications.slice(0, 5).map(notif => (
+                    <View key={notif.id} style={[styles.activityRow, { backgroundColor: colors.card, borderColor: colors.border }, !notif.isRead && { borderLeftWidth: 3, borderLeftColor: colors.accent }]}>
+                      <View style={[styles.activityIcon, { backgroundColor: colors.accent + '15' }]}>
+                        <Ionicons name={getNotifIcon(notif.type)} size={16} color={colors.accent} />
+                      </View>
+                      <View style={styles.activityContent}>
+                        <Text style={[styles.activityTitle, { color: colors.text }]} numberOfLines={1}>{notif.title}</Text>
+                        {notif.message && (
+                          <Text style={[styles.activityMsg, { color: colors.secondary }]} numberOfLines={1}>{notif.message}</Text>
+                        )}
+                      </View>
+                      <Text style={[styles.activityTime, { color: colors.muted }]}>{formatTimeAgo(notif.createdAt)}</Text>
+                    </View>
+                  ))
+                )}
+              </View>
+            )}
+          </View>
+        );
+      case 'calendar':
+        return (
+          <View key={key} style={styles.section}>
+            {renderSectionHeader("Today's Calendar", 'calendar')}
+            {!collapsed.calendar && (
+              <View style={[styles.emptySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Ionicons name="calendar-outline" size={28} color={colors.muted} />
+                <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No events today</Text>
+              </View>
+            )}
+          </View>
+        );
+      case 'favourites':
+        return (
+          <View key={key} style={styles.section}>
+            {renderSectionHeader('Favourites', 'favourites', favouriteProjects.length)}
+            {!collapsed.favourites && (
+              <View>
+                {favouriteProjects.length === 0 ? (
+                  <View style={[styles.emptySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <Ionicons name="star-outline" size={28} color={colors.muted} />
+                    <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No favourite projects</Text>
+                  </View>
+                ) : (
+                  favouriteProjects.map(project => (
+                    <TouchableOpacity
+                      key={project.id}
+                      style={[styles.favouriteRow, { backgroundColor: colors.card, borderColor: colors.border }]}
+                      onPress={() => navigation.navigate('Projects', {
+                        screen: 'ProjectDetail',
+                        params: { projectId: project.id, projectName: project.name },
+                      })}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="briefcase-outline" size={18} color={colors.accent} />
+                      <View style={styles.favouriteContent}>
+                        <Text style={[styles.favouriteName, { color: colors.text }]} numberOfLines={1}>{project.name}</Text>
+                        {project.clientName && (
+                          <Text style={[styles.favouriteClient, { color: colors.secondary }]} numberOfLines={1}>{project.clientName}</Text>
+                        )}
+                      </View>
+                      {project.currentSystemPhase && (
+                        <View style={[styles.phaseBadge, { backgroundColor: getPhaseColor(project.currentSystemPhase) + '20' }]}>
+                          <Text style={[styles.phaseBadgeText, { color: getPhaseColor(project.currentSystemPhase) }]}>
+                            {getPhaseLabel(project.currentSystemPhase)}
+                          </Text>
+                        </View>
+                      )}
+                      <Ionicons name="chevron-forward" size={16} color={colors.muted} />
+                    </TouchableOpacity>
+                  ))
+                )}
+              </View>
+            )}
+          </View>
+        );
+      case 'timesheet':
+        return (
+          <View key={key} style={styles.section}>
+            {renderSectionHeader('Timesheet', 'timesheet')}
+            {!collapsed.timesheet && (
+              <TouchableOpacity
+                style={[styles.timesheetCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                onPress={() => navigation.navigate('Timesheets')}
+                activeOpacity={0.7}
+              >
+                <View style={styles.timesheetCardRow}>
+                  <View style={[styles.timesheetIconBg, { backgroundColor: activeTimesheet ? '#22c55e20' : colors.accent + '15' }]}>
+                    <Ionicons name="time-outline" size={22} color={activeTimesheet ? '#22c55e' : colors.accent} />
+                  </View>
+                  <View style={styles.timesheetCardContent}>
+                    <Text style={[styles.timesheetCardTitle, { color: colors.text }]}>
+                      {activeTimesheet ? 'Currently Clocked In' : 'Not Clocked In'}
+                    </Text>
+                    <Text style={[styles.timesheetCardSub, { color: colors.secondary }]}>
+                      {activeTimesheet
+                        ? `${formatTimeSince(activeTimesheet.clockInTime)} elapsed`
+                        : 'Tap to view timesheets'}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+                </View>
+              </TouchableOpacity>
+            )}
+          </View>
+        );
+      default:
+        return null;
+    }
+  };
+
   if (loading) {
     return (
       <View style={[styles.container, styles.center, { backgroundColor: colors.bg }]}>
@@ -289,19 +536,27 @@ export default function DashboardScreen({ navigation }: Props) {
             <Text style={[styles.userName, { color: colors.text }]}>{fullDisplayName}</Text>
           </View>
         </TouchableOpacity>
-        <TouchableOpacity
-          onPress={openNotifications}
-          style={styles.bellBtn}
-        >
-          <Ionicons name="notifications-outline" size={24} color={colors.text} />
-          {unreadCount > 0 && (
-            <View style={styles.bellBadge}>
-              <Text style={styles.bellBadgeText}>
-                {unreadCount > 99 ? '99+' : unreadCount}
-              </Text>
-            </View>
-          )}
-        </TouchableOpacity>
+        <View style={styles.headerRight}>
+          <TouchableOpacity
+            onPress={() => setShowCustomize(true)}
+            style={styles.bellBtn}
+          >
+            <Ionicons name="settings-outline" size={22} color={colors.text} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={openNotifications}
+            style={styles.bellBtn}
+          >
+            <Ionicons name="notifications-outline" size={24} color={colors.text} />
+            {unreadCount > 0 && (
+              <View style={styles.bellBadge}>
+                <Text style={styles.bellBadgeText}>
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
@@ -309,22 +564,24 @@ export default function DashboardScreen({ navigation }: Props) {
         contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
       >
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.categoryRow}
-          style={styles.categoryScroll}
-        >
-          {categoryCards.map(card => (
-            <View key={card.key} style={[styles.categoryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Ionicons name={card.icon} size={22} color={colors.secondary} />
-              <Text style={[styles.categoryLabel, { color: colors.text }]}>{card.label}</Text>
-              <Text style={[styles.categoryCount, { color: colors.secondary }]}>
-                {card.count > 0 ? `${card.count} new` : '-'}
-              </Text>
-            </View>
-          ))}
-        </ScrollView>
+        {visibleTiles.length > 0 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.categoryRow}
+            style={styles.categoryScroll}
+          >
+            {visibleTiles.map(card => (
+              <View key={card.key} style={[styles.categoryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Ionicons name={card.icon} size={22} color={colors.secondary} />
+                <Text style={[styles.categoryLabel, { color: colors.text }]}>{card.label}</Text>
+                <Text style={[styles.categoryCount, { color: colors.secondary }]}>
+                  {card.count > 0 ? `${card.count} new` : '-'}
+                </Text>
+              </View>
+            ))}
+          </ScrollView>
+        )}
 
         {activeTimesheet && (
           <View style={[styles.timesheetBanner, { backgroundColor: '#22c55e' + '15', borderColor: '#22c55e' + '40' }]}>
@@ -343,173 +600,7 @@ export default function DashboardScreen({ navigation }: Props) {
           </View>
         )}
 
-        <View style={styles.section}>
-          {renderSectionHeader('My Tasks', 'tasks', overdueTasks.length + todayTasks.length)}
-          {!collapsed.tasks && (
-            <View>
-              {overdueTasks.length === 0 && todayTasks.length === 0 && upcomingTasks.length === 0 && (
-                <View style={[styles.emptySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                  <Ionicons name="checkmark-circle-outline" size={28} color={colors.muted} />
-                  <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No tasks assigned</Text>
-                </View>
-              )}
-
-              {overdueTasks.length > 0 && (
-                <View style={styles.taskGroup}>
-                  <Text style={[styles.taskGroupLabel, { color: '#ef4444' }]}>Overdue</Text>
-                  {overdueTasks.slice(0, 3).map(task => (
-                    <View key={task.id} style={[styles.taskRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                      <View style={[styles.priorityStrip, { backgroundColor: getPriorityColor(task.priority) }]} />
-                      <View style={styles.taskContent}>
-                        <Text style={[styles.taskTitle, { color: colors.text }]} numberOfLines={1}>{task.title}</Text>
-                        <Text style={[styles.taskDue, { color: '#ef4444' }]}>{getRelativeDate(task.dueDate!)}</Text>
-                      </View>
-                    </View>
-                  ))}
-                </View>
-              )}
-
-              {todayTasks.length > 0 && (
-                <View style={styles.taskGroup}>
-                  <Text style={[styles.taskGroupLabel, { color: colors.accent }]}>Today</Text>
-                  {todayTasks.map(task => (
-                    <View key={task.id} style={[styles.taskRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                      <View style={[styles.priorityStrip, { backgroundColor: getPriorityColor(task.priority) }]} />
-                      <View style={styles.taskContent}>
-                        <Text style={[styles.taskTitle, { color: colors.text }]} numberOfLines={1}>{task.title}</Text>
-                        <Text style={[styles.taskDue, { color: colors.accent }]}>Today</Text>
-                      </View>
-                    </View>
-                  ))}
-                </View>
-              )}
-
-              {upcomingTasks.length > 0 && (
-                <View style={styles.taskGroup}>
-                  <Text style={[styles.taskGroupLabel, { color: colors.secondary }]}>Upcoming</Text>
-                  {upcomingTasks.map(task => (
-                    <View key={task.id} style={[styles.taskRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                      <View style={[styles.priorityStrip, { backgroundColor: getPriorityColor(task.priority) }]} />
-                      <View style={styles.taskContent}>
-                        <Text style={[styles.taskTitle, { color: colors.text }]} numberOfLines={1}>{task.title}</Text>
-                        <Text style={[styles.taskDue, { color: colors.secondary }]}>{getRelativeDate(task.dueDate!)}</Text>
-                      </View>
-                    </View>
-                  ))}
-                </View>
-              )}
-            </View>
-          )}
-        </View>
-
-        <View style={styles.section}>
-          {renderSectionHeader('Recent Activity', 'activity', unreadNotifications.length)}
-          {!collapsed.activity && (
-            <View>
-              {recentNotifications.length === 0 ? (
-                <View style={[styles.emptySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                  <Ionicons name="pulse-outline" size={28} color={colors.muted} />
-                  <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No recent activity</Text>
-                </View>
-              ) : (
-                recentNotifications.slice(0, 5).map(notif => (
-                  <View key={notif.id} style={[styles.activityRow, { backgroundColor: colors.card, borderColor: colors.border }, !notif.isRead && { borderLeftWidth: 3, borderLeftColor: colors.accent }]}>
-                    <View style={[styles.activityIcon, { backgroundColor: colors.accent + '15' }]}>
-                      <Ionicons name={getNotifIcon(notif.type)} size={16} color={colors.accent} />
-                    </View>
-                    <View style={styles.activityContent}>
-                      <Text style={[styles.activityTitle, { color: colors.text }]} numberOfLines={1}>{notif.title}</Text>
-                      {notif.message && (
-                        <Text style={[styles.activityMsg, { color: colors.secondary }]} numberOfLines={1}>{notif.message}</Text>
-                      )}
-                    </View>
-                    <Text style={[styles.activityTime, { color: colors.muted }]}>{formatTimeAgo(notif.createdAt)}</Text>
-                  </View>
-                ))
-              )}
-            </View>
-          )}
-        </View>
-
-        <View style={styles.section}>
-          {renderSectionHeader("Today's Calendar", 'calendar')}
-          {!collapsed.calendar && (
-            <View style={[styles.emptySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Ionicons name="calendar-outline" size={28} color={colors.muted} />
-              <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No events today</Text>
-            </View>
-          )}
-        </View>
-
-        <View style={styles.section}>
-          {renderSectionHeader('Favourites', 'favourites', favouriteProjects.length)}
-          {!collapsed.favourites && (
-            <View>
-              {favouriteProjects.length === 0 ? (
-                <View style={[styles.emptySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                  <Ionicons name="star-outline" size={28} color={colors.muted} />
-                  <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No favourite projects</Text>
-                </View>
-              ) : (
-                favouriteProjects.map(project => (
-                  <TouchableOpacity
-                    key={project.id}
-                    style={[styles.favouriteRow, { backgroundColor: colors.card, borderColor: colors.border }]}
-                    onPress={() => navigation.navigate('Projects', {
-                      screen: 'ProjectDetail',
-                      params: { projectId: project.id, projectName: project.name },
-                    })}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="briefcase-outline" size={18} color={colors.accent} />
-                    <View style={styles.favouriteContent}>
-                      <Text style={[styles.favouriteName, { color: colors.text }]} numberOfLines={1}>{project.name}</Text>
-                      {project.clientName && (
-                        <Text style={[styles.favouriteClient, { color: colors.secondary }]} numberOfLines={1}>{project.clientName}</Text>
-                      )}
-                    </View>
-                    {project.currentSystemPhase && (
-                      <View style={[styles.phaseBadge, { backgroundColor: getPhaseColor(project.currentSystemPhase) + '20' }]}>
-                        <Text style={[styles.phaseBadgeText, { color: getPhaseColor(project.currentSystemPhase) }]}>
-                          {getPhaseLabel(project.currentSystemPhase)}
-                        </Text>
-                      </View>
-                    )}
-                    <Ionicons name="chevron-forward" size={16} color={colors.muted} />
-                  </TouchableOpacity>
-                ))
-              )}
-            </View>
-          )}
-        </View>
-
-        <View style={styles.section}>
-          {renderSectionHeader('Timesheet', 'timesheet')}
-          {!collapsed.timesheet && (
-            <TouchableOpacity
-              style={[styles.timesheetCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-              onPress={() => navigation.navigate('Timesheets')}
-              activeOpacity={0.7}
-            >
-              <View style={styles.timesheetCardRow}>
-                <View style={[styles.timesheetIconBg, { backgroundColor: activeTimesheet ? '#22c55e20' : colors.accent + '15' }]}>
-                  <Ionicons name="time-outline" size={22} color={activeTimesheet ? '#22c55e' : colors.accent} />
-                </View>
-                <View style={styles.timesheetCardContent}>
-                  <Text style={[styles.timesheetCardTitle, { color: colors.text }]}>
-                    {activeTimesheet ? 'Currently Clocked In' : 'Not Clocked In'}
-                  </Text>
-                  <Text style={[styles.timesheetCardSub, { color: colors.secondary }]}>
-                    {activeTimesheet
-                      ? `${formatTimeSince(activeTimesheet.clockInTime)} elapsed`
-                      : 'Tap to view timesheets'}
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={colors.muted} />
-              </View>
-            </TouchableOpacity>
-          )}
-        </View>
+        {visibleSections.map(section => renderSection(section.key))}
       </ScrollView>
 
       <Modal visible={showNotifications} transparent animationType="slide">
@@ -582,6 +673,17 @@ export default function DashboardScreen({ navigation }: Props) {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      <Modal visible={showCustomize} animationType="slide" presentationStyle="pageSheet">
+        <CustomizeHomeScreen
+          navigation={{
+            goBack: () => {
+              setShowCustomize(false);
+              fetchData();
+            },
+          } as any}
+        />
+      </Modal>
     </View>
   );
 }
@@ -602,6 +704,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   avatarCircle: {
     width: 40,

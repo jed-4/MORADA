@@ -73,10 +73,11 @@ Preferred communication style: Simple, everyday language.
 ### Mobile App (Expo/React Native)
 - **Framework**: React Native with Expo SDK 52.
 - **Location**: `/expo-mobile` directory.
-- **Dashboard**: ClickUp-style home screen with greeting, horizontally scrollable category cards (Messages, Activity, Mentions, Assigned), collapsible sections (My Tasks, Recent Activity, Calendar, Favourites, Timesheet), notification bell with unread badge, user menu with logout.
+- **Dashboard**: ClickUp-style home screen with greeting, horizontally scrollable category cards (Messages, Activity, Mentions, Assigned), collapsible sections (Today's Tasks, Overdue Tasks, Upcoming Tasks, Recent Activity, Calendar, Favourites, Timesheet), notification bell with unread badge, user menu with logout. Customizable layout via "Customize Home" settings (toggle visibility and reorder tiles/sections), persisted per user via user-view-preferences API.
+- **Tasks Screen**: Dedicated tasks tab with list view and board/kanban view toggle, grouping by status/priority/project/due date, task view modal with full details, and inline edit mode for updating tasks.
 - **Site Diary**: Template selector with pre-fetching and auto-select default in both Projects and More > Site Diary screens. Calendar popover with entry count dots.
-- **Screens**: Login, Dashboard, Projects List, Project Detail, Timesheets (clock in/out, log hours, week navigation, detail/edit/delete).
-- **Navigation**: React Navigation with bottom tabs and native stack.
+- **Screens**: Login, Dashboard, Tasks, Projects List, Project Detail, Timesheets (clock in/out, log hours, week navigation, detail/edit/delete).
+- **Navigation**: React Navigation with bottom tabs (Workspace, Projects, Tasks, Timesheets, More) and native stack.
 - **Dark Mode**: Automatic via useColorScheme.
 - **Backend Connection**: Uses same Express API on port 5000, session-based auth via X-Session-ID header.
 
