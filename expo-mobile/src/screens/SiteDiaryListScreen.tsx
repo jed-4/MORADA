@@ -421,7 +421,24 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
       const creatorMatch = entry.createdByName?.toLowerCase().includes(q);
       const projectMatch = getProjectLabel(entry.projectId).toLowerCase().includes(q);
       const weatherMatch = entry.weather?.condition?.toLowerCase().includes(q);
-      if (!titleMatch && !creatorMatch && !projectMatch && !weatherMatch) return false;
+      let fieldMatch = false;
+      if (entry.fieldValues) {
+        for (const value of Object.values(entry.fieldValues)) {
+          if (!value) continue;
+          if (typeof value === 'string' || typeof value === 'number') {
+            if (String(value).toLowerCase().includes(q)) { fieldMatch = true; break; }
+          } else if (Array.isArray(value)) {
+            for (const item of value) {
+              if (typeof item === 'string' && item.toLowerCase().includes(q)) { fieldMatch = true; break; }
+            }
+            if (fieldMatch) break;
+          } else if (typeof value === 'object' && value !== null) {
+            if ('checkedByName' in value && value.checkedByName && String(value.checkedByName).toLowerCase().includes(q)) { fieldMatch = true; break; }
+            if ('value' in value && typeof value.value === 'string' && value.value.toLowerCase().includes(q)) { fieldMatch = true; break; }
+          }
+        }
+      }
+      if (!titleMatch && !creatorMatch && !projectMatch && !weatherMatch && !fieldMatch) return false;
     }
     return true;
   });

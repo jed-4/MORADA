@@ -117,8 +117,14 @@ export default function SiteDiaryEntries() {
       if (!value) continue;
       if (typeof value === 'string' || typeof value === 'number') {
         if (String(value).toLowerCase().includes(searchLower)) return true;
+      } else if (Array.isArray(value)) {
+        for (const item of value) {
+          if (typeof item === 'string' && item.toLowerCase().includes(searchLower)) return true;
+        }
       } else if (typeof value === 'object' && 'checkedByName' in value) {
         if (value.checkedByName && String(value.checkedByName).toLowerCase().includes(searchLower)) return true;
+      } else if (typeof value === 'object' && value !== null) {
+        if ('value' in value && typeof value.value === 'string' && value.value.toLowerCase().includes(searchLower)) return true;
       }
     }
     return false;
