@@ -11119,6 +11119,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/site-diary-templates", async (req, res) => {
     try {
+      const user = req.user as any;
       const validationResult = insertSiteDiaryTemplateSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -11127,7 +11128,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const template = await storage.createSiteDiaryTemplate(validationResult.data);
+      const data = validationResult.data;
+      if (user?.companyId && !data.companyId) {
+        data.companyId = user.companyId;
+      }
+
+      const template = await storage.createSiteDiaryTemplate(data);
+      
+      if (data.isDefault && user?.companyId && template) {
+        await storage.setDefaultSiteDiaryTemplate(template.id, user.companyId);
+      }
+      
       res.status(201).json(template);
     } catch (error: any) {
       res.status(500).json({ 
@@ -11139,6 +11150,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/site-diary-templates/:id", async (req, res) => {
     try {
+      const user = req.user as any;
       const validationResult = insertSiteDiaryTemplateSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -11147,7 +11159,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const template = await storage.updateSiteDiaryTemplate(req.params.id, validationResult.data);
+      const data = validationResult.data;
+      if (data.isDefault && user?.companyId) {
+        await storage.setDefaultSiteDiaryTemplate(req.params.id, user.companyId);
+      } else if (data.isDefault === false) {
+        data.isDefault = false;
+      }
+
+      const template = await storage.updateSiteDiaryTemplate(req.params.id, data);
       if (!template) {
         return res.status(404).json({ error: "Template not found" });
       }

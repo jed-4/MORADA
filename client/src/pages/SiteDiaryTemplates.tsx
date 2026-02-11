@@ -102,10 +102,11 @@ export default function SiteDiaryTemplates() {
   // Duplicate mutation
   const duplicateMutation = useMutation({
     mutationFn: async (template: SiteDiaryTemplate) => {
-      const { id, createdAt, updatedAt, isArchived, ...rest } = template;
+      const { id, createdAt, updatedAt, isArchived, isDefault, ...rest } = template;
       await apiRequest("/api/site-diary-templates", 'POST', {
         ...rest,
         name: `${template.name} (Copy)`,
+        isDefault: false,
       });
     },
     onSuccess: () => {

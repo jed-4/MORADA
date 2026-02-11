@@ -15,9 +15,11 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { CustomFieldBuilder } from "@/components/site-diary/CustomFieldBuilder";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Star } from "lucide-react";
 
 interface TemplateFormDialogProps {
   open: boolean;
@@ -41,6 +43,7 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSuccess }: 
       name: template?.name || "",
       description: template?.description || "",
       fields: templateFields,
+      isDefault: template?.isDefault || false,
     },
   });
 
@@ -52,13 +55,14 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSuccess }: 
       name: template?.name || "",
       description: template?.description || "",
       fields: newFields,
+      isDefault: template?.isDefault || false,
     });
   }, [template, open, form]);
 
   // Create mutation
   const createMutation = useMutation({
     mutationFn: async (data: InsertSiteDiaryTemplate) => {
-      return await apiRequest('POST', "/api/site-diary-templates", data);
+      return await apiRequest("/api/site-diary-templates", 'POST', data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/site-diary-templates"] });
@@ -82,7 +86,7 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSuccess }: 
   // Update mutation
   const updateMutation = useMutation({
     mutationFn: async (data: Partial<InsertSiteDiaryTemplate>) => {
-      return await apiRequest('PATCH', `/api/site-diary-templates/${template?.id}`, data);
+      return await apiRequest(`/api/site-diary-templates/${template?.id}`, 'PATCH', data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/site-diary-templates"] });
@@ -104,7 +108,6 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSuccess }: 
   });
 
   const onSubmit = (data: FormData) => {
-    // Update order values to match array position
     const fieldsWithOrder = fields.map((field, index) => ({
       ...field,
       order: index,
@@ -114,6 +117,7 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSuccess }: 
       name: data.name,
       description: data.description || undefined,
       fields: fieldsWithOrder,
+      isDefault: data.isDefault || false,
     };
 
     if (template) {
@@ -175,6 +179,31 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSuccess }: 
                       />
                     </FormControl>
                     <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="isDefault"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+                    <div className="space-y-0.5">
+                      <FormLabel className="flex items-center gap-1.5">
+                        <Star className="h-3.5 w-3.5 text-[#bba7db]" />
+                        Set as Default Template
+                      </FormLabel>
+                      <p className="text-xs text-muted-foreground">
+                        This template will be pre-selected when creating new site diary entries
+                      </p>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value || false}
+                        onCheckedChange={field.onChange}
+                        data-testid="switch-default-template"
+                      />
+                    </FormControl>
                   </FormItem>
                 )}
               />
