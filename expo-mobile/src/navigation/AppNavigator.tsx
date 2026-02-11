@@ -11,6 +11,7 @@ import ProjectsScreen from '../screens/ProjectsScreen';
 import ProjectDetailScreen from '../screens/ProjectDetailScreen';
 import TimesheetsScreen from '../screens/TimesheetsScreen';
 import SiteDiaryScreen from '../screens/SiteDiaryScreen';
+import MoreScreen from '../screens/MoreScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -57,9 +58,10 @@ function MainTabs() {
       screenOptions={({ route }) => ({
         tabBarIcon: ({ focused, color, size }) => {
           let iconName: keyof typeof Ionicons.glyphMap = 'home';
-          if (route.name === 'Dashboard') iconName = focused ? 'home' : 'home-outline';
+          if (route.name === 'Workspace') iconName = focused ? 'home' : 'home-outline';
           else if (route.name === 'Projects') iconName = focused ? 'briefcase' : 'briefcase-outline';
           else if (route.name === 'Timesheets') iconName = focused ? 'time' : 'time-outline';
+          else if (route.name === 'More') iconName = focused ? 'grid' : 'grid-outline';
           return <Ionicons name={iconName} size={size} color={color} />;
         },
         tabBarActiveTintColor: colors.active,
@@ -73,9 +75,10 @@ function MainTabs() {
         headerShown: false,
       })}
     >
-      <Tab.Screen name="Dashboard" component={DashboardScreen} />
+      <Tab.Screen name="Workspace" component={DashboardScreen} />
       <Tab.Screen name="Projects" component={ProjectsStack} />
       <Tab.Screen name="Timesheets" component={TimesheetsScreen} />
+      <Tab.Screen name="More" component={MoreScreen} />
     </Tab.Navigator>
   );
 }
