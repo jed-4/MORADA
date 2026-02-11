@@ -122,15 +122,18 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
   const [entries, setEntries] = useState<SiteDiaryEntry[]>([]);
   const [offlineEntries, setOfflineEntries] = useState<SiteDiaryEntry[]>([]);
   const [template, setTemplate] = useState<SiteDiaryTemplate | null>(null);
+  const [allTemplates, setAllTemplates] = useState<SiteDiaryTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [networkOnline, setNetworkOnline] = useState(true);
 
   const [showEntryModal, setShowEntryModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<SiteDiaryEntry | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [activeTemplate, setActiveTemplate] = useState<SiteDiaryTemplate | null>(null);
 
   const [formTitle, setFormTitle] = useState('');
   const [formDateTime, setFormDateTime] = useState(new Date().toISOString());
@@ -169,14 +172,18 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
 
   const fetchData = useCallback(async () => {
     try {
-      const [entriesData, templateData] = await Promise.all([
+      const [entriesData, templateData, templatesData] = await Promise.all([
         apiFetch<SiteDiaryEntry[]>(`/api/projects/${projectId}/site-diary-entries`).catch(() => []),
         user?.companyId
           ? apiFetch<SiteDiaryTemplate>(`/api/site-diary-templates/default/${user.companyId}`).catch(() => null)
           : Promise.resolve(null),
+        user?.companyId
+          ? apiFetch<SiteDiaryTemplate[]>(`/api/site-diary-templates?companyId=${user.companyId}`).catch(() => [])
+          : Promise.resolve([]),
       ]);
       setEntries(entriesData || []);
       if (templateData) setTemplate(templateData);
+      setAllTemplates(templatesData || []);
     } catch (e) {
       console.error('Failed to fetch diary data:', e);
     } finally {
@@ -285,17 +292,30 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
     setSelectedEntry(null);
   };
 
-  const openCreateModal = () => {
-    resetForm();
-    if (template?.fields) {
+  const applyTemplateDefaults = (t: SiteDiaryTemplate | null) => {
+    if (t?.fields) {
       const defaults: Record<string, any> = {};
-      template.fields.forEach(f => {
+      t.fields.forEach(f => {
         if (f.type === 'checkbox') defaults[f.id] = false;
         else if (f.type === 'photo-gallery') defaults[f.id] = [];
         else defaults[f.id] = '';
       });
       setFormFieldValues(defaults);
+    } else {
+      setFormFieldValues({});
     }
+  };
+
+  const switchTemplate = (t: SiteDiaryTemplate) => {
+    setActiveTemplate(t);
+    applyTemplateDefaults(t);
+    setShowTemplatePicker(false);
+  };
+
+  const openCreateModal = () => {
+    resetForm();
+    setActiveTemplate(template);
+    applyTemplateDefaults(template);
     setShowEntryModal(true);
   };
 
@@ -308,6 +328,8 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
     setFormOverallPhotos(entry.overallPhotos || []);
     setFormWeatherTemp(entry.weather?.temp?.toString() || '');
     setFormWeatherCondition(entry.weather?.condition || '');
+    const entryTemplate = allTemplates.find(t => t.id === entry.templateId) || template;
+    setActiveTemplate(entryTemplate);
     setShowDetailModal(false);
     setShowEntryModal(true);
   };
@@ -432,7 +454,7 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
 
         const offlineEntry: SiteDiaryEntry = {
           id: entryId,
-          templateId: template?.id || '',
+          templateId: activeTemplate?.id || template?.id || '',
           projectId,
           title: formTitle.trim(),
           entryDateTime: formDateTime,
@@ -483,7 +505,7 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
       const uploadedOverallPhotos = await uploadAllPhotos(formOverallPhotos);
 
       const body: any = {
-        templateId: template?.id || null,
+        templateId: activeTemplate?.id || template?.id || null,
         projectId,
         title: formTitle.trim(),
         entryDateTime: formDateTime,
@@ -888,6 +910,19 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
             </TouchableOpacity>
           </View>
 
+          {allTemplates.length > 1 && (
+            <TouchableOpacity
+              style={[styles.templateBar, { backgroundColor: isDark ? '#1e293b' : '#f1f5f9', borderBottomColor: colors.border }]}
+              onPress={() => setShowTemplatePicker(true)}
+            >
+              <Ionicons name="document-text-outline" size={16} color={colors.accent} />
+              <Text style={[styles.templateBarText, { color: colors.text }]} numberOfLines={1}>
+                {activeTemplate?.name || 'Default Template'}
+              </Text>
+              <Ionicons name="chevron-down" size={16} color={colors.secondary} />
+            </TouchableOpacity>
+          )}
+
           <ScrollView contentContainerStyle={styles.formContent} keyboardShouldPersistTaps="handled">
             <View style={styles.fieldContainer}>
               <Text style={[styles.fieldLabel, { color: colors.text }]}>Title *</Text>
@@ -935,14 +970,14 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
               </View>
             </View>
 
-            {template && template.fields.length > 0 && (
+            {activeTemplate && activeTemplate.fields.length > 0 && (
               <>
                 <View style={[styles.sectionDivider, { borderBottomColor: colors.border }]}>
                   <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                    {template.name || 'Template Fields'}
+                    {activeTemplate.name || 'Template Fields'}
                   </Text>
                 </View>
-                {template.fields
+                {activeTemplate.fields
                   .sort((a, b) => a.order - b.order)
                   .map(field => renderFieldInput(field))}
               </>
@@ -1047,6 +1082,45 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
               )}
             </ScrollView>
           )}
+        </View>
+      </Modal>
+
+      <Modal visible={showTemplatePicker} transparent animationType="slide">
+        <View style={[styles.tpOverlay, { justifyContent: 'flex-end' }]}>
+          <View style={[styles.tpSheet, { backgroundColor: isDark ? '#1e293b' : '#ffffff' }]}>
+            <View style={[styles.tpHeader, { borderBottomColor: isDark ? '#334155' : '#e2e8f0' }]}>
+              <Text style={[styles.tpHeaderTitle, { color: isDark ? '#f1f5f9' : '#0f172a' }]}>
+                Select Template
+              </Text>
+              <TouchableOpacity onPress={() => setShowTemplatePicker(false)}>
+                <Ionicons name="close" size={24} color={isDark ? '#94a3b8' : '#64748b'} />
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={allTemplates}
+              keyExtractor={item => item.id}
+              contentContainerStyle={{ paddingBottom: 40 }}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[styles.tpRow, { borderBottomColor: isDark ? '#334155' : '#f1f5f9' }]}
+                  onPress={() => switchTemplate(item)}
+                >
+                  <Ionicons name="document-text-outline" size={18} color={colors.accent} />
+                  <View style={styles.tpRowContent}>
+                    <Text style={[styles.tpRowName, { color: isDark ? '#f1f5f9' : '#0f172a' }]} numberOfLines={1}>
+                      {item.name}
+                    </Text>
+                    {item.isDefault && (
+                      <Text style={[styles.tpRowBadge, { color: colors.accent }]}>Default</Text>
+                    )}
+                  </View>
+                  {activeTemplate?.id === item.id && (
+                    <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
+                  )}
+                </TouchableOpacity>
+              )}
+            />
+          </View>
         </View>
       </Modal>
     </View>
@@ -1372,5 +1446,63 @@ const styles = StyleSheet.create({
     height: 100,
     borderRadius: 8,
     marginRight: 10,
+  },
+  templateBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 8,
+    borderBottomWidth: 1,
+  },
+  templateBarText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  tpOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  tpSheet: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '60%',
+    minHeight: 200,
+  },
+  tpHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+  },
+  tpHeaderTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+  },
+  tpRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    gap: 12,
+  },
+  tpRowContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  tpRowName: {
+    fontSize: 15,
+    fontWeight: '500',
+    flexShrink: 1,
+  },
+  tpRowBadge: {
+    fontSize: 11,
+    fontWeight: '600',
   },
 });

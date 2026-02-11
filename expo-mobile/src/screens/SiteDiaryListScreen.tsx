@@ -158,6 +158,12 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
   const [filterProjectId, setFilterProjectId] = useState<string | null>(null);
   const [showFilterPicker, setShowFilterPicker] = useState(false);
 
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
+  const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
+  const [entryCounts, setEntryCounts] = useState<Record<string, number>>({});
+  const [weekStartDay, setWeekStartDay] = useState(1);
+
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [quickAddTitle, setQuickAddTitle] = useState('');
   const [quickAddProjectId, setQuickAddProjectId] = useState('');
@@ -261,14 +267,119 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    apiFetch<{ weekStartDay?: number }>('/api/company-settings')
+      .then(settings => {
+        if (settings && typeof settings.weekStartDay === 'number') {
+          setWeekStartDay(settings.weekStartDay);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const fetchEntryCounts = useCallback(async (year: number, month: number) => {
+    try {
+      const data = await apiFetch<Record<string, number>>(
+        `/api/company/site-diary-counts?year=${year}&month=${month + 1}`
+      );
+      setEntryCounts(data || {});
+    } catch {
+      setEntryCounts({});
+    }
+  }, []);
+
+  useEffect(() => {
+    if (showCalendar) {
+      fetchEntryCounts(calendarYear, calendarMonth);
+    }
+  }, [showCalendar, calendarYear, calendarMonth, fetchEntryCounts]);
+
+  const openCalendar = useCallback(() => {
+    setCalendarMonth(currentDate.getMonth());
+    setCalendarYear(currentDate.getFullYear());
+    setShowCalendar(true);
+  }, [currentDate]);
+
+  const calendarPrevMonth = useCallback(() => {
+    if (calendarMonth === 0) {
+      setCalendarMonth(11);
+      setCalendarYear(y => y - 1);
+    } else {
+      setCalendarMonth(m => m - 1);
+    }
+  }, [calendarMonth]);
+
+  const calendarNextMonth = useCallback(() => {
+    if (calendarMonth === 11) {
+      setCalendarMonth(0);
+      setCalendarYear(y => y + 1);
+    } else {
+      setCalendarMonth(m => m + 1);
+    }
+  }, [calendarMonth]);
+
+  const selectCalendarDate = useCallback((day: number, month: number, year: number) => {
+    setCurrentDate(new Date(year, month, day));
+    setShowCalendar(false);
+  }, []);
+
+  const calendarGoToToday = useCallback(() => {
+    const now = new Date();
+    setCurrentDate(now);
+    setShowCalendar(false);
+  }, []);
+
+  const getCalendarGrid = useCallback(() => {
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const orderedDayNames: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      orderedDayNames.push(dayNames[(weekStartDay + i) % 7]);
+    }
+
+    const firstDay = new Date(calendarYear, calendarMonth, 1);
+    const lastDay = new Date(calendarYear, calendarMonth + 1, 0);
+    const daysInMonth = lastDay.getDate();
+
+    let startOffset = firstDay.getDay() - weekStartDay;
+    if (startOffset < 0) startOffset += 7;
+
+    const prevMonthLastDay = new Date(calendarYear, calendarMonth, 0).getDate();
+
+    const cells: { day: number; month: number; year: number; isCurrentMonth: boolean }[] = [];
+
+    const prevMonth = calendarMonth === 0 ? 11 : calendarMonth - 1;
+    const prevYear = calendarMonth === 0 ? calendarYear - 1 : calendarYear;
+    for (let i = startOffset - 1; i >= 0; i--) {
+      cells.push({ day: prevMonthLastDay - i, month: prevMonth, year: prevYear, isCurrentMonth: false });
+    }
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      cells.push({ day: d, month: calendarMonth, year: calendarYear, isCurrentMonth: true });
+    }
+
+    const nextMonth = calendarMonth === 11 ? 0 : calendarMonth + 1;
+    const nextYear = calendarMonth === 11 ? calendarYear + 1 : calendarYear;
+    const remaining = 7 - (cells.length % 7);
+    if (remaining < 7) {
+      for (let d = 1; d <= remaining; d++) {
+        cells.push({ day: d, month: nextMonth, year: nextYear, isCurrentMonth: false });
+      }
+    }
+
+    const rows: typeof cells[] = [];
+    for (let i = 0; i < cells.length; i += 7) {
+      rows.push(cells.slice(i, i + 7));
+    }
+
+    return { orderedDayNames, rows };
+  }, [calendarYear, calendarMonth, weekStartDay]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await fetchData();
     await loadOfflineEntries();
     setRefreshing(false);
   }, [fetchData, loadOfflineEntries]);
-
-  const goToToday = () => setCurrentDate(new Date());
 
   const activeProjects = projects.filter(p => p.isActive && !p.isArchived && !p.isBusiness);
 
@@ -413,10 +524,13 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
         <TouchableOpacity onPress={() => goToDay(-1)} style={styles.navArrow}>
           <Ionicons name="chevron-back" size={22} color={colors.accent} />
         </TouchableOpacity>
-        <TouchableOpacity onPress={goToToday} style={styles.dayInfo}>
-          <Text style={[styles.dayLabel, { color: colors.text }]}>
-            {isToday(currentDate) ? 'Today' : formatDayHeader(currentDate)}
-          </Text>
+        <TouchableOpacity onPress={openCalendar} style={styles.dayInfo}>
+          <View style={styles.dayInfoRow}>
+            <Text style={[styles.dayLabel, { color: colors.text }]}>
+              {isToday(currentDate) ? 'Today' : formatDayHeader(currentDate)}
+            </Text>
+            <Ionicons name="calendar-outline" size={16} color={colors.secondary} style={{ marginLeft: 6 }} />
+          </View>
           {isToday(currentDate) && (
             <Text style={[styles.dayDate, { color: colors.secondary }]}>
               {formatDayHeader(currentDate)}
@@ -770,6 +884,99 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
           </View>
         </View>
       </Modal>
+
+      <Modal visible={showCalendar} transparent animationType="slide">
+        <View style={[styles.modalOverlay, { justifyContent: 'flex-end' }]}>
+          <View style={[styles.calendarSheet, { backgroundColor: isDark ? '#1e293b' : '#ffffff' }]}>
+            <View style={[styles.calendarHeader, { borderBottomColor: isDark ? '#334155' : '#e2e8f0' }]}>
+              <Text style={[styles.pickerHeaderTitle, { color: isDark ? '#f1f5f9' : '#0f172a' }]}>
+                Select Date
+              </Text>
+              <TouchableOpacity onPress={() => setShowCalendar(false)}>
+                <Ionicons name="close" size={24} color={isDark ? '#94a3b8' : '#64748b'} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.calendarMonthNav}>
+              <TouchableOpacity onPress={calendarPrevMonth} style={styles.calendarMonthArrow}>
+                <Ionicons name="chevron-back" size={22} color={colors.accent} />
+              </TouchableOpacity>
+              <Text style={[styles.calendarMonthLabel, { color: colors.text }]}>
+                {new Date(calendarYear, calendarMonth).toLocaleString('default', { month: 'long', year: 'numeric' })}
+              </Text>
+              <TouchableOpacity onPress={calendarNextMonth} style={styles.calendarMonthArrow}>
+                <Ionicons name="chevron-forward" size={22} color={colors.accent} />
+              </TouchableOpacity>
+            </View>
+
+            {(() => {
+              const { orderedDayNames, rows } = getCalendarGrid();
+              const todayStr = getDateStr(new Date());
+              const selectedStr = getDateStr(currentDate);
+              return (
+                <View style={styles.calendarGrid}>
+                  <View style={styles.calendarDayHeaderRow}>
+                    {orderedDayNames.map(dn => (
+                      <View key={dn} style={styles.calendarDayHeaderCell}>
+                        <Text style={[styles.calendarDayHeaderText, { color: colors.secondary }]}>{dn}</Text>
+                      </View>
+                    ))}
+                  </View>
+                  {rows.map((row, ri) => (
+                    <View key={ri} style={styles.calendarWeekRow}>
+                      {row.map((cell, ci) => {
+                        const cellDateStr = `${cell.year}-${(cell.month + 1).toString().padStart(2, '0')}-${cell.day.toString().padStart(2, '0')}`;
+                        const isSelected = cellDateStr === selectedStr;
+                        const isTodayCell = cellDateStr === todayStr;
+                        const count = entryCounts[cellDateStr] || 0;
+                        const dotCount = Math.min(count, 3);
+                        return (
+                          <TouchableOpacity
+                            key={ci}
+                            style={styles.calendarDayCell}
+                            activeOpacity={0.6}
+                            onPress={() => selectCalendarDate(cell.day, cell.month, cell.year)}
+                          >
+                            <View
+                              style={[
+                                styles.calendarDayCircle,
+                                isSelected && { backgroundColor: colors.accent },
+                                !isSelected && isTodayCell && { borderWidth: 2, borderColor: colors.accent },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.calendarDayText,
+                                  { color: isSelected ? '#ffffff' : cell.isCurrentMonth ? colors.text : colors.muted },
+                                ]}
+                              >
+                                {cell.day}
+                              </Text>
+                            </View>
+                            <View style={styles.calendarDotRow}>
+                              {Array.from({ length: dotCount }).map((_, di) => (
+                                <View key={di} style={styles.calendarDot} />
+                              ))}
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  ))}
+                </View>
+              );
+            })()}
+
+            <TouchableOpacity
+              style={[styles.calendarTodayBtn, { backgroundColor: colors.accent }]}
+              onPress={calendarGoToToday}
+            >
+              <Ionicons name="today-outline" size={18} color="#ffffff" style={{ marginRight: 6 }} />
+              <Text style={styles.calendarTodayBtnText}>Today</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1112,5 +1319,98 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     fontWeight: '500',
+  },
+  dayInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calendarSheet: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: 32,
+  },
+  calendarHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+  },
+  calendarMonthNav: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  calendarMonthArrow: {
+    padding: 8,
+  },
+  calendarMonthLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  calendarGrid: {
+    paddingHorizontal: 8,
+  },
+  calendarDayHeaderRow: {
+    flexDirection: 'row',
+  },
+  calendarDayHeaderCell: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  calendarDayHeaderText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  calendarWeekRow: {
+    flexDirection: 'row',
+  },
+  calendarDayCell: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  calendarDayCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calendarDayText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  calendarDotRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 3,
+    height: 8,
+    marginTop: 2,
+  },
+  calendarDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#3b82f6',
+  },
+  calendarTodayBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 20,
+    marginTop: 12,
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  calendarTodayBtnText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

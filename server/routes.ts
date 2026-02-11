@@ -11407,6 +11407,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/company/site-diary-counts", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.teamMember?.companyId || req.user?.companyId;
+      if (!companyId) {
+        return res.status(400).json({ error: "Company not found" });
+      }
+      const year = parseInt(req.query.year as string);
+      const month = parseInt(req.query.month as string);
+      if (isNaN(year) || isNaN(month) || month < 1 || month > 12) {
+        return res.status(400).json({ error: "Valid year and month (1-12) are required" });
+      }
+      const counts = await storage.getSiteDiaryEntryCountsByMonth(companyId, year, month);
+      res.json(counts);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch diary entry counts",
+        details: error.message 
+      });
+    }
+  });
+
   // Site Diary Entry routes
   app.get("/api/projects/:projectId/site-diary-entries", async (req, res) => {
     try {

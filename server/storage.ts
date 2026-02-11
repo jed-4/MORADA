@@ -680,6 +680,7 @@ export interface IStorage {
   // Site Diary Entries CRUD (project-specific)
   getSiteDiaryEntries(projectId: string): Promise<schema.SiteDiaryEntry[]>;
   getSiteDiaryEntriesByCompany(companyId: string, date?: string): Promise<schema.SiteDiaryEntry[]>;
+  getSiteDiaryEntryCountsByMonth(companyId: string, year: number, month: number): Promise<Record<string, number>>;
   getSiteDiaryEntry(id: string): Promise<schema.SiteDiaryEntry | undefined>;
   createSiteDiaryEntry(entry: schema.InsertSiteDiaryEntry): Promise<schema.SiteDiaryEntry>;
   updateSiteDiaryEntry(id: string, entry: Partial<schema.InsertSiteDiaryEntry>): Promise<schema.SiteDiaryEntry | undefined>;
@@ -5055,6 +5056,21 @@ export class MemStorage implements IStorage {
       });
     }
     return entries.sort((a, b) => b.entryDateTime.getTime() - a.entryDateTime.getTime()).map(e => structuredClone(e));
+  }
+
+  async getSiteDiaryEntryCountsByMonth(companyId: string, year: number, month: number): Promise<Record<string, number>> {
+    const companyProjects = Array.from(this.projects.values()).filter(p => p.companyId === companyId);
+    const projectIds = new Set(companyProjects.map(p => p.id));
+    const entries = Array.from(this.siteDiaryEntries.values()).filter(e => projectIds.has(e.projectId));
+    const counts: Record<string, number> = {};
+    entries.forEach(e => {
+      const d = e.entryDateTime instanceof Date ? e.entryDateTime : new Date(String(e.entryDateTime));
+      if (d.getFullYear() === year && d.getMonth() + 1 === month) {
+        const dateStr = d.toISOString().split('T')[0];
+        counts[dateStr] = (counts[dateStr] || 0) + 1;
+      }
+    });
+    return counts;
   }
 
   async getSiteDiaryEntry(id: string): Promise<schema.SiteDiaryEntry | undefined> {
@@ -12963,6 +12979,37 @@ export class DbStorage implements IStorage {
       return rows.map(r => r.entry);
     } catch (error) {
       console.error("Database error in getSiteDiaryEntriesByCompany:", error);
+      throw error;
+    }
+  }
+
+  async getSiteDiaryEntryCountsByMonth(companyId: string, year: number, month: number): Promise<Record<string, number>> {
+    try {
+      const startDate = `${year}-${month.toString().padStart(2, '0')}-01`;
+      const endMonth = month === 12 ? 1 : month + 1;
+      const endYear = month === 12 ? year + 1 : year;
+      const endDate = `${endYear}-${endMonth.toString().padStart(2, '0')}-01`;
+
+      const rows = await db.select({
+        dateStr: sql<string>`DATE(${schema.siteDiaryEntries.entryDateTime})`.as('date_str'),
+        count: sql<number>`COUNT(*)`.as('count'),
+      })
+        .from(schema.siteDiaryEntries)
+        .innerJoin(schema.projects, eq(schema.siteDiaryEntries.projectId, schema.projects.id))
+        .where(and(
+          eq(schema.projects.companyId, companyId),
+          sql`${schema.siteDiaryEntries.entryDateTime} >= ${startDate}::date`,
+          sql`${schema.siteDiaryEntries.entryDateTime} < ${endDate}::date`,
+        ))
+        .groupBy(sql`DATE(${schema.siteDiaryEntries.entryDateTime})`);
+
+      const counts: Record<string, number> = {};
+      rows.forEach(r => {
+        counts[String(r.dateStr)] = Number(r.count);
+      });
+      return counts;
+    } catch (error) {
+      console.error("Database error in getSiteDiaryEntryCountsByMonth:", error);
       throw error;
     }
   }
