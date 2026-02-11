@@ -430,6 +430,11 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
           } else if (Array.isArray(value)) {
             for (const item of value) {
               if (typeof item === 'string' && item.toLowerCase().includes(q)) { fieldMatch = true; break; }
+              if (typeof item === 'number' && String(item).includes(q)) { fieldMatch = true; break; }
+              if (typeof item === 'object' && item !== null) {
+                const label = item.label || item.value || item.name || '';
+                if (String(label).toLowerCase().includes(q)) { fieldMatch = true; break; }
+              }
             }
             if (fieldMatch) break;
           } else if (typeof value === 'object' && value !== null) {

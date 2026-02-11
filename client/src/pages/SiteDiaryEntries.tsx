@@ -120,6 +120,11 @@ export default function SiteDiaryEntries() {
       } else if (Array.isArray(value)) {
         for (const item of value) {
           if (typeof item === 'string' && item.toLowerCase().includes(searchLower)) return true;
+          if (typeof item === 'number' && String(item).includes(searchLower)) return true;
+          if (typeof item === 'object' && item !== null) {
+            const label = item.label || item.value || item.name || '';
+            if (String(label).toLowerCase().includes(searchLower)) return true;
+          }
         }
       } else if (typeof value === 'object' && 'checkedByName' in value) {
         if (value.checkedByName && String(value.checkedByName).toLowerCase().includes(searchLower)) return true;

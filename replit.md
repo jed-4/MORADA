@@ -46,7 +46,7 @@ Preferred communication style: Simple, everyday language.
 ### Feature Specifications & System Design
 - **Budget Tracking**: Manages estimates, bills, and variations with a calculation engine, storing real dollar values.
 - **Task Management**: Kanban, List, and Calendar views with drag-and-drop, task templates, inline checklist management, and due date filtering. Supports inline creation with contextual defaults, task duplication, and reminder setting. Reminders generate notifications with deep links.
-- **Site Diary System**: Company-wide templates define form structure, project-specific entries record daily activities. Features include template import/export (Excel and JSON), search, checkbox accountability, file/photo uploads, weather data recording, calendar view for entries, and PDF export for reports.
+- **Site Diary System**: Company-wide templates define form structure, project-specific entries record daily activities. Features include template import/export (Excel and JSON), deep search across field values, checkbox accountability, file/photo uploads, voice notes (mobile audio recording via expo-av), weather data recording, calendar view for entries, and PDF export for reports.
 - **Checklist System**: Templates with group functionality, dashboard widget integration, and color-coded status indicators.
 - **Cost Code Management**: Company-isolated merge functionality.
 - **Import System**: Flexible CSV/Excel import for schedules with column mapping.
@@ -75,7 +75,7 @@ Preferred communication style: Simple, everyday language.
 - **Location**: `/expo-mobile` directory.
 - **Dashboard**: ClickUp-style home screen with greeting, horizontally scrollable category cards (Messages, Activity, Mentions, Assigned), collapsible sections (Today's Tasks, Overdue Tasks, Upcoming Tasks, Recent Activity, Calendar, Favourites, Timesheet), notification bell with unread badge, user menu with logout. Customizable layout via "Customize Home" settings (toggle visibility and reorder tiles/sections), persisted per user via user-view-preferences API.
 - **Tasks Screen**: Dedicated tasks tab with list view and board/kanban view toggle, grouping by status/priority/project/due date, task view modal with full details, and inline edit mode for updating tasks.
-- **Site Diary**: Template selector with pre-fetching and auto-select default in both Projects and More > Site Diary screens. Calendar popover with entry count dots.
+- **Site Diary**: Template selector with pre-fetching and auto-select default in both Projects and More > Site Diary screens. Calendar popover with entry count dots. Voice notes with audio recording and playback. Deep search across field values.
 - **Screens**: Login, Dashboard, Tasks, Projects List, Project Detail, Timesheets (clock in/out, log hours, week navigation, detail/edit/delete).
 - **Navigation**: React Navigation with bottom tabs (Workspace, Projects, Tasks, Timesheets, More) and native stack.
 - **Dark Mode**: Automatic via useColorScheme.
