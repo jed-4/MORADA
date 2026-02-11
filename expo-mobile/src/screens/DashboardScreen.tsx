@@ -220,15 +220,16 @@ export default function DashboardScreen({ navigation }: Props) {
   const lastName = user?.lastName || (user?.fullName?.split(' ').slice(1).join(' ')) || '';
   const fullDisplayName = `${firstName} ${lastName}`.trim() || 'there';
 
-  const overdueTasks = tasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && t.status !== 'completed');
+  const isComplete = (s?: string) => s === 'completed' || s === 'done';
+  const overdueTasks = tasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && !isComplete(t.status));
   const todayTasks = tasks.filter(t => {
-    if (!t.dueDate || t.status === 'completed') return false;
+    if (!t.dueDate || isComplete(t.status)) return false;
     const d = new Date(t.dueDate);
     const now = new Date();
     return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
   });
   const upcomingTasks = tasks.filter(t => {
-    if (!t.dueDate || t.status === 'completed') return false;
+    if (!t.dueDate || isComplete(t.status)) return false;
     const d = new Date(t.dueDate);
     const now = new Date();
     return d > now && !(d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate());
@@ -284,7 +285,7 @@ export default function DashboardScreen({ navigation }: Props) {
     messages: { icon: 'chatbubble-outline', label: 'Messages', count: 0 },
     activity: { icon: 'pulse-outline', label: 'Activity', count: recentNotifications.length },
     mentions: { icon: 'at-outline', label: 'Mentions', count: mentionCount },
-    assigned: { icon: 'person-outline', label: 'Assigned', count: tasks.filter(t => t.status !== 'completed').length },
+    assigned: { icon: 'person-outline', label: 'Assigned', count: tasks.filter(t => !isComplete(t.status)).length },
   };
 
   const visibleTiles = layoutPrefs.tiles.filter(t => t.visible).map(t => ({ key: t.key, ...allCategoryCards[t.key] })).filter(t => t.icon);
