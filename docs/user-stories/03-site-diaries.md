@@ -162,11 +162,11 @@ The Site Diary system provides a structured way to record daily site activities,
 **So that** I can add details or correct information
 
 **Acceptance Criteria:**
-- [ ] Open entry in edit mode
-- [ ] Modify any field values
-- [ ] Add or remove photos
-- [ ] Update date/time if needed
-- [ ] Save changes with updated timestamp
+- [x] Open entry in edit mode
+- [x] Modify any field values
+- [x] Add or remove photos
+- [x] Update date/time if needed
+- [x] Save changes with updated timestamp
 
 **Priority:** Must Have  
 **Status:** Implemented
@@ -179,11 +179,11 @@ The Site Diary system provides a structured way to record daily site activities,
 **So that** I can reference site information
 
 **Acceptance Criteria:**
-- [ ] View all field values
-- [ ] See photos and attachments
-- [ ] View weather information
-- [ ] See creator and timestamps
-- [ ] Expand entry for full details
+- [x] View all field values
+- [x] See photos and attachments
+- [x] View weather information
+- [x] See creator and timestamps
+- [x] Expand entry for full details
 
 **Priority:** Must Have  
 **Status:** Implemented
@@ -381,13 +381,36 @@ The Site Diary system provides a structured way to record daily site activities,
 **So that** I can document overall site conditions
 
 **Acceptance Criteria:**
-- [ ] Photo upload section at bottom of entry
-- [ ] Unlimited photos (unlike field galleries)
-- [ ] Photo preview and full-size viewing
-- [ ] Photos stored in object storage
+- [x] Photo upload section at bottom of entry
+- [x] Unlimited photos (unlike field galleries)
+- [x] Photo preview and full-size viewing
+- [x] Photos stored in object storage
 
 **Priority:** Must Have  
-**Status:** Implemented (data structure exists)
+**Status:** Implemented
+
+---
+
+#### US-SD041: Voice Notes
+**As a** site supervisor  
+**I want to** record voice notes on diary entries  
+**So that** I can quickly capture detailed information without typing long text on a mobile device
+
+**Acceptance Criteria:**
+- [x] Microphone button available when creating/editing entries (mobile)
+- [x] Request microphone permission before recording
+- [x] Visual recording indicator with elapsed time and stop button
+- [x] Record multiple voice notes per entry
+- [x] Playback controls with play/pause and duration display
+- [x] Delete individual voice notes before saving
+- [x] Voice notes uploaded to object storage on save
+- [x] Voice notes playback available in entry detail view
+- [x] Offline support - voice notes stored locally and uploaded on sync
+
+**Implementation Note:** Uses `expo-av` for recording and playback. Audio stored as M4A format via presigned URL upload to object storage. Voice notes stored in `fieldValues._voiceNotes` array.
+
+**Priority:** Nice to Have  
+**Status:** Implemented (mobile only)
 
 ---
 
@@ -485,45 +508,49 @@ The Site Diary system provides a structured way to record daily site activities,
 - Template field types: text, textarea, number, date, select, checkbox, file, photo-gallery
 - Set default template (star indicator)
 - Duplicate and archive templates
-- Import templates from Excel
-- Export templates to Excel
+- Import templates from Excel and JSON
+- Export templates to Excel and JSON
 - Create site diary entries from templates
 - Template selection when creating entries (default pre-selected)
 - Required field validation
 - Weather data recording (manual)
 - Filter by template
-- Search by title, template name, and field values
-- Delete entries with permission checks
+- Search by title, template name, and deep search within template form field values (web + mobile)
+- Delete entries with permission checks (requires `projects.site_diary` delete permission)
 - Labels support (data structure)
 - Project-specific diary views
 - Share with client flag
-- Checkbox accountability (who checked, when)
-- File and photo uploads via Object Storage
+- Checkbox accountability (who checked, when, displayed on entry)
+- File and photo uploads via Object Storage (camera + gallery on mobile, file upload on web)
+- Calendar view for entries (web calendar component + mobile calendar popover with entry count dots)
+- PDF export for diary entries (web)
+- Offline entry creation with AsyncStorage and auto-sync on reconnect (mobile)
+- Voice notes with audio recording and playback (mobile, via expo-av)
 
 ### Known Limitations
-- [ ] No calendar view for entries
-- [ ] No PDF export for entries
-- [ ] No offline entry creation (mobile)
-- [ ] No auto-fetch weather (requires API key)
+- [x] Calendar view for entries (web + mobile)
+- [x] PDF export for entries (web)
+- [x] Offline entry creation (mobile - AsyncStorage with sync)
+- [ ] No auto-fetch weather (requires API key - not yet provided)
 - [ ] Client portal not yet implemented
 - [ ] No entry duplication / quick-fill from previous day
 - [ ] No bulk operations
-- [ ] No voice notes / audio recording
+- [x] Voice notes / audio recording (mobile - expo-av)
 
 ---
 
 ## Future Enhancements
 
-| Enhancement | Description | Priority |
-|-------------|-------------|----------|
-| Calendar View | View entries on a calendar with date navigation | Should Have |
-| PDF Export | Generate formatted PDF reports from diary entries | Should Have |
-| Auto Weather | Fetch weather automatically from weather API based on project location | Nice to Have |
-| Offline Mode | Create entries offline on mobile, sync when connected | Should Have |
-| Client Portal | Client-facing view for shared entries | Should Have |
-| Entry Templates / Quick-Fill | Quick-fill from previous day's entry to speed up daily recording | Nice to Have |
-| Voice Notes | Audio recording capability on entries | Nice to Have |
-| Camera Access | Direct camera access from mobile browser for photo capture | Should Have |
+| Enhancement | Description | Priority | Status |
+|-------------|-------------|----------|--------|
+| ~~Calendar View~~ | ~~View entries on a calendar with date navigation~~ | ~~Should Have~~ | Implemented |
+| ~~PDF Export~~ | ~~Generate formatted PDF reports from diary entries~~ | ~~Should Have~~ | Implemented |
+| Auto Weather | Fetch weather automatically from weather API based on project location | Nice to Have | Pending (requires API key) |
+| ~~Offline Mode~~ | ~~Create entries offline on mobile, sync when connected~~ | ~~Should Have~~ | Implemented |
+| Client Portal | Client-facing view for shared entries | Should Have | Not Started |
+| Entry Templates / Quick-Fill | Quick-fill from previous day's entry to speed up daily recording | Nice to Have | Declined by user |
+| ~~Voice Notes~~ | ~~Audio recording capability on entries~~ | ~~Nice to Have~~ | Implemented |
+| ~~Camera Access~~ | ~~Direct camera access from mobile app for photo capture~~ | ~~Should Have~~ | Implemented |
 
 ---
 
@@ -550,6 +577,7 @@ Built-in admin roles (General Manager, Admin, Owner) automatically bypass all pe
 |------|---------|
 | 2026-02-04 | Initial user story document created based on current implementation |
 | 2026-02-09 | Comprehensive review with user notes. Updated terminology (template = form, entry = site diary). Ticked implemented criteria for US-SD003, US-SD004. Added export to US-SD006. Updated US-SD013 with permission requirements. Hidden US-SD014 (reminder deemed unnecessary). Added checkbox accountability to US-SD025. Updated US-SD026 with upload requirements. Added search within field values to US-SD051. Added future enhancements: Calendar View, PDF Export, Auto Weather, Offline Mode, Client Portal, Entry Templates, Voice Notes, Camera Access. |
+| 2026-02-11 | Status update: Marked Calendar View, PDF Export, Offline Mode, Voice Notes, Camera Access as Implemented. Added US-SD041 (Voice Notes) user story with full acceptance criteria. Updated US-SD011/US-SD012 checkboxes to ticked. Updated US-SD040 (Overall Photos) checkboxes to ticked. Updated Implemented Features list with all completed items. Updated Known Limitations to reflect current state. Updated Future Enhancements table with status column. Entry Templates declined by user. Auto Weather pending API key. Client Portal not yet started. |
 
 ---
 
@@ -564,10 +592,10 @@ Built-in admin roles (General Manager, Admin, Owner) automatically bypass all pe
 7. US-SD025: Checkbox accountability - Track who checks and when ✓
 8. US-SD026: File attachments - Upload from phone/computer with Object Storage ✓
 9. US-SD051: Search within field values (secondary search) ✓
-10. Calendar View - Added to future enhancements
-11. PDF Export - Added to future enhancements
-12. Auto Weather - Added to future enhancements
-13. Offline Mode - Added to future enhancements
-14. Client Portal - Added to future enhancements
-15. Entry Templates / Quick-fill - Added to future enhancements
-16. Voice Notes - Added to future enhancements
+10. Calendar View - Implemented (web + mobile) ✓
+11. PDF Export - Implemented (web) ✓
+12. Auto Weather - Pending (requires OpenWeatherMap API key)
+13. Offline Mode - Implemented (mobile with auto-sync) ✓
+14. Client Portal - Not yet started
+15. Entry Templates / Quick-fill - Declined by user
+16. Voice Notes - Implemented (mobile, expo-av) ✓
