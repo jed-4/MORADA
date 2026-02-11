@@ -44,6 +44,8 @@ interface Timesheet {
 interface Project {
   id: string;
   name: string;
+  jobNumber?: string | null;
+  currentSystemPhase?: string | null;
 }
 
 interface CostCode {
@@ -101,6 +103,46 @@ function generateTimeOptions() {
 }
 
 const TIME_OPTIONS = generateTimeOptions();
+
+const PHASE_ORDER: Record<string, number> = {
+  construction: 0,
+  pre_construction: 1,
+  lead: 2,
+  post_construction: 3,
+};
+
+const PHASE_LABELS: Record<string, string> = {
+  construction: 'Construction',
+  pre_construction: 'Pre-construction',
+  lead: 'Lead',
+  post_construction: 'Post-construction',
+};
+
+function getSortedProjectItems(projects: Project[]): { id: string; label: string; isHeader?: boolean }[] {
+  const visible = projects.filter(p => p.currentSystemPhase !== 'archive');
+
+  visible.sort((a, b) => {
+    const phaseA = PHASE_ORDER[a.currentSystemPhase || 'lead'] ?? 99;
+    const phaseB = PHASE_ORDER[b.currentSystemPhase || 'lead'] ?? 99;
+    if (phaseA !== phaseB) return phaseA - phaseB;
+    const jnCompare = (a.jobNumber || '').localeCompare(b.jobNumber || '', undefined, { numeric: true });
+    if (jnCompare !== 0) return jnCompare;
+    return a.name.localeCompare(b.name);
+  });
+
+  const items: { id: string; label: string; isHeader?: boolean }[] = [];
+  let currentPhase = '';
+  for (const p of visible) {
+    const phase = p.currentSystemPhase || 'lead';
+    if (phase !== currentPhase) {
+      currentPhase = phase;
+      items.push({ id: `__header_${phase}`, label: PHASE_LABELS[phase] || phase, isHeader: true });
+    }
+    const prefix = p.jobNumber ? `${p.jobNumber} - ` : '';
+    items.push({ id: p.id, label: `${prefix}${p.name}` });
+  }
+  return items;
+}
 
 function calculateDuration(start: string, end: string, breakDur: string): string {
   const [startH, startM] = start.split(':').map(Number);
@@ -521,7 +563,11 @@ export default function TimesheetsScreen() {
 
   const totalHours = filteredTimesheets.reduce((sum, ts) => sum + parseFloat(ts.duration || '0'), 0);
 
-  const getProjectName = (pid: string) => projects.find(p => p.id === pid)?.name || 'Unknown';
+  const getProjectName = (pid: string) => {
+    const p = projects.find(p => p.id === pid);
+    if (!p) return 'Unknown';
+    return p.jobNumber ? `${p.jobNumber} - ${p.name}` : p.name;
+  };
   const getCostCodeName = (ccId: string | null) => {
     if (!ccId) return null;
     const cc = costCodes.find(c => c.id === ccId);
@@ -550,7 +596,7 @@ export default function TimesheetsScreen() {
     visible: boolean,
     onClose: () => void,
     title: string,
-    items: { id: string; label: string }[],
+    items: { id: string; label: string; isHeader?: boolean }[],
     selectedId: string,
     onSelect: (id: string) => void,
   ) => (
@@ -566,15 +612,24 @@ export default function TimesheetsScreen() {
           <FlatList
             data={items}
             keyExtractor={item => item.id}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={[styles.pickerItem, { borderBottomColor: colors.border }]}
-                onPress={() => { onSelect(item.id); onClose(); }}
-              >
-                <Text style={[styles.pickerItemText, { color: colors.text }]}>{item.label}</Text>
-                {selectedId === item.id && <Ionicons name="checkmark" size={20} color={colors.accent} />}
-              </TouchableOpacity>
-            )}
+            renderItem={({ item }) => {
+              if (item.isHeader) {
+                return (
+                  <View style={[styles.pickerSectionHeader, { backgroundColor: isDark ? '#1e293b' : '#f1f5f9' }]}>
+                    <Text style={[styles.pickerSectionText, { color: colors.secondary }]}>{item.label}</Text>
+                  </View>
+                );
+              }
+              return (
+                <TouchableOpacity
+                  style={[styles.pickerItem, { borderBottomColor: colors.border }]}
+                  onPress={() => { onSelect(item.id); onClose(); }}
+                >
+                  <Text style={[styles.pickerItemText, { color: colors.text }]}>{item.label}</Text>
+                  {selectedId === item.id && <Ionicons name="checkmark" size={20} color={colors.accent} />}
+                </TouchableOpacity>
+              );
+            }}
             ListEmptyComponent={<Text style={[styles.emptyText, { color: colors.secondary }]}>No options available</Text>}
           />
         </View>
@@ -793,7 +848,7 @@ export default function TimesheetsScreen() {
         showProjectPicker,
         () => setShowProjectPicker(false),
         'Select Project',
-        projects.map(p => ({ id: p.id, label: p.name })),
+        getSortedProjectItems(projects),
         clockInProjectId,
         setClockInProjectId,
       )}
@@ -1051,7 +1106,7 @@ export default function TimesheetsScreen() {
         showFormProjectPicker,
         () => setShowFormProjectPicker(false),
         'Select Project',
-        projects.map(p => ({ id: p.id, label: p.name })),
+        getSortedProjectItems(projects),
         formProjectId,
         setFormProjectId,
       )}
@@ -1249,6 +1304,16 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   pickerItemText: { fontSize: 15 },
+  pickerSectionHeader: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  pickerSectionText: {
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
 
   detailContainer: {
     borderTopLeftRadius: 16,
