@@ -679,6 +679,7 @@ export interface IStorage {
 
   // Site Diary Entries CRUD (project-specific)
   getSiteDiaryEntries(projectId: string): Promise<schema.SiteDiaryEntry[]>;
+  getSiteDiaryEntriesByCompany(companyId: string, date?: string): Promise<schema.SiteDiaryEntry[]>;
   getSiteDiaryEntry(id: string): Promise<schema.SiteDiaryEntry | undefined>;
   createSiteDiaryEntry(entry: schema.InsertSiteDiaryEntry): Promise<schema.SiteDiaryEntry>;
   updateSiteDiaryEntry(id: string, entry: Partial<schema.InsertSiteDiaryEntry>): Promise<schema.SiteDiaryEntry | undefined>;
@@ -5040,7 +5041,20 @@ export class MemStorage implements IStorage {
     return Array.from(this.siteDiaryEntries.values())
       .filter(e => e.projectId === projectId)
       .sort((a, b) => b.entryDateTime.getTime() - a.entryDateTime.getTime())
-      .map(e => structuredClone(e)); // Return clones to prevent mutation
+      .map(e => structuredClone(e));
+  }
+
+  async getSiteDiaryEntriesByCompany(companyId: string, date?: string): Promise<schema.SiteDiaryEntry[]> {
+    const companyProjects = Array.from(this.projects.values()).filter(p => p.companyId === companyId);
+    const projectIds = new Set(companyProjects.map(p => p.id));
+    let entries = Array.from(this.siteDiaryEntries.values()).filter(e => projectIds.has(e.projectId));
+    if (date) {
+      entries = entries.filter(e => {
+        const entryDate = e.entryDateTime instanceof Date ? e.entryDateTime.toISOString().split('T')[0] : String(e.entryDateTime).split('T')[0];
+        return entryDate === date;
+      });
+    }
+    return entries.sort((a, b) => b.entryDateTime.getTime() - a.entryDateTime.getTime()).map(e => structuredClone(e));
   }
 
   async getSiteDiaryEntry(id: string): Promise<schema.SiteDiaryEntry | undefined> {
@@ -12929,6 +12943,26 @@ export class DbStorage implements IStorage {
         .orderBy(desc(schema.siteDiaryEntries.entryDateTime));
     } catch (error) {
       console.error("Database error in getSiteDiaryEntries:", error);
+      throw error;
+    }
+  }
+
+  async getSiteDiaryEntriesByCompany(companyId: string, date?: string): Promise<schema.SiteDiaryEntry[]> {
+    try {
+      const conditions = [eq(schema.projects.companyId, companyId)];
+      if (date) {
+        conditions.push(sql`DATE(${schema.siteDiaryEntries.entryDateTime}) = ${date}` as any);
+      }
+      const rows = await db.select({
+        entry: schema.siteDiaryEntries,
+      })
+        .from(schema.siteDiaryEntries)
+        .innerJoin(schema.projects, eq(schema.siteDiaryEntries.projectId, schema.projects.id))
+        .where(and(...conditions))
+        .orderBy(desc(schema.siteDiaryEntries.entryDateTime));
+      return rows.map(r => r.entry);
+    } catch (error) {
+      console.error("Database error in getSiteDiaryEntriesByCompany:", error);
       throw error;
     }
   }

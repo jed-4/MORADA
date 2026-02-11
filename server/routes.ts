@@ -11389,6 +11389,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Company-wide Site Diary Entries (all projects)
+  app.get("/api/company/site-diary-entries", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.teamMember?.companyId || req.user?.companyId;
+      if (!companyId) {
+        return res.status(400).json({ error: "Company not found" });
+      }
+      const date = req.query.date as string | undefined;
+      const entries = await storage.getSiteDiaryEntriesByCompany(companyId, date);
+      res.json(entries);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch company site diary entries",
+        details: error.message 
+      });
+    }
+  });
+
   // Site Diary Entry routes
   app.get("/api/projects/:projectId/site-diary-entries", async (req, res) => {
     try {

@@ -11,6 +11,7 @@ import ProjectsScreen from '../screens/ProjectsScreen';
 import ProjectDetailScreen from '../screens/ProjectDetailScreen';
 import TimesheetsScreen from '../screens/TimesheetsScreen';
 import SiteDiaryScreen from '../screens/SiteDiaryScreen';
+import SiteDiaryListScreen from '../screens/SiteDiaryListScreen';
 import MoreScreen from '../screens/MoreScreen';
 
 const Stack = createNativeStackNavigator();
@@ -41,6 +42,27 @@ function ProjectsStack() {
         component={SiteDiaryScreen}
         options={({ route }: any) => ({ title: `${route.params?.projectName || 'Project'} - Site Diary` })}
       />
+    </Stack.Navigator>
+  );
+}
+
+function MoreStack() {
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+
+  return (
+    <Stack.Navigator
+      screenOptions={{
+        headerShown: false,
+        headerStyle: { backgroundColor: isDark ? '#1e293b' : '#ffffff' },
+        headerTintColor: isDark ? '#f1f5f9' : '#0f172a',
+        headerTitleStyle: { fontWeight: '600' },
+        headerShadowVisible: false,
+        headerBackButtonDisplayMode: 'minimal',
+      }}
+    >
+      <Stack.Screen name="MoreHome" component={MoreScreen} />
+      <Stack.Screen name="SiteDiaryList" component={SiteDiaryListScreen} />
     </Stack.Navigator>
   );
 }
@@ -78,7 +100,7 @@ function MainTabs() {
       <Tab.Screen name="Workspace" component={DashboardScreen} />
       <Tab.Screen name="Projects" component={ProjectsStack} />
       <Tab.Screen name="Timesheets" component={TimesheetsScreen} />
-      <Tab.Screen name="More" component={MoreScreen} />
+      <Tab.Screen name="More" component={MoreStack} />
     </Tab.Navigator>
   );
 }
