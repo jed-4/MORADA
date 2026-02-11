@@ -73,12 +73,15 @@ export default function SiteDiaryEntries() {
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [isCreating, setIsCreating] = useState(false);
+  const [creatingForProjectId, setCreatingForProjectId] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState("");
   const [viewingEntry, setViewingEntry] = useState<SiteDiaryEntry | null>(null);
   const [editingEntry, setEditingEntry] = useState<SiteDiaryEntry | null>(null);
   const [viewMode, setViewMode] = useState<"list" | "calendar">("list");
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const isProjectFromUrl = !!projectIdFromUrl;
+  const isStandalone = !isProjectFromUrl;
 
   useEffect(() => {
     if (projectIdFromUrl) {
@@ -94,15 +97,28 @@ export default function SiteDiaryEntries() {
     queryKey: ["/api/site-diary-templates"],
   });
 
-  const { data: entries = [], isLoading } = useQuery<SiteDiaryEntry[]>({
+  const { data: projectEntries = [], isLoading: isLoadingProject } = useQuery<SiteDiaryEntry[]>({
     queryKey: ["/api/projects", selectedProjectId, "site-diary-entries"],
-    enabled: !!selectedProjectId,
+    enabled: !!selectedProjectId && isProjectFromUrl,
   });
 
+  const { data: companyEntries = [], isLoading: isLoadingCompany } = useQuery<SiteDiaryEntry[]>({
+    queryKey: ["/api/company/site-diary-entries"],
+    enabled: isStandalone,
+  });
+
+  const entries = isStandalone ? companyEntries : projectEntries;
+  const isLoading = isStandalone ? isLoadingCompany : isLoadingProject;
+
   const selectedProject = projects.find(p => p.id === selectedProjectId);
-  const isProjectFromUrl = !!projectIdFromUrl;
+  const effectiveProjectId = isStandalone ? (creatingForProjectId || selectedProjectId) : selectedProjectId;
 
   const filteredEntries = entries.filter((entry) => {
+    if (isStandalone && selectedProjectId && selectedProjectId !== "all") {
+      if (entry.projectId !== selectedProjectId) return false;
+    }
+    return true;
+  }).filter((entry) => {
     if (!selectedTemplateId || selectedTemplateId === "all") return true;
     return entry.templateId === selectedTemplateId;
   }).filter((entry) => {
@@ -135,7 +151,7 @@ export default function SiteDiaryEntries() {
     return false;
   });
 
-  const handleAddEntry = () => {
+  const handleAddEntry = (forProjectId?: string) => {
     if (templates.length === 0) {
       toast({
         title: "No templates available",
@@ -143,6 +159,9 @@ export default function SiteDiaryEntries() {
         variant: "destructive",
       });
       return;
+    }
+    if (isStandalone && forProjectId) {
+      setCreatingForProjectId(forProjectId);
     }
     setIsCreating(true);
   };
@@ -188,7 +207,8 @@ export default function SiteDiaryEntries() {
     );
   }
 
-  if (editingEntry && selectedProjectId) {
+  if (editingEntry) {
+    const editProjectId = editingEntry.projectId || selectedProjectId;
     const entryTemplate = templates.find(t => t.id === editingEntry.templateId);
     return (
       <div className="flex flex-col h-full p-2">
@@ -198,8 +218,11 @@ export default function SiteDiaryEntries() {
           onCancel={() => setEditingEntry(null)}
           onSuccess={() => {
             setEditingEntry(null);
+            if (isStandalone) {
+              queryClient.invalidateQueries({ queryKey: ["/api/company/site-diary-entries"] });
+            }
             queryClient.invalidateQueries({ 
-              queryKey: ["/api/projects", selectedProjectId, "site-diary-entries"] 
+              queryKey: ["/api/projects", editProjectId, "site-diary-entries"] 
             });
           }}
         />
@@ -207,18 +230,58 @@ export default function SiteDiaryEntries() {
     );
   }
 
-  if (isCreating && selectedProjectId) {
+  if (isCreating) {
+    const createProjectId = effectiveProjectId;
+    const createProject = projects.find(p => p.id === createProjectId);
+
+    if (!createProjectId && isStandalone) {
+      return (
+        <div className="flex flex-col h-full p-2">
+          <Card>
+            <CardHeader className="py-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base">New Site Diary Entry</CardTitle>
+                <Button variant="ghost" size="icon" onClick={() => { setIsCreating(false); setCreatingForProjectId(""); }}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">Select a project for this entry</p>
+            </CardHeader>
+            <CardContent className="py-2">
+              <div className="space-y-1">
+                {projects.filter(p => p.isActive !== false).map((project) => (
+                  <button
+                    key={project.id}
+                    onClick={() => setCreatingForProjectId(project.id)}
+                    className="w-full text-left px-3 py-2.5 text-sm rounded-md border hover-elevate active-elevate-2 flex items-center gap-2"
+                    data-testid={`select-project-${project.id}`}
+                  >
+                    <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    <span>{project.name}</span>
+                  </button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
     return (
       <div className="flex flex-col h-full p-2">
         <EntryFormWithTemplateSelector
           templates={templates}
-          projectId={selectedProjectId}
-          projectName={selectedProject?.name || ""}
-          onCancel={() => setIsCreating(false)}
+          projectId={createProjectId}
+          projectName={createProject?.name || selectedProject?.name || ""}
+          onCancel={() => { setIsCreating(false); setCreatingForProjectId(""); }}
           onSuccess={() => {
             setIsCreating(false);
+            setCreatingForProjectId("");
+            if (isStandalone) {
+              queryClient.invalidateQueries({ queryKey: ["/api/company/site-diary-entries"] });
+            }
             queryClient.invalidateQueries({ 
-              queryKey: ["/api/projects", selectedProjectId, "site-diary-entries"] 
+              queryKey: ["/api/projects", createProjectId, "site-diary-entries"] 
             });
           }}
         />
@@ -240,7 +303,7 @@ export default function SiteDiaryEntries() {
         </div>
 
         <div className="flex items-center gap-1.5">
-          {selectedProjectId && filteredEntries.length > 0 && (
+          {filteredEntries.length > 0 && (
             <button
               className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
               onClick={() => handleExportPdf()}
@@ -253,8 +316,8 @@ export default function SiteDiaryEntries() {
           )}
           <button
             className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
-            onClick={handleAddEntry}
-            disabled={!selectedProjectId}
+            onClick={() => handleAddEntry()}
+            disabled={!isStandalone && !selectedProjectId}
             data-testid="button-add-site-diary"
           >
             <Plus className="w-3 h-3" />
@@ -298,28 +361,38 @@ export default function SiteDiaryEntries() {
           </div>
 
           {/* Project Filter (only when not in project context) */}
-          {!isProjectFromUrl && (
+          {isStandalone && (
             <Popover>
               <PopoverTrigger asChild>
                 <button 
                   className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
                   data-testid="filter-project-popover"
                 >
-                  <span>Project</span>
-                  {selectedProjectId && (
+                  <span>{selectedProjectId && selectedProjectId !== "all" ? (projects.find(p => p.id === selectedProjectId)?.name || "Project") : "All Projects"}</span>
+                  {selectedProjectId && selectedProjectId !== "all" && (
                     <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
                       1
                     </Badge>
                   )}
+                  <ChevronDown className="w-3 h-3 ml-0.5" />
                 </button>
               </PopoverTrigger>
               <PopoverContent className="w-56 p-2" align="start">
                 <div className="space-y-1">
+                  <button
+                    onClick={() => setSelectedProjectId("")}
+                    className={`w-full text-left px-2 py-1.5 text-sm rounded hover-elevate ${
+                      !selectedProjectId || selectedProjectId === "all" ? "bg-[#bba7db]/10 text-[#bba7db] font-medium" : ""
+                    }`}
+                    data-testid="filter-project-all"
+                  >
+                    All Projects
+                  </button>
                   {projects.map((project) => (
                     <button
                       key={project.id}
                       onClick={() => setSelectedProjectId(project.id)}
-                      className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${
+                      className={`w-full text-left px-2 py-1.5 text-sm rounded hover-elevate ${
                         selectedProjectId === project.id ? "bg-[#bba7db]/10 text-[#bba7db] font-medium" : ""
                       }`}
                       data-testid={`filter-project-${project.id}`}
@@ -378,12 +451,10 @@ export default function SiteDiaryEntries() {
 
       {/* Content */}
       <div className="flex-1 overflow-auto p-2">
-        {!selectedProjectId ? (
+        {!isStandalone && !selectedProjectId ? (
           <div className="flex flex-col items-center justify-center h-64 gap-4">
             <BookOpen className="h-12 w-12 text-muted-foreground" />
-            <p className="text-muted-foreground text-sm">
-              {isProjectFromUrl ? "No site diary entries" : "Select a project to view entries"}
-            </p>
+            <p className="text-muted-foreground text-sm">No site diary entries</p>
           </div>
         ) : isLoading ? (
           <div className="flex items-center justify-center h-64">
@@ -405,7 +476,7 @@ export default function SiteDiaryEntries() {
             {entries.length === 0 && (
               <button
                 className="h-7 px-3 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
-                onClick={handleAddEntry}
+                onClick={() => handleAddEntry()}
                 data-testid="button-add-first-entry"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -415,14 +486,18 @@ export default function SiteDiaryEntries() {
           </div>
         ) : (
           <div className="space-y-1">
-            {filteredEntries.map((entry) => (
-              <SiteDiaryCard 
-                key={entry.id} 
-                entry={entry} 
-                onView={() => setViewingEntry(entry)}
-                onEdit={() => setEditingEntry(entry)}
-              />
-            ))}
+            {filteredEntries.map((entry) => {
+              const entryProject = isStandalone ? projects.find(p => p.id === entry.projectId) : undefined;
+              return (
+                <SiteDiaryCard 
+                  key={entry.id} 
+                  entry={entry} 
+                  projectName={entryProject?.name}
+                  onView={() => setViewingEntry(entry)}
+                  onEdit={() => setEditingEntry(entry)}
+                />
+              );
+            })}
           </div>
         )}
       </div>
@@ -513,7 +588,7 @@ function SiteDiaryCalendarView({
   );
 }
 
-function SiteDiaryCard({ entry, onView, onEdit }: { entry: SiteDiaryEntry; onView: () => void; onEdit: () => void }) {
+function SiteDiaryCard({ entry, projectName, onView, onEdit }: { entry: SiteDiaryEntry; projectName?: string; onView: () => void; onEdit: () => void }) {
   const { toast } = useToast();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const fieldValues = entry.fieldValues as Record<string, any> || {};
@@ -524,6 +599,7 @@ function SiteDiaryCard({ entry, onView, onEdit }: { entry: SiteDiaryEntry; onVie
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", entry.projectId, "site-diary-entries"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/company/site-diary-entries"] });
       toast({ title: "Entry deleted" });
     },
     onError: (error: any) => {
@@ -589,6 +665,13 @@ function SiteDiaryCard({ entry, onView, onEdit }: { entry: SiteDiaryEntry; onVie
 
         {/* Metadata Column */}
         <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Project Name (standalone mode) */}
+          {projectName && (
+            <Badge variant="outline" className="h-4 px-1.5 text-[10px]" data-testid={`entry-project-${entry.id}`}>
+              {projectName}
+            </Badge>
+          )}
+
           {/* Template */}
           <Badge variant="default" className="h-4 px-1.5 text-[10px]" data-testid={`entry-template-${entry.id}`}>
             {entry.templateName}
@@ -720,30 +803,18 @@ function EntryFormWithTemplateSelector({
             <CardTitle className="text-base">New Site Diary Entry</CardTitle>
             <p className="text-xs text-muted-foreground mt-0.5">{projectName}</p>
           </div>
-          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onCancel} data-testid="button-cancel-entry">
+          <Button variant="ghost" size="icon" onClick={onCancel} data-testid="button-cancel-entry">
             <X className="h-4 w-4" />
           </Button>
         </div>
         {/* Template Selector */}
         <div className="mt-3">
           <Label className="text-xs font-medium">Template</Label>
-          <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
-            <SelectTrigger className="h-8 mt-1" data-testid="select-template">
-              <SelectValue placeholder="Select template" />
-            </SelectTrigger>
-            <SelectContent>
-              {templates.map((template) => (
-                <SelectItem key={template.id} value={template.id}>
-                  <div className="flex items-center gap-2">
-                    <span>{template.name}</span>
-                    {template.isDefault && (
-                      <Badge variant="secondary" className="text-[10px] h-4 px-1">Default</Badge>
-                    )}
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <TemplatePopoverSelector
+            templates={templates}
+            selectedTemplateId={selectedTemplateId}
+            onSelect={setSelectedTemplateId}
+          />
         </div>
       </CardHeader>
       <CardContent className="py-2">
@@ -755,6 +826,59 @@ function EntryFormWithTemplateSelector({
         />
       </CardContent>
     </Card>
+  );
+}
+
+function TemplatePopoverSelector({
+  templates,
+  selectedTemplateId,
+  onSelect,
+}: {
+  templates: SiteDiaryTemplate[];
+  selectedTemplateId: string;
+  onSelect: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selectedTemplate = templates.find(t => t.id === selectedTemplateId);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex h-8 w-full items-center justify-between rounded-md border-2 border-input bg-background px-3 py-2 text-sm mt-1 hover-elevate"
+          data-testid="select-template"
+        >
+          <span className="flex items-center gap-2 truncate">
+            {selectedTemplate?.name || "Select template"}
+            {selectedTemplate?.isDefault && (
+              <Badge variant="secondary" className="text-[10px] h-4 px-1">Default</Badge>
+            )}
+          </span>
+          <ChevronDown className="h-4 w-4 opacity-50 flex-shrink-0" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-1" align="start">
+        <div className="space-y-0.5">
+          {templates.map((template) => (
+            <button
+              key={template.id}
+              type="button"
+              onClick={() => { onSelect(template.id); setOpen(false); }}
+              className={`w-full text-left px-2 py-1.5 text-sm rounded hover-elevate flex items-center gap-2 ${
+                selectedTemplateId === template.id ? "bg-[#bba7db]/10 text-[#bba7db] font-medium" : ""
+              }`}
+              data-testid={`template-option-${template.id}`}
+            >
+              <span>{template.name}</span>
+              {template.isDefault && (
+                <Badge variant="secondary" className="text-[10px] h-4 px-1">Default</Badge>
+              )}
+            </button>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
