@@ -1,3 +1,4 @@
+import { useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -5,6 +6,7 @@ import {
   TouchableOpacity,
   useColorScheme,
   SafeAreaView,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
@@ -31,10 +33,36 @@ const moreItems: MoreItem[] = [
   { id: 'settings', label: 'Settings', icon: 'settings', color: '#6b7280', action: 'coming-soon' },
 ];
 
+const SHEET_HEIGHT = 340;
+
 export default function MoreScreen({ navigation }: Props) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const { user } = useAuth();
+
+  const slideAnim = useRef(new Animated.Value(SHEET_HEIGHT)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      slideAnim.setValue(SHEET_HEIGHT);
+      fadeAnim.setValue(0);
+      Animated.parallel([
+        Animated.spring(slideAnim, {
+          toValue: 0,
+          useNativeDriver: true,
+          tension: 65,
+          friction: 11,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    });
+    return unsubscribe;
+  }, [navigation, slideAnim, fadeAnim]);
 
   const colors = isDark
     ? {
@@ -43,6 +71,7 @@ export default function MoreScreen({ navigation }: Props) {
         secondary: '#94a3b8',
         sheetBg: '#1e293b',
         accent: '#3b82f6',
+        handle: '#475569',
       }
     : {
         bg: '#f8fafc',
@@ -50,6 +79,7 @@ export default function MoreScreen({ navigation }: Props) {
         secondary: '#64748b',
         sheetBg: '#1e293b',
         accent: '#2563eb',
+        handle: '#64748b',
       };
 
   const handleItemPress = (item: MoreItem) => {
@@ -63,12 +93,36 @@ export default function MoreScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]}>
-      <View style={styles.header}>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>More</Text>
-      </View>
+      {user && (
+        <Animated.View style={[styles.profileSection, { opacity: fadeAnim }]}>
+          <View style={[styles.avatar, { backgroundColor: colors.accent }]}>
+            <Text style={styles.avatarText}>
+              {(user.firstName?.[0] || user.email?.[0] || '?').toUpperCase()}
+            </Text>
+          </View>
+          <View style={styles.profileInfo}>
+            <Text style={[styles.profileName, { color: colors.text }]}>
+              {user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.email}
+            </Text>
+            <Text style={[styles.profileEmail, { color: colors.secondary }]}>{user.email}</Text>
+          </View>
+        </Animated.View>
+      )}
 
-      <View style={styles.gridContainer}>
-        <View style={[styles.gridSheet, { backgroundColor: colors.sheetBg }]}>
+      <View style={styles.sheetWrapper}>
+        <Animated.View
+          style={[
+            styles.bottomSheet,
+            {
+              backgroundColor: colors.sheetBg,
+              transform: [{ translateY: slideAnim }],
+            },
+          ]}
+        >
+          <View style={styles.handleBar}>
+            <View style={[styles.handle, { backgroundColor: colors.handle }]} />
+          </View>
+
           <View style={styles.grid}>
             {moreItems.map((item) => (
               <TouchableOpacity
@@ -89,24 +143,8 @@ export default function MoreScreen({ navigation }: Props) {
               </TouchableOpacity>
             ))}
           </View>
-        </View>
+        </Animated.View>
       </View>
-
-      {user && (
-        <View style={[styles.profileSection, { borderTopColor: isDark ? '#334155' : '#e2e8f0' }]}>
-          <View style={[styles.avatar, { backgroundColor: colors.accent }]}>
-            <Text style={styles.avatarText}>
-              {(user.firstName?.[0] || user.email?.[0] || '?').toUpperCase()}
-            </Text>
-          </View>
-          <View style={styles.profileInfo}>
-            <Text style={[styles.profileName, { color: colors.text }]}>
-              {user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.email}
-            </Text>
-            <Text style={[styles.profileEmail, { color: colors.secondary }]}>{user.email}</Text>
-          </View>
-        </View>
-      )}
     </SafeAreaView>
   );
 }
@@ -115,32 +153,67 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  header: {
+  profileSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 12,
+    paddingTop: 24,
+    paddingBottom: 16,
   },
-  headerTitle: {
-    fontSize: 28,
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    color: '#ffffff',
+    fontSize: 20,
     fontWeight: '700',
   },
-  gridContainer: {
-    paddingHorizontal: 16,
+  profileInfo: {
+    marginLeft: 14,
+    flex: 1,
+  },
+  profileName: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  profileEmail: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+  sheetWrapper: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  bottomSheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingBottom: 32,
     paddingTop: 8,
   },
-  gridSheet: {
-    borderRadius: 16,
-    padding: 20,
+  handleBar: {
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  handle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
   },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'flex-start',
+    paddingHorizontal: 16,
+    paddingTop: 8,
   },
   gridItem: {
     width: '25%',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 24,
     position: 'relative',
   },
   iconCircle: {
@@ -149,7 +222,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 6,
+    marginBottom: 8,
   },
   gridLabel: {
     fontSize: 11,
@@ -162,37 +235,5 @@ const styles = StyleSheet.create({
     color: '#f59e0b',
     textTransform: 'uppercase',
     marginTop: 2,
-  },
-  profileSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    marginTop: 'auto',
-    borderTopWidth: 1,
-  },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  profileInfo: {
-    marginLeft: 12,
-    flex: 1,
-  },
-  profileName: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  profileEmail: {
-    fontSize: 12,
-    marginTop: 1,
   },
 });
