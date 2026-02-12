@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,9 +7,16 @@ import {
   useColorScheme,
   SafeAreaView,
   Animated,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
+import { apiRequest } from '../services/api';
 
 type Props = {
   navigation: any;
@@ -24,6 +31,20 @@ interface MoreItem {
   screen?: string;
 }
 
+interface QuickAddItem {
+  id: string;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  color: string;
+}
+
+const quickAddItems: QuickAddItem[] = [
+  { id: 'memo', label: 'Memo', icon: 'create-outline', color: '#f59e0b' },
+  { id: 'note', label: 'Note', icon: 'document-text-outline', color: '#10b981' },
+  { id: 'task', label: 'Task', icon: 'checkbox-outline', color: '#8b5cf6' },
+  { id: 'site-diary', label: 'Site Diary', icon: 'book-outline', color: '#3b82f6' },
+];
+
 const moreItems: MoreItem[] = [
   { id: 'site-diary', label: 'Site Diary', icon: 'book', color: '#3b82f6', action: 'navigate', screen: 'SiteDiaryList' },
   { id: 'tasks', label: 'My Tasks', icon: 'checkbox', color: '#8b5cf6', action: 'coming-soon' },
@@ -33,7 +54,7 @@ const moreItems: MoreItem[] = [
   { id: 'settings', label: 'Settings', icon: 'settings', color: '#6b7280', action: 'coming-soon' },
 ];
 
-const SHEET_HEIGHT = 340;
+const SHEET_HEIGHT = 440;
 
 export default function MoreScreen({ navigation }: Props) {
   const colorScheme = useColorScheme();
@@ -42,6 +63,16 @@ export default function MoreScreen({ navigation }: Props) {
 
   const slideAnim = useRef(new Animated.Value(SHEET_HEIGHT)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  const [showMemoModal, setShowMemoModal] = useState(false);
+  const [showNoteModal, setShowNoteModal] = useState(false);
+  const [showTaskModal, setShowTaskModal] = useState(false);
+  const [memoContent, setMemoContent] = useState('');
+  const [noteTitle, setNoteTitle] = useState('');
+  const [noteContent, setNoteContent] = useState('');
+  const [taskTitle, setTaskTitle] = useState('');
+  const [taskDescription, setTaskDescription] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
@@ -72,6 +103,10 @@ export default function MoreScreen({ navigation }: Props) {
         sheetBg: '#1e293b',
         accent: '#3b82f6',
         handle: '#475569',
+        inputBg: '#0f172a',
+        border: '#334155',
+        muted: '#64748b',
+        danger: '#ef4444',
       }
     : {
         bg: '#f8fafc',
@@ -80,6 +115,10 @@ export default function MoreScreen({ navigation }: Props) {
         sheetBg: '#1e293b',
         accent: '#2563eb',
         handle: '#64748b',
+        inputBg: '#ffffff',
+        border: '#e2e8f0',
+        muted: '#94a3b8',
+        danger: '#ef4444',
       };
 
   const handleItemPress = (item: MoreItem) => {
@@ -90,6 +129,150 @@ export default function MoreScreen({ navigation }: Props) {
       navigation.navigate(item.screen);
     }
   };
+
+  const handleQuickAdd = (item: QuickAddItem) => {
+    switch (item.id) {
+      case 'memo':
+        setMemoContent('');
+        setShowMemoModal(true);
+        break;
+      case 'note':
+        setNoteTitle('');
+        setNoteContent('');
+        setShowNoteModal(true);
+        break;
+      case 'task':
+        setTaskTitle('');
+        setTaskDescription('');
+        setShowTaskModal(true);
+        break;
+      case 'site-diary':
+        navigation.navigate('SiteDiaryList', { openCreate: true });
+        break;
+    }
+  };
+
+  const saveMemo = async () => {
+    if (!memoContent.trim()) {
+      Alert.alert('Required', 'Please enter memo content.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await apiRequest('/api/notes', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: memoContent.trim().substring(0, 50),
+          content: memoContent.trim(),
+          type: 'note',
+          scope: 'personal',
+          category: 'General',
+          priority: 'low',
+        }),
+      });
+      setShowMemoModal(false);
+      setMemoContent('');
+      Alert.alert('Saved', 'Memo created successfully.');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to save memo. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveNote = async () => {
+    if (!noteTitle.trim()) {
+      Alert.alert('Required', 'Please enter a title.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await apiRequest('/api/notes', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: noteTitle.trim(),
+          content: noteContent.trim() || noteTitle.trim(),
+          type: 'note',
+          scope: 'personal',
+          category: 'General',
+          priority: 'low',
+        }),
+      });
+      setShowNoteModal(false);
+      setNoteTitle('');
+      setNoteContent('');
+      Alert.alert('Saved', 'Note created successfully.');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to save note. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveTask = async () => {
+    if (!taskTitle.trim()) {
+      Alert.alert('Required', 'Please enter a task title.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await apiRequest('/api/notes', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: taskTitle.trim(),
+          content: taskDescription.trim() || taskTitle.trim(),
+          type: 'task',
+          status: 'todo',
+          scope: 'personal',
+          category: 'General',
+          priority: 'medium',
+        }),
+      });
+      setShowTaskModal(false);
+      setTaskTitle('');
+      setTaskDescription('');
+      Alert.alert('Saved', 'Task created successfully.');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to save task. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const renderQuickAddModal = (
+    visible: boolean,
+    onClose: () => void,
+    title: string,
+    onSave: () => void,
+    children: React.ReactNode,
+  ) => (
+    <Modal visible={visible} transparent animationType="slide">
+      <KeyboardAvoidingView
+        style={styles.qaOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <TouchableOpacity style={styles.qaBackdrop} activeOpacity={1} onPress={onClose} />
+        <View style={[styles.qaSheet, { backgroundColor: isDark ? '#1e293b' : '#ffffff' }]}>
+          <View style={[styles.qaHeader, { borderBottomColor: isDark ? '#334155' : '#e2e8f0' }]}>
+            <TouchableOpacity onPress={onClose}>
+              <Text style={[styles.qaHeaderBtn, { color: colors.secondary }]}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={[styles.qaHeaderTitle, { color: isDark ? '#f1f5f9' : '#0f172a' }]}>{title}</Text>
+            <TouchableOpacity onPress={onSave} disabled={saving}>
+              {saving ? (
+                <ActivityIndicator size="small" color={colors.accent} />
+              ) : (
+                <Text style={[styles.qaHeaderBtn, { color: colors.accent, fontWeight: '600' }]}>Save</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+          <View style={styles.qaBody}>
+            {children}
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]}>
@@ -143,8 +326,99 @@ export default function MoreScreen({ navigation }: Props) {
               </TouchableOpacity>
             ))}
           </View>
+
+          <View style={[styles.quickAddDivider, { borderTopColor: '#334155' }]}>
+            <Text style={[styles.quickAddLabel, { color: '#94a3b8' }]}>Quick Add</Text>
+          </View>
+
+          <View style={styles.quickAddRow}>
+            {quickAddItems.map((item) => (
+              <TouchableOpacity
+                key={item.id}
+                style={styles.quickAddItem}
+                onPress={() => handleQuickAdd(item)}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.quickAddCircle, { backgroundColor: item.color + '20', borderColor: item.color + '40' }]}>
+                  <Ionicons name={item.icon} size={22} color={item.color} />
+                </View>
+                <Text style={[styles.gridLabel, { color: '#e2e8f0' }]} numberOfLines={1}>
+                  {item.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </Animated.View>
       </View>
+
+      {renderQuickAddModal(
+        showMemoModal,
+        () => setShowMemoModal(false),
+        'New Memo',
+        saveMemo,
+        <TextInput
+          style={[styles.qaTextArea, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
+          value={memoContent}
+          onChangeText={setMemoContent}
+          placeholder="Jot something down..."
+          placeholderTextColor={colors.muted}
+          multiline
+          autoFocus
+          textAlignVertical="top"
+        />,
+      )}
+
+      {renderQuickAddModal(
+        showNoteModal,
+        () => setShowNoteModal(false),
+        'New Note',
+        saveNote,
+        <>
+          <TextInput
+            style={[styles.qaInput, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
+            value={noteTitle}
+            onChangeText={setNoteTitle}
+            placeholder="Note title"
+            placeholderTextColor={colors.muted}
+            autoFocus
+          />
+          <TextInput
+            style={[styles.qaTextArea, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border, marginTop: 12 }]}
+            value={noteContent}
+            onChangeText={setNoteContent}
+            placeholder="Write your note..."
+            placeholderTextColor={colors.muted}
+            multiline
+            textAlignVertical="top"
+          />
+        </>,
+      )}
+
+      {renderQuickAddModal(
+        showTaskModal,
+        () => setShowTaskModal(false),
+        'New Task',
+        saveTask,
+        <>
+          <TextInput
+            style={[styles.qaInput, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
+            value={taskTitle}
+            onChangeText={setTaskTitle}
+            placeholder="Task title"
+            placeholderTextColor={colors.muted}
+            autoFocus
+          />
+          <TextInput
+            style={[styles.qaTextArea, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border, marginTop: 12 }]}
+            value={taskDescription}
+            onChangeText={setTaskDescription}
+            placeholder="Description (optional)"
+            placeholderTextColor={colors.muted}
+            multiline
+            textAlignVertical="top"
+          />
+        </>,
+      )}
     </SafeAreaView>
   );
 }
@@ -235,5 +509,85 @@ const styles = StyleSheet.create({
     color: '#f59e0b',
     textTransform: 'uppercase',
     marginTop: 2,
+  },
+  quickAddDivider: {
+    borderTopWidth: 1,
+    marginHorizontal: 20,
+    paddingTop: 12,
+    marginBottom: 8,
+  },
+  quickAddLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  quickAddRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    paddingHorizontal: 16,
+  },
+  quickAddItem: {
+    width: '25%',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  quickAddCircle: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+    borderWidth: 1,
+  },
+  qaOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  qaBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  qaSheet: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: 32,
+  },
+  qaHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+  },
+  qaHeaderTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+  },
+  qaHeaderBtn: {
+    fontSize: 16,
+  },
+  qaBody: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+  },
+  qaInput: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+  },
+  qaTextArea: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    minHeight: 120,
+    textAlignVertical: 'top',
   },
 });

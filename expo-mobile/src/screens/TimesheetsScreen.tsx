@@ -641,9 +641,6 @@ export default function TimesheetsScreen() {
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Timesheets</Text>
-        <TouchableOpacity onPress={openLogSheet} style={[styles.addButton, { backgroundColor: colors.accent }]}>
-          <Ionicons name="add" size={22} color="#fff" />
-        </TouchableOpacity>
       </View>
 
       {!networkOnline && (
@@ -842,6 +839,14 @@ export default function TimesheetsScreen() {
           <Text style={[styles.emptyText, { color: colors.secondary }]}>No timesheets this week</Text>
         )}
       </ScrollView>
+
+      <TouchableOpacity
+        style={[styles.fab, { backgroundColor: colors.accent }]}
+        onPress={openLogSheet}
+        activeOpacity={0.8}
+      >
+        <Ionicons name="add" size={28} color="#ffffff" />
+      </TouchableOpacity>
 
       {/* Project Picker for Clock In */}
       {renderPickerModal(
@@ -1147,15 +1152,23 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   headerTitle: { fontSize: 22, fontWeight: '700' },
-  addButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
+  fab: {
+    position: 'absolute',
+    bottom: 24,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
   },
   scroll: { flex: 1 },
-  scrollContent: { padding: 16, paddingBottom: 32 },
+  scrollContent: { padding: 16, paddingBottom: 100 },
   offlineBanner: {
     flexDirection: 'row',
     alignItems: 'center',
