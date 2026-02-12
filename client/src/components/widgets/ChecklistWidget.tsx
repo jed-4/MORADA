@@ -150,7 +150,7 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [checklists, statusFilter, assigneeFilter, hideCompletedGroups]);
 
-  const displayChecklists = filteredChecklists.slice(0, maxChecklists);
+  const displayChecklists = maxChecklists > 0 ? filteredChecklists.slice(0, maxChecklists) : filteredChecklists;
 
 
   const toggleChecklist = (id: string) => {
@@ -294,15 +294,23 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
         </div>
         
         <div className="space-y-2">
-          <Label className="text-xs">Max Items to Show</Label>
-          <Input 
-            type="number"
-            min={1}
-            max={50}
-            value={configMaxChecklists}
-            onChange={(e) => setConfigMaxChecklists(parseInt(e.target.value) || 10)}
-            className="h-7 text-xs w-20"
-          />
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">Limit Checklists Shown</Label>
+            <Switch
+              checked={configMaxChecklists > 0}
+              onCheckedChange={(checked) => setConfigMaxChecklists(checked ? 10 : 0)}
+            />
+          </div>
+          {configMaxChecklists > 0 && (
+            <Input 
+              type="number"
+              min={1}
+              max={50}
+              value={configMaxChecklists}
+              onChange={(e) => setConfigMaxChecklists(parseInt(e.target.value) || 10)}
+              className="h-7 text-xs w-20"
+            />
+          )}
         </div>
 
         <div className="flex items-center justify-between">

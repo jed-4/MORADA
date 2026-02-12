@@ -399,7 +399,37 @@ export default function ProjectChecklists() {
     mutationFn: async ({ itemId, data }: { itemId: string; data: Partial<ChecklistInstanceItem> }) => {
       await apiRequest(`/api/checklist-instance-items/${itemId}`, "PATCH", data);
     },
-    onSuccess: () => {
+    onMutate: async ({ itemId, data }) => {
+      await queryClient.cancelQueries({
+        predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/checklist-items"
+      });
+      const previousItems = queryClient.getQueriesData({
+        predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/checklist-items"
+      });
+      queryClient.setQueriesData(
+        { predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/checklist-items" },
+        (old: Record<string, ChecklistInstanceItem[]> | undefined) => {
+          if (!old) return old;
+          const updated = { ...old };
+          for (const groupId of Object.keys(updated)) {
+            updated[groupId] = updated[groupId].map(item =>
+              item.id === itemId ? { ...item, ...data } : item
+            );
+          }
+          return updated;
+        }
+      );
+      return { previousItems };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previousItems) {
+        context.previousItems.forEach(([queryKey, data]) => {
+          queryClient.setQueryData(queryKey, data);
+        });
+      }
+      toast({ title: "Error", description: "Failed to update item.", variant: "destructive" });
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ 
         predicate: (query) => {
           const key = query.queryKey;
@@ -831,7 +861,7 @@ export default function ProjectChecklists() {
                           <MoreVertical className="h-3 w-3" />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
+                      <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
                         <DropdownMenuItem
                           onClick={(e) => {
                             e.stopPropagation();
@@ -841,8 +871,8 @@ export default function ProjectChecklists() {
                           View Details
                         </DropdownMenuItem>
                         <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
+                          onSelect={(e) => {
+                            e.preventDefault();
                             setShowActivityLog(instance.id);
                           }}
                         >
@@ -874,25 +904,29 @@ export default function ProjectChecklists() {
                         return (
                           <div
                             key={group.id}
-                            className="group border rounded-md p-2 bg-card hover-elevate transition-all cursor-pointer"
+                            className="group border rounded-md p-2 bg-card hover-elevate transition-all"
                             data-testid={`checklist-card-${group.id}`}
-                            onClick={() => toggleChecklistExpand(group.id)}
                           >
                             {/* Checklist Header */}
                             <div className="flex items-start gap-2">
-                              {/* Left: Chevron + Title */}
-                              <div className="flex items-start gap-2 flex-1 min-w-0">
-                                <div className={`transition-transform duration-200 mt-0.5 ${isExpanded ? 'rotate-90' : ''}`}>
-                                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <span className="text-sm line-clamp-1">{group.name}</span>
-                                  {items.length > 0 && (
-                                    <p className="text-xs text-muted-foreground">
-                                      {completedItems} of {items.length} items
-                                    </p>
-                                  )}
-                                </div>
+                              {/* Left: Title */}
+                              <div className="flex-1 min-w-0">
+                                <span className="text-sm line-clamp-1">{group.name}</span>
+                                {items.length > 0 && (
+                                  <div className="mt-1">
+                                    <div className="flex items-center gap-2">
+                                      <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                                        <div 
+                                          className="h-full rounded-full bg-[#bba7db] transition-all duration-300"
+                                          style={{ width: `${items.length > 0 ? (completedItems / items.length) * 100 : 0}%` }}
+                                        />
+                                      </div>
+                                      <span className="text-[10px] text-muted-foreground shrink-0">
+                                        {completedItems}/{items.length}
+                                      </span>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                               
                               {/* Right: Chips + Assignee */}
@@ -1162,9 +1196,24 @@ export default function ProjectChecklists() {
                                 </div>
                             </div>
                             
+                            {/* Expand/Collapse Toggle */}
+                            <div 
+                              className="flex items-center justify-center mt-1.5 pt-1 cursor-pointer"
+                              onClick={() => toggleChecklistExpand(group.id)}
+                            >
+                              <div className="flex items-center gap-1 text-muted-foreground/60 hover:text-muted-foreground transition-colors">
+                                {isExpanded ? (
+                                  <ChevronDown className="h-3.5 w-3.5" />
+                                ) : (
+                                  <ChevronRight className="h-3.5 w-3.5" />
+                                )}
+                                <span className="text-[10px]">{isExpanded ? 'Collapse' : 'Expand'}</span>
+                              </div>
+                            </div>
+
                             {/* Expanded Items Panel */}
                             {isExpanded && (
-                              <div className="border-t border-border/40 bg-muted/30 p-3" onClick={(e) => e.stopPropagation()}>
+                              <div className="border-t border-border/40 bg-muted/30 p-3 mt-1.5" onClick={(e) => e.stopPropagation()}>
                                 {items.length === 0 ? (
                                   <div className="space-y-3">
                                     <p className="text-xs text-muted-foreground text-center py-2">

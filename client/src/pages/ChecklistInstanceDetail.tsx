@@ -269,7 +269,27 @@ export default function ChecklistInstanceDetail() {
       const res = await apiRequest(`/api/checklist-instance-items/${itemId}`, "PATCH", data);
       return res.json();
     },
+    onMutate: async ({ itemId, data }) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/checklist-instances", checklistId, "items"] });
+      const previousItems = queryClient.getQueryData<ChecklistInstanceItem[]>(["/api/checklist-instances", checklistId, "items"]);
+      queryClient.setQueryData<ChecklistInstanceItem[]>(
+        ["/api/checklist-instances", checklistId, "items"],
+        (old) => old?.map(item => item.id === itemId ? { ...item, ...data } : item)
+      );
+      return { previousItems };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previousItems) {
+        queryClient.setQueryData(["/api/checklist-instances", checklistId, "items"], context.previousItems);
+      }
+      toast({ title: "Error", description: "Failed to update item.", variant: "destructive" });
+    },
     onSuccess: (updatedItem) => {
+      if (showNotesDialog && showNotesDialog.id === updatedItem.id) {
+        setShowNotesDialog(updatedItem);
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ 
         predicate: (query) => {
           const key = query.queryKey;
@@ -279,12 +299,6 @@ export default function ChecklistInstanceDetail() {
                  key[0] === "/api/checklist-items";
         }
       });
-      if (showNotesDialog && showNotesDialog.id === updatedItem.id) {
-        setShowNotesDialog(updatedItem);
-      }
-    },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to update item.", variant: "destructive" });
     },
   });
 
@@ -1036,7 +1050,7 @@ export default function ChecklistInstanceDetail() {
             Activity Log
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <ChecklistActivityLog instanceId={id!} />
+            <ChecklistActivityLog instanceId={checklistId!} />
           </CollapsibleContent>
         </Collapsible>
       </div>
