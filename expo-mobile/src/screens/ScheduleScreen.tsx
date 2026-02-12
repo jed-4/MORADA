@@ -66,6 +66,7 @@ type Props = {
 };
 
 type ViewMode = 'list' | 'gantt' | 'calendar';
+type CalendarMode = 'month' | 'week' | 'day';
 
 const PHASE_ORDER: Record<string, number> = {
   construction: 0,
@@ -140,6 +141,8 @@ const TYPE_LABELS: Record<string, string> = {
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MONTHS_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DAY_NAMES_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const DAY_NAMES_MON = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 function formatDateRange(start: string, end: string): string {
   const s = new Date(start);
@@ -186,10 +189,25 @@ function isToday(d: Date): boolean {
   return isSameDay(d, new Date());
 }
 
+function getMondayOfWeek(date: Date): Date {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function parseTimeToHour(timeStr: string): number {
+  const [h, m] = timeStr.split(':').map(Number);
+  return h + (m || 0) / 60;
+}
+
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const DAY_COL_WIDTH = 40;
 const NAME_COL_WIDTH = 140;
 const GANTT_ROW_HEIGHT = 36;
+const HOUR_HEIGHT = 60;
 
 export default function ScheduleScreen({ navigation }: Props) {
   const { user } = useAuth();
@@ -221,6 +239,9 @@ export default function ScheduleScreen({ navigation }: Props) {
   const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
   const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [calendarMode, setCalendarMode] = useState<CalendarMode>('month');
+  const [weekStartDate, setWeekStartDate] = useState<Date>(getMondayOfWeek(new Date()));
+  const [dayViewDate, setDayViewDate] = useState<Date>(new Date());
 
   const ganttScrollRef = useRef<ScrollView>(null);
 
@@ -298,6 +319,7 @@ export default function ScheduleScreen({ navigation }: Props) {
     setDetailNotes(item.notes || '');
     setActivityNotes([]);
     setNewNoteText('');
+    setShowStatusPicker(false);
     setShowDetailSheet(true);
     fetchActivityNotes(item.id);
   }, [fetchActivityNotes]);
@@ -465,49 +487,15 @@ export default function ScheduleScreen({ navigation }: Props) {
     return { minDate, maxDate, days, sortedItems };
   }, [items]);
 
-  const renderPickerModal = (
-    visible: boolean,
-    onClose: () => void,
-    title: string,
-    pickerItems: { id: string; label: string; isHeader?: boolean }[],
-    selectedId: string,
-    onSelect: (id: string) => void,
-  ) => (
-    <Modal visible={visible} animationType="slide" transparent>
-      <View style={styles.pickerOverlay}>
-        <View style={[styles.pickerContainer, { backgroundColor: colors.card }]}>
-          <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
-            <Text style={[styles.pickerTitle, { color: colors.text }]}>{title}</Text>
-            <TouchableOpacity onPress={onClose}>
-              <Ionicons name="close" size={24} color={colors.secondary} />
-            </TouchableOpacity>
-          </View>
-          <FlatList
-            data={pickerItems}
-            keyExtractor={item => item.id}
-            renderItem={({ item }) => {
-              if (item.isHeader) {
-                return (
-                  <View style={[styles.pickerSectionHeader, { backgroundColor: isDark ? '#1e293b' : '#f1f5f9' }]}>
-                    <Text style={[styles.pickerSectionText, { color: colors.secondary }]}>{item.label}</Text>
-                  </View>
-                );
-              }
-              return (
-                <TouchableOpacity
-                  style={[styles.pickerItem, { borderBottomColor: colors.border }]}
-                  onPress={() => { onSelect(item.id); onClose(); }}
-                >
-                  <Text style={[styles.pickerItemText, { color: colors.text }]}>{item.label}</Text>
-                  {selectedId === item.id && <Ionicons name="checkmark" size={20} color={colors.accent} />}
-                </TouchableOpacity>
-              );
-            }}
-          />
-        </View>
-      </View>
-    </Modal>
-  );
+  const getWeekDays = useCallback((): Date[] => {
+    const days: Date[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(weekStartDate);
+      d.setDate(d.getDate() + i);
+      days.push(d);
+    }
+    return days;
+  }, [weekStartDate]);
 
   const renderItemCard = (item: ScheduleItem) => {
     const itemColor = getItemColor(item);
@@ -714,15 +702,35 @@ export default function ScheduleScreen({ navigation }: Props) {
     );
   };
 
-  const renderCalendarView = () => {
+  const renderCalendarModeToggle = () => (
+    <View style={[styles.calModeToggle, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+      {(['month', 'week', 'day'] as CalendarMode[]).map(mode => (
+        <TouchableOpacity
+          key={mode}
+          style={[styles.calModeBtn, calendarMode === mode && { backgroundColor: colors.accent }]}
+          onPress={() => {
+            setCalendarMode(mode);
+            if (mode === 'week') {
+              setWeekStartDate(getMondayOfWeek(selectedDate));
+            } else if (mode === 'day') {
+              setDayViewDate(new Date(selectedDate));
+            }
+          }}
+        >
+          <Text style={[styles.calModeText, { color: calendarMode === mode ? '#fff' : colors.secondary }]}>
+            {mode.charAt(0).toUpperCase() + mode.slice(1)}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+
+  const renderMonthView = () => {
     const rows = getCalendarGrid();
     const selectedDayItems = getItemsForDate(selectedDate);
 
     return (
-      <ScrollView
-        style={styles.flex1}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
-      >
+      <>
         <View style={[styles.calendarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.calendarNav}>
             <TouchableOpacity onPress={() => {
@@ -803,6 +811,225 @@ export default function ScheduleScreen({ navigation }: Props) {
             selectedDayItems.map(renderItemCard)
           )}
         </View>
+      </>
+    );
+  };
+
+  const renderWeekView = () => {
+    const weekDays = getWeekDays();
+    const selectedDayItems = getItemsForDate(selectedDate);
+    const weekEndDate = new Date(weekStartDate);
+    weekEndDate.setDate(weekEndDate.getDate() + 6);
+
+    return (
+      <>
+        <View style={[styles.calendarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={styles.calendarNav}>
+            <TouchableOpacity onPress={() => {
+              const prev = new Date(weekStartDate);
+              prev.setDate(prev.getDate() - 7);
+              setWeekStartDate(prev);
+            }}>
+              <Ionicons name="chevron-back" size={24} color={colors.text} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => {
+              const today = new Date();
+              setWeekStartDate(getMondayOfWeek(today));
+              setSelectedDate(today);
+            }}>
+              <Text style={[styles.calendarTitle, { color: colors.text }]}>
+                {weekStartDate.getDate()} {MONTHS[weekStartDate.getMonth()]} - {weekEndDate.getDate()} {MONTHS[weekEndDate.getMonth()]} {weekEndDate.getFullYear()}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => {
+              const next = new Date(weekStartDate);
+              next.setDate(next.getDate() + 7);
+              setWeekStartDate(next);
+            }}>
+              <Ionicons name="chevron-forward" size={24} color={colors.text} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.weekRow}>
+            {weekDays.map((day, i) => {
+              const today = isToday(day);
+              const selected = isSameDay(day, selectedDate);
+              const dots = getDotsForDate(day);
+
+              return (
+                <TouchableOpacity
+                  key={i}
+                  style={[
+                    styles.weekDayCol,
+                    today && !selected && { backgroundColor: isDark ? '#1e3a5f' : '#dbeafe' },
+                    selected && { backgroundColor: colors.accent },
+                  ]}
+                  onPress={() => setSelectedDate(new Date(day))}
+                >
+                  <Text style={[
+                    styles.weekDayName,
+                    { color: selected ? '#fff' : colors.secondary },
+                    today && !selected && { color: colors.accent },
+                  ]}>
+                    {DAY_NAMES_MON[i]}
+                  </Text>
+                  <Text style={[
+                    styles.weekDayNum,
+                    { color: selected ? '#fff' : colors.text },
+                    today && !selected && { color: colors.accent, fontWeight: '700' },
+                  ]}>
+                    {day.getDate()}
+                  </Text>
+                  {dots.length > 0 && (
+                    <View style={styles.dotsRow}>
+                      {dots.map((color, di) => (
+                        <View key={di} style={[styles.dot, { backgroundColor: selected ? '#fff' : color }]} />
+                      ))}
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
+        <View style={styles.selectedDaySection}>
+          <Text style={[styles.selectedDayTitle, { color: colors.text }]}>
+            {DAY_NAMES_FULL[selectedDate.getDay()]}, {selectedDate.getDate()} {MONTHS_FULL[selectedDate.getMonth()]} {selectedDate.getFullYear()}
+          </Text>
+          {selectedDayItems.length === 0 ? (
+            <Text style={[styles.noDayItems, { color: colors.secondary }]}>No items scheduled for this day</Text>
+          ) : (
+            selectedDayItems.map(renderItemCard)
+          )}
+        </View>
+      </>
+    );
+  };
+
+  const renderDayView = () => {
+    const dayItems = getItemsForDate(dayViewDate);
+    const allDayItems = dayItems.filter(item => !item.startTime || !item.endTime);
+    const timedItems = dayItems.filter(item => item.startTime && item.endTime);
+
+    const startHour = 6;
+    const endHour = 20;
+    const hours: number[] = [];
+    for (let h = startHour; h <= endHour; h++) {
+      hours.push(h);
+    }
+
+    const formatHourLabel = (h: number): string => {
+      if (h === 0) return '12 AM';
+      if (h < 12) return `${h} AM`;
+      if (h === 12) return '12 PM';
+      return `${h - 12} PM`;
+    };
+
+    return (
+      <>
+        <View style={[styles.calendarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={styles.calendarNav}>
+            <TouchableOpacity onPress={() => {
+              const prev = new Date(dayViewDate);
+              prev.setDate(prev.getDate() - 1);
+              setDayViewDate(prev);
+              setSelectedDate(prev);
+            }}>
+              <Ionicons name="chevron-back" size={24} color={colors.text} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => {
+              const today = new Date();
+              setDayViewDate(today);
+              setSelectedDate(today);
+            }}>
+              <Text style={[styles.calendarTitle, { color: colors.text }]}>
+                {DAY_NAMES_FULL[dayViewDate.getDay()]}, {dayViewDate.getDate()} {MONTHS_FULL[dayViewDate.getMonth()]} {dayViewDate.getFullYear()}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => {
+              const next = new Date(dayViewDate);
+              next.setDate(next.getDate() + 1);
+              setDayViewDate(next);
+              setSelectedDate(next);
+            }}>
+              <Ionicons name="chevron-forward" size={24} color={colors.text} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {allDayItems.length > 0 && (
+          <View style={styles.allDaySection}>
+            <Text style={[styles.allDayLabel, { color: colors.secondary }]}>All Day</Text>
+            {allDayItems.map(item => (
+              <TouchableOpacity
+                key={item.id}
+                style={[styles.allDayItem, { backgroundColor: (getItemColor(item)) + '20', borderLeftColor: getItemColor(item) }]}
+                onPress={() => openDetail(item)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.allDayItemText, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
+                <View style={[styles.typeBadge, { backgroundColor: (TYPE_COLORS[item.type] || '#3b82f6') + '20' }]}>
+                  <Text style={[styles.typeBadgeText, { color: TYPE_COLORS[item.type] || '#3b82f6' }]}>{TYPE_LABELS[item.type] || item.type}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
+        <View style={[styles.timelineContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          {hours.map(h => (
+            <View key={h} style={[styles.hourRow, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.hourLabel, { color: colors.secondary }]}>{formatHourLabel(h)}</Text>
+              <View style={[styles.hourLine, { backgroundColor: colors.border }]} />
+            </View>
+          ))}
+
+          {timedItems.map(item => {
+            const itemStartHour = parseTimeToHour(item.startTime!);
+            const itemEndHour = parseTimeToHour(item.endTime!);
+            const clampedStart = Math.max(itemStartHour, startHour);
+            const clampedEnd = Math.min(itemEndHour, endHour + 1);
+            if (clampedEnd <= clampedStart) return null;
+
+            const top = (clampedStart - startHour) * HOUR_HEIGHT;
+            const height = Math.max((clampedEnd - clampedStart) * HOUR_HEIGHT - 2, 20);
+            const itemColor = getItemColor(item);
+
+            return (
+              <TouchableOpacity
+                key={item.id}
+                style={[styles.timeBlock, { top, height, backgroundColor: itemColor + '30', borderLeftColor: itemColor, left: 56 }]}
+                onPress={() => openDetail(item)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.timeBlockName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
+                {height > 30 && (
+                  <Text style={[styles.timeBlockTime, { color: colors.secondary }]}>
+                    {item.startTime} - {item.endTime}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </>
+    );
+  };
+
+  const renderCalendarView = () => {
+    return (
+      <ScrollView
+        style={styles.flex1}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+      >
+        <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
+          {renderCalendarModeToggle()}
+        </View>
+        {calendarMode === 'month' && renderMonthView()}
+        {calendarMode === 'week' && renderWeekView()}
+        {calendarMode === 'day' && renderDayView()}
+        <View style={{ height: 40 }} />
       </ScrollView>
     );
   };
@@ -877,12 +1104,39 @@ export default function ScheduleScreen({ navigation }: Props) {
                   <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Status</Text>
                   <TouchableOpacity
                     style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-                    onPress={() => setShowStatusPicker(true)}
+                    onPress={() => setShowStatusPicker(!showStatusPicker)}
                   >
                     <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
                     <Text style={[styles.fieldPickerText, { color: colors.text }]}>{STATUS_LABELS[detailStatus] || detailStatus}</Text>
-                    <Ionicons name="chevron-down" size={16} color={colors.secondary} />
+                    <Ionicons name={showStatusPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
                   </TouchableOpacity>
+
+                  {showStatusPicker && (
+                    <View style={[styles.inlineStatusList, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+                      {Object.entries(STATUS_LABELS).map(([key, label]) => {
+                        const sc = STATUS_COLORS[key] || '#94a3b8';
+                        const isSelected = detailStatus === key;
+                        return (
+                          <TouchableOpacity
+                            key={key}
+                            style={[
+                              styles.inlineStatusOption,
+                              { borderBottomColor: colors.border },
+                              isSelected && { backgroundColor: sc + '15' },
+                            ]}
+                            onPress={() => {
+                              setDetailStatus(key);
+                              setShowStatusPicker(false);
+                            }}
+                          >
+                            <View style={[styles.statusDot, { backgroundColor: sc }]} />
+                            <Text style={[styles.inlineStatusText, { color: colors.text }]}>{label}</Text>
+                            {isSelected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  )}
 
                   <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Progress ({detailProgress}%)</Text>
                   <View style={styles.progressInputRow}>
@@ -974,18 +1228,46 @@ export default function ScheduleScreen({ navigation }: Props) {
             </View>
           </View>
         </KeyboardAvoidingView>
-
-        {renderPickerModal(
-          showStatusPicker,
-          () => setShowStatusPicker(false),
-          'Select Status',
-          Object.entries(STATUS_LABELS).map(([id, label]) => ({ id, label })),
-          detailStatus,
-          (id) => setDetailStatus(id),
-        )}
       </Modal>
     );
   };
+
+  const renderProjectPickerModal = () => (
+    <Modal visible={showProjectPicker} animationType="slide" transparent>
+      <View style={styles.pickerOverlay}>
+        <View style={[styles.pickerContainer, { backgroundColor: colors.card }]}>
+          <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
+            <Text style={[styles.pickerTitle, { color: colors.text }]}>Select Project</Text>
+            <TouchableOpacity onPress={() => setShowProjectPicker(false)}>
+              <Ionicons name="close" size={24} color={colors.secondary} />
+            </TouchableOpacity>
+          </View>
+          <FlatList
+            data={getSortedProjectItems(projects)}
+            keyExtractor={item => item.id}
+            renderItem={({ item }) => {
+              if (item.isHeader) {
+                return (
+                  <View style={[styles.pickerSectionHeader, { backgroundColor: isDark ? '#1e293b' : '#f1f5f9' }]}>
+                    <Text style={[styles.pickerSectionText, { color: colors.secondary }]}>{item.label}</Text>
+                  </View>
+                );
+              }
+              return (
+                <TouchableOpacity
+                  style={[styles.pickerItem, { borderBottomColor: colors.border }]}
+                  onPress={() => { setSelectedProjectId(item.id); setShowProjectPicker(false); }}
+                >
+                  <Text style={[styles.pickerItemText, { color: colors.text }]}>{item.label}</Text>
+                  {selectedProjectId === item.id && <Ionicons name="checkmark" size={20} color={colors.accent} />}
+                </TouchableOpacity>
+              );
+            }}
+          />
+        </View>
+      </View>
+    </Modal>
+  );
 
   if (loading && projects.length === 0) {
     return (
@@ -1052,15 +1334,7 @@ export default function ScheduleScreen({ navigation }: Props) {
         </>
       )}
 
-      {renderPickerModal(
-        showProjectPicker,
-        () => setShowProjectPicker(false),
-        'Select Project',
-        getSortedProjectItems(projects),
-        selectedProjectId || '',
-        (id) => setSelectedProjectId(id),
-      )}
-
+      {renderProjectPickerModal()}
       {renderDetailSheet()}
     </View>
   );
@@ -1128,7 +1402,11 @@ const styles = StyleSheet.create({
   ganttBar: { position: 'absolute', top: 6, height: GANTT_ROW_HEIGHT - 12, borderRadius: 4, justifyContent: 'center', paddingHorizontal: 4 },
   ganttBarText: { color: '#fff', fontSize: 9, fontWeight: '600' },
 
-  calendarCard: { margin: 16, borderWidth: 1, borderRadius: 12, padding: 12 },
+  calModeToggle: { flexDirection: 'row', borderWidth: 1, borderRadius: 8, overflow: 'hidden', marginBottom: 4 },
+  calModeBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 7 },
+  calModeText: { fontSize: 12, fontWeight: '600' },
+
+  calendarCard: { margin: 16, marginBottom: 8, borderWidth: 1, borderRadius: 12, padding: 12 },
   calendarNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   calendarTitle: { fontSize: 16, fontWeight: '700' },
   calendarDayNames: { flexDirection: 'row' },
@@ -1142,6 +1420,24 @@ const styles = StyleSheet.create({
   selectedDaySection: { paddingHorizontal: 16, paddingBottom: 40 },
   selectedDayTitle: { fontSize: 16, fontWeight: '700', marginBottom: 12 },
   noDayItems: { fontSize: 14, textAlign: 'center', paddingVertical: 20 },
+
+  weekRow: { flexDirection: 'row', gap: 2 },
+  weekDayCol: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 8, minHeight: 64, justifyContent: 'center' },
+  weekDayName: { fontSize: 10, fontWeight: '600', marginBottom: 2 },
+  weekDayNum: { fontSize: 16, fontWeight: '600' },
+
+  allDaySection: { marginHorizontal: 16, marginBottom: 8 },
+  allDayLabel: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
+  allDayItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 8, borderLeftWidth: 3, borderRadius: 6, marginBottom: 4 },
+  allDayItemText: { fontSize: 13, fontWeight: '500', flex: 1, marginRight: 8 },
+
+  timelineContainer: { marginHorizontal: 16, borderWidth: 1, borderRadius: 12, padding: 0, position: 'relative', overflow: 'hidden' },
+  hourRow: { height: HOUR_HEIGHT, flexDirection: 'row', alignItems: 'flex-start', borderBottomWidth: StyleSheet.hairlineWidth },
+  hourLabel: { width: 52, fontSize: 10, fontWeight: '500', paddingTop: 4, paddingLeft: 8 },
+  hourLine: { flex: 1, height: StyleSheet.hairlineWidth, marginTop: 12 },
+  timeBlock: { position: 'absolute', right: 8, borderLeftWidth: 3, borderRadius: 4, paddingHorizontal: 8, paddingVertical: 4, justifyContent: 'center' },
+  timeBlockName: { fontSize: 12, fontWeight: '600' },
+  timeBlockTime: { fontSize: 10, marginTop: 1 },
 
   detailOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
   detailContainer: { maxHeight: '90%', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 20 },
@@ -1159,6 +1455,9 @@ const styles = StyleSheet.create({
   fieldPicker: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
   fieldPickerText: { flex: 1, fontSize: 14 },
   statusDot: { width: 8, height: 8, borderRadius: 4 },
+  inlineStatusList: { borderWidth: 1, borderRadius: 8, marginTop: 4, overflow: 'hidden' },
+  inlineStatusOption: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, gap: 8, borderBottomWidth: StyleSheet.hairlineWidth },
+  inlineStatusText: { flex: 1, fontSize: 14, fontWeight: '500' },
   progressInputRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   progressTrackLarge: { flex: 1, height: 6, borderRadius: 3, overflow: 'hidden' },
   progressFillLarge: { height: '100%', borderRadius: 3 },
