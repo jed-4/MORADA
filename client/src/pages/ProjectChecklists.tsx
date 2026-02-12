@@ -1,10 +1,11 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { useUpload } from "@/hooks/use-upload";
 import { format } from "date-fns";
 import {
   type ChecklistInstance,
@@ -21,6 +22,17 @@ type Task = {
   id: string;
   title: string;
   projectId: string | null;
+};
+
+type AssignableUser = {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  displayName: string;
+  email: string;
+  profileImageUrl: string | null;
+  roleId: string | null;
+  roleName: string | null;
 };
 
 import { Button } from "@/components/ui/button";
@@ -217,6 +229,11 @@ export default function ProjectChecklists() {
   const [showNotesDialog, setShowNotesDialog] = useState<ChecklistInstanceItem | null>(null);
   const [newNoteText, setNewNoteText] = useState("");
   const [openAssignPopover, setOpenAssignPopover] = useState<string | null>(null);
+  const [openAttachPopover, setOpenAttachPopover] = useState<string | null>(null);
+  const [uploadingItemId, setUploadingItemId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadTargetRef = useRef<string | null>(null);
+  const { uploadFile, isUploading } = useUpload();
   
   const [formData, setFormData] = useState({
     templateId: "",
@@ -297,8 +314,8 @@ export default function ProjectChecklists() {
     queryKey: ["/api/checklist-templates"],
   });
 
-  const { data: teamMembers = [] } = useQuery<User[]>({
-    queryKey: ["/api/users"],
+  const { data: teamMembers = [] } = useQuery<AssignableUser[]>({
+    queryKey: ["/api/users/assignable"],
   });
 
   const { data: templateGroups = [] } = useQuery<ChecklistTemplateGroup[]>({
@@ -343,7 +360,7 @@ export default function ProjectChecklists() {
       const result = await apiRequest("/api/checklist-instances", "POST", {
         ...data,
         projectId,
-        assigneeName: teamMembers.find(u => u.id === data.assigneeId)?.name,
+        assigneeName: teamMembers.find(u => u.id === data.assigneeId)?.displayName,
         dueDate: data.dueDate ? new Date(data.dueDate) : null,
         selectedGroupIds: data.selectedGroupIds.length > 0 ? data.selectedGroupIds : undefined,
       });
@@ -597,6 +614,53 @@ export default function ProjectChecklists() {
     setNewNoteText("");
   };
 
+  const handleFileUpload = async (itemId: string, files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const allItems = Object.values(checklistItems).flat();
+    const item = allItems.find(i => i.id === itemId);
+    let currentAttachments = Array.isArray(item?.attachmentIds) ? [...(item.attachmentIds as any[])] : [];
+    if (currentAttachments.length + files.length > 3) {
+      toast({ title: "Limit reached", description: "Maximum 3 attachments per item.", variant: "destructive" });
+      return;
+    }
+    setUploadingItemId(itemId);
+    for (const file of Array.from(files)) {
+      if (file.size > 10 * 1024 * 1024) {
+        toast({ title: "File too large", description: `${file.name} exceeds 10MB limit.`, variant: "destructive" });
+        continue;
+      }
+      const response = await uploadFile(file);
+      if (response) {
+        const newAttachment = {
+          name: response.metadata.name,
+          path: response.objectPath,
+          contentType: response.metadata.contentType,
+          size: response.metadata.size,
+          uploadedAt: new Date().toISOString(),
+          uploadedBy: user?.name || "Unknown",
+        };
+        currentAttachments = [...currentAttachments, newAttachment];
+        updateItemMutation.mutate({
+          itemId,
+          data: { attachmentIds: currentAttachments }
+        });
+        toast({ title: "File attached", description: response.metadata.name });
+      }
+    }
+    setUploadingItemId(null);
+  };
+
+  const handleRemoveAttachment = (itemId: string, attachmentIndex: number) => {
+    const allItems = Object.values(checklistItems).flat();
+    const item = allItems.find(i => i.id === itemId);
+    const existingAttachments = Array.isArray(item?.attachmentIds) ? [...(item.attachmentIds as any[])] : [];
+    existingAttachments.splice(attachmentIndex, 1);
+    updateItemMutation.mutate({
+      itemId,
+      data: { attachmentIds: existingAttachments }
+    });
+  };
+
   const toggleChecklistExpand = (checklistId: string) => {
     setExpandedChecklists(prev => {
       const next = new Set(prev);
@@ -824,7 +888,7 @@ export default function ProjectChecklists() {
               <SelectItem value="all">All Assignees</SelectItem>
               {teamMembers.map((member) => (
                 <SelectItem key={member.id} value={member.id}>
-                  {member.name}
+                  {member.displayName}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -1036,16 +1100,16 @@ export default function ProjectChecklists() {
                                             onClick={() => {
                                               updateGroupMutation.mutate({ 
                                                 groupId: group.id, 
-                                                data: { assigneeId: member.id, assigneeName: member.name }
+                                                data: { assigneeId: member.id, assigneeName: member.displayName }
                                               });
                                             }}
                                           >
                                             <Avatar className="h-4 w-4 mr-2">
                                               <AvatarFallback className="text-[8px] bg-[#bba7db]/20 text-[#bba7db]">
-                                                {member.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                                                {member.displayName?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                                               </AvatarFallback>
                                             </Avatar>
-                                            {member.name}
+                                            {member.displayName}
                                             {group.assigneeId === member.id && (
                                               <Check className="h-3 w-3 ml-auto text-[#bba7db]" />
                                             )}
@@ -1356,7 +1420,7 @@ export default function ProjectChecklists() {
                                                     <TooltipTrigger asChild>
                                                       <button
                                                         className="p-0.5 rounded hover:bg-muted/60 transition-colors"
-                                                        onClick={() => setShowNotesDialog(item)}
+                                                        onClick={(e) => { e.stopPropagation(); setShowNotesDialog(item); }}
                                                       >
                                                         <MessageSquare className={`h-3.5 w-3.5 shrink-0 ${item.notes ? 'text-amber-500' : 'text-muted-foreground/40'}`} />
                                                       </button>
@@ -1366,27 +1430,20 @@ export default function ProjectChecklists() {
                                                     </TooltipContent>
                                                   </Tooltip>
                                                   <Popover open={openAssignPopover === item.id} onOpenChange={(open) => setOpenAssignPopover(open ? item.id : null)}>
-                                                    <Tooltip>
-                                                      <TooltipTrigger asChild>
-                                                        <PopoverTrigger asChild>
-                                                          <button className="p-0.5 rounded hover:bg-muted/60 transition-colors">
-                                                            {item.assigneeName ? (
-                                                              <Avatar className="h-5 w-5">
-                                                                <AvatarFallback className="text-[9px] bg-[#bba7db]/20 text-[#bba7db]">
-                                                                  {item.assigneeName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                                                                </AvatarFallback>
-                                                              </Avatar>
-                                                            ) : (
-                                                              <UserPlus className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
-                                                            )}
-                                                          </button>
-                                                        </PopoverTrigger>
-                                                      </TooltipTrigger>
-                                                      <TooltipContent side="top">
-                                                        <p className="text-xs">{item.assigneeName || 'Assign'}</p>
-                                                      </TooltipContent>
-                                                    </Tooltip>
-                                                    <PopoverContent className="w-48 p-1" align="end">
+                                                    <PopoverTrigger asChild>
+                                                      <button className="p-0.5 rounded hover:bg-muted/60 transition-colors" onClick={(e) => e.stopPropagation()}>
+                                                        {item.assigneeName ? (
+                                                          <Avatar className="h-5 w-5">
+                                                            <AvatarFallback className="text-[9px] bg-[#bba7db]/20 text-[#bba7db]">
+                                                              {item.assigneeName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                                                            </AvatarFallback>
+                                                          </Avatar>
+                                                        ) : (
+                                                          <UserPlus className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
+                                                        )}
+                                                      </button>
+                                                    </PopoverTrigger>
+                                                    <PopoverContent className="w-48 p-1" align="end" onClick={(e) => e.stopPropagation()}>
                                                       <div className="space-y-0.5">
                                                         {item.assigneeId && (
                                                           <button
@@ -1404,36 +1461,74 @@ export default function ProjectChecklists() {
                                                             key={member.id}
                                                             className={`w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted/60 flex items-center gap-2 ${item.assigneeId === member.id ? 'bg-muted/40' : ''}`}
                                                             onClick={() => {
-                                                              updateItemMutation.mutate({ itemId: item.id, data: { assigneeId: member.id, assigneeName: member.name } });
+                                                              updateItemMutation.mutate({ itemId: item.id, data: { assigneeId: member.id, assigneeName: member.displayName } });
                                                               setOpenAssignPopover(null);
                                                             }}
                                                           >
                                                             <Avatar className="h-4 w-4">
                                                               <AvatarFallback className="text-[8px] bg-[#bba7db]/20 text-[#bba7db]">
-                                                                {member.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                                                                {member.displayName?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                                                               </AvatarFallback>
                                                             </Avatar>
-                                                            {member.name}
+                                                            {member.displayName}
                                                             {item.assigneeId === member.id && <Check className="h-3 w-3 ml-auto text-[#bba7db]" />}
                                                           </button>
                                                         ))}
                                                       </div>
                                                     </PopoverContent>
                                                   </Popover>
-                                                  <Tooltip>
-                                                    <TooltipTrigger asChild>
-                                                      <button className="p-0.5 rounded hover:bg-muted/60 transition-colors">
-                                                        <Paperclip className={`h-3.5 w-3.5 shrink-0 ${Array.isArray(item.attachmentIds) && (item.attachmentIds as any[]).length > 0 ? 'text-[#bba7db]' : 'text-muted-foreground/40'}`} />
+                                                  <Popover open={openAttachPopover === item.id} onOpenChange={(open) => { setOpenAttachPopover(open ? item.id : null); if (!open) { uploadTargetRef.current = null; } }}>
+                                                    <PopoverTrigger asChild>
+                                                      <button className="p-0.5 rounded hover:bg-muted/60 transition-colors" onClick={(e) => e.stopPropagation()}>
+                                                        {uploadingItemId === item.id ? (
+                                                          <Loader2 className="h-3.5 w-3.5 animate-spin text-[#bba7db]" />
+                                                        ) : (
+                                                          <Paperclip className={`h-3.5 w-3.5 shrink-0 ${Array.isArray(item.attachmentIds) && (item.attachmentIds as any[]).length > 0 ? 'text-[#bba7db]' : 'text-muted-foreground/40'}`} />
+                                                        )}
                                                       </button>
-                                                    </TooltipTrigger>
-                                                    <TooltipContent side="top">
-                                                      <p className="text-xs">
-                                                        {Array.isArray(item.attachmentIds) && (item.attachmentIds as any[]).length > 0
-                                                          ? `${(item.attachmentIds as any[]).length} attachment(s)`
-                                                          : 'Attachments'}
-                                                      </p>
-                                                    </TooltipContent>
-                                                  </Tooltip>
+                                                    </PopoverTrigger>
+                                                    <PopoverContent className="w-56 p-2" align="end" onClick={(e) => e.stopPropagation()}>
+                                                      <div className="space-y-2">
+                                                        <div className="flex items-center justify-between">
+                                                          <p className="text-xs font-medium text-muted-foreground">Attachments</p>
+                                                          <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="h-6 text-xs"
+                                                            onClick={(e) => {
+                                                              e.stopPropagation();
+                                                              uploadTargetRef.current = item.id;
+                                                              setUploadingItemId(item.id);
+                                                              fileInputRef.current?.click();
+                                                            }}
+                                                            disabled={isUploading}
+                                                          >
+                                                            <Plus className="h-3 w-3 mr-1" />
+                                                            Add
+                                                          </Button>
+                                                        </div>
+                                                        {Array.isArray(item.attachmentIds) && (item.attachmentIds as any[]).length > 0 ? (
+                                                          <div className="space-y-1">
+                                                            {(item.attachmentIds as any[]).map((att: any, idx: number) => (
+                                                              <div key={idx} className="flex items-center gap-2 p-1.5 rounded bg-muted/30 text-xs">
+                                                                <Paperclip className="h-3 w-3 text-muted-foreground shrink-0" />
+                                                                <span className="flex-1 truncate">{att.name || 'File'}</span>
+                                                                <button
+                                                                  className="p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                                                                  onClick={(e) => { e.stopPropagation(); handleRemoveAttachment(item.id, idx); }}
+                                                                >
+                                                                  <X className="h-3 w-3" />
+                                                                </button>
+                                                              </div>
+                                                            ))}
+                                                          </div>
+                                                        ) : (
+                                                          <p className="text-[11px] text-muted-foreground text-center py-2">No attachments</p>
+                                                        )}
+                                                        <p className="text-[10px] text-muted-foreground">Max 3 files, 10MB each</p>
+                                                      </div>
+                                                    </PopoverContent>
+                                                  </Popover>
                                                   {item.completedByName && item.status === "completed" && (
                                                     <Tooltip>
                                                       <TooltipTrigger asChild>
@@ -1907,6 +2002,21 @@ export default function ProjectChecklists() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <input
+        type="file"
+        ref={fileInputRef}
+        className="hidden"
+        onChange={(e) => {
+          const targetId = uploadTargetRef.current;
+          if (targetId) {
+            handleFileUpload(targetId, e.target.files);
+            uploadTargetRef.current = null;
+          }
+          e.target.value = '';
+        }}
+        accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt"
+      />
     </div>
   );
 }

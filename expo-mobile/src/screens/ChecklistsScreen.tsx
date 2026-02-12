@@ -389,20 +389,25 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
           </View>
 
           <View style={styles.expandIndicatorRow}>
-            <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.muted} />
-            {isExpanded && hasGroups && (
-              <TouchableOpacity
-                onPress={(e) => { e.stopPropagation(); toggleAllInstanceGroups(); }}
-                style={styles.collapseAllBelowBtn}
-                activeOpacity={0.7}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Ionicons name={allGroupsCollapsed ? 'chevron-down' : 'chevron-up'} size={13} color={colors.secondary} />
-                <Text style={[styles.collapseAllText, { color: colors.secondary }]}>
-                  {allGroupsCollapsed ? 'Expand All' : 'Collapse All'}
-                </Text>
-              </TouchableOpacity>
-            )}
+            <View style={styles.expandIndicatorSpacer} />
+            <View style={styles.expandIndicatorCenter}>
+              <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.muted} />
+            </View>
+            <View style={styles.expandIndicatorRight}>
+              {isExpanded && hasGroups && (
+                <TouchableOpacity
+                  onPress={(e) => { e.stopPropagation(); toggleAllInstanceGroups(); }}
+                  style={styles.collapseAllBelowBtn}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name={allGroupsCollapsed ? 'chevron-down' : 'chevron-up'} size={13} color={colors.secondary} />
+                  <Text style={[styles.collapseAllText, { color: colors.secondary }]}>
+                    {allGroupsCollapsed ? 'Expand All' : 'Collapse All'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
         </TouchableOpacity>
 
@@ -528,7 +533,10 @@ const styles = StyleSheet.create({
   instanceMetaRight: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   metaText: { fontSize: 11 },
-  expandIndicatorRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 4, gap: 12 },
+  expandIndicatorRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
+  expandIndicatorSpacer: { flex: 1 },
+  expandIndicatorCenter: { alignItems: 'center' },
+  expandIndicatorRight: { flex: 1, alignItems: 'flex-end' },
   itemsContainer: { borderTopWidth: 1, paddingHorizontal: 14, paddingVertical: 8 },
   collapseAllBtn: {
     flexDirection: 'row',
