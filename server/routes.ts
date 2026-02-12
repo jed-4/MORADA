@@ -1316,6 +1316,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Generic audio transcription endpoint (voice-to-text)
+  app.post("/api/transcribe-audio", recordingUpload.single('audio'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No audio file uploaded" });
+      }
+
+      const OpenAI = (await import('openai')).default;
+      const openai = new OpenAI({
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+      });
+
+      const file = new File([req.file.buffer], req.file.originalname || 'audio.m4a', { type: req.file.mimetype });
+
+      const transcription = await openai.audio.transcriptions.create({
+        file: file,
+        model: "gpt-4o-mini-transcribe",
+        response_format: "json",
+      });
+
+      res.json({ text: transcription.text });
+    } catch (error) {
+      console.error("Failed to transcribe audio:", error);
+      res.status(500).json({ error: "Failed to transcribe audio" });
+    }
+  });
+
   // Custom Field Definitions API Routes
   app.get("/api/custom-field-defs", async (req, res) => {
     try {

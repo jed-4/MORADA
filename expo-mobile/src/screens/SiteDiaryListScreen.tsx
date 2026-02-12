@@ -23,6 +23,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest } from '../services/api';
+import VoiceToTextButton from '../components/VoiceToTextButton';
 import { isOnline } from '../services/offlineQueue';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
@@ -789,7 +790,12 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
                 <Ionicons name="chevron-down" size={18} color={colors.secondary} />
               </TouchableOpacity>
 
-              <Text style={[styles.fieldLabel, { color: isDark ? '#f1f5f9' : '#0f172a' }]}>Notes</Text>
+              <View style={styles.fieldLabelRow}>
+                <Text style={[styles.fieldLabel, { color: isDark ? '#f1f5f9' : '#0f172a', marginBottom: 0 }]}>Notes</Text>
+                <VoiceToTextButton
+                  onTranscription={(text) => setQuickAddNotes(prev => prev + (prev ? ' ' : '') + text)}
+                />
+              </View>
               <TextInput
                 style={[styles.input, styles.textArea, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                 value={quickAddNotes}
@@ -1294,6 +1300,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 32,
+  },
+  fieldLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+    gap: 8,
   },
   fieldLabel: {
     fontSize: 13,
