@@ -1329,7 +1329,7 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
               </TouchableOpacity>
             </View>
             <FlatList
-              data={allTemplates}
+              data={[...allTemplates].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))}
               keyExtractor={item => item.id}
               contentContainerStyle={{ paddingBottom: 40 }}
               renderItem={({ item }) => (
