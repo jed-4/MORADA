@@ -61,6 +61,7 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [itemsByInstance, setItemsByInstance] = useState<Record<string, ChecklistItem[]>>({});
   const [loadingItems, setLoadingItems] = useState<Record<string, boolean>>({});
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState<string>('');
   const [refreshing, setRefreshing] = useState(false);
@@ -257,6 +258,10 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
     </TouchableOpacity>
   );
 
+  const toggleGroup = (groupKey: string) => {
+    setCollapsedGroups(prev => ({ ...prev, [groupKey]: !prev[groupKey] }));
+  };
+
   const renderExpandedItems = (instanceId: string) => {
     if (loadingItems[instanceId]) {
       return (
@@ -277,12 +282,27 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
     return (
       <View style={[styles.itemsContainer, { borderTopColor: colors.border }]}>
         {ungrouped.length > 0 && ungrouped.map(renderItemRow)}
-        {Object.entries(groups).map(([groupName, groupItems]) => (
-          <View key={groupName}>
-            <Text style={[styles.groupHeader, { color: colors.accent }]}>{groupName}</Text>
-            {groupItems.map(renderItemRow)}
-          </View>
-        ))}
+        {Object.entries(groups).map(([groupName, grpItems]) => {
+          const groupKey = `${instanceId}:${groupName}`;
+          const isCollapsed = collapsedGroups[groupKey];
+          const completedInGroup = grpItems.filter(i => i.status === 'completed' || i.status === 'na').length;
+          return (
+            <View key={groupName}>
+              <TouchableOpacity
+                style={[styles.groupHeaderRow, { borderColor: colors.border }]}
+                onPress={() => toggleGroup(groupKey)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name={isCollapsed ? 'chevron-forward' : 'chevron-down'} size={14} color={colors.accent} />
+                <Text style={[styles.groupHeader, { color: colors.accent }]} numberOfLines={1}>{groupName}</Text>
+                <Text style={[styles.groupCount, { color: colors.secondary }]}>
+                  {completedInGroup}/{grpItems.length}
+                </Text>
+              </TouchableOpacity>
+              {!isCollapsed && grpItems.map(renderItemRow)}
+            </View>
+          );
+        })}
       </View>
     );
   };
@@ -453,8 +473,8 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     overflow: 'hidden',
   },
-  instanceHeader: { padding: 14 },
-  instanceTop: { marginBottom: 10 },
+  instanceHeader: { padding: 12 },
+  instanceTop: { marginBottom: 6 },
   instanceTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -465,8 +485,8 @@ const styles = StyleSheet.create({
   statusBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
   statusBadgeText: { fontSize: 11, fontWeight: '600' },
   instanceDesc: { fontSize: 12, marginTop: 4 },
-  instanceMeta: { gap: 8 },
-  progressSection: { gap: 4 },
+  instanceMeta: { gap: 6 },
+  progressSection: { gap: 3 },
   progressBar: {
     height: 6,
     borderRadius: 3,
@@ -485,13 +505,24 @@ const styles = StyleSheet.create({
   itemsLoading: { padding: 20, alignItems: 'center' },
   itemsEmpty: { padding: 16, alignItems: 'center' },
   itemsEmptyText: { fontSize: 13 },
+  groupHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    marginTop: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
   groupHeader: {
     fontSize: 12,
     fontWeight: '600',
-    marginTop: 10,
-    marginBottom: 6,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+    flex: 1,
+  },
+  groupCount: {
+    fontSize: 11,
+    fontWeight: '500',
   },
   itemRow: {
     flexDirection: 'row',

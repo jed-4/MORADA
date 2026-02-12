@@ -70,6 +70,7 @@ function MoreStack() {
       <Stack.Screen name="SiteDiaryList" component={SiteDiaryListScreen} />
       <Stack.Screen name="Schedule" component={ScheduleScreen} options={{ headerShown: true, title: 'Schedule' }} />
       <Stack.Screen name="Checklists" component={ChecklistsScreen} options={{ headerShown: true, title: 'Checklists' }} />
+      <Stack.Screen name="Tasks" component={TasksScreen} options={{ headerShown: true, title: 'My Tasks' }} />
     </Stack.Navigator>
   );
 }
@@ -89,7 +90,6 @@ function MainTabs() {
           let iconName: keyof typeof Ionicons.glyphMap = 'home';
           if (route.name === 'Workspace') iconName = focused ? 'home' : 'home-outline';
           else if (route.name === 'Projects') iconName = focused ? 'briefcase' : 'briefcase-outline';
-          else if (route.name === 'Tasks') iconName = focused ? 'checkbox' : 'checkbox-outline';
           else if (route.name === 'Timesheets') iconName = focused ? 'time' : 'time-outline';
           else if (route.name === 'More') iconName = focused ? 'grid' : 'grid-outline';
           return <Ionicons name={iconName} size={size} color={color} />;
@@ -107,7 +107,6 @@ function MainTabs() {
     >
       <Tab.Screen name="Workspace" component={DashboardScreen} />
       <Tab.Screen name="Projects" component={ProjectsStack} />
-      <Tab.Screen name="Tasks" component={TasksScreen} />
       <Tab.Screen name="Timesheets" component={TimesheetsScreen} />
       <Tab.Screen name="More" component={MoreStack} />
     </Tab.Navigator>

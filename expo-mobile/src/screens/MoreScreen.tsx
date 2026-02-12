@@ -47,7 +47,7 @@ const quickAddItems: QuickAddItem[] = [
 
 const moreItems: MoreItem[] = [
   { id: 'site-diary', label: 'Site Diary', icon: 'book', color: '#b196d2', action: 'navigate', screen: 'SiteDiaryList' },
-  { id: 'tasks', label: 'My Tasks', icon: 'checkbox', color: '#8b5cf6', action: 'coming-soon' },
+  { id: 'tasks', label: 'My Tasks', icon: 'checkbox', color: '#8b5cf6', action: 'navigate', screen: 'Tasks' },
   { id: 'messages', label: 'Messages', icon: 'chatbubbles', color: '#10b981', action: 'coming-soon' },
   { id: 'contacts', label: 'Contacts', icon: 'people', color: '#f59e0b', action: 'coming-soon' },
   { id: 'schedule', label: 'Schedule', icon: 'calendar', color: '#ef4444', action: 'navigate', screen: 'Schedule' },
