@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { apiFetch, apiRequest } from '../services/api';
+import { addToQueue, isOnline } from '../services/offlineQueue';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
@@ -169,22 +170,29 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
           : inst
       )
     );
-    apiRequest(`/api/checklist-instance-items/${item.id}`, 'PATCH', { status: newStatus }).catch(() => {
-      setItemsByInstance(prev => {
-        const items = prev[item.instanceId] || [];
-        return {
-          ...prev,
-          [item.instanceId]: items.map(i => i.id === item.id ? { ...i, status: item.status } : i),
-        };
-      });
-      setInstances(prev =>
-        prev.map(inst =>
-          inst.id === item.instanceId
-            ? { ...inst, completedCount: Math.max(0, inst.completedCount - delta) }
-            : inst
-        )
-      );
-    });
+    (async () => {
+      const online = await isOnline();
+      if (online) {
+        apiRequest(`/api/checklist-instance-items/${item.id}`, 'PATCH', { status: newStatus }).catch(() => {
+          setItemsByInstance(prev => {
+            const items = prev[item.instanceId] || [];
+            return {
+              ...prev,
+              [item.instanceId]: items.map(i => i.id === item.id ? { ...i, status: item.status } : i),
+            };
+          });
+          setInstances(prev =>
+            prev.map(inst =>
+              inst.id === item.instanceId
+                ? { ...inst, completedCount: Math.max(0, inst.completedCount - delta) }
+                : inst
+            )
+          );
+        });
+      } else {
+        await addToQueue({ type: 'update-checklist-item', payload: { id: item.id, status: newStatus } });
+      }
+    })();
   };
 
   const getCheckboxIcon = (status: string): keyof typeof Ionicons.glyphMap => {

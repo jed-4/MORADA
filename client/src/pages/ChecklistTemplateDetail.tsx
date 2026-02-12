@@ -244,15 +244,15 @@ export default function ChecklistTemplateDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates"] });
       toast({
-        title: "Checklist group deleted",
-        description: "The checklist group and all its contents have been deleted.",
+        title: "Template deleted",
+        description: "The template and all its contents have been deleted.",
       });
       setLocation("/checklist-templates");
     },
     onError: (error: any) => {
       toast({
         title: "Error",
-        description: error.message || "Failed to delete checklist group.",
+        description: error.message || "Failed to delete template.",
         variant: "destructive",
       });
     },
@@ -554,9 +554,9 @@ export default function ChecklistTemplateDetail() {
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Checklist Group</AlertDialogTitle>
+            <AlertDialogTitle>Delete Template</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete "{template.name}"? This will permanently remove this checklist group along with all its checklists and items. This action cannot be undone.
+              Are you sure you want to delete "{template.name}"? This will permanently remove this template along with all its checklists and items. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -660,7 +660,7 @@ function SortableGroupItem({
             data-testid={`button-move-group-${group.id}`}
           >
             <FolderInput className="h-4 w-4 mr-2" />
-            Move to Checklist Group
+            Move to Template
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
@@ -1147,18 +1147,18 @@ function MoveToGroupDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Move to Checklist Group</DialogTitle>
+          <DialogTitle>Move to Template</DialogTitle>
           <DialogDescription>
-            Move "{sourceGroup?.name}" to a different checklist group.
+            Move "{sourceGroup?.name}" to a different template.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-4">
           <div className="space-y-2">
-            <label className="text-sm font-medium">Select destination checklist group</label>
+            <label className="text-sm font-medium">Select destination template</label>
             <Select value={targetTemplateId} onValueChange={setTargetTemplateId} disabled={isLoading}>
               <SelectTrigger data-testid="select-target-group">
-                <SelectValue placeholder={isLoading ? "Loading..." : "Choose a checklist group..."} />
+                <SelectValue placeholder={isLoading ? "Loading..." : "Choose a template..."} />
               </SelectTrigger>
               <SelectContent>
                 {availableTemplates.map((template) => (
@@ -1181,7 +1181,7 @@ function MoveToGroupDialog({
           {!isLoading && availableTemplates.length === 0 && (
             <div className="p-3 bg-muted rounded-md text-sm text-center">
               <p className="text-muted-foreground">
-                No other checklist groups available. Create another checklist group first.
+                No other templates available. Create another template first.
               </p>
             </div>
           )}

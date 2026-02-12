@@ -123,7 +123,8 @@ import {
   insertDashboardViewSchema,
   insertPaymentTermsOptionSchema,
   insertPinnedItemSchema,
-  pinnedItems
+  pinnedItems,
+  insertChecklistStatusTriggerSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -2379,6 +2380,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Project not found" });
       }
       
+      // Trigger automatic checklist creation when project status changes
+      if (('projectStatus' in req.body || 'projectSubStatus' in req.body) && project.companyId) {
+        try {
+          const user = (req as any).user;
+          const newStatus = project.projectSubStatus || project.projectStatus;
+          if (newStatus) {
+            const triggers = await storage.getChecklistStatusTriggers(project.companyId);
+            const activeTriggers = triggers.filter(
+              t => t.isActive && t.projectStatus === newStatus
+            );
+
+            for (const trigger of activeTriggers) {
+              try {
+                const template = await storage.getChecklistTemplate(trigger.templateId);
+                if (!template) continue;
+
+                const instance = await storage.createChecklistInstance({
+                  templateId: template.id,
+                  name: template.name,
+                  projectId: project.id,
+                  companyId: project.companyId,
+                  status: "active",
+                  createdBy: user?.id || null,
+                  createdByName: user?.firstName && user?.lastName
+                    ? `${user.firstName} ${user.lastName}`.trim()
+                    : user?.email || 'System',
+                  assigneeId: null,
+                } as any);
+
+                const groups = await storage.getChecklistTemplateGroups(template.id);
+                for (const group of groups) {
+                  const instanceGroup = await storage.createChecklistInstanceGroup({
+                    instanceId: instance.id,
+                    name: group.name,
+                    order: group.order,
+                    status: "active",
+                  });
+
+                  const templateItems = await storage.getChecklistTemplateItems(group.id);
+                  for (const templateItem of templateItems) {
+                    await storage.createChecklistInstanceItem({
+                      instanceId: instance.id,
+                      groupId: instanceGroup.id,
+                      groupName: group.name,
+                      groupOrder: group.order,
+                      description: templateItem.description,
+                      tooltip: templateItem.tooltip,
+                      order: templateItem.order,
+                      isRequired: templateItem.isRequired ?? false,
+                      status: "pending",
+                    });
+                  }
+                }
+
+                console.log(`[PATCH /api/projects/:id] Auto-created checklist "${template.name}" for project ${project.id} (trigger: ${trigger.id})`);
+              } catch (triggerError) {
+                console.error(`[PATCH /api/projects/:id] Failed to execute checklist trigger ${trigger.id}:`, triggerError);
+              }
+            }
+          }
+        } catch (triggerError) {
+          console.error("[PATCH /api/projects/:id] Error processing checklist triggers:", triggerError);
+        }
+      }
+
       console.log("[PATCH /api/projects/:id] Project updated successfully");
       res.json(project);
     } catch (error: any) {
@@ -13241,10 +13307,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      const existingGroup = await storage.getChecklistInstanceGroup(req.params.id);
       const group = await storage.updateChecklistInstanceGroup(req.params.id, validationResult.data);
       if (!group) {
         return res.status(404).json({ error: "Checklist group not found" });
       }
+
+      if (validationResult.data.assigneeId && validationResult.data.assigneeId !== existingGroup?.assigneeId) {
+        try {
+          const instance = group.instanceId ? await storage.getChecklistInstance(group.instanceId) : null;
+          const currentUser = (req as any).user;
+          if (currentUser && validationResult.data.assigneeId !== currentUser.id) {
+            await storage.createNotification({
+              userId: validationResult.data.assigneeId,
+              companyId: currentUser.companyId,
+              type: "checklist_assigned",
+              title: "Checklist assigned to you",
+              message: `You have been assigned to checklist "${group.name}"${instance ? ` in "${instance.name}"` : ""}`,
+              link: instance ? `/projects/${instance.projectId}/checklists/${instance.id}` : undefined,
+              entityType: "checklist_group",
+              entityId: group.id,
+              isRead: false,
+              createdByUserId: currentUser.id,
+            });
+          }
+        } catch (notifError) {
+          console.error("Failed to create checklist assignment notification:", notifError);
+        }
+      }
+
       res.json(group);
     } catch (error: any) {
       res.status(500).json({ 
@@ -13327,10 +13418,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      const existingItem = await storage.getChecklistInstanceItem(req.params.id);
       const item = await storage.updateChecklistInstanceItem(req.params.id, validationResult.data);
       if (!item) {
         return res.status(404).json({ error: "Checklist instance item not found" });
       }
+
+      const currentUser = (req as any).user;
+      if (currentUser && existingItem) {
+        try {
+          const instance = item.instanceId ? await storage.getChecklistInstance(item.instanceId) : null;
+          if (validationResult.data.status && validationResult.data.status !== existingItem.status) {
+            await storage.createChecklistAuditEntry({
+              companyId: currentUser.companyId,
+              projectId: instance?.projectId || null,
+              instanceId: item.instanceId,
+              itemId: item.id,
+              action: "item_status_changed",
+              details: `Item "${item.description}" status changed`,
+              previousValue: existingItem.status || "pending",
+              newValue: validationResult.data.status,
+              userId: currentUser.id,
+              userName: `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim(),
+            });
+          }
+          if (validationResult.data.assigneeId && validationResult.data.assigneeId !== existingItem.assigneeId) {
+            await storage.createChecklistAuditEntry({
+              companyId: currentUser.companyId,
+              projectId: instance?.projectId || null,
+              instanceId: item.instanceId,
+              itemId: item.id,
+              action: "item_assigned",
+              details: `Item "${item.description}" assigned`,
+              previousValue: existingItem.assigneeId || "",
+              newValue: validationResult.data.assigneeId,
+              userId: currentUser.id,
+              userName: `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim(),
+            });
+          }
+        } catch (auditError) {
+          console.error("Failed to create checklist audit entry:", auditError);
+        }
+      }
+
+      if (validationResult.data.assigneeId && validationResult.data.assigneeId !== existingItem?.assigneeId) {
+        try {
+          if (currentUser && validationResult.data.assigneeId !== currentUser.id) {
+            const instance = item.instanceId ? await storage.getChecklistInstance(item.instanceId) : null;
+            await storage.createNotification({
+              userId: validationResult.data.assigneeId,
+              companyId: currentUser.companyId,
+              type: "checklist_item_assigned",
+              title: "Checklist item assigned to you",
+              message: `You have been assigned to checklist item "${item.description}"`,
+              link: instance ? `/projects/${instance.projectId}/checklists/${instance.id}` : undefined,
+              entityType: "checklist_item",
+              entityId: item.id,
+              isRead: false,
+              createdByUserId: currentUser.id,
+            });
+          }
+        } catch (notifError) {
+          console.error("Failed to create checklist item assignment notification:", notifError);
+        }
+      }
+
       res.json(item);
     } catch (error: any) {
       res.status(500).json({ 
@@ -13352,6 +13504,93 @@ export async function registerRoutes(app: Express): Promise<Server> {
         error: "Failed to delete checklist instance item",
         details: error.message 
       });
+    }
+  });
+
+  // Checklist Status Triggers
+  app.get("/api/checklist-status-triggers", async (req, res) => {
+    try {
+      const user = (req as any).user;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      const triggers = await storage.getChecklistStatusTriggers(user.companyId);
+      res.json(triggers);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to fetch checklist status triggers", details: error.message });
+    }
+  });
+
+  app.post("/api/checklist-status-triggers", async (req, res) => {
+    try {
+      const user = (req as any).user;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      const validationResult = insertChecklistStatusTriggerSchema.safeParse({
+        ...req.body,
+        companyId: user.companyId,
+      });
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString(),
+        });
+      }
+      const trigger = await storage.createChecklistStatusTrigger(validationResult.data);
+      res.status(201).json(trigger);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to create checklist status trigger", details: error.message });
+    }
+  });
+
+  app.patch("/api/checklist-status-triggers/:id", async (req, res) => {
+    try {
+      const user = (req as any).user;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      const updateSchema = insertChecklistStatusTriggerSchema.partial();
+      const validationResult = updateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString(),
+        });
+      }
+      const trigger = await storage.updateChecklistStatusTrigger(req.params.id, validationResult.data);
+      if (!trigger) {
+        return res.status(404).json({ error: "Checklist status trigger not found" });
+      }
+      res.json(trigger);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to update checklist status trigger", details: error.message });
+    }
+  });
+
+  app.delete("/api/checklist-status-triggers/:id", async (req, res) => {
+    try {
+      const user = (req as any).user;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      const success = await storage.deleteChecklistStatusTrigger(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Checklist status trigger not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to delete checklist status trigger", details: error.message });
+    }
+  });
+
+  // Checklist Audit Log
+  app.get("/api/checklist-instances/:instanceId/audit-log", async (req, res) => {
+    try {
+      const log = await storage.getChecklistAuditLog(req.params.instanceId);
+      res.json(log);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to fetch audit log", details: error.message });
     }
   });
 

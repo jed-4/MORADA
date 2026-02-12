@@ -1,9 +1,10 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { useUpload } from "@/hooks/use-upload";
 import { format } from "date-fns";
 import {
   type ChecklistInstance,
@@ -70,6 +71,10 @@ import {
   X,
   Link2,
   Send,
+  Paperclip,
+  FileText,
+  Image as ImageIcon,
+  Download,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -83,6 +88,77 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import type { ChecklistAuditLog } from "@shared/schema";
+
+function ChecklistActivityLog({ instanceId }: { instanceId: string }) {
+  const { data: auditLog = [], isLoading } = useQuery<ChecklistAuditLog[]>({
+    queryKey: ['/api/checklist-instances', instanceId, 'audit-log'],
+    queryFn: () => fetch(`/api/checklist-instances/${instanceId}/audit-log`).then(r => r.json()),
+    enabled: !!instanceId,
+  });
+
+  const getActionLabel = (action: string) => {
+    switch (action) {
+      case "item_status_changed": return "changed status";
+      case "item_assigned": return "assigned item";
+      case "item_created": return "added item";
+      case "item_deleted": return "removed item";
+      case "group_created": return "added group";
+      case "group_deleted": return "removed group";
+      case "checklist_created": return "created checklist";
+      default: return action.replace(/_/g, " ");
+    }
+  };
+
+  const getStatusLabel = (val: string | null) => {
+    if (!val) return "";
+    switch (val) {
+      case "completed": return "Completed";
+      case "pending": return "Pending";
+      case "na": return "N/A";
+      default: return val;
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-4">
+        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (auditLog.length === 0) {
+    return (
+      <p className="text-xs text-muted-foreground py-3 px-2">No activity recorded yet.</p>
+    );
+  }
+
+  return (
+    <div className="mt-2 space-y-1 max-h-48 overflow-auto">
+      {auditLog.map((entry) => (
+        <div key={entry.id} className="flex items-start gap-2 py-1.5 px-2 text-xs">
+          <div className="w-1 h-1 rounded-full bg-muted-foreground/40 mt-1.5 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <span className="font-medium">{entry.userName || "System"}</span>{" "}
+            <span className="text-muted-foreground">{getActionLabel(entry.action)}</span>
+            {entry.action === "item_status_changed" && entry.previousValue && entry.newValue && (
+              <span className="text-muted-foreground">
+                {" "}{getStatusLabel(entry.previousValue)} → {getStatusLabel(entry.newValue)}
+              </span>
+            )}
+            {entry.details && entry.action !== "item_status_changed" && (
+              <span className="text-muted-foreground block truncate">{entry.details}</span>
+            )}
+          </div>
+          <span className="text-[10px] text-muted-foreground/60 shrink-0">
+            {format(new Date(entry.createdAt), "MMM d, h:mm a")}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function ChecklistInstanceDetail() {
   const { projectId, checklistId } = useParams<{ projectId: string; checklistId: string }>();
@@ -97,6 +173,11 @@ export default function ChecklistInstanceDetail() {
   const [showNotesDialog, setShowNotesDialog] = useState<ChecklistInstanceItem | null>(null);
   const [newNoteText, setNewNoteText] = useState("");
   const [openAssignPopover, setOpenAssignPopover] = useState<string | null>(null);
+  const [uploadingItemId, setUploadingItemId] = useState<string | null>(null);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { uploadFile, isUploading } = useUpload();
   
   const [settingsForm, setSettingsForm] = useState({
     name: "",
@@ -189,10 +270,15 @@ export default function ChecklistInstanceDetail() {
       return res.json();
     },
     onSuccess: (updatedItem) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances", checklistId, "items"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances", checklistId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances", { projectId }] });
-      // Update dialog state if the notes dialog is open for this item
+      queryClient.invalidateQueries({ 
+        predicate: (query) => {
+          const key = query.queryKey;
+          if (!Array.isArray(key) || key.length === 0) return false;
+          return key[0] === "/api/checklist-instances" || 
+                 key[0] === "/api/checklist-instance-groups" || 
+                 key[0] === "/api/checklist-items";
+        }
+      });
       if (showNotesDialog && showNotesDialog.id === updatedItem.id) {
         setShowNotesDialog(updatedItem);
       }
@@ -238,17 +324,65 @@ export default function ChecklistInstanceDetail() {
   });
 
   const handleToggleItem = (item: ChecklistInstanceItem) => {
-    const newStatus = item.status === "completed" ? "pending" : "completed";
+    const isCompleting = item.status !== "completed";
+    const newStatus = isCompleting ? "completed" : "pending";
     updateItemMutation.mutate({
       itemId: item.id,
       data: {
         status: newStatus,
-        completedAt: newStatus === "completed" ? new Date() : null,
-        completedBy: newStatus === "completed" ? user?.id : null,
-        completedByName: newStatus === "completed" ? user?.name : null,
+        completedAt: isCompleting ? new Date() : null,
+        completedBy: isCompleting ? user?.id : null,
+        completedByName: isCompleting ? user?.name : null,
       },
     });
   };
+
+  const handleFileUpload = async (itemId: string, files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const item = items.find(i => i.id === itemId);
+    let currentAttachments = Array.isArray(item?.attachmentIds) ? [...(item.attachmentIds as any[])] : [];
+    if (currentAttachments.length + files.length > 3) {
+      toast({ title: "Limit reached", description: "Maximum 3 attachments per item.", variant: "destructive" });
+      return;
+    }
+    setUploadingItemId(itemId);
+    for (const file of Array.from(files)) {
+      if (file.size > 10 * 1024 * 1024) {
+        toast({ title: "File too large", description: `${file.name} exceeds 10MB limit.`, variant: "destructive" });
+        continue;
+      }
+      const response = await uploadFile(file);
+      if (response) {
+        const newAttachment = {
+          name: response.metadata.name,
+          path: response.objectPath,
+          contentType: response.metadata.contentType,
+          size: response.metadata.size,
+          uploadedAt: new Date().toISOString(),
+          uploadedBy: user?.name || "Unknown",
+        };
+        currentAttachments = [...currentAttachments, newAttachment];
+        updateItemMutation.mutate({
+          itemId,
+          data: { attachmentIds: currentAttachments }
+        });
+        toast({ title: "File attached", description: response.metadata.name });
+      }
+    }
+    setUploadingItemId(null);
+  };
+
+  const handleRemoveAttachment = (itemId: string, attachmentIndex: number) => {
+    const item = items.find(i => i.id === itemId);
+    const existingAttachments = Array.isArray(item?.attachmentIds) ? [...(item.attachmentIds as any[])] : [];
+    existingAttachments.splice(attachmentIndex, 1);
+    updateItemMutation.mutate({
+      itemId,
+      data: { attachmentIds: existingAttachments }
+    });
+  };
+
+  const isImageType = (contentType: string) => contentType?.startsWith('image/');
 
   const handleMarkNA = (item: ChecklistInstanceItem) => {
     updateItemMutation.mutate({
@@ -332,6 +466,43 @@ export default function ChecklistInstanceDetail() {
       completedBy: user?.id,
       completedByName: user?.name,
     });
+  };
+
+  const handleExportPdf = async () => {
+    if (!checklist) return;
+    setIsExportingPdf(true);
+    try {
+      const { pdf } = await import("@react-pdf/renderer");
+      const { ChecklistPdfDocument } = await import("@/components/checklists/ChecklistPdfDocument");
+      const pdfGroups = Object.entries(groupedItems).map(([groupName, groupItems]) => ({
+        id: groupName,
+        name: groupName,
+        assigneeName: undefined,
+        items: groupItems.map((i: ChecklistInstanceItem) => ({
+          ...i,
+          assigneeName: teamMembers?.find((u: User) => u.id === i.assigneeId)?.name,
+          completedByName: i.completedByName || teamMembers?.find((u: User) => u.id === i.completedBy)?.name,
+        })),
+      }));
+      const exportDate = format(new Date(), "MMM d, yyyy h:mm a");
+      const blob = await pdf(
+        ChecklistPdfDocument({ checklist, groups: pdfGroups, projectName: checklist.projectId || "", exportDate })
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `checklist-${checklist.name.replace(/\s+/g, "-").toLowerCase()}-${format(new Date(), "yyyy-MM-dd")}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast({ title: "PDF exported successfully" });
+    } catch (error: any) {
+      console.error("PDF export error:", error);
+      toast({ title: "Failed to export PDF", description: error.message, variant: "destructive" });
+    } finally {
+      setIsExportingPdf(false);
+    }
   };
 
   const toggleGroup = (groupName: string) => {
@@ -451,6 +622,16 @@ export default function ChecklistInstanceDetail() {
           )}
         </div>
         <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={handleExportPdf}
+            disabled={isExportingPdf}
+            data-testid="button-export-pdf"
+          >
+            {isExportingPdf ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+          </Button>
           <Button
             variant="ghost"
             size="icon"
@@ -607,10 +788,12 @@ export default function ChecklistInstanceDetail() {
                     </CollapsibleTrigger>
                     <CollapsibleContent>
                       <div className="border-t">
-                        {groupItems.map((item) => (
+                        {groupItems.map((item) => {
+                          const itemAttachments = Array.isArray(item.attachmentIds) ? (item.attachmentIds as any[]) : [];
+                          return (
+                          <div key={item.id} className="border-b last:border-b-0">
                           <div
-                            key={item.id}
-                            className={`flex items-center gap-2 px-3 py-1.5 border-b last:border-b-0 ${
+                            className={`flex items-center gap-2 px-3 py-1.5 ${
                               item.status === "completed" ? "bg-green-50/50 dark:bg-green-900/10" :
                               item.status === "na" ? "bg-gray-50/50 dark:bg-gray-900/10" : ""
                             }`}
@@ -632,12 +815,28 @@ export default function ChecklistInstanceDetail() {
                             
                             {/* Description */}
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-1">
+                              <div className="flex items-center gap-1 flex-wrap">
                                 <span className={`text-xs truncate ${item.status !== "pending" ? "line-through text-muted-foreground" : ""}`}>
                                   {item.description}
                                 </span>
                                 {item.isRequired && (
                                   <Asterisk className="h-2.5 w-2.5 text-red-500 shrink-0" />
+                                )}
+                                {item.completedByName && item.status === "completed" && (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <div className="flex items-center gap-0.5 text-green-600 shrink-0 ml-auto">
+                                        <CheckCircle2 className="h-3 w-3" />
+                                        <span className="text-[10px]">{item.completedByName}</span>
+                                      </div>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top">
+                                      <p className="text-xs">
+                                        Completed by {item.completedByName}
+                                        {item.completedAt && ` on ${new Date(item.completedAt).toLocaleDateString()}`}
+                                      </p>
+                                    </TooltipContent>
+                                  </Tooltip>
                                 )}
                               </div>
                             </div>
@@ -729,6 +928,34 @@ export default function ChecklistInstanceDetail() {
                                 )}
                               </Button>
                               
+                              {/* Attachment Icon */}
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-5 w-5"
+                                    disabled={isUploading && uploadingItemId === item.id}
+                                    onClick={() => {
+                                      setUploadingItemId(item.id);
+                                      fileInputRef.current?.click();
+                                    }}
+                                    data-testid={`button-attach-${item.id}`}
+                                  >
+                                    {isUploading && uploadingItemId === item.id ? (
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                      <Paperclip className={`h-3 w-3 ${Array.isArray(item.attachmentIds) && (item.attachmentIds as any[]).length > 0 ? 'text-[#bba7db]' : 'text-muted-foreground/50'}`} />
+                                    )}
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  {Array.isArray(item.attachmentIds) && (item.attachmentIds as any[]).length > 0
+                                    ? `${(item.attachmentIds as any[]).length} attachment(s)`
+                                    : "Attach file"}
+                                </TooltipContent>
+                              </Tooltip>
+                              
                               {/* Menu */}
                               {checklist.status !== "completed" && (
                                 <DropdownMenu>
@@ -756,7 +983,39 @@ export default function ChecklistInstanceDetail() {
                               )}
                             </div>
                           </div>
-                        ))}
+                          {/* Attachments Display */}
+                          {itemAttachments.length > 0 && (
+                            <div className="px-3 py-1 bg-muted/20 flex items-center gap-2 flex-wrap">
+                              {itemAttachments.map((att: any, idx: number) => (
+                                <div key={idx} className="flex items-center gap-1 bg-card border rounded px-1.5 py-0.5 text-[10px] group/att">
+                                  {isImageType(att.contentType) ? (
+                                    <ImageIcon className="h-3 w-3 text-blue-500 shrink-0" />
+                                  ) : (
+                                    <FileText className="h-3 w-3 text-muted-foreground shrink-0" />
+                                  )}
+                                  <a
+                                    href={att.path}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-foreground hover:underline truncate max-w-[120px]"
+                                  >
+                                    {att.name}
+                                  </a>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-4 w-4 invisible group-hover/att:visible"
+                                    onClick={() => handleRemoveAttachment(item.id, idx)}
+                                  >
+                                    <X className="h-2.5 w-2.5 text-destructive" />
+                                  </Button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          </div>
+                        );
+                        })}
                       </div>
                     </CollapsibleContent>
                   </Collapsible>
@@ -766,6 +1025,35 @@ export default function ChecklistInstanceDetail() {
           </div>
         )}
       </div>
+
+      {/* Activity Log Section */}
+      <div className="px-4 pb-4">
+        <Collapsible>
+          <CollapsibleTrigger className="flex items-center gap-2 text-xs font-medium text-muted-foreground hover-elevate px-2 py-1 rounded-md w-full">
+            <ChevronRight className="h-3 w-3 transition-transform group-data-[state=open]:rotate-90" />
+            <Clock className="h-3 w-3" />
+            Activity Log
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <ChecklistActivityLog instanceId={id!} />
+          </CollapsibleContent>
+        </Collapsible>
+      </div>
+
+      {/* Hidden File Input for Attachments */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+        multiple
+        onChange={(e) => {
+          if (uploadingItemId) {
+            handleFileUpload(uploadingItemId, e.target.files);
+          }
+          e.target.value = '';
+        }}
+      />
 
       {/* Settings Dialog */}
       <Dialog open={showSettingsDialog} onOpenChange={setShowSettingsDialog}>

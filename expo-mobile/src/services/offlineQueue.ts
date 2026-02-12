@@ -6,7 +6,7 @@ const QUEUE_KEY = 'buildpro_offline_queue';
 
 export interface QueuedAction {
   id: string;
-  type: 'clock-in' | 'clock-out' | 'log-hours' | 'edit-timesheet' | 'delete-timesheet' | 'create-diary-entry' | 'edit-diary-entry' | 'delete-diary-entry';
+  type: 'clock-in' | 'clock-out' | 'log-hours' | 'edit-timesheet' | 'delete-timesheet' | 'create-diary-entry' | 'edit-diary-entry' | 'delete-diary-entry' | 'update-checklist-item' | 'complete-checklist';
   payload: any;
   photoUri?: string;
   createdAt: string;
@@ -157,6 +157,18 @@ const processAction = async (action: QueuedAction): Promise<boolean> => {
       case 'delete-diary-entry': {
         const res = await apiRequest(`/api/site-diary-entries/${action.payload.id}`, 'DELETE');
         if (!res.ok) throw new Error('Delete diary entry failed');
+        return true;
+      }
+      case 'update-checklist-item': {
+        const { id, ...data } = action.payload;
+        const res = await apiRequest(`/api/checklist-instance-items/${id}`, 'PATCH', data);
+        if (!res.ok) throw new Error('Update checklist item failed');
+        return true;
+      }
+      case 'complete-checklist': {
+        const { id, ...data } = action.payload;
+        const res = await apiRequest(`/api/checklist-instances/${id}`, 'PATCH', data);
+        if (!res.ok) throw new Error('Complete checklist failed');
         return true;
       }
       default:

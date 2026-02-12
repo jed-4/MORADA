@@ -58,6 +58,8 @@ import {
   type ChecklistInstance, type InsertChecklistInstance,
   type ChecklistInstanceGroup, type InsertChecklistInstanceGroup,
   type ChecklistInstanceItem, type InsertChecklistInstanceItem,
+  type ChecklistAuditLog, type InsertChecklistAuditLog,
+  type ChecklistStatusTrigger, type InsertChecklistStatusTrigger,
   type Budget, type InsertBudget,
   type BudgetLineItem, type InsertBudgetLineItem,
   type LabourHoursBudget, type InsertLabourHoursBudget,
@@ -729,6 +731,16 @@ export interface IStorage {
   createChecklistInstanceItem(item: InsertChecklistInstanceItem): Promise<ChecklistInstanceItem>;
   updateChecklistInstanceItem(id: string, item: Partial<InsertChecklistInstanceItem>): Promise<ChecklistInstanceItem | undefined>;
   deleteChecklistInstanceItem(id: string): Promise<boolean>;
+
+  // Checklist Audit Log
+  createChecklistAuditEntry(entry: InsertChecklistAuditLog): Promise<ChecklistAuditLog>;
+  getChecklistAuditLog(instanceId: string): Promise<ChecklistAuditLog[]>;
+
+  // Checklist Status Triggers
+  getChecklistStatusTriggers(companyId: string): Promise<ChecklistStatusTrigger[]>;
+  createChecklistStatusTrigger(trigger: InsertChecklistStatusTrigger): Promise<ChecklistStatusTrigger>;
+  updateChecklistStatusTrigger(id: string, trigger: Partial<InsertChecklistStatusTrigger>): Promise<ChecklistStatusTrigger | undefined>;
+  deleteChecklistStatusTrigger(id: string): Promise<boolean>;
 
   // Budget CRUD
   getBudget(projectId: string): Promise<Budget | undefined>;
@@ -5392,6 +5404,24 @@ export class MemStorage implements IStorage {
   }
   async getUnreadNotificationCount(userId: string, companyId: string): Promise<number> {
     return 0;
+  }
+  async createChecklistAuditEntry(entry: InsertChecklistAuditLog): Promise<ChecklistAuditLog> {
+    return { id: '', ...entry, createdAt: new Date() } as ChecklistAuditLog;
+  }
+  async getChecklistAuditLog(instanceId: string): Promise<ChecklistAuditLog[]> {
+    return [];
+  }
+  async getChecklistStatusTriggers(companyId: string): Promise<ChecklistStatusTrigger[]> {
+    return [];
+  }
+  async createChecklistStatusTrigger(trigger: InsertChecklistStatusTrigger): Promise<ChecklistStatusTrigger> {
+    return { id: '', ...trigger, createdAt: new Date(), updatedAt: new Date() } as ChecklistStatusTrigger;
+  }
+  async updateChecklistStatusTrigger(id: string, trigger: Partial<InsertChecklistStatusTrigger>): Promise<ChecklistStatusTrigger | undefined> {
+    return undefined;
+  }
+  async deleteChecklistStatusTrigger(id: string): Promise<boolean> {
+    return false;
   }
 }
 
@@ -13483,6 +13513,79 @@ export class DbStorage implements IStorage {
       return result.length > 0;
     } catch (error) {
       console.error("Database error in deleteChecklistInstanceItem:", error);
+      throw error;
+    }
+  }
+
+  async createChecklistAuditEntry(entry: InsertChecklistAuditLog): Promise<ChecklistAuditLog> {
+    try {
+      const [result] = await db.insert(schema.checklistAuditLog)
+        .values(entry)
+        .returning();
+      return result;
+    } catch (error) {
+      console.error("Database error in createChecklistAuditEntry:", error);
+      throw error;
+    }
+  }
+
+  async getChecklistAuditLog(instanceId: string): Promise<ChecklistAuditLog[]> {
+    try {
+      return await db.select()
+        .from(schema.checklistAuditLog)
+        .where(eq(schema.checklistAuditLog.instanceId, instanceId))
+        .orderBy(desc(schema.checklistAuditLog.createdAt));
+    } catch (error) {
+      console.error("Database error in getChecklistAuditLog:", error);
+      throw error;
+    }
+  }
+
+  async getChecklistStatusTriggers(companyId: string): Promise<ChecklistStatusTrigger[]> {
+    try {
+      return await db.select()
+        .from(schema.checklistStatusTriggers)
+        .where(eq(schema.checklistStatusTriggers.companyId, companyId))
+        .orderBy(desc(schema.checklistStatusTriggers.createdAt));
+    } catch (error) {
+      console.error("Database error in getChecklistStatusTriggers:", error);
+      throw error;
+    }
+  }
+
+  async createChecklistStatusTrigger(trigger: InsertChecklistStatusTrigger): Promise<ChecklistStatusTrigger> {
+    try {
+      const [result] = await db.insert(schema.checklistStatusTriggers)
+        .values(trigger)
+        .returning();
+      return result;
+    } catch (error) {
+      console.error("Database error in createChecklistStatusTrigger:", error);
+      throw error;
+    }
+  }
+
+  async updateChecklistStatusTrigger(id: string, trigger: Partial<InsertChecklistStatusTrigger>): Promise<ChecklistStatusTrigger | undefined> {
+    try {
+      const [result] = await db.update(schema.checklistStatusTriggers)
+        .set({ ...trigger, updatedAt: new Date() })
+        .where(eq(schema.checklistStatusTriggers.id, id))
+        .returning();
+      return result;
+    } catch (error) {
+      console.error("Database error in updateChecklistStatusTrigger:", error);
+      throw error;
+    }
+  }
+
+  async deleteChecklistStatusTrigger(id: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.checklistStatusTriggers)
+        .where(eq(schema.checklistStatusTriggers.id, id))
+        .returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error("Database error in deleteChecklistStatusTrigger:", error);
       throw error;
     }
   }

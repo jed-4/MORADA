@@ -2633,6 +2633,35 @@ export const insertChecklistInstanceItemSchema = createInsertSchema(checklistIns
 export type InsertChecklistInstanceItem = z.infer<typeof insertChecklistInstanceItemSchema>;
 export type ChecklistInstanceItem = typeof checklistInstanceItems.$inferSelect;
 
+// Checklist Audit Log (tracks all changes to checklists)
+export const checklistAuditLog = pgTable("checklist_audit_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id"),
+  instanceId: varchar("instance_id"),
+  groupId: varchar("group_id"),
+  itemId: varchar("item_id"),
+  action: text("action").notNull(),
+  details: text("details"),
+  previousValue: text("previous_value"),
+  newValue: text("new_value"),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }),
+  userName: text("user_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("checklist_audit_company_idx").on(table.companyId),
+  instanceIdx: index("checklist_audit_instance_idx").on(table.instanceId),
+  createdAtIdx: index("checklist_audit_created_at_idx").on(table.createdAt),
+}));
+
+export const insertChecklistAuditLogSchema = createInsertSchema(checklistAuditLog).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertChecklistAuditLog = z.infer<typeof insertChecklistAuditLogSchema>;
+export type ChecklistAuditLog = typeof checklistAuditLog.$inferSelect;
+
 // Checklist Status Triggers (which checklists to create when project moves to a status)
 export const checklistStatusTriggers = pgTable("checklist_status_triggers", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

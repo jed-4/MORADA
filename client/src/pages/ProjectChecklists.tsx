@@ -82,6 +82,8 @@ import {
   Info,
   Type,
   CircleDot,
+  StickyNote,
+  Paperclip,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -277,12 +279,12 @@ export default function ProjectChecklists() {
       await queryClient.invalidateQueries({ 
         predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/checklist-instance-groups"
       });
-      toast({ title: "Checklist Group created", description: "The checklist group has been created successfully." });
+      toast({ title: "Checklist created", description: "The checklist has been created successfully." });
       setShowAddDialog(false);
       setFormData({ templateId: "", name: "", description: "", priority: "medium", dueDate: "", assigneeId: "", selectedGroupIds: [] });
     },
     onError: () => {
-      toast({ title: "Error", description: "Failed to create checklist group.", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to create checklist.", variant: "destructive" });
     },
   });
 
@@ -298,11 +300,11 @@ export default function ProjectChecklists() {
       queryClient.invalidateQueries({ 
         predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/checklist-instance-groups"
       });
-      toast({ title: "Checklist Group deleted", description: "The checklist group has been deleted." });
+      toast({ title: "Checklist deleted", description: "The checklist has been deleted." });
       setShowDeleteConfirm(null);
     },
     onError: () => {
-      toast({ title: "Error", description: "Failed to delete checklist group.", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to delete checklist.", variant: "destructive" });
     },
   });
 
@@ -325,11 +327,13 @@ export default function ProjectChecklists() {
       await apiRequest(`/api/checklist-instance-items/${itemId}`, "PATCH", data);
     },
     onSuccess: () => {
-      // Invalidate all checklist items queries
       queryClient.invalidateQueries({ 
         predicate: (query) => {
           const key = query.queryKey;
-          return Array.isArray(key) && key.length > 0 && key[0] === "/api/checklist-items";
+          if (!Array.isArray(key) || key.length === 0) return false;
+          return key[0] === "/api/checklist-items" || 
+                 key[0] === "/api/checklist-instance-groups" || 
+                 key[0] === "/api/checklist-instances";
         }
       });
     },
@@ -358,6 +362,24 @@ export default function ProjectChecklists() {
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to add checklist item.", variant: "destructive" });
+    },
+  });
+
+  const deleteGroupMutation = useMutation({
+    mutationFn: async (groupId: string) => {
+      await apiRequest(`/api/checklist-instance-groups/${groupId}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ 
+        predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/checklist-instance-groups"
+      });
+      queryClient.invalidateQueries({ 
+        predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/checklist-instances"
+      });
+      toast({ title: "Checklist deleted", description: "The checklist has been removed." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to delete checklist.", variant: "destructive" });
     },
   });
 
@@ -584,7 +606,7 @@ export default function ProjectChecklists() {
             data-testid="button-add-checklist"
           >
             <Plus className="h-3 w-3" />
-            Add Checklist Group
+            Add Checklist
           </button>
         </div>
       </div>
@@ -705,7 +727,7 @@ export default function ProjectChecklists() {
                 data-testid="button-add-first-checklist"
               >
                 <Plus className="h-4 w-4 mr-2" />
-                Add First Checklist Group
+                Add First Checklist
               </Button>
             )}
           </div>
@@ -753,7 +775,7 @@ export default function ProjectChecklists() {
                           }}
                         >
                           <Trash2 className="h-3 w-3 mr-2" />
-                          Delete Group
+                          Delete Checklist
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -765,7 +787,7 @@ export default function ProjectChecklists() {
                       {groups.map((group) => {
                         const isExpanded = expandedChecklists.has(group.id);
                         const items = checklistItems[group.id] || [];
-                        const completedItems = items.filter(i => i.isCompleted).length;
+                        const completedItems = items.filter(i => i.status === "completed" || i.status === "na").length;
                         
                         return (
                           <div
@@ -1006,12 +1028,61 @@ export default function ProjectChecklists() {
                                       </div>
                                     </PopoverContent>
                                   </Popover>
+
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button variant="ghost" size="icon" className="h-6 w-6" data-testid={`group-menu-${group.id}`}>
+                                        <MoreVertical className="h-3 w-3" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                                      <div className="px-2 py-1.5">
+                                        <p className="text-xs font-medium text-muted-foreground mb-1">Priority</p>
+                                        <div className="flex gap-1">
+                                          {(["low", "medium", "high", "urgent"] as const).map((p) => (
+                                            <Button
+                                              key={p}
+                                              variant={group.priority === p ? "default" : "outline"}
+                                              size="sm"
+                                              className={`text-[10px] px-2 h-6 ${group.priority === p ? '' : ''}`}
+                                              onClick={() => {
+                                                updateGroupMutation.mutate({
+                                                  groupId: group.id,
+                                                  data: { priority: p }
+                                                });
+                                              }}
+                                            >
+                                              {p.charAt(0).toUpperCase() + p.slice(1)}
+                                            </Button>
+                                          ))}
+                                        </div>
+                                      </div>
+                                      <DropdownMenuItem
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          navigate(`/projects/${projectId}/checklists/${instance.id}`);
+                                        }}
+                                      >
+                                        View Details
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        className="text-destructive"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          deleteGroupMutation.mutate(group.id);
+                                        }}
+                                      >
+                                        <Trash2 className="h-3 w-3 mr-2" />
+                                        Delete Checklist
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
                                 </div>
                             </div>
                             
                             {/* Expanded Items Panel */}
                             {isExpanded && (
-                              <div className="border-t border-border/40 bg-muted/30 p-3">
+                              <div className="border-t border-border/40 bg-muted/30 p-3" onClick={(e) => e.stopPropagation()}>
                                 {items.length === 0 ? (
                                   <div className="space-y-3">
                                     <p className="text-xs text-muted-foreground text-center py-2">
@@ -1071,7 +1142,7 @@ export default function ProjectChecklists() {
                                       const selectedResponses = (item.selectedResponses as string[]) || [];
                                       const textResponse = item.textResponse || "";
                                       const isAnswered = responseType === "checkbox" 
-                                        ? item.isCompleted 
+                                        ? (item.status === "completed" || item.status === "na")
                                         : responseType === "text" 
                                         ? !!textResponse 
                                         : selectedResponses.length > 0;
@@ -1087,12 +1158,12 @@ export default function ProjectChecklists() {
                                             {/* Response Type Icon/Input */}
                                             {responseType === "checkbox" && (
                                               <Checkbox
-                                                checked={item.isCompleted || false}
+                                                checked={item.status === "completed"}
                                                 onCheckedChange={(checked) => {
                                                   updateItemMutation.mutate({
                                                     itemId: item.id,
                                                     data: { 
-                                                      isCompleted: !!checked,
+                                                      status: checked ? "completed" : "pending",
                                                       completedAt: checked ? new Date().toISOString() : null,
                                                       completedBy: checked ? user?.id : null,
                                                       completedByName: checked ? user?.name : null,
@@ -1113,7 +1184,7 @@ export default function ProjectChecklists() {
                                             )}
                                             
                                             <div className="flex-1 min-w-0">
-                                              <div className="flex items-center gap-2">
+                                              <div className="flex items-center gap-2 flex-wrap">
                                                 <span className={`text-sm ${isAnswered && responseType === "checkbox" ? 'line-through text-muted-foreground' : ''}`}>
                                                   {item.description}
                                                 </span>
@@ -1134,6 +1205,70 @@ export default function ProjectChecklists() {
                                                     Required
                                                   </Badge>
                                                 )}
+                                                <div className="flex items-center gap-1 ml-auto">
+                                                  {Array.isArray(item.attachmentIds) && (item.attachmentIds as any[]).length > 0 && (
+                                                    <Tooltip>
+                                                      <TooltipTrigger asChild>
+                                                        <Paperclip className="h-3.5 w-3.5 text-[#bba7db] shrink-0" />
+                                                      </TooltipTrigger>
+                                                      <TooltipContent side="top">
+                                                        <p className="text-xs">{(item.attachmentIds as any[]).length} attachment(s)</p>
+                                                      </TooltipContent>
+                                                    </Tooltip>
+                                                  )}
+                                                  {item.notes && (
+                                                    <Tooltip>
+                                                      <TooltipTrigger asChild>
+                                                        <StickyNote className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                                                      </TooltipTrigger>
+                                                      <TooltipContent side="top" className="max-w-xs">
+                                                        <p className="text-xs whitespace-pre-wrap">
+                                                          {(() => {
+                                                            try {
+                                                              const parsed = JSON.parse(item.notes as string);
+                                                              if (Array.isArray(parsed)) {
+                                                                return parsed.map((n: any) => `${n.author}: ${n.text}`).join('\n');
+                                                              }
+                                                            } catch {}
+                                                            return item.notes;
+                                                          })()}
+                                                        </p>
+                                                      </TooltipContent>
+                                                    </Tooltip>
+                                                  )}
+                                                  {item.assigneeName && (
+                                                    <Tooltip>
+                                                      <TooltipTrigger asChild>
+                                                        <div className="flex items-center gap-1">
+                                                          <Avatar className="h-5 w-5">
+                                                            <AvatarFallback className="text-[9px] bg-[#bba7db]/20 text-[#bba7db]">
+                                                              {item.assigneeName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                                                            </AvatarFallback>
+                                                          </Avatar>
+                                                        </div>
+                                                      </TooltipTrigger>
+                                                      <TooltipContent side="top">
+                                                        <p className="text-xs">{item.assigneeName}</p>
+                                                      </TooltipContent>
+                                                    </Tooltip>
+                                                  )}
+                                                  {item.completedByName && item.status === "completed" && (
+                                                    <Tooltip>
+                                                      <TooltipTrigger asChild>
+                                                        <div className="flex items-center gap-1 text-green-600">
+                                                          <CheckCircle2 className="h-3.5 w-3.5" />
+                                                          <span className="text-[10px]">{item.completedByName}</span>
+                                                        </div>
+                                                      </TooltipTrigger>
+                                                      <TooltipContent side="top">
+                                                        <p className="text-xs">
+                                                          Completed by {item.completedByName}
+                                                          {item.completedAt && ` on ${new Date(item.completedAt).toLocaleDateString()}`}
+                                                        </p>
+                                                      </TooltipContent>
+                                                    </Tooltip>
+                                                  )}
+                                                </div>
                                               </div>
 
                                               {/* Text Response Input */}
@@ -1147,7 +1282,7 @@ export default function ProjectChecklists() {
                                                         itemId: item.id,
                                                         data: { 
                                                           textResponse: e.target.value,
-                                                          isCompleted: !!e.target.value,
+                                                          status: e.target.value ? "completed" : "pending",
                                                           completedAt: e.target.value ? new Date().toISOString() : null,
                                                           completedBy: e.target.value ? user?.id : null,
                                                           completedByName: e.target.value ? user?.name : null,
@@ -1168,7 +1303,7 @@ export default function ProjectChecklists() {
                                                       itemId: item.id,
                                                       data: { 
                                                         selectedResponses: [value],
-                                                        isCompleted: true,
+                                                        status: "completed",
                                                         completedAt: new Date().toISOString(),
                                                         completedBy: user?.id,
                                                         completedByName: user?.name,
@@ -1213,7 +1348,7 @@ export default function ProjectChecklists() {
                                                               itemId: item.id,
                                                               data: { 
                                                                 selectedResponses: newSelected,
-                                                                isCompleted: newSelected.length > 0,
+                                                                status: newSelected.length > 0 ? "completed" : "pending",
                                                                 completedAt: newSelected.length > 0 ? new Date().toISOString() : null,
                                                                 completedBy: newSelected.length > 0 ? user?.id : null,
                                                                 completedByName: newSelected.length > 0 ? user?.name : null,
@@ -1307,13 +1442,13 @@ export default function ProjectChecklists() {
         )}
       </div>
 
-      {/* Add Checklist Group Dialog */}
+      {/* Add Checklist Dialog */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
         <DialogContent data-testid="dialog-add-checklist">
           <DialogHeader>
-            <DialogTitle>Add Checklist Group</DialogTitle>
+            <DialogTitle>Add Checklist</DialogTitle>
             <DialogDescription>
-              Create a new checklist group from a template or from scratch.
+              Create a new checklist from a template or from scratch.
             </DialogDescription>
           </DialogHeader>
           
@@ -1467,7 +1602,7 @@ export default function ProjectChecklists() {
                   Creating...
                 </>
               ) : (
-                "Create Checklist Group"
+                "Create Checklist"
               )}
             </Button>
           </DialogFooter>
@@ -1478,9 +1613,9 @@ export default function ProjectChecklists() {
       <AlertDialog open={!!showDeleteConfirm} onOpenChange={() => setShowDeleteConfirm(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Checklist Group</AlertDialogTitle>
+            <AlertDialogTitle>Delete Checklist</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete this checklist group and all its checklists? This action cannot be undone.
+              Are you sure you want to delete this checklist and all its items? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

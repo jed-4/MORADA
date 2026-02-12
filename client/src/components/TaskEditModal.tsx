@@ -327,7 +327,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
     enabled: !!task?.id,
   });
 
-  // Fetch checklist groups (individual checklists) for linking to tasks
+  // Fetch checklists for linking to tasks
   const { data: allChecklistGroups = [] } = useQuery<any[]>({
     queryKey: ["/api/checklist-instance-groups"],
   });
@@ -631,7 +631,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
       const selectedAssignees = users.filter(u => (data.assigneeIds || []).includes(u.id));
       const assigneeNames = selectedAssignees.map(u => getUserDisplayName(u));
       
-      // Get linked checklist group name for caching
+      // Get linked checklist name for caching
       const linkedChecklist = data.checklistInstanceId 
         ? checklistGroups.find(g => g.id === data.checklistInstanceId)
         : null;

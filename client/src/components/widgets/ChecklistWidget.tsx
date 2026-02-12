@@ -32,6 +32,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { type ChecklistInstance, type ChecklistInstanceGroup, type ChecklistInstanceItem, type User as UserType } from "@shared/schema";
 import { useProject } from "@/contexts/ProjectContext";
+import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
 
@@ -65,6 +66,7 @@ function saveCollapsedState(projectId: string, checklists: string[], groups: str
 }
 
 export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onCloseConfig }: WidgetProps) {
+  const { user: currentUser } = useAuth();
   const maxChecklists = widget.config?.maxChecklists || 10;
   const wrapText = widget.config?.wrapText || false;
   const savedStatusFilter = (widget.config?.statusFilter as StatusFilter) || "all";
@@ -515,6 +517,7 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
               onToggleGroup={handleToggleGroup}
               hideCompletedChecklists={hideCompletedChecklists}
               hideCompletedItems={hideCompletedItems}
+              currentUser={currentUser}
             />
           ))
         )}
@@ -536,6 +539,7 @@ function ChecklistAccordionItem({
   onToggleGroup,
   hideCompletedChecklists,
   hideCompletedItems,
+  currentUser,
 }: {
   checklist: ChecklistInstanceWithCounts;
   isExpanded: boolean;
@@ -549,6 +553,7 @@ function ChecklistAccordionItem({
   onToggleGroup: (groupId: string) => void;
   hideCompletedChecklists: boolean;
   hideCompletedItems: boolean;
+  currentUser?: { id: string; name?: string | null } | null;
 }) {
   const [, setLocation] = useLocation();
   const progressPercent = checklist.totalCount > 0 
@@ -660,6 +665,7 @@ function ChecklistAccordionItem({
                     getStatusLabel={getStatusLabel}
                     getInitials={getInitials}
                     hideCompletedItems={hideCompletedItems}
+                    currentUser={currentUser}
                   />
                 ))
             )}
@@ -681,6 +687,7 @@ function ChecklistGroupItem({
   getStatusLabel,
   getInitials,
   hideCompletedItems,
+  currentUser,
 }: {
   group: ChecklistGroupWithItems;
   checklistId: string;
@@ -692,6 +699,7 @@ function ChecklistGroupItem({
   getStatusLabel: (status: string) => string;
   getInitials: (name: string) => string;
   hideCompletedItems: boolean;
+  currentUser?: { id: string; name?: string | null } | null;
 }) {
   const [, setLocation] = useLocation();
 
@@ -703,7 +711,6 @@ function ChecklistGroupItem({
       });
       if (!response.ok) throw new Error("Failed to fetch items");
       const data = await response.json();
-      // Sort by order to maintain template order
       return data.sort((a: ChecklistInstanceItem, b: ChecklistInstanceItem) => (a.order ?? 0) - (b.order ?? 0));
     },
     enabled: isExpanded,
@@ -714,19 +721,31 @@ function ChecklistGroupItem({
   const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
   const updateItemMutation = useMutation({
-    mutationFn: async ({ itemId, status }: { itemId: string; status: string }) => {
-      return apiRequest(`/api/checklist-instance-items/${itemId}`, "PATCH", { status });
+    mutationFn: async ({ itemId, data }: { itemId: string; data: Record<string, any> }) => {
+      return apiRequest(`/api/checklist-instance-items/${itemId}`, "PATCH", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-instance-groups", group.id, "items"] });
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances", checklistId, "groups"] });
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-instances"] });
+      queryClient.invalidateQueries({ 
+        predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/checklist-items"
+      });
     },
   });
 
   const toggleItemComplete = (item: ChecklistInstanceItem) => {
-    const newStatus = item.status === "completed" ? "pending" : "completed";
-    updateItemMutation.mutate({ itemId: item.id, status: newStatus });
+    const isCompleting = item.status !== "completed";
+    const newStatus = isCompleting ? "completed" : "pending";
+    updateItemMutation.mutate({ 
+      itemId: item.id, 
+      data: { 
+        status: newStatus,
+        completedAt: isCompleting ? new Date().toISOString() : null,
+        completedBy: isCompleting ? currentUser?.id : null,
+        completedByName: isCompleting ? currentUser?.name : null,
+      }
+    });
   };
 
   return (
@@ -815,6 +834,20 @@ function ChecklistGroupItem({
                     {item.description}
                   </span>
                 </TaskTooltip>
+                {item.assigneeName && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Avatar className="h-4 w-4 flex-shrink-0">
+                        <AvatarFallback className="text-[7px] bg-[#bba7db]/20 text-[#bba7db]">
+                          {getInitials(item.assigneeName)}
+                        </AvatarFallback>
+                      </Avatar>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      <p className="text-xs">{item.assigneeName}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
               </div>
             ))
           )}
