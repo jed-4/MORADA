@@ -118,13 +118,13 @@ export default function DashboardScreen({ navigation }: Props) {
   const [showUserMenu, setShowUserMenu] = useState(false);
 
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({
-    todayTasks: false,
-    overdueTasks: false,
-    upcomingTasks: false,
-    recentActivity: false,
-    calendar: false,
-    favourites: false,
-    timesheet: false,
+    todayTasks: true,
+    overdueTasks: true,
+    upcomingTasks: true,
+    recentActivity: true,
+    calendar: true,
+    favourites: true,
+    timesheet: true,
   });
   const [showCustomize, setShowCustomize] = useState(false);
 
