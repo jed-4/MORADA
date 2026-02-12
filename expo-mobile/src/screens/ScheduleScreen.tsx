@@ -249,6 +249,7 @@ export default function ScheduleScreen({ navigation }: Props) {
   const [addStartDate, setAddStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [addEndDate, setAddEndDate] = useState(new Date().toISOString().split('T')[0]);
   const [addPriority, setAddPriority] = useState('medium');
+  const [addDescription, setAddDescription] = useState('');
   const [addNotes, setAddNotes] = useState('');
   const [addSaving, setAddSaving] = useState(false);
   const [showAddTypePicker, setShowAddTypePicker] = useState(false);
@@ -393,6 +394,7 @@ export default function ScheduleScreen({ navigation }: Props) {
     setAddStartDate(new Date().toISOString().split('T')[0]);
     setAddEndDate(new Date().toISOString().split('T')[0]);
     setAddPriority('medium');
+    setAddDescription('');
     setAddNotes('');
     setShowAddTypePicker(false);
     setShowAddPriorityPicker(false);
@@ -432,6 +434,7 @@ export default function ScheduleScreen({ navigation }: Props) {
       await apiRequest('/api/schedule-items', 'POST', {
         scheduleId: schedule.id,
         name: addName.trim(),
+        description: addDescription.trim() || null,
         type: addType,
         startDate: addStartDate,
         endDate: addEndDate,
@@ -1431,6 +1434,17 @@ export default function ScheduleScreen({ navigation }: Props) {
                 })}
               </View>
             )}
+
+            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Description</Text>
+            <TextInput
+              style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
+              value={addDescription}
+              onChangeText={setAddDescription}
+              multiline
+              numberOfLines={2}
+              placeholder="Optional description..."
+              placeholderTextColor={colors.secondary}
+            />
 
             <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Notes</Text>
             <TextInput

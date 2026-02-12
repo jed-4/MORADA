@@ -78,7 +78,7 @@ function getPriorityColor(priority?: string): string {
   }
 }
 
-function getStatusColor(status?: string): string {
+function getStatusColorFallback(status?: string): string {
   switch (status) {
     case 'todo': return '#94a3b8';
     case 'in-progress': return '#3b82f6';
@@ -213,6 +213,22 @@ export default function TasksScreen({ navigation }: Props) {
     return p?.name || '';
   }, [projects]);
 
+  const getStatusColor = useCallback((status?: string): string => {
+    if (statusOptions.length > 0) {
+      const opt = statusOptions.find(o => o.key === status);
+      if (opt?.color) return opt.color;
+    }
+    return getStatusColorFallback(status);
+  }, [statusOptions]);
+
+  const getStatusLabel = useCallback((status?: string): string => {
+    if (statusOptions.length > 0) {
+      const opt = statusOptions.find(o => o.key === status);
+      if (opt) return opt.name;
+    }
+    return STATUS_LABELS[status || 'todo'] || status || 'To Do';
+  }, [statusOptions]);
+
   const hasActiveFilters = filters.statuses.length > 0 || filters.priorities.length > 0 || filters.projects.length > 0;
 
   const groupedTasks = useMemo(() => {
@@ -272,7 +288,7 @@ export default function TasksScreen({ navigation }: Props) {
     }
 
     return groups.filter(g => g.tasks.length > 0);
-  }, [tasks, groupBy, getProjectName, colors.accent, colors.muted, filters, statusOptions]);
+  }, [tasks, groupBy, getProjectName, getStatusColor, colors.accent, colors.muted, filters, statusOptions]);
 
   const toggleSection = (key: string) => {
     setCollapsedSections(prev => ({ ...prev, [key]: !prev[key] }));
@@ -584,7 +600,7 @@ export default function TasksScreen({ navigation }: Props) {
                     <View style={styles.viewBadgeRow}>
                       <View style={[styles.viewBadge, { backgroundColor: getStatusColor(selectedTask.status) + '20' }]}>
                         <Text style={[styles.viewBadgeText, { color: getStatusColor(selectedTask.status) }]}>
-                          {STATUS_LABELS[selectedTask.status || 'todo'] || 'To Do'}
+                          {getStatusLabel(selectedTask.status)}
                         </Text>
                       </View>
                       <View style={[styles.viewBadge, { backgroundColor: getPriorityColor(selectedTask.priority) + '20' }]}>
@@ -695,7 +711,7 @@ export default function TasksScreen({ navigation }: Props) {
                       >
                         <View style={[styles.selectDot, { backgroundColor: getStatusColor(editStatus) }]} />
                         <Text style={[styles.editSelectText, { color: colors.text }]}>
-                          {STATUS_LABELS[editStatus] || editStatus}
+                          {getStatusLabel(editStatus)}
                         </Text>
                         <Ionicons name="chevron-down" size={16} color={colors.secondary} />
                       </TouchableOpacity>

@@ -279,26 +279,8 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
       );
     }
     const { groups, ungrouped } = groupItems(items);
-    const groupKeys = Object.keys(groups).map(g => `${instanceId}:${g}`);
-    const allGroupsCollapsed = groupKeys.length > 0 && groupKeys.every(k => collapsedGroups[k]);
-    const toggleAllGroups = () => {
-      const newState = !allGroupsCollapsed;
-      setCollapsedGroups(prev => {
-        const updated = { ...prev };
-        groupKeys.forEach(k => { updated[k] = newState; });
-        return updated;
-      });
-    };
     return (
       <View style={[styles.itemsContainer, { borderTopColor: colors.border }]}>
-        {groupKeys.length > 1 && (
-          <TouchableOpacity onPress={toggleAllGroups} style={styles.collapseAllBtn} activeOpacity={0.7}>
-            <Ionicons name={allGroupsCollapsed ? 'chevron-down' : 'chevron-up'} size={12} color={colors.secondary} />
-            <Text style={[styles.collapseAllText, { color: colors.secondary }]}>
-              {allGroupsCollapsed ? 'Expand All' : 'Collapse All'}
-            </Text>
-          </TouchableOpacity>
-        )}
         {ungrouped.length > 0 && ungrouped.map(renderItemRow)}
         {Object.entries(groups).map(([groupName, grpItems]) => {
           const groupKey = `${instanceId}:${groupName}`;
@@ -330,6 +312,21 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
     const progress = instance.totalCount > 0 ? instance.completedCount / instance.totalCount : 0;
     const statusColor = statusColors[instance.status] || '#94a3b8';
 
+    const items = itemsByInstance[instance.id] || [];
+    const { groups: instanceGroups } = groupItems(items);
+    const groupKeys = Object.keys(instanceGroups).map(g => `${instance.id}:${g}`);
+    const allGroupsCollapsed = groupKeys.length > 0 && groupKeys.every(k => collapsedGroups[k]);
+    const hasGroups = groupKeys.length > 1;
+
+    const toggleAllInstanceGroups = () => {
+      const newState = !allGroupsCollapsed;
+      setCollapsedGroups(prev => {
+        const updated = { ...prev };
+        groupKeys.forEach(k => { updated[k] = newState; });
+        return updated;
+      });
+    };
+
     return (
       <View key={instance.id} style={[styles.instanceCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <TouchableOpacity
@@ -339,12 +336,27 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
         >
           <View style={styles.instanceTop}>
             <View style={styles.instanceTitleRow}>
-              <Text style={[styles.instanceName, { color: colors.text }]} numberOfLines={1}>{instance.name}</Text>
-              <View style={[styles.statusBadge, { backgroundColor: statusColor + '20' }]}>
-                <Text style={[styles.statusBadgeText, { color: statusColor }]}>
-                  {statusLabels[instance.status] || instance.status}
-                </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 8 }}>
+                <Text style={[styles.instanceName, { color: colors.text }]} numberOfLines={1}>{instance.name}</Text>
+                <View style={[styles.statusBadge, { backgroundColor: statusColor + '20' }]}>
+                  <Text style={[styles.statusBadgeText, { color: statusColor }]}>
+                    {statusLabels[instance.status] || instance.status}
+                  </Text>
+                </View>
               </View>
+              {isExpanded && hasGroups && (
+                <TouchableOpacity
+                  onPress={(e) => { e.stopPropagation(); toggleAllInstanceGroups(); }}
+                  style={styles.collapseAllHeaderBtn}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name={allGroupsCollapsed ? 'chevron-down' : 'chevron-up'} size={13} color={colors.secondary} />
+                  <Text style={[styles.collapseAllText, { color: colors.secondary }]}>
+                    {allGroupsCollapsed ? 'Expand' : 'Collapse'}
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
             {instance.description && (
               <Text style={[styles.instanceDesc, { color: colors.secondary }]} numberOfLines={1}>{instance.description}</Text>
@@ -512,6 +524,13 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingVertical: 4,
     paddingHorizontal: 2,
+  },
+  collapseAllHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
   },
   collapseAllText: { fontSize: 11, fontWeight: '500' },
   itemsLoading: { padding: 20, alignItems: 'center' },
