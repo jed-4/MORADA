@@ -279,8 +279,26 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
       );
     }
     const { groups, ungrouped } = groupItems(items);
+    const groupKeys = Object.keys(groups).map(g => `${instanceId}:${g}`);
+    const allGroupsCollapsed = groupKeys.length > 0 && groupKeys.every(k => collapsedGroups[k]);
+    const toggleAllGroups = () => {
+      const newState = !allGroupsCollapsed;
+      setCollapsedGroups(prev => {
+        const updated = { ...prev };
+        groupKeys.forEach(k => { updated[k] = newState; });
+        return updated;
+      });
+    };
     return (
       <View style={[styles.itemsContainer, { borderTopColor: colors.border }]}>
+        {groupKeys.length > 1 && (
+          <TouchableOpacity onPress={toggleAllGroups} style={styles.collapseAllBtn} activeOpacity={0.7}>
+            <Ionicons name={allGroupsCollapsed ? 'chevron-down' : 'chevron-up'} size={12} color={colors.secondary} />
+            <Text style={[styles.collapseAllText, { color: colors.secondary }]}>
+              {allGroupsCollapsed ? 'Expand All' : 'Collapse All'}
+            </Text>
+          </TouchableOpacity>
+        )}
         {ungrouped.length > 0 && ungrouped.map(renderItemRow)}
         {Object.entries(groups).map(([groupName, grpItems]) => {
           const groupKey = `${instanceId}:${groupName}`;
@@ -378,13 +396,6 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Checklists</Text>
-        {projectId && projectName ? (
-          <Text style={[styles.headerSub, { color: colors.secondary }]}>{projectName}</Text>
-        ) : null}
-      </View>
-
       {!projectId && projects.length > 0 && (
         <ScrollView
           horizontal
@@ -448,14 +459,6 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   center: { justifyContent: 'center', alignItems: 'center' },
-  header: {
-    paddingTop: 12,
-    paddingBottom: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-  },
-  headerTitle: { fontSize: 20, fontWeight: '700' },
-  headerSub: { fontSize: 13, marginTop: 2 },
   filterScroll: { borderBottomWidth: 1 },
   filterRow: { paddingHorizontal: 16, paddingVertical: 10, gap: 8 },
   filterPill: {
@@ -502,6 +505,15 @@ const styles = StyleSheet.create({
   metaText: { fontSize: 11 },
   expandIndicator: { alignItems: 'center', marginTop: 4 },
   itemsContainer: { borderTopWidth: 1, paddingHorizontal: 14, paddingVertical: 8 },
+  collapseAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-end',
+    gap: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 2,
+  },
+  collapseAllText: { fontSize: 11, fontWeight: '500' },
   itemsLoading: { padding: 20, alignItems: 'center' },
   itemsEmpty: { padding: 16, alignItems: 'center' },
   itemsEmptyText: { fontSize: 13 },

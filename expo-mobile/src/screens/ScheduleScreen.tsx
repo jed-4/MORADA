@@ -243,6 +243,17 @@ export default function ScheduleScreen({ navigation }: Props) {
   const [weekStartDate, setWeekStartDate] = useState<Date>(getMondayOfWeek(new Date()));
   const [dayViewDate, setDayViewDate] = useState<Date>(new Date());
 
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addName, setAddName] = useState('');
+  const [addType, setAddType] = useState('task');
+  const [addStartDate, setAddStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [addEndDate, setAddEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [addPriority, setAddPriority] = useState('medium');
+  const [addNotes, setAddNotes] = useState('');
+  const [addSaving, setAddSaving] = useState(false);
+  const [showAddTypePicker, setShowAddTypePicker] = useState(false);
+  const [showAddPriorityPicker, setShowAddPriorityPicker] = useState(false);
+
   const ganttScrollRef = useRef<ScrollView>(null);
 
   const colors = isDark
@@ -359,6 +370,83 @@ export default function ScheduleScreen({ navigation }: Props) {
       Alert.alert('Error', 'Could not add note.');
     } finally {
       setAddingNote(false);
+    }
+  };
+
+  const PRIORITY_LABELS: Record<string, string> = {
+    low: 'Low',
+    medium: 'Medium',
+    high: 'High',
+    urgent: 'Urgent',
+  };
+
+  const PRIORITY_COLORS: Record<string, string> = {
+    low: '#94a3b8',
+    medium: '#3b82f6',
+    high: '#f59e0b',
+    urgent: '#ef4444',
+  };
+
+  const resetAddForm = () => {
+    setAddName('');
+    setAddType('task');
+    setAddStartDate(new Date().toISOString().split('T')[0]);
+    setAddEndDate(new Date().toISOString().split('T')[0]);
+    setAddPriority('medium');
+    setAddNotes('');
+    setShowAddTypePicker(false);
+    setShowAddPriorityPicker(false);
+  };
+
+  const handleAddItem = async () => {
+    if (!addName.trim()) {
+      Alert.alert('Missing Name', 'Please enter a name for the schedule item.');
+      return;
+    }
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(addStartDate) || !dateRegex.test(addEndDate)) {
+      Alert.alert('Invalid Date', 'Please enter dates in YYYY-MM-DD format.');
+      return;
+    }
+    const startD = new Date(addStartDate);
+    const endD = new Date(addEndDate);
+    if (isNaN(startD.getTime()) || isNaN(endD.getTime())) {
+      Alert.alert('Invalid Date', 'Please enter valid dates.');
+      return;
+    }
+    if (endD < startD) {
+      Alert.alert('Invalid Dates', 'End date must be on or after the start date.');
+      return;
+    }
+    if (!selectedProjectId) return;
+    setAddSaving(true);
+    try {
+      const schedule = await apiFetch<{ id: string }>(`/api/projects/${selectedProjectId}/schedule`);
+      if (!schedule?.id) {
+        Alert.alert('Error', 'Could not find schedule for this project.');
+        return;
+      }
+      const diffMs = endD.getTime() - startD.getTime();
+      const duration = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)) + 1);
+
+      await apiRequest('/api/schedule-items', 'POST', {
+        scheduleId: schedule.id,
+        name: addName.trim(),
+        type: addType,
+        startDate: addStartDate,
+        endDate: addEndDate,
+        priority: addPriority || undefined,
+        notes: addNotes.trim() || null,
+        status: 'not_started',
+        duration,
+      });
+      await fetchItems(selectedProjectId);
+      setShowAddModal(false);
+      resetAddForm();
+    } catch (e: any) {
+      Alert.alert('Error', 'Could not create schedule item. Please try again.');
+    } finally {
+      setAddSaving(false);
     }
   };
 
@@ -1238,6 +1326,129 @@ export default function ScheduleScreen({ navigation }: Props) {
     );
   };
 
+  const renderAddModal = () => (
+    <Modal visible={showAddModal} animationType="slide" presentationStyle="fullScreen">
+      <View style={[styles.modalContainer, { backgroundColor: colors.bg }]}>
+        <View style={[styles.modalHeader, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+          <TouchableOpacity onPress={() => { setShowAddModal(false); resetAddForm(); }}>
+            <Text style={{ color: colors.accent, fontSize: 15, fontWeight: '500' }}>Cancel</Text>
+          </TouchableOpacity>
+          <Text style={[styles.modalHeaderTitle, { color: colors.text }]}>New Schedule Item</Text>
+          <TouchableOpacity onPress={handleAddItem} disabled={addSaving} style={{ opacity: addSaving ? 0.5 : 1 }}>
+            {addSaving ? (
+              <ActivityIndicator size="small" color={colors.accent} />
+            ) : (
+              <Text style={{ color: colors.accent, fontSize: 15, fontWeight: '600' }}>Save</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex1}>
+          <ScrollView style={styles.flex1} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
+            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Name *</Text>
+            <TextInput
+              style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text, minHeight: 44 }]}
+              value={addName}
+              onChangeText={setAddName}
+              placeholder="Schedule item name"
+              placeholderTextColor={colors.secondary}
+            />
+
+            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Type</Text>
+            <TouchableOpacity
+              style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
+              onPress={() => { setShowAddTypePicker(!showAddTypePicker); setShowAddPriorityPicker(false); }}
+            >
+              <View style={[styles.statusDot, { backgroundColor: TYPE_COLORS[addType] || '#3b82f6' }]} />
+              <Text style={[styles.fieldPickerText, { color: colors.text }]}>{TYPE_LABELS[addType] || addType}</Text>
+              <Ionicons name={showAddTypePicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
+            </TouchableOpacity>
+            {showAddTypePicker && (
+              <View style={[styles.inlineStatusList, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+                {Object.entries(TYPE_LABELS).map(([key, label]) => {
+                  const tc = TYPE_COLORS[key] || '#3b82f6';
+                  const isSelected = addType === key;
+                  return (
+                    <TouchableOpacity
+                      key={key}
+                      style={[styles.inlineStatusOption, { borderBottomColor: colors.border }, isSelected && { backgroundColor: tc + '15' }]}
+                      onPress={() => { setAddType(key); setShowAddTypePicker(false); }}
+                    >
+                      <View style={[styles.statusDot, { backgroundColor: tc }]} />
+                      <Text style={[styles.inlineStatusText, { color: colors.text }]}>{label}</Text>
+                      {isSelected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+
+            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Start Date</Text>
+            <TextInput
+              style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text, minHeight: 44 }]}
+              value={addStartDate}
+              onChangeText={setAddStartDate}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={colors.secondary}
+              keyboardType="numbers-and-punctuation"
+            />
+
+            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>End Date</Text>
+            <TextInput
+              style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text, minHeight: 44 }]}
+              value={addEndDate}
+              onChangeText={setAddEndDate}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={colors.secondary}
+              keyboardType="numbers-and-punctuation"
+            />
+
+            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Priority</Text>
+            <TouchableOpacity
+              style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
+              onPress={() => { setShowAddPriorityPicker(!showAddPriorityPicker); setShowAddTypePicker(false); }}
+            >
+              <View style={[styles.statusDot, { backgroundColor: PRIORITY_COLORS[addPriority] || '#3b82f6' }]} />
+              <Text style={[styles.fieldPickerText, { color: colors.text }]}>{PRIORITY_LABELS[addPriority] || addPriority}</Text>
+              <Ionicons name={showAddPriorityPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
+            </TouchableOpacity>
+            {showAddPriorityPicker && (
+              <View style={[styles.inlineStatusList, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+                {Object.entries(PRIORITY_LABELS).map(([key, label]) => {
+                  const pc = PRIORITY_COLORS[key] || '#3b82f6';
+                  const isSelected = addPriority === key;
+                  return (
+                    <TouchableOpacity
+                      key={key}
+                      style={[styles.inlineStatusOption, { borderBottomColor: colors.border }, isSelected && { backgroundColor: pc + '15' }]}
+                      onPress={() => { setAddPriority(key); setShowAddPriorityPicker(false); }}
+                    >
+                      <View style={[styles.statusDot, { backgroundColor: pc }]} />
+                      <Text style={[styles.inlineStatusText, { color: colors.text }]}>{label}</Text>
+                      {isSelected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+
+            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Notes</Text>
+            <TextInput
+              style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
+              value={addNotes}
+              onChangeText={setAddNotes}
+              multiline
+              numberOfLines={3}
+              placeholder="Optional notes..."
+              placeholderTextColor={colors.secondary}
+            />
+            <View style={{ height: 40 }} />
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </View>
+    </Modal>
+  );
+
   const renderProjectPickerModal = () => (
     <Modal visible={showProjectPicker} animationType="slide" transparent>
       <View style={styles.pickerOverlay}>
@@ -1340,8 +1551,19 @@ export default function ScheduleScreen({ navigation }: Props) {
         </>
       )}
 
+      {selectedProjectId && !loading && (
+        <TouchableOpacity
+          style={[styles.fab, { backgroundColor: colors.accent }]}
+          onPress={() => setShowAddModal(true)}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="add" size={28} color="#fff" />
+        </TouchableOpacity>
+      )}
+
       {renderProjectPickerModal()}
       {renderDetailSheet()}
+      {renderAddModal()}
     </View>
   );
 }
@@ -1482,6 +1704,8 @@ const styles = StyleSheet.create({
   detailActions: { flexDirection: 'row', gap: 12, marginTop: 8 },
   actionBtn: { flex: 1, paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
   actionBtnText: { fontWeight: '600', fontSize: 14 },
+
+  fab: { position: 'absolute', bottom: 24, right: 20, width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4 },
 
   pickerOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
   pickerContainer: { maxHeight: '70%', borderTopLeftRadius: 16, borderTopRightRadius: 16 },

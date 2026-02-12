@@ -46,6 +46,25 @@ interface ScheduleItem {
   status?: string;
 }
 
+interface ChecklistInstance {
+  id: string;
+  name: string;
+  status: 'active' | 'in_progress' | 'completed' | 'cancelled';
+  completedCount: number;
+  totalCount: number;
+}
+
+interface ChecklistItem {
+  id: string;
+  instanceId: string;
+  groupId?: string;
+  groupName?: string;
+  description: string;
+  order: number;
+  isRequired: boolean;
+  status: 'pending' | 'completed' | 'na';
+}
+
 type Props = {
   navigation: NativeStackNavigationProp<any>;
   route: RouteProp<any>;
@@ -67,6 +86,11 @@ export default function ProjectDetailScreen({ navigation, route }: Props) {
     siteDiary: false,
     checklists: true,
   });
+  const [checklistInstances, setChecklistInstances] = useState<ChecklistInstance[]>([]);
+  const [expandedChecklist, setExpandedChecklist] = useState<string | null>(null);
+  const [checklistItems, setChecklistItems] = useState<Record<string, ChecklistItem[]>>({});
+  const [loadingChecklistItems, setLoadingChecklistItems] = useState<Record<string, boolean>>({});
+  const [collapsedChecklistGroups, setCollapsedChecklistGroups] = useState<Record<string, boolean>>({});
 
   const colors = isDark
     ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569' }
@@ -74,15 +98,17 @@ export default function ProjectDetailScreen({ navigation, route }: Props) {
 
   const fetchData = useCallback(async () => {
     try {
-      const [projectData, tasksData, scheduleData, collapsedPrefs] = await Promise.all([
+      const [projectData, tasksData, scheduleData, collapsedPrefs, checklistData] = await Promise.all([
         apiFetch<Project>(`/api/projects/${projectId}`),
         apiFetch<Task[]>(`/api/projects/${projectId}/tasks`).catch(() => []),
         apiFetch<ScheduleItem[]>(`/api/projects/${projectId}/schedule-items`).catch(() => []),
         apiFetch<any>('/api/user-view-preferences/mobile-project-detail-collapsed').catch(() => null),
+        apiFetch<ChecklistInstance[]>(`/api/checklist-instances?projectId=${projectId}`).catch(() => []),
       ]);
       setProject(projectData);
       setTasks(tasksData || []);
       setScheduleItems(scheduleData || []);
+      setChecklistInstances(checklistData || []);
       if (collapsedPrefs?.preferences) {
         setCollapsed(prev => ({ ...prev, ...collapsedPrefs.preferences }));
       }
@@ -99,6 +125,8 @@ export default function ProjectDetailScreen({ navigation, route }: Props) {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
+    setChecklistItems({});
+    setLoadingChecklistItems({});
     await fetchData();
     setRefreshing(false);
   }, [fetchData]);
@@ -191,6 +219,68 @@ export default function ProjectDetailScreen({ navigation, route }: Props) {
       </View>
     </TouchableOpacity>
   );
+
+  const fetchChecklistItems = async (instanceId: string) => {
+    if (checklistItems[instanceId]) return;
+    setLoadingChecklistItems(prev => ({ ...prev, [instanceId]: true }));
+    try {
+      const items = await apiFetch<ChecklistItem[]>(`/api/checklist-instances/${instanceId}/items`);
+      setChecklistItems(prev => ({ ...prev, [instanceId]: items || [] }));
+    } catch {
+      setChecklistItems(prev => ({ ...prev, [instanceId]: [] }));
+    } finally {
+      setLoadingChecklistItems(prev => ({ ...prev, [instanceId]: false }));
+    }
+  };
+
+  const toggleChecklistExpand = (instanceId: string) => {
+    if (expandedChecklist === instanceId) {
+      setExpandedChecklist(null);
+    } else {
+      setExpandedChecklist(instanceId);
+      fetchChecklistItems(instanceId);
+    }
+  };
+
+  const toggleChecklistItem = (item: ChecklistItem) => {
+    if (item.status === 'na') return;
+    const newStatus = item.status === 'completed' ? 'pending' : 'completed';
+    setChecklistItems(prev => ({
+      ...prev,
+      [item.instanceId]: (prev[item.instanceId] || []).map(i => i.id === item.id ? { ...i, status: newStatus } : i),
+    }));
+    const delta = newStatus === 'completed' ? 1 : -1;
+    setChecklistInstances(prev => prev.map(inst => inst.id === item.instanceId ? { ...inst, completedCount: Math.max(0, inst.completedCount + delta) } : inst));
+    apiRequest(`/api/checklist-instance-items/${item.id}`, 'PATCH', { status: newStatus }).catch(() => {
+      setChecklistItems(prev => ({
+        ...prev,
+        [item.instanceId]: (prev[item.instanceId] || []).map(i => i.id === item.id ? { ...i, status: item.status } : i),
+      }));
+      setChecklistInstances(prev => prev.map(inst => inst.id === item.instanceId ? { ...inst, completedCount: Math.max(0, inst.completedCount - delta) } : inst));
+    });
+  };
+
+  const toggleChecklistGroup = (groupKey: string) => {
+    setCollapsedChecklistGroups(prev => ({ ...prev, [groupKey]: !prev[groupKey] }));
+  };
+
+  const groupChecklistItems = (items: ChecklistItem[]) => {
+    const groups: Record<string, ChecklistItem[]> = {};
+    const ungrouped: ChecklistItem[] = [];
+    for (const item of items) {
+      if (item.groupName) {
+        if (!groups[item.groupName]) groups[item.groupName] = [];
+        groups[item.groupName].push(item);
+      } else {
+        ungrouped.push(item);
+      }
+    }
+    for (const key of Object.keys(groups)) {
+      groups[key].sort((a, b) => a.order - b.order);
+    }
+    ungrouped.sort((a, b) => a.order - b.order);
+    return { groups, ungrouped };
+  };
 
   if (loading) {
     return (
@@ -402,10 +492,95 @@ export default function ProjectDetailScreen({ navigation, route }: Props) {
         <View style={styles.section}>
           {renderSectionHeader('Checklists', 'checklists')}
           {!collapsed.checklists && (
-            <View style={[styles.emptySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Ionicons name="checkmark-done-outline" size={28} color={colors.muted} />
-              <Text style={[styles.emptySectionText, { color: colors.secondary }]}>Coming soon</Text>
-            </View>
+            checklistInstances.length === 0 ? (
+              <View style={[styles.emptySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Ionicons name="checkmark-done-outline" size={28} color={colors.muted} />
+                <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No checklists</Text>
+              </View>
+            ) : (
+              checklistInstances.map(inst => {
+                const isExpanded = expandedChecklist === inst.id;
+                const progress = inst.totalCount > 0 ? inst.completedCount / inst.totalCount : 0;
+                const statusColor = inst.status === 'completed' ? '#22c55e' : inst.status === 'in_progress' ? '#3b82f6' : inst.status === 'cancelled' ? '#ef4444' : '#94a3b8';
+                return (
+                  <View key={inst.id} style={[styles.checklistCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <TouchableOpacity onPress={() => toggleChecklistExpand(inst.id)} style={styles.checklistHeader} activeOpacity={0.7}>
+                      <View style={{ flex: 1, gap: 4 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <Text style={[styles.checklistName, { color: colors.text }]} numberOfLines={1}>{inst.name}</Text>
+                          <View style={[styles.checklistStatusBadge, { backgroundColor: statusColor + '20' }]}>
+                            <Text style={{ fontSize: 10, fontWeight: '600', color: statusColor }}>{inst.status.replace('_', ' ')}</Text>
+                          </View>
+                        </View>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <View style={[styles.checklistProgress, { backgroundColor: colors.border }]}>
+                            <View style={[styles.checklistProgressFill, { width: `${Math.round(progress * 100)}%`, backgroundColor: progress === 1 ? '#22c55e' : colors.accent }]} />
+                          </View>
+                          <Text style={{ fontSize: 11, color: colors.secondary }}>{inst.completedCount}/{inst.totalCount}</Text>
+                        </View>
+                      </View>
+                      <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={colors.muted} />
+                    </TouchableOpacity>
+                    {isExpanded && (
+                      loadingChecklistItems[inst.id] ? (
+                        <View style={{ padding: 16, alignItems: 'center' }}><ActivityIndicator size="small" color={colors.accent} /></View>
+                      ) : (() => {
+                        const items = checklistItems[inst.id] || [];
+                        if (items.length === 0) return <View style={{ padding: 12, alignItems: 'center' }}><Text style={{ color: colors.secondary, fontSize: 12 }}>No items</Text></View>;
+                        const { groups, ungrouped } = groupChecklistItems(items);
+                        const groupKeys = Object.keys(groups).map(g => `${inst.id}:${g}`);
+                        const allCollapsed = groupKeys.length > 0 && groupKeys.every(k => collapsedChecklistGroups[k]);
+                        return (
+                          <View style={[styles.checklistItemsWrap, { borderTopColor: colors.border }]}>
+                            {groupKeys.length > 1 && (
+                              <TouchableOpacity onPress={() => {
+                                const newState = !allCollapsed;
+                                setCollapsedChecklistGroups(prev => {
+                                  const updated = { ...prev };
+                                  groupKeys.forEach(k => { updated[k] = newState; });
+                                  return updated;
+                                });
+                              }} style={{ alignSelf: 'flex-end', flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4 }} activeOpacity={0.7}>
+                                <Ionicons name={allCollapsed ? 'chevron-down' : 'chevron-up'} size={11} color={colors.secondary} />
+                                <Text style={{ fontSize: 10, color: colors.secondary, fontWeight: '500' }}>{allCollapsed ? 'Expand All' : 'Collapse All'}</Text>
+                              </TouchableOpacity>
+                            )}
+                            {ungrouped.map(item => (
+                              <TouchableOpacity key={item.id} style={[styles.checklistItemRow, { borderColor: colors.border }]} onPress={() => toggleChecklistItem(item)} activeOpacity={0.7} disabled={item.status === 'na'}>
+                                <Ionicons name={item.status === 'completed' ? 'checkbox' : item.status === 'na' ? 'remove-circle-outline' : 'square-outline'} size={20} color={item.status === 'completed' ? '#22c55e' : item.status === 'na' ? colors.muted : colors.secondary} />
+                                <Text style={[{ fontSize: 13, flex: 1, color: item.status === 'completed' ? colors.muted : colors.text }, item.status === 'completed' && { textDecorationLine: 'line-through' }]} numberOfLines={2}>{item.description}</Text>
+                                {item.isRequired && <View style={{ backgroundColor: '#ef444420', borderRadius: 3, paddingHorizontal: 4, paddingVertical: 1 }}><Text style={{ fontSize: 9, fontWeight: '600', color: '#ef4444' }}>Req</Text></View>}
+                              </TouchableOpacity>
+                            ))}
+                            {Object.entries(groups).map(([groupName, grpItems]) => {
+                              const gk = `${inst.id}:${groupName}`;
+                              const gCollapsed = collapsedChecklistGroups[gk];
+                              const doneInGroup = grpItems.filter(i => i.status === 'completed' || i.status === 'na').length;
+                              return (
+                                <View key={groupName}>
+                                  <TouchableOpacity style={[styles.checklistGroupHeader, { borderColor: colors.border }]} onPress={() => toggleChecklistGroup(gk)} activeOpacity={0.7}>
+                                    <Ionicons name={gCollapsed ? 'chevron-forward' : 'chevron-down'} size={13} color={colors.accent} />
+                                    <Text style={{ fontSize: 11, fontWeight: '600', color: colors.accent, textTransform: 'uppercase', letterSpacing: 0.5, flex: 1 }} numberOfLines={1}>{groupName}</Text>
+                                    <Text style={{ fontSize: 10, color: colors.secondary }}>{doneInGroup}/{grpItems.length}</Text>
+                                  </TouchableOpacity>
+                                  {!gCollapsed && grpItems.map(item => (
+                                    <TouchableOpacity key={item.id} style={[styles.checklistItemRow, { borderColor: colors.border }]} onPress={() => toggleChecklistItem(item)} activeOpacity={0.7} disabled={item.status === 'na'}>
+                                      <Ionicons name={item.status === 'completed' ? 'checkbox' : item.status === 'na' ? 'remove-circle-outline' : 'square-outline'} size={20} color={item.status === 'completed' ? '#22c55e' : item.status === 'na' ? colors.muted : colors.secondary} />
+                                      <Text style={[{ fontSize: 13, flex: 1, color: item.status === 'completed' ? colors.muted : colors.text }, item.status === 'completed' && { textDecorationLine: 'line-through' }]} numberOfLines={2}>{item.description}</Text>
+                                      {item.isRequired && <View style={{ backgroundColor: '#ef444420', borderRadius: 3, paddingHorizontal: 4, paddingVertical: 1 }}><Text style={{ fontSize: 9, fontWeight: '600', color: '#ef4444' }}>Req</Text></View>}
+                                    </TouchableOpacity>
+                                  ))}
+                                </View>
+                              );
+                            })}
+                          </View>
+                        );
+                      })()
+                    )}
+                  </View>
+                );
+              })
+            )
           )}
         </View>
       </ScrollView>
@@ -542,4 +717,36 @@ const styles = StyleSheet.create({
   actionContent: { flex: 1 },
   actionTitle: { fontSize: 15, fontWeight: '600' },
   actionSub: { fontSize: 12, marginTop: 1 },
+  checklistCard: {
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 8,
+    overflow: 'hidden',
+  },
+  checklistHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    gap: 10,
+  },
+  checklistName: { fontSize: 14, fontWeight: '600', flex: 1 },
+  checklistStatusBadge: { borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
+  checklistProgress: { height: 4, borderRadius: 2, flex: 1, overflow: 'hidden' },
+  checklistProgressFill: { height: 4, borderRadius: 2 },
+  checklistItemsWrap: { borderTopWidth: 1, paddingHorizontal: 12, paddingVertical: 6 },
+  checklistItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 8,
+  },
+  checklistGroupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 8,
+    marginTop: 2,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
 });

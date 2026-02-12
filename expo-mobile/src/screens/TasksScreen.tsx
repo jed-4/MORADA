@@ -161,15 +161,20 @@ export default function TasksScreen({ navigation }: Props) {
   const [showStatusPicker, setShowStatusPicker] = useState(false);
   const [showPriorityPicker, setShowPriorityPicker] = useState(false);
 
+  const [statusOptions, setStatusOptions] = useState<{key: string; name: string; color: string | null; sortOrder: number}[]>([]);
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [filters, setFilters] = useState<{statuses: string[]; priorities: string[]; projects: string[]}>({statuses: [], priorities: [], projects: []});
+
   const colors = isDark
     ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569' }
     : { bg: '#f8fafc', card: '#ffffff', text: '#0f172a', secondary: '#64748b', border: '#e2e8f0', accent: '#9b7fc4', muted: '#cbd5e1' };
 
   const fetchData = useCallback(async () => {
     try {
-      const [tasksData, projectsData] = await Promise.all([
+      const [tasksData, projectsData, statusData] = await Promise.all([
         apiFetch<Task[]>('/api/tasks').catch(() => []),
         apiFetch<Project[]>('/api/projects').catch(() => []),
+        apiFetch<{ options: {key: string; name: string; color: string | null; sortOrder: number}[] }>('/api/field-categories/by-key/task_status').catch(() => ({ options: [] })),
       ]);
 
       const filtered = (tasksData || []).filter(t => {
@@ -182,6 +187,11 @@ export default function TasksScreen({ navigation }: Props) {
 
       setTasks(filtered);
       setProjects(projectsData || []);
+
+      const opts = (statusData?.options || []).sort((a, b) => a.sortOrder - b.sortOrder);
+      if (opts.length > 0) {
+        setStatusOptions(opts);
+      }
     } catch (e) {
       console.error('Failed to fetch tasks:', e);
     } finally {
@@ -203,23 +213,43 @@ export default function TasksScreen({ navigation }: Props) {
     return p?.name || '';
   }, [projects]);
 
+  const hasActiveFilters = filters.statuses.length > 0 || filters.priorities.length > 0 || filters.projects.length > 0;
+
   const groupedTasks = useMemo(() => {
+    let filteredTasks = tasks;
+    if (filters.statuses.length > 0) {
+      filteredTasks = filteredTasks.filter(t => filters.statuses.includes(t.status || 'todo'));
+    }
+    if (filters.priorities.length > 0) {
+      filteredTasks = filteredTasks.filter(t => filters.priorities.includes(t.priority || 'low'));
+    }
+    if (filters.projects.length > 0) {
+      filteredTasks = filteredTasks.filter(t => t.projectId && filters.projects.includes(t.projectId));
+    }
+
     const groups: { key: string; label: string; color: string; tasks: Task[] }[] = [];
 
     if (groupBy === 'status') {
-      for (const status of STATUS_ORDER) {
-        const items = tasks.filter(t => (t.status || 'todo') === status);
-        groups.push({ key: status, label: STATUS_LABELS[status] || status, color: getStatusColor(status), tasks: items });
+      if (statusOptions.length > 0) {
+        for (const opt of statusOptions) {
+          const items = filteredTasks.filter(t => (t.status || 'todo') === opt.key);
+          groups.push({ key: opt.key, label: opt.name, color: opt.color || '#94a3b8', tasks: items });
+        }
+      } else {
+        for (const status of STATUS_ORDER) {
+          const items = filteredTasks.filter(t => (t.status || 'todo') === status);
+          groups.push({ key: status, label: STATUS_LABELS[status] || status, color: getStatusColor(status), tasks: items });
+        }
       }
     } else if (groupBy === 'priority') {
       for (const priority of PRIORITY_ORDER) {
-        const items = tasks.filter(t => (t.priority || 'low') === priority);
+        const items = filteredTasks.filter(t => (t.priority || 'low') === priority);
         groups.push({ key: priority, label: PRIORITY_LABELS[priority] || priority, color: getPriorityColor(priority), tasks: items });
       }
     } else if (groupBy === 'project') {
       const projectMap: Record<string, Task[]> = {};
       const noProject: Task[] = [];
-      for (const t of tasks) {
+      for (const t of filteredTasks) {
         if (t.projectId) {
           if (!projectMap[t.projectId]) projectMap[t.projectId] = [];
           projectMap[t.projectId].push(t);
@@ -236,13 +266,13 @@ export default function TasksScreen({ navigation }: Props) {
       }
     } else if (groupBy === 'dueDate') {
       for (const group of DUE_DATE_ORDER) {
-        const items = tasks.filter(t => getDueDateGroup(t.dueDate) === group);
+        const items = filteredTasks.filter(t => getDueDateGroup(t.dueDate) === group);
         groups.push({ key: group, label: group, color: getDueDateColor(group), tasks: items });
       }
     }
 
     return groups.filter(g => g.tasks.length > 0);
-  }, [tasks, groupBy, getProjectName, colors.accent, colors.muted]);
+  }, [tasks, groupBy, getProjectName, colors.accent, colors.muted, filters, statusOptions]);
 
   const toggleSection = (key: string) => {
     setCollapsedSections(prev => ({ ...prev, [key]: !prev[key] }));
@@ -407,29 +437,21 @@ export default function TasksScreen({ navigation }: Props) {
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Tasks</Text>
         <View style={styles.headerControls}>
-          <View style={[styles.segmentedControl, { backgroundColor: isDark ? '#0f172a' : '#f1f5f9', borderColor: colors.border }]}>
-            <TouchableOpacity
-              style={[styles.segmentBtn, viewMode === 'list' && { backgroundColor: colors.accent }]}
-              onPress={() => setViewMode('list')}
-            >
-              <Ionicons name="list-outline" size={16} color={viewMode === 'list' ? '#ffffff' : colors.secondary} />
-              <Text style={[styles.segmentText, { color: viewMode === 'list' ? '#ffffff' : colors.secondary }]}>List</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.segmentBtn, viewMode === 'board' && { backgroundColor: colors.accent }]}
-              onPress={() => setViewMode('board')}
-            >
-              <Ionicons name="grid-outline" size={16} color={viewMode === 'board' ? '#ffffff' : colors.secondary} />
-              <Text style={[styles.segmentText, { color: viewMode === 'board' ? '#ffffff' : colors.secondary }]}>Board</Text>
-            </TouchableOpacity>
-          </View>
           <TouchableOpacity
             style={[styles.groupByBtn, { borderColor: colors.border }]}
             onPress={() => setShowGroupByModal(true)}
           >
             <Ionicons name="funnel-outline" size={16} color={colors.secondary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.groupByBtn, { borderColor: colors.border }]}
+            onPress={() => setShowFilterModal(true)}
+          >
+            <Ionicons name="filter-outline" size={16} color={colors.secondary} />
+            {hasActiveFilters && (
+              <View style={styles.filterDot} />
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -749,17 +771,17 @@ export default function TasksScreen({ navigation }: Props) {
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowStatusPicker(false)}>
           <View style={[styles.pickerSheet, { backgroundColor: colors.card }]}>
             <Text style={[styles.pickerSheetTitle, { color: colors.text }]}>Status</Text>
-            {STATUS_ORDER.map(s => (
+            {(statusOptions.length > 0 ? statusOptions : STATUS_ORDER.map(s => ({ key: s, name: STATUS_LABELS[s] || s, color: getStatusColor(s), sortOrder: 0 }))).map(opt => (
               <TouchableOpacity
-                key={s}
-                style={[styles.pickerOption, editStatus === s && { backgroundColor: colors.accent + '15' }]}
-                onPress={() => { setEditStatus(s); setShowStatusPicker(false); }}
+                key={opt.key}
+                style={[styles.pickerOption, editStatus === opt.key && { backgroundColor: colors.accent + '15' }]}
+                onPress={() => { setEditStatus(opt.key); setShowStatusPicker(false); }}
               >
-                <View style={[styles.selectDot, { backgroundColor: getStatusColor(s) }]} />
-                <Text style={[styles.pickerOptionText, { color: editStatus === s ? colors.accent : colors.text }]}>
-                  {STATUS_LABELS[s]}
+                <View style={[styles.selectDot, { backgroundColor: opt.color || '#94a3b8' }]} />
+                <Text style={[styles.pickerOptionText, { color: editStatus === opt.key ? colors.accent : colors.text }]}>
+                  {opt.name}
                 </Text>
-                {editStatus === s && <Ionicons name="checkmark" size={20} color={colors.accent} />}
+                {editStatus === opt.key && <Ionicons name="checkmark" size={20} color={colors.accent} />}
               </TouchableOpacity>
             ))}
           </View>
@@ -786,6 +808,105 @@ export default function TasksScreen({ navigation }: Props) {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      <Modal visible={showFilterModal} transparent animationType="fade">
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowFilterModal(false)}>
+          <View style={[styles.filterSheet, { backgroundColor: colors.card }]}>
+            <View style={styles.filterHeader}>
+              <Text style={[styles.groupByTitle, { color: colors.text }]}>Filters</Text>
+              {hasActiveFilters && (
+                <TouchableOpacity onPress={() => setFilters({ statuses: [], priorities: [], projects: [] })}>
+                  <Text style={{ color: colors.accent, fontWeight: '600', fontSize: 14 }}>Clear All</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <ScrollView style={{ maxHeight: 400 }} nestedScrollEnabled>
+              <Text style={[styles.filterSectionLabel, { color: colors.secondary }]}>Status</Text>
+              <View style={styles.filterChips}>
+                {(statusOptions.length > 0 ? statusOptions : STATUS_ORDER.map(s => ({ key: s, name: STATUS_LABELS[s] || s, color: getStatusColor(s), sortOrder: 0 }))).map(opt => {
+                  const active = filters.statuses.includes(opt.key);
+                  return (
+                    <TouchableOpacity
+                      key={opt.key}
+                      style={[styles.filterChip, { borderColor: active ? (opt.color || colors.accent) : colors.border, backgroundColor: active ? (opt.color || colors.accent) + '20' : 'transparent' }]}
+                      onPress={() => {
+                        setFilters(prev => ({
+                          ...prev,
+                          statuses: active ? prev.statuses.filter(s => s !== opt.key) : [...prev.statuses, opt.key],
+                        }));
+                      }}
+                    >
+                      <View style={[styles.selectDot, { backgroundColor: opt.color || '#94a3b8' }]} />
+                      <Text style={[styles.filterChipText, { color: active ? (opt.color || colors.accent) : colors.text }]}>{opt.name}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <Text style={[styles.filterSectionLabel, { color: colors.secondary }]}>Priority</Text>
+              <View style={styles.filterChips}>
+                {PRIORITY_ORDER.map(p => {
+                  const active = filters.priorities.includes(p);
+                  return (
+                    <TouchableOpacity
+                      key={p}
+                      style={[styles.filterChip, { borderColor: active ? getPriorityColor(p) : colors.border, backgroundColor: active ? getPriorityColor(p) + '20' : 'transparent' }]}
+                      onPress={() => {
+                        setFilters(prev => ({
+                          ...prev,
+                          priorities: active ? prev.priorities.filter(pr => pr !== p) : [...prev.priorities, p],
+                        }));
+                      }}
+                    >
+                      <View style={[styles.selectDot, { backgroundColor: getPriorityColor(p) }]} />
+                      <Text style={[styles.filterChipText, { color: active ? getPriorityColor(p) : colors.text }]}>{PRIORITY_LABELS[p]}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <Text style={[styles.filterSectionLabel, { color: colors.secondary }]}>Project</Text>
+              <View style={styles.filterChips}>
+                {projects.map(proj => {
+                  const active = filters.projects.includes(proj.id);
+                  return (
+                    <TouchableOpacity
+                      key={proj.id}
+                      style={[styles.filterChip, { borderColor: active ? colors.accent : colors.border, backgroundColor: active ? colors.accent + '20' : 'transparent' }]}
+                      onPress={() => {
+                        setFilters(prev => ({
+                          ...prev,
+                          projects: active ? prev.projects.filter(id => id !== proj.id) : [...prev.projects, proj.id],
+                        }));
+                      }}
+                    >
+                      <Text style={[styles.filterChipText, { color: active ? colors.accent : colors.text }]}>{proj.name}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      <View style={[styles.bottomBar, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
+        <TouchableOpacity
+          style={[styles.bottomBarBtn, viewMode === 'list' && { backgroundColor: colors.accent }]}
+          onPress={() => setViewMode('list')}
+        >
+          <Ionicons name="list-outline" size={18} color={viewMode === 'list' ? '#ffffff' : colors.secondary} />
+          <Text style={[styles.bottomBarBtnText, { color: viewMode === 'list' ? '#ffffff' : colors.secondary }]}>List</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.bottomBarBtn, viewMode === 'board' && { backgroundColor: colors.accent }]}
+          onPress={() => setViewMode('board')}
+        >
+          <Ionicons name="grid-outline" size={18} color={viewMode === 'board' ? '#ffffff' : colors.secondary} />
+          <Text style={[styles.bottomBarBtnText, { color: viewMode === 'board' ? '#ffffff' : colors.secondary }]}>Board</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -799,15 +920,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   header: {
-    paddingTop: 56,
+    paddingTop: 8,
     paddingHorizontal: 16,
     paddingBottom: 12,
     borderBottomWidth: 1,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    marginBottom: 12,
   },
   headerControls: {
     flexDirection: 'row',
@@ -1249,5 +1365,73 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '500',
     flex: 1,
+  },
+  filterDot: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#ef4444',
+  },
+  filterSheet: {
+    width: '85%',
+    borderRadius: 14,
+    padding: 16,
+    maxHeight: '70%',
+  },
+  filterHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  filterSectionLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  filterChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  filterChipText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  bottomBar: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderTopWidth: 1,
+    gap: 4,
+  },
+  bottomBarBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  bottomBarBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
