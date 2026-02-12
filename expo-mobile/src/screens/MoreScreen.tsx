@@ -42,15 +42,16 @@ const quickAddItems: QuickAddItem[] = [
   { id: 'memo', label: 'Memo', icon: 'create-outline', color: '#f59e0b' },
   { id: 'note', label: 'Note', icon: 'document-text-outline', color: '#10b981' },
   { id: 'task', label: 'Task', icon: 'checkbox-outline', color: '#8b5cf6' },
-  { id: 'site-diary', label: 'Site Diary', icon: 'book-outline', color: '#3b82f6' },
+  { id: 'site-diary', label: 'Site Diary', icon: 'book-outline', color: '#b196d2' },
 ];
 
 const moreItems: MoreItem[] = [
-  { id: 'site-diary', label: 'Site Diary', icon: 'book', color: '#3b82f6', action: 'navigate', screen: 'SiteDiaryList' },
+  { id: 'site-diary', label: 'Site Diary', icon: 'book', color: '#b196d2', action: 'navigate', screen: 'SiteDiaryList' },
   { id: 'tasks', label: 'My Tasks', icon: 'checkbox', color: '#8b5cf6', action: 'coming-soon' },
   { id: 'messages', label: 'Messages', icon: 'chatbubbles', color: '#10b981', action: 'coming-soon' },
   { id: 'contacts', label: 'Contacts', icon: 'people', color: '#f59e0b', action: 'coming-soon' },
   { id: 'schedule', label: 'Schedule', icon: 'calendar', color: '#ef4444', action: 'navigate', screen: 'Schedule' },
+  { id: 'checklists', label: 'Checklists', icon: 'checkmark-done', color: '#22c55e', action: 'navigate', screen: 'Checklists' },
   { id: 'settings', label: 'Settings', icon: 'settings', color: '#6b7280', action: 'coming-soon' },
 ];
 
@@ -101,7 +102,7 @@ export default function MoreScreen({ navigation }: Props) {
         text: '#f1f5f9',
         secondary: '#94a3b8',
         sheetBg: '#1e293b',
-        accent: '#3b82f6',
+        accent: '#b196d2',
         handle: '#475569',
         inputBg: '#0f172a',
         border: '#334155',
@@ -113,7 +114,7 @@ export default function MoreScreen({ navigation }: Props) {
         text: '#0f172a',
         secondary: '#64748b',
         sheetBg: '#1e293b',
-        accent: '#2563eb',
+        accent: '#9b7fc4',
         handle: '#64748b',
         inputBg: '#ffffff',
         border: '#e2e8f0',

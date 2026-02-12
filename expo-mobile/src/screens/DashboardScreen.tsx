@@ -151,18 +151,19 @@ export default function DashboardScreen({ navigation }: Props) {
   const [layoutPrefs, setLayoutPrefs] = useState<LayoutPrefs>(defaultLayout);
 
   const colors = isDark
-    ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#3b82f6', muted: '#475569', cardHover: '#253449' }
-    : { bg: '#f8fafc', card: '#ffffff', text: '#0f172a', secondary: '#64748b', border: '#e2e8f0', accent: '#2563eb', muted: '#cbd5e1', cardHover: '#f1f5f9' };
+    ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569', cardHover: '#253449' }
+    : { bg: '#f8fafc', card: '#ffffff', text: '#0f172a', secondary: '#64748b', border: '#e2e8f0', accent: '#9b7fc4', muted: '#cbd5e1', cardHover: '#f1f5f9' };
 
   const fetchData = useCallback(async () => {
     try {
-      const [projectsData, tasksData, notifData, unreadData, timesheetData, prefsData] = await Promise.all([
+      const [projectsData, tasksData, notifData, unreadData, timesheetData, prefsData, collapsedData] = await Promise.all([
         apiFetch<Project[]>('/api/projects').catch(() => []),
         apiFetch<Task[]>('/api/tasks').catch(() => []),
         apiFetch<Notification[]>('/api/notifications?limit=20').catch(() => []),
         apiFetch<{ count: number }>('/api/notifications/unread-count').catch(() => ({ count: 0 })),
         apiFetch<ActiveTimesheet | null>('/api/timesheets/active').catch(() => null),
         apiFetch<any>('/api/user-view-preferences/mobile-dashboard-layout').catch(() => null),
+        apiFetch<any>('/api/user-view-preferences/mobile-dashboard-collapsed').catch(() => null),
       ]);
       setProjects(projectsData || []);
       const myTasks = (tasksData || []).filter((t: any) => {
@@ -187,6 +188,9 @@ export default function DashboardScreen({ navigation }: Props) {
         ];
         setLayoutPrefs({ tiles: mergedTiles, sections: mergedSections });
       }
+      if (collapsedData?.preferences) {
+        setCollapsed(prev => ({ ...prev, ...collapsedData.preferences }));
+      }
     } catch (e) {
       console.error('Failed to fetch dashboard data:', e);
     } finally {
@@ -203,7 +207,11 @@ export default function DashboardScreen({ navigation }: Props) {
   }, [fetchData]);
 
   const toggleSection = (key: string) => {
-    setCollapsed(prev => ({ ...prev, [key]: !prev[key] }));
+    setCollapsed(prev => {
+      const updated = { ...prev, [key]: !prev[key] };
+      apiRequest('/api/user-view-preferences/mobile-dashboard-collapsed', 'PUT', { preferences: updated }).catch(() => {});
+      return updated;
+    });
   };
 
   const openNotifications = useCallback(() => {

@@ -246,8 +246,8 @@ export default function ScheduleScreen({ navigation }: Props) {
   const ganttScrollRef = useRef<ScrollView>(null);
 
   const colors = isDark
-    ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#3b82f6', inputBg: '#0f172a' }
-    : { bg: '#f8fafc', card: '#ffffff', text: '#0f172a', secondary: '#64748b', border: '#e2e8f0', accent: '#2563eb', inputBg: '#f1f5f9' };
+    ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', inputBg: '#0f172a' }
+    : { bg: '#f8fafc', card: '#ffffff', text: '#0f172a', secondary: '#64748b', border: '#e2e8f0', accent: '#9b7fc4', inputBg: '#f1f5f9' };
 
   const fetchProjects = useCallback(async () => {
     try {

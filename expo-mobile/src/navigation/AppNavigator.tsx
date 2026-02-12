@@ -14,6 +14,7 @@ import TimesheetsScreen from '../screens/TimesheetsScreen';
 import SiteDiaryScreen from '../screens/SiteDiaryScreen';
 import SiteDiaryListScreen from '../screens/SiteDiaryListScreen';
 import ScheduleScreen from '../screens/ScheduleScreen';
+import ChecklistsScreen from '../screens/ChecklistsScreen';
 import MoreScreen from '../screens/MoreScreen';
 
 const Stack = createNativeStackNavigator();
@@ -44,6 +45,8 @@ function ProjectsStack() {
         component={SiteDiaryScreen}
         options={({ route }: any) => ({ title: `${route.params?.projectName || 'Project'} - Site Diary` })}
       />
+      <Stack.Screen name="Checklists" component={ChecklistsScreen} options={{ title: 'Checklists' }} />
+      <Stack.Screen name="Schedule" component={ScheduleScreen} options={{ title: 'Schedule' }} />
     </Stack.Navigator>
   );
 }
@@ -66,6 +69,7 @@ function MoreStack() {
       <Stack.Screen name="MoreHome" component={MoreScreen} />
       <Stack.Screen name="SiteDiaryList" component={SiteDiaryListScreen} />
       <Stack.Screen name="Schedule" component={ScheduleScreen} options={{ headerShown: true, title: 'Schedule' }} />
+      <Stack.Screen name="Checklists" component={ChecklistsScreen} options={{ headerShown: true, title: 'Checklists' }} />
     </Stack.Navigator>
   );
 }
@@ -75,8 +79,8 @@ function MainTabs() {
   const isDark = colorScheme === 'dark';
 
   const colors = isDark
-    ? { bg: '#0f172a', card: '#1e293b', border: '#334155', active: '#3b82f6', inactive: '#64748b' }
-    : { bg: '#f8fafc', card: '#ffffff', border: '#e2e8f0', active: '#2563eb', inactive: '#94a3b8' };
+    ? { bg: '#0f172a', card: '#1e293b', border: '#334155', active: '#b196d2', inactive: '#64748b' }
+    : { bg: '#f8fafc', card: '#ffffff', border: '#e2e8f0', active: '#9b7fc4', inactive: '#94a3b8' };
 
   return (
     <Tab.Navigator
@@ -124,7 +128,7 @@ export default function AppNavigator() {
       theme={{
         dark: isDark,
         colors: {
-          primary: isDark ? '#3b82f6' : '#2563eb',
+          primary: isDark ? '#b196d2' : '#9b7fc4',
           background: isDark ? '#0f172a' : '#f8fafc',
           card: isDark ? '#1e293b' : '#ffffff',
           text: isDark ? '#f1f5f9' : '#0f172a',

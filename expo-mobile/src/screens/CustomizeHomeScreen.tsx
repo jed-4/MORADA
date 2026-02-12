@@ -70,8 +70,8 @@ export default function CustomizeHomeScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
 
   const colors = isDark
-    ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#3b82f6', muted: '#475569' }
-    : { bg: '#f8fafc', card: '#ffffff', text: '#0f172a', secondary: '#64748b', border: '#e2e8f0', accent: '#2563eb', muted: '#cbd5e1' };
+    ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569' }
+    : { bg: '#f8fafc', card: '#ffffff', text: '#0f172a', secondary: '#64748b', border: '#e2e8f0', accent: '#9b7fc4', muted: '#cbd5e1' };
 
   useEffect(() => {
     apiFetch<{ preferences: LayoutPreferences } | null>('/api/user-view-preferences/mobile-dashboard-layout')

@@ -154,8 +154,8 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
   const [playbackDuration, setPlaybackDuration] = useState(0);
 
   const colors = isDark
-    ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#3b82f6', danger: '#ef4444', success: '#22c55e', inputBg: '#0f172a' }
-    : { bg: '#f8fafc', card: '#ffffff', text: '#0f172a', secondary: '#64748b', border: '#e2e8f0', accent: '#2563eb', danger: '#ef4444', success: '#22c55e', inputBg: '#f1f5f9' };
+    ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', danger: '#ef4444', success: '#22c55e', inputBg: '#0f172a' }
+    : { bg: '#f8fafc', card: '#ffffff', text: '#0f172a', secondary: '#64748b', border: '#e2e8f0', accent: '#9b7fc4', danger: '#ef4444', success: '#22c55e', inputBg: '#f1f5f9' };
 
   const offlineKey = `${OFFLINE_KEY_PREFIX}${projectId}`;
 
