@@ -357,19 +357,6 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
                   </Text>
                 </View>
               </View>
-              {isExpanded && hasGroups && (
-                <TouchableOpacity
-                  onPress={(e) => { e.stopPropagation(); toggleAllInstanceGroups(); }}
-                  style={styles.collapseAllHeaderBtn}
-                  activeOpacity={0.7}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Ionicons name={allGroupsCollapsed ? 'chevron-down' : 'chevron-up'} size={13} color={colors.secondary} />
-                  <Text style={[styles.collapseAllText, { color: colors.secondary }]}>
-                    {allGroupsCollapsed ? 'Expand' : 'Collapse'}
-                  </Text>
-                </TouchableOpacity>
-              )}
             </View>
             {instance.description && (
               <Text style={[styles.instanceDesc, { color: colors.secondary }]} numberOfLines={1}>{instance.description}</Text>
@@ -401,8 +388,21 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
             </View>
           </View>
 
-          <View style={styles.expandIndicator}>
+          <View style={styles.expandIndicatorRow}>
             <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.muted} />
+            {isExpanded && hasGroups && (
+              <TouchableOpacity
+                onPress={(e) => { e.stopPropagation(); toggleAllInstanceGroups(); }}
+                style={styles.collapseAllBelowBtn}
+                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name={allGroupsCollapsed ? 'chevron-down' : 'chevron-up'} size={13} color={colors.secondary} />
+                <Text style={[styles.collapseAllText, { color: colors.secondary }]}>
+                  {allGroupsCollapsed ? 'Expand All' : 'Collapse All'}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         </TouchableOpacity>
 
@@ -528,7 +528,7 @@ const styles = StyleSheet.create({
   instanceMetaRight: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   metaText: { fontSize: 11 },
-  expandIndicator: { alignItems: 'center', marginTop: 4 },
+  expandIndicatorRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 4, gap: 12 },
   itemsContainer: { borderTopWidth: 1, paddingHorizontal: 14, paddingVertical: 8 },
   collapseAllBtn: {
     flexDirection: 'row',
@@ -539,6 +539,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   collapseAllHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+  },
+  collapseAllBelowBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
