@@ -83,6 +83,46 @@ type Props = {
   navigation: NativeStackNavigationProp<any>;
 };
 
+const PHASE_ORDER: Record<string, number> = {
+  construction: 0,
+  pre_construction: 1,
+  lead: 2,
+  post_construction: 3,
+};
+
+const PHASE_LABELS: Record<string, string> = {
+  construction: 'Construction',
+  pre_construction: 'Pre-construction',
+  lead: 'Lead',
+  post_construction: 'Post-construction',
+};
+
+function getSortedProjectItems(projects: Project[]): { id: string; label: string; isHeader?: boolean }[] {
+  const visible = projects.filter(p => p.isActive && !p.isArchived && !p.isBusiness && p.currentSystemPhase !== 'archive');
+
+  visible.sort((a, b) => {
+    const phaseA = PHASE_ORDER[a.currentSystemPhase || 'lead'] ?? 99;
+    const phaseB = PHASE_ORDER[b.currentSystemPhase || 'lead'] ?? 99;
+    if (phaseA !== phaseB) return phaseA - phaseB;
+    const jnCompare = (a.jobNumber || '').localeCompare(b.jobNumber || '', undefined, { numeric: true });
+    if (jnCompare !== 0) return jnCompare;
+    return a.name.localeCompare(b.name);
+  });
+
+  const items: { id: string; label: string; isHeader?: boolean }[] = [];
+  let currentPhase = '';
+  for (const p of visible) {
+    const phase = p.currentSystemPhase || 'lead';
+    if (phase !== currentPhase) {
+      currentPhase = phase;
+      items.push({ id: `__header_${phase}`, label: PHASE_LABELS[phase] || phase, isHeader: true });
+    }
+    const prefix = p.jobNumber ? `${p.jobNumber} - ` : '';
+    items.push({ id: p.id, label: `${prefix}${p.name}` });
+  }
+  return items;
+}
+
 function formatDayHeader(date: Date): string {
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -1664,26 +1704,35 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
               </TouchableOpacity>
             </View>
             <FlatList
-              data={activeProjects}
+              data={getSortedProjectItems(projects)}
               keyExtractor={item => item.id}
               contentContainerStyle={{ paddingBottom: 40 }}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[styles.projectPickerRow, { borderBottomColor: isDark ? '#334155' : '#f1f5f9' }]}
-                  onPress={() => {
-                    setFormProjectId(item.id);
-                    setShowProjectPicker(false);
-                  }}
-                >
-                  <Ionicons name="briefcase-outline" size={18} color={colors.accent} />
-                  <Text style={[styles.projectPickerName, { color: isDark ? '#f1f5f9' : '#0f172a' }]} numberOfLines={1}>
-                    {item.jobNumber ? `${item.jobNumber} - ${item.name}` : item.name}
-                  </Text>
-                  {formProjectId === item.id && (
-                    <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
-                  )}
-                </TouchableOpacity>
-              )}
+              renderItem={({ item }) => {
+                if (item.isHeader) {
+                  return (
+                    <View style={[styles.phaseSectionHeader, { backgroundColor: isDark ? '#1e293b' : '#f1f5f9' }]}>
+                      <Text style={[styles.phaseSectionText, { color: colors.secondary }]}>{item.label}</Text>
+                    </View>
+                  );
+                }
+                return (
+                  <TouchableOpacity
+                    style={[styles.projectPickerRow, { borderBottomColor: isDark ? '#334155' : '#f1f5f9' }]}
+                    onPress={() => {
+                      setFormProjectId(item.id);
+                      setShowProjectPicker(false);
+                    }}
+                  >
+                    <Ionicons name="briefcase-outline" size={18} color={colors.accent} />
+                    <Text style={[styles.projectPickerName, { color: isDark ? '#f1f5f9' : '#0f172a' }]} numberOfLines={1}>
+                      {item.label}
+                    </Text>
+                    {formProjectId === item.id && (
+                      <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
+                    )}
+                  </TouchableOpacity>
+                );
+              }}
             />
           </View>
         </View>
@@ -1711,26 +1760,35 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
               {!filterProjectId && <Ionicons name="checkmark-circle" size={20} color={colors.accent} />}
             </TouchableOpacity>
             <FlatList
-              data={activeProjects}
+              data={getSortedProjectItems(projects)}
               keyExtractor={item => item.id}
               contentContainerStyle={{ paddingBottom: 40 }}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[styles.projectPickerRow, { borderBottomColor: isDark ? '#334155' : '#f1f5f9' }]}
-                  onPress={() => {
-                    setFilterProjectId(item.id);
-                    setShowFilterPicker(false);
-                  }}
-                >
-                  <Ionicons name="briefcase-outline" size={18} color={colors.accent} />
-                  <Text style={[styles.projectPickerName, { color: isDark ? '#f1f5f9' : '#0f172a' }]} numberOfLines={1}>
-                    {item.jobNumber ? `${item.jobNumber} - ${item.name}` : item.name}
-                  </Text>
-                  {filterProjectId === item.id && (
-                    <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
-                  )}
-                </TouchableOpacity>
-              )}
+              renderItem={({ item }) => {
+                if (item.isHeader) {
+                  return (
+                    <View style={[styles.phaseSectionHeader, { backgroundColor: isDark ? '#1e293b' : '#f1f5f9' }]}>
+                      <Text style={[styles.phaseSectionText, { color: colors.secondary }]}>{item.label}</Text>
+                    </View>
+                  );
+                }
+                return (
+                  <TouchableOpacity
+                    style={[styles.projectPickerRow, { borderBottomColor: isDark ? '#334155' : '#f1f5f9' }]}
+                    onPress={() => {
+                      setFilterProjectId(item.id);
+                      setShowFilterPicker(false);
+                    }}
+                  >
+                    <Ionicons name="briefcase-outline" size={18} color={colors.accent} />
+                    <Text style={[styles.projectPickerName, { color: isDark ? '#f1f5f9' : '#0f172a' }]} numberOfLines={1}>
+                      {item.label}
+                    </Text>
+                    {filterProjectId === item.id && (
+                      <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
+                    )}
+                  </TouchableOpacity>
+                );
+              }}
             />
           </View>
         </View>
@@ -2439,6 +2497,16 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     fontWeight: '500',
+  },
+  phaseSectionHeader: {
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+  },
+  phaseSectionText: {
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   dayInfoRow: {
     flexDirection: 'row',
