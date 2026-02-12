@@ -528,14 +528,14 @@ export default function ChecklistInstanceDetail() {
     });
     
     Object.keys(groups).forEach(key => {
-      groups[key].sort((a, b) => a.order - b.order);
+      groups[key].sort((a, b) => (a.description || '').localeCompare(b.description || ''));
     });
     
     return groups;
   }, [items]);
 
   // Get current group names
-  const allGroupNames = useMemo(() => Object.keys(groupedItems), [groupedItems]);
+  const allGroupNames = useMemo(() => Object.keys(groupedItems).sort((a, b) => a.localeCompare(b)), [groupedItems]);
 
   // Clean up stale collapsed groups when data changes
   useEffect(() => {
@@ -760,7 +760,8 @@ export default function ChecklistInstanceDetail() {
           </div>
         ) : (
           <div className="space-y-4">
-            {Object.entries(groupedItems).map(([groupName, groupItems]) => {
+            {allGroupNames.map((groupName) => {
+              const groupItems = groupedItems[groupName] || [];
               const isCollapsed = collapsedGroups.has(groupName);
               const groupCompleted = groupItems.filter(i => i.status === "completed" || i.status === "na").length;
               

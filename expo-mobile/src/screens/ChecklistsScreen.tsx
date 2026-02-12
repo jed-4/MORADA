@@ -91,7 +91,8 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
       const filterPid = projectId || selectedProjectId;
       const query = filterPid ? `?projectId=${filterPid}` : '';
       const data = await apiFetch<ChecklistInstance[]>(`/api/checklist-instances${query}`);
-      setInstances(data || []);
+      const sorted = (data || []).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      setInstances(sorted);
     } catch {
       setInstances([]);
     }
@@ -135,7 +136,8 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
     setLoadingItems(prev => ({ ...prev, [instanceId]: true }));
     try {
       const items = await apiFetch<ChecklistItem[]>(`/api/checklist-instances/${instanceId}/items`);
-      setItemsByInstance(prev => ({ ...prev, [instanceId]: items || [] }));
+      const sorted = (items || []).sort((a, b) => (a.description || '').localeCompare(b.description || ''));
+      setItemsByInstance(prev => ({ ...prev, [instanceId]: sorted }));
     } catch {
       setItemsByInstance(prev => ({ ...prev, [instanceId]: [] }));
     } finally {
@@ -228,9 +230,9 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
       }
     }
     for (const key of Object.keys(groups)) {
-      groups[key].sort((a, b) => a.order - b.order);
+      groups[key].sort((a, b) => (a.description || '').localeCompare(b.description || ''));
     }
-    ungrouped.sort((a, b) => a.order - b.order);
+    ungrouped.sort((a, b) => (a.description || '').localeCompare(b.description || ''));
     return { groups, ungrouped };
   };
 
@@ -258,6 +260,9 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
           <Text style={[styles.itemAssignee, { color: colors.secondary }]}>{item.assigneeName}</Text>
         )}
       </View>
+      {item.notes && (
+        <Ionicons name="chatbubble" size={12} color="#3b82f6" style={{ marginRight: 4 }} />
+      )}
       {item.isRequired && (
         <View style={[styles.requiredBadge, { backgroundColor: '#ef444420' }]}>
           <Text style={[styles.requiredText, { color: '#ef4444' }]}>Req</Text>
@@ -290,7 +295,7 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
     return (
       <View style={[styles.itemsContainer, { borderTopColor: colors.border }]}>
         {ungrouped.length > 0 && ungrouped.map(renderItemRow)}
-        {Object.entries(groups).map(([groupName, grpItems]) => {
+        {Object.entries(groups).sort(([a], [b]) => a.localeCompare(b)).map(([groupName, grpItems]) => {
           const groupKey = `${instanceId}:${groupName}`;
           const isCollapsed = collapsedGroups[groupKey];
           const completedInGroup = grpItems.filter(i => i.status === 'completed' || i.status === 'na').length;

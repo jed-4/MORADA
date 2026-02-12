@@ -12,6 +12,7 @@ import {
   type ChecklistInstanceItem,
   type ChecklistTemplate,
   type ChecklistTemplateGroup,
+  type ChecklistAuditLog,
   type User,
   type ScheduleItem,
 } from "@shared/schema";
@@ -117,6 +118,78 @@ type ChecklistGroupWithCounts = ChecklistInstanceGroup & {
   totalCount?: number;
 };
 
+function ActivityLogContent({ instanceId }: { instanceId: string }) {
+  const { data: auditLog = [], isLoading } = useQuery<ChecklistAuditLog[]>({
+    queryKey: ['/api/checklist-instances', instanceId, 'audit-log'],
+    queryFn: () => fetch(`/api/checklist-instances/${instanceId}/audit-log`).then(r => r.json()),
+    enabled: !!instanceId,
+  });
+
+  const getActionLabel = (action: string) => {
+    switch (action) {
+      case "item_status_changed": return "changed status";
+      case "item_assigned": return "assigned item";
+      case "item_created": return "added item";
+      case "item_deleted": return "removed item";
+      case "group_created": return "added group";
+      case "group_deleted": return "removed group";
+      case "checklist_created": return "created checklist";
+      default: return action.replace(/_/g, " ");
+    }
+  };
+
+  const getStatusLabel = (val: string | null) => {
+    if (!val) return "";
+    switch (val) {
+      case "completed": return "Completed";
+      case "pending": return "Pending";
+      case "na": return "N/A";
+      default: return val;
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (auditLog.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground py-4 text-center">No activity recorded yet.</p>
+    );
+  }
+
+  return (
+    <ScrollArea className="max-h-[400px]">
+      <div className="space-y-1">
+        {auditLog.map((entry) => (
+          <div key={entry.id} className="flex items-start gap-2 py-1.5 px-1 text-xs">
+            <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 mt-1.5 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <span className="font-medium">{entry.userName || "System"}</span>{" "}
+              <span className="text-muted-foreground">{getActionLabel(entry.action)}</span>
+              {entry.action === "item_status_changed" && entry.previousValue && entry.newValue && (
+                <span className="text-muted-foreground">
+                  {" "}{getStatusLabel(entry.previousValue)} → {getStatusLabel(entry.newValue)}
+                </span>
+              )}
+              {entry.details && entry.action !== "item_status_changed" && (
+                <span className="text-muted-foreground block truncate">{entry.details}</span>
+              )}
+            </div>
+            <span className="text-[10px] text-muted-foreground/60 shrink-0">
+              {format(new Date(entry.createdAt), "MMM d, h:mm a")}
+            </span>
+          </div>
+        ))}
+      </div>
+    </ScrollArea>
+  );
+}
+
 export default function ProjectChecklists() {
   const { projectId } = useParams<{ projectId: string }>();
   const [, navigate] = useLocation();
@@ -128,6 +201,7 @@ export default function ProjectChecklists() {
   const [searchTerm, setSearchTerm] = useState("");
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [showActivityLog, setShowActivityLog] = useState<string | null>(null);
   const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
   const [openLinkPopover, setOpenLinkPopover] = useState<string | null>(null);
   const [hideCompleted, setHideCompleted] = useState(false);
@@ -205,9 +279,8 @@ export default function ProjectChecklists() {
           });
         }
       }));
-      // Sort items by order to maintain template order
       Object.keys(itemsMap).forEach(groupId => {
-        itemsMap[groupId].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+        itemsMap[groupId].sort((a, b) => (a.description || '').localeCompare(b.description || ''));
       });
       return itemsMap;
     },
@@ -503,7 +576,7 @@ export default function ProjectChecklists() {
     const result = instances.map(instance => {
       const groups = groupsByInstanceId[instance.id] || [];
       // Sort groups by order
-      groups.sort((a, b) => (a.order || 0) - (b.order || 0));
+      groups.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
       return { instance, groups };
     });
     
@@ -766,6 +839,15 @@ export default function ProjectChecklists() {
                           }}
                         >
                           View Details
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowActivityLog(instance.id);
+                          }}
+                        >
+                          <Clock className="h-3 w-3 mr-2" />
+                          Activity Log
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           className="text-destructive"
@@ -1606,6 +1688,22 @@ export default function ProjectChecklists() {
               )}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Activity Log Dialog */}
+      <Dialog open={!!showActivityLog} onOpenChange={() => setShowActivityLog(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Clock className="h-4 w-4" />
+              Activity Log
+            </DialogTitle>
+            <DialogDescription>
+              Recent activity for this checklist
+            </DialogDescription>
+          </DialogHeader>
+          {showActivityLog && <ActivityLogContent instanceId={showActivityLog} />}
         </DialogContent>
       </Dialog>
 

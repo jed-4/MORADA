@@ -314,10 +314,26 @@ export default function ChecklistWidget({ widget, onUpdate, isConfiguring, onClo
         </div>
 
         <div className="flex items-center justify-between">
-          <Label className="text-xs">Hide Completed</Label>
+          <Label className="text-xs">Hide Completed Items</Label>
           <Switch 
-            checked={hideCompleted}
-            onCheckedChange={setHideCompleted}
+            checked={hideCompletedItems}
+            onCheckedChange={setHideCompletedItems}
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <Label className="text-xs">Hide Completed Checklists</Label>
+          <Switch 
+            checked={hideCompletedChecklists}
+            onCheckedChange={setHideCompletedChecklists}
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <Label className="text-xs">Hide Completed Groups</Label>
+          <Switch 
+            checked={hideCompletedGroups}
+            onCheckedChange={setHideCompletedGroups}
           />
         </div>
         
@@ -567,7 +583,8 @@ function ChecklistAccordionItem({
         credentials: "include",
       });
       if (!response.ok) throw new Error("Failed to fetch groups");
-      return response.json();
+      const data = await response.json();
+      return data.sort((a: ChecklistGroupWithItems, b: ChecklistGroupWithItems) => (a.name || '').localeCompare(b.name || ''));
     },
     enabled: isExpanded,
   });
@@ -711,7 +728,7 @@ function ChecklistGroupItem({
       });
       if (!response.ok) throw new Error("Failed to fetch items");
       const data = await response.json();
-      return data.sort((a: ChecklistInstanceItem, b: ChecklistInstanceItem) => (a.order ?? 0) - (b.order ?? 0));
+      return data.sort((a: ChecklistInstanceItem, b: ChecklistInstanceItem) => (a.description || '').localeCompare(b.description || ''));
     },
     enabled: isExpanded,
   });
