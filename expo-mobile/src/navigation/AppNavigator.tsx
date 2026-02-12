@@ -13,6 +13,7 @@ import TasksScreen from '../screens/TasksScreen';
 import TimesheetsScreen from '../screens/TimesheetsScreen';
 import SiteDiaryScreen from '../screens/SiteDiaryScreen';
 import SiteDiaryListScreen from '../screens/SiteDiaryListScreen';
+import ScheduleScreen from '../screens/ScheduleScreen';
 import MoreScreen from '../screens/MoreScreen';
 
 const Stack = createNativeStackNavigator();
@@ -64,6 +65,7 @@ function MoreStack() {
     >
       <Stack.Screen name="MoreHome" component={MoreScreen} />
       <Stack.Screen name="SiteDiaryList" component={SiteDiaryListScreen} />
+      <Stack.Screen name="Schedule" component={ScheduleScreen} options={{ headerShown: true, title: 'Schedule' }} />
     </Stack.Navigator>
   );
 }
