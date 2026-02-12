@@ -1584,6 +1584,91 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
 
             <View style={{ height: 40 }} />
           </ScrollView>
+
+          <Modal visible={showProjectPicker} transparent animationType="slide">
+            <View style={[styles.modalOverlay, { justifyContent: 'flex-end' }]}>
+              <View style={[styles.pickerSheet, { backgroundColor: isDark ? '#1e293b' : '#ffffff' }]}>
+                <View style={[styles.pickerHeader, { borderBottomColor: isDark ? '#334155' : '#e2e8f0' }]}>
+                  <Text style={[styles.pickerHeaderTitle, { color: isDark ? '#f1f5f9' : '#0f172a' }]}>
+                    Select Project
+                  </Text>
+                  <TouchableOpacity onPress={() => setShowProjectPicker(false)}>
+                    <Ionicons name="close" size={24} color={isDark ? '#94a3b8' : '#64748b'} />
+                  </TouchableOpacity>
+                </View>
+                <FlatList
+                  data={getSortedProjectItems(projects)}
+                  keyExtractor={item => item.id}
+                  contentContainerStyle={{ paddingBottom: 40 }}
+                  renderItem={({ item }) => {
+                    if (item.isHeader) {
+                      return (
+                        <View style={[styles.phaseSectionHeader, { backgroundColor: isDark ? '#1e293b' : '#f1f5f9' }]}>
+                          <Text style={[styles.phaseSectionText, { color: colors.secondary }]}>{item.label}</Text>
+                        </View>
+                      );
+                    }
+                    return (
+                      <TouchableOpacity
+                        style={[styles.projectPickerRow, { borderBottomColor: isDark ? '#334155' : '#f1f5f9' }]}
+                        onPress={() => {
+                          setFormProjectId(item.id);
+                          setShowProjectPicker(false);
+                        }}
+                      >
+                        <Ionicons name="briefcase-outline" size={18} color={colors.accent} />
+                        <Text style={[styles.projectPickerName, { color: isDark ? '#f1f5f9' : '#0f172a' }]} numberOfLines={1}>
+                          {item.label}
+                        </Text>
+                        {formProjectId === item.id && (
+                          <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  }}
+                />
+              </View>
+            </View>
+          </Modal>
+
+          <Modal visible={showTemplatePicker} transparent animationType="slide">
+            <View style={[styles.tpOverlay, { justifyContent: 'flex-end' }]}>
+              <View style={[styles.tpSheet, { backgroundColor: isDark ? '#1e293b' : '#ffffff' }]}>
+                <View style={[styles.tpHeader, { borderBottomColor: isDark ? '#334155' : '#e2e8f0' }]}>
+                  <Text style={[styles.tpHeaderTitle, { color: isDark ? '#f1f5f9' : '#0f172a' }]}>
+                    Select Template
+                  </Text>
+                  <TouchableOpacity onPress={() => setShowTemplatePicker(false)}>
+                    <Ionicons name="close" size={24} color={isDark ? '#94a3b8' : '#64748b'} />
+                  </TouchableOpacity>
+                </View>
+                <FlatList
+                  data={allTemplates}
+                  keyExtractor={item => item.id}
+                  contentContainerStyle={{ paddingBottom: 40 }}
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      style={[styles.tpRow, { borderBottomColor: isDark ? '#334155' : '#f1f5f9' }]}
+                      onPress={() => switchTemplate(item)}
+                    >
+                      <Ionicons name="document-text-outline" size={18} color={colors.accent} />
+                      <View style={styles.tpRowContent}>
+                        <Text style={[styles.tpRowName, { color: isDark ? '#f1f5f9' : '#0f172a' }]} numberOfLines={1}>
+                          {item.name}
+                        </Text>
+                        {item.isDefault && (
+                          <Text style={[styles.tpRowBadge, { color: colors.accent }]}>Default</Text>
+                        )}
+                      </View>
+                      {activeTemplate?.id === item.id && (
+                        <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
+                      )}
+                    </TouchableOpacity>
+                  )}
+                />
+              </View>
+            </View>
+          </Modal>
         </KeyboardAvoidingView>
       </Modal>
 
@@ -1689,52 +1774,6 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
               )}
             </ScrollView>
           )}
-        </View>
-      </Modal>
-
-      <Modal visible={showProjectPicker} transparent animationType="slide">
-        <View style={[styles.modalOverlay, { justifyContent: 'flex-end' }]}>
-          <View style={[styles.pickerSheet, { backgroundColor: isDark ? '#1e293b' : '#ffffff' }]}>
-            <View style={[styles.pickerHeader, { borderBottomColor: isDark ? '#334155' : '#e2e8f0' }]}>
-              <Text style={[styles.pickerHeaderTitle, { color: isDark ? '#f1f5f9' : '#0f172a' }]}>
-                Select Project
-              </Text>
-              <TouchableOpacity onPress={() => setShowProjectPicker(false)}>
-                <Ionicons name="close" size={24} color={isDark ? '#94a3b8' : '#64748b'} />
-              </TouchableOpacity>
-            </View>
-            <FlatList
-              data={getSortedProjectItems(projects)}
-              keyExtractor={item => item.id}
-              contentContainerStyle={{ paddingBottom: 40 }}
-              renderItem={({ item }) => {
-                if (item.isHeader) {
-                  return (
-                    <View style={[styles.phaseSectionHeader, { backgroundColor: isDark ? '#1e293b' : '#f1f5f9' }]}>
-                      <Text style={[styles.phaseSectionText, { color: colors.secondary }]}>{item.label}</Text>
-                    </View>
-                  );
-                }
-                return (
-                  <TouchableOpacity
-                    style={[styles.projectPickerRow, { borderBottomColor: isDark ? '#334155' : '#f1f5f9' }]}
-                    onPress={() => {
-                      setFormProjectId(item.id);
-                      setShowProjectPicker(false);
-                    }}
-                  >
-                    <Ionicons name="briefcase-outline" size={18} color={colors.accent} />
-                    <Text style={[styles.projectPickerName, { color: isDark ? '#f1f5f9' : '#0f172a' }]} numberOfLines={1}>
-                      {item.label}
-                    </Text>
-                    {formProjectId === item.id && (
-                      <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
-                    )}
-                  </TouchableOpacity>
-                );
-              }}
-            />
-          </View>
         </View>
       </Modal>
 
@@ -1887,44 +1926,6 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
         </View>
       </Modal>
 
-      <Modal visible={showTemplatePicker} transparent animationType="slide">
-        <View style={[styles.tpOverlay, { justifyContent: 'flex-end' }]}>
-          <View style={[styles.tpSheet, { backgroundColor: isDark ? '#1e293b' : '#ffffff' }]}>
-            <View style={[styles.tpHeader, { borderBottomColor: isDark ? '#334155' : '#e2e8f0' }]}>
-              <Text style={[styles.tpHeaderTitle, { color: isDark ? '#f1f5f9' : '#0f172a' }]}>
-                Select Template
-              </Text>
-              <TouchableOpacity onPress={() => setShowTemplatePicker(false)}>
-                <Ionicons name="close" size={24} color={isDark ? '#94a3b8' : '#64748b'} />
-              </TouchableOpacity>
-            </View>
-            <FlatList
-              data={allTemplates}
-              keyExtractor={item => item.id}
-              contentContainerStyle={{ paddingBottom: 40 }}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[styles.tpRow, { borderBottomColor: isDark ? '#334155' : '#f1f5f9' }]}
-                  onPress={() => switchTemplate(item)}
-                >
-                  <Ionicons name="document-text-outline" size={18} color={colors.accent} />
-                  <View style={styles.tpRowContent}>
-                    <Text style={[styles.tpRowName, { color: isDark ? '#f1f5f9' : '#0f172a' }]} numberOfLines={1}>
-                      {item.name}
-                    </Text>
-                    {item.isDefault && (
-                      <Text style={[styles.tpRowBadge, { color: colors.accent }]}>Default</Text>
-                    )}
-                  </View>
-                  {activeTemplate?.id === item.id && (
-                    <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
-                  )}
-                </TouchableOpacity>
-              )}
-            />
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
