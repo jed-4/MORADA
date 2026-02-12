@@ -1034,200 +1034,206 @@ export default function ScheduleScreen({ navigation }: Props) {
     );
   };
 
+  const closeDetail = () => {
+    setShowDetailSheet(false);
+    setShowStatusPicker(false);
+    setSelectedItem(null);
+  };
+
   const renderDetailSheet = () => {
     if (!selectedItem) return null;
     const typeColor = TYPE_COLORS[selectedItem.type] || '#3b82f6';
     const statusColor = STATUS_COLORS[detailStatus] || '#94a3b8';
 
     return (
-      <Modal visible={showDetailSheet} animationType="slide" transparent>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex1}>
-          <View style={styles.detailOverlay}>
-            <View style={[styles.detailContainer, { backgroundColor: colors.card }]}>
-              <View style={[styles.detailHandle, { backgroundColor: colors.border }]} />
-              <ScrollView style={styles.flex1} showsVerticalScrollIndicator={false}>
-                <View style={styles.detailHeaderRow}>
-                  <Text style={[styles.detailTitle, { color: colors.text }]}>{selectedItem.name}</Text>
-                  <TouchableOpacity onPress={() => setShowDetailSheet(false)}>
-                    <Ionicons name="close-circle" size={28} color={colors.secondary} />
-                  </TouchableOpacity>
-                </View>
+      <Modal visible={showDetailSheet} animationType="slide" presentationStyle="fullScreen">
+        <View style={[styles.modalContainer, { backgroundColor: colors.bg }]}>
+          <View style={[styles.modalHeader, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+            <TouchableOpacity onPress={closeDetail}>
+              <Ionicons name="arrow-back" size={24} color={colors.text} />
+            </TouchableOpacity>
+            <Text style={[styles.modalHeaderTitle, { color: colors.text }]} numberOfLines={1}>Schedule Item</Text>
+            <View style={{ width: 24 }} />
+          </View>
 
-                <View style={styles.detailBadgesRow}>
-                  <View style={[styles.typeBadge, { backgroundColor: typeColor + '20' }]}>
-                    <Text style={[styles.typeBadgeText, { color: typeColor }]}>{TYPE_LABELS[selectedItem.type] || selectedItem.type}</Text>
-                  </View>
-                  <View style={[styles.typeBadge, { backgroundColor: statusColor + '20' }]}>
-                    <Text style={[styles.typeBadgeText, { color: statusColor }]}>{STATUS_LABELS[detailStatus] || detailStatus}</Text>
-                  </View>
-                  {selectedItem.priority && (
-                    <View style={[styles.typeBadge, { backgroundColor: selectedItem.priority === 'urgent' ? '#ef444420' : selectedItem.priority === 'high' ? '#f59e0b20' : colors.border }]}>
-                      <Text style={[styles.typeBadgeText, { color: selectedItem.priority === 'urgent' ? '#ef4444' : selectedItem.priority === 'high' ? '#f59e0b' : colors.secondary }]}>
-                        {selectedItem.priority.charAt(0).toUpperCase() + selectedItem.priority.slice(1)}
-                      </Text>
-                    </View>
-                  )}
-                </View>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex1}>
+            <ScrollView style={styles.flex1} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
+              <Text style={[styles.detailTitle, { color: colors.text }]}>{selectedItem.name}</Text>
 
-                <View style={[styles.detailInfoSection, { borderColor: colors.border }]}>
+              <View style={styles.detailBadgesRow}>
+                <View style={[styles.typeBadge, { backgroundColor: typeColor + '20' }]}>
+                  <Text style={[styles.typeBadgeText, { color: typeColor }]}>{TYPE_LABELS[selectedItem.type] || selectedItem.type}</Text>
+                </View>
+                <View style={[styles.typeBadge, { backgroundColor: statusColor + '20' }]}>
+                  <Text style={[styles.typeBadgeText, { color: statusColor }]}>{STATUS_LABELS[detailStatus] || detailStatus}</Text>
+                </View>
+                {selectedItem.priority && (
+                  <View style={[styles.typeBadge, { backgroundColor: selectedItem.priority === 'urgent' ? '#ef444420' : selectedItem.priority === 'high' ? '#f59e0b20' : colors.border }]}>
+                    <Text style={[styles.typeBadgeText, { color: selectedItem.priority === 'urgent' ? '#ef4444' : selectedItem.priority === 'high' ? '#f59e0b' : colors.secondary }]}>
+                      {selectedItem.priority.charAt(0).toUpperCase() + selectedItem.priority.slice(1)}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              <View style={[styles.detailInfoSection, { borderColor: colors.border }]}>
+                <View style={styles.detailInfoRow}>
+                  <Ionicons name="calendar-outline" size={16} color={colors.secondary} />
+                  <Text style={[styles.detailInfoLabel, { color: colors.secondary }]}>Dates</Text>
+                  <Text style={[styles.detailInfoValue, { color: colors.text }]}>{formatDateRange(selectedItem.startDate, selectedItem.endDate)}</Text>
+                </View>
+                {selectedItem.assignedToName && (
                   <View style={styles.detailInfoRow}>
-                    <Ionicons name="calendar-outline" size={16} color={colors.secondary} />
-                    <Text style={[styles.detailInfoLabel, { color: colors.secondary }]}>Dates</Text>
-                    <Text style={[styles.detailInfoValue, { color: colors.text }]}>{formatDateRange(selectedItem.startDate, selectedItem.endDate)}</Text>
+                    <Ionicons name="person-outline" size={16} color={colors.secondary} />
+                    <Text style={[styles.detailInfoLabel, { color: colors.secondary }]}>Assigned</Text>
+                    <Text style={[styles.detailInfoValue, { color: colors.text }]}>{selectedItem.assignedToName}</Text>
                   </View>
-                  {selectedItem.assignedToName && (
-                    <View style={styles.detailInfoRow}>
-                      <Ionicons name="person-outline" size={16} color={colors.secondary} />
-                      <Text style={[styles.detailInfoLabel, { color: colors.secondary }]}>Assigned</Text>
-                      <Text style={[styles.detailInfoValue, { color: colors.text }]}>{selectedItem.assignedToName}</Text>
-                    </View>
-                  )}
-                  {selectedItem.groupName && (
-                    <View style={styles.detailInfoRow}>
-                      <Ionicons name="layers-outline" size={16} color={colors.secondary} />
-                      <Text style={[styles.detailInfoLabel, { color: colors.secondary }]}>Group</Text>
-                      <Text style={[styles.detailInfoValue, { color: colors.text }]}>{selectedItem.groupName}</Text>
-                    </View>
-                  )}
-                  {selectedItem.description && (
-                    <View style={[styles.detailInfoRow, { alignItems: 'flex-start' }]}>
-                      <Ionicons name="document-text-outline" size={16} color={colors.secondary} style={{ marginTop: 2 }} />
-                      <Text style={[styles.detailInfoLabel, { color: colors.secondary }]}>Description</Text>
-                      <Text style={[styles.detailInfoValue, { color: colors.text, flex: 1 }]}>{selectedItem.description}</Text>
-                    </View>
-                  )}
-                </View>
-
-                <View style={[styles.detailEditSection, { borderColor: colors.border }]}>
-                  <Text style={[styles.detailSectionTitle, { color: colors.text }]}>Update</Text>
-
-                  <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Status</Text>
-                  <TouchableOpacity
-                    style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-                    onPress={() => setShowStatusPicker(!showStatusPicker)}
-                  >
-                    <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-                    <Text style={[styles.fieldPickerText, { color: colors.text }]}>{STATUS_LABELS[detailStatus] || detailStatus}</Text>
-                    <Ionicons name={showStatusPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
-                  </TouchableOpacity>
-
-                  {showStatusPicker && (
-                    <View style={[styles.inlineStatusList, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
-                      {Object.entries(STATUS_LABELS).map(([key, label]) => {
-                        const sc = STATUS_COLORS[key] || '#94a3b8';
-                        const isSelected = detailStatus === key;
-                        return (
-                          <TouchableOpacity
-                            key={key}
-                            style={[
-                              styles.inlineStatusOption,
-                              { borderBottomColor: colors.border },
-                              isSelected && { backgroundColor: sc + '15' },
-                            ]}
-                            onPress={() => {
-                              setDetailStatus(key);
-                              setShowStatusPicker(false);
-                            }}
-                          >
-                            <View style={[styles.statusDot, { backgroundColor: sc }]} />
-                            <Text style={[styles.inlineStatusText, { color: colors.text }]}>{label}</Text>
-                            {isSelected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                  )}
-
-                  <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Progress ({detailProgress}%)</Text>
-                  <View style={styles.progressInputRow}>
-                    <View style={[styles.progressTrackLarge, { backgroundColor: colors.border }]}>
-                      <View style={[styles.progressFillLarge, { width: `${Math.min(parseInt(detailProgress) || 0, 100)}%`, backgroundColor: statusColor }]} />
-                    </View>
-                    <TextInput
-                      style={[styles.progressInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-                      value={detailProgress}
-                      onChangeText={t => { const n = t.replace(/[^0-9]/g, ''); setDetailProgress(n ? String(Math.min(parseInt(n), 100)) : '0'); }}
-                      keyboardType="number-pad"
-                      maxLength={3}
-                    />
+                )}
+                {selectedItem.groupName && (
+                  <View style={styles.detailInfoRow}>
+                    <Ionicons name="layers-outline" size={16} color={colors.secondary} />
+                    <Text style={[styles.detailInfoLabel, { color: colors.secondary }]}>Group</Text>
+                    <Text style={[styles.detailInfoValue, { color: colors.text }]}>{selectedItem.groupName}</Text>
                   </View>
+                )}
+                {selectedItem.description && (
+                  <View style={[styles.detailInfoRow, { alignItems: 'flex-start' }]}>
+                    <Ionicons name="document-text-outline" size={16} color={colors.secondary} style={{ marginTop: 2 }} />
+                    <Text style={[styles.detailInfoLabel, { color: colors.secondary }]}>Description</Text>
+                    <Text style={[styles.detailInfoValue, { color: colors.text, flex: 1 }]}>{selectedItem.description}</Text>
+                  </View>
+                )}
+              </View>
 
-                  <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Notes</Text>
+              <View style={[styles.detailEditSection, { borderColor: colors.border }]}>
+                <Text style={[styles.detailSectionTitle, { color: colors.text }]}>Update</Text>
+
+                <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Status</Text>
+                <TouchableOpacity
+                  style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
+                  onPress={() => setShowStatusPicker(!showStatusPicker)}
+                >
+                  <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+                  <Text style={[styles.fieldPickerText, { color: colors.text }]}>{STATUS_LABELS[detailStatus] || detailStatus}</Text>
+                  <Ionicons name={showStatusPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
+                </TouchableOpacity>
+
+                {showStatusPicker && (
+                  <View style={[styles.inlineStatusList, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+                    {Object.entries(STATUS_LABELS).map(([key, label]) => {
+                      const sc = STATUS_COLORS[key] || '#94a3b8';
+                      const isSelected = detailStatus === key;
+                      return (
+                        <TouchableOpacity
+                          key={key}
+                          style={[
+                            styles.inlineStatusOption,
+                            { borderBottomColor: colors.border },
+                            isSelected && { backgroundColor: sc + '15' },
+                          ]}
+                          onPress={() => {
+                            setDetailStatus(key);
+                            setShowStatusPicker(false);
+                          }}
+                        >
+                          <View style={[styles.statusDot, { backgroundColor: sc }]} />
+                          <Text style={[styles.inlineStatusText, { color: colors.text }]}>{label}</Text>
+                          {isSelected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+
+                <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Progress ({detailProgress}%)</Text>
+                <View style={styles.progressInputRow}>
+                  <View style={[styles.progressTrackLarge, { backgroundColor: colors.border }]}>
+                    <View style={[styles.progressFillLarge, { width: `${Math.min(parseInt(detailProgress) || 0, 100)}%`, backgroundColor: statusColor }]} />
+                  </View>
                   <TextInput
-                    style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-                    value={detailNotes}
-                    onChangeText={setDetailNotes}
-                    multiline
-                    numberOfLines={3}
-                    placeholder="Add notes..."
-                    placeholderTextColor={colors.secondary}
+                    style={[styles.progressInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
+                    value={detailProgress}
+                    onChangeText={t => { const n = t.replace(/[^0-9]/g, ''); setDetailProgress(n ? String(Math.min(parseInt(n), 100)) : '0'); }}
+                    keyboardType="number-pad"
+                    maxLength={3}
                   />
                 </View>
 
-                <View style={[styles.detailEditSection, { borderColor: colors.border }]}>
-                  <Text style={[styles.detailSectionTitle, { color: colors.text }]}>Activity Notes</Text>
-                  {loadingNotes ? (
-                    <ActivityIndicator size="small" color={colors.accent} style={{ marginVertical: 12 }} />
-                  ) : (
-                    activityNotes.map(note => (
-                      <View key={note.id} style={[styles.activityNote, { borderColor: colors.border }]}>
-                        <View style={styles.noteHeader}>
-                          <Text style={[styles.noteUser, { color: colors.text }]}>{note.userName || 'System'}</Text>
-                          <Text style={[styles.noteDate, { color: colors.secondary }]}>{formatNoteDate(note.createdAt)}</Text>
-                        </View>
-                        <Text style={[styles.noteContent, { color: note.type === 'system' ? colors.secondary : colors.text }]}>{note.content}</Text>
-                      </View>
-                    ))
-                  )}
-                  {activityNotes.length === 0 && !loadingNotes && (
-                    <Text style={[styles.noNotesText, { color: colors.secondary }]}>No activity notes yet</Text>
-                  )}
-                  <View style={styles.addNoteRow}>
-                    <TextInput
-                      style={[styles.addNoteInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-                      value={newNoteText}
-                      onChangeText={setNewNoteText}
-                      placeholder="Add a note..."
-                      placeholderTextColor={colors.secondary}
-                    />
-                    <TouchableOpacity
-                      style={[styles.addNoteBtn, { backgroundColor: colors.accent, opacity: !newNoteText.trim() || addingNote ? 0.5 : 1 }]}
-                      onPress={handleAddNote}
-                      disabled={!newNoteText.trim() || addingNote}
-                    >
-                      {addingNote ? (
-                        <ActivityIndicator size="small" color="#fff" />
-                      ) : (
-                        <Ionicons name="send" size={16} color="#fff" />
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                </View>
+                <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Notes</Text>
+                <TextInput
+                  style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
+                  value={detailNotes}
+                  onChangeText={setDetailNotes}
+                  multiline
+                  numberOfLines={3}
+                  placeholder="Add notes..."
+                  placeholderTextColor={colors.secondary}
+                />
+              </View>
 
-                <View style={styles.detailActions}>
+              <View style={[styles.detailEditSection, { borderColor: colors.border }]}>
+                <Text style={[styles.detailSectionTitle, { color: colors.text }]}>Activity Notes</Text>
+                {loadingNotes ? (
+                  <ActivityIndicator size="small" color={colors.accent} style={{ marginVertical: 12 }} />
+                ) : (
+                  activityNotes.map(note => (
+                    <View key={note.id} style={[styles.activityNote, { borderColor: colors.border }]}>
+                      <View style={styles.noteHeader}>
+                        <Text style={[styles.noteUser, { color: colors.text }]}>{note.userName || 'System'}</Text>
+                        <Text style={[styles.noteDate, { color: colors.secondary }]}>{formatNoteDate(note.createdAt)}</Text>
+                      </View>
+                      <Text style={[styles.noteContent, { color: note.type === 'system' ? colors.secondary : colors.text }]}>{note.content}</Text>
+                    </View>
+                  ))
+                )}
+                {activityNotes.length === 0 && !loadingNotes && (
+                  <Text style={[styles.noNotesText, { color: colors.secondary }]}>No activity notes yet</Text>
+                )}
+                <View style={styles.addNoteRow}>
+                  <TextInput
+                    style={[styles.addNoteInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
+                    value={newNoteText}
+                    onChangeText={setNewNoteText}
+                    placeholder="Add a note..."
+                    placeholderTextColor={colors.secondary}
+                  />
                   <TouchableOpacity
-                    style={[styles.actionBtn, { backgroundColor: colors.border }]}
-                    onPress={() => setShowDetailSheet(false)}
+                    style={[styles.addNoteBtn, { backgroundColor: colors.accent, opacity: !newNoteText.trim() || addingNote ? 0.5 : 1 }]}
+                    onPress={handleAddNote}
+                    disabled={!newNoteText.trim() || addingNote}
                   >
-                    <Text style={[styles.actionBtnText, { color: colors.text }]}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.actionBtn, { backgroundColor: colors.accent, opacity: saving ? 0.6 : 1 }]}
-                    onPress={handleSave}
-                    disabled={saving}
-                  >
-                    {saving ? (
+                    {addingNote ? (
                       <ActivityIndicator size="small" color="#fff" />
                     ) : (
-                      <Text style={[styles.actionBtnText, { color: '#fff' }]}>Save Changes</Text>
+                      <Ionicons name="send" size={16} color="#fff" />
                     )}
                   </TouchableOpacity>
                 </View>
-                <View style={{ height: 40 }} />
-              </ScrollView>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
+              </View>
+
+              <View style={styles.detailActions}>
+                <TouchableOpacity
+                  style={[styles.actionBtn, { backgroundColor: colors.border }]}
+                  onPress={closeDetail}
+                >
+                  <Text style={[styles.actionBtnText, { color: colors.text }]}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionBtn, { backgroundColor: colors.accent, opacity: saving ? 0.6 : 1 }]}
+                  onPress={handleSave}
+                  disabled={saving}
+                >
+                  {saving ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={[styles.actionBtnText, { color: '#fff' }]}>Save Changes</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+              <View style={{ height: 40 }} />
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </View>
       </Modal>
     );
   };
@@ -1439,11 +1445,10 @@ const styles = StyleSheet.create({
   timeBlockName: { fontSize: 12, fontWeight: '600' },
   timeBlockTime: { fontSize: 10, marginTop: 1 },
 
-  detailOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
-  detailContainer: { maxHeight: '90%', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 20 },
-  detailHandle: { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 10, marginBottom: 8 },
-  detailHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8, gap: 12 },
-  detailTitle: { fontSize: 18, fontWeight: '700', flex: 1 },
+  modalContainer: { flex: 1 },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1 },
+  modalHeaderTitle: { fontSize: 16, fontWeight: '700', flex: 1, textAlign: 'center' },
+  detailTitle: { fontSize: 18, fontWeight: '700', marginBottom: 8 },
   detailBadgesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 16 },
   detailInfoSection: { borderTopWidth: 1, paddingTop: 12, marginBottom: 16 },
   detailInfoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 8 },
