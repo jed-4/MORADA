@@ -3,16 +3,18 @@
 ## Epic Overview
 
 ### Description
-The Checklists system provides structured quality control, compliance tracking, and task verification for construction projects. It operates on a template-to-instance model: company admins create reusable checklist templates (called "Checklist Groups") containing sub-checklists with individual items, and these templates are applied to specific projects as instances. Team members work through checklist items on-site, marking them complete, adding notes, and tracking progress. The system supports multiple response types, assignees at every level, linking to tasks and schedule items, and a dashboard widget for at-a-glance progress monitoring.
+The Checklists system provides structured quality control, compliance tracking, and task verification for construction projects. It operates on a template-to-instance model: company admins create reusable checklist templates (Groups) containing checklists with individual items, and these templates are applied to specific projects as instances. Team members work through checklist items on-site, marking them complete, adding notes, and tracking progress. The system supports multiple response types, assignees at every level, linking to tasks and schedule items, and a dashboard widget for at-a-glance progress monitoring. The hierarchy is: **Groups > Checklists > Items**.
 
-### Terminology
+### Terminology & Hierarchy
+The system uses a three-level hierarchy: **Groups > Checklists > Items**.
+
 | System Term | User-Facing Term | Description |
 |-------------|-----------------|-------------|
-| Checklist Template | Checklist Group (template) | A reusable template in Resources > Templates containing sub-checklists and items |
-| Checklist Template Group | Checklist (within template) | A named sub-checklist within a template (e.g., "ITP013 - Dilapidation Report") |
-| Checklist Template Item | Item (within template) | An individual line item within a template sub-checklist |
-| Checklist Instance | Checklist Group (project) | A template applied to a specific project, containing sub-checklists and items |
-| Checklist Instance Group | Checklist (within project) | A sub-checklist within a project checklist group, with its own status and assignee |
+| Checklist Template | Group (template) | A reusable template in Resources > Templates containing checklists and items |
+| Checklist Template Group | Checklist (within template) | A named checklist within a template (e.g., "ITP013 - Dilapidation Report") |
+| Checklist Template Item | Item (within template) | An individual line item within a template checklist |
+| Checklist Instance | Group (project) | A template applied to a specific project, containing checklists and items |
+| Checklist Instance Group | Checklist (within project) | A checklist within a project group, with its own status and assignee |
 | Checklist Instance Item | Item (within project) | An individual trackable item with completion status, assignee, notes, and response |
 
 ### Business Value
@@ -374,14 +376,16 @@ The Checklists system provides structured quality control, compliance tracking, 
 
 ---
 
-#### US-CL055: Delete Checklist Items
+#### US-CL055: Manage Checklist Items (3-Dot Menu)
 **As a** project manager  
-**I want to** delete individual checklist items  
-**So that** I can remove items that are not applicable
+**I want to** rename or delete individual checklist items via a contextual menu  
+**So that** I can manage items without accidental deletions
 
 **Acceptance Criteria:**
-- [x] Delete button (X icon) on each item row
-- [x] Item is removed immediately
+- [x] 3-dot menu (MoreVertical icon) on each item row, visible on hover
+- [x] Menu options: Rename, Delete
+- [x] Rename activates inline text editing (Enter to save, Escape to cancel)
+- [x] Delete removes the item immediately
 - [x] Counts update accordingly
 
 **Priority:** Should Have  
@@ -484,9 +488,13 @@ The Checklists system provides structured quality control, compliance tracking, 
 **Acceptance Criteria:**
 - [x] Notes icon/button on each item row
 - [x] Notes dialog shows a feed of all notes with author and timestamp
-- [x] User can add new notes (saved as JSON array with author, date, text)
+- [x] User can add new notes (saved as JSON array with `{author, date, text, system?}`)
 - [x] Legacy plain-text notes are handled gracefully
 - [x] Multiple notes per item supported (chronological feed)
+- [x] System notes added automatically on item completion/reopening (e.g., "Completed by Jed Smith")
+- [x] System notes use `system: true` flag and display as italic, muted entries with CheckCircle2 icon
+- [x] Notes icon only lights up (fills with brand colour) for human-written notes (`hasHumanNotes()` check)
+- [x] System notes do not trigger the notes indicator
 
 **Priority:** Should Have  
 **Status:** Implemented
@@ -621,7 +629,7 @@ The Checklists system provides structured quality control, compliance tracking, 
 - [x] Single choice - select one option from predefined list (selectedResponses field)
 - [x] Multiple choice - select multiple options from predefined list (selectedResponses field)
 - [x] Response options defined at template level and copied to instances
-- [ ] Response type icons shown on items (Type, CircleDot icons for text/choice)
+- [x] Response type icons shown on items (Type for text, CircleDot for single choice, ListChecks for multiple choice)
 
 **Priority:** Should Have  
 **Status:** Implemented
@@ -672,6 +680,13 @@ The Checklists system provides structured quality control, compliance tracking, 
 - Dashboard widget with configurable filters and persistent collapse state
 - Completion tracking with attribution (who, when)
 - Notes feed on items (JSON-based with author and timestamp)
+- System notes on item completion/reopening with user attribution
+- Notes indicator only highlights for human-written notes (hasHumanNotes check)
+- 3-dot menu on items with inline Rename and Delete options
+- File/photo attachments on items (max 3 files, 10MB each, Object Storage)
+- Audit log tracking status changes, assignments, and item operations
+- Activity Log viewable from group 3-dot menu
+- User display names resolved from firstName/lastName fields (userDisplayName helper)
 - Priority levels at instance and group level
 - Due dates on instances
 - Completion gating: "Complete" button disabled until 100% progress
@@ -683,24 +698,22 @@ The Checklists system provides structured quality control, compliance tracking, 
 - [ ] Status triggers not yet executed on project status change (data model exists)
 - [ ] No checklist-specific notifications (e.g., assigned to you, overdue)
 - [ ] No export of completed checklist instances (e.g., PDF report)
-- [ ] No revision history or audit log for item changes
-- [ ] No file/photo attachments on items (attachmentIds field exists but UI not implemented)
 
 ---
 
 ## Future Enhancements
 
-| Enhancement | Description | Priority |
-|-------------|-------------|----------|
-| Status Triggers | Auto-create checklists when project reaches a status | Should Have |
-| PDF Export | Export completed checklist as a PDF report for records | Should Have |
-| File Attachments | Attach photos/documents to individual checklist items | Should Have |
-| Notifications | Notify users when assigned to a checklist or item | Should Have |
-| Permissions | RBAC for creating, editing, deleting, and completing checklists | Should Have |
-| Bulk Operations | Bulk mark items as complete or N/A | Nice to Have |
-| Audit Log | Track all changes to checklist items with timestamps | Nice to Have |
-| Offline Support | Allow checklist completion on mobile without connectivity | Nice to Have |
-| Item Drag-and-Drop | Reorder items within groups via drag-and-drop | Nice to Have |
+| Enhancement | Description | Priority | Status |
+|-------------|-------------|----------|--------|
+| Status Triggers | Auto-create checklists when project reaches a status | Should Have | Pending |
+| PDF Export | Export completed checklist as a PDF report for records | Should Have | Pending |
+| ~~File Attachments~~ | ~~Attach photos/documents to individual checklist items~~ | ~~Should Have~~ | Done |
+| Notifications | Notify users when assigned to a checklist or item | Should Have | Pending |
+| Permissions | RBAC for creating, editing, deleting, and completing checklists | Should Have | Pending |
+| Bulk Operations | Bulk mark items as complete or N/A | Nice to Have | Pending |
+| ~~Audit Log~~ | ~~Track all changes to checklist items with timestamps~~ | ~~Nice to Have~~ | Done |
+| Offline Support | Allow checklist completion on mobile without connectivity | Nice to Have | Pending |
+| Item Drag-and-Drop | Reorder items within groups via drag-and-drop | Nice to Have | Pending |
 
 ---
 
@@ -708,9 +721,9 @@ The Checklists system provides structured quality control, compliance tracking, 
 
 ### Template Layer (Resources > Templates)
 ```
-checklistTemplates (Checklist Group)
+checklistTemplates (Group - template)
   ├── id, name, description, type, createdBy, isArchived
-  └── checklistTemplateGroups (Sub-Checklist)
+  └── checklistTemplateGroups (Checklist - template)
        ├── id, templateId, name, order
        └── checklistTemplateItems (Item)
             ├── id, groupId, description, tooltip, order
@@ -720,13 +733,13 @@ checklistTemplates (Checklist Group)
 
 ### Instance Layer (Project > Checklists)
 ```
-checklistInstances (Checklist Group - project)
+checklistInstances (Group - project)
   ├── id, templateId, projectId, companyId, name, description
   ├── status (active|in_progress|completed|cancelled)
   ├── priority, dueDate, assigneeId, assigneeName
   ├── linkedTaskId, linkedScheduleItemId
   ├── completedAt, completedBy, completedByName
-  └── checklistInstanceGroups (Sub-Checklist - project)
+  └── checklistInstanceGroups (Checklist - project)
        ├── id, instanceId, name, order, status, priority
        ├── assigneeId, assigneeName
        ├── linkedTaskId, linkedScheduleItemId
@@ -738,8 +751,18 @@ checklistInstances (Checklist Group - project)
             ├── responseType, responseOptions, textResponse, selectedResponses
             ├── assigneeId, assigneeName
             ├── completedAt, completedBy, completedByName
-            ├── notes (JSON feed: [{author, date, text}])
-            └── attachmentIds (array, UI not yet implemented)
+            ├── notes (JSON feed: [{author, date, text, system?}])
+            └── attachmentIds (array of file keys, max 3 files, 10MB each)
+```
+
+### Audit Layer
+```
+checklistAuditEntries
+  ├── id, instanceId, groupId, itemId, companyId, projectId
+  ├── action (status_change|assignment_change|item_added|item_deleted|note_added|file_attached)
+  ├── userId, userName
+  ├── details (JSON: {field, oldValue, newValue, ...})
+  └── createdAt
 ```
 
 ### Automation Layer
@@ -756,3 +779,12 @@ checklistStatusTriggers
 | Date | Changes |
 |------|---------|
 | 2026-02-12 | Initial user story document created based on comprehensive review of current implementation |
+| 2026-02-13 | Updated terminology table to reflect Groups > Checklists > Items hierarchy |
+| 2026-02-13 | US-CL055: Changed from "X icon delete" to 3-dot menu with Rename + Delete options |
+| 2026-02-13 | US-CL063: Added system notes (completion/reopening), `system` flag, and `hasHumanNotes()` indicator logic |
+| 2026-02-13 | US-CL080: Marked response type icons as implemented (Type, CircleDot, ListChecks) |
+| 2026-02-13 | Marked file attachments as implemented (max 3 files, 10MB each, web + mobile) |
+| 2026-02-13 | Marked audit log as implemented (checklistAuditEntries table, Activity Log in group menu) |
+| 2026-02-13 | Added Audit Layer to data model reference |
+| 2026-02-13 | Updated notes format in data model to include `system?` flag |
+| 2026-02-13 | Fixed "Unknown" user display bug: uses `firstName`/`lastName` via `userDisplayName` helper |
