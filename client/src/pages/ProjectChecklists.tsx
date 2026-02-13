@@ -211,6 +211,7 @@ export default function ProjectChecklists() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const { user } = useAuth();
+  const userDisplayName = user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || 'Unknown' : 'Unknown';
   const pageTitle = usePageTitle({ pageName: "Checklists" });
   
   const [activeTab, setActiveTab] = useState<TabType>("all");
@@ -608,7 +609,7 @@ export default function ProjectChecklists() {
   const addSystemNote = (currentNotes: string | null | undefined, text: string): string => {
     const entries = parseNoteFeed(currentNotes);
     entries.push({
-      author: user?.name || "System",
+      author: userDisplayName,
       date: new Date().toISOString(),
       text,
       system: true,
@@ -620,7 +621,7 @@ export default function ProjectChecklists() {
     if (!showNotesDialog || !newNoteText.trim()) return;
     const existingNotes = parseNoteFeed(showNotesDialog.notes);
     const newEntry = {
-      author: user?.name || "Unknown",
+      author: userDisplayName,
       date: new Date().toISOString(),
       text: newNoteText.trim()
     };
@@ -656,7 +657,7 @@ export default function ProjectChecklists() {
           contentType: response.metadata.contentType,
           size: response.metadata.size,
           uploadedAt: new Date().toISOString(),
-          uploadedBy: user?.name || "Unknown",
+          uploadedBy: userDisplayName,
         };
         currentAttachments = [...currentAttachments, newAttachment];
         updateItemMutation.mutate({
@@ -784,7 +785,7 @@ export default function ProjectChecklists() {
           completionData: { 
             completedAt: now,
             completedBy: user?.id || null,
-            completedByName: user?.name || null,
+            completedByName: userDisplayName,
           } 
         };
       case "completed":
@@ -979,14 +980,6 @@ export default function ProjectChecklists() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            navigate(`/projects/${projectId}/checklists/${instance.id}`);
-                          }}
-                        >
-                          View Details
-                        </DropdownMenuItem>
                         <DropdownMenuItem
                           onSelect={(e) => {
                             e.preventDefault();
@@ -1287,14 +1280,6 @@ export default function ProjectChecklists() {
                                         </div>
                                       </div>
                                       <DropdownMenuItem
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          navigate(`/projects/${projectId}/checklists/${instance.id}`);
-                                        }}
-                                      >
-                                        View Details
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem
                                         className="text-destructive"
                                         onClick={(e) => {
                                           e.stopPropagation();
@@ -1390,15 +1375,15 @@ export default function ProjectChecklists() {
                                                 checked={item.status === "completed"}
                                                 onCheckedChange={(checked) => {
                                                   const updatedNotes = checked
-                                                    ? addSystemNote(item.notes, `Completed by ${user?.name || 'Unknown'}`)
-                                                    : addSystemNote(item.notes, `Reopened by ${user?.name || 'Unknown'}`);
+                                                    ? addSystemNote(item.notes, `Completed by ${userDisplayName}`)
+                                                    : addSystemNote(item.notes, `Reopened by ${userDisplayName}`);
                                                   updateItemMutation.mutate({
                                                     itemId: item.id,
                                                     data: { 
                                                       status: checked ? "completed" : "pending",
                                                       completedAt: checked ? new Date().toISOString() : null,
                                                       completedBy: checked ? user?.id : null,
-                                                      completedByName: checked ? user?.name : null,
+                                                      completedByName: checked ? userDisplayName : null,
                                                       notes: updatedNotes,
                                                     }
                                                   });
@@ -1607,7 +1592,7 @@ export default function ProjectChecklists() {
                                                           status: e.target.value ? "completed" : "pending",
                                                           completedAt: e.target.value ? new Date().toISOString() : null,
                                                           completedBy: e.target.value ? user?.id : null,
-                                                          completedByName: e.target.value ? user?.name : null,
+                                                          completedByName: e.target.value ? userDisplayName : null,
                                                         }
                                                       });
                                                     }}
@@ -1628,7 +1613,7 @@ export default function ProjectChecklists() {
                                                         status: "completed",
                                                         completedAt: new Date().toISOString(),
                                                         completedBy: user?.id,
-                                                        completedByName: user?.name,
+                                                        completedByName: userDisplayName,
                                                       }
                                                     });
                                                   }}
@@ -1673,7 +1658,7 @@ export default function ProjectChecklists() {
                                                                 status: newSelected.length > 0 ? "completed" : "pending",
                                                                 completedAt: newSelected.length > 0 ? new Date().toISOString() : null,
                                                                 completedBy: newSelected.length > 0 ? user?.id : null,
-                                                                completedByName: newSelected.length > 0 ? user?.name : null,
+                                                                completedByName: newSelected.length > 0 ? userDisplayName : null,
                                                               }
                                                             });
                                                           }}
