@@ -136,6 +136,10 @@ function SortableRoleItem({
   );
 }
 
+const EMPTY_ROLES: UserRole[] = [];
+const EMPTY_PERMISSIONS: Permission[] = [];
+const EMPTY_ROLE_PERMISSIONS: RolePermission[] = [];
+
 export default function RolesPermissions() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
@@ -151,7 +155,7 @@ export default function RolesPermissions() {
   const [localRoles, setLocalRoles] = useState<UserRole[]>([]);
 
   // Fetch roles
-  const { data: roles = [], isLoading: rolesLoading } = useQuery<UserRole[]>({
+  const { data: roles = EMPTY_ROLES, isLoading: rolesLoading } = useQuery<UserRole[]>({
     queryKey: ["/api/user-roles"],
   });
 
@@ -169,12 +173,12 @@ export default function RolesPermissions() {
   );
 
   // Fetch permissions
-  const { data: permissions = [], isLoading: permissionsLoading } = useQuery<Permission[]>({
+  const { data: permissions = EMPTY_PERMISSIONS, isLoading: permissionsLoading } = useQuery<Permission[]>({
     queryKey: ["/api/permissions"],
   });
 
   // Fetch role permissions for selected role
-  const { data: rolePermissions = [] } = useQuery<RolePermission[]>({
+  const { data: rolePermissions = EMPTY_ROLE_PERMISSIONS } = useQuery<RolePermission[]>({
     queryKey: ["/api/user-roles", selectedRoleId, "permissions"],
     enabled: !!selectedRoleId,
   });
