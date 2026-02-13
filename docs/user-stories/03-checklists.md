@@ -691,13 +691,31 @@ The system uses a three-level hierarchy: **Groups > Checklists > Items**.
 - Due dates on instances
 - Completion gating: "Complete" button disabled until 100% progress
 
+### Known Bugs
+- [ ] Checking off a checklist item causes the group to collapse (expanded state lost on mutation re-render)
+- [ ] Widget does not deep-link to specific checklists — only links to general checklists page
+- [ ] Completed-by name and timestamp not visible on completed items in the list view (data is saved but not displayed)
+
+### Discoverability Issues
+- [ ] Assignee, notes, and file attachment icons on checklist items are too small and muted — users cannot find them
+- [ ] Need more prominent UI for item-level assignees, notes, and attachments (larger icons, labels, or action bar)
+- [ ] Widget does not show item-level assignees
+
+### Terminology Issues (UI Labels)
+- [ ] "Template Sub-Checklists (Groups)" should be labelled as "Templates" in the UI
+- [ ] "Sub-checklists" should be labelled as "Checklists" consistently throughout the UI
+- [ ] Ensure all user-facing labels follow the Groups > Checklists > Items hierarchy
+
 ### Known Limitations
 - [ ] No bulk status change for checklist items
 - [ ] No drag-and-drop reordering of instance items
-- [ ] No permissions/RBAC for checklist operations
-- [ ] Status triggers not yet executed on project status change (data model exists)
+- [ ] No permissions/RBAC for checklist operations (add a section to Roles & Permissions)
+- [ ] Status triggers not yet executed on project status change (data model exists; should be created through Workflows section)
 - [ ] No checklist-specific notifications (e.g., assigned to you, overdue)
 - [ ] No export of completed checklist instances (e.g., PDF report)
+- [ ] No 3-dot menu on checklists (groups) for editing priority, assignee, due date, and other details
+- [ ] No assignee toggle per checklist: option to assign items by user or by role
+- [ ] No offline support for checklist completion on mobile
 
 ---
 
@@ -705,15 +723,22 @@ The system uses a three-level hierarchy: **Groups > Checklists > Items**.
 
 | Enhancement | Description | Priority | Status |
 |-------------|-------------|----------|--------|
-| Status Triggers | Auto-create checklists when project reaches a status | Should Have | Pending |
+| Status Triggers | Auto-create checklists when project reaches a status (via Workflows section) | Should Have | Pending |
 | PDF Export | Export completed checklist as a PDF report for records | Should Have | Pending |
 | ~~File Attachments~~ | ~~Attach photos/documents to individual checklist items~~ | ~~Should Have~~ | Done |
 | Notifications | Notify users when assigned to a checklist or item | Should Have | Pending |
-| Permissions | RBAC for creating, editing, deleting, and completing checklists | Should Have | Pending |
+| Permissions | RBAC for checklists, add section to Roles & Permissions | Should Have | Pending |
+| Checklist 3-Dot Menu | Add 3-dot menu on checklists for editing priority, assignee, due date, details | Should Have | Pending |
+| Assignee by User or Role | Toggle per checklist to assign items by individual user or by role | Should Have | Pending |
 | Bulk Operations | Bulk mark items as complete or N/A | Nice to Have | Pending |
 | ~~Audit Log~~ | ~~Track all changes to checklist items with timestamps~~ | ~~Nice to Have~~ | Done |
 | Offline Support | Allow checklist completion on mobile without connectivity | Nice to Have | Pending |
 | Item Drag-and-Drop | Reorder items within groups via drag-and-drop | Nice to Have | Pending |
+| Widget Deep-Linking | Click a checklist in the widget to navigate to that specific checklist | Should Have | Pending |
+| Widget Assignees | Show item-level assignees in the dashboard widget | Should Have | Pending |
+| Item Discoverability | Make assignee, notes, and attachment icons more visible on item rows | Must Have | Pending |
+| Completed-By Display | Show completer name and timestamp on completed items in list view | Should Have | Pending |
+| UI Terminology | Update all UI labels to follow Groups > Checklists > Items hierarchy | Must Have | Pending |
 
 ---
 
@@ -788,3 +813,8 @@ checklistStatusTriggers
 | 2026-02-13 | Added Audit Layer to data model reference |
 | 2026-02-13 | Updated notes format in data model to include `system?` flag |
 | 2026-02-13 | Fixed "Unknown" user display bug: uses `firstName`/`lastName` via `userDisplayName` helper |
+| 2026-02-13 | Added Known Bugs section: collapse bug, widget deep-linking, completed-by display |
+| 2026-02-13 | Added Discoverability Issues section: item icons too subtle, widget missing assignees |
+| 2026-02-13 | Added Terminology Issues section: UI labels need to follow Groups > Checklists > Items |
+| 2026-02-13 | Expanded Known Limitations: 3-dot menu on checklists, assignee by user/role toggle, offline support |
+| 2026-02-13 | Expanded Future Enhancements with 7 new items from user feedback review |
