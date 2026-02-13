@@ -382,17 +382,19 @@ export default function RolesPermissions() {
     messaging: "MESSAGING",
   };
 
+  // Auto-select first role if none selected
+  useEffect(() => {
+    if (!selectedRoleId && localRoles.length > 0) {
+      setSelectedRoleId(localRoles[0].id);
+    }
+  }, [selectedRoleId, localRoles]);
+
   if (rolesLoading || permissionsLoading) {
     return (
       <div className="flex items-center justify-center h-full">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
-  }
-
-  // Auto-select first role if none selected
-  if (!selectedRoleId && localRoles.length > 0) {
-    setSelectedRoleId(localRoles[0].id);
   }
 
   return (
