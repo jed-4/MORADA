@@ -16,8 +16,10 @@ import {
   Pressable,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { apiFetch, apiRequest } from '../services/api';
+import { apiFetch, apiRequest, uploadFileFromUri } from '../services/api';
 import { addToQueue, isOnline } from '../services/offlineQueue';
+import { useAuth } from '../contexts/AuthContext';
+import * as ImagePicker from 'expo-image-picker';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
@@ -81,12 +83,14 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [menuItem, setMenuItem] = useState<ChecklistItem | null>(null);
-  const [menuMode, setMenuMode] = useState<'actions' | 'notes' | 'assignee'>('actions');
+  const [menuMode, setMenuMode] = useState<'actions' | 'activity' | 'assignee' | 'attachments'>('actions');
   const [noteText, setNoteText] = useState('');
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [savingNote, setSavingNote] = useState(false);
   const [savingAssignee, setSavingAssignee] = useState(false);
   const [loadingTeam, setLoadingTeam] = useState(false);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const { user } = useAuth();
 
   const colors = isDark
     ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569' }
@@ -256,10 +260,36 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
     return { groups, ungrouped };
   };
 
+  const parseNoteFeed = (notes: string | null | undefined): Array<{ author: string; date: string; text: string }> => {
+    if (!notes) return [];
+    try {
+      const parsed = JSON.parse(notes);
+      if (Array.isArray(parsed)) return parsed;
+      return [{ author: 'Note', date: new Date().toISOString(), text: notes }];
+    } catch {
+      return [{ author: 'Note', date: new Date().toISOString(), text: notes }];
+    }
+  };
+
+  const formatFeedDate = (dateStr: string) => {
+    try {
+      const d = new Date(dateStr);
+      const day = d.getDate();
+      const month = d.toLocaleString('default', { month: 'short' });
+      const hours = d.getHours();
+      const mins = d.getMinutes().toString().padStart(2, '0');
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      const h = hours % 12 || 12;
+      return `${month} ${day} at ${h}:${mins} ${ampm}`;
+    } catch {
+      return '';
+    }
+  };
+
   const openItemMenu = (item: ChecklistItem) => {
     setMenuItem(item);
     setMenuMode('actions');
-    setNoteText(item.notes || '');
+    setNoteText('');
   };
 
   const closeMenu = () => {
@@ -280,20 +310,93 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
     }
   }, []);
 
-  const handleSaveNote = async () => {
-    if (!menuItem) return;
+  const handleAddNote = async () => {
+    if (!menuItem || !noteText.trim()) return;
     setSavingNote(true);
     try {
-      await apiRequest(`/api/checklist-instance-items/${menuItem.id}`, 'PATCH', { notes: noteText || null });
+      const existingNotes = parseNoteFeed(menuItem.notes);
+      const newEntry = {
+        author: user?.fullName || user?.firstName || 'You',
+        date: new Date().toISOString(),
+        text: noteText.trim(),
+      };
+      existingNotes.push(newEntry);
+      const updatedNotes = JSON.stringify(existingNotes);
+      await apiRequest(`/api/checklist-instance-items/${menuItem.id}`, 'PATCH', { notes: updatedNotes });
+      const updatedItem = { ...menuItem, notes: updatedNotes };
+      setMenuItem(updatedItem);
       setItemsByInstance(prev => {
         const items = prev[menuItem.instanceId] || [];
-        return { ...prev, [menuItem.instanceId]: items.map(i => i.id === menuItem.id ? { ...i, notes: noteText || undefined } : i) };
+        return { ...prev, [menuItem.instanceId]: items.map(i => i.id === menuItem.id ? { ...i, notes: updatedNotes } : i) };
       });
-      closeMenu();
+      setNoteText('');
     } catch {
-      Alert.alert('Error', 'Failed to save note');
+      Alert.alert('Error', 'Failed to add note');
     } finally {
       setSavingNote(false);
+    }
+  };
+
+  const handlePickAttachment = async () => {
+    if (!menuItem) return;
+    const currentAttachments = Array.isArray(menuItem.attachmentIds) ? [...(menuItem.attachmentIds as any[])] : [];
+    if (currentAttachments.length >= 3) {
+      Alert.alert('Limit reached', 'Maximum 3 attachments per item.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.All,
+      quality: 0.8,
+      allowsMultipleSelection: false,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    const fileName = asset.fileName || `attachment-${Date.now()}.jpg`;
+    const contentType = asset.mimeType || 'image/jpeg';
+    if (asset.fileSize && asset.fileSize > 10 * 1024 * 1024) {
+      Alert.alert('File too large', 'Maximum file size is 10MB.');
+      return;
+    }
+    setUploadingAttachment(true);
+    try {
+      const { objectPath } = await uploadFileFromUri(asset.uri, fileName, contentType);
+      const newAttachment = {
+        name: fileName,
+        path: objectPath,
+        contentType,
+        size: asset.fileSize || 0,
+        uploadedAt: new Date().toISOString(),
+        uploadedBy: user?.fullName || user?.firstName || 'Unknown',
+      };
+      const updatedAttachments = [...currentAttachments, newAttachment];
+      await apiRequest(`/api/checklist-instance-items/${menuItem.id}`, 'PATCH', { attachmentIds: updatedAttachments });
+      const updatedItem = { ...menuItem, attachmentIds: updatedAttachments };
+      setMenuItem(updatedItem);
+      setItemsByInstance(prev => {
+        const items = prev[menuItem.instanceId] || [];
+        return { ...prev, [menuItem.instanceId]: items.map(i => i.id === menuItem.id ? { ...i, attachmentIds: updatedAttachments } : i) };
+      });
+    } catch {
+      Alert.alert('Error', 'Failed to upload attachment');
+    } finally {
+      setUploadingAttachment(false);
+    }
+  };
+
+  const handleRemoveAttachment = async (index: number) => {
+    if (!menuItem) return;
+    const currentAttachments = Array.isArray(menuItem.attachmentIds) ? [...(menuItem.attachmentIds as any[])] : [];
+    currentAttachments.splice(index, 1);
+    try {
+      await apiRequest(`/api/checklist-instance-items/${menuItem.id}`, 'PATCH', { attachmentIds: currentAttachments });
+      const updatedItem = { ...menuItem, attachmentIds: currentAttachments };
+      setMenuItem(updatedItem);
+      setItemsByInstance(prev => {
+        const items = prev[menuItem.instanceId] || [];
+        return { ...prev, [menuItem.instanceId]: items.map(i => i.id === menuItem.id ? { ...i, attachmentIds: currentAttachments } : i) };
+      });
+    } catch {
+      Alert.alert('Error', 'Failed to remove attachment');
     }
   };
 
@@ -336,13 +439,21 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
           </Text>
           <View style={styles.itemIndicators}>
             {item.assigneeName && (
-              <Text style={[styles.itemAssignee, { color: colors.secondary }]}>{item.assigneeName}</Text>
+              <View style={styles.indicatorChip}>
+                <Ionicons name="person" size={10} color={colors.accent} />
+                <Text style={[styles.indicatorText, { color: colors.accent }]} numberOfLines={1}>{item.assigneeName.split(' ')[0]}</Text>
+              </View>
             )}
             {item.notes && (
-              <Ionicons name="chatbubble" size={10} color={colors.accent} />
+              <View style={styles.indicatorChip}>
+                <Ionicons name="chatbubble" size={10} color={colors.accent} />
+              </View>
             )}
             {Array.isArray(item.attachmentIds) && item.attachmentIds.length > 0 && (
-              <Ionicons name="attach" size={11} color={colors.accent} />
+              <View style={styles.indicatorChip}>
+                <Ionicons name="attach" size={11} color={colors.accent} />
+                <Text style={[styles.indicatorText, { color: colors.accent }]}>{item.attachmentIds.length}</Text>
+              </View>
             )}
           </View>
         </View>
@@ -592,13 +703,16 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
                     <Text style={[styles.modalTitle, { color: colors.text }]} numberOfLines={2}>{menuItem.description}</Text>
                     <TouchableOpacity
                       style={styles.modalAction}
-                      onPress={() => setMenuMode('notes')}
+                      onPress={() => setMenuMode('activity')}
                       activeOpacity={0.7}
                     >
-                      <Ionicons name={menuItem.notes ? 'chatbubble' : 'chatbubble-outline'} size={20} color={menuItem.notes ? colors.accent : colors.secondary} />
-                      <Text style={[styles.modalActionText, { color: colors.text }]}>
-                        {menuItem.notes ? 'View / Edit Notes' : 'Add Notes'}
-                      </Text>
+                      <Ionicons name="chatbubbles-outline" size={20} color={menuItem.notes ? colors.accent : colors.secondary} />
+                      <Text style={[styles.modalActionText, { color: colors.text }]}>Activity</Text>
+                      {menuItem.notes && (
+                        <View style={[styles.menuBadge, { backgroundColor: colors.accent + '20' }]}>
+                          <Text style={{ color: colors.accent, fontSize: 10, fontWeight: '600' }}>{parseNoteFeed(menuItem.notes).length}</Text>
+                        </View>
+                      )}
                       <Ionicons name="chevron-forward" size={16} color={colors.muted} />
                     </TouchableOpacity>
                     <TouchableOpacity
@@ -612,45 +726,145 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
                       </Text>
                       <Ionicons name="chevron-forward" size={16} color={colors.muted} />
                     </TouchableOpacity>
-                    <View style={styles.modalAction}>
+                    <TouchableOpacity
+                      style={styles.modalAction}
+                      onPress={() => setMenuMode('attachments')}
+                      activeOpacity={0.7}
+                    >
                       <Ionicons name="attach" size={20} color={Array.isArray(menuItem.attachmentIds) && menuItem.attachmentIds.length > 0 ? colors.accent : colors.secondary} />
                       <Text style={[styles.modalActionText, { color: colors.text }]}>
-                        {Array.isArray(menuItem.attachmentIds) && menuItem.attachmentIds.length > 0
-                          ? `${menuItem.attachmentIds.length} Attachment(s)`
-                          : 'No Attachments'}
+                        Attachments
                       </Text>
-                    </View>
+                      {Array.isArray(menuItem.attachmentIds) && menuItem.attachmentIds.length > 0 && (
+                        <View style={[styles.menuBadge, { backgroundColor: colors.accent + '20' }]}>
+                          <Text style={{ color: colors.accent, fontSize: 10, fontWeight: '600' }}>{menuItem.attachmentIds.length}</Text>
+                        </View>
+                      )}
+                      <Ionicons name="chevron-forward" size={16} color={colors.muted} />
+                    </TouchableOpacity>
                   </View>
                 )}
 
-                {menuMode === 'notes' && menuItem && (
+                {menuMode === 'activity' && menuItem && (
                   <View>
                     <View style={styles.modalSubHeader}>
                       <TouchableOpacity onPress={() => setMenuMode('actions')} activeOpacity={0.7}>
                         <Ionicons name="arrow-back" size={22} color={colors.text} />
                       </TouchableOpacity>
-                      <Text style={[styles.modalTitle, { color: colors.text, flex: 1 }]}>Notes</Text>
+                      <Text style={[styles.modalTitle, { color: colors.text, flex: 1 }]}>Activity</Text>
                     </View>
-                    <TextInput
-                      style={[styles.noteInput, { color: colors.text, borderColor: colors.border, backgroundColor: isDark ? '#0f172a' : '#f8fafc' }]}
-                      multiline
-                      numberOfLines={4}
-                      placeholder="Add a note..."
-                      placeholderTextColor={colors.muted}
-                      value={noteText}
-                      onChangeText={setNoteText}
-                      textAlignVertical="top"
-                    />
+                    <ScrollView style={{ maxHeight: 220, marginBottom: 12 }}>
+                      {(() => {
+                        const entries = parseNoteFeed(menuItem.notes);
+                        if (entries.length === 0) {
+                          return (
+                            <View style={{ paddingVertical: 24, alignItems: 'center' }}>
+                              <Ionicons name="chatbubbles-outline" size={28} color={colors.muted} />
+                              <Text style={{ color: colors.secondary, fontSize: 13, marginTop: 8 }}>No activity yet</Text>
+                            </View>
+                          );
+                        }
+                        return entries.map((entry, idx) => (
+                          <View key={idx} style={styles.feedEntry}>
+                            <View style={[styles.feedAvatar, { backgroundColor: colors.accent + '20' }]}>
+                              <Text style={{ color: colors.accent, fontSize: 10, fontWeight: '700' }}>
+                                {entry.author.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                              </Text>
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
+                                <Text style={{ color: colors.text, fontSize: 12, fontWeight: '600' }}>{entry.author}</Text>
+                                <Text style={{ color: colors.secondary, fontSize: 10 }}>{formatFeedDate(entry.date)}</Text>
+                              </View>
+                              <Text style={{ color: colors.text, fontSize: 13, marginTop: 2 }}>{entry.text}</Text>
+                            </View>
+                          </View>
+                        ));
+                      })()}
+                    </ScrollView>
+                    <View style={[styles.feedInputRow, { borderTopColor: colors.border }]}>
+                      <TextInput
+                        style={[styles.feedInput, { color: colors.text, borderColor: colors.border, backgroundColor: isDark ? '#0f172a' : '#f8fafc' }]}
+                        placeholder="Add a note..."
+                        placeholderTextColor={colors.muted}
+                        value={noteText}
+                        onChangeText={setNoteText}
+                        multiline
+                        textAlignVertical="top"
+                      />
+                      <TouchableOpacity
+                        style={[styles.feedSendBtn, { backgroundColor: noteText.trim() ? colors.accent : colors.muted }]}
+                        onPress={handleAddNote}
+                        activeOpacity={0.7}
+                        disabled={savingNote || !noteText.trim()}
+                      >
+                        {savingNote ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <Ionicons name="send" size={16} color="#fff" />
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+
+                {menuMode === 'attachments' && menuItem && (
+                  <View>
+                    <View style={styles.modalSubHeader}>
+                      <TouchableOpacity onPress={() => setMenuMode('actions')} activeOpacity={0.7}>
+                        <Ionicons name="arrow-back" size={22} color={colors.text} />
+                      </TouchableOpacity>
+                      <Text style={[styles.modalTitle, { color: colors.text, flex: 1 }]}>Attachments</Text>
+                    </View>
+                    {(() => {
+                      const attachments = Array.isArray(menuItem.attachmentIds) ? menuItem.attachmentIds as any[] : [];
+                      if (attachments.length === 0) {
+                        return (
+                          <View style={{ paddingVertical: 24, alignItems: 'center' }}>
+                            <Ionicons name="cloud-upload-outline" size={28} color={colors.muted} />
+                            <Text style={{ color: colors.secondary, fontSize: 13, marginTop: 8 }}>No attachments</Text>
+                          </View>
+                        );
+                      }
+                      return (
+                        <ScrollView style={{ maxHeight: 200 }}>
+                          {attachments.map((att: any, idx: number) => (
+                            <View key={idx} style={[styles.attachmentRow, { borderColor: colors.border }]}>
+                              <Ionicons
+                                name={att.contentType?.startsWith('image/') ? 'image-outline' : 'document-outline'}
+                                size={18}
+                                color={colors.accent}
+                              />
+                              <View style={{ flex: 1, marginLeft: 8 }}>
+                                <Text style={{ color: colors.text, fontSize: 13 }} numberOfLines={1}>{att.name}</Text>
+                                <Text style={{ color: colors.secondary, fontSize: 10 }}>
+                                  {att.uploadedBy} {att.uploadedAt ? `- ${formatFeedDate(att.uploadedAt)}` : ''}
+                                </Text>
+                              </View>
+                              <TouchableOpacity
+                                onPress={() => handleRemoveAttachment(idx)}
+                                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                              >
+                                <Ionicons name="trash-outline" size={16} color="#ef4444" />
+                              </TouchableOpacity>
+                            </View>
+                          ))}
+                        </ScrollView>
+                      );
+                    })()}
                     <TouchableOpacity
-                      style={[styles.saveBtn, { backgroundColor: colors.accent }]}
-                      onPress={handleSaveNote}
+                      style={[styles.saveBtn, { backgroundColor: colors.accent, marginTop: 12, flexDirection: 'row', gap: 6 }]}
+                      onPress={handlePickAttachment}
                       activeOpacity={0.7}
-                      disabled={savingNote}
+                      disabled={uploadingAttachment}
                     >
-                      {savingNote ? (
+                      {uploadingAttachment ? (
                         <ActivityIndicator size="small" color="#fff" />
                       ) : (
-                        <Text style={styles.saveBtnText}>Save Note</Text>
+                        <>
+                          <Ionicons name="add" size={18} color="#fff" />
+                          <Text style={styles.saveBtnText}>Add Attachment</Text>
+                        </>
                       )}
                     </TouchableOpacity>
                   </View>
@@ -828,6 +1042,16 @@ const styles = StyleSheet.create({
   itemStrikethrough: { textDecorationLine: 'line-through' },
   itemIndicators: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
   itemAssignee: { fontSize: 11 },
+  indicatorChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  indicatorText: {
+    fontSize: 10,
+    fontWeight: '500',
+    maxWidth: 60,
+  },
   itemMenuBtn: {
     padding: 4,
     justifyContent: 'center',
@@ -917,6 +1141,55 @@ const styles = StyleSheet.create({
   assignAvatarText: {
     fontSize: 11,
     fontWeight: '600',
+  },
+  menuBadge: {
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginRight: -4,
+  },
+  feedEntry: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 2,
+  },
+  feedAvatar: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  feedInputRow: {
+    borderTopWidth: 1,
+    paddingTop: 10,
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'flex-end',
+  },
+  feedInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+    fontSize: 13,
+    minHeight: 40,
+    maxHeight: 80,
+  },
+  feedSendBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  attachmentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   emptyState: {
     borderRadius: 10,

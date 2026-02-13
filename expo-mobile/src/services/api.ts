@@ -89,6 +89,27 @@ export const uploadPhoto = async (localUri: string): Promise<{ uploadURL: string
   return { uploadURL, objectPath };
 };
 
+export const uploadFileFromUri = async (localUri: string, fileName: string, contentType: string): Promise<{ uploadURL: string; objectPath: string }> => {
+  const presignRes = await apiRequest('/api/uploads/request-url', 'POST', {
+    name: fileName,
+    contentType,
+  });
+  if (!presignRes.ok) throw new Error('Failed to get upload URL');
+  const { uploadURL, objectPath } = await presignRes.json();
+
+  const fileResponse = await fetch(localUri);
+  const blob = await fileResponse.blob();
+
+  const uploadRes = await fetch(uploadURL, {
+    method: 'PUT',
+    headers: { 'Content-Type': contentType },
+    body: blob,
+  });
+  if (!uploadRes.ok) throw new Error('Failed to upload file');
+
+  return { uploadURL, objectPath };
+};
+
 export const uploadAudio = async (localUri: string): Promise<{ uploadURL: string; objectPath: string }> => {
   const presignRes = await apiRequest('/api/uploads/request-url', 'POST', {
     name: `voice-note-${Date.now()}.m4a`,
