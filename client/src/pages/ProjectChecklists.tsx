@@ -76,6 +76,7 @@ import {
   Plus,
   Search,
   MoreVertical,
+  Pencil,
   Trash2,
   User as UserIcon,
   CheckCircle2,
@@ -230,6 +231,8 @@ export default function ProjectChecklists() {
   const [newNoteText, setNewNoteText] = useState("");
   const [openAssignPopover, setOpenAssignPopover] = useState<string | null>(null);
   const [openAttachPopover, setOpenAttachPopover] = useState<string | null>(null);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editingItemText, setEditingItemText] = useState("");
   const [uploadingItemId, setUploadingItemId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadTargetRef = useRef<string | null>(null);
@@ -245,7 +248,7 @@ export default function ProjectChecklists() {
     selectedGroupIds: [] as string[],
   });
 
-  // Fetch checklist instances (these are "Checklist Groups" in user terminology)
+  // Fetch checklist instances (Groups > Checklists > Items hierarchy)
   const { data: instances = [], isLoading } = useQuery<ChecklistInstance[]>({
     queryKey: ["/api/checklist-instances", { projectId }],
     queryFn: async () => {
@@ -375,12 +378,12 @@ export default function ProjectChecklists() {
       await queryClient.invalidateQueries({ 
         predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/checklist-instance-groups"
       });
-      toast({ title: "Checklist created", description: "The checklist has been created successfully." });
+      toast({ title: "Group created", description: "The group has been created successfully." });
       setShowAddDialog(false);
       setFormData({ templateId: "", name: "", description: "", priority: "medium", dueDate: "", assigneeId: "", selectedGroupIds: [] });
     },
     onError: () => {
-      toast({ title: "Error", description: "Failed to create checklist.", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to create group.", variant: "destructive" });
     },
   });
 
@@ -396,11 +399,11 @@ export default function ProjectChecklists() {
       queryClient.invalidateQueries({ 
         predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/checklist-instance-groups"
       });
-      toast({ title: "Checklist deleted", description: "The checklist has been deleted." });
+      toast({ title: "Group deleted", description: "The group has been deleted." });
       setShowDeleteConfirm(null);
     },
     onError: () => {
-      toast({ title: "Error", description: "Failed to delete checklist.", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to delete group.", variant: "destructive" });
     },
   });
 
@@ -413,7 +416,7 @@ export default function ProjectChecklists() {
       setOpenLinkPopover(null);
     },
     onError: () => {
-      toast({ title: "Error", description: "Failed to update checklist.", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to update item.", variant: "destructive" });
       setOpenLinkPopover(null);
     },
   });
@@ -487,7 +490,7 @@ export default function ProjectChecklists() {
       toast({ title: "Item added", description: "The checklist item has been added." });
     },
     onError: () => {
-      toast({ title: "Error", description: "Failed to add checklist item.", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to add item.", variant: "destructive" });
     },
   });
 
@@ -502,10 +505,10 @@ export default function ProjectChecklists() {
       queryClient.invalidateQueries({ 
         predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "/api/checklist-instances"
       });
-      toast({ title: "Checklist deleted", description: "The checklist has been removed." });
+      toast({ title: "Checklist deleted", description: "The checklist item has been removed." });
     },
     onError: () => {
-      toast({ title: "Error", description: "Failed to delete checklist.", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to delete checklist item.", variant: "destructive" });
     },
   });
 
@@ -595,6 +598,22 @@ export default function ProjectChecklists() {
     } catch {
       return [{ author: "Previous note", date: new Date().toISOString(), text: notes }];
     }
+  };
+
+  const hasHumanNotes = (notes: string | null | undefined): boolean => {
+    const entries = parseNoteFeed(notes);
+    return entries.some((e: any) => !e.system);
+  };
+
+  const addSystemNote = (currentNotes: string | null | undefined, text: string): string => {
+    const entries = parseNoteFeed(currentNotes);
+    entries.push({
+      author: user?.name || "System",
+      date: new Date().toISOString(),
+      text,
+      system: true,
+    });
+    return JSON.stringify(entries);
   };
 
   const handleAddNote = () => {
@@ -807,7 +826,7 @@ export default function ProjectChecklists() {
             data-testid="button-add-checklist"
           >
             <Plus className="h-3 w-3" />
-            Add Checklist
+            Add Group
           </button>
         </div>
       </div>
@@ -928,7 +947,7 @@ export default function ProjectChecklists() {
                 data-testid="button-add-first-checklist"
               >
                 <Plus className="h-4 w-4 mr-2" />
-                Add First Checklist
+                Add First Group
               </Button>
             )}
           </div>
@@ -939,7 +958,7 @@ export default function ProjectChecklists() {
               
               return (
                 <div key={instance.id} className="space-y-3">
-                  {/* Checklist Group Header - Collapsible */}
+                  {/* Group Header - Collapsible */}
                   <div
                     className="flex items-center gap-2 px-3 py-2 bg-muted/30 border border-border/60 rounded-md cursor-pointer hover:bg-muted/50 transition-all"
                     onClick={() => toggleInstanceCollapse(instance.id)}
@@ -985,7 +1004,7 @@ export default function ProjectChecklists() {
                           }}
                         >
                           <Trash2 className="h-3 w-3 mr-2" />
-                          Delete Checklist
+                          Delete Group
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -1370,6 +1389,9 @@ export default function ProjectChecklists() {
                                               <Checkbox
                                                 checked={item.status === "completed"}
                                                 onCheckedChange={(checked) => {
+                                                  const updatedNotes = checked
+                                                    ? addSystemNote(item.notes, `Completed by ${user?.name || 'Unknown'}`)
+                                                    : addSystemNote(item.notes, `Reopened by ${user?.name || 'Unknown'}`);
                                                   updateItemMutation.mutate({
                                                     itemId: item.id,
                                                     data: { 
@@ -1377,6 +1399,7 @@ export default function ProjectChecklists() {
                                                       completedAt: checked ? new Date().toISOString() : null,
                                                       completedBy: checked ? user?.id : null,
                                                       completedByName: checked ? user?.name : null,
+                                                      notes: updatedNotes,
                                                     }
                                                   });
                                                 }}
@@ -1395,9 +1418,31 @@ export default function ProjectChecklists() {
                                             
                                             <div className="flex-1 min-w-0">
                                               <div className="flex items-center gap-2 flex-wrap">
-                                                <span className={`text-sm ${isAnswered && responseType === "checkbox" ? 'line-through text-muted-foreground' : ''}`}>
-                                                  {item.description}
-                                                </span>
+                                                {editingItemId === item.id ? (
+                                                  <Input
+                                                    autoFocus
+                                                    value={editingItemText}
+                                                    onChange={(e) => setEditingItemText(e.target.value)}
+                                                    onKeyDown={(e) => {
+                                                      if (e.key === "Enter" && editingItemText.trim()) {
+                                                        updateItemMutation.mutate({ itemId: item.id, data: { description: editingItemText.trim() } });
+                                                        setEditingItemId(null);
+                                                      }
+                                                      if (e.key === "Escape") setEditingItemId(null);
+                                                    }}
+                                                    onBlur={() => {
+                                                      if (editingItemText.trim() && editingItemText.trim() !== item.description) {
+                                                        updateItemMutation.mutate({ itemId: item.id, data: { description: editingItemText.trim() } });
+                                                      }
+                                                      setEditingItemId(null);
+                                                    }}
+                                                    className="h-7 text-sm"
+                                                  />
+                                                ) : (
+                                                  <span className={`text-sm ${isAnswered && responseType === "checkbox" ? 'line-through text-muted-foreground' : ''}`}>
+                                                    {item.description}
+                                                  </span>
+                                                )}
                                                 {item.tooltip && (
                                                   <Tooltip>
                                                     <TooltipTrigger asChild>
@@ -1422,7 +1467,7 @@ export default function ProjectChecklists() {
                                                         className="p-0.5 rounded hover:bg-muted/60 transition-colors"
                                                         onClick={(e) => { e.stopPropagation(); setShowNotesDialog(item); }}
                                                       >
-                                                        <MessageSquare className={`h-3.5 w-3.5 shrink-0 ${item.notes ? 'text-[#bba7db] fill-[#bba7db]' : 'text-muted-foreground/40'}`} />
+                                                        <MessageSquare className={`h-3.5 w-3.5 shrink-0 ${hasHumanNotes(item.notes) ? 'text-[#bba7db] fill-[#bba7db]' : 'text-muted-foreground/40'}`} />
                                                       </button>
                                                     </TooltipTrigger>
                                                     <TooltipContent side="top">
@@ -1647,16 +1692,38 @@ export default function ProjectChecklists() {
                                               )}
                                             </div>
                                             
-                                            <Button
-                                              variant="ghost"
-                                              size="icon"
-                                              className="h-5 w-5 shrink-0 text-muted-foreground/0 hover:text-destructive self-start mt-0.5 opacity-0 group-hover/item:opacity-100 transition-opacity"
-                                              onClick={() => deleteItemMutation.mutate(item.id)}
-                                              disabled={deleteItemMutation.isPending}
-                                              data-testid={`delete-item-${item.id}`}
-                                            >
-                                              <Trash2 className="h-3 w-3" />
-                                            </Button>
+                                            <DropdownMenu>
+                                              <DropdownMenuTrigger asChild>
+                                                <Button
+                                                  variant="ghost"
+                                                  size="icon"
+                                                  className="h-5 w-5 shrink-0 text-muted-foreground self-start mt-0.5 opacity-0 group-hover/item:opacity-100 transition-opacity"
+                                                  onClick={(e) => e.stopPropagation()}
+                                                  data-testid={`item-menu-${item.id}`}
+                                                >
+                                                  <MoreVertical className="h-3 w-3" />
+                                                </Button>
+                                              </DropdownMenuTrigger>
+                                              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                                                <DropdownMenuItem
+                                                  onClick={() => {
+                                                    setEditingItemId(item.id);
+                                                    setEditingItemText(item.description);
+                                                  }}
+                                                >
+                                                  <Pencil className="h-3 w-3 mr-2" />
+                                                  Rename
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem
+                                                  className="text-destructive"
+                                                  onClick={() => deleteItemMutation.mutate(item.id)}
+                                                  disabled={deleteItemMutation.isPending}
+                                                >
+                                                  <Trash2 className="h-3 w-3 mr-2" />
+                                                  Delete
+                                                </DropdownMenuItem>
+                                              </DropdownMenuContent>
+                                            </DropdownMenu>
                                           </div>
                                         </div>
                                       );
@@ -1722,9 +1789,9 @@ export default function ProjectChecklists() {
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
         <DialogContent data-testid="dialog-add-checklist">
           <DialogHeader>
-            <DialogTitle>Add Checklist</DialogTitle>
+            <DialogTitle>Add Group</DialogTitle>
             <DialogDescription>
-              Create a new checklist from a template or from scratch.
+              Create a new group from a template or from scratch.
             </DialogDescription>
           </DialogHeader>
           
@@ -1878,7 +1945,7 @@ export default function ProjectChecklists() {
                   Creating...
                 </>
               ) : (
-                "Create Checklist"
+                "Create Group"
               )}
             </Button>
           </DialogFooter>
@@ -1927,22 +1994,32 @@ export default function ProjectChecklists() {
                 return (
                   <div className="space-y-3 py-2">
                     {noteEntries.map((entry: any, idx: number) => (
-                      <div key={idx} className="flex gap-2">
-                        <Avatar className="h-6 w-6 shrink-0">
-                          <AvatarFallback className="text-[9px] bg-[#bba7db]/20 text-[#bba7db]">
-                            {entry.author.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-baseline gap-2 flex-wrap">
-                            <span className="text-xs font-medium">{entry.author}</span>
-                            <span className="text-[10px] text-muted-foreground">
-                              {format(new Date(entry.date), "MMM d 'at' h:mm a")}
-                            </span>
-                          </div>
-                          <p className="text-xs text-foreground mt-0.5 whitespace-pre-wrap">{entry.text}</p>
+                      entry.system ? (
+                        <div key={idx} className="flex items-center gap-2 py-1 px-2 rounded bg-muted/40">
+                          <CheckCircle2 className="h-3 w-3 text-muted-foreground shrink-0" />
+                          <span className="text-[11px] text-muted-foreground italic">{entry.text}</span>
+                          <span className="text-[10px] text-muted-foreground/60 ml-auto shrink-0">
+                            {format(new Date(entry.date), "MMM d 'at' h:mm a")}
+                          </span>
                         </div>
-                      </div>
+                      ) : (
+                        <div key={idx} className="flex gap-2">
+                          <Avatar className="h-6 w-6 shrink-0">
+                            <AvatarFallback className="text-[9px] bg-[#bba7db]/20 text-[#bba7db]">
+                              {entry.author.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-baseline gap-2 flex-wrap">
+                              <span className="text-xs font-medium">{entry.author}</span>
+                              <span className="text-[10px] text-muted-foreground">
+                                {format(new Date(entry.date), "MMM d 'at' h:mm a")}
+                              </span>
+                            </div>
+                            <p className="text-xs text-foreground mt-0.5 whitespace-pre-wrap">{entry.text}</p>
+                          </div>
+                        </div>
+                      )
                     ))}
                   </div>
                 );
@@ -1986,9 +2063,9 @@ export default function ProjectChecklists() {
       <AlertDialog open={!!showDeleteConfirm} onOpenChange={() => setShowDeleteConfirm(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Checklist</AlertDialogTitle>
+            <AlertDialogTitle>Delete Group</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete this checklist and all its items? This action cannot be undone.
+              Are you sure you want to delete this group and all its checklists? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
