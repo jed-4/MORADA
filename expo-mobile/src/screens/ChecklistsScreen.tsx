@@ -707,7 +707,7 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
                       activeOpacity={0.7}
                     >
                       <Ionicons name="chatbubbles-outline" size={20} color={menuItem.notes ? colors.accent : colors.secondary} />
-                      <Text style={[styles.modalActionText, { color: colors.text }]}>Activity</Text>
+                      <Text style={[styles.modalActionText, { color: colors.text }]}>Notes</Text>
                       {menuItem.notes && (
                         <View style={[styles.menuBadge, { backgroundColor: colors.accent + '20' }]}>
                           <Text style={{ color: colors.accent, fontSize: 10, fontWeight: '600' }}>{parseNoteFeed(menuItem.notes).length}</Text>
@@ -751,7 +751,7 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
                       <TouchableOpacity onPress={() => setMenuMode('actions')} activeOpacity={0.7}>
                         <Ionicons name="arrow-back" size={22} color={colors.text} />
                       </TouchableOpacity>
-                      <Text style={[styles.modalTitle, { color: colors.text, flex: 1 }]}>Activity</Text>
+                      <Text style={[styles.modalTitle, { color: colors.text, flex: 1 }]}>Notes</Text>
                     </View>
                     <ScrollView style={{ maxHeight: 220, marginBottom: 12 }}>
                       {(() => {
@@ -760,7 +760,7 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
                           return (
                             <View style={{ paddingVertical: 24, alignItems: 'center' }}>
                               <Ionicons name="chatbubbles-outline" size={28} color={colors.muted} />
-                              <Text style={{ color: colors.secondary, fontSize: 13, marginTop: 8 }}>No activity yet</Text>
+                              <Text style={{ color: colors.secondary, fontSize: 13, marginTop: 8 }}>No notes yet</Text>
                             </View>
                           );
                         }
