@@ -1360,7 +1360,7 @@ export default function ProjectChecklists() {
                                       return (
                                         <div
                                           key={item.id}
-                                          className={`p-2 rounded-md border border-border/40 bg-background/50 transition-colors ${
+                                          className={`group/item p-2 rounded-md border border-border/40 bg-background/50 transition-colors ${
                                             isAnswered ? 'opacity-80' : ''
                                           }`}
                                         >
@@ -1422,7 +1422,7 @@ export default function ProjectChecklists() {
                                                         className="p-0.5 rounded hover:bg-muted/60 transition-colors"
                                                         onClick={(e) => { e.stopPropagation(); setShowNotesDialog(item); }}
                                                       >
-                                                        <MessageSquare className={`h-3.5 w-3.5 shrink-0 ${item.notes ? 'text-amber-500' : 'text-muted-foreground/40'}`} />
+                                                        <MessageSquare className={`h-3.5 w-3.5 shrink-0 ${item.notes ? 'text-[#bba7db] fill-[#bba7db]' : 'text-muted-foreground/40'}`} />
                                                       </button>
                                                     </TooltipTrigger>
                                                     <TooltipContent side="top">
@@ -1647,11 +1647,10 @@ export default function ProjectChecklists() {
                                               )}
                                             </div>
                                             
-                                            {/* Delete Item Button */}
                                             <Button
                                               variant="ghost"
                                               size="icon"
-                                              className="h-5 w-5 shrink-0 text-muted-foreground hover:text-destructive self-start mt-0.5"
+                                              className="h-5 w-5 shrink-0 text-muted-foreground/0 hover:text-destructive self-start mt-0.5 opacity-0 group-hover/item:opacity-100 transition-opacity"
                                               onClick={() => deleteItemMutation.mutate(item.id)}
                                               disabled={deleteItemMutation.isPending}
                                               data-testid={`delete-item-${item.id}`}

@@ -159,7 +159,7 @@ export default function ProjectsScreen({ navigation }: Props) {
           {item.projectNumber && (
             <Text style={[styles.projectNumber, { color: colors.accent }]}>#{item.projectNumber}</Text>
           )}
-          <Text style={[styles.projectName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
+          <Text style={[styles.projectName, { color: colors.text }]}>{item.name}</Text>
         </View>
         <View style={[styles.phaseBadge, { backgroundColor: getPhaseColor(item.currentSystemPhase) + '20' }]}>
           <Text style={[styles.phaseBadgeText, { color: getPhaseColor(item.currentSystemPhase) }]}>
@@ -176,7 +176,7 @@ export default function ProjectsScreen({ navigation }: Props) {
       {item.address && (
         <View style={styles.detailRow}>
           <Ionicons name="location-outline" size={13} color={colors.secondary} />
-          <Text style={[styles.detailText, { color: colors.secondary }]} numberOfLines={1}>{item.address}</Text>
+          <Text style={[styles.detailText, { color: colors.secondary }]}>{item.address}</Text>
         </View>
       )}
     </TouchableOpacity>
@@ -333,7 +333,7 @@ const styles = StyleSheet.create({
   },
   list: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 20 },
   projectCard: {
-    borderRadius: 10,
+    borderRadius: 8,
     padding: 14,
     borderWidth: 1,
     marginBottom: 8,

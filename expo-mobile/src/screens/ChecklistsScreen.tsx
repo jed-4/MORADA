@@ -8,6 +8,12 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   useColorScheme,
+  Modal,
+  TextInput,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { apiFetch, apiRequest } from '../services/api';
@@ -45,6 +51,13 @@ interface ChecklistItem {
   responseType: 'checkbox' | 'text' | 'single_choice' | 'multiple_choice';
   notes?: string;
   assigneeName?: string;
+  assigneeId?: string;
+  attachmentIds?: any[];
+}
+
+interface TeamMember {
+  id: string;
+  displayName: string;
 }
 
 type Props = {
@@ -67,6 +80,13 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
   const [projectName, setProjectName] = useState<string>('');
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [menuItem, setMenuItem] = useState<ChecklistItem | null>(null);
+  const [menuMode, setMenuMode] = useState<'actions' | 'notes' | 'assignee'>('actions');
+  const [noteText, setNoteText] = useState('');
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [savingNote, setSavingNote] = useState(false);
+  const [savingAssignee, setSavingAssignee] = useState(false);
+  const [loadingTeam, setLoadingTeam] = useState(false);
 
   const colors = isDark
     ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569' }
@@ -236,39 +256,111 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
     return { groups, ungrouped };
   };
 
+  const openItemMenu = (item: ChecklistItem) => {
+    setMenuItem(item);
+    setMenuMode('actions');
+    setNoteText(item.notes || '');
+  };
+
+  const closeMenu = () => {
+    setMenuItem(null);
+    setMenuMode('actions');
+    setNoteText('');
+  };
+
+  const fetchTeamMembers = useCallback(async () => {
+    setLoadingTeam(true);
+    try {
+      const data = await apiFetch<TeamMember[]>('/api/users/assignable');
+      setTeamMembers(data || []);
+    } catch {
+      setTeamMembers([]);
+    } finally {
+      setLoadingTeam(false);
+    }
+  }, []);
+
+  const handleSaveNote = async () => {
+    if (!menuItem) return;
+    setSavingNote(true);
+    try {
+      await apiRequest(`/api/checklist-instance-items/${menuItem.id}`, 'PATCH', { notes: noteText || null });
+      setItemsByInstance(prev => {
+        const items = prev[menuItem.instanceId] || [];
+        return { ...prev, [menuItem.instanceId]: items.map(i => i.id === menuItem.id ? { ...i, notes: noteText || undefined } : i) };
+      });
+      closeMenu();
+    } catch {
+      Alert.alert('Error', 'Failed to save note');
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
+  const handleAssign = async (memberId: string | null, memberName: string | null) => {
+    if (!menuItem) return;
+    setSavingAssignee(true);
+    try {
+      await apiRequest(`/api/checklist-instance-items/${menuItem.id}`, 'PATCH', { assigneeId: memberId, assigneeName: memberName });
+      setItemsByInstance(prev => {
+        const items = prev[menuItem.instanceId] || [];
+        return { ...prev, [menuItem.instanceId]: items.map(i => i.id === menuItem.id ? { ...i, assigneeId: memberId || undefined, assigneeName: memberName || undefined } : i) };
+      });
+      closeMenu();
+    } catch {
+      Alert.alert('Error', 'Failed to update assignee');
+    } finally {
+      setSavingAssignee(false);
+    }
+  };
+
   const renderItemRow = (item: ChecklistItem) => (
-    <TouchableOpacity
-      key={item.id}
-      style={[styles.itemRow, { borderColor: colors.border }]}
-      onPress={() => toggleItemStatus(item)}
-      activeOpacity={0.7}
-      disabled={item.status === 'na'}
-    >
-      <Ionicons name={getCheckboxIcon(item.status)} size={22} color={getCheckboxColor(item.status)} />
-      <View style={styles.itemContent}>
-        <Text
-          style={[
-            styles.itemDescription,
-            { color: item.status === 'completed' ? colors.muted : colors.text },
-            item.status === 'completed' && styles.itemStrikethrough,
-          ]}
-          numberOfLines={2}
-        >
-          {item.description}
-        </Text>
-        {item.assigneeName && (
-          <Text style={[styles.itemAssignee, { color: colors.secondary }]}>{item.assigneeName}</Text>
-        )}
-      </View>
-      {item.notes && (
-        <Ionicons name="chatbubble" size={12} color="#3b82f6" style={{ marginRight: 4 }} />
-      )}
-      {item.isRequired && (
-        <View style={[styles.requiredBadge, { backgroundColor: '#ef444420' }]}>
-          <Text style={[styles.requiredText, { color: '#ef4444' }]}>Req</Text>
+    <View key={item.id} style={[styles.itemRow, { borderColor: colors.border }]}>
+      <TouchableOpacity
+        style={styles.itemCheckArea}
+        onPress={() => toggleItemStatus(item)}
+        activeOpacity={0.7}
+        disabled={item.status === 'na'}
+      >
+        <Ionicons name={getCheckboxIcon(item.status)} size={22} color={getCheckboxColor(item.status)} />
+        <View style={styles.itemContent}>
+          <Text
+            style={[
+              styles.itemDescription,
+              { color: item.status === 'completed' ? colors.muted : colors.text },
+              item.status === 'completed' && styles.itemStrikethrough,
+            ]}
+            numberOfLines={2}
+          >
+            {item.description}
+          </Text>
+          <View style={styles.itemIndicators}>
+            {item.assigneeName && (
+              <Text style={[styles.itemAssignee, { color: colors.secondary }]}>{item.assigneeName}</Text>
+            )}
+            {item.notes && (
+              <Ionicons name="chatbubble" size={10} color={colors.accent} />
+            )}
+            {Array.isArray(item.attachmentIds) && item.attachmentIds.length > 0 && (
+              <Ionicons name="attach" size={11} color={colors.accent} />
+            )}
+          </View>
         </View>
-      )}
-    </TouchableOpacity>
+        {item.isRequired && (
+          <View style={[styles.requiredBadge, { backgroundColor: '#ef444420' }]}>
+            <Text style={[styles.requiredText, { color: '#ef4444' }]}>Req</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.itemMenuBtn}
+        onPress={() => openItemMenu(item)}
+        activeOpacity={0.6}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
+        <Ionicons name="ellipsis-vertical" size={16} color={colors.secondary} />
+      </TouchableOpacity>
+    </View>
   );
 
   const toggleGroup = (groupKey: string) => {
@@ -482,6 +574,141 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
           instances.map(renderInstance)
         )}
       </ScrollView>
+
+      <Modal
+        visible={!!menuItem}
+        transparent
+        animationType="slide"
+        onRequestClose={closeMenu}
+      >
+        <Pressable style={styles.modalOverlay} onPress={closeMenu}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ justifyContent: 'flex-end', flex: 1 }}>
+            <Pressable onPress={(e) => e.stopPropagation()}>
+              <View style={[styles.modalSheet, { backgroundColor: colors.card }]}>
+                <View style={[styles.modalHandle, { backgroundColor: colors.muted }]} />
+
+                {menuMode === 'actions' && menuItem && (
+                  <View>
+                    <Text style={[styles.modalTitle, { color: colors.text }]} numberOfLines={2}>{menuItem.description}</Text>
+                    <TouchableOpacity
+                      style={styles.modalAction}
+                      onPress={() => setMenuMode('notes')}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name={menuItem.notes ? 'chatbubble' : 'chatbubble-outline'} size={20} color={menuItem.notes ? colors.accent : colors.secondary} />
+                      <Text style={[styles.modalActionText, { color: colors.text }]}>
+                        {menuItem.notes ? 'View / Edit Notes' : 'Add Notes'}
+                      </Text>
+                      <Ionicons name="chevron-forward" size={16} color={colors.muted} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.modalAction}
+                      onPress={() => { setMenuMode('assignee'); fetchTeamMembers(); }}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name={menuItem.assigneeName ? 'person' : 'person-outline'} size={20} color={menuItem.assigneeName ? colors.accent : colors.secondary} />
+                      <Text style={[styles.modalActionText, { color: colors.text }]}>
+                        {menuItem.assigneeName ? `Assigned: ${menuItem.assigneeName}` : 'Assign'}
+                      </Text>
+                      <Ionicons name="chevron-forward" size={16} color={colors.muted} />
+                    </TouchableOpacity>
+                    <View style={styles.modalAction}>
+                      <Ionicons name="attach" size={20} color={Array.isArray(menuItem.attachmentIds) && menuItem.attachmentIds.length > 0 ? colors.accent : colors.secondary} />
+                      <Text style={[styles.modalActionText, { color: colors.text }]}>
+                        {Array.isArray(menuItem.attachmentIds) && menuItem.attachmentIds.length > 0
+                          ? `${menuItem.attachmentIds.length} Attachment(s)`
+                          : 'No Attachments'}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
+                {menuMode === 'notes' && menuItem && (
+                  <View>
+                    <View style={styles.modalSubHeader}>
+                      <TouchableOpacity onPress={() => setMenuMode('actions')} activeOpacity={0.7}>
+                        <Ionicons name="arrow-back" size={22} color={colors.text} />
+                      </TouchableOpacity>
+                      <Text style={[styles.modalTitle, { color: colors.text, flex: 1 }]}>Notes</Text>
+                    </View>
+                    <TextInput
+                      style={[styles.noteInput, { color: colors.text, borderColor: colors.border, backgroundColor: isDark ? '#0f172a' : '#f8fafc' }]}
+                      multiline
+                      numberOfLines={4}
+                      placeholder="Add a note..."
+                      placeholderTextColor={colors.muted}
+                      value={noteText}
+                      onChangeText={setNoteText}
+                      textAlignVertical="top"
+                    />
+                    <TouchableOpacity
+                      style={[styles.saveBtn, { backgroundColor: colors.accent }]}
+                      onPress={handleSaveNote}
+                      activeOpacity={0.7}
+                      disabled={savingNote}
+                    >
+                      {savingNote ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <Text style={styles.saveBtnText}>Save Note</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {menuMode === 'assignee' && menuItem && (
+                  <View>
+                    <View style={styles.modalSubHeader}>
+                      <TouchableOpacity onPress={() => setMenuMode('actions')} activeOpacity={0.7}>
+                        <Ionicons name="arrow-back" size={22} color={colors.text} />
+                      </TouchableOpacity>
+                      <Text style={[styles.modalTitle, { color: colors.text, flex: 1 }]}>Assign To</Text>
+                    </View>
+                    {menuItem.assigneeId && (
+                      <TouchableOpacity
+                        style={[styles.assignRow, { borderColor: colors.border }]}
+                        onPress={() => handleAssign(null, null)}
+                        activeOpacity={0.7}
+                        disabled={savingAssignee}
+                      >
+                        <Ionicons name="close-circle-outline" size={20} color={colors.secondary} />
+                        <Text style={[styles.assignRowText, { color: colors.secondary }]}>Unassign</Text>
+                      </TouchableOpacity>
+                    )}
+                    {loadingTeam ? (
+                      <ActivityIndicator size="small" color={colors.accent} style={{ marginVertical: 20 }} />
+                    ) : teamMembers.length === 0 ? (
+                      <Text style={{ color: colors.secondary, fontSize: 13, textAlign: 'center', paddingVertical: 20 }}>No team members available</Text>
+                    ) : (
+                      <ScrollView style={{ maxHeight: 300 }}>
+                        {teamMembers.map(member => (
+                          <TouchableOpacity
+                            key={member.id}
+                            style={[styles.assignRow, { borderColor: colors.border }, menuItem.assigneeId === member.id && { backgroundColor: colors.accent + '15' }]}
+                            onPress={() => handleAssign(member.id, member.displayName)}
+                            activeOpacity={0.7}
+                            disabled={savingAssignee}
+                          >
+                            <View style={[styles.assignAvatar, { backgroundColor: colors.accent + '20' }]}>
+                              <Text style={[styles.assignAvatarText, { color: colors.accent }]}>
+                                {member.displayName?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                              </Text>
+                            </View>
+                            <Text style={[styles.assignRowText, { color: colors.text }]}>{member.displayName}</Text>
+                            {menuItem.assigneeId === member.id && (
+                              <Ionicons name="checkmark" size={18} color={colors.accent} style={{ marginLeft: 'auto' }} />
+                            )}
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    )}
+                  </View>
+                )}
+              </View>
+            </Pressable>
+          </KeyboardAvoidingView>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -588,14 +815,109 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 4,
+  },
+  itemCheckArea: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
     gap: 10,
   },
   itemContent: { flex: 1 },
   itemDescription: { fontSize: 14 },
   itemStrikethrough: { textDecorationLine: 'line-through' },
-  itemAssignee: { fontSize: 11, marginTop: 2 },
+  itemIndicators: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
+  itemAssignee: { fontSize: 11 },
+  itemMenuBtn: {
+    padding: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   requiredBadge: { borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
   requiredText: { fontSize: 10, fontWeight: '600' },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingHorizontal: 20,
+    paddingBottom: 34,
+    paddingTop: 10,
+  },
+  modalHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    marginBottom: 16,
+  },
+  modalAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(128,128,128,0.15)',
+  },
+  modalActionText: {
+    fontSize: 15,
+    flex: 1,
+  },
+  modalSubHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+  },
+  noteInput: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 14,
+    minHeight: 100,
+    marginBottom: 12,
+  },
+  saveBtn: {
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  saveBtnText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  assignRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  assignRowText: {
+    fontSize: 14,
+    flex: 1,
+  },
+  assignAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  assignAvatarText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
   emptyState: {
     borderRadius: 10,
     borderWidth: 1,
