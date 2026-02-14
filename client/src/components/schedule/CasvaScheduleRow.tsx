@@ -162,7 +162,7 @@ export function CasvaScheduleRow({
       {/* Status Column */}
       {visibleColumns.status && (
         <TableCell className="w-32 h-8 py-0">
-          <div className="flex items-center gap-1 flex-wrap">
+          <div className="flex items-center gap-1">
             {item.status && onStatusChange && statusOptions.length > 0 ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
@@ -192,13 +192,17 @@ export function CasvaScheduleRow({
             ) : item.status ? (
               <ColorChip type="status" value={item.status} />
             ) : null}
-            <ActivityNotesPopover 
-              scheduleItemId={item.id} 
-              externalNoteCount={noteCount}
-            />
           </div>
         </TableCell>
       )}
+
+      {/* Notes Column */}
+      <TableCell className="w-8 h-8 py-0">
+        <ActivityNotesPopover 
+          scheduleItemId={item.id} 
+          externalNoteCount={noteCount}
+        />
+      </TableCell>
 
       {/* Completion Percentage Column */}
       {visibleColumns.completion && (

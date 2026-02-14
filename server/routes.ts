@@ -133,7 +133,8 @@ import {
   insertScheduleItemStepSchema,
   scheduleBaselines,
   scheduleBaselineItems,
-  insertScheduleBaselineSchema
+  insertScheduleBaselineSchema,
+  contacts
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -14617,12 +14618,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Handle business assignee (company:xxx format)
-      const createData = { ...validationResult.data };
+      const createData = { ...validationResult.data } as any;
       if (createData.assignedToId && createData.assignedToId.startsWith('company:')) {
         const companyId = createData.assignedToId.replace('company:', '');
         const company = await storage.getCompany(companyId);
         if (company) {
           createData.assignedToName = company.nickname || company.name;
+        }
+      }
+      
+      // Copy contact's scheduleColor to assignedToColor when assigning a contact
+      if (createData.assignedToId && !createData.assignedToId.startsWith('company:')) {
+        try {
+          const [contact] = await db.select().from(contacts).where(eq(contacts.id, createData.assignedToId)).limit(1);
+          if (contact?.scheduleColor) {
+            createData.assignedToColor = contact.scheduleColor;
+          }
+        } catch (e) {
+          // Non-critical - continue without color
         }
       }
       
@@ -14675,12 +14688,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const originalItem = await storage.getScheduleItem(req.params.id);
       
       // Handle business assignee (company:xxx format)
-      const updateData = { ...validationResult.data };
+      const updateData = { ...validationResult.data } as any;
       if (updateData.assignedToId && updateData.assignedToId.startsWith('company:')) {
         const companyId = updateData.assignedToId.replace('company:', '');
         const company = await storage.getCompany(companyId);
         if (company) {
           updateData.assignedToName = company.nickname || company.name;
+        }
+      }
+      
+      // Copy contact's scheduleColor to assignedToColor when assignedToId changes
+      if (updateData.assignedToId !== undefined) {
+        if (updateData.assignedToId && !updateData.assignedToId.startsWith('company:')) {
+          try {
+            const [contact] = await db.select().from(contacts).where(eq(contacts.id, updateData.assignedToId)).limit(1);
+            updateData.assignedToColor = contact?.scheduleColor || null;
+          } catch (e) {
+            // Non-critical - continue without color
+          }
+        } else if (!updateData.assignedToId) {
+          updateData.assignedToColor = null;
         }
       }
       
@@ -15065,6 +15092,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         error: "Failed to delete schedule item",
         details: error.message 
       });
+    }
+  });
+
+  // Duplicate schedule item
+  app.post("/api/schedule-items/:id/duplicate", requireAuth, async (req, res) => {
+    try {
+      const item = await storage.getScheduleItem(req.params.id);
+      if (!item) {
+        return res.status(404).json({ error: "Schedule item not found" });
+      }
+      const { id, createdAt, updatedAt, ...itemData } = item;
+      const [duplicated] = await db.insert(scheduleItems).values({
+        ...itemData,
+        name: `${item.name} (copy)`,
+        sortOrder: (item.sortOrder || 0) + 1,
+        progressPercent: 0,
+        completedAt: null,
+      }).returning();
+      res.json(duplicated);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to duplicate schedule item", details: error.message });
     }
   });
 

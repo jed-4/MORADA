@@ -15,6 +15,7 @@ import {
   Platform,
   FlatList,
   Dimensions,
+  Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
@@ -42,6 +43,28 @@ interface ScheduleItem {
   color: string | null;
   sortOrder: number;
   parentItemId: string | null;
+  dependencies: { id: string; type: string }[];
+  checklistIds: string[];
+  taskIds: string[];
+  useWorkingDaysOverride: boolean | null;
+}
+
+interface ScheduleItemStep {
+  id: string;
+  scheduleItemId: string;
+  name: string;
+  isCompleted: boolean;
+  sortOrder: number;
+}
+
+interface LinkedChecklist {
+  id: string;
+  name: string;
+}
+
+interface LinkedTask {
+  id: string;
+  title: string;
 }
 
 interface ActivityNote {
@@ -243,6 +266,14 @@ export default function ScheduleScreen({ navigation }: Props) {
   const [weekStartDate, setWeekStartDate] = useState<Date>(getMondayOfWeek(new Date()));
   const [dayViewDate, setDayViewDate] = useState<Date>(new Date());
 
+  const [checklistSteps, setChecklistSteps] = useState<ScheduleItemStep[]>([]);
+  const [loadingSteps, setLoadingSteps] = useState(false);
+  const [newStepName, setNewStepName] = useState('');
+  const [addingStep, setAddingStep] = useState(false);
+  const [linkedChecklists, setLinkedChecklists] = useState<LinkedChecklist[]>([]);
+  const [linkedTasks, setLinkedTasks] = useState<LinkedTask[]>([]);
+  const [detailWeekendOverride, setDetailWeekendOverride] = useState<boolean>(false);
+
   const [showAddModal, setShowAddModal] = useState(false);
   const [addName, setAddName] = useState('');
   const [addType, setAddType] = useState('task');
@@ -324,6 +355,39 @@ export default function ScheduleScreen({ navigation }: Props) {
     }
   }, []);
 
+  const fetchSteps = useCallback(async (itemId: string) => {
+    setLoadingSteps(true);
+    try {
+      const res = await apiFetch<ScheduleItemStep[]>(`/api/schedule-items/${itemId}/steps`);
+      setChecklistSteps(res || []);
+    } catch {
+      setChecklistSteps([]);
+    } finally {
+      setLoadingSteps(false);
+    }
+  }, []);
+
+  const fetchLinkedItems = useCallback(async (item: ScheduleItem) => {
+    const cIds = item.checklistIds || [];
+    const tIds = item.taskIds || [];
+    if (cIds.length > 0) {
+      try {
+        const allChecklists = await apiFetch<any[]>('/api/checklist-templates').catch(() => []);
+        setLinkedChecklists((allChecklists || []).filter((c: any) => cIds.includes(String(c.id))).map((c: any) => ({ id: String(c.id), name: c.name || 'Untitled' })));
+      } catch { setLinkedChecklists([]); }
+    } else {
+      setLinkedChecklists([]);
+    }
+    if (tIds.length > 0) {
+      try {
+        const allTasks = await apiFetch<any[]>(`/api/projects/${item.scheduleId}/tasks`).catch(() => []);
+        setLinkedTasks((allTasks || []).filter((t: any) => tIds.includes(String(t.id))).map((t: any) => ({ id: String(t.id), title: t.title || 'Untitled' })));
+      } catch { setLinkedTasks([]); }
+    } else {
+      setLinkedTasks([]);
+    }
+  }, []);
+
   const openDetail = useCallback((item: ScheduleItem) => {
     setSelectedItem(item);
     setDetailStatus(item.status);
@@ -332,9 +396,16 @@ export default function ScheduleScreen({ navigation }: Props) {
     setActivityNotes([]);
     setNewNoteText('');
     setShowStatusPicker(false);
+    setChecklistSteps([]);
+    setNewStepName('');
+    setLinkedChecklists([]);
+    setLinkedTasks([]);
+    setDetailWeekendOverride(item.useWorkingDaysOverride === true);
     setShowDetailSheet(true);
     fetchActivityNotes(item.id);
-  }, [fetchActivityNotes]);
+    fetchSteps(item.id);
+    fetchLinkedItems(item);
+  }, [fetchActivityNotes, fetchSteps, fetchLinkedItems]);
 
   const handleSave = async () => {
     if (!selectedItem) return;
@@ -344,6 +415,7 @@ export default function ScheduleScreen({ navigation }: Props) {
         status: detailStatus,
         progressPercent: parseInt(detailProgress) || 0,
         notes: detailNotes,
+        useWorkingDaysOverride: detailWeekendOverride,
       };
       await apiRequest(`/api/schedule-items/${selectedItem.id}`, 'PATCH', body);
       if (selectedProjectId) {
@@ -371,6 +443,38 @@ export default function ScheduleScreen({ navigation }: Props) {
       Alert.alert('Error', 'Could not add note.');
     } finally {
       setAddingNote(false);
+    }
+  };
+
+  const handleToggleStep = async (step: ScheduleItemStep) => {
+    try {
+      await apiRequest(`/api/schedule-item-steps/${step.id}`, 'PATCH', { isCompleted: !step.isCompleted });
+      if (selectedItem) await fetchSteps(selectedItem.id);
+    } catch {
+      Alert.alert('Error', 'Could not update step.');
+    }
+  };
+
+  const handleAddStep = async () => {
+    if (!selectedItem || !newStepName.trim()) return;
+    setAddingStep(true);
+    try {
+      await apiRequest(`/api/schedule-items/${selectedItem.id}/steps`, 'POST', { name: newStepName.trim() });
+      setNewStepName('');
+      await fetchSteps(selectedItem.id);
+    } catch {
+      Alert.alert('Error', 'Could not add step.');
+    } finally {
+      setAddingStep(false);
+    }
+  };
+
+  const handleDeleteStep = async (stepId: string) => {
+    try {
+      await apiRequest(`/api/schedule-item-steps/${stepId}`, 'DELETE');
+      if (selectedItem) await fetchSteps(selectedItem.id);
+    } catch {
+      Alert.alert('Error', 'Could not delete step.');
     }
   };
 
@@ -784,6 +888,44 @@ export default function ScheduleScreen({ navigation }: Props) {
                       </TouchableOpacity>
                     </View>
                   );
+                })}
+
+                {sortedItems.map((item, idx) => {
+                  const deps = item.dependencies || [];
+                  if (deps.length === 0) return null;
+                  const depStartDay = Math.max(0, Math.floor((new Date(item.startDate).getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)));
+                  const depBarLeft = depStartDay * DAY_COL_WIDTH + 2;
+                  const headerHeight = showMonthHeaders ? 52 : 32;
+                  const depRowTop = headerHeight + idx * GANTT_ROW_HEIGHT + GANTT_ROW_HEIGHT / 2;
+
+                  return deps.map(dep => {
+                    const predIdx = sortedItems.findIndex(si => String(si.id) === String(dep.id));
+                    if (predIdx < 0) return null;
+                    const pred = sortedItems[predIdx];
+                    const predEndDay = Math.max(1, Math.ceil((new Date(pred.endDate).getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+                    const predBarRight = predEndDay * DAY_COL_WIDTH - 2;
+                    const predRowMid = headerHeight + predIdx * GANTT_ROW_HEIGHT + GANTT_ROW_HEIGHT / 2;
+
+                    const lineColor = '#a78bfa';
+                    const cornerX = Math.min(predBarRight + 8, depBarLeft);
+                    const hLineWidth = Math.abs(cornerX - predBarRight);
+                    const vTop = Math.min(predRowMid, depRowTop);
+                    const vHeight = Math.abs(depRowTop - predRowMid);
+                    const hLineToDepWidth = Math.abs(depBarLeft - cornerX);
+
+                    return (
+                      <View key={`dep-${item.id}-${dep.id}`} pointerEvents="none">
+                        <View style={[styles.depLineH, { left: predBarRight, top: predRowMid - 1, width: hLineWidth, backgroundColor: lineColor }]} />
+                        {vHeight > 0 && (
+                          <View style={[styles.depLineV, { left: cornerX - 1, top: vTop, height: vHeight, backgroundColor: lineColor }]} />
+                        )}
+                        {hLineToDepWidth > 0 && (
+                          <View style={[styles.depLineH, { left: cornerX, top: depRowTop - 1, width: hLineToDepWidth, backgroundColor: lineColor }]} />
+                        )}
+                        <View style={[styles.depArrow, { left: depBarLeft - 4, top: depRowTop - 3, borderLeftColor: lineColor }]} />
+                      </View>
+                    );
+                  });
                 })}
               </View>
             </ScrollView>
@@ -1263,6 +1405,91 @@ export default function ScheduleScreen({ navigation }: Props) {
               </View>
 
               <View style={[styles.detailEditSection, { borderColor: colors.border }]}>
+                <View style={styles.switchRow}>
+                  <View style={styles.switchLabelRow}>
+                    <Ionicons name="calendar-outline" size={16} color={colors.secondary} />
+                    <Text style={[styles.switchLabel, { color: colors.text }]}>Allow on weekends</Text>
+                  </View>
+                  <Switch
+                    value={detailWeekendOverride}
+                    onValueChange={setDetailWeekendOverride}
+                    trackColor={{ false: colors.border, true: colors.accent + '80' }}
+                    thumbColor={detailWeekendOverride ? colors.accent : '#f4f3f4'}
+                  />
+                </View>
+              </View>
+
+              <View style={[styles.detailEditSection, { borderColor: colors.border }]}>
+                <Text style={[styles.detailSectionTitle, { color: colors.text }]}>Checklist Steps</Text>
+                {loadingSteps ? (
+                  <ActivityIndicator size="small" color={colors.accent} style={{ marginVertical: 12 }} />
+                ) : (
+                  checklistSteps.map(step => (
+                    <View key={step.id} style={[styles.stepRow, { borderBottomColor: colors.border }]}>
+                      <TouchableOpacity onPress={() => handleToggleStep(step)} style={styles.stepCheckbox}>
+                        <Ionicons
+                          name={step.isCompleted ? 'checkbox' : 'square-outline'}
+                          size={20}
+                          color={step.isCompleted ? colors.accent : colors.secondary}
+                        />
+                      </TouchableOpacity>
+                      <Text style={[styles.stepName, { color: colors.text }, step.isCompleted && styles.stepCompleted]}>{step.name}</Text>
+                      <TouchableOpacity onPress={() => handleDeleteStep(step.id)} style={styles.stepDeleteBtn}>
+                        <Ionicons name="trash-outline" size={16} color="#ef4444" />
+                      </TouchableOpacity>
+                    </View>
+                  ))
+                )}
+                {checklistSteps.length === 0 && !loadingSteps && (
+                  <Text style={[styles.noNotesText, { color: colors.secondary }]}>No checklist steps yet</Text>
+                )}
+                <View style={styles.addNoteRow}>
+                  <TextInput
+                    style={[styles.addNoteInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
+                    value={newStepName}
+                    onChangeText={setNewStepName}
+                    placeholder="Add a step..."
+                    placeholderTextColor={colors.secondary}
+                  />
+                  <TouchableOpacity
+                    style={[styles.addNoteBtn, { backgroundColor: colors.accent, opacity: !newStepName.trim() || addingStep ? 0.5 : 1 }]}
+                    onPress={handleAddStep}
+                    disabled={!newStepName.trim() || addingStep}
+                  >
+                    {addingStep ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Ionicons name="add" size={18} color="#fff" />
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {linkedChecklists.length > 0 && (
+                <View style={[styles.detailEditSection, { borderColor: colors.border }]}>
+                  <Text style={[styles.detailSectionTitle, { color: colors.text }]}>Linked Checklists</Text>
+                  {linkedChecklists.map(cl => (
+                    <View key={cl.id} style={[styles.linkedItemRow, { borderBottomColor: colors.border }]}>
+                      <Ionicons name="checkmark-circle-outline" size={16} color={colors.accent} />
+                      <Text style={[styles.linkedItemName, { color: colors.text }]}>{cl.name}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {linkedTasks.length > 0 && (
+                <View style={[styles.detailEditSection, { borderColor: colors.border }]}>
+                  <Text style={[styles.detailSectionTitle, { color: colors.text }]}>Linked Tasks</Text>
+                  {linkedTasks.map(t => (
+                    <View key={t.id} style={[styles.linkedItemRow, { borderBottomColor: colors.border }]}>
+                      <Ionicons name="checkbox-outline" size={16} color={colors.accent} />
+                      <Text style={[styles.linkedItemName, { color: colors.text }]}>{t.title}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              <View style={[styles.detailEditSection, { borderColor: colors.border }]}>
                 <Text style={[styles.detailSectionTitle, { color: colors.text }]}>Activity Notes</Text>
                 {loadingNotes ? (
                   <ActivityIndicator size="small" color={colors.accent} style={{ marginVertical: 12 }} />
@@ -1714,6 +1941,20 @@ const styles = StyleSheet.create({
   addNoteRow: { flexDirection: 'row', marginTop: 10, gap: 8 },
   addNoteInput: { flex: 1, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13 },
   addNoteBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
+
+  switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 4 },
+  switchLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  switchLabel: { fontSize: 14, fontWeight: '500' },
+  stepRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, gap: 8 },
+  stepCheckbox: { padding: 2 },
+  stepName: { flex: 1, fontSize: 13, fontWeight: '500' },
+  stepCompleted: { textDecorationLine: 'line-through', opacity: 0.6 },
+  stepDeleteBtn: { padding: 4 },
+  linkedItemRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, gap: 8 },
+  linkedItemName: { flex: 1, fontSize: 13, fontWeight: '500' },
+  depLineH: { position: 'absolute', height: 2 },
+  depLineV: { position: 'absolute', width: 2 },
+  depArrow: { position: 'absolute', width: 0, height: 0, borderTopWidth: 4, borderBottomWidth: 4, borderLeftWidth: 6, borderTopColor: 'transparent', borderBottomColor: 'transparent' },
 
   detailActions: { flexDirection: 'row', gap: 12, marginTop: 8 },
   actionBtn: { flex: 1, paddingVertical: 12, borderRadius: 8, alignItems: 'center' },

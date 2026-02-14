@@ -2981,6 +2981,7 @@ export const scheduleItems = pgTable("schedule_items", {
   notesHtml: text("notes_html"), // Rich text notes
   checklistIds: json("checklist_ids").default([]), // Array of checklist template IDs linked
   taskIds: json("task_ids").default([]), // Array of task IDs linked
+  taskLinkOffsets: json("task_link_offsets").default([]), // Array of offset objects [{taskId, offsetDays, offsetFrom}]
   attachments: json("attachments").default([]), // Array of attachment objects [{url, name, type}]
   
   // Site diary integration
@@ -3026,6 +3027,11 @@ export const insertScheduleItemSchema = createInsertSchema(scheduleItems).omit({
   predecessorIds: z.array(z.string()).optional(),
   checklistIds: z.array(z.string()).optional(),
   taskIds: z.array(z.string()).optional(),
+  taskLinkOffsets: z.array(z.object({
+    taskId: z.string(),
+    offsetDays: z.number().int().default(0),
+    offsetFrom: z.enum(["start", "end"]).default("start"),
+  })).optional(),
   attachments: z.array(z.object({
     url: z.string(),
     name: z.string(),

@@ -14,7 +14,6 @@ import "moment/locale/en-gb";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import "./schedule-calendar.css";
 
-moment.locale("en-gb");
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -81,19 +80,24 @@ import { ContactSelect } from "@/components/ContactSelect";
 import Gantt from "./Gantt";
 import { ImportScheduleDialog } from "@/components/schedule/ImportScheduleDialog";
 import { useScheduleItemStatusOptions } from "@/hooks/useScheduleItemStatusOptions";
+import { useWeekStartDay } from "@/hooks/useWeekStartDay";
+import { Switch } from "@/components/ui/switch";
 
 interface ScheduleParams {
   projectId: string;
 }
-
-// Setup moment localizer for BigCalendar
-const localizer = momentLocalizer(moment);
 
 export default function Schedule() {
   const { currentProject } = useProject();
   const { user } = useAuth();
   const { toast } = useToast();
   const pageTitle = usePageTitle({ pageName: "Schedule" });
+  const weekStartDay = useWeekStartDay();
+
+  const localizer = useMemo(() => {
+    moment.locale("en-custom", { week: { dow: weekStartDay, doy: 4 } });
+    return momentLocalizer(moment);
+  }, [weekStartDay]);
   const params = useParams<ScheduleParams>();
   const projectId = params.projectId || currentProject?.id;
 
@@ -129,7 +133,9 @@ export default function Schedule() {
     assignedToId: "",
     parentItemId: "",
     progressPercent: 0,
+    useWorkingDaysOverride: null as boolean | null,
   });
+  const [taskLinkOffsetsLocal, setTaskLinkOffsetsLocal] = useState<Array<{taskId: string; offsetDays: number; offsetFrom: "start" | "end"}>>([]);
   const [filters, setFilters] = useState({
     status: "all",
     assignee: "all",
@@ -352,7 +358,7 @@ export default function Schedule() {
   });
 
   const updateItemLinksMutation = useMutation({
-    mutationFn: async (data: { id: string; checklistIds?: string[]; taskIds?: string[] }) => {
+    mutationFn: async (data: { id: string; checklistIds?: string[]; taskIds?: string[]; taskLinkOffsets?: Array<{taskId: string; offsetDays: number; offsetFrom: "start" | "end"}> }) => {
       const { id, ...body } = data;
       const response = await fetch(`/api/schedule-items/${id}`, {
         method: "PATCH",
@@ -688,7 +694,9 @@ export default function Schedule() {
       assignedToId: "",
       parentItemId: "",
       progressPercent: 0,
+      useWorkingDaysOverride: null,
     });
+    setTaskLinkOffsetsLocal([]);
     setDescriptionExpanded(false);
     setNotesExpanded(false);
   };
@@ -718,6 +726,8 @@ export default function Schedule() {
       ...formData,
       assignedToId: formData.assignedToId || undefined,
       parentItemId: formData.parentItemId || undefined,
+      useWorkingDaysOverride: formData.useWorkingDaysOverride,
+      taskLinkOffsets: taskLinkOffsetsLocal.length > 0 ? taskLinkOffsetsLocal : undefined,
     };
 
     if (editingItem) {
@@ -786,8 +796,9 @@ export default function Schedule() {
         assignedToId: editingItem.assignedToId || "",
         parentItemId: editingItem.parentItemId || "",
         progressPercent: editingItem.progressPercent || 0,
+        useWorkingDaysOverride: editingItem.useWorkingDaysOverride ?? null,
       });
-      // Auto-expand description/notes only if they have content
+      setTaskLinkOffsetsLocal((editingItem as any).taskLinkOffsets || []);
       setDescriptionExpanded(!!(editingItem.description && editingItem.description.trim()));
       setNotesExpanded(!!(editingItem.notes && editingItem.notes.trim()));
     } else {
@@ -995,35 +1006,6 @@ export default function Schedule() {
           <div className="flex items-center gap-3">
             <h2 className="text-sm font-semibold">{pageTitle}</h2>
             
-            {/* Lock/Unlock Toggle */}
-            <div className="flex items-center gap-2">
-              {schedule?.status === "locked" ? (
-                <button
-                  onClick={() => {
-                    updateStatusMutation.mutate("online");
-                  }}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs font-medium hover-elevate active-elevate-2 transition-all"
-                  data-testid="button-unlock-schedule"
-                >
-                  <Lock className="w-3.5 h-3.5" />
-                  Locked
-                </button>
-              ) : (
-                <button
-                  onClick={() => {
-                    if (confirm("Lock the schedule? This will make it read-only and visible to clients. Any unsaved changes will be committed.")) {
-                      updateStatusMutation.mutate("locked");
-                    }
-                  }}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs font-medium hover-elevate active-elevate-2 transition-all"
-                  data-testid="button-lock-schedule"
-                >
-                  <Unlock className="w-3.5 h-3.5" />
-                  Unlocked (Draft)
-                </button>
-              )}
-            </div>
-            
             {/* Online/Offline indicator */}
             <button
               onClick={() => {
@@ -1045,6 +1027,32 @@ export default function Schedule() {
 
           {/* Right: Action Buttons */}
           <div className="flex items-center gap-1.5">
+            {/* Lock/Unlock Toggle */}
+            {schedule?.status === "locked" ? (
+              <button
+                onClick={() => {
+                  updateStatusMutation.mutate("online");
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs font-medium hover-elevate active-elevate-2 transition-all"
+                data-testid="button-unlock-schedule"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                Locked
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  if (confirm("Lock the schedule? This will make it read-only and visible to clients. Any unsaved changes will be committed.")) {
+                    updateStatusMutation.mutate("locked");
+                  }
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs font-medium hover-elevate active-elevate-2 transition-all"
+                data-testid="button-lock-schedule"
+              >
+                <Unlock className="w-3.5 h-3.5" />
+                Unlocked (Draft)
+              </button>
+            )}
             <button
               className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-primary-foreground border-primary/20 hover:bg-primary/90 active-elevate-2"
               onClick={() => setShowItemDialog(true)}
@@ -1569,7 +1577,7 @@ export default function Schedule() {
                     onNavigate={(date) => setCalendarDate(date)}
                     popup
                     toolbar={false}
-                    culture="en-GB"
+                    culture="en-custom"
                     data-testid="calendar-view"
                   />
                 </div>
@@ -1836,6 +1844,21 @@ export default function Schedule() {
               </div>
             )}
 
+            {/* Allow on weekends toggle */}
+            <div className="flex items-center justify-between py-2">
+              <div className="space-y-0.5">
+                <Label htmlFor="allow-weekends" className="text-sm">Allow on weekends</Label>
+                <p className="text-xs text-muted-foreground">Override schedule settings to allow this item on weekends</p>
+              </div>
+              <Switch
+                id="allow-weekends"
+                checked={formData.useWorkingDaysOverride === true}
+                onCheckedChange={(checked) => {
+                  setFormData({ ...formData, useWorkingDaysOverride: checked ? true : null });
+                }}
+              />
+            </div>
+
             {/* Dependencies Section */}
             {editingItem && (
               <div className="space-y-2 pt-4 border-t">
@@ -2100,6 +2123,7 @@ export default function Schedule() {
                                 const newIds = [...(editingItem.taskIds as string[] || []), t.id];
                                 updateItemLinksMutation.mutate({ id: editingItem.id, taskIds: newIds });
                                 setEditingItem({ ...editingItem, taskIds: newIds });
+                                setTaskLinkOffsetsLocal(prev => [...prev, { taskId: t.id, offsetDays: 0, offsetFrom: "start" as const }]);
                               }}
                             >
                               {t.title || t.name}
@@ -2112,24 +2136,67 @@ export default function Schedule() {
                     </DropdownMenu>
                   </div>
                   {((editingItem.taskIds as string[]) || []).length > 0 && (
-                    <div className="space-y-1">
+                    <div className="space-y-1.5">
                       {((editingItem.taskIds as string[]) || []).map((taskId: string) => {
                         const task = (availableTasks as any[]).find((t: any) => t.id === taskId);
+                        const offset = taskLinkOffsetsLocal.find(o => o.taskId === taskId);
                         return (
-                          <div key={taskId} className="flex items-center justify-between py-0.5 px-2 rounded hover-elevate group">
-                            <span className="text-xs">{task?.title || task?.name || taskId}</span>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-5 w-5 invisible group-hover:visible"
-                              onClick={() => {
-                                const newIds = ((editingItem.taskIds as string[]) || []).filter(id => id !== taskId);
-                                updateItemLinksMutation.mutate({ id: editingItem.id, taskIds: newIds });
-                                setEditingItem({ ...editingItem, taskIds: newIds });
-                              }}
-                            >
-                              <X className="h-3 w-3" />
-                            </Button>
+                          <div key={taskId} className="space-y-1 py-1 px-2 rounded border bg-card">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-medium">{task?.title || task?.name || taskId}</span>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-5 w-5"
+                                onClick={() => {
+                                  const newIds = ((editingItem.taskIds as string[]) || []).filter(id => id !== taskId);
+                                  updateItemLinksMutation.mutate({ id: editingItem.id, taskIds: newIds });
+                                  setEditingItem({ ...editingItem, taskIds: newIds });
+                                  setTaskLinkOffsetsLocal(prev => prev.filter(o => o.taskId !== taskId));
+                                }}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Input
+                                type="number"
+                                value={offset?.offsetDays ?? 0}
+                                onChange={(e) => {
+                                  const days = parseInt(e.target.value) || 0;
+                                  setTaskLinkOffsetsLocal(prev => {
+                                    const existing = prev.find(o => o.taskId === taskId);
+                                    if (existing) {
+                                      return prev.map(o => o.taskId === taskId ? { ...o, offsetDays: days } : o);
+                                    }
+                                    return [...prev, { taskId, offsetDays: days, offsetFrom: "start" as const }];
+                                  });
+                                }}
+                                className="h-6 w-16 text-xs"
+                                placeholder="0"
+                              />
+                              <span className="text-xs text-muted-foreground whitespace-nowrap">days from</span>
+                              <Select
+                                value={offset?.offsetFrom || "start"}
+                                onValueChange={(value: "start" | "end") => {
+                                  setTaskLinkOffsetsLocal(prev => {
+                                    const existing = prev.find(o => o.taskId === taskId);
+                                    if (existing) {
+                                      return prev.map(o => o.taskId === taskId ? { ...o, offsetFrom: value } : o);
+                                    }
+                                    return [...prev, { taskId, offsetDays: 0, offsetFrom: value }];
+                                  });
+                                }}
+                              >
+                                <SelectTrigger className="h-6 w-20 text-xs">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="start">Start</SelectItem>
+                                  <SelectItem value="end">End</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
                           </div>
                         );
                       })}

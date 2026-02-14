@@ -618,6 +618,16 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     },
   });
 
+  const duplicateItemMutation = useMutation({
+    mutationFn: async (itemId: string) => {
+      return await apiRequest(`/api/schedule-items/${itemId}/duplicate`, "POST");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      toast({ title: "Item duplicated" });
+    },
+  });
+
   const updateDependencyMutation = useMutation({
     mutationFn: async ({ itemId, predecessorId, type, lag }: { itemId: string; predecessorId: string; type?: string; lag?: number }) => {
       return apiRequest(`/api/schedule-items/${itemId}/dependencies/${predecessorId}`, "PATCH", { type, lag });
@@ -851,13 +861,11 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     };
   };
 
-  // Get bar color - using custom color if set, otherwise neutral gray
+  // Get bar color - priority: custom color > trade/contact color > default
   const getBarColor = (item: ScheduleItem) => {
-    // Use custom color if set
     if (item.color) return item.color;
-    
-    // Use neutral gray color as default
-    return '#9ca3af'; // neutral gray
+    if ((item as any).assignedToColor) return (item as any).assignedToColor;
+    return '#9ca3af';
   };
 
   // Bar click handler - open modal (but not if a drag just happened)
@@ -1901,8 +1909,8 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                           key={`weekend-${week.weekLabel}-${dayIdx}`}
                           className="absolute top-0 bottom-0 bg-[#f3f4f6] dark:bg-muted/50"
                           style={{
-                            left: `${previousDays * 40}px`,
-                            width: '40px',
+                            left: `${previousDays * pixelsPerDay}px`,
+                            width: `${pixelsPerDay}px`,
                           }}
                         />
                       );
@@ -1914,7 +1922,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
               {/* Vertical grid lines */}
               <div className="absolute top-0 bottom-0 left-0 right-0 pointer-events-none z-0">
                 {groupedTimelineHeaders ? (
-                  // Day zoom: one line per day at exact 40px intervals
+                  // Day zoom: one line per day at exact pixelsPerDay intervals
                   groupedTimelineHeaders.flatMap((week, weekIdx) =>
                     week.days.map((day, dayIdx) => {
                       const totalDayIdx = groupedTimelineHeaders
@@ -1923,8 +1931,8 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                       return (
                         <div
                           key={`grid-${weekIdx}-${dayIdx}`}
-                          className="absolute top-0 bottom-0 border-r border-border/30"
-                          style={{ left: `${(totalDayIdx + 1) * 40}px` }}
+                          className="absolute top-0 bottom-0 w-px bg-border/30"
+                          style={{ left: `${(totalDayIdx + 1) * pixelsPerDay - 1}px` }}
                         />
                       );
                     })
@@ -2185,8 +2193,6 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                         const blStart = getPosition(new Date(baselineItem.startDate));
                         const blDuration = differenceInDays(new Date(baselineItem.endDate), new Date(baselineItem.startDate)) + 1;
                         const blWidth = blDuration * pixelsPerDay;
-                        // Only show if dates differ
-                        if (blStart === parentStart && blWidth === parentWidth) return null;
                         return (
                           <div
                             className="absolute h-2 rounded-sm border border-dashed border-purple-400/60 bg-purple-200/30 dark:bg-purple-800/20 pointer-events-none z-5"
@@ -2380,8 +2386,6 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                             const blStart = getPosition(new Date(baselineItem.startDate));
                             const blDuration = differenceInDays(new Date(baselineItem.endDate), new Date(baselineItem.startDate)) + 1;
                             const blWidth = blDuration * pixelsPerDay;
-                            // Only show if dates differ
-                            if (blStart === childStart && blWidth === childWidth) return null;
                             return (
                               <div
                                 className="absolute h-2 rounded-sm border border-dashed border-purple-400/60 bg-purple-200/30 dark:bg-purple-800/20 pointer-events-none z-5"
@@ -2927,6 +2931,18 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
           >
             <Eye className="w-4 h-4 mr-2" />
             View Details
+          </button>
+          
+          <button
+            className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left"
+            onClick={() => {
+              duplicateItemMutation.mutate(contextMenu.item.id);
+              setContextMenu(null);
+            }}
+            data-testid="context-menu-duplicate"
+          >
+            <Copy className="w-4 h-4 mr-2" />
+            Duplicate
           </button>
           
           <div className="-mx-1 my-1 h-0.5 bg-border" />

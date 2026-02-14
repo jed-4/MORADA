@@ -234,6 +234,7 @@ export function CasvaScheduleList({
               {visibleColumns.type && <TableHead className="font-semibold w-24 h-8 py-0 text-xs">Type</TableHead>}
               {visibleColumns.dueDate && <TableHead className="font-semibold w-36 h-8 py-0 text-xs">Due Date & Duration</TableHead>}
               {visibleColumns.status && <TableHead className="font-semibold w-32 h-8 py-0 text-xs">Status</TableHead>}
+              <TableHead className="w-8 h-8 py-0 text-xs"></TableHead>
               {visibleColumns.completion && <TableHead className="font-semibold w-20 h-8 py-0 text-xs text-center">%</TableHead>}
               <TableHead className="w-12 h-8 py-0"></TableHead>
             </TableRow>

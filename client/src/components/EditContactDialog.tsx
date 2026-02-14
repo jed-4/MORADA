@@ -80,6 +80,7 @@ export default function EditContactDialog({
       labels: (contact.labels as string[]) || [],
       projectIds: (contact.projectIds as string[]) || [],
       avatarColor: contact.avatarColor || "",
+      scheduleColor: contact.scheduleColor || "",
       portalEnabled: contact.portalEnabled || false,
       isArchived: contact.isArchived || false,
     },
@@ -114,6 +115,7 @@ export default function EditContactDialog({
         labels: (contact.labels as string[]) || [],
         projectIds: (contact.projectIds as string[]) || [],
         avatarColor: contact.avatarColor || "#64748b",
+        scheduleColor: contact.scheduleColor || "",
         portalEnabled: contact.portalEnabled || false,
         isArchived: contact.isArchived || false,
       });
@@ -475,6 +477,67 @@ export default function EditContactDialog({
                               onChange={field.onChange}
                               data-testid="input-contact-color-hex"
                             />
+                          </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {/* Schedule Colour - only for trade/supplier */}
+                  <FormField
+                    control={form.control}
+                    name="scheduleColor"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Schedule Colour</FormLabel>
+                        <FormControl>
+                          <div className="space-y-2">
+                            <div className="flex flex-wrap gap-1.5">
+                              {[
+                                "#ef4444", "#f97316", "#f59e0b", "#eab308",
+                                "#22c55e", "#14b8a6", "#06b6d4", "#3b82f6",
+                                "#6366f1", "#8b5cf6", "#d946ef", "#ec4899",
+                              ].map((color) => (
+                                <button
+                                  key={color}
+                                  type="button"
+                                  className="w-7 h-7 rounded-md border-2 transition-transform"
+                                  style={{
+                                    backgroundColor: color,
+                                    borderColor: field.value === color ? "white" : "transparent",
+                                    boxShadow: field.value === color ? `0 0 0 2px ${color}` : "none",
+                                  }}
+                                  onClick={() => field.onChange(color)}
+                                />
+                              ))}
+                              {field.value && (
+                                <button
+                                  type="button"
+                                  className="w-7 h-7 rounded-md border border-dashed border-muted-foreground flex items-center justify-center text-muted-foreground text-xs"
+                                  onClick={() => field.onChange(null)}
+                                  title="Clear colour"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Input
+                                type="color"
+                                className="w-9 h-9 p-1 border rounded cursor-pointer"
+                                value={field.value || "#9ca3af"}
+                                onChange={field.onChange}
+                              />
+                              <Input
+                                type="text"
+                                placeholder="#hex colour"
+                                className="flex-1"
+                                value={field.value || ""}
+                                onChange={field.onChange}
+                                data-testid="input-schedule-color-hex"
+                              />
+                            </div>
                           </div>
                         </FormControl>
                         <FormMessage />
