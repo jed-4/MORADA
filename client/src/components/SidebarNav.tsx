@@ -66,7 +66,7 @@ interface NavItem {
 }
 
 const getBaseUserItems = (userId?: string): NavItem[] => [
-  { title: "Dashboard", url: userId ? `/users/${userId}` : "/users/me", icon: LayoutDashboard },
+  { title: "Workspace", url: userId ? `/users/${userId}` : "/users/me", icon: LayoutDashboard },
   { title: "Inbox", url: "/messages", icon: Inbox },
   { title: "My Tasks", url: userId ? `/users/${userId}/tasks` : "/users/me/tasks", icon: CheckSquare },
 ];
@@ -524,7 +524,7 @@ export function SidebarNav() {
   const getItemUrl = (sectionId: SectionId, item: NavItem): string => {
     if (sectionId === "user") {
       // For User Dashboard, always route to user workspace when user is available
-      if (item.title === "Dashboard" && currentUser?.id) {
+      if (item.title === "Workspace" && currentUser?.id) {
         return `/users/${currentUser.id}`;
       }
       return item.url;
@@ -949,10 +949,9 @@ export function SidebarNav() {
                           {userFavorites.map((fav) => {
                             const IconComponent = iconMap[fav.iconName] || FileText;
                             let url = fav.fullUrl || fav.url;
-                            if (fav.title === "Dashboard" && currentUser?.id) {
+                            if ((fav.title === "Dashboard" || fav.title === "Workspace") && currentUser?.id) {
                               url = `/users/${currentUser.id}`;
                             }
-                            // Handle both title-based and legacy URL-based My Tasks favorites
                             if ((fav.title === "My Tasks" || url === "/tasks") && currentUser?.id) {
                               url = `/users/${currentUser.id}/tasks`;
                             }
@@ -1062,7 +1061,7 @@ export function SidebarNav() {
                             const IconComponent = iconMap[fav.iconName] || FileText;
                             // Fix User Dashboard and My Tasks favorite URLs to use current user ID
                             let url = fav.fullUrl || fav.url;
-                            if (sectionId === "user" && fav.title === "Dashboard" && currentUser?.id) {
+                            if (sectionId === "user" && (fav.title === "Dashboard" || fav.title === "Workspace") && currentUser?.id) {
                               url = `/users/${currentUser.id}`;
                             }
                             // Handle both title-based and legacy URL-based My Tasks favorites

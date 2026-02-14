@@ -19,7 +19,7 @@ import UserActivity from "@/components/user-workspace/UserActivity";
 import Messages from "./Messages";
 
 const USER_TABS = [
-  { id: "overview", label: "Overview", icon: Home, path: "" },
+  { id: "overview", label: "Workspace", icon: Home, path: "" },
   { id: "calendar", label: "Calendar", icon: CalendarIcon, path: "calendar" },
   { id: "tasks", label: "Tasks", icon: CheckSquare, path: "tasks" },
   { id: "time", label: "Timesheets", icon: Timer, path: "time" },

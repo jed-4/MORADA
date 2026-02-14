@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useParams } from "wouter";
+import { useParams, useLocation } from "wouter";
 import { useProject } from "@/contexts/ProjectContext";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -178,14 +178,41 @@ export default function Schedule() {
   });
 
   const isUnlocked = schedule?.status !== "locked" && !!schedule;
+  const [showLeaveGuardDialog, setShowLeaveGuardDialog] = useState(false);
+  const pendingNavigationRef = useRef<string | null>(null);
+  const [, navigate] = useLocation();
+
+  const scheduleRef = useRef(schedule);
+  const isUnlockedRef = useRef(isUnlocked);
+  useEffect(() => { scheduleRef.current = schedule; }, [schedule]);
+  useEffect(() => { isUnlockedRef.current = isUnlocked; }, [isUnlocked]);
+
+  const lockScheduleAndNavigate = useCallback(async (targetUrl: string) => {
+    if (schedule && isUnlocked) {
+      try {
+        await fetch(`/api/schedules/${schedule.id}/status`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ status: "locked" }),
+        });
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedule"] });
+        navigate(targetUrl);
+      } catch (e) {
+        toast({
+          title: "Failed to lock schedule",
+          description: "Please try again.",
+          variant: "destructive",
+        });
+      }
+    } else {
+      navigate(targetUrl);
+    }
+  }, [schedule, isUnlocked, projectId, navigate, toast]);
+
   useEffect(() => {
     if (!isUnlocked) return;
-    const beforeUnloadHandler = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = "You have an unlocked schedule. Are you sure you want to leave?";
-      return e.returnValue;
-    };
-    window.addEventListener("beforeunload", beforeUnloadHandler);
+
     const clickHandler = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
       const anchor = target.closest("a[href]") as HTMLAnchorElement | null;
@@ -194,17 +221,32 @@ export default function Schedule() {
       if (href.startsWith("#") || href === "") return;
       const isScheduleLink = href.includes("/schedule");
       if (isScheduleLink) return;
-      if (!confirm("You have an unlocked schedule. Are you sure you want to leave this page?")) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
+      e.preventDefault();
+      e.stopPropagation();
+      pendingNavigationRef.current = href;
+      setShowLeaveGuardDialog(true);
     };
     document.addEventListener("click", clickHandler, true);
     return () => {
-      window.removeEventListener("beforeunload", beforeUnloadHandler);
       document.removeEventListener("click", clickHandler, true);
     };
   }, [isUnlocked]);
+
+  useEffect(() => {
+    return () => {
+      if (isUnlockedRef.current && scheduleRef.current) {
+        const s = scheduleRef.current;
+        fetch(`/api/schedules/${s.id}/status`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ status: "locked" }),
+        }).then(() => {
+          queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedule"] });
+        }).catch(() => {});
+      }
+    };
+  }, [projectId]);
 
   // Fetch schedule items using unified endpoint (all three views use the same data)
   const { data: scheduleItems = [], isLoading: itemsLoading } = useQuery<ScheduleItem[]>({
@@ -2593,6 +2635,42 @@ export default function Schedule() {
               </div>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Leave Guard Dialog */}
+      <Dialog open={showLeaveGuardDialog} onOpenChange={setShowLeaveGuardDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Unsaved Schedule Changes</DialogTitle>
+            <DialogDescription>
+              Your schedule is currently unlocked. If you leave this page, your schedule will be locked to prevent unintended changes.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                pendingNavigationRef.current = null;
+                setShowLeaveGuardDialog(false);
+              }}
+            >
+              Stay on Page
+            </Button>
+            <Button
+              variant="default"
+              onClick={() => {
+                setShowLeaveGuardDialog(false);
+                const target = pendingNavigationRef.current;
+                pendingNavigationRef.current = null;
+                if (target) {
+                  lockScheduleAndNavigate(target);
+                }
+              }}
+            >
+              Lock & Leave
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </ScheduleViewProvider>
