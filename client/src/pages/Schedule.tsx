@@ -1050,7 +1050,7 @@ export default function Schedule() {
                 data-testid="button-lock-schedule"
               >
                 <Unlock className="w-3.5 h-3.5" />
-                Unlocked (Draft)
+                Unlocked (Edit)
               </button>
             )}
             <button
