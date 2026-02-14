@@ -2917,6 +2917,7 @@ export type Schedule = typeof schedules.$inferSelect;
 export const nonWorkingDays = pgTable("non_working_days", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  scheduleId: varchar("schedule_id"),
   date: timestamp("date").notNull(),
   name: text("name").notNull(),
   isRecurring: boolean("is_recurring").notNull().default(false),

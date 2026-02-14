@@ -1377,6 +1377,7 @@ function TimesheetSettingsSection() {
 
 function ScheduleSettingsSection() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [workDays, setWorkDays] = useState({
     monday: true,
     tuesday: true,
@@ -1392,6 +1393,35 @@ function ScheduleSettingsSection() {
   });
   const [defaultTaskDuration, setDefaultTaskDuration] = useState("8");
   const [bufferTime, setBufferTime] = useState("0");
+  const [newHolidayName, setNewHolidayName] = useState("");
+  const [newHolidayDate, setNewHolidayDate] = useState("");
+
+  const { data: companyHolidays = [] } = useQuery<any[]>({
+    queryKey: [`/api/companies/${user?.companyId}/non-working-days`],
+    enabled: !!user?.companyId,
+  });
+
+  const addHolidayMutation = useMutation({
+    mutationFn: async (data: { date: string; name: string }) => {
+      return await apiRequest(`/api/companies/${user?.companyId}/non-working-days`, "POST", { ...data, isRecurring: false });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/companies/${user?.companyId}/non-working-days`] });
+      setNewHolidayName("");
+      setNewHolidayDate("");
+      toast({ title: "Public holiday added" });
+    },
+  });
+
+  const deleteHolidayMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest(`/api/non-working-days/${id}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/companies/${user?.companyId}/non-working-days`] });
+      toast({ title: "Public holiday removed" });
+    },
+  });
 
   const handleSave = () => {
     localStorage.setItem('scheduleSettings', JSON.stringify({ workDays, workHours, defaultTaskDuration, bufferTime }));
@@ -1486,6 +1516,70 @@ function ScheduleSettingsSection() {
               />
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-2">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-base font-semibold">Public Holidays</CardTitle>
+          <p className="text-sm text-muted-foreground">Company-wide public holidays that apply to all project schedules. Individual schedules can also add their own non-working days.</p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <Label className="text-sm font-medium">Holiday Name</Label>
+              <Input
+                value={newHolidayName}
+                onChange={(e) => setNewHolidayName(e.target.value)}
+                placeholder="e.g. Christmas Day"
+                className="mt-1.5"
+              />
+            </div>
+            <div className="w-44">
+              <Label className="text-sm font-medium">Date</Label>
+              <Input
+                type="date"
+                value={newHolidayDate}
+                onChange={(e) => setNewHolidayDate(e.target.value)}
+                className="mt-1.5"
+              />
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (!newHolidayName || !newHolidayDate) return;
+                addHolidayMutation.mutate({ date: newHolidayDate, name: newHolidayName });
+              }}
+              disabled={!newHolidayName || !newHolidayDate || addHolidayMutation.isPending}
+            >
+              <Plus className="w-3.5 h-3.5 mr-1" />
+              Add
+            </Button>
+          </div>
+          {companyHolidays.length === 0 ? (
+            <p className="text-xs text-muted-foreground py-2">No public holidays configured yet. Add public holidays like Christmas, Easter, ANZAC Day, etc.</p>
+          ) : (
+            <div className="space-y-1 max-h-60 overflow-y-auto">
+              {companyHolidays.map((day: any) => (
+                <div key={day.id} className="flex items-center justify-between py-1.5 px-2 rounded hover-elevate">
+                  <div className="flex items-center gap-3">
+                    <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
+                    <span className="text-sm font-medium">{day.name}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(day.date).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                    </span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => deleteHolidayMutation.mutate(day.id)}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 

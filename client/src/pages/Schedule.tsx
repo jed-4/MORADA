@@ -73,6 +73,7 @@ import {
   Copy,
   X,
   Bookmark,
+  Globe,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CasvaScheduleList } from "@/components/schedule/CasvaScheduleList";
@@ -175,6 +176,17 @@ export default function Schedule() {
     queryKey: ["/api/projects", projectId, "schedule"],
     enabled: !!projectId,
   });
+
+  const isUnlocked = schedule?.status !== "locked" && !!schedule;
+  useEffect(() => {
+    if (!isUnlocked) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isUnlocked]);
 
   // Fetch schedule items using unified endpoint (all three views use the same data)
   const { data: scheduleItems = [], isLoading: itemsLoading } = useQuery<ScheduleItem[]>({
@@ -543,9 +555,12 @@ export default function Schedule() {
   });
 
   const { data: nonWorkingDays = [], refetch: refetchNonWorkingDays } = useQuery({
-    queryKey: [`/api/companies/${user?.companyId}/non-working-days`],
-    enabled: !!user?.companyId,
+    queryKey: [`/api/companies/${user?.companyId}/non-working-days?scheduleId=${schedule?.id}`],
+    enabled: !!user?.companyId && !!schedule?.id,
   });
+
+  const companyHolidays = (nonWorkingDays as any[]).filter((d: any) => !d.scheduleId);
+  const scheduleSpecificDays = (nonWorkingDays as any[]).filter((d: any) => d.scheduleId);
 
   const updateWorkingDaysMutation = useMutation({
     mutationFn: async (data: { includeSaturday: boolean; includeSunday: boolean; clientVisibilityWeeks?: number | null }) => {
@@ -558,7 +573,7 @@ export default function Schedule() {
   });
 
   const addNonWorkingDayMutation = useMutation({
-    mutationFn: async (data: { date: string; name: string; isRecurring: boolean }) => {
+    mutationFn: async (data: { date: string; name: string; isRecurring: boolean; scheduleId?: string }) => {
       return await apiRequest(`/api/companies/${user?.companyId}/non-working-days`, "POST", data);
     },
     onSuccess: () => {
@@ -2465,29 +2480,47 @@ export default function Schedule() {
               </div>
             </div>
 
+            {companyHolidays.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Company Public Holidays</Label>
+                <p className="text-xs text-muted-foreground">These apply to all schedules. Manage them in Business Settings.</p>
+                <div className="space-y-1 max-h-32 overflow-y-auto">
+                  {companyHolidays.map((day: any) => (
+                    <div key={day.id} className="flex items-center gap-2 py-1 px-2 rounded bg-muted/50">
+                      <Globe className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                      <span className="text-xs font-medium">{day.name}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(day.date).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <Label className="text-sm font-medium">Non-Working Days (Holidays)</Label>
+                <Label className="text-sm font-medium">Schedule-Specific Non-Working Days</Label>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    const name = prompt("Holiday name (e.g., Christmas Day):");
+                    const name = prompt("Non-working day name (e.g., Site Closure):");
                     if (!name) return;
                     const date = prompt("Date (YYYY-MM-DD):");
                     if (!date) return;
-                    addNonWorkingDayMutation.mutate({ date, name, isRecurring: false });
+                    addNonWorkingDayMutation.mutate({ date, name, isRecurring: false, scheduleId: schedule?.id });
                   }}
                 >
                   <Plus className="w-3.5 h-3.5 mr-1" />
-                  Add Holiday
+                  Add Day
                 </Button>
               </div>
-              {(nonWorkingDays as any[]).length === 0 ? (
-                <p className="text-xs text-muted-foreground">No holidays configured. Add public holidays or company closures.</p>
+              {scheduleSpecificDays.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No schedule-specific non-working days. Add closures that only apply to this project's schedule.</p>
               ) : (
-                <div className="space-y-1 max-h-48 overflow-y-auto">
-                  {(nonWorkingDays as any[]).map((day: any) => (
+                <div className="space-y-1 max-h-32 overflow-y-auto">
+                  {scheduleSpecificDays.map((day: any) => (
                     <div key={day.id} className="flex items-center justify-between py-1.5 px-2 rounded hover-elevate">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-medium">{day.name}</span>

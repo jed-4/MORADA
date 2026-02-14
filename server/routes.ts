@@ -138,7 +138,7 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
-import { eq, and, asc, desc } from "drizzle-orm";
+import { eq, and, asc, desc, or, isNull } from "drizzle-orm";
 import { PasswordUtils } from "./utils/auth";
 import { requireAuth, requireAdmin, requireTeamMember, requirePermission, toSafeUser } from "./middleware/auth";
 import multer from "multer";
@@ -14390,7 +14390,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/companies/:companyId/non-working-days", async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Not authenticated" });
     const { companyId } = req.params;
-    const days = await db.select().from(nonWorkingDays).where(eq(nonWorkingDays.companyId, companyId)).orderBy(nonWorkingDays.date);
+    const scheduleId = req.query.scheduleId as string | undefined;
+    let days;
+    if (scheduleId) {
+      days = await db.select().from(nonWorkingDays)
+        .where(and(eq(nonWorkingDays.companyId, companyId), or(isNull(nonWorkingDays.scheduleId), eq(nonWorkingDays.scheduleId, scheduleId))))
+        .orderBy(nonWorkingDays.date);
+    } else {
+      days = await db.select().from(nonWorkingDays)
+        .where(and(eq(nonWorkingDays.companyId, companyId), isNull(nonWorkingDays.scheduleId)))
+        .orderBy(nonWorkingDays.date);
+    }
     res.json(days);
   });
 
