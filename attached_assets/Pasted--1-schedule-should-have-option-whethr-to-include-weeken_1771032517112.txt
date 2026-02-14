@@ -1,0 +1,33 @@
+- [ ]  1 - schedule should have option whethr to include weekends or not. eg 20 days should be 20 working days, so 4 weeks not just under 3 weeks inc weekends
+- [ ]  2 - Epic overview - Schedule items cant be linked to cost codes
+- [ ]  3 - Roles & Permissions
+- [ ]  4 - Create baseline feature. How would this work? can save multiple baselines.
+- [ ]  5 - Statuses. Not sure what the best way to do this section is. I want to be able to create a schedule and not have it published, but also to ‘unlock’ the schedule to make changes and experiment wth how things might work, and then to have to save those changes. So things cant just get moved around and the schedule can lose its place easily or accidently
+- [ ]  6 - US-SCH-001: Auto-Create Schedule - a new or empty schedule should open as an empty state, with options to load a template, import a file or create an item. and default offline
+- [ ]  7 - US-SCH-002: Toggle Schedule Status (Offline / Online / Locked) - Should be more of an obvious button / toggle, how coule do that? and it should have an ‘are you sure’? and when unlocked, no changes are saved until the schedule is locked again, and it should have a confirmation, ‘are you sure, this will save any updates’ what an option, ‘no, keep original’ or something make it obvious it will revert to how it was.and also and option to email/update assignees. maybe under the yes/no button, have text to explain the update assignees, and then update assignees button. which shows a range of the assignees who had their schedule items moved and a select option to select them. Trades get an email. users get a notification.
+- [ ]  8 - a button on the schedule header, to update assignees
+- [ ]  9 - Calendar view needs to show the month in a small header. it isnt shown
+- [ ]  10 - US-SCH-006: Inline Completion Toggle - a parent items completion can be shown by the completion of its sub items. Does that make sense? same for an items and its sub items
+- [ ]  11 - The cells where the day/date is, the verticals dont really line up with them vertical columns below it, where the schedule items are. Only slightly. Can you explain this to me to maek sure we are on the same page.
+- [ ]  12 - app - the schedule gantt only shows the scroll for where the schedule items are. it should be able to scroll 2 months before the first item and 2 months after the last item
+- [ ]  13 - US-SCH-010: Gantt Chart Display - timeline bars colour. in contacts>trades, the contacts should have an option in their settings to select a colour for them. when they are assigned to a schedule item, the timeline bar changes to their colour. so each trade in the schedule has their own colour and specific, and that gives continuity through projects and easily recognisable. But still have the option to for the standard colour selection to select any colour in the schedule for the items they are assigned too
+- [ ]  14 - Settings, schedule (create if necessary) select whether saturdays or sundays are included in schedules. so if the arent selected, they are excluded as work days in the schedule, so an item with 20 days, would be 4 full weeks, not 21 days in a row inc weekends.
+- [ ]  15 - When creating/editing an item, there is a toggle down the bottom of the modal to allow it do appear on a weekend, so that if needed a schedule item can be on a saturday or sunday
+- [ ]  16 - be able to duplicate tasks. right click/3 dot menu
+- [ ]  17 - list view, the rows need to be. abit neater, no data items wrapping/doubling up height wise
+- [ ]  18 - list assignee & role, remove role, its only user, and it currently shows ‘task’ the schedule item type should be its own column with an option for it to appear or not
+- [ ]  19 - the start of the week day should align with that setting in the company settings. Monday or sunday
+- [ ]  20 - load template, import, export settings etc should appear in in a popover, visually theres too many options there. how can we make that work?
+- [ ]  21 - Hierachy is Parent (which is just a normal shcedule item, but anotehr schedule item(s) has been moved inside of it) > Schedule Item > Subchecklist item (these arent just a schedule item in a schedule item, these are directly sub items of the schedule items, and inside the schedule item eg. FRAMING > wall frames, straighten frame, roof frame. To help break down the steps of a schedule item
+- [ ]  22 - roles and permissions - who can CRUD each type of schedule item type, which is viewable for a client
+- [ ]  23 - US-SCH-090: Schedule Dashboard Widget - clicking a schedule item, should open a detail modal, with the option to edit. much like how tasks operate, similar 2 modals and function.
+- [ ]  24 - US-SCH-090: Schedule Dashboard Widget - Navigation controls to move between days/weeks/months - this should only be in the configure settings, nothing for this in the widget. Saturday and sundays muted grey for visual distinction
+- [ ]  25 - US-SCH-100: Mobile Schedule Screen - edit/create modal needs to match the web app details
+- [ ]  26 - US-SCH-110: Link to Cost Codes - unnecessary
+- [ ]  27 - US-SCH-111: Link to Checklists - reverse, a checklist can be linked to a schedule item
+- [ ]  28 - US-SCH-112: Link to Tasks - this function should be linking a task to a schedule item and relative of date for task based on the schedule item. eg. link ‘book inspection’ to framing and set for 1 day before end of framing
+- [ ]  29 - US-SCH-113: Link to Site Diary Entries - not needed
+- [ ]  **30 - Baseline comparison rendering** — Ghost bars showing original vs. current dates - yes
+- [ ]  **31 - Export to PDF/Excel** — Wire the existing export button to generate downloadable files - yes
+- [ ]  **32 - Non-working days configuration** — Define public holidays and custom non-working days - yes
+- [ ]  **33 - Mobile dependency viewing** — Show dependency lines on the mobile Gantt view - yes
