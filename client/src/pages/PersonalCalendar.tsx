@@ -621,29 +621,26 @@ export default function PersonalCalendar() {
   if (isLoading) {
     return (
       <div className="flex flex-col h-full" data-testid="personal-calendar">
-        <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <Skeleton className="h-4 w-32" />
+        <div className="border border-border rounded-t-lg bg-card flex-shrink-0">
+          <div className="h-8 flex items-center justify-between px-3 border-b border-border/50">
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-4 w-32" />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Skeleton className="h-6 w-24" />
+            </div>
           </div>
-          <div className="flex items-center gap-1.5">
-            <Skeleton className="h-6 w-24" />
+          <div className="h-8 flex items-center justify-between px-3">
+            <div className="flex items-center gap-1.5">
+              <Skeleton className="h-6 w-20" />
+              <Skeleton className="h-6 w-20" />
+              <Skeleton className="h-6 w-20" />
+            </div>
+            <Skeleton className="h-6 w-20" />
           </div>
         </div>
-        <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
-          <Skeleton className="h-6 w-48" />
-        </div>
-        <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
-          <div className="flex items-center gap-1.5">
-            <Skeleton className="h-6 w-20" />
-            <Skeleton className="h-6 w-20" />
-            <Skeleton className="h-6 w-20" />
-          </div>
-          <Skeleton className="h-6 w-20" />
-        </div>
-        <div className="flex-1 min-h-0">
-          <div className="h-full">
-            <Skeleton className="h-full w-full" />
-          </div>
+        <div className="flex-1 min-h-0 border-x border-b border-border rounded-b-lg bg-card overflow-hidden">
+          <Skeleton className="h-full w-full" />
         </div>
       </div>
     );
@@ -653,46 +650,48 @@ export default function PersonalCalendar() {
 
   return (
     <div className="flex flex-col h-full" data-testid="personal-calendar">
-      {/* REDESIGNED 3-ROW COMPACT HEADER */}
-      
-      {/* Row 1 - Title & Views (36px) */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
-        {/* Left: Title */}
-        <h2 className="text-sm font-semibold" data-testid="text-page-title">
-          {userName} Calendar
-        </h2>
-
-        {/* Right: View Tabs + Save View + Settings */}
-        <div className="flex items-center gap-1">
-          {/* View Tabs */}
-          <div className="flex items-center gap-0.5" data-testid="tabs-calendar-views">
-            {views.map((view: CalendarView) => (
-              <div key={view.id} className="relative group">
-                <button
-                  onClick={() => handleViewSelect(view)}
-                  className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                    selectedViewId === view.id
-                      ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
-                      : 'hover-elevate'
-                  } active-elevate-2 flex items-center gap-1`}
-                  data-testid={`tab-${view.id}`}
-                >
-                  {view.name}
-                </button>
-                {!view.isDefault && (
+      {/* Header Panel - rounded top, bordered like Tasks */}
+      <div className="border border-border rounded-t-lg bg-card flex-shrink-0">
+        {/* Row 1 - Title & Views (32px) */}
+        <div className="h-8 flex items-center justify-between px-3 border-b border-border/50">
+          {/* Left: Title + View Tabs */}
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold" data-testid="text-page-title">
+              {userName} Calendar
+            </h2>
+            <div className="flex items-center gap-0.5" data-testid="tabs-calendar-views">
+              {views.map((view: CalendarView) => (
+                <div key={view.id} className="relative group">
                   <button
-                    className="absolute -right-1 -top-1 h-4 w-4 rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteView(view);
-                    }}
-                    data-testid={`button-delete-${view.id}`}
+                    onClick={() => handleViewSelect(view)}
+                    className={`h-6 w-auto px-2 text-xs border rounded-md ${
+                      selectedViewId === view.id
+                        ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
+                        : 'hover-elevate'
+                    } active-elevate-2 flex items-center gap-1`}
+                    data-testid={`tab-${view.id}`}
                   >
-                    <X className="h-2 w-2" />
+                    {view.name}
                   </button>
-                )}
-              </div>
-            ))}
+                  {!view.isDefault && (
+                    <button
+                      className="absolute -right-1 -top-1 h-4 w-4 rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteView(view);
+                      }}
+                      data-testid={`button-delete-${view.id}`}
+                    >
+                      <X className="h-2 w-2" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Right: New View + Settings */}
+          <div className="flex items-center gap-1">
             <button
               className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
               onClick={() => {
@@ -706,21 +705,18 @@ export default function PersonalCalendar() {
             >
               <Plus className="w-3 h-3" />
             </button>
+            <button
+              className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+              onClick={() => setShowSettingsDialog(true)}
+              data-testid="button-settings"
+            >
+              <Settings className="w-3 h-3" />
+            </button>
           </div>
-
-          {/* Settings Icon */}
-          <button
-            className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-            onClick={() => setShowSettingsDialog(true)}
-            data-testid="button-settings"
-          >
-            <Settings className="w-3 h-3" />
-          </button>
         </div>
-      </div>
 
-      {/* Row 2 - Filters & Controls (36px) */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
+        {/* Row 2 - Filters & Controls (32px) */}
+        <div className="h-8 flex items-center justify-between px-3 gap-1.5">
         {/* Left: Filters */}
         <div className="flex items-center gap-1">
           {/* Projects Filter */}
@@ -1037,9 +1033,10 @@ export default function PersonalCalendar() {
           </button>
         </div>
       </div>
+      </div>
 
-      {/* Calendar Content - No Card Wrapper, Flush with Header */}
-      <div className="flex-1 min-h-0">
+      {/* Calendar Content - bordered bottom, rounded bottom like Tasks */}
+      <div className="flex-1 min-h-0 border-x border-b border-border rounded-b-lg bg-card overflow-hidden">
         <EnhancedCalendar
           events={filteredEvents}
           onEventClick={handleEventClick}
