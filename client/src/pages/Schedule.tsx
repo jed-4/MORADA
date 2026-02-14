@@ -7,7 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { ScheduleViewProvider } from "@/contexts/ScheduleViewContext";
-import { type Schedule as ScheduleType, type ScheduleItem, type Contact } from "@shared/schema";
+import { type Schedule as ScheduleType, type ScheduleItem, type Contact, type CompanySettings } from "@shared/schema";
 import { Calendar as BigCalendar, momentLocalizer, Views } from "react-big-calendar";
 import moment from "moment";
 import "moment/locale/en-gb";
@@ -180,12 +180,30 @@ export default function Schedule() {
   const isUnlocked = schedule?.status !== "locked" && !!schedule;
   useEffect(() => {
     if (!isUnlocked) return;
-    const handler = (e: BeforeUnloadEvent) => {
+    const beforeUnloadHandler = (e: BeforeUnloadEvent) => {
       e.preventDefault();
-      e.returnValue = "";
+      e.returnValue = "You have an unlocked schedule. Are you sure you want to leave?";
+      return e.returnValue;
     };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
+    window.addEventListener("beforeunload", beforeUnloadHandler);
+    const clickHandler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const anchor = target.closest("a[href]") as HTMLAnchorElement | null;
+      if (!anchor) return;
+      const href = anchor.getAttribute("href") || "";
+      if (href.startsWith("#") || href === "") return;
+      const isScheduleLink = href.includes("/schedule");
+      if (isScheduleLink) return;
+      if (!confirm("You have an unlocked schedule. Are you sure you want to leave this page?")) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    document.addEventListener("click", clickHandler, true);
+    return () => {
+      window.removeEventListener("beforeunload", beforeUnloadHandler);
+      document.removeEventListener("click", clickHandler, true);
+    };
   }, [isUnlocked]);
 
   // Fetch schedule items using unified endpoint (all three views use the same data)
@@ -561,6 +579,10 @@ export default function Schedule() {
 
   const companyHolidays = (nonWorkingDays as any[]).filter((d: any) => !d.scheduleId);
   const scheduleSpecificDays = (nonWorkingDays as any[]).filter((d: any) => d.scheduleId);
+
+  const { data: companySettings } = useQuery<CompanySettings>({
+    queryKey: ["/api/company-settings"],
+  });
 
   const updateWorkingDaysMutation = useMutation({
     mutationFn: async (data: { includeSaturday: boolean; includeSunday: boolean; clientVisibilityWeeks?: number | null }) => {
@@ -2482,7 +2504,7 @@ export default function Schedule() {
 
             {companyHolidays.length > 0 && (
               <div className="space-y-2">
-                <Label className="text-sm font-medium">Company Public Holidays</Label>
+                <Label className="text-sm font-medium">Company Non-Working Days</Label>
                 <p className="text-xs text-muted-foreground">These apply to all schedules. Manage them in Business Settings.</p>
                 <div className="space-y-1 max-h-32 overflow-y-auto">
                   {companyHolidays.map((day: any) => (
@@ -2543,13 +2565,19 @@ export default function Schedule() {
 
             <div className="space-y-3 pt-3 border-t">
               <Label className="text-sm font-medium">Client Visibility</Label>
-              <p className="text-xs text-muted-foreground">Limit how far ahead clients can see schedule items. Leave empty to show all items.</p>
+              <p className="text-xs text-muted-foreground">
+                Override how far ahead clients can see schedule items for this schedule.
+                {companySettings?.defaultClientVisibilityWeeks
+                  ? ` Company default: ${companySettings.defaultClientVisibilityWeeks} weeks.`
+                  : " Company default: show all items."}
+                {" "}Leave empty to use the company default.
+              </p>
               <div className="flex items-center gap-2">
                 <Input
                   type="number"
                   min={1}
                   max={52}
-                  placeholder="All"
+                  placeholder={companySettings?.defaultClientVisibilityWeeks ? `${companySettings.defaultClientVisibilityWeeks} (default)` : "All"}
                   value={schedule?.clientVisibilityWeeks ?? ""}
                   onChange={(e) => {
                     const val = e.target.value === "" ? null : parseInt(e.target.value);

@@ -1396,6 +1396,20 @@ function ScheduleSettingsSection() {
   const [newHolidayName, setNewHolidayName] = useState("");
   const [newHolidayDate, setNewHolidayDate] = useState("");
 
+  const { data: scheduleCompanySettings } = useQuery<CompanySettings>({
+    queryKey: ["/api/company-settings"],
+  });
+
+  const updateScheduleSettingsMutation = useMutation({
+    mutationFn: async (data: any) => {
+      return await apiRequest("/api/company-settings", "PATCH", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
+      toast({ title: "Settings updated" });
+    },
+  });
+
   const { data: companyHolidays = [] } = useQuery<any[]>({
     queryKey: [`/api/companies/${user?.companyId}/non-working-days`],
     enabled: !!user?.companyId,
@@ -1409,7 +1423,7 @@ function ScheduleSettingsSection() {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${user?.companyId}/non-working-days`] });
       setNewHolidayName("");
       setNewHolidayDate("");
-      toast({ title: "Public holiday added" });
+      toast({ title: "Non-working day added" });
     },
   });
 
@@ -1419,7 +1433,7 @@ function ScheduleSettingsSection() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${user?.companyId}/non-working-days`] });
-      toast({ title: "Public holiday removed" });
+      toast({ title: "Non-working day removed" });
     },
   });
 
@@ -1521,8 +1535,32 @@ function ScheduleSettingsSection() {
 
       <Card className="border-2">
         <CardHeader className="pb-4">
-          <CardTitle className="text-base font-semibold">Public Holidays</CardTitle>
-          <p className="text-sm text-muted-foreground">Company-wide public holidays that apply to all project schedules. Individual schedules can also add their own non-working days.</p>
+          <CardTitle className="text-base font-semibold">Client Visibility</CardTitle>
+          <p className="text-sm text-muted-foreground">Default number of weeks ahead that clients can see schedule items. Individual schedules can override this setting.</p>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-2 max-w-xs">
+            <Input
+              type="number"
+              min={1}
+              max={52}
+              placeholder="All (no limit)"
+              value={scheduleCompanySettings?.defaultClientVisibilityWeeks ?? ""}
+              onChange={(e) => {
+                const val = e.target.value === "" ? null : parseInt(e.target.value);
+                updateScheduleSettingsMutation.mutate({ defaultClientVisibilityWeeks: val });
+              }}
+              className="h-8 w-28 text-sm"
+            />
+            <span className="text-sm text-muted-foreground">weeks ahead</span>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-2">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-base font-semibold">Non-Working Days</CardTitle>
+          <p className="text-sm text-muted-foreground">Company-wide non-working days that apply to all project schedules. Individual schedules can also add their own schedule-specific non-working days.</p>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-end gap-2">
@@ -1557,7 +1595,7 @@ function ScheduleSettingsSection() {
             </Button>
           </div>
           {companyHolidays.length === 0 ? (
-            <p className="text-xs text-muted-foreground py-2">No public holidays configured yet. Add public holidays like Christmas, Easter, ANZAC Day, etc.</p>
+            <p className="text-xs text-muted-foreground py-2">No non-working days configured yet. Add public holidays, company closures, etc.</p>
           ) : (
             <div className="space-y-1 max-h-60 overflow-y-auto">
               {companyHolidays.map((day: any) => (
