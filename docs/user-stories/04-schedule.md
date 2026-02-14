@@ -3,11 +3,11 @@
 ## Epic Overview
 
 ### Description
-The Schedule system is the backbone of project timeline management for residential builders. It provides a unified view of all project activities — tasks, milestones, inspections, deliveries, and meetings — across three complementary views: **Gantt chart**, **Calendar**, and **List**. The system supports dependencies between items, drag-and-drop reordering and resizing, hierarchical parent/child nesting, offline/online/locked status modes, reusable templates, CSV/Excel import, and a dashboard widget for at-a-glance project timeline visibility. Each schedule belongs to a single project, and schedule items can be linked to contacts (assignees), cost codes, checklists, tasks, and site diary entries.
+The Schedule system is the backbone of project timeline management for residential builders. It provides a unified view of all project activities — tasks, milestones, inspections, deliveries, and meetings — across three complementary views: **Gantt chart**, **Calendar**, and **List**. The system supports dependencies between items, drag-and-drop reordering and resizing, hierarchical parent/child nesting, offline/online/locked status modes, reusable templates, CSV/Excel import, and a dashboard widget for at-a-glance project timeline visibility. Each schedule belongs to a single project, and schedule items can be linked to contacts (assignees), checklists, and tasks. The system includes a working days configuration (Saturday/Sunday toggles and non-working days/holidays), named baselines for tracking schedule variance, sub-checklist steps within items, lock/unlock draft workflow, and CSV export.
 
 ### Terminology & Hierarchy
 
-The schedule system uses a two-level hierarchy: **Schedule > Schedule Items**, with optional nesting via parent/child relationships.
+The schedule system uses a three-level hierarchy: **Schedule > Schedule Items > Sub-Checklist Steps**, with optional parent/child nesting between items.
 
 | System Term | User-Facing Term | Description |
 |-------------|-----------------|-------------|
@@ -19,7 +19,9 @@ The schedule system uses a two-level hierarchy: **Schedule > Schedule Items**, w
 | Schedule Template | Template | A reusable schedule blueprint saved from an existing schedule and applied to new projects |
 | Template Item | Template Item | An item definition within a template (no dates, no assignees — just structure) |
 | Activity Note | Note / Activity | Manual notes or system-generated activity log entries attached to items |
-| Baseline | Baseline (planned) | Stored original start/end dates for tracking schedule variance (schema only, not yet rendered) |
+| Baseline | Baseline (planned) | Named snapshots of the schedule for tracking variance, rendered as ghost bars on the Gantt chart |
+| Sub-Checklist Step | Step / Checklist Item | A lightweight checklist item within a schedule item (name + done/not done) |
+| Non-Working Day | Holiday / Closure | A company-level date excluded from working day calculations |
 
 ### Core Concepts
 
@@ -30,7 +32,7 @@ The schedule system uses a two-level hierarchy: **Schedule > Schedule Items**, w
 | **Dependency** | A relationship between two schedule items defining execution order (FS, SS, FF, SF) |
 | **Template** | A reusable schedule blueprint that can be applied to new projects |
 | **Activity Note** | Manual notes or system-generated activity log entries attached to schedule items |
-| **Baseline** | Stored original start/end dates for tracking schedule variance (schema only, not yet rendered) |
+| **Baseline** | Named snapshots of the schedule for tracking variance, rendered as ghost bars on the Gantt chart |
 
 ### Status Modes
 
@@ -38,9 +40,9 @@ The schedule operates in three modes:
 
 | Mode | Icon | Behaviour |
 |------|------|-----------|
-| **Offline** | Red dot | Schedule is in draft/planning mode. Only visible to the project team internally. Editable. |
-| **Online** | Green dot | Schedule is published and visible. Editable. |
-| **Locked** | Lock icon | Schedule is frozen. No edits allowed. Used to preserve a snapshot for contract or compliance purposes. |
+| **Offline** | Grey dot | Schedule is in draft/planning mode. Only visible to the project team internally. Editable. |
+| **Online** | Green dot | Schedule is published and visible. Editable. "Unlocked (Draft)" state shown prominently. |
+| **Locked** | Amber lock | Schedule is read-only. Locking commits all changes and makes them visible. Prominent Lock/Unlock toggle in header. |
 
 ### Business Value
 - Provides builders with a visual timeline of all project activities
@@ -48,7 +50,6 @@ The schedule operates in three modes:
 - Supports contract compliance by locking schedules at milestones
 - Reduces data entry through templates and CSV/Excel import
 - Improves field-to-office communication via mobile app access
-- Links schedule items to cost codes for budget timeline correlation
 - Tracks actual vs. planned dates for variance analysis
 
 ---
@@ -679,11 +680,7 @@ The schedule operates in three modes:
 **I want** to link schedule items to cost codes,
 **So that** I can correlate timeline activities with budget categories.
 
-**Acceptance Criteria:**
-- Schedule items have `costCodeId` and `costCodeTitle` fields
-- Linkage established during item creation or editing
-
-**Current Implementation:** Schema supports it. UI for cost code selection is not prominently surfaced in the current item dialog.
+**Status:** Deprioritized. Cost code linking schema exists but is not exposed in the UI. Future enhancement.
 
 ---
 
@@ -718,11 +715,7 @@ The schedule operates in three modes:
 **I want** to link site diary entries to schedule items,
 **So that** I can connect daily field records to the timeline.
 
-**Acceptance Criteria:**
-- Schedule items have a `siteDiaryEntryIds` JSON array
-- Linked entries are referenced by ID
-
-**Current Implementation:** Schema supports it. UI for managing diary links is not yet implemented in the item dialog.
+**Status:** Deprioritized. Site diary linking from the schedule side has been removed. Site diary entries can reference schedule items independently.
 
 ---
 

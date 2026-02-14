@@ -562,8 +562,8 @@ export default function ScheduleScreen({ navigation }: Props) {
       if (e > maxDate) maxDate = e;
     });
 
-    minDate.setDate(minDate.getDate() - 1);
-    maxDate.setDate(maxDate.getDate() + 1);
+    minDate.setMonth(minDate.getMonth() - 2);
+    maxDate.setMonth(maxDate.getMonth() + 2);
     minDate.setHours(0, 0, 0, 0);
     maxDate.setHours(0, 0, 0, 0);
 

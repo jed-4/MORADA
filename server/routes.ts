@@ -124,11 +124,20 @@ import {
   insertPaymentTermsOptionSchema,
   insertPinnedItemSchema,
   pinnedItems,
-  insertChecklistStatusTriggerSchema
+  insertChecklistStatusTriggerSchema,
+  nonWorkingDays,
+  insertNonWorkingDaySchema,
+  schedules,
+  scheduleItems,
+  scheduleItemSteps,
+  insertScheduleItemStepSchema,
+  scheduleBaselines,
+  scheduleBaselineItems,
+  insertScheduleBaselineSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
-import { eq, and, asc } from "drizzle-orm";
+import { eq, and, asc, desc } from "drizzle-orm";
 import { PasswordUtils } from "./utils/auth";
 import { requireAuth, requireAdmin, requireTeamMember, requirePermission, toSafeUser } from "./middleware/auth";
 import multer from "multer";
@@ -14376,6 +14385,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Non-Working Days routes
+  app.get("/api/companies/:companyId/non-working-days", async (req, res) => {
+    if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    const { companyId } = req.params;
+    const days = await db.select().from(nonWorkingDays).where(eq(nonWorkingDays.companyId, companyId)).orderBy(nonWorkingDays.date);
+    res.json(days);
+  });
+
+  app.post("/api/companies/:companyId/non-working-days", async (req, res) => {
+    if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    const { companyId } = req.params;
+    const data = insertNonWorkingDaySchema.parse({ ...req.body, companyId });
+    const [day] = await db.insert(nonWorkingDays).values(data).returning();
+    res.json(day);
+  });
+
+  app.delete("/api/non-working-days/:id", async (req, res) => {
+    if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    await db.delete(nonWorkingDays).where(eq(nonWorkingDays.id, req.params.id));
+    res.json({ success: true });
+  });
+
+  app.patch("/api/schedules/:id/working-days", async (req, res) => {
+    if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    const { includeSaturday, includeSunday, clientVisibilityWeeks } = req.body;
+    const [updated] = await db.update(schedules)
+      .set({ 
+        includeSaturday: includeSaturday ?? false, 
+        includeSunday: includeSunday ?? false,
+        clientVisibilityWeeks: clientVisibilityWeeks ?? null,
+        updatedAt: new Date() 
+      })
+      .where(eq(schedules.id, req.params.id))
+      .returning();
+    res.json(updated);
+  });
+
   // Schedule routes
   app.get("/api/projects/:projectId/schedule", async (req, res) => {
     try {
@@ -14483,6 +14529,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     }
   });
+
+  // Helper: Recalculate parent's progressPercent as average of children
+  async function recalculateParentProgress(parentId: string) {
+    const children = await db.select().from(scheduleItems)
+      .where(eq(scheduleItems.parentItemId, parentId));
+
+    if (children.length > 0) {
+      const avgProgress = Math.round(
+        children.reduce((sum, s) => sum + (s.progressPercent || 0), 0) / children.length
+      );
+      await db.update(scheduleItems)
+        .set({ progressPercent: avgProgress, updatedAt: new Date() })
+        .where(eq(scheduleItems.id, parentId));
+    }
+  }
 
   // Get schedule items for a specific project (used by Gantt timeline)
   // Optional query params: limit, offset for pagination (omit for all items)
@@ -14649,9 +14710,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
+      // Auto-set progressPercent to 100 when status is changed to "completed"
+      if (updateData.status === 'completed' && updateData.progressPercent === undefined) {
+        updateData.progressPercent = 100;
+      }
+
       const item = await storage.updateScheduleItem(req.params.id, updateData);
       if (!item) {
         return res.status(404).json({ error: "Schedule item not found" });
+      }
+
+      // Recalculate parent progress if this item has a parent
+      try {
+        const parentId = item.parentItemId;
+        if (parentId) {
+          await recalculateParentProgress(parentId);
+        }
+      } catch (parentError) {
+        console.error("Failed to recalculate parent progress:", parentError);
       }
       
       // Log activity for schedule item update
@@ -14664,12 +14740,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           // Determine what changed
           const changes: string[] = [];
-          const updateData = validationResult.data;
-          if (updateData.name && updateData.name !== originalItem?.name) changes.push("renamed");
-          if (updateData.startDate || updateData.endDate) changes.push("dates updated");
-          if (updateData.status && updateData.status !== originalItem?.status) changes.push(`status changed to ${updateData.status}`);
-          if (updateData.assigneeId !== undefined && updateData.assigneeId !== originalItem?.assigneeId) changes.push("assigned");
-          if (updateData.progress !== undefined && updateData.progress !== originalItem?.progress) changes.push(`progress updated to ${updateData.progress}%`);
+          const logUpdateData = validationResult.data;
+          if (logUpdateData.name && logUpdateData.name !== originalItem?.name) changes.push("renamed");
+          if (logUpdateData.startDate || logUpdateData.endDate) changes.push("dates updated");
+          if (logUpdateData.status && logUpdateData.status !== originalItem?.status) changes.push(`status changed to ${logUpdateData.status}`);
+          if (logUpdateData.assigneeId !== undefined && logUpdateData.assigneeId !== originalItem?.assigneeId) changes.push("assigned");
+          if (logUpdateData.progress !== undefined && logUpdateData.progress !== originalItem?.progress) changes.push(`progress updated to ${logUpdateData.progress}%`);
           
           const changeDescription = changes.length > 0 ? changes.join(", ") : "updated";
           
@@ -14716,7 +14792,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
+      // Auto-set progressPercent to 100 for items marked as "completed"
+      for (const item of items) {
+        if (item.status === 'completed' && item.progressPercent === undefined) {
+          item.progressPercent = 100;
+        }
+      }
+
       const updatedItems = await storage.bulkUpdateScheduleItems(items);
+
+      // Recalculate parent progress for all affected parents
+      try {
+        const parentIds = new Set<string>();
+        for (const item of updatedItems) {
+          if (item.parentItemId) {
+            parentIds.add(item.parentItemId);
+          }
+        }
+        for (const parentId of parentIds) {
+          await recalculateParentProgress(parentId);
+        }
+      } catch (parentError) {
+        console.error("Failed to recalculate parent progress after bulk update:", parentError);
+      }
       
       // Log batch activity for schedule item updates
       try {
@@ -14968,6 +15066,101 @@ export async function registerRoutes(app: Express): Promise<Server> {
         details: error.message 
       });
     }
+  });
+
+  // Schedule Item Steps (sub-checklist items)
+  app.get("/api/schedule-items/:itemId/steps", async (req, res) => {
+    if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    const steps = await db.select().from(scheduleItemSteps)
+      .where(eq(scheduleItemSteps.scheduleItemId, req.params.itemId))
+      .orderBy(scheduleItemSteps.sortOrder);
+    res.json(steps);
+  });
+
+  app.post("/api/schedule-items/:itemId/steps", async (req, res) => {
+    if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    const data = insertScheduleItemStepSchema.parse({
+      ...req.body,
+      scheduleItemId: req.params.itemId,
+    });
+    const [step] = await db.insert(scheduleItemSteps).values(data).returning();
+    res.json(step);
+  });
+
+  app.patch("/api/schedule-item-steps/:id", async (req, res) => {
+    if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    const { isCompleted, name, sortOrder } = req.body;
+    const updates: any = {};
+    if (isCompleted !== undefined) updates.isCompleted = isCompleted;
+    if (name !== undefined) updates.name = name;
+    if (sortOrder !== undefined) updates.sortOrder = sortOrder;
+    const [step] = await db.update(scheduleItemSteps)
+      .set(updates)
+      .where(eq(scheduleItemSteps.id, req.params.id))
+      .returning();
+    res.json(step);
+  });
+
+  app.delete("/api/schedule-item-steps/:id", async (req, res) => {
+    if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    await db.delete(scheduleItemSteps).where(eq(scheduleItemSteps.id, req.params.id));
+    res.json({ success: true });
+  });
+
+  app.get("/api/schedules/:scheduleId/baselines", async (req, res) => {
+    if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    const baselines = await db.select().from(scheduleBaselines)
+      .where(eq(scheduleBaselines.scheduleId, req.params.scheduleId))
+      .orderBy(desc(scheduleBaselines.createdAt));
+    res.json(baselines);
+  });
+
+  app.post("/api/schedules/:scheduleId/baselines", async (req, res) => {
+    if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    const user = req.user as any;
+    const { name, description } = req.body;
+
+    const [baseline] = await db.insert(scheduleBaselines).values({
+      scheduleId: req.params.scheduleId,
+      name: name || `Baseline ${new Date().toLocaleDateString('en-AU')}`,
+      description,
+      createdBy: user.id,
+      createdByName: `${user.firstName || user.dbUser?.firstName || ''} ${user.lastName || user.dbUser?.lastName || ''}`.trim(),
+    }).returning();
+
+    const currentItems = await db.select().from(scheduleItems)
+      .where(eq(scheduleItems.scheduleId, req.params.scheduleId));
+
+    if (currentItems.length > 0) {
+      await db.insert(scheduleBaselineItems).values(
+        currentItems.map(item => ({
+          baselineId: baseline.id,
+          scheduleItemId: item.id,
+          name: item.name,
+          startDate: item.startDate,
+          endDate: item.endDate,
+          duration: item.duration,
+          progressPercent: item.progressPercent,
+          status: item.status,
+          parentItemId: item.parentItemId,
+        }))
+      );
+    }
+
+    res.json(baseline);
+  });
+
+  app.get("/api/baselines/:baselineId/items", async (req, res) => {
+    if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    const items = await db.select().from(scheduleBaselineItems)
+      .where(eq(scheduleBaselineItems.baselineId, req.params.baselineId));
+    res.json(items);
+  });
+
+  app.delete("/api/baselines/:id", async (req, res) => {
+    if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    await db.delete(scheduleBaselines).where(eq(scheduleBaselines.id, req.params.id));
+    res.json({ success: true });
   });
 
   // Bulk delete schedule items

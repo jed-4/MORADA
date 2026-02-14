@@ -65,7 +65,8 @@ Preferred communication style: Simple, everyday language.
 - **Onboarding Flow**: Two-step process for user profile completion and company creation.
 - **Activity Feed Settings**: Company-level settings to toggle visibility of activity types in the ActivityWidget.
 - **Business Dashboard Views**: Database-backed views with company-wide access control and widget configuration persistence.
-- **Schedule Widget**: Project dashboard schedule widget with multiple view modes (list, day, week, month), supporting stacked and timeline display.
+- **Schedule Widget**: Project dashboard schedule widget with multiple view modes (list, day, week, month), supporting stacked and timeline display. Weekend muting and detail modal on click.
+- **Schedule Improvements**: Working days system (Saturday/Sunday toggles + non-working days/holidays), named baselines with ghost bar rendering on Gantt, sub-checklist steps within schedule items, parent auto-completion calculation, lock/unlock draft workflow, CSV export, checklist/task linking, client visibility weeks, consolidated toolbar dropdown, baseline selector.
 - **Default Diary**: Weekly view of recurring tasks, with automated generation for current + next week, and template syncing to future uncompleted tasks.
 - **Actionable Status Flag**: `isActionable` boolean flag for status categories to filter and highlight items requiring action.
 - **Suppliers Migration**: Unified `suppliers` into `contacts` with `contactType='supplier'`, including contact merging and dedicated `contactInsurances` table.

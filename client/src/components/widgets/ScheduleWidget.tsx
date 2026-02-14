@@ -7,6 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TaskTooltip } from "@/components/ui/task-tooltip";
+import { Progress } from "@/components/ui/progress";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Dialog,
   DialogContent,
@@ -65,6 +67,8 @@ interface ScheduleItem {
   type: "task" | "milestone" | "meeting" | "inspection";
   status: "scheduled" | "overdue" | "completed" | "in_progress";
   priority?: "high" | "medium" | "low";
+  assigneeName?: string;
+  progress?: number;
 }
 
 const typeHexColors: Record<string, string> = {
@@ -185,6 +189,8 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
           type: "task",
           status: isOverdue ? "overdue" : task.status === 'completed' ? "completed" : task.status === 'in_progress' ? "in_progress" : "scheduled",
           priority: task.priority,
+          assigneeName: task.assigneeName,
+          progress: task.progress || 0,
         });
       });
     }
@@ -216,6 +222,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
           type: "milestone",
           status: isOverdue ? "overdue" : milestone.completed ? "completed" : "scheduled",
           priority: "high",
+          progress: milestone.progress || 0,
         });
       });
     }
@@ -578,18 +585,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
     return (
       <div className="flex flex-col h-full -m-3">
         {/* Header with navigation */}
-        <div className="flex items-center justify-between px-3 py-1.5 border-b bg-muted/30 gap-2 flex-shrink-0">
-          <div className="flex items-center gap-1">
-            <Button size="icon" variant="ghost" className="h-6 w-6" onClick={navigatePrev}>
-              <ChevronLeft className="h-3.5 w-3.5" />
-            </Button>
-            <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={goToToday}>
-              Today
-            </Button>
-            <Button size="icon" variant="ghost" className="h-6 w-6" onClick={navigateNext}>
-              <ChevronRight className="h-3.5 w-3.5" />
-            </Button>
-          </div>
+        <div className="flex items-center justify-end px-3 py-1.5 border-b bg-muted/30 gap-2 flex-shrink-0">
           <div className="flex items-center gap-2">
             <span className="text-xs font-medium">
               {format(currentDate, "EEEE, MMM d")}
@@ -764,18 +760,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
     return (
       <div className="flex flex-col h-full -m-3">
         {/* Header with navigation */}
-        <div className="flex items-center justify-between px-3 py-1.5 border-b bg-muted/30 gap-2 flex-shrink-0">
-          <div className="flex items-center gap-1">
-            <Button size="icon" variant="ghost" className="h-6 w-6" onClick={navigatePrev}>
-              <ChevronLeft className="h-3.5 w-3.5" />
-            </Button>
-            <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={goToToday}>
-              This Week
-            </Button>
-            <Button size="icon" variant="ghost" className="h-6 w-6" onClick={navigateNext}>
-              <ChevronRight className="h-3.5 w-3.5" />
-            </Button>
-          </div>
+        <div className="flex items-center justify-end px-3 py-1.5 border-b bg-muted/30 gap-2 flex-shrink-0">
           <span className="text-xs font-medium">
             {format(weekStart, "MMM d")} - {format(addDays(weekStart, 6), "MMM d")}
           </span>
@@ -788,7 +773,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
             return (
               <div 
                 key={idx}
-                className={`text-center py-1 border-r last:border-r-0 ${isTodayDate ? 'bg-primary/10' : ''}`}
+                className={`text-center py-1 border-r last:border-r-0 ${isTodayDate ? 'bg-primary/10' : ''} ${getDay(day) === 0 || getDay(day) === 6 ? 'bg-muted/30' : ''}`}
               >
                 <div className="text-[9px] text-muted-foreground uppercase">
                   {format(day, "EEE")}
@@ -863,7 +848,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                   return (
                     <div 
                       key={idx}
-                      className={`relative border-r last:border-r-0 ${isPast ? 'opacity-50' : ''}`}
+                      className={`relative border-r last:border-r-0 ${isPast ? 'opacity-50' : ''} ${getDay(day) === 0 || getDay(day) === 6 ? 'bg-muted/30' : ''}`}
                     >
                       {/* Hour grid lines */}
                       {HOURS.map(hour => (
@@ -921,7 +906,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
               return (
                 <div 
                   key={idx} 
-                  className={`flex flex-col border-r last:border-r-0 min-w-0 ${isPast ? 'opacity-50' : ''}`}
+                  className={`flex flex-col border-r last:border-r-0 min-w-0 ${isPast ? 'opacity-50' : ''} ${getDay(day) === 0 || getDay(day) === 6 ? 'bg-muted/30' : ''}`}
                 >
                   <div className="flex-1 p-0.5 space-y-0.5 overflow-y-auto">
                     {dayItems.slice(0, 5).map(item => (
@@ -972,18 +957,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
 
     return (
       <div className="flex flex-col h-full -m-3">
-        <div className="flex items-center justify-between px-3 py-1.5 border-b bg-muted/30 gap-2">
-          <div className="flex items-center gap-1">
-            <Button size="icon" variant="ghost" className="h-6 w-6" onClick={navigatePrev}>
-              <ChevronLeft className="h-3.5 w-3.5" />
-            </Button>
-            <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={goToToday}>
-              Today
-            </Button>
-            <Button size="icon" variant="ghost" className="h-6 w-6" onClick={navigateNext}>
-              <ChevronRight className="h-3.5 w-3.5" />
-            </Button>
-          </div>
+        <div className="flex items-center justify-end px-3 py-1.5 border-b bg-muted/30 gap-2">
           <span className="text-xs font-medium">
             {format(currentDate, "MMMM yyyy")}
           </span>
@@ -1011,7 +985,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
                     key={dayIdx}
                     className={`border-r last:border-r-0 p-0.5 overflow-hidden ${
                       !isCurrentMonth ? 'bg-muted/30' : ''
-                    } ${isPast && isCurrentMonth ? 'opacity-60' : ''}`}
+                    } ${isPast && isCurrentMonth ? 'opacity-60' : ''} ${isCurrentMonth && (getDay(day) === 0 || getDay(day) === 6) ? 'bg-muted/30' : ''}`}
                   >
                     <div className={`text-[10px] mb-0.5 ${
                       isTodayDate 
@@ -1052,9 +1026,19 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
     );
   };
 
+  const getAssigneeInitials = (name: string | undefined) => {
+    if (!name) return "?";
+    return name
+      .split(" ")
+      .map((part) => part[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
   const renderItemDetailDialog = () => (
     <Dialog open={!!selectedItem} onOpenChange={(open) => !open && setSelectedItem(null)}>
-      <DialogContent className="sm:max-w-[400px]">
+      <DialogContent className="sm:max-w-[450px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {selectedItem?.type === 'milestone' && <Flag className="h-4 w-4 text-purple-500" />}
@@ -1065,7 +1049,7 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
         </DialogHeader>
         {selectedItem && (
           <div className="space-y-4 pt-2">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Badge 
                 className="text-xs font-semibold"
                 style={{
@@ -1086,9 +1070,9 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
               </Badge>
             </div>
             
-            <div className="space-y-2 text-sm">
+            <div className="space-y-3 text-sm">
               <div className="flex items-center gap-2 text-muted-foreground">
-                <Calendar className="h-4 w-4" />
+                <Calendar className="h-4 w-4 flex-shrink-0" />
                 <span className={selectedItem.status === 'overdue' ? 'text-red-500 font-medium' : ''}>
                   {format(new Date(selectedItem.date), "EEEE, MMMM d, yyyy")}
                 </span>
@@ -1096,19 +1080,58 @@ export default function ScheduleWidget({ widget, onUpdate, isConfiguring, onClos
               
               {selectedItem.time && (
                 <div className="flex items-center gap-2 text-muted-foreground">
-                  <Clock className="h-4 w-4" />
+                  <Clock className="h-4 w-4 flex-shrink-0" />
                   <span>{selectedItem.time}</span>
                 </div>
               )}
               
               {selectedItem.priority && (
                 <div className="flex items-center gap-2">
-                  <Flag className="h-4 w-4" />
+                  <Flag className="h-4 w-4 flex-shrink-0" />
                   <span className={`capitalize ${priorityColors[selectedItem.priority]}`}>
                     {selectedItem.priority} Priority
                   </span>
                 </div>
               )}
+
+              {selectedItem.assigneeName && (
+                <div className="flex items-center gap-3">
+                  <Avatar className="h-6 w-6 flex-shrink-0">
+                    <AvatarFallback className="text-xs">
+                      {getAssigneeInitials(selectedItem.assigneeName)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <div className="text-xs text-muted-foreground">Assigned to</div>
+                    <div className="font-medium">{selectedItem.assigneeName}</div>
+                  </div>
+                </div>
+              )}
+
+              {selectedItem.progress !== undefined && selectedItem.progress > 0 && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Progress</span>
+                    <span className="text-xs font-medium">{Math.round(selectedItem.progress)}%</span>
+                  </div>
+                  <Progress value={Math.min(100, Math.max(0, selectedItem.progress))} className="h-2" />
+                </div>
+              )}
+            </div>
+
+            <div className="pt-4 border-t">
+              <Button 
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() => {
+                  navigate('/schedule');
+                  setSelectedItem(null);
+                }}
+              >
+                <ArrowRight className="h-4 w-4 mr-2" />
+                View in Schedule
+              </Button>
             </div>
           </div>
         )}

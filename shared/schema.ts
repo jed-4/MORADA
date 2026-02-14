@@ -2890,6 +2890,9 @@ export const schedules = pgTable("schedules", {
   lockedByName: text("locked_by_name"), // Name of who locked it
   lockedAt: timestamp("locked_at"), // When it was locked
   isArchived: boolean("is_archived").notNull().default(false),
+  includeSaturday: boolean("include_saturday").notNull().default(false),
+  includeSunday: boolean("include_sunday").notNull().default(false),
+  clientVisibilityWeeks: integer("client_visibility_weeks").default(null),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -2903,10 +2906,32 @@ export const insertScheduleSchema = createInsertSchema(schedules).omit({
   startDate: z.coerce.date().optional(),
   endDate: z.coerce.date().optional(),
   lockedAt: z.coerce.date().optional(),
+  includeSaturday: z.boolean().optional(),
+  includeSunday: z.boolean().optional(),
+  clientVisibilityWeeks: z.number().int().min(1).nullable().optional(),
 });
 
 export type InsertSchedule = z.infer<typeof insertScheduleSchema>;
 export type Schedule = typeof schedules.$inferSelect;
+
+export const nonWorkingDays = pgTable("non_working_days", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  date: timestamp("date").notNull(),
+  name: text("name").notNull(),
+  isRecurring: boolean("is_recurring").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertNonWorkingDaySchema = createInsertSchema(nonWorkingDays).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  date: z.coerce.date(),
+});
+
+export type InsertNonWorkingDay = z.infer<typeof insertNonWorkingDaySchema>;
+export type NonWorkingDay = typeof nonWorkingDays.$inferSelect;
 
 // Schedule Items (individual tasks/activities in the schedule)
 export const scheduleItems = pgTable("schedule_items", {
@@ -2972,6 +2997,7 @@ export const scheduleItems = pgTable("schedule_items", {
   color: text("color"), // Custom color override
   sortOrder: integer("sort_order").notNull().default(0),
   isCollapsed: boolean("is_collapsed").notNull().default(false),
+  useWorkingDaysOverride: boolean("use_working_days_override").default(null),
   
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -2993,9 +3019,9 @@ export const insertScheduleItemSchema = createInsertSchema(scheduleItems).omit({
   duration: z.number().default(1),
   progressPercent: z.number().int().min(0).max(100).default(0),
   dependencies: z.array(z.object({
-    id: z.string(), // ID of the predecessor item
-    type: z.enum(["FS", "SS", "FF", "SF"]).default("FS"), // Dependency type
-    lag: z.number().int().default(0), // Lag days (positive = delay, negative = lead)
+    id: z.string(),
+    type: z.enum(["FS", "SS", "FF", "SF"]).default("FS"),
+    lag: z.number().int().default(0),
   })).optional(),
   predecessorIds: z.array(z.string()).optional(),
   checklistIds: z.array(z.string()).optional(),
@@ -3008,10 +3034,71 @@ export const insertScheduleItemSchema = createInsertSchema(scheduleItems).omit({
   })).optional(),
   siteDiaryEntryIds: z.array(z.string()).optional(),
   sortOrder: z.number().default(0),
+  useWorkingDaysOverride: z.boolean().nullable().optional(),
 });
 
 export type InsertScheduleItem = z.infer<typeof insertScheduleItemSchema>;
 export type ScheduleItem = typeof scheduleItems.$inferSelect;
+
+export const scheduleItemSteps = pgTable("schedule_item_steps", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  scheduleItemId: varchar("schedule_item_id").notNull().references(() => scheduleItems.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  isCompleted: boolean("is_completed").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertScheduleItemStepSchema = createInsertSchema(scheduleItemSteps).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  sortOrder: z.number().default(0),
+});
+
+export type InsertScheduleItemStep = z.infer<typeof insertScheduleItemStepSchema>;
+export type ScheduleItemStep = typeof scheduleItemSteps.$inferSelect;
+
+export const scheduleBaselines = pgTable("schedule_baselines", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  scheduleId: varchar("schedule_id").notNull().references(() => schedules.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertScheduleBaselineSchema = createInsertSchema(scheduleBaselines).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertScheduleBaseline = z.infer<typeof insertScheduleBaselineSchema>;
+export type ScheduleBaseline = typeof scheduleBaselines.$inferSelect;
+
+export const scheduleBaselineItems = pgTable("schedule_baseline_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  baselineId: varchar("baseline_id").notNull().references(() => scheduleBaselines.id, { onDelete: "cascade" }),
+  scheduleItemId: varchar("schedule_item_id").notNull(),
+  name: text("name").notNull(),
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date").notNull(),
+  duration: integer("duration").notNull().default(1),
+  progressPercent: integer("progress_percent").notNull().default(0),
+  status: text("status").notNull().default("not_started"),
+  parentItemId: varchar("parent_item_id"),
+});
+
+export const insertScheduleBaselineItemSchema = createInsertSchema(scheduleBaselineItems).omit({
+  id: true,
+}).extend({
+  startDate: z.coerce.date(),
+  endDate: z.coerce.date(),
+});
+
+export type InsertScheduleBaselineItem = z.infer<typeof insertScheduleBaselineItemSchema>;
+export type ScheduleBaselineItem = typeof scheduleBaselineItems.$inferSelect;
 
 // Activity Notes for Schedule Items (manual notes + system-generated activity)
 export const activityNotes = pgTable("activity_notes", {

@@ -2,7 +2,7 @@ import { ScheduleItem } from "@shared/schema";
 import { ColorChip } from "@/components/ui/color-chip";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Pencil, GripVertical, ChevronRight, ChevronDown, Check } from "lucide-react";
+import { Pencil, GripVertical, ChevronRight, ChevronDown, Check, MoreVertical, Trash2, Copy } from "lucide-react";
 import { format, differenceInDays } from "date-fns";
 import { cn } from "@/lib/utils";
 import { TableCell } from "@/components/ui/table";
@@ -24,6 +24,7 @@ interface StatusOption {
 interface VisibleColumns {
   item: boolean;
   assignee: boolean;
+  type: boolean;
   dueDate: boolean;
   status: boolean;
   completion: boolean;
@@ -34,6 +35,8 @@ export interface CasvaScheduleRowProps {
   noteCount?: number;
   onEdit: () => void;
   onStatusChange?: (newStatus: string) => void;
+  onDuplicate?: () => void;
+  onDelete?: () => void;
   onCompletionToggle?: () => void;
   statusOptions?: StatusOption[];
   visibleColumns?: VisibleColumns;
@@ -52,9 +55,11 @@ export function CasvaScheduleRow({
   noteCount = 0,
   onEdit,
   onStatusChange,
+  onDuplicate,
+  onDelete,
   onCompletionToggle,
   statusOptions = [],
-  visibleColumns = { item: true, assignee: true, dueDate: true, status: true, completion: true },
+  visibleColumns = { item: true, assignee: true, type: true, dueDate: true, status: true, completion: true },
   isDraggable = false,
   dragAttributes,
   dragListeners,
@@ -116,33 +121,37 @@ export function CasvaScheduleRow({
         </TableCell>
       )}
 
-      {/* Assignee & Role Column */}
+      {/* Assignee Column */}
       {visibleColumns.assignee && (
-        <TableCell className="w-48 h-8 py-0">
-          <div className="flex items-center gap-1">
-            {item.assignedToName && (
-              <span className="text-[10px] text-muted-foreground truncate" data-testid="schedule-item-assignee">
-                {item.assignedToName}
-              </span>
-            )}
-            {item.type && (
-              <Badge variant="outline" className="text-[10px] h-4 px-1">
-                {item.type}
-              </Badge>
-            )}
-          </div>
+        <TableCell className="w-32 h-8 py-0">
+          {item.assignedToName && (
+            <span className="text-xs text-muted-foreground truncate block" data-testid="schedule-item-assignee">
+              {item.assignedToName}
+            </span>
+          )}
+        </TableCell>
+      )}
+
+      {/* Type Column */}
+      {visibleColumns.type && (
+        <TableCell className="w-24 h-8 py-0">
+          {item.type && (
+            <Badge variant="outline" className="text-[10px] h-4 px-1 capitalize">
+              {item.type}
+            </Badge>
+          )}
         </TableCell>
       )}
 
       {/* Due Date & Duration Column */}
       {visibleColumns.dueDate && (
-        <TableCell className="w-40 h-8 py-0">
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] text-muted-foreground" data-testid="schedule-item-date-range">
+        <TableCell className="w-36 h-8 py-0">
+          <div className="flex items-center gap-1 whitespace-nowrap">
+            <span className="text-xs text-muted-foreground" data-testid="schedule-item-date-range">
               {dateRange}
             </span>
             {duration !== null && (
-              <span className="text-[10px] text-muted-foreground/70">
+              <span className="text-xs text-muted-foreground/70">
                 · {duration}d
               </span>
             )}
@@ -218,15 +227,36 @@ export function CasvaScheduleRow({
 
       {/* Actions Column */}
       <TableCell className="w-12 h-8 py-0">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-          onClick={onEdit}
-          data-testid={`button-edit-schedule-${item.id}`}
-        >
-          <Pencil className="h-3 w-3" />
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+              data-testid={`button-actions-${item.id}`}
+            >
+              <MoreVertical className="h-3 w-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={onEdit}>
+              <Pencil className="h-3.5 w-3.5 mr-2" />
+              Edit
+            </DropdownMenuItem>
+            {onDuplicate && (
+              <DropdownMenuItem onClick={onDuplicate}>
+                <Copy className="h-3.5 w-3.5 mr-2" />
+                Duplicate
+              </DropdownMenuItem>
+            )}
+            {onDelete && (
+              <DropdownMenuItem onClick={onDelete} className="text-destructive">
+                <Trash2 className="h-3.5 w-3.5 mr-2" />
+                Delete
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </TableCell>
     </>
   );

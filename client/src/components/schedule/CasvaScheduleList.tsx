@@ -15,6 +15,7 @@ interface StatusOption {
 interface VisibleColumns {
   item: boolean;
   assignee: boolean;
+  type: boolean;
   dueDate: boolean;
   status: boolean;
   completion: boolean;
@@ -32,6 +33,8 @@ export interface CasvaScheduleListProps {
   selectedItems?: Set<string>;
   onSelectionChange?: (selectedIds: Set<string>) => void;
   onNestItem?: (itemId: string, newParentId: string | null) => void;
+  onDuplicateItem?: (item: ScheduleItem) => void;
+  onDeleteItem?: (itemId: string) => void;
 }
 
 export function CasvaScheduleList({ 
@@ -42,10 +45,12 @@ export function CasvaScheduleList({
   onCompletionToggle,
   statusOptions = [],
   maxHeight = "calc(100vh - 280px)",
-  visibleColumns = { item: true, assignee: true, dueDate: true, status: true, completion: true },
+  visibleColumns = { item: true, assignee: true, type: true, dueDate: true, status: true, completion: true },
   selectedItems = new Set(),
   onSelectionChange,
-  onNestItem
+  onNestItem,
+  onDuplicateItem,
+  onDeleteItem
 }: CasvaScheduleListProps) {
   const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set());
   const [ripples, setRipples] = useState<{id: string, x: number, y: number}[]>([]);
@@ -225,8 +230,9 @@ export function CasvaScheduleList({
                 </TableHead>
               )}
               {visibleColumns.item && <TableHead className="font-semibold h-8 py-0 text-xs">Item</TableHead>}
-              {visibleColumns.assignee && <TableHead className="font-semibold w-48 h-8 py-0 text-xs">Assignee & Role</TableHead>}
-              {visibleColumns.dueDate && <TableHead className="font-semibold w-40 h-8 py-0 text-xs">Due Date & Duration</TableHead>}
+              {visibleColumns.assignee && <TableHead className="font-semibold w-32 h-8 py-0 text-xs">Assignee</TableHead>}
+              {visibleColumns.type && <TableHead className="font-semibold w-24 h-8 py-0 text-xs">Type</TableHead>}
+              {visibleColumns.dueDate && <TableHead className="font-semibold w-36 h-8 py-0 text-xs">Due Date & Duration</TableHead>}
               {visibleColumns.status && <TableHead className="font-semibold w-32 h-8 py-0 text-xs">Status</TableHead>}
               {visibleColumns.completion && <TableHead className="font-semibold w-20 h-8 py-0 text-xs text-center">%</TableHead>}
               <TableHead className="w-12 h-8 py-0"></TableHead>
@@ -275,6 +281,8 @@ export function CasvaScheduleList({
                       noteCount={noteCounts[item.id] || 0}
                       onEdit={() => onEditItem(item)}
                       onStatusChange={onStatusChange ? (status) => onStatusChange(item.id, status) : undefined}
+                      onDuplicate={onDuplicateItem ? () => onDuplicateItem(item) : undefined}
+                      onDelete={onDeleteItem ? () => onDeleteItem(item.id) : undefined}
                       onCompletionToggle={onCompletionToggle ? () => onCompletionToggle(item.id, item.progressPercent || 0) : undefined}
                       statusOptions={statusOptions}
                       visibleColumns={visibleColumns}
@@ -333,6 +341,8 @@ export function CasvaScheduleList({
                         noteCount={noteCounts[subtask.id] || 0}
                         onEdit={() => onEditItem(subtask)}
                         onStatusChange={onStatusChange ? (status) => onStatusChange(subtask.id, status) : undefined}
+                        onDuplicate={onDuplicateItem ? () => onDuplicateItem(subtask) : undefined}
+                        onDelete={onDeleteItem ? () => onDeleteItem(subtask.id) : undefined}
                         onCompletionToggle={onCompletionToggle ? () => onCompletionToggle(subtask.id, subtask.progressPercent || 0) : undefined}
                         statusOptions={statusOptions}
                         visibleColumns={visibleColumns}

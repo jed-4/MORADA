@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams } from "wouter";
 import { useProject } from "@/contexts/ProjectContext";
+import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -70,6 +71,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Columns3,
+  Copy,
+  X,
+  Bookmark,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CasvaScheduleList } from "@/components/schedule/CasvaScheduleList";
@@ -87,6 +91,7 @@ const localizer = momentLocalizer(moment);
 
 export default function Schedule() {
   const { currentProject } = useProject();
+  const { user } = useAuth();
   const { toast } = useToast();
   const pageTitle = usePageTitle({ pageName: "Schedule" });
   const params = useParams<ScheduleParams>();
@@ -106,6 +111,7 @@ export default function Schedule() {
   const [showSaveTemplateDialog, setShowSaveTemplateDialog] = useState(false);
   const [showLoadTemplateDialog, setShowLoadTemplateDialog] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
+  const [showWorkingDaysDialog, setShowWorkingDaysDialog] = useState(false);
   const [templateFormData, setTemplateFormData] = useState({
     name: "",
     description: "",
@@ -136,11 +142,16 @@ export default function Schedule() {
     return saved ? JSON.parse(saved) : {
       item: true,
       assignee: true,
+      type: true,
       dueDate: true,
       status: true,
       completion: true,
     };
   });
+  const [newStepName, setNewStepName] = useState("");
+  const [showBaselineDialog, setShowBaselineDialog] = useState(false);
+  const [activeBaselineId, setActiveBaselineId] = useState<string | null>(null);
+  const [baselineName, setBaselineName] = useState("");
 
   useEffect(() => {
     localStorage.setItem('schedule-visible-columns', JSON.stringify(visibleColumns));
@@ -183,6 +194,22 @@ export default function Schedule() {
   // Fetch contacts for assignee selection
   const { data: contacts = [] } = useQuery<Contact[]>({
     queryKey: ["/api/contacts"],
+  });
+
+  // Fetch steps for editing item
+  const { data: itemSteps = [], refetch: refetchSteps } = useQuery({
+    queryKey: [`/api/schedule-items/${editingItem?.id}/steps`],
+    enabled: !!editingItem?.id,
+  });
+
+  const { data: availableChecklists = [] } = useQuery({
+    queryKey: [`/api/projects/${projectId}/checklists`],
+    enabled: !!projectId && !!editingItem,
+  });
+
+  const { data: availableTasks = [] } = useQuery({
+    queryKey: [`/api/projects/${projectId}/tasks`],
+    enabled: !!projectId && !!editingItem,
   });
 
   // Fetch schedule item status options from Field Settings using hook
@@ -324,6 +351,30 @@ export default function Schedule() {
     },
   });
 
+  const updateItemLinksMutation = useMutation({
+    mutationFn: async (data: { id: string; checklistIds?: string[]; taskIds?: string[] }) => {
+      const { id, ...body } = data;
+      const response = await fetch(`/api/schedule-items/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) throw new Error("Failed to update links");
+      return response.json() as Promise<ScheduleItem>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to update links",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   // Quick inline status update mutation
   const updateStatusMutationInline = useMutation({
     mutationFn: async ({ itemId, status }: { itemId: string; status: string }) => {
@@ -373,6 +424,30 @@ export default function Schedule() {
     },
   });
 
+  // Add step mutation
+  const addStepMutation = useMutation({
+    mutationFn: async (data: { scheduleItemId: string; name: string }) => {
+      return await apiRequest(`/api/schedule-items/${data.scheduleItemId}/steps`, "POST", { name: data.name });
+    },
+    onSuccess: () => refetchSteps(),
+  });
+
+  // Toggle step completion mutation
+  const toggleStepMutation = useMutation({
+    mutationFn: async (data: { id: string; isCompleted: boolean }) => {
+      return await apiRequest(`/api/schedule-item-steps/${data.id}`, "PATCH", { isCompleted: data.isCompleted });
+    },
+    onSuccess: () => refetchSteps(),
+  });
+
+  // Delete step mutation
+  const deleteStepMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest(`/api/schedule-item-steps/${id}`, "DELETE");
+    },
+    onSuccess: () => refetchSteps(),
+  });
+
   // Bulk delete mutation
   const bulkDeleteMutation = useMutation({
     mutationFn: async (itemIds: string[]) => {
@@ -405,6 +480,34 @@ export default function Schedule() {
     },
   });
 
+  // Duplicate item mutation
+  const duplicateItemMutation = useMutation({
+    mutationFn: async (itemId: string) => {
+      return await apiRequest(`/api/schedule-items/${itemId}/duplicate`, "POST");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      toast({ title: "Item duplicated" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to duplicate", description: error.message, variant: "destructive" });
+    },
+  });
+
+  // Delete single item mutation
+  const deleteItemMutation = useMutation({
+    mutationFn: async (itemId: string) => {
+      return await apiRequest(`/api/schedule-items/${itemId}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      toast({ title: "Item deleted" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to delete", description: error.message, variant: "destructive" });
+    },
+  });
+
   // Nest item mutation (set parentId)
   const nestItemMutation = useMutation({
     mutationFn: async ({ itemId, parentId }: { itemId: string; parentId: string | null }) => {
@@ -433,9 +536,77 @@ export default function Schedule() {
     },
   });
 
+  const { data: nonWorkingDays = [], refetch: refetchNonWorkingDays } = useQuery({
+    queryKey: [`/api/companies/${user?.companyId}/non-working-days`],
+    enabled: !!user?.companyId,
+  });
+
+  const updateWorkingDaysMutation = useMutation({
+    mutationFn: async (data: { includeSaturday: boolean; includeSunday: boolean; clientVisibilityWeeks?: number | null }) => {
+      return await apiRequest(`/api/schedules/${schedule?.id}/working-days`, "PATCH", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedule"] });
+      toast({ title: "Working days updated" });
+    },
+  });
+
+  const addNonWorkingDayMutation = useMutation({
+    mutationFn: async (data: { date: string; name: string; isRecurring: boolean }) => {
+      return await apiRequest(`/api/companies/${user?.companyId}/non-working-days`, "POST", data);
+    },
+    onSuccess: () => {
+      refetchNonWorkingDays();
+      toast({ title: "Non-working day added" });
+    },
+  });
+
+  const deleteNonWorkingDayMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest(`/api/non-working-days/${id}`, "DELETE");
+    },
+    onSuccess: () => {
+      refetchNonWorkingDays();
+      toast({ title: "Non-working day removed" });
+    },
+  });
+
   // Fetch schedule templates
   const { data: scheduleTemplates = [] } = useQuery({
     queryKey: ["/api/schedule-templates"],
+  });
+
+  const { data: baselines = [] } = useQuery({
+    queryKey: [`/api/schedules/${schedule?.id}/baselines`],
+    enabled: !!schedule?.id,
+  });
+
+  const { data: baselineItems = [] } = useQuery({
+    queryKey: [`/api/baselines/${activeBaselineId}/items`],
+    enabled: !!activeBaselineId,
+  });
+
+  const createBaselineMutation = useMutation({
+    mutationFn: async (data: { name: string }) => {
+      return await apiRequest(`/api/schedules/${schedule?.id}/baselines`, "POST", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/schedules/${schedule?.id}/baselines`] });
+      setShowBaselineDialog(false);
+      setBaselineName("");
+      toast({ title: "Baseline created", description: "Schedule snapshot saved." });
+    },
+  });
+
+  const deleteBaselineMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest(`/api/baselines/${id}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/schedules/${schedule?.id}/baselines`] });
+      if (activeBaselineId) setActiveBaselineId(null);
+      toast({ title: "Baseline deleted" });
+    },
   });
 
   // Save current schedule as template
@@ -554,6 +725,50 @@ export default function Schedule() {
     } else {
       createItemMutation.mutate(data);
     }
+  };
+
+  // Handle export schedule to CSV
+  const handleExportSchedule = () => {
+    if (!scheduleItems.length) {
+      toast({ title: "Nothing to export", description: "Add items to the schedule first.", variant: "destructive" });
+      return;
+    }
+    
+    const headers = ["Name", "Type", "Status", "Priority", "Start Date", "End Date", "Duration (days)", "Assignee", "Progress %", "Parent", "Notes"];
+    
+    const rows = scheduleItems.map(item => {
+      const parentItem = scheduleItems.find(si => si.id === item.parentItemId);
+      return [
+        item.name,
+        item.type,
+        item.status,
+        item.priority || "",
+        item.startDate ? new Date(item.startDate).toLocaleDateString('en-AU') : "",
+        item.endDate ? new Date(item.endDate).toLocaleDateString('en-AU') : "",
+        item.duration?.toString() || "",
+        item.assignedToName || "",
+        (item.progressPercent || 0).toString(),
+        parentItem?.name || "",
+        (item.notes || "").replace(/"/g, '""'),
+      ];
+    });
+    
+    const csvContent = [
+      headers.join(","),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(","))
+    ].join("\n");
+    
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `schedule-${pageTitle.replace(/\s+/g, '-').toLowerCase()}-${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    toast({ title: "Schedule exported", description: "CSV file downloaded." });
   };
 
   // Load editing item into form
@@ -776,31 +991,55 @@ export default function Schedule() {
         
         {/* Row 1 - Project Controls (36px) */}
         <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
-          {/* Left: Project Name + Online/Offline Toggle */}
+          {/* Left: Project Name + Lock/Unlock Toggle + Online/Offline Indicator */}
           <div className="flex items-center gap-3">
             <h2 className="text-sm font-semibold">{pageTitle}</h2>
+            
+            {/* Lock/Unlock Toggle */}
+            <div className="flex items-center gap-2">
+              {schedule?.status === "locked" ? (
+                <button
+                  onClick={() => {
+                    updateStatusMutation.mutate("online");
+                  }}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs font-medium hover-elevate active-elevate-2 transition-all"
+                  data-testid="button-unlock-schedule"
+                >
+                  <Lock className="w-3.5 h-3.5" />
+                  Locked
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    if (confirm("Lock the schedule? This will make it read-only and visible to clients. Any unsaved changes will be committed.")) {
+                      updateStatusMutation.mutate("locked");
+                    }
+                  }}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs font-medium hover-elevate active-elevate-2 transition-all"
+                  data-testid="button-lock-schedule"
+                >
+                  <Unlock className="w-3.5 h-3.5" />
+                  Unlocked (Draft)
+                </button>
+              )}
+            </div>
+            
+            {/* Online/Offline indicator */}
             <button
               onClick={() => {
+                if (schedule?.status === "locked") return;
                 if (schedule?.status === "offline") {
                   updateStatusMutation.mutate("online");
                 } else {
                   updateStatusMutation.mutate("offline");
                 }
               }}
-              className="flex items-center gap-1 hover-elevate active-elevate-2 px-1.5 py-0.5 rounded-md transition-all"
+              className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md text-xs text-muted-foreground ${schedule?.status === "locked" ? "opacity-50 cursor-not-allowed" : "hover-elevate active-elevate-2"}`}
+              disabled={schedule?.status === "locked"}
               data-testid="button-toggle-online"
             >
-              {schedule?.status === "online" ? (
-                <>
-                  <div className="w-2 h-2 rounded-full bg-green-500" />
-                  <span className="text-xs text-muted-foreground">Online</span>
-                </>
-              ) : (
-                <>
-                  <div className="w-2 h-2 rounded-full bg-red-500" />
-                  <span className="text-xs text-muted-foreground">Offline</span>
-                </>
-              )}
+              <div className={`w-1.5 h-1.5 rounded-full ${schedule?.status === "online" || schedule?.status === "locked" ? "bg-green-500" : "bg-muted-foreground"}`} />
+              <span>{schedule?.status === "online" || schedule?.status === "locked" ? "Online" : "Offline"}</span>
             </button>
           </div>
 
@@ -815,36 +1054,42 @@ export default function Schedule() {
               <Plus className="w-3 h-3 inline mr-0.5" />
               Add Item
             </button>
-            <button
-              className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
-              onClick={() => setShowLoadTemplateDialog(true)}
-              disabled={schedule?.status === "locked"}
-              data-testid="button-load-template"
-            >
-              <Upload className="w-3 h-3 inline mr-0.5" />
-              Load Template
-            </button>
-            <button
-              className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
-              onClick={() => setShowImportDialog(true)}
-              disabled={schedule?.status === "locked"}
-              data-testid="button-import-schedule"
-            >
-              <Upload className="w-3 h-3 inline mr-0.5" />
-              Import
-            </button>
-            <button
-              className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-              data-testid="button-export-pdf"
-            >
-              <Download className="w-3 h-3" />
-            </button>
-            <button
-              className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-              data-testid="button-settings"
-            >
-              <Settings className="w-3 h-3" />
-            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center" data-testid="button-more-actions">
+                  <MoreVertical className="w-3 h-3" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setShowLoadTemplateDialog(true)} disabled={schedule?.status === "locked"}>
+                  <Upload className="w-4 h-4 mr-2" />
+                  Load Template
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setShowSaveTemplateDialog(true)} disabled={schedule?.status === "locked" || scheduleItems.length === 0}>
+                  <Download className="w-4 h-4 mr-2" />
+                  Save as Template
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setShowImportDialog(true)} disabled={schedule?.status === "locked"}>
+                  <Upload className="w-4 h-4 mr-2" />
+                  Import Schedule
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportSchedule} data-testid="button-export-pdf">
+                  <Download className="w-4 h-4 mr-2" />
+                  Export Schedule
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setShowBaselineDialog(true)}>
+                  <Bookmark className="w-4 h-4 mr-2" />
+                  Create Baseline
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem data-testid="button-settings" onClick={() => setShowWorkingDaysDialog(true)}>
+                  <Settings className="w-4 h-4 mr-2" />
+                  Schedule Settings
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 
@@ -962,6 +1207,25 @@ export default function Schedule() {
                 <SelectItem value="overdue">Overdue</SelectItem>
               </SelectContent>
             </Select>
+
+            {(baselines as any[]).length > 0 && (
+              <Select 
+                value={activeBaselineId || "none"} 
+                onValueChange={(v) => setActiveBaselineId(v === "none" ? null : v)}
+              >
+                <SelectTrigger className={`h-6 w-auto px-3 py-0 text-xs rounded-full border ${activeBaselineId ? 'bg-purple-100 dark:bg-purple-900/30 border-purple-300 dark:border-purple-700' : 'border-border'} [&>svg]:hidden`}>
+                  <span>{activeBaselineId ? (baselines as any[]).find((b: any) => b.id === activeBaselineId)?.name || 'Baseline' : 'Baseline'}</span>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No Baseline</SelectItem>
+                  {(baselines as any[]).map((b: any) => (
+                    <SelectItem key={b.id} value={b.id}>
+                      {b.name} ({new Date(b.createdAt).toLocaleDateString('en-AU')})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           {/* Right: Today + Columns + Day/Week/Month */}
@@ -1051,7 +1315,14 @@ export default function Schedule() {
                     data-testid="checkbox-column-assignee"
                   >
                     <Checkbox checked={visibleColumns.assignee} className="pointer-events-none h-3.5 w-3.5" />
-                    <span>Assignee & Role</span>
+                    <span>Assignee</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    onClick={() => toggleColumn('type')}
+                    className="flex items-center gap-2 px-2 py-1.5 text-xs"
+                  >
+                    <Checkbox checked={visibleColumns.type} className="pointer-events-none h-3.5 w-3.5" />
+                    <span>Type</span>
                   </DropdownMenuItem>
                   <DropdownMenuItem 
                     onClick={() => toggleColumn('dueDate')}
@@ -1155,127 +1426,156 @@ export default function Schedule() {
         </div>
 
         {/* Content - conditional rendering based on activeView */}
-        {activeView === "list" && (
-          <div className="flex-1 overflow-auto p-4">
-            {filteredItems.length === 0 ? (
-              <Card className="p-12 text-center">
-                <CardTitle className="mb-2">No Schedule Items</CardTitle>
-                <p className="text-muted-foreground mb-4">
-                  {scheduleItems.length === 0
-                    ? "Get started by adding your first schedule item."
-                    : "No items match the current filters."}
-                </p>
-                {scheduleItems.length === 0 && schedule?.status !== "locked" && (
-                  <Button onClick={() => setShowItemDialog(true)} data-testid="button-add-first-item">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add First Item
-                  </Button>
-                )}
-              </Card>
-            ) : (
-              <>
-                {/* Bulk Actions Bar */}
-                {selectedItems.size > 0 && (
-                  <div className="flex items-center gap-2 p-2 mb-2 bg-muted/50 rounded-lg border">
-                    <span className="text-xs text-muted-foreground">
-                      {selectedItems.size} selected
-                    </span>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => {
-                        if (!projectId) {
-                          toast({
-                            title: "Error",
-                            description: "No project selected",
-                            variant: "destructive",
-                          });
-                          return;
-                        }
-                        if (confirm(`Delete ${selectedItems.size} items? This cannot be undone.`)) {
-                          bulkDeleteMutation.mutate(Array.from(selectedItems));
-                        }
-                      }}
-                      disabled={bulkDeleteMutation.isPending || !projectId}
-                      data-testid="button-bulk-delete"
-                    >
-                      <Trash2 className="w-3 h-3 mr-1" />
-                      {bulkDeleteMutation.isPending ? "Deleting..." : "Delete"}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setSelectedItems(new Set())}
-                      data-testid="button-clear-selection"
-                    >
-                      Clear
-                    </Button>
-                  </div>
-                )}
-                <CasvaScheduleList
-                  items={filteredItems}
-                  noteCounts={noteCounts}
-                  statusOptions={statusOptions}
-                  visibleColumns={visibleColumns}
-                  selectedItems={selectedItems}
-                  onSelectionChange={setSelectedItems}
-                  onNestItem={(itemId, parentId) => {
-                    nestItemMutation.mutate({ itemId, parentId });
-                  }}
-                  onStatusChange={(itemId, status) => {
-                    updateStatusMutationInline.mutate({ itemId, status });
-                  }}
-                  onCompletionToggle={(itemId, currentPercent) => {
-                    updateCompletionMutation.mutate({ itemId, currentPercent });
-                  }}
-                  onEditItem={(item) => {
-                    setEditingItem(item);
-                    setShowItemDialog(true);
-                  }}
-                />
-              </>
-            )}
-          </div>
-        )}
-
-        {activeView === "gantt" && (
-          <Gantt
-            onEditItem={(item) => {
-              setEditingItem(item);
-              setShowItemDialog(true);
-            }}
-          />
-        )}
-
-        {activeView === "calendar" && (
-          <div className="h-full flex flex-col">
-            <div className="flex-1 p-1" style={{ minHeight: '600px' }}>
-              <BigCalendar
-                localizer={localizer}
-                events={calendarEvents}
-                startAccessor="start"
-                endAccessor="end"
-                style={{ height: '100%' }}
-                eventPropGetter={eventStyleGetter}
-                dayPropGetter={dayPropGetter}
-                onSelectEvent={(event) => {
-                  if (schedule?.status !== "locked") {
-                    setEditingItem(event.resource as ScheduleItem);
-                    setShowItemDialog(true);
-                  }
-                }}
-                views={[Views.MONTH, Views.WEEK, Views.DAY, Views.AGENDA]}
-                view={calendarView}
-                onView={(view) => setCalendarView(view as "month" | "week" | "day" | "agenda")}
-                date={calendarDate}
-                onNavigate={(date) => setCalendarDate(date)}
-                popup
-                toolbar={false}
-                culture="en-GB"
-                data-testid="calendar-view"
-              />
+        {scheduleItems.length === 0 ? (
+          <div className="flex-1 flex items-center justify-center p-8">
+            <div className="text-center max-w-md">
+              <GanttChart className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+              <h3 className="text-lg font-semibold mb-2">Build Your Schedule</h3>
+              <p className="text-sm text-muted-foreground mb-6">Get started by creating items, loading a template, or importing from a file.</p>
+              <div className="flex items-center justify-center gap-3">
+                <Button onClick={() => setShowItemDialog(true)} disabled={schedule?.status === "locked"}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create Item
+                </Button>
+                <Button variant="outline" onClick={() => setShowLoadTemplateDialog(true)} disabled={schedule?.status === "locked"}>
+                  <Upload className="w-4 h-4 mr-2" />
+                  Load Template
+                </Button>
+                <Button variant="outline" onClick={() => setShowImportDialog(true)} disabled={schedule?.status === "locked"}>
+                  <Upload className="w-4 h-4 mr-2" />
+                  Import File
+                </Button>
+              </div>
             </div>
           </div>
+        ) : (
+          <>
+            {activeView === "list" && (
+              <div className="flex-1 overflow-auto p-4">
+                {filteredItems.length === 0 ? (
+                  <Card className="p-12 text-center">
+                    <CardTitle className="mb-2">No Matching Items</CardTitle>
+                    <p className="text-muted-foreground mb-4">
+                      No items match the current filters.
+                    </p>
+                  </Card>
+                ) : (
+                  <>
+                    {selectedItems.size > 0 && (
+                      <div className="flex items-center gap-2 p-2 mb-2 bg-muted/50 rounded-lg border">
+                        <span className="text-xs text-muted-foreground">
+                          {selectedItems.size} selected
+                        </span>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => {
+                            if (!projectId) {
+                              toast({
+                                title: "Error",
+                                description: "No project selected",
+                                variant: "destructive",
+                              });
+                              return;
+                            }
+                            if (confirm(`Delete ${selectedItems.size} items? This cannot be undone.`)) {
+                              bulkDeleteMutation.mutate(Array.from(selectedItems));
+                            }
+                          }}
+                          disabled={bulkDeleteMutation.isPending || !projectId}
+                          data-testid="button-bulk-delete"
+                        >
+                          <Trash2 className="w-3 h-3 mr-1" />
+                          {bulkDeleteMutation.isPending ? "Deleting..." : "Delete"}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setSelectedItems(new Set())}
+                          data-testid="button-clear-selection"
+                        >
+                          Clear
+                        </Button>
+                      </div>
+                    )}
+                    <CasvaScheduleList
+                      items={filteredItems}
+                      noteCounts={noteCounts}
+                      statusOptions={statusOptions}
+                      visibleColumns={visibleColumns}
+                      selectedItems={selectedItems}
+                      onSelectionChange={setSelectedItems}
+                      onNestItem={(itemId, parentId) => {
+                        nestItemMutation.mutate({ itemId, parentId });
+                      }}
+                      onStatusChange={(itemId, status) => {
+                        updateStatusMutationInline.mutate({ itemId, status });
+                      }}
+                      onCompletionToggle={(itemId, currentPercent) => {
+                        updateCompletionMutation.mutate({ itemId, currentPercent });
+                      }}
+                      onEditItem={(item) => {
+                        setEditingItem(item);
+                        setShowItemDialog(true);
+                      }}
+                      onDuplicateItem={(item) => duplicateItemMutation.mutate(item.id)}
+                      onDeleteItem={(itemId) => {
+                        if (confirm("Delete this schedule item? This cannot be undone.")) {
+                          deleteItemMutation.mutate(itemId);
+                        }
+                      }}
+                    />
+                  </>
+                )}
+              </div>
+            )}
+
+            {activeView === "gantt" && (
+              <Gantt
+                onEditItem={(item) => {
+                  setEditingItem(item);
+                  setShowItemDialog(true);
+                }}
+                baselineItems={activeBaselineId ? baselineItems as any[] : []}
+              />
+            )}
+
+            {activeView === "calendar" && (
+              <div className="h-full flex flex-col">
+                <div className="flex items-center justify-center py-1.5">
+                  <span className="text-sm font-medium">
+                    {calendarDate.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' })}
+                  </span>
+                </div>
+                <div className="flex-1 p-1" style={{ minHeight: '600px' }}>
+                  <BigCalendar
+                    localizer={localizer}
+                    events={calendarEvents}
+                    startAccessor="start"
+                    endAccessor="end"
+                    style={{ height: '100%' }}
+                    eventPropGetter={eventStyleGetter}
+                    dayPropGetter={dayPropGetter}
+                    onSelectEvent={(event) => {
+                      if (schedule?.status !== "locked") {
+                        setEditingItem(event.resource as ScheduleItem);
+                        setShowItemDialog(true);
+                      }
+                    }}
+                    views={[Views.MONTH, Views.WEEK, Views.DAY, Views.AGENDA]}
+                    view={calendarView}
+                    onView={(view) => setCalendarView(view as "month" | "week" | "day" | "agenda")}
+                    date={calendarDate}
+                    onNavigate={(date) => setCalendarDate(date)}
+                    popup
+                    toolbar={false}
+                    culture="en-GB"
+                    data-testid="calendar-view"
+                  />
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -1652,8 +1952,208 @@ export default function Schedule() {
                 </p>
               </div>
             )}
+
+            {editingItem && (
+              <div className="space-y-2 pt-4 border-t">
+                <div className="flex items-center justify-between">
+                  <Label>Checklist Steps</Label>
+                  <span className="text-xs text-muted-foreground">
+                    {(itemSteps as any[]).filter((s: any) => s.isCompleted).length}/{(itemSteps as any[]).length} done
+                  </span>
+                </div>
+                
+                {/* Steps List */}
+                <div className="space-y-1">
+                  {(itemSteps as any[]).map((step: any) => (
+                    <div key={step.id} className="flex items-center gap-2 py-0.5 group">
+                      <Checkbox
+                        checked={step.isCompleted}
+                        onCheckedChange={(checked) => {
+                          toggleStepMutation.mutate({ id: step.id, isCompleted: !!checked });
+                        }}
+                      />
+                      <span className={`text-sm flex-1 ${step.isCompleted ? 'line-through text-muted-foreground' : ''}`}>
+                        {step.name}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5 opacity-0 group-hover:opacity-100"
+                        onClick={() => deleteStepMutation.mutate(step.id)}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+                
+                {/* Add Step Input */}
+                <div className="flex items-center gap-2">
+                  <Input
+                    placeholder="Add a step..."
+                    value={newStepName}
+                    onChange={(e) => setNewStepName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newStepName.trim() && editingItem) {
+                        addStepMutation.mutate({ scheduleItemId: editingItem.id, name: newStepName.trim() });
+                        setNewStepName("");
+                      }
+                    }}
+                    className="h-7 text-sm"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (newStepName.trim() && editingItem) {
+                        addStepMutation.mutate({ scheduleItemId: editingItem.id, name: newStepName.trim() });
+                        setNewStepName("");
+                      }
+                    }}
+                    disabled={!newStepName.trim()}
+                    className="h-7"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {editingItem && (
+              <div className="space-y-3 pt-4 border-t">
+                <Label className="text-sm font-medium">Linked Items</Label>
+                
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Checklists</span>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm" className="h-6 text-xs">
+                          <Plus className="w-3 h-3 mr-1" />
+                          Link Checklist
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="max-h-48 overflow-y-auto">
+                        {(availableChecklists as any[])
+                          .filter((cl: any) => !(editingItem.checklistIds as string[] || []).includes(cl.id))
+                          .map((cl: any) => (
+                            <DropdownMenuItem
+                              key={cl.id}
+                              onClick={() => {
+                                const newIds = [...(editingItem.checklistIds as string[] || []), cl.id];
+                                updateItemLinksMutation.mutate({ id: editingItem.id, checklistIds: newIds });
+                                setEditingItem({ ...editingItem, checklistIds: newIds });
+                              }}
+                            >
+                              {cl.name || cl.title}
+                            </DropdownMenuItem>
+                          ))}
+                        {(availableChecklists as any[]).filter((cl: any) => !(editingItem.checklistIds as string[] || []).includes(cl.id)).length === 0 && (
+                          <div className="px-2 py-1.5 text-xs text-muted-foreground">No checklists available</div>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                  {((editingItem.checklistIds as string[]) || []).length > 0 && (
+                    <div className="space-y-1">
+                      {((editingItem.checklistIds as string[]) || []).map((clId: string) => {
+                        const cl = (availableChecklists as any[]).find((c: any) => c.id === clId);
+                        return (
+                          <div key={clId} className="flex items-center justify-between py-0.5 px-2 rounded hover-elevate group">
+                            <span className="text-xs">{cl?.name || cl?.title || clId}</span>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-5 w-5 invisible group-hover:visible"
+                              onClick={() => {
+                                const newIds = ((editingItem.checklistIds as string[]) || []).filter(id => id !== clId);
+                                updateItemLinksMutation.mutate({ id: editingItem.id, checklistIds: newIds });
+                                setEditingItem({ ...editingItem, checklistIds: newIds });
+                              }}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Tasks</span>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm" className="h-6 text-xs">
+                          <Plus className="w-3 h-3 mr-1" />
+                          Link Task
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="max-h-48 overflow-y-auto">
+                        {(availableTasks as any[])
+                          .filter((t: any) => !(editingItem.taskIds as string[] || []).includes(t.id))
+                          .map((t: any) => (
+                            <DropdownMenuItem
+                              key={t.id}
+                              onClick={() => {
+                                const newIds = [...(editingItem.taskIds as string[] || []), t.id];
+                                updateItemLinksMutation.mutate({ id: editingItem.id, taskIds: newIds });
+                                setEditingItem({ ...editingItem, taskIds: newIds });
+                              }}
+                            >
+                              {t.title || t.name}
+                            </DropdownMenuItem>
+                          ))}
+                        {(availableTasks as any[]).filter((t: any) => !(editingItem.taskIds as string[] || []).includes(t.id)).length === 0 && (
+                          <div className="px-2 py-1.5 text-xs text-muted-foreground">No tasks available</div>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                  {((editingItem.taskIds as string[]) || []).length > 0 && (
+                    <div className="space-y-1">
+                      {((editingItem.taskIds as string[]) || []).map((taskId: string) => {
+                        const task = (availableTasks as any[]).find((t: any) => t.id === taskId);
+                        return (
+                          <div key={taskId} className="flex items-center justify-between py-0.5 px-2 rounded hover-elevate group">
+                            <span className="text-xs">{task?.title || task?.name || taskId}</span>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-5 w-5 invisible group-hover:visible"
+                              onClick={() => {
+                                const newIds = ((editingItem.taskIds as string[]) || []).filter(id => id !== taskId);
+                                updateItemLinksMutation.mutate({ id: editingItem.id, taskIds: newIds });
+                                setEditingItem({ ...editingItem, taskIds: newIds });
+                              }}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter className="border-t pt-4 mt-4">
+            {editingItem && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  duplicateItemMutation.mutate(editingItem.id);
+                  setShowItemDialog(false);
+                  setEditingItem(null);
+                }}
+                disabled={schedule?.status === "locked"}
+              >
+                <Copy className="w-4 h-4 mr-2" />
+                Duplicate
+              </Button>
+            )}
             <Button 
               variant="outline" 
               onClick={() => {
@@ -1830,6 +2330,143 @@ export default function Schedule() {
         projectId={projectId}
         scheduleId={schedule?.id}
       />
+
+      <Dialog open={showBaselineDialog} onOpenChange={setShowBaselineDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Create Baseline</DialogTitle>
+            <DialogDescription>
+              Save a snapshot of the current schedule for comparison.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label>Baseline Name</Label>
+              <Input
+                value={baselineName}
+                onChange={(e) => setBaselineName(e.target.value)}
+                placeholder={`Baseline ${new Date().toLocaleDateString('en-AU')}`}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowBaselineDialog(false)}>Cancel</Button>
+              <Button onClick={() => createBaselineMutation.mutate({ name: baselineName || `Baseline ${new Date().toLocaleDateString('en-AU')}` })}>
+                Create Baseline
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showWorkingDaysDialog} onOpenChange={setShowWorkingDaysDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Schedule Working Days</DialogTitle>
+            <DialogDescription>
+              Configure which days are working days and define company holidays.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6">
+            <div className="space-y-3">
+              <Label className="text-sm font-medium">Working Days</Label>
+              <p className="text-xs text-muted-foreground">Monday to Friday are always working days. Toggle Saturday and Sunday below.</p>
+              <div className="flex items-center gap-6">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <Checkbox
+                    checked={schedule?.includeSaturday ?? false}
+                    onCheckedChange={(checked) => {
+                      updateWorkingDaysMutation.mutate({
+                        includeSaturday: !!checked,
+                        includeSunday: schedule?.includeSunday ?? false,
+                      });
+                    }}
+                  />
+                  <span className="text-sm">Saturday</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <Checkbox
+                    checked={schedule?.includeSunday ?? false}
+                    onCheckedChange={(checked) => {
+                      updateWorkingDaysMutation.mutate({
+                        includeSaturday: schedule?.includeSaturday ?? false,
+                        includeSunday: !!checked,
+                      });
+                    }}
+                  />
+                  <span className="text-sm">Sunday</span>
+                </label>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium">Non-Working Days (Holidays)</Label>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const name = prompt("Holiday name (e.g., Christmas Day):");
+                    if (!name) return;
+                    const date = prompt("Date (YYYY-MM-DD):");
+                    if (!date) return;
+                    addNonWorkingDayMutation.mutate({ date, name, isRecurring: false });
+                  }}
+                >
+                  <Plus className="w-3.5 h-3.5 mr-1" />
+                  Add Holiday
+                </Button>
+              </div>
+              {(nonWorkingDays as any[]).length === 0 ? (
+                <p className="text-xs text-muted-foreground">No holidays configured. Add public holidays or company closures.</p>
+              ) : (
+                <div className="space-y-1 max-h-48 overflow-y-auto">
+                  {(nonWorkingDays as any[]).map((day: any) => (
+                    <div key={day.id} className="flex items-center justify-between py-1.5 px-2 rounded hover-elevate">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium">{day.name}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(day.date).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </span>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => deleteNonWorkingDayMutation.mutate(day.id)}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-3 pt-3 border-t">
+              <Label className="text-sm font-medium">Client Visibility</Label>
+              <p className="text-xs text-muted-foreground">Limit how far ahead clients can see schedule items. Leave empty to show all items.</p>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min={1}
+                  max={52}
+                  placeholder="All"
+                  value={schedule?.clientVisibilityWeeks ?? ""}
+                  onChange={(e) => {
+                    const val = e.target.value === "" ? null : parseInt(e.target.value);
+                    updateWorkingDaysMutation.mutate({
+                      includeSaturday: schedule?.includeSaturday ?? false,
+                      includeSunday: schedule?.includeSunday ?? false,
+                      clientVisibilityWeeks: val,
+                    });
+                  }}
+                  className="h-8 w-24 text-sm"
+                />
+                <span className="text-xs text-muted-foreground">weeks ahead</span>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </ScheduleViewProvider>
   );
 }

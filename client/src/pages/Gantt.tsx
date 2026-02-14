@@ -60,6 +60,7 @@ type ZoomLevel = 'day' | 'week' | 'month';
 
 interface GanttProps {
   onEditItem?: (item: ScheduleItem) => void;
+  baselineItems?: any[];
 }
 
 function SortableColumnItem({ 
@@ -140,7 +141,7 @@ function SortableTaskRow({
   );
 }
 
-export default function Gantt({ onEditItem }: GanttProps = {}) {
+export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {}) {
   const { projectId } = useParams();
   const { toast } = useToast();
   const weekStartDay = useWeekStartDay();
@@ -771,7 +772,9 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     days.forEach((day, idx) => {
       const weekStart = startOfWeek(day, { weekStartsOn: weekStartDay });
       const dayOfWeek = getDay(day);
-      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6; // Sunday or Saturday
+      // Sunday (0) is non-working only if includeSunday is false/not set
+      // Saturday (6) is non-working only if includeSaturday is false/not set
+      const isWeekend = (dayOfWeek === 0 && !schedule?.includeSunday) || (dayOfWeek === 6 && !schedule?.includeSaturday);
       
       // If we've moved to a new week, save the previous week
       if (weekStart.getTime() !== currentWeekStart.getTime() && currentWeekDays.length > 0) {
@@ -804,7 +807,7 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
     }
     
     return weeks;
-  }, [timelineStart, timelineEnd, zoomLevel, projectStartDate]);
+  }, [timelineStart, timelineEnd, zoomLevel, projectStartDate, schedule]);
 
   // Calculate pixels per day based on zoom level
   const pixelsPerDay = useMemo(() => {
@@ -1910,13 +1913,32 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
 
               {/* Vertical grid lines */}
               <div className="absolute top-0 bottom-0 left-0 right-0 pointer-events-none z-0">
-                {timelineHeaders.map((header, idx) => (
-                  <div
-                    key={idx}
-                    className="absolute top-0 bottom-0 border-r border-border/30"
-                    style={{ left: `${timelineHeaders.slice(0, idx + 1).reduce((sum, h) => sum + h.width, 0)}px` }}
-                  />
-                ))}
+                {groupedTimelineHeaders ? (
+                  // Day zoom: one line per day at exact 40px intervals
+                  groupedTimelineHeaders.flatMap((week, weekIdx) =>
+                    week.days.map((day, dayIdx) => {
+                      const totalDayIdx = groupedTimelineHeaders
+                        .slice(0, weekIdx)
+                        .reduce((sum, w) => sum + w.days.length, 0) + dayIdx;
+                      return (
+                        <div
+                          key={`grid-${weekIdx}-${dayIdx}`}
+                          className="absolute top-0 bottom-0 border-r border-border/30"
+                          style={{ left: `${(totalDayIdx + 1) * 40}px` }}
+                        />
+                      );
+                    })
+                  )
+                ) : (
+                  // Week/month zoom: use timelineHeaders
+                  timelineHeaders.map((header, idx) => (
+                    <div
+                      key={idx}
+                      className="absolute top-0 bottom-0 border-r border-border/30"
+                      style={{ left: `${timelineHeaders.slice(0, idx + 1).reduce((sum, h) => sum + h.width, 0)}px` }}
+                    />
+                  ))
+                )}
               </div>
 
               {/* Today line - lilac color */}
@@ -2156,6 +2178,28 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                       </div>
                     </div>
                       
+                      {/* Baseline ghost bar */}
+                      {baselineItems.length > 0 && (() => {
+                        const baselineItem = baselineItems.find((bi: any) => bi.scheduleItemId === parentItem.id);
+                        if (!baselineItem) return null;
+                        const blStart = getPosition(new Date(baselineItem.startDate));
+                        const blDuration = differenceInDays(new Date(baselineItem.endDate), new Date(baselineItem.startDate)) + 1;
+                        const blWidth = blDuration * pixelsPerDay;
+                        // Only show if dates differ
+                        if (blStart === parentStart && blWidth === parentWidth) return null;
+                        return (
+                          <div
+                            className="absolute h-2 rounded-sm border border-dashed border-purple-400/60 bg-purple-200/30 dark:bg-purple-800/20 pointer-events-none z-5"
+                            style={{
+                              left: `${blStart}px`,
+                              width: `${blWidth}px`,
+                              top: '28px',
+                            }}
+                            title={`Baseline: ${format(new Date(baselineItem.startDate), 'MMM d')} – ${format(new Date(baselineItem.endDate), 'MMM d')}`}
+                          />
+                        );
+                      })()}
+                      
                       {!nameFitsInBar && (
                         <div
                           className="absolute top-2 h-6 flex items-center pl-2 z-20"
@@ -2328,6 +2372,28 @@ export default function Gantt({ onEditItem }: GanttProps = {}) {
                               <div className="w-2 h-2 rounded-full bg-[#9b7fc7] hover:scale-150 transition-transform" />
                             </div>
                           </div>
+                          
+                          {/* Baseline ghost bar */}
+                          {baselineItems.length > 0 && (() => {
+                            const baselineItem = baselineItems.find((bi: any) => bi.scheduleItemId === childItem.id);
+                            if (!baselineItem) return null;
+                            const blStart = getPosition(new Date(baselineItem.startDate));
+                            const blDuration = differenceInDays(new Date(baselineItem.endDate), new Date(baselineItem.startDate)) + 1;
+                            const blWidth = blDuration * pixelsPerDay;
+                            // Only show if dates differ
+                            if (blStart === childStart && blWidth === childWidth) return null;
+                            return (
+                              <div
+                                className="absolute h-2 rounded-sm border border-dashed border-purple-400/60 bg-purple-200/30 dark:bg-purple-800/20 pointer-events-none z-5"
+                                style={{
+                                  left: `${blStart}px`,
+                                  width: `${blWidth}px`,
+                                  top: '28px',
+                                }}
+                                title={`Baseline: ${format(new Date(baselineItem.startDate), 'MMM d')} – ${format(new Date(baselineItem.endDate), 'MMM d')}`}
+                              />
+                            );
+                          })()}
                           
                           {!childNameFits && (
                             <div
