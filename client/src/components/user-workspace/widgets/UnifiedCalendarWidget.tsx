@@ -107,6 +107,62 @@ function parseTime(timeStr: string | null): number | null {
   return hours + (minutes || 0) / 60;
 }
 
+interface LayoutedEvent {
+  event: CalendarItem;
+  column: number;
+  totalColumns: number;
+}
+
+function layoutOverlappingEvents(events: CalendarItem[]): LayoutedEvent[] {
+  if (events.length === 0) return [];
+
+  const sorted = events
+    .map(e => {
+      const s = parseTime(e.startTime) ?? 0;
+      return { event: e, start: s, end: parseTime(e.endTime) ?? s + 1 };
+    })
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+
+  const clusters: typeof sorted[] = [];
+  let cluster = [sorted[0]];
+  let clusterEnd = sorted[0].end;
+
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i].start < clusterEnd) {
+      cluster.push(sorted[i]);
+      clusterEnd = Math.max(clusterEnd, sorted[i].end);
+    } else {
+      clusters.push(cluster);
+      cluster = [sorted[i]];
+      clusterEnd = sorted[i].end;
+    }
+  }
+  clusters.push(cluster);
+
+  const result: LayoutedEvent[] = [];
+
+  for (const cl of clusters) {
+    const cols: number[] = [];
+    const assignments: { event: CalendarItem; col: number }[] = [];
+
+    for (const item of cl) {
+      let col = 0;
+      while (cols[col] !== undefined && item.start < cols[col]) {
+        col++;
+      }
+      cols[col] = item.end;
+      assignments.push({ event: item.event, col });
+    }
+
+    const totalColumns = Math.max(...assignments.map(a => a.col)) + 1;
+    for (const a of assignments) {
+      result.push({ event: a.event, column: a.col, totalColumns });
+    }
+  }
+
+  return result;
+}
+
 function isEventPast(event: CalendarItem): boolean {
   const now = new Date();
   if (event.endTime) {
@@ -123,7 +179,7 @@ function isEventPast(event: CalendarItem): boolean {
   return isBefore(event.startDate, startOfDay(now));
 }
 
-function DayTimelineEvent({ event, colorMode, onClick }: { event: CalendarItem; colorMode: ColorMode; onClick?: () => void }) {
+function DayTimelineEvent({ event, colorMode, onClick, column = 0, totalColumns = 1 }: { event: CalendarItem; colorMode: ColorMode; onClick?: () => void; column?: number; totalColumns?: number }) {
   const startHour = parseTime(event.startTime);
   const endHour = parseTime(event.endTime);
 
@@ -136,12 +192,19 @@ function DayTimelineEvent({ event, colorMode, onClick }: { event: CalendarItem; 
   const baseColor = getEventColor(event, colorMode);
   const notionColors = generateNotionColors(baseColor);
 
+  const leftPx = 48;
+  const rightPx = 8;
+  const widthPercent = totalColumns > 1 ? `calc((100% - ${leftPx + rightPx}px) / ${totalColumns})` : `calc(100% - ${leftPx + rightPx}px)`;
+  const leftOffset = totalColumns > 1 ? `calc(${leftPx}px + (100% - ${leftPx + rightPx}px) * ${column} / ${totalColumns})` : `${leftPx}px`;
+
   return (
     <div
-      className={`absolute left-12 right-2 rounded-md px-2 py-1 overflow-hidden cursor-pointer hover-elevate ${isPast ? 'opacity-50' : ''}`}
+      className={`absolute rounded-md px-2 py-1 overflow-hidden cursor-pointer hover-elevate ${isPast ? 'opacity-50' : ''}`}
       style={{
         top: `${top}px`,
         height: `${height}px`,
+        left: leftOffset,
+        width: widthPercent,
         backgroundColor: notionColors.pastelBg,
         border: `1px solid rgba(0,0,0,0.08)`,
         borderLeftWidth: '3px',
@@ -202,7 +265,7 @@ function DayAllDayEvent({ event, colorMode, onClick }: { event: CalendarItem; co
   );
 }
 
-function WeekTimelineEvent({ event, colorMode, onClick }: { event: CalendarItem; colorMode: ColorMode; onClick?: () => void }) {
+function WeekTimelineEvent({ event, colorMode, onClick, column = 0, totalColumns = 1 }: { event: CalendarItem; colorMode: ColorMode; onClick?: () => void; column?: number; totalColumns?: number }) {
   const startHour = parseTime(event.startTime);
   const endHour = parseTime(event.endTime);
 
@@ -215,12 +278,17 @@ function WeekTimelineEvent({ event, colorMode, onClick }: { event: CalendarItem;
   const baseColor = getEventColor(event, colorMode);
   const notionColors = generateNotionColors(baseColor);
 
+  const widthPercent = totalColumns > 1 ? `${(100 / totalColumns)}%` : 'calc(100% - 4px)';
+  const leftPercent = totalColumns > 1 ? `${(column * 100 / totalColumns)}%` : '0';
+
   return (
     <div
-      className={`absolute left-0 right-1 rounded-sm px-1 py-0.5 overflow-hidden cursor-pointer hover-elevate text-[9px] ${isPast ? 'opacity-50' : ''}`}
+      className={`absolute rounded-sm px-1 py-0.5 overflow-hidden cursor-pointer hover-elevate text-[9px] ${isPast ? 'opacity-50' : ''}`}
       style={{
         top: `${top}px`,
         height: `${height}px`,
+        left: leftPercent,
+        width: widthPercent,
         backgroundColor: notionColors.pastelBg,
         border: `1px solid rgba(0,0,0,0.08)`,
         borderLeftWidth: '2px',
@@ -856,11 +924,13 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
               </div>
             )}
 
-            {timedEvents.map(event => (
+            {layoutOverlappingEvents(timedEvents).map(({ event, column, totalColumns }) => (
               <DayTimelineEvent
                 key={event.id}
                 event={event}
                 colorMode={colorMode}
+                column={column}
+                totalColumns={totalColumns}
                 onClick={() => handleEventClick(event)}
               />
             ))}
@@ -981,11 +1051,13 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
                     )}
 
                     <div className="absolute inset-0 px-0.5">
-                      {dayTimedEvents.map(event => (
+                      {layoutOverlappingEvents(dayTimedEvents).map(({ event, column, totalColumns }) => (
                         <WeekTimelineEvent
                           key={event.id}
                           event={event}
                           colorMode={colorMode}
+                          column={column}
+                          totalColumns={totalColumns}
                           onClick={() => handleEventClick(event)}
                         />
                       ))}
