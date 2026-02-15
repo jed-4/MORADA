@@ -39,18 +39,19 @@ interface QuickAddItem {
 }
 
 const quickAddItems: QuickAddItem[] = [
-  { id: 'memo', label: 'Memo', icon: 'create-outline', color: '#f59e0b' },
-  { id: 'note', label: 'Note', icon: 'document-text-outline', color: '#10b981' },
-  { id: 'task', label: 'Task', icon: 'checkbox-outline', color: '#8b5cf6' },
+  { id: 'note', label: 'Notes', icon: 'document-text-outline', color: '#10b981' },
+  { id: 'task', label: 'Tasks', icon: 'checkbox-outline', color: '#8b5cf6' },
   { id: 'site-diary', label: 'Site Diary', icon: 'book-outline', color: '#b196d2' },
+  { id: 'my-calendar', label: 'My Calendar', icon: 'calendar-outline', color: '#9b7fc4' },
 ];
 
 const moreItems: MoreItem[] = [
   { id: 'site-diary', label: 'Site Diary', icon: 'book', color: '#b196d2', action: 'navigate', screen: 'SiteDiaryList' },
   { id: 'tasks', label: 'My Tasks', icon: 'checkbox', color: '#8b5cf6', action: 'navigate', screen: 'Tasks' },
+  { id: 'my-calendar', label: 'My Calendar', icon: 'calendar', color: '#9b7fc4', action: 'navigate', screen: 'MyCalendar' },
   { id: 'messages', label: 'Messages', icon: 'chatbubbles', color: '#10b981', action: 'coming-soon' },
   { id: 'contacts', label: 'Contacts', icon: 'people', color: '#f59e0b', action: 'coming-soon' },
-  { id: 'schedule', label: 'Schedule', icon: 'calendar', color: '#ef4444', action: 'navigate', screen: 'Schedule' },
+  { id: 'schedule', label: 'Schedule', icon: 'calendar-outline', color: '#ef4444', action: 'navigate', screen: 'Schedule' },
   { id: 'checklists', label: 'Checklists', icon: 'checkmark-done', color: '#22c55e', action: 'navigate', screen: 'Checklists' },
   { id: 'settings', label: 'Settings', icon: 'settings', color: '#6b7280', action: 'coming-soon' },
 ];
@@ -65,10 +66,8 @@ export default function MoreScreen({ navigation }: Props) {
   const slideAnim = useRef(new Animated.Value(SHEET_HEIGHT)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  const [showMemoModal, setShowMemoModal] = useState(false);
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [showTaskModal, setShowTaskModal] = useState(false);
-  const [memoContent, setMemoContent] = useState('');
   const [noteTitle, setNoteTitle] = useState('');
   const [noteContent, setNoteContent] = useState('');
   const [taskTitle, setTaskTitle] = useState('');
@@ -126,6 +125,10 @@ export default function MoreScreen({ navigation }: Props) {
     if (item.action === 'coming-soon') {
       return;
     }
+    if (item.screen === 'MyCalendar') {
+      navigation.getParent()?.navigate('Calendar');
+      return;
+    }
     if (item.screen) {
       navigation.navigate(item.screen);
     }
@@ -133,10 +136,6 @@ export default function MoreScreen({ navigation }: Props) {
 
   const handleQuickAdd = (item: QuickAddItem) => {
     switch (item.id) {
-      case 'memo':
-        setMemoContent('');
-        setShowMemoModal(true);
-        break;
       case 'note':
         setNoteTitle('');
         setNoteContent('');
@@ -150,34 +149,9 @@ export default function MoreScreen({ navigation }: Props) {
       case 'site-diary':
         navigation.navigate('SiteDiaryList', { openCreate: true });
         break;
-    }
-  };
-
-  const saveMemo = async () => {
-    if (!memoContent.trim()) {
-      Alert.alert('Required', 'Please enter memo content.');
-      return;
-    }
-    setSaving(true);
-    try {
-      await apiRequest('/api/notes', {
-        method: 'POST',
-        body: JSON.stringify({
-          title: memoContent.trim().substring(0, 50),
-          content: memoContent.trim(),
-          type: 'note',
-          scope: 'personal',
-          category: 'General',
-          priority: 'low',
-        }),
-      });
-      setShowMemoModal(false);
-      setMemoContent('');
-      Alert.alert('Saved', 'Memo created successfully.');
-    } catch (error) {
-      Alert.alert('Error', 'Failed to save memo. Please try again.');
-    } finally {
-      setSaving(false);
+      case 'my-calendar':
+        navigation.getParent()?.navigate('Calendar');
+        break;
     }
   };
 
@@ -351,23 +325,6 @@ export default function MoreScreen({ navigation }: Props) {
           </View>
         </Animated.View>
       </View>
-
-      {renderQuickAddModal(
-        showMemoModal,
-        () => setShowMemoModal(false),
-        'New Memo',
-        saveMemo,
-        <TextInput
-          style={[styles.qaTextArea, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
-          value={memoContent}
-          onChangeText={setMemoContent}
-          placeholder="Jot something down..."
-          placeholderTextColor={colors.muted}
-          multiline
-          autoFocus
-          textAlignVertical="top"
-        />,
-      )}
 
       {renderQuickAddModal(
         showNoteModal,
