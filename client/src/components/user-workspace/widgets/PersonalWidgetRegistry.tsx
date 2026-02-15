@@ -29,6 +29,7 @@ import PersonalActivityWidget from "./PersonalActivityWidget";
 import PersonalAISummaryWidget from "./PersonalAISummaryWidget";
 import DayCalendarWidget from "./DayCalendarWidget";
 import WeekCalendarWidget from "./WeekCalendarWidget";
+import UnifiedCalendarWidget from "./UnifiedCalendarWidget";
 import ActionableItemsWidget from "./ActionableItemsWidget";
 import PinnedItemsWidget from "./PinnedItemsWidget";
 import MyProjectsWidget from "./MyProjectsWidget";
@@ -58,7 +59,7 @@ export const personalWidgetRegistry: Record<string, WidgetDefinition> = {
     name: "My Calendar",
     description: "Upcoming events and appointments",
     icon: Calendar,
-    component: PersonalCalendarWidget,
+    component: UnifiedCalendarWidget,
     defaultSize: "md",
     configurable: true,
   },
@@ -130,7 +131,7 @@ export const personalWidgetRegistry: Record<string, WidgetDefinition> = {
     name: "Day Calendar",
     description: "Scrollable timeline view of today's tasks, events, and schedule",
     icon: CalendarDays,
-    component: DayCalendarWidget,
+    component: UnifiedCalendarWidget,
     defaultSize: "md",
     configurable: true,
   },
@@ -139,7 +140,7 @@ export const personalWidgetRegistry: Record<string, WidgetDefinition> = {
     name: "Week Calendar",
     description: "7-day grid view of your week with all events at a glance",
     icon: CalendarRange,
-    component: WeekCalendarWidget,
+    component: UnifiedCalendarWidget,
     defaultSize: "lg",
     configurable: true,
   },

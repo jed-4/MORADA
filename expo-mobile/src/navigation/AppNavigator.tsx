@@ -14,6 +14,7 @@ import TimesheetsScreen from '../screens/TimesheetsScreen';
 import SiteDiaryScreen from '../screens/SiteDiaryScreen';
 import SiteDiaryListScreen from '../screens/SiteDiaryListScreen';
 import ScheduleScreen from '../screens/ScheduleScreen';
+import CalendarScreen from '../screens/CalendarScreen';
 import ChecklistsScreen from '../screens/ChecklistsScreen';
 import MoreScreen from '../screens/MoreScreen';
 
@@ -90,6 +91,7 @@ function MainTabs() {
           let iconName: keyof typeof Ionicons.glyphMap = 'home';
           if (route.name === 'Workspace') iconName = focused ? 'home' : 'home-outline';
           else if (route.name === 'Projects') iconName = focused ? 'briefcase' : 'briefcase-outline';
+          else if (route.name === 'Calendar') iconName = focused ? 'calendar' : 'calendar-outline';
           else if (route.name === 'Timesheets') iconName = focused ? 'time' : 'time-outline';
           else if (route.name === 'More') iconName = focused ? 'grid' : 'grid-outline';
           return <Ionicons name={iconName} size={size} color={color} />;
@@ -107,6 +109,7 @@ function MainTabs() {
     >
       <Tab.Screen name="Workspace" component={DashboardScreen} />
       <Tab.Screen name="Projects" component={ProjectsStack} />
+      <Tab.Screen name="Calendar" component={CalendarScreen} />
       <Tab.Screen name="Timesheets" component={TimesheetsScreen} />
       <Tab.Screen name="More" component={MoreStack} />
     </Tab.Navigator>
