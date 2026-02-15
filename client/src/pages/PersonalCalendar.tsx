@@ -24,7 +24,7 @@ import {
 import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
 import { TaskDetailModal } from "@/components/TaskDetailModal";
 import TaskEditModal from "@/components/TaskEditModal";
-import type { Task } from "@shared/schema";
+import type { Task, CompanySettings } from "@shared/schema";
 import { CalendarFilters as CalendarFiltersType } from "@/components/CalendarFilters";
 import { CalendarView } from "@/components/SavedViews";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -78,7 +78,6 @@ export default function PersonalCalendar() {
   const [filters, setFilters] = useState<CalendarFiltersType>({});
   const [calendarMode, setCalendarMode] = useState<string>("week");
   const [selectedViewId, setSelectedViewId] = useState<string | undefined>();
-  const [selectedUserId, setSelectedUserId] = useState<string | undefined>();
   const [showCreateViewDialog, setShowCreateViewDialog] = useState(false);
   const [showDeleteViewDialog, setShowDeleteViewDialog] = useState(false);
   const [viewToDelete, setViewToDelete] = useState<CalendarView | null>(null);
@@ -89,24 +88,7 @@ export default function PersonalCalendar() {
   const { user } = useAuth();
   const defaultViewCreationAttempted = useRef(false);
 
-  // Check if user has "View Team Calendars" permission
-  const { data: permissions = [] } = useQuery({
-    queryKey: ["/api/user-permissions"],
-    enabled: !!user,
-  });
-
-  const hasTeamCalendarPermission = permissions.some(
-    (p: any) => p.permission?.key === "projects.team_calendars"
-  );
-
-  // Fetch team members (other users in company)
-  const { data: teamMembers = [] } = useQuery({
-    queryKey: ["/api/users"],
-    enabled: hasTeamCalendarPermission && !!user,
-  });
-
-  const displayedUserId = selectedUserId || user?.id;
-  const displayedUser = teamMembers.find((u: any) => u.id === displayedUserId) || user;
+  const displayedUserId = user?.id;
 
   // Fetch tasks for displayed user
   const { data: userTasks = [], isLoading: isLoadingTasks } = useQuery({
@@ -123,6 +105,11 @@ export default function PersonalCalendar() {
   // Fetch projects for color coding
   const { data: projects = [] } = useQuery({
     queryKey: ["/api/projects"],
+  });
+
+  // Fetch company settings for brand colour (used for project-less events)
+  const { data: companySettings } = useQuery<CompanySettings>({
+    queryKey: ["/api/company-settings"],
   });
 
   // Fetch task templates to filter out tasks from inactive templates
@@ -153,8 +140,9 @@ export default function PersonalCalendar() {
         throw error;
       }
     },
-    retry: false,
-    enabled: displayedUserId === user?.id && isGoogleCalendarConnected,
+    retry: 1,
+    retryDelay: 2000,
+    enabled: !!user?.id && isGoogleCalendarConnected,
   });
 
   // Fetch task status options
@@ -409,9 +397,9 @@ export default function PersonalCalendar() {
           endDate: new Date(task.dueDate!),
           startTime: task.startTime,
           endTime: task.endTime,
-          color: project?.color,
+          color: project?.color || companySettings?.brandColor || "#3B82F6",
           projectId: task.projectId,
-          projectColor: project?.color,
+          projectColor: project?.color || companySettings?.brandColor || "#3B82F6",
           type: "task" as const,
           status: task.status,
           isCompleted,
@@ -421,10 +409,7 @@ export default function PersonalCalendar() {
         };
       });
 
-    // Merge with Google Calendar events (only if viewing own calendar)
-    const allEvents = displayedUserId === user?.id 
-      ? [...taskEvents, ...googleCalendarEvents]
-      : taskEvents;
+    const allEvents = [...taskEvents, ...googleCalendarEvents];
 
     // Apply filters
     let filtered = allEvents;
@@ -464,7 +449,7 @@ export default function PersonalCalendar() {
     }
 
     return filtered;
-  }, [userTasks, projects, completedOption, googleCalendarEvents, filters, displayedUserId, user?.id, taskTemplates]);
+  }, [userTasks, projects, completedOption, googleCalendarEvents, filters, displayedUserId, taskTemplates, companySettings?.brandColor]);
 
   const handleEventComplete = (eventId: string, completed: boolean) => {
     if (eventId.startsWith('google-')) {
@@ -614,9 +599,9 @@ export default function PersonalCalendar() {
   };
 
   const isLoading = isLoadingTasks;
-  const userName = displayedUser 
-    ? `${displayedUser.firstName || ''} ${displayedUser.lastName || ''}`.trim() || (displayedUserId === user?.id ? 'My' : 'User')
-    : (displayedUserId === user?.id ? 'My' : 'User');
+  const userName = user 
+    ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'My'
+    : 'My';
 
   if (isLoading) {
     return (
@@ -822,7 +807,7 @@ export default function PersonalCalendar() {
           )}
 
           {/* Event Types Filter */}
-          {displayedUserId === user?.id && (
+          {user?.id && (
             <Popover>
               <PopoverTrigger asChild>
                 <button
@@ -1148,31 +1133,8 @@ export default function PersonalCalendar() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            {/* Team Calendar Selector */}
-            {hasTeamCalendarPermission && teamMembers.length > 0 && (
-              <div className="space-y-2">
-                <Label>View Team Member Calendar</Label>
-                <Select 
-                  value={selectedUserId || user?.id} 
-                  onValueChange={(value) => setSelectedUserId(value === user?.id ? undefined : value)}
-                >
-                  <SelectTrigger data-testid="select-team-member">
-                    <SelectValue placeholder="Select team member" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {teamMembers.map((member: any) => (
-                      <SelectItem key={member.id} value={member.id}>
-                        {`${member.firstName || ''} ${member.lastName || ''}`.trim() || member.email}
-                        {member.id === user?.id && " (You)"}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
             {/* Google Calendar Error Alert */}
-            {googleCalendarError && displayedUserId === user?.id && (
+            {googleCalendarError && (
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription>

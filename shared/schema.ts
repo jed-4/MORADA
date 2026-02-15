@@ -973,6 +973,9 @@ export const companySettings = pgTable("company_settings", {
   timesheetAutoRound: boolean("timesheet_auto_round").notNull().default(false),
   timesheetDefaultBreak: numeric("timesheet_default_break", { precision: 4, scale: 2 }).notNull().default("0.00"),
   
+  // Company brand colour
+  brandColor: text("brand_color").default("#3B82F6"), // Company brand colour used for business-level events and throughout the app
+  
   // Proposal branding
   proposalPrimaryColor: text("proposal_primary_color").default("#3B82F6"), // Primary brand color for proposals
   proposalSecondaryColor: text("proposal_secondary_color").default("#10B981"), // Secondary color

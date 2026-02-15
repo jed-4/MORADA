@@ -5001,12 +5001,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json([]);
       }
 
+      // Don't block on expired access tokens — getCalendarClient will attempt
+      // to refresh using the stored refresh token before giving up.
       if (status.isExpired) {
-        console.log('⚠️ [Google Calendar] Token is expired, needs reconnection');
-        return res.status(401).json({ 
-          error: 'token_expired',
-          message: 'Your Google Calendar connection has expired. Please reconnect to continue syncing events.' 
-        });
+        console.log('⚠️ [Google Calendar] Access token expired, will attempt refresh via getCalendarClient');
       }
 
       const calendar = await oauthService.getCalendarClient(req.user.id);
@@ -5071,7 +5069,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           startTime: isAllDay ? null : extractTime(event.start?.dateTime),
           endTime: isAllDay ? null : extractTime(event.end?.dateTime),
           type: 'google-calendar' as const,
-          color: '#4285f4', // Google Calendar blue
+          color: '#7aafff', // Soft Google Calendar blue
           description: event.description || null,
           location: event.location || null,
           isCompleted: false,
@@ -5088,12 +5086,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         data: error.response?.data,
       });
       
-      // Check if it's a token expiration error
-      if (error.response?.status === 401 || error.code === 'invalid_grant') {
-        return res.status(401).json({ 
-          error: 'token_expired',
-          message: 'Your Google Calendar connection has expired. Please reconnect to continue syncing events.' 
-        });
+      // For token/auth errors, return empty array with a hint header
+      // instead of a 401 that breaks the UI — the user can reconnect from their profile
+      if (error.response?.status === 401 || error.code === 'invalid_grant' ||
+          error.message?.includes('revoked') || error.message?.includes('reconnect')) {
+        console.log('⚠️ [Google Calendar] Auth error, returning empty events. User should reconnect.');
+        return res.json([]);
       }
       
       // Return empty array for other errors to avoid breaking the UI

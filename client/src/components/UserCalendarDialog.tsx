@@ -3,13 +3,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
 } from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
-import { Calendar as CalendarIcon, AlertCircle } from "lucide-react";
+import { Calendar as CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
-import type { Task, ScheduleItem, Project, FieldCategoryWithOptions } from "@shared/schema";
+import type { Task, ScheduleItem, Project, FieldCategoryWithOptions, CompanySettings } from "@shared/schema";
 import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
 import { TaskDetailModal } from "@/components/TaskDetailModal";
 import TaskEditModal from "@/components/TaskEditModal";
@@ -54,6 +51,12 @@ export function UserCalendarDialog({ open, onOpenChange }: UserCalendarDialogPro
   // Fetch field categories for status handling
   const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
     queryKey: ["/api/field-categories"],
+    enabled: open,
+  });
+
+  // Fetch company settings for brand colour
+  const { data: companySettings } = useQuery<CompanySettings>({
+    queryKey: ["/api/company-settings"],
     enabled: open,
   });
 
@@ -117,9 +120,9 @@ export function UserCalendarDialog({ open, onOpenChange }: UserCalendarDialogPro
           endDate: new Date(task.dueDate!),
           startTime: task.startTime,
           endTime: task.endTime,
-          color: project?.color,
+          color: project?.color || companySettings?.brandColor || "#3B82F6",
           projectId: task.projectId,
-          projectColor: project?.color,
+          projectColor: project?.color || companySettings?.brandColor || "#3B82F6",
           type: "task" as const,
           status: task.status,
           isCompleted,
@@ -128,7 +131,7 @@ export function UserCalendarDialog({ open, onOpenChange }: UserCalendarDialogPro
 
     // Merge with Google Calendar events
     return [...taskEvents, ...googleCalendarEvents];
-  }, [userTasks, projects, completedOption, googleCalendarEvents]);
+  }, [userTasks, projects, completedOption, googleCalendarEvents, companySettings?.brandColor]);
 
   const handleEventComplete = (eventId: string, completed: boolean) => {
     // Don't allow completing Google Calendar events
@@ -177,48 +180,31 @@ export function UserCalendarDialog({ open, onOpenChange }: UserCalendarDialogPro
   if (isLoading) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-6xl h-[85vh] flex flex-col overflow-hidden" data-testid="user-calendar-dialog">
-          <DialogHeader className="flex-shrink-0">
-            <DialogTitle className="flex items-center gap-2">
-              <CalendarIcon className="h-5 w-5" />
-              My Calendar
-            </DialogTitle>
-          </DialogHeader>
+        <DialogContent className="max-w-6xl h-[85vh] flex flex-col overflow-hidden p-0" data-testid="user-calendar-dialog">
+          <div className="h-10 flex items-center px-4 border-b border-border/50 flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <CalendarIcon className="h-4 w-4 text-muted-foreground" />
+              <h2 className="text-sm font-semibold">My Calendar</h2>
+            </div>
+          </div>
           <div className="flex items-center justify-center h-full overflow-hidden">
-            <div className="text-muted-foreground">Loading calendar...</div>
+            <div className="text-muted-foreground text-sm">Loading calendar...</div>
           </div>
         </DialogContent>
       </Dialog>
     );
   }
 
-  const taskCount = events.filter(e => e.type === "task").length;
-  const googleEventCount = events.filter(e => e.type === "google-calendar").length;
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl h-[85vh] flex flex-col overflow-hidden" data-testid="user-calendar-dialog">
-        <DialogHeader className="flex-shrink-0">
-          <DialogTitle className="flex items-center gap-2 flex-wrap">
-            <CalendarIcon className="h-5 w-5" />
-            My Calendar
-            <Badge variant="secondary" className="ml-2" data-testid="event-count">
-              {taskCount} tasks
-            </Badge>
-            {googleEventCount > 0 && (
-              <Badge variant="outline" className="gap-1" style={{ borderColor: '#4285f4', color: '#4285f4' }}>
-                {googleEventCount} from Google
-              </Badge>
-            )}
-            {isGoogleCalendarError && (
-              <Badge variant="destructive" className="gap-1" data-testid="google-calendar-error-badge">
-                <AlertCircle className="h-3 w-3" />
-                Google Calendar error
-              </Badge>
-            )}
-          </DialogTitle>
-        </DialogHeader>
-        <div className="flex-1 min-h-0 overflow-hidden">
+      <DialogContent className="max-w-6xl h-[85vh] flex flex-col overflow-hidden p-0" data-testid="user-calendar-dialog">
+        <div className="h-10 flex items-center justify-between px-4 border-b border-border/50 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <CalendarIcon className="h-4 w-4 text-muted-foreground" />
+            <h2 className="text-sm font-semibold">My Calendar</h2>
+          </div>
+        </div>
+        <div className="flex-1 min-h-0 overflow-hidden px-1 pb-1">
           <EnhancedCalendar
             events={events}
             onEventClick={handleEventClick}

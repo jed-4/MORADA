@@ -10,7 +10,7 @@ import {
   User,
 } from "lucide-react";
 import { format, parseISO, isWithinInterval, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths } from "date-fns";
-import type { Task, ScheduleItem, Project, User as UserType, FieldCategoryWithOptions, Schedule } from "@shared/schema";
+import type { Task, ScheduleItem, Project, User as UserType, FieldCategoryWithOptions, Schedule, CompanySettings } from "@shared/schema";
 import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
 import { CalendarFilters as CalendarFiltersType } from "@/components/CalendarFilters";
 import { CalendarView } from "@/components/SavedViews";
@@ -86,6 +86,11 @@ export default function BusinessCalendar() {
   // Fetch all projects
   const { data: projects = [], isLoading: isLoadingProjects } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
+  });
+
+  // Fetch company settings for brand colour (used for project-less events)
+  const { data: companySettings } = useQuery<CompanySettings>({
+    queryKey: ["/api/company-settings"],
   });
 
   // Fetch tasks with date range filtering for calendar performance
@@ -334,9 +339,9 @@ export default function BusinessCalendar() {
           endDate: new Date(task.dueDate!),
           startTime: task.startTime,
           endTime: task.endTime,
-          color: project?.color,
+          color: project?.color || companySettings?.brandColor || "#3B82F6",
           projectId: task.projectId,
-          projectColor: project?.color,
+          projectColor: project?.color || companySettings?.brandColor || "#3B82F6",
           type: "task" as const,
           status: task.status,
           isCompleted,
@@ -360,9 +365,9 @@ export default function BusinessCalendar() {
           endDate: new Date(item.endDate),
           startTime: item.startTime,
           endTime: item.endTime,
-          color: item.color || project?.color,
+          color: item.color || project?.color || companySettings?.brandColor || "#3B82F6",
           projectId: project?.id,
-          projectColor: project?.color,
+          projectColor: project?.color || companySettings?.brandColor || "#3B82F6",
           type: "schedule" as const,
           status: item.status,
           isCompleted,
@@ -427,7 +432,7 @@ export default function BusinessCalendar() {
     }
 
     return filtered;
-  }, [allTasks, allScheduleItems, schedules, projects, completedOption, filters, selectedViewUserId]);
+  }, [allTasks, allScheduleItems, schedules, projects, completedOption, filters, selectedViewUserId, companySettings?.brandColor]);
 
   const handleEventComplete = (eventId: string, completed: boolean) => {
     const event = filteredEvents.find(e => e.id === eventId);

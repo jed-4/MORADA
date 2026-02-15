@@ -214,6 +214,7 @@ const companyInfoSchema = z.object({
   timesheetReminderThresholdHours: z.coerce.number().min(1).max(24).default(10),
   timesheetAutoRound: z.boolean().default(false),
   timesheetDefaultBreak: z.coerce.number().min(0).max(4).default(0),
+  brandColor: z.string().optional(),
   facebook: z.string().optional(),
   linkedin: z.string().optional(), 
   twitter: z.string().optional(),
@@ -246,6 +247,7 @@ export default function Settings() {
       timesheetReminderThresholdHours: 10,
       timesheetAutoRound: false,
       timesheetDefaultBreak: 0,
+      brandColor: "#3B82F6",
       facebook: "",
       linkedin: "",
       twitter: "",
@@ -285,6 +287,7 @@ export default function Settings() {
         timesheetReminderThresholdHours: companySettings.timesheetReminderThresholdHours ? parseFloat(companySettings.timesheetReminderThresholdHours as string) : 10,
         timesheetAutoRound: companySettings.timesheetAutoRound ?? false,
         timesheetDefaultBreak: companySettings.timesheetDefaultBreak ? parseFloat(companySettings.timesheetDefaultBreak as string) : 0,
+        brandColor: companySettings.brandColor || "#3B82F6",
         facebook: companySettings.facebook || "",
         linkedin: companySettings.linkedin || "",
         twitter: companySettings.twitter || "",
@@ -898,6 +901,55 @@ export default function Settings() {
                   )}
                 </div>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Brand Colour */}
+          <Card className="border-2">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-base font-semibold">Brand Colour</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Your company's primary brand colour. Used for business-level calendar events and throughout the app.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <FormField
+                control={companyForm.control}
+                name="brandColor"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Brand Colour</FormLabel>
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="w-9 h-9 rounded-md border border-border flex-shrink-0"
+                        style={{ backgroundColor: field.value || "#3B82F6" }}
+                      />
+                      <FormControl>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="color"
+                            {...field}
+                            value={field.value || "#3B82F6"}
+                            disabled={!isEditing}
+                            className="w-9 h-9 p-0.5 cursor-pointer"
+                            data-testid="brand-color-picker"
+                          />
+                          <Input
+                            type="text"
+                            value={field.value || "#3B82F6"}
+                            onChange={(e) => field.onChange(e.target.value)}
+                            disabled={!isEditing}
+                            className="w-28 font-mono text-sm"
+                            placeholder="#3B82F6"
+                            data-testid="brand-color-hex-input"
+                          />
+                        </div>
+                      </FormControl>
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </CardContent>
           </Card>
 
