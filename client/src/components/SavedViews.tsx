@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -25,9 +26,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Plus, MoreVertical, Edit, Trash2, Star } from "lucide-react";
+import { Plus, MoreVertical, Edit, Trash2, Star, Users, Share2 } from "lucide-react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import type { CalendarFilters } from "./CalendarFilters";
 
 export interface CalendarView {
@@ -62,7 +64,9 @@ export default function SavedViews({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedView, setSelectedView] = useState<CalendarView | null>(null);
   const [viewName, setViewName] = useState("");
+  const [sharedWithUsers, setSharedWithUsers] = useState<string[]>([]);
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const { data: views = [], isLoading } = useQuery({
     queryKey: ["/api/calendar-views", calendarType],
@@ -71,14 +75,22 @@ export default function SavedViews({
     },
   });
 
+  const { data: companyUsers = [] } = useQuery<any[]>({
+    queryKey: ["/api/users/assignable"],
+    enabled: calendarType === "business",
+  });
+
+  const otherUsers = companyUsers.filter((u: any) => u.id !== user?.id);
+
   const createViewMutation = useMutation({
-    mutationFn: async (data: { name: string; filters: CalendarFilters; calendarMode: string; isDefault: boolean }) => {
+    mutationFn: async (data: { name: string; filters: CalendarFilters; calendarMode: string; isDefault: boolean; sharedWith?: string[] }) => {
       return await apiRequest("/api/calendar-views", "POST", {
         name: data.name,
         calendarType,
         filters: data.filters,
         calendarMode: data.calendarMode,
         isDefault: data.isDefault,
+        sharedWith: data.sharedWith || [],
       });
     },
     onSuccess: (newView) => {
@@ -86,6 +98,7 @@ export default function SavedViews({
       toast({ title: "View created successfully" });
       setCreateDialogOpen(false);
       setViewName("");
+      setSharedWithUsers([]);
       onViewSelect(newView);
     },
     onError: () => {
@@ -94,11 +107,12 @@ export default function SavedViews({
   });
 
   const updateViewMutation = useMutation({
-    mutationFn: async (data: { id: string; name: string; filters: CalendarFilters; calendarMode: string }) => {
+    mutationFn: async (data: { id: string; name: string; filters: CalendarFilters; calendarMode: string; sharedWith?: string[] }) => {
       return await apiRequest(`/api/calendar-views/${data.id}`, "PATCH", {
         name: data.name,
         filters: data.filters,
         calendarMode: data.calendarMode,
+        sharedWith: data.sharedWith || [],
       });
     },
     onSuccess: (updatedView) => {
@@ -106,6 +120,7 @@ export default function SavedViews({
       toast({ title: "View updated successfully" });
       setEditDialogOpen(false);
       setViewName("");
+      setSharedWithUsers([]);
       setSelectedView(null);
       onViewSelect(updatedView);
     },
@@ -124,7 +139,7 @@ export default function SavedViews({
       setDeleteDialogOpen(false);
       setSelectedView(null);
       
-      const defaultView = views.find(v => v.isDefault);
+      const defaultView = views.find((v: CalendarView) => v.isDefault);
       if (defaultView && defaultView.id !== selectedView?.id) {
         onViewSelect(defaultView);
       }
@@ -146,6 +161,7 @@ export default function SavedViews({
       filters: currentFilters,
       calendarMode: currentCalendarMode,
       isDefault: isFirstView,
+      sharedWith: calendarType === "business" ? sharedWithUsers : [],
     });
   };
 
@@ -160,12 +176,14 @@ export default function SavedViews({
       name: viewName,
       filters: currentFilters,
       calendarMode: currentCalendarMode,
+      sharedWith: calendarType === "business" ? sharedWithUsers : [],
     });
   };
 
   const handleEditClick = (view: CalendarView) => {
     setSelectedView(view);
     setViewName(view.name);
+    setSharedWithUsers(view.sharedWith || []);
     setEditDialogOpen(true);
   };
 
@@ -175,17 +193,65 @@ export default function SavedViews({
   };
 
   const handleViewChange = (viewId: string) => {
-    const view = views.find(v => v.id === viewId);
+    const view = views.find((v: CalendarView) => v.id === viewId);
     if (view) {
       onViewSelect(view);
     }
   };
 
-  const currentView = views.find(v => v.id === selectedViewId);
+  const toggleUserSharing = (userId: string) => {
+    setSharedWithUsers(prev => 
+      prev.includes(userId) 
+        ? prev.filter(id => id !== userId) 
+        : [...prev, userId]
+    );
+  };
+
+  const currentView = views.find((v: CalendarView) => v.id === selectedViewId);
+  const isSharedView = currentView && currentView.userId !== user?.id;
 
   if (isLoading) {
     return <div className="text-sm text-muted-foreground">Loading views...</div>;
   }
+
+  const renderShareSection = () => {
+    if (calendarType !== "business" || otherUsers.length === 0) return null;
+    
+    return (
+      <div className="space-y-2">
+        <Label className="flex items-center gap-1.5">
+          <Share2 className="h-3.5 w-3.5" />
+          Share with team members
+        </Label>
+        <div className="text-xs text-muted-foreground mb-2">
+          Selected users will see this view in their Business Calendar
+        </div>
+        <div className="space-y-1.5 max-h-40 overflow-y-auto border rounded-md p-2">
+          {otherUsers.map((u: any) => (
+            <label key={u.id} className="flex items-center gap-2 cursor-pointer py-0.5">
+              <Checkbox
+                checked={sharedWithUsers.includes(u.id)}
+                onCheckedChange={() => toggleUserSharing(u.id)}
+              />
+              <span className="text-xs">
+                {u.firstName && u.lastName 
+                  ? `${u.firstName} ${u.lastName}` 
+                  : u.email}
+              </span>
+              {u.role && (
+                <Badge variant="secondary" className="text-[10px]">{u.role.name || u.role}</Badge>
+              )}
+            </label>
+          ))}
+        </div>
+        {sharedWithUsers.length > 0 && (
+          <div className="text-xs text-muted-foreground">
+            Shared with {sharedWithUsers.length} user{sharedWithUsers.length !== 1 ? 's' : ''}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="flex items-center gap-2">
@@ -194,23 +260,29 @@ export default function SavedViews({
           <SelectValue placeholder="Select a view">
             <div className="flex items-center gap-2">
               {currentView?.isDefault && <Star className="h-3 w-3 fill-current" />}
+              {isSharedView && <Users className="h-3 w-3" />}
               {currentView?.name || "Select a view"}
             </div>
           </SelectValue>
         </SelectTrigger>
         <SelectContent>
-          {views.map((view: CalendarView) => (
-            <SelectItem key={view.id} value={view.id}>
-              <div className="flex items-center gap-2">
-                {view.isDefault && <Star className="h-3 w-3 fill-current" />}
-                {view.name}
-              </div>
-            </SelectItem>
-          ))}
+          {views.map((view: CalendarView) => {
+            const isShared = view.userId !== user?.id;
+            return (
+              <SelectItem key={view.id} value={view.id}>
+                <div className="flex items-center gap-2">
+                  {view.isDefault && <Star className="h-3 w-3 fill-current" />}
+                  {isShared && <Users className="h-3 w-3 text-muted-foreground" />}
+                  {view.name}
+                  {isShared && <span className="text-[10px] text-muted-foreground">(shared)</span>}
+                </div>
+              </SelectItem>
+            );
+          })}
         </SelectContent>
       </Select>
 
-      {currentView && (
+      {currentView && !isSharedView && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button 
@@ -245,6 +317,7 @@ export default function SavedViews({
         size="sm" 
         onClick={() => {
           setViewName("");
+          setSharedWithUsers([]);
           setCreateDialogOpen(true);
         }}
         data-testid="button-create-view"
@@ -283,6 +356,7 @@ export default function SavedViews({
                 )}
               </div>
             </div>
+            {renderShareSection()}
           </div>
           <DialogFooter>
             <Button 
@@ -333,6 +407,7 @@ export default function SavedViews({
                 )}
               </div>
             </div>
+            {renderShareSection()}
           </div>
           <DialogFooter>
             <Button 

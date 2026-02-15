@@ -104,7 +104,7 @@ import { randomUUID } from "crypto";
 import { PasswordUtils } from "./utils/auth";
 import { generateRecurringTaskInstances, getRecurringTaskKey, generateNextRecurringInstance } from "./utils/recurringTasks";
 import { db } from "./db";
-import { eq, or, and, desc, asc, gte, lte, sql, inArray, isNull, gt } from "drizzle-orm";
+import { eq, or, and, desc, asc, gte, lte, sql, inArray, isNull, gt, not } from "drizzle-orm";
 import * as schema from "@shared/schema";
 import type { Timesheet, InsertTimesheet, TimesheetCostCode, InsertTimesheetCostCode } from "@shared/schema";
 import type { Defect, InsertDefect } from "@shared/schema";
@@ -15077,7 +15077,7 @@ export class DbStorage implements IStorage {
   // Calendar Views CRUD
   async getCalendarViews(userId: string, calendarType: "personal" | "business", companyId: string): Promise<CalendarView[]> {
     try {
-      return await db.select()
+      const ownViews = await db.select()
         .from(schema.calendarViews)
         .where(and(
           eq(schema.calendarViews.userId, userId),
@@ -15086,6 +15086,29 @@ export class DbStorage implements IStorage {
           eq(schema.calendarViews.isArchived, false)
         ))
         .orderBy(asc(schema.calendarViews.sortOrder));
+
+      if (calendarType === "business") {
+        const allCompanyViews = await db.select()
+          .from(schema.calendarViews)
+          .where(and(
+            eq(schema.calendarViews.calendarType, "business"),
+            eq(schema.calendarViews.companyId, companyId),
+            eq(schema.calendarViews.isArchived, false),
+            not(eq(schema.calendarViews.userId, userId)),
+          ))
+          .orderBy(asc(schema.calendarViews.sortOrder));
+
+        const sharedViews = allCompanyViews.filter(v => {
+          const sharedWith = v.sharedWith as string[] | null;
+          return sharedWith && Array.isArray(sharedWith) && sharedWith.includes(userId);
+        });
+
+        const ownIds = new Set(ownViews.map(v => v.id));
+        const uniqueShared = sharedViews.filter(v => !ownIds.has(v.id));
+        return [...ownViews, ...uniqueShared];
+      }
+
+      return ownViews;
     } catch (error) {
       console.error("Database error in getCalendarViews:", error);
       throw error;

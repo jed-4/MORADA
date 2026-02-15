@@ -122,6 +122,8 @@ export default function PersonalCalendar() {
   const { data: googleCalendarStatus } = useQuery<{ connected: boolean; email?: string }>({
     queryKey: ["/api/google-calendar/status"],
     enabled: !!user,
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
   });
 
   const isGoogleCalendarConnected = googleCalendarStatus?.connected === true;
@@ -140,8 +142,10 @@ export default function PersonalCalendar() {
         throw error;
       }
     },
-    retry: 1,
-    retryDelay: 2000,
+    retry: 2,
+    retryDelay: 3000,
+    staleTime: 3 * 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
     enabled: !!user?.id && isGoogleCalendarConnected,
   });
 
