@@ -163,17 +163,6 @@ export default function PersonalCalendar() {
     enabled: !!user,
   });
 
-  const cleanupDuplicatesMutation = useMutation({
-    mutationFn: async () => {
-      return await apiRequest("/api/calendar-views/cleanup-duplicates", "POST", {
-        calendarType: "personal",
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", "personal"] });
-    },
-  });
-
   const deleteTaskMutation = useMutation({
     mutationFn: async (taskId: string) => {
       await apiRequest(`/api/tasks/${taskId}`, "DELETE");
@@ -273,26 +262,15 @@ export default function PersonalCalendar() {
     generateTasks();
   }, [user]);
 
-  // Cleanup duplicates on first load, then create default view if none exists
   useEffect(() => {
     if (!user || isLoadingViews || defaultViewCreationAttempted.current) return;
+    if (createDefaultViewMutation.isPending) return;
     
-    defaultViewCreationAttempted.current = true;
-
-    // First cleanup any duplicates
-    if (views.length > 1) {
-      const defaultViews = views.filter((v: CalendarView) => v.isDefault && v.name === "All Events");
-      if (defaultViews.length > 1) {
-        cleanupDuplicatesMutation.mutate();
-        return;
-      }
-    }
-
-    // Then create default view if none exists
-    if (views.length === 0 && !createDefaultViewMutation.isPending) {
+    if (views.length === 0) {
+      defaultViewCreationAttempted.current = true;
       createDefaultViewMutation.mutate();
     }
-  }, [user, views, isLoadingViews]);
+  }, [user, isLoadingViews, views.length]);
 
   // Set selected view to default on load
   useEffect(() => {

@@ -841,6 +841,7 @@ export interface IStorage {
   getCalendarViews(userId: string, calendarType: "personal" | "business", companyId: string): Promise<CalendarView[]>;
   getCalendarView(id: string, companyId: string): Promise<CalendarView | undefined>;
   createCalendarView(view: InsertCalendarView): Promise<CalendarView>;
+  findOrCreateCalendarView(view: InsertCalendarView & { userId: string; companyId: string }): Promise<CalendarView>;
   updateCalendarView(id: string, view: Partial<InsertCalendarView>, companyId: string): Promise<CalendarView | undefined>;
   deleteCalendarView(id: string, companyId: string): Promise<boolean>;
 
@@ -5148,6 +5149,15 @@ export class MemStorage implements IStorage {
     } as CalendarView;
     this.calendarViews.set(id, structuredClone(newView));
     return structuredClone(newView);
+  }
+
+  async findOrCreateCalendarView(view: InsertCalendarView & { userId: string; companyId: string }): Promise<CalendarView> {
+    const existing = Array.from(this.calendarViews.values()).find(
+      (v) => v.userId === view.userId && v.companyId === view.companyId && 
+             v.calendarType === view.calendarType && v.name === view.name
+    );
+    if (existing) return structuredClone(existing);
+    return this.createCalendarView(view);
   }
 
   async updateCalendarView(id: string, view: Partial<InsertCalendarView>, companyId: string): Promise<CalendarView | undefined> {
@@ -15106,6 +15116,44 @@ export class DbStorage implements IStorage {
       return result[0];
     } catch (error) {
       console.error("Database error in createCalendarView:", error);
+      throw error;
+    }
+  }
+
+  async findOrCreateCalendarView(view: InsertCalendarView & { userId: string; companyId: string }): Promise<CalendarView> {
+    try {
+      const existing = await db.select()
+        .from(schema.calendarViews)
+        .where(and(
+          eq(schema.calendarViews.userId, view.userId),
+          eq(schema.calendarViews.companyId, view.companyId),
+          eq(schema.calendarViews.calendarType, view.calendarType),
+          eq(schema.calendarViews.name, view.name),
+        ))
+        .limit(1);
+      if (existing.length > 0) return existing[0];
+      try {
+        const result = await db.insert(schema.calendarViews)
+          .values(view)
+          .returning();
+        return result[0];
+      } catch (insertError: any) {
+        if (insertError.code === '23505') {
+          const retry = await db.select()
+            .from(schema.calendarViews)
+            .where(and(
+              eq(schema.calendarViews.userId, view.userId),
+              eq(schema.calendarViews.companyId, view.companyId),
+              eq(schema.calendarViews.calendarType, view.calendarType),
+              eq(schema.calendarViews.name, view.name),
+            ))
+            .limit(1);
+          if (retry.length > 0) return retry[0];
+        }
+        throw insertError;
+      }
+    } catch (error) {
+      console.error("Database error in findOrCreateCalendarView:", error);
       throw error;
     }
   }

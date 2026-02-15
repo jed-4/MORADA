@@ -16473,8 +16473,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
+      const data = validationResult.data;
+      
+      if (data.name === "All Events" && data.calendarType) {
+        const view = await storage.findOrCreateCalendarView({
+          ...data,
+          userId: req.user!.id,
+          companyId: req.user!.companyId!,
+        });
+        return res.status(200).json(view);
+      }
+      
       const view = await storage.createCalendarView({
-        ...validationResult.data,
+        ...data,
         userId: req.user!.id,
         companyId: req.user!.companyId!,
       });

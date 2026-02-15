@@ -142,17 +142,6 @@ export default function BusinessCalendar() {
     enabled: !!user,
   });
 
-  const cleanupDuplicatesMutation = useMutation({
-    mutationFn: async () => {
-      return await apiRequest("/api/calendar-views/cleanup-duplicates", "POST", {
-        calendarType: "business",
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", "business"] });
-    },
-  });
-
   const createDefaultViewMutation = useMutation({
     mutationFn: async () => {
       return await apiRequest("/api/calendar-views", "POST", {
@@ -169,26 +158,15 @@ export default function BusinessCalendar() {
     },
   });
 
-  // Cleanup duplicates on first load, then create default view if none exists
   useEffect(() => {
     if (!user || isLoadingViews || defaultViewCreationAttempted.current) return;
+    if (createDefaultViewMutation.isPending) return;
     
-    defaultViewCreationAttempted.current = true;
-
-    // First cleanup any duplicates
-    if (views.length > 1) {
-      const defaultViews = views.filter((v: CalendarView) => v.isDefault && v.name === "All Events");
-      if (defaultViews.length > 1) {
-        cleanupDuplicatesMutation.mutate();
-        return;
-      }
-    }
-
-    // Then create default view if none exists
-    if (views.length === 0 && !createDefaultViewMutation.isPending) {
+    if (views.length === 0) {
+      defaultViewCreationAttempted.current = true;
       createDefaultViewMutation.mutate();
     }
-  }, [user, views, isLoadingViews]);
+  }, [user, isLoadingViews, views.length]);
 
   // Set selected view to default on load
   useEffect(() => {
