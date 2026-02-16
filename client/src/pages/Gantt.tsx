@@ -183,8 +183,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
   } | null>(null);
   const draggingRef = useRef(dragging);
   draggingRef.current = dragging;
-  const allItemsRef = useRef(allItems);
-  allItemsRef.current = allItems;
+  const allItemsRef = useRef<ScheduleItem[]>([]);
   const projectIdRef = useRef(projectId);
   projectIdRef.current = projectId;
   const [hoveredBar, setHoveredBar] = useState<string | null>(null);
@@ -392,6 +391,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
   const { data: allItems = [], isLoading } = useQuery<ScheduleItem[]>({
     queryKey: [`/api/projects/${projectId}/schedule-items`],
   });
+  allItemsRef.current = allItems;
 
   // Fetch note counts for all schedule items
   const { data: noteCounts = {} } = useQuery<Record<string, number>>({
