@@ -23,6 +23,7 @@ interface ScheduleViewContextType {
   setShowItemDialog: (show: boolean) => void;
   setEditingItem: (item: ScheduleItem | null) => void;
   setPendingAutoLink?: (link: { successorId: string } | null) => void;
+  scrollToTodayRef?: React.MutableRefObject<(() => void) | null>;
 }
 
 const ScheduleViewContext = createContext<ScheduleViewContextType | undefined>(undefined);

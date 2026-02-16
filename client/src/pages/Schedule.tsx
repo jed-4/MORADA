@@ -185,6 +185,8 @@ export default function Schedule() {
 
   const scheduleRef = useRef(schedule);
   const isUnlockedRef = useRef(isUnlocked);
+  const scrollToTodayRef = useRef<(() => void) | null>(null);
+  const calendarInitialized = useRef(false);
   useEffect(() => { scheduleRef.current = schedule; }, [schedule]);
   useEffect(() => { isUnlockedRef.current = isUnlocked; }, [isUnlocked]);
 
@@ -269,6 +271,17 @@ export default function Schedule() {
     queryKey: [`/api/projects/${projectId}/schedule-items`],
     enabled: !!projectId,
   });
+
+  useEffect(() => {
+    if (!calendarInitialized.current && scheduleItems.length > 0) {
+      calendarInitialized.current = true;
+      const earliest = scheduleItems.reduce((min, item) => {
+        const d = new Date(item.startDate);
+        return d < min ? d : min;
+      }, new Date(scheduleItems[0].startDate));
+      setCalendarDate(earliest);
+    }
+  }, [scheduleItems]);
 
   // Fetch note counts for all schedule items
   const { data: noteCounts = {} } = useQuery<Record<string, number>>({
@@ -1103,6 +1116,7 @@ export default function Schedule() {
         setShowItemDialog,
         setEditingItem,
         setPendingAutoLink,
+        scrollToTodayRef,
       }}
     >
       <div className="flex flex-col h-full bg-background rounded-lg border overflow-hidden">
@@ -1396,6 +1410,7 @@ export default function Schedule() {
             {/* Today Button - only show for Gantt/List */}
             {activeView !== 'calendar' && (
               <button
+                onClick={() => scrollToTodayRef.current?.()}
                 className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
                 data-testid="button-scroll-to-today"
               >

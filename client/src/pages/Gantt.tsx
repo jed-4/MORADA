@@ -160,6 +160,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     setShowItemDialog,
     setEditingItem: setEditingItemContext,
     setPendingAutoLink,
+    scrollToTodayRef,
   } = useScheduleView();
   
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -217,6 +218,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     y: number;
     item: ScheduleItem;
   } | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
   
   // Inline editing state for task name in left table
   const [inlineEditId, setInlineEditId] = useState<number | null>(null);
@@ -1514,6 +1516,36 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     });
   };
 
+  useEffect(() => {
+    if (scrollToTodayRef) {
+      scrollToTodayRef.current = () => {
+        if (!timelineRef.current) return;
+        const todayPos = differenceInDays(new Date(), timelineStart) * pixelsPerDay;
+        const containerWidth = timelineRef.current.clientWidth;
+        timelineRef.current.scrollLeft = todayPos - containerWidth / 2;
+      };
+    }
+    return () => {
+      if (scrollToTodayRef) scrollToTodayRef.current = null;
+    };
+  }, [scrollToTodayRef, timelineStart, pixelsPerDay]);
+
+  useEffect(() => {
+    if (contextMenu && contextMenuRef.current) {
+      const rect = contextMenuRef.current.getBoundingClientRect();
+      const viewportHeight = window.innerHeight;
+      if (rect.bottom > viewportHeight) {
+        const adjustedY = Math.max(0, contextMenu.y - (rect.bottom - viewportHeight) - 8);
+        setContextMenu(prev => prev ? { ...prev, y: adjustedY } : null);
+      }
+      const viewportWidth = window.innerWidth;
+      if (rect.right > viewportWidth) {
+        const adjustedX = Math.max(0, contextMenu.x - (rect.right - viewportWidth) - 8);
+        setContextMenu(prev => prev ? { ...prev, x: adjustedX } : null);
+      }
+    }
+  }, [contextMenu?.x, contextMenu?.y]);
+
   // Scroll synchronization between left panel and timeline
   const handleLeftPanelScroll = (e: React.UIEvent<HTMLDivElement>) => {
     if (isScrollSyncing.current) return;
@@ -2103,7 +2135,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                     {/* Completion column */}
                     {visibleColumns.completion && (
                       <div style={{ width: columnWidths.completion }} className="flex items-center justify-center flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
-                        <span className="text-xs text-muted-foreground">{item.progressPercent || 0}%</span>
+                        <span className="text-xs text-muted-foreground">{isParent && childItems.length > 0 ? Math.round(childItems.reduce((sum, c) => sum + (c.progressPercent ?? 0), 0) / childItems.length) : (item.progressPercent || 0)}%</span>
                       </div>
                     )}
 
@@ -2416,7 +2448,9 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
 
                 const displayProgress = progressDrag?.itemId === item.id 
                   ? progressDrag.currentProgress 
-                  : (item.progressPercent ?? 0);
+                  : hasChildren 
+                    ? Math.round(childItems.reduce((sum, c) => sum + (c.progressPercent ?? 0), 0) / (childItems.length || 1))
+                    : (item.progressPercent ?? 0);
 
                 return (
                   <div key={item.id} style={{ height: `${ROW_HEIGHT}px` }} className="relative group/row">
@@ -2513,6 +2547,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                           }}
                         />
                         
+                        {!hasChildren && (
                         <div
                           className={`absolute bottom-0 left-0 right-0 h-2 opacity-0 group-hover/bar:opacity-100 transition-opacity ${schedule?.status === 'offline' ? 'pointer-events-none' : 'cursor-ew-resize'}`}
                           onMouseDown={(e) => {
@@ -2557,6 +2592,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                             data-testid={`progress-thumb-${item.id}`}
                           />
                         </div>
+                        )}
                       </div>
                       
                       <div
@@ -3092,6 +3128,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
       {/* Right-click context menu for Gantt bars */}
       {contextMenu && (
         <div
+          ref={contextMenuRef}
           className="fixed z-50 min-w-[180px] rounded-md border-2 bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-80"
           style={{
             left: contextMenu.x,
