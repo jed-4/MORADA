@@ -1,0 +1,27 @@
+- [ ]  1 - Create child item from schedule modal/3 dot menu/right click context menu
+- [ ]  2 - CONFIRM - 25 - US-SCH-100: Mobile Schedule Screen - edit/create modal needs to match the web app details
+- [ ]  3 - add child item, with default start date of the parent item that was right clicked
+- [ ]  4 - Add predecessor, with default of 0 day lag for the item that was right clicked
+- [ ]  5 - Visual distinction for a parent gantt bar, maybe slimline half high bar?
+- [ ]  6 - Default duration 1 day
+- [ ]  7 - Modal needs same details as Buildern
+- [ ]  8 - Change title of parent, removes the brackets
+- [ ]  9 - Duration above the fold
+- [ ]  10 - Less padding on rows. Less height
+- [ ]  11 - Priority not necessary
+- [ ]  12 - refresh page to reset ordering, by start date
+- [ ]  13 - Drag in item into another to create a parent item
+- [ ]  14 - Some items have the wrong name to whats in the table on the left. drag and drop down table on left but not gantt bars, and moving an item into a parent items changes it all around
+- [ ]  15 - Dependancy needs to appear instantly
+- [ ]  16 - When sliding to dependancy items, they move in sync, but the dependancy line does not, it needs to
+- [ ]  17 - Search bar show ’x’ to clear
+- [ ]  18 - Item updated, gets annoying
+- [ ]  19 - Week bar should show the month
+- [ ]  20 - Cant scroll to the bottom
+- [ ]  21 - When dragging an item, when the cursor hits the edge, it gets out of whack
+- [ ]  22 - double click gantt bar to open modal
+- [ ]  23 - dependancy modal, changing days doesnt push the predecessor along to the delay. and shouldnt show the days on the dependancy line.
+- [ ]  24 - When moving everything in a dependancy line, all items and the dependancy lines should move once grabbed to drag and drop
+- [ ]  25 - The schedulle doesnt appear to acknowledge the saturday sunday non working days.
+- [ ]  26 - The predecessor part of the edit modal needs to have an option to show number of days lag
+- [ ]  27 - It didnt ask me to lock a schedule when i clicked out of it. unlocking opens edit mode, and you cant leave the screen without saving it
