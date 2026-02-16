@@ -12,7 +12,7 @@ import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, v
 import { CSS } from '@dnd-kit/utilities';
 import { useScheduleView } from "@/contexts/ScheduleViewContext";
 import { format, differenceInDays, addDays, startOfWeek, eachWeekOfInterval, eachDayOfInterval, getISOWeek, endOfWeek, getDay } from "date-fns";
-import { useState, useRef, useMemo, useEffect } from "react";
+import { useState, useRef, useMemo, useEffect, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -181,11 +181,21 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     viewportStartX?: number;
     viewportStartY?: number;
   } | null>(null);
+  const draggingRef = useRef(dragging);
+  draggingRef.current = dragging;
+  const allItemsRef = useRef(allItems);
+  allItemsRef.current = allItems;
+  const projectIdRef = useRef(projectId);
+  projectIdRef.current = projectId;
   const [hoveredBar, setHoveredBar] = useState<string | null>(null);
-  const [hoveredAnchor, setHoveredAnchor] = useState<'start' | 'end' | null>(null); // Which anchor is being hovered for drop
+  const hoveredBarRef = useRef(hoveredBar);
+  hoveredBarRef.current = hoveredBar;
+  const [hoveredAnchor, setHoveredAnchor] = useState<'start' | 'end' | null>(null);
+  const hoveredAnchorRef = useRef(hoveredAnchor);
+  hoveredAnchorRef.current = hoveredAnchor;
   const [ripple, setRipple] = useState<{ x: number; y: number } | null>(null);
   const [selectedTask, setSelectedTask] = useState<ScheduleItem | null>(null);
-  const [hoveredDependency, setHoveredDependency] = useState<string | null>(null); // "itemId-predId" format
+  const [hoveredDependency, setHoveredDependency] = useState<string | null>(null);
   const [selectedDependency, setSelectedDependency] = useState<{
     itemId: string;
     itemName: string;
@@ -194,9 +204,10 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     type: string;
     lag: number;
   } | null>(null);
-  const [scrollVersion, setScrollVersion] = useState(0); // Force re-render on scroll during dependency drag
-  const lastCursorPosition = useRef<{ x: number; y: number } | null>(null); // Track last cursor for scroll updates
-  const dragHappened = useRef<boolean>(false); // Track if actual drag occurred (to distinguish from clicks)
+  const [scrollVersion, setScrollVersion] = useState(0);
+  const lastCursorPosition = useRef<{ x: number; y: number } | null>(null);
+  const dragHappened = useRef<boolean>(false);
+  const dragStartTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // Context menu state for right-click on bars
   const [contextMenu, setContextMenu] = useState<{
@@ -972,15 +983,25 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     }, 300);
   };
 
-  // Drag handlers
+  const pixelsPerDayRef = useRef(pixelsPerDay);
+  pixelsPerDayRef.current = pixelsPerDay;
+  const snapToWorkingDayRef = useRef(snapToWorkingDay);
+  snapToWorkingDayRef.current = snapToWorkingDay;
+  const countWorkingDaysRef = useRef(countWorkingDays);
+  countWorkingDaysRef.current = countWorkingDays;
+  const addWorkingDaysRef = useRef(addWorkingDays);
+  addWorkingDaysRef.current = addWorkingDays;
+  const updateItemMutationRef = useRef(updateItemMutation);
+  updateItemMutationRef.current = updateItemMutation;
+  const createDependencyMutationRef = useRef(createDependencyMutation);
+  createDependencyMutationRef.current = createDependencyMutation;
+
   const handleBarMouseDown = (
     e: React.MouseEvent,
     item: ScheduleItem,
     dragType: 'move' | 'resize-left' | 'resize-right' | 'dependency' = 'move',
     anchor?: 'start' | 'end'
   ) => {
-    // Only start drag on left mouse button (button 0)
-    // Right-click (button 2) should trigger context menu instead
     if (e.button !== 0) return;
     
     e.preventDefault();
@@ -1008,64 +1029,52 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     });
   };
 
-  // Attach global listeners with proper cleanup
   useEffect(() => {
-    if (!dragging) return;
-
     const handleMouseMove = (e: MouseEvent) => {
-      if (!dragging) return;
+      const drag = draggingRef.current;
+      if (!drag) return;
 
-      // Mark that actual drag movement happened (to distinguish from clicks)
-      const deltaX = Math.abs(e.clientX - dragging.startX);
-      const deltaY = Math.abs(e.clientY - dragging.startY);
+      const deltaX = Math.abs(e.clientX - drag.startX);
+      const deltaY = Math.abs(e.clientY - drag.startY);
       if (deltaX > 3 || deltaY > 3) {
         dragHappened.current = true;
       }
 
-      // Edge scrolling - auto-scroll timeline when dragging near viewport edges
-      if (timelineRef.current && (dragging.type === 'move' || dragging.type === 'resize-left' || dragging.type === 'resize-right')) {
+      if (timelineRef.current && (drag.type === 'move' || drag.type === 'resize-left' || drag.type === 'resize-right')) {
         const rect = timelineRef.current.getBoundingClientRect();
-        const edgeZone = 60; // pixels from edge to trigger scroll
-        const scrollSpeed = 8; // pixels per frame
+        const edgeZone = 60;
+        const scrollSpeed = 8;
         
         if (e.clientX < rect.left + edgeZone) {
-          // Near left edge - scroll left
           timelineRef.current.scrollLeft -= scrollSpeed;
         } else if (e.clientX > rect.right - edgeZone) {
-          // Near right edge - scroll right
           timelineRef.current.scrollLeft += scrollSpeed;
         }
       }
 
-      // For dependency drag, store VIEWPORT coordinates in state
-      // The timeline-relative conversion will happen during render using live scroll offset
       let currentX = e.clientX;
       let currentY = e.clientY;
       
-      // Store cursor position in ref for scroll updates
       lastCursorPosition.current = { x: currentX, y: currentY };
 
-      // Calculate scroll-aware deltaX: accounts for auto-scroll displacement
-      // Without this, the bar drifts away from the cursor during edge-scrolling
-      const scrollDelta = (timelineRef.current?.scrollLeft ?? 0) - dragging.startScrollLeft;
-      const currentDeltaX = (e.clientX - dragging.startX) + scrollDelta;
+      const scrollDelta = (timelineRef.current?.scrollLeft ?? 0) - drag.startScrollLeft;
+      const currentDeltaX = (e.clientX - drag.startX) + scrollDelta;
 
       setDragging(prev => prev ? { ...prev, currentX, currentY, currentDeltaX } : null);
     };
 
     const handleMouseUp = async (e: MouseEvent) => {
-      if (!dragging || !timelineRef.current) {
+      const drag = draggingRef.current;
+      if (!drag || !timelineRef.current) {
         setDragging(null);
         return;
       }
 
-      // Scroll-aware delta: accounts for scroll displacement during drag
-      const scrollDelta = (timelineRef.current?.scrollLeft ?? 0) - dragging.startScrollLeft;
-      const deltaX = (e.clientX - dragging.startX) + scrollDelta;
-      const deltaDays = Math.round(deltaX / pixelsPerDay);
-      const cacheKey = `/api/projects/${projectId}/schedule-items`;
+      const scrollDelta = (timelineRef.current?.scrollLeft ?? 0) - drag.startScrollLeft;
+      const deltaX = (e.clientX - drag.startX) + scrollDelta;
+      const deltaDays = Math.round(deltaX / pixelsPerDayRef.current);
+      const cacheKey = `/api/projects/${projectIdRef.current}/schedule-items`;
 
-      // Helper to optimistically update cache for instant dependency line updates
       const updateCacheOptimistically = (itemId: number, newStart: Date, newEnd: Date) => {
         queryClient.setQueryData<ScheduleItem[]>([cacheKey], (oldData) => {
           if (!oldData) return oldData;
@@ -1077,31 +1086,34 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
         });
       };
 
-      if (dragging.type === 'move') {
-        if (deltaDays !== 0) {
-          // Preserve working-day duration when moving
-          const workingDuration = countWorkingDays(dragging.originalStart, dragging.originalEnd);
-          
-          let newStart = addDays(dragging.originalStart, deltaDays);
-          // Snap start based on drag direction
-          const snapDir = deltaDays > 0 ? 'forward' : 'backward';
-          newStart = snapToWorkingDay(newStart, snapDir);
-          // Compute end by adding working-day duration from snapped start
-          let newEnd = addWorkingDays(newStart, workingDuration);
-          
-          const totalOffset = differenceInDays(newStart, dragging.originalStart);
+      const currentItems = allItemsRef.current;
+      const snap = snapToWorkingDayRef.current;
+      const countWD = countWorkingDaysRef.current;
+      const addWD = addWorkingDaysRef.current;
+      const mutate = updateItemMutationRef.current;
 
-          const dependentItems = allItems.filter(item => 
-            item.dependencies?.some((dep: any) => dep.id === dragging.id)
+      if (drag.type === 'move') {
+        if (deltaDays !== 0) {
+          const workingDuration = countWD(drag.originalStart, drag.originalEnd);
+          
+          let newStart = addDays(drag.originalStart, deltaDays);
+          const snapDir = deltaDays > 0 ? 'forward' : 'backward';
+          newStart = snap(newStart, snapDir);
+          let newEnd = addWD(newStart, workingDuration);
+          
+          const totalOffset = differenceInDays(newStart, drag.originalStart);
+
+          const dependentItems = currentItems.filter(item => 
+            item.dependencies?.some((dep: any) => dep.id === drag.id)
           );
 
-          updateCacheOptimistically(dragging.id, newStart, newEnd);
+          updateCacheOptimistically(drag.id, newStart, newEnd);
           
           const snapDepItem = (depItem: ScheduleItem) => {
-            const depWorkingDuration = countWorkingDays(new Date(depItem.startDate), new Date(depItem.endDate));
+            const depWorkingDuration = countWD(new Date(depItem.startDate), new Date(depItem.endDate));
             let depNewStart = addDays(new Date(depItem.startDate), totalOffset);
-            depNewStart = snapToWorkingDay(depNewStart, snapDir);
-            const depNewEnd = addWorkingDays(depNewStart, depWorkingDuration);
+            depNewStart = snap(depNewStart, snapDir);
+            const depNewEnd = addWD(depNewStart, depWorkingDuration);
             return { depNewStart, depNewEnd };
           };
           
@@ -1110,65 +1122,58 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
             updateCacheOptimistically(depItem.id, depNewStart, depNewEnd);
           }
 
-          updateItemMutation.mutate({
-            id: dragging.id,
+          mutate.mutate({
+            id: drag.id,
             startDate: newStart,
             endDate: newEnd,
           });
           
           for (const depItem of dependentItems) {
             const { depNewStart, depNewEnd } = snapDepItem(depItem);
-            updateItemMutation.mutate({
+            mutate.mutate({
               id: depItem.id,
               startDate: depNewStart,
               endDate: depNewEnd,
             });
           }
         }
-      } else if (dragging.type === 'resize-left') {
+      } else if (drag.type === 'resize-left') {
         if (deltaDays !== 0) {
-          let newStart = addDays(dragging.originalStart, deltaDays);
-          // Snap start: if extending left (deltaDays < 0), snap backward; if shrinking (>0), snap forward
-          newStart = snapToWorkingDay(newStart, deltaDays < 0 ? 'backward' : 'forward');
+          let newStart = addDays(drag.originalStart, deltaDays);
+          newStart = snap(newStart, deltaDays < 0 ? 'backward' : 'forward');
           
-          if (newStart <= dragging.originalEnd) {
-            updateCacheOptimistically(dragging.id, newStart, dragging.originalEnd);
+          if (newStart <= drag.originalEnd) {
+            updateCacheOptimistically(drag.id, newStart, drag.originalEnd);
             
-            updateItemMutation.mutate({
-              id: dragging.id,
+            mutate.mutate({
+              id: drag.id,
               startDate: newStart,
-              endDate: dragging.originalEnd,
+              endDate: drag.originalEnd,
             });
           }
         }
-      } else if (dragging.type === 'resize-right') {
+      } else if (drag.type === 'resize-right') {
         if (deltaDays !== 0) {
-          let newEnd = addDays(dragging.originalEnd, deltaDays);
-          // Snap end: if extending right (deltaDays > 0), snap forward; if shrinking (<0), snap backward
-          newEnd = snapToWorkingDay(newEnd, deltaDays > 0 ? 'forward' : 'backward');
+          let newEnd = addDays(drag.originalEnd, deltaDays);
+          newEnd = snap(newEnd, deltaDays > 0 ? 'forward' : 'backward');
           
-          if (newEnd >= dragging.originalStart) {
-            updateCacheOptimistically(dragging.id, dragging.originalStart, newEnd);
+          if (newEnd >= drag.originalStart) {
+            updateCacheOptimistically(drag.id, drag.originalStart, newEnd);
             
-            updateItemMutation.mutate({
-              id: dragging.id,
-              startDate: dragging.originalStart,
+            mutate.mutate({
+              id: drag.id,
+              startDate: drag.originalStart,
               endDate: newEnd,
             });
           }
         }
-      } else if (dragging.type === 'dependency') {
-        // Handle dependency creation (check if dropped on another bar's anchor)
-        if (hoveredBar && hoveredBar !== dragging.id && hoveredAnchor) {
-          // Determine dependency type based on source and target anchors
-          const sourceAnchor = dragging.sourceAnchor || 'end';
-          const targetAnchor = hoveredAnchor || 'start';
+      } else if (drag.type === 'dependency') {
+        const hBar = hoveredBarRef.current;
+        const hAnchor = hoveredAnchorRef.current;
+        if (hBar && hBar !== drag.id && hAnchor) {
+          const sourceAnchor = drag.sourceAnchor || 'end';
+          const targetAnchor = hAnchor || 'start';
           
-          // Map anchor pairs to dependency types:
-          // end -> start = FS (Finish-to-Start) - most common
-          // start -> start = SS (Start-to-Start)
-          // end -> end = FF (Finish-to-Finish)
-          // start -> end = SF (Start-to-Finish)
           let dependencyType = 'FS';
           if (sourceAnchor === 'end' && targetAnchor === 'start') {
             dependencyType = 'FS';
@@ -1180,9 +1185,9 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
             dependencyType = 'SF';
           }
           
-          await createDependencyMutation.mutateAsync({
-            itemId: hoveredBar,
-            predecessorId: dragging.id,
+          await createDependencyMutationRef.current.mutateAsync({
+            itemId: hBar,
+            predecessorId: drag.id,
             type: dependencyType,
           });
         }
@@ -1191,37 +1196,32 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
       setDragging(null);
       setHoveredAnchor(null);
       
-      // Reset drag flag after a short delay to allow the click event to be suppressed first
-      // Click events fire immediately after mouseup, so we delay the reset
       setTimeout(() => {
         dragHappened.current = false;
       }, 50);
     };
 
+    const handleScroll = () => {
+      if (draggingRef.current?.type === 'dependency') {
+        setScrollVersion(v => v + 1);
+      }
+    };
+
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-    
-    // For dependency drags, add scroll listener to update coordinates when scrolling
-    // This ensures the dependency line follows the cursor correctly during manual scroll
-    let handleScroll: (() => void) | null = null;
-    const timeline = timelineRef.current; // Capture ref for cleanup
-    if (dragging.type === 'dependency' && timeline) {
-      handleScroll = () => {
-        // Force re-render even if cursor coordinates haven't changed
-        // The render will recompute timeline-relative position with new scroll offset
-        setScrollVersion(v => v + 1);
-      };
+    const timeline = timelineRef.current;
+    if (timeline) {
       timeline.addEventListener('scroll', handleScroll);
     }
     
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
-      if (handleScroll && timeline) {
+      if (timeline) {
         timeline.removeEventListener('scroll', handleScroll);
       }
     };
-  }, [dragging, pixelsPerDay, updateItemMutation, hoveredBar, hoveredAnchor, createDependencyMutation]);
+  }, []);
 
   // Progress drag effect - with live visual feedback
   useEffect(() => {
@@ -1481,6 +1481,38 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     }
   };
 
+  const handleCreatePredecessor = async (item: ScheduleItem) => {
+    try {
+      const itemStart = new Date(item.startDate);
+      const endDate = addDays(itemStart, -1);
+      const startDate = addDays(endDate, -4);
+      
+      const predecessorItem = {
+        scheduleId: item.scheduleId,
+        name: `Predecessor`,
+        status: "not_started",
+        startDate,
+        endDate,
+        parentItemId: item.parentItemId,
+        progressPercent: 0,
+      };
+      
+      const newItem: any = await apiRequest("/api/schedule-items", "POST", predecessorItem);
+      
+      if (newItem?.id) {
+        await apiRequest(`/api/schedule-items/${item.id}/dependencies`, "POST", {
+          predecessorId: newItem.id,
+          type: 'FS',
+        });
+      }
+      
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      toast({ title: "Predecessor created", description: "New predecessor item has been created and linked." });
+    } catch (error) {
+      toast({ title: "Failed to create predecessor", description: "Could not create predecessor item.", variant: "destructive" });
+    }
+  };
+
   const handleToggleComplete = async (item: ScheduleItem) => {
     try {
       const newStatus = item.status === "completed" ? "not_started" : "completed";
@@ -1606,69 +1638,67 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
           style={{ width: leftPanelWidth ?? totalPanelWidth }} 
           className="border-r flex flex-col bg-card flex-shrink-0 overflow-x-auto relative"
         >
+          {/* Top row - Search bar (30px) - outside inner wrapper so it resizes with panel */}
+          <div className="h-[30px] flex items-center px-2 border-b border-border gap-2 flex-shrink-0">
+            <div className="relative flex-1 min-w-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+              <Input
+                placeholder="Search tasks..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-7 pr-7 py-0 h-6 text-xs border"
+                data-testid="input-search-gantt-tasks"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  data-testid="button-clear-search"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+            
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-6 w-6 flex-shrink-0" data-testid="button-columns">
+                  <Columns className="w-3.5 h-3.5" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-56 p-2 z-[100]" data-testid="popover-columns">
+                <div className="text-xs font-medium text-muted-foreground mb-2 px-2">Show & Reorder Columns</div>
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleColumnDragEnd}
+                >
+                  <SortableContext items={columnOrder} strategy={verticalListSortingStrategy}>
+                    {columnOrder.map((colId) => {
+                      const labels: Record<string, string> = {
+                        status: 'Status',
+                        notes: 'Notes',
+                        completion: 'Completion %',
+                        assignee: 'Assignee',
+                      };
+                      return (
+                        <SortableColumnItem
+                          key={colId}
+                          id={colId}
+                          label={labels[colId] || colId}
+                          checked={visibleColumns[colId as keyof typeof visibleColumns]}
+                          onChange={(checked) => setVisibleColumns(prev => ({ ...prev, [colId]: checked }))}
+                        />
+                      );
+                    })}
+                  </SortableContext>
+                </DndContext>
+              </PopoverContent>
+            </Popover>
+          </div>
+
           {/* Content wrapper with actual column widths */}
           <div style={{ width: totalPanelWidth }} className="flex flex-col flex-1 overflow-hidden">
-            {/* Double-row header to match timeline (60px total) */}
-            
-            {/* Top row - Search bar (30px) */}
-            <div className="h-[30px] flex items-center px-2 border-b border-border gap-2">
-              <div className="relative flex-1 max-w-xs">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-                <Input
-                  placeholder="Search tasks..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-7 pr-7 py-0 h-6 text-xs border"
-                  data-testid="input-search-gantt-tasks"
-                />
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    data-testid="button-clear-search"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-              
-              {/* Columns visibility/reorder popover */}
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-6 w-6" data-testid="button-columns">
-                    <Columns className="w-3.5 h-3.5" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent align="start" className="w-56 p-2 z-[100]" data-testid="popover-columns">
-                  <div className="text-xs font-medium text-muted-foreground mb-2 px-2">Show & Reorder Columns</div>
-                  <DndContext
-                    sensors={sensors}
-                    collisionDetection={closestCenter}
-                    onDragEnd={handleColumnDragEnd}
-                  >
-                    <SortableContext items={columnOrder} strategy={verticalListSortingStrategy}>
-                      {columnOrder.map((colId) => {
-                        const labels: Record<string, string> = {
-                          status: 'Status',
-                          notes: 'Notes',
-                          completion: 'Completion %',
-                          assignee: 'Assignee',
-                        };
-                        return (
-                          <SortableColumnItem
-                            key={colId}
-                            id={colId}
-                            label={labels[colId] || colId}
-                            checked={visibleColumns[colId as keyof typeof visibleColumns]}
-                            onChange={(checked) => setVisibleColumns(prev => ({ ...prev, [colId]: checked }))}
-                          />
-                        );
-                      })}
-                    </SortableContext>
-                  </DndContext>
-                </PopoverContent>
-              </Popover>
-            </div>
             
             {/* Bottom row - Column names (30px) */}
             <div className="h-[30px] flex items-center px-2 text-xs font-medium text-muted-foreground relative border-b border-border">
@@ -1827,7 +1857,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                                   const statusInfo = getStatusInfo(item.status);
                                   return (
                                     <Badge 
-                                      className="text-xs px-1.5 h-5 border-0"
+                                      className="text-xs px-1.5 h-5 border-0 min-w-[72px] justify-center"
                                       style={{
                                         backgroundColor: statusInfo.color,
                                         color: '#ffffff'
@@ -1869,7 +1899,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                             const statusInfo = getStatusInfo(item.status);
                             return (
                               <Badge 
-                                className="text-xs px-1.5 h-5 border-0"
+                                className="text-xs px-1.5 h-5 border-0 min-w-[72px] justify-center"
                                 style={{
                                   backgroundColor: statusInfo.color,
                                   color: '#ffffff'
@@ -1947,10 +1977,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                             </DropdownMenuItem>
                           )}
                           <DropdownMenuItem 
-                            onClick={() => {
-                              setPendingPredecessor(item.id);
-                              toast({ title: "Click another bar to set it as predecessor" });
-                            }} 
+                            onClick={() => handleCreatePredecessor(item)} 
                             data-testid="menu-create-predecessor"
                           >
                             <Link className="mr-2 h-4 w-4" />
@@ -2250,7 +2277,9 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                             clearTimeout(clickTimer.current);
                             clickTimer.current = null;
                           }
-                          if (!dragHappened.current) handleEditItem(item);
+                          setDragging(null);
+                          dragHappened.current = false;
+                          handleEditItem(item);
                         }}
                         onContextMenu={(e) => {
                           e.preventDefault();
@@ -2942,8 +2971,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
           <button
             className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left"
             onClick={() => {
-              setPendingPredecessor(contextMenu.item.id);
-              toast({ title: "Click another bar to set it as predecessor" });
+              handleCreatePredecessor(contextMenu.item);
               setContextMenu(null);
             }}
             data-testid="context-menu-create-predecessor"
