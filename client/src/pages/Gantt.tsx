@@ -816,16 +816,6 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     return { timelineStart: start, timelineEnd: end, totalDays: days, dataStart: dataStartDate, dataEnd: dataEndDate };
   }, [allItems, timelineBuffer]);
 
-  useEffect(() => {
-    if (prevTimelineStartRef.current && timelineRef.current && pendingScrollAdjustEarly.current === 0) {
-      const shiftDays = differenceInDays(prevTimelineStartRef.current, timelineStart);
-      if (shiftDays !== 0) {
-        timelineRef.current.scrollLeft += shiftDays * pixelsPerDay;
-      }
-    }
-    prevTimelineStartRef.current = timelineStart;
-  }, [timelineStart, pixelsPerDay]);
-
   // Generate timeline headers based on zoom level
   const timelineHeaders = useMemo(() => {
     if (zoomLevel === 'day') {
@@ -939,6 +929,16 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     if (zoomLevel === 'week') return 20;
     return 10;
   }, [zoomLevel]);
+
+  useEffect(() => {
+    if (prevTimelineStartRef.current && timelineRef.current && pendingScrollAdjustEarly.current === 0) {
+      const shiftDays = differenceInDays(prevTimelineStartRef.current, timelineStart);
+      if (shiftDays !== 0) {
+        timelineRef.current.scrollLeft += shiftDays * pixelsPerDay;
+      }
+    }
+    prevTimelineStartRef.current = timelineStart;
+  }, [timelineStart, pixelsPerDay]);
 
   const timelineWidth = totalDays * pixelsPerDay;
 
