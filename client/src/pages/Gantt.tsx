@@ -185,25 +185,6 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
   const draggingRef = useRef(dragging);
   draggingRef.current = dragging;
   
-  const draggingCascadeIds = useMemo(() => {
-    if (!dragging || dragging.type !== 'move') return new Set<number | string>();
-    const items = allItems || [];
-    const visited = new Set<number | string>();
-    const queue: (number | string)[] = [dragging.id];
-    visited.add(dragging.id);
-    while (queue.length > 0) {
-      const currentId = queue.shift()!;
-      for (const item of items) {
-        if (!visited.has(item.id) && item.dependencies?.some((dep: any) => String(dep.id) === String(currentId))) {
-          visited.add(item.id);
-          queue.push(item.id);
-        }
-      }
-    }
-    visited.delete(dragging.id);
-    return visited;
-  }, [dragging?.id, dragging?.type, allItems]);
-  
   const allItemsRef = useRef<ScheduleItem[]>([]);
   const projectIdRef = useRef(projectId);
   projectIdRef.current = projectId;
@@ -461,6 +442,25 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     queryKey: [`/api/projects/${projectId}/schedule-items`],
   });
   allItemsRef.current = allItems;
+
+  const draggingCascadeIds = useMemo(() => {
+    if (!dragging || dragging.type !== 'move') return new Set<number | string>();
+    const items = allItems || [];
+    const visited = new Set<number | string>();
+    const queue: (number | string)[] = [dragging.id];
+    visited.add(dragging.id);
+    while (queue.length > 0) {
+      const currentId = queue.shift()!;
+      for (const item of items) {
+        if (!visited.has(item.id) && item.dependencies?.some((dep: any) => String(dep.id) === String(currentId))) {
+          visited.add(item.id);
+          queue.push(item.id);
+        }
+      }
+    }
+    visited.delete(dragging.id);
+    return visited;
+  }, [dragging?.id, dragging?.type, allItems]);
 
   // Fetch note counts for all schedule items
   const { data: noteCounts = {} } = useQuery<Record<string, number>>({
