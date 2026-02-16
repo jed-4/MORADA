@@ -170,13 +170,13 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     type: 'move' | 'resize-left' | 'resize-right' | 'dependency';
     startX: number;
     startY: number;
+    startScrollLeft: number; // Timeline scrollLeft when drag started, for scroll-aware delta
     originalStart: Date;
     originalEnd: Date;
     currentX?: number;
     currentY?: number;
-    currentDeltaX?: number; // For visual feedback during bar move/resize
+    currentDeltaX?: number; // For visual feedback during bar move/resize (scroll-aware)
     sourceAnchor?: 'start' | 'end'; // For dependency drag: which end the drag started from
-    // For dependency drags: store original viewport coordinates for recalculation on scroll
     viewportStartX?: number;
     viewportStartY?: number;
   } | null>(null);
@@ -555,28 +555,20 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
   }, [parentItems, sessionItemOrder]);
 
   // Create global item map and row index map for dependency rendering
+  // Uses orderedItems (the same flat list as the left panel) for perfect sync
   const { globalItemMap, itemRowIndexMap } = useMemo(() => {
     const itemMap = new Map<string, ScheduleItem>();
     const rowIndexMap = new Map<string, number>();
     
     allItems.forEach(item => itemMap.set(item.id, item));
     
-    // Calculate row index for each visible item (using orderedParentItems for correct order)
-    let rowIndex = 0;
-    orderedParentItems.forEach(parent => {
-      rowIndexMap.set(parent.id, rowIndex);
-      rowIndex++;
-      if (!collapsedItems.has(parent.id)) {
-        const children = childItemsByParent[parent.id] || [];
-        children.forEach(child => {
-          rowIndexMap.set(child.id, rowIndex);
-          rowIndex++;
-        });
-      }
+    // Calculate row index from orderedItems - same flat list the left panel iterates
+    orderedItems.forEach((item, idx) => {
+      rowIndexMap.set(item.id, idx);
     });
     
     return { globalItemMap: itemMap, itemRowIndexMap: rowIndexMap };
-  }, [allItems, orderedParentItems, childItemsByParent, collapsedItems]);
+  }, [allItems, orderedItems]);
 
   // Update mutation for schedule items
   const updateItemMutation = useMutation({
@@ -868,6 +860,59 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     return '#9ca3af';
   };
 
+  // Check if a date is a non-working day (weekend based on schedule settings)
+  const isNonWorkingDay = (date: Date): boolean => {
+    const day = getDay(date); // 0 = Sunday, 6 = Saturday
+    if (day === 0 && !schedule?.includeSunday) return true;
+    if (day === 6 && !schedule?.includeSaturday) return true;
+    return false;
+  };
+
+  // Snap a date to the nearest working day in the given direction
+  const snapToWorkingDay = (date: Date, direction: 'forward' | 'backward' = 'forward'): Date => {
+    let d = new Date(date);
+    const step = direction === 'forward' ? 1 : -1;
+    let maxIterations = 7;
+    while (isNonWorkingDay(d) && maxIterations > 0) {
+      d = addDays(d, step);
+      maxIterations--;
+    }
+    return d;
+  };
+
+  // Count working days between two dates (inclusive of start, exclusive of end)
+  const countWorkingDays = (start: Date, end: Date): number => {
+    let count = 0;
+    const s = new Date(start);
+    const e = new Date(end);
+    const forward = s <= e;
+    let current = new Date(s);
+    if (forward) {
+      while (current < e) {
+        if (!isNonWorkingDay(current)) count++;
+        current = addDays(current, 1);
+      }
+    } else {
+      while (current > e) {
+        current = addDays(current, -1);
+        if (!isNonWorkingDay(current)) count++;
+      }
+    }
+    return count;
+  };
+
+  // Add N working days from a date (skipping non-working days)
+  const addWorkingDays = (date: Date, days: number): Date => {
+    let d = new Date(date);
+    let remaining = Math.abs(days);
+    const step = days >= 0 ? 1 : -1;
+    while (remaining > 0) {
+      d = addDays(d, step);
+      if (!isNonWorkingDay(d)) remaining--;
+    }
+    return d;
+  };
+
   // Bar click handler - open modal (but not if a drag just happened)
   const handleBarClick = (e: React.MouseEvent, item: ScheduleItem) => {
     e.preventDefault();
@@ -900,26 +945,23 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     e.preventDefault();
     e.stopPropagation();
     
-    // Reset drag flag at start of new drag interaction
     dragHappened.current = false;
     
-    // Store viewport coordinates for all drag types
-    // For dependency drags, we'll convert to timeline-relative on each mouse move
-    // using the SAME scroll offset for both start and current positions
     const startX = e.clientX;
     const startY = e.clientY;
+    const startScrollLeft = timelineRef.current?.scrollLeft ?? 0;
     
     setDragging({
       id: item.id,
       type: dragType,
       startX,
       startY,
+      startScrollLeft,
       originalStart: new Date(item.startDate),
       originalEnd: new Date(item.endDate),
       currentX: startX,
       currentY: startY,
       sourceAnchor: anchor,
-      // For dependency drags, store original viewport coordinates for recalculation
       viewportStartX: dragType === 'dependency' ? startX : undefined,
       viewportStartY: dragType === 'dependency' ? startY : undefined,
     });
@@ -962,12 +1004,11 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
       // Store cursor position in ref for scroll updates
       lastCursorPosition.current = { x: currentX, y: currentY };
 
-      // Calculate deltaX for visual bar movement feedback
-      const currentDeltaX = e.clientX - dragging.startX;
+      // Calculate scroll-aware deltaX: accounts for auto-scroll displacement
+      // Without this, the bar drifts away from the cursor during edge-scrolling
+      const scrollDelta = (timelineRef.current?.scrollLeft ?? 0) - dragging.startScrollLeft;
+      const currentDeltaX = (e.clientX - dragging.startX) + scrollDelta;
 
-      // Update current position for dependency line drawing and bar movement
-      // NEVER mutate startX/startY - they're needed for move/resize delta calculations
-      // For dependency drags, the line rendering will use viewportStartX/viewportStartY + scroll offset
       setDragging(prev => prev ? { ...prev, currentX, currentY, currentDeltaX } : null);
     };
 
@@ -977,7 +1018,9 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
         return;
       }
 
-      const deltaX = e.clientX - dragging.startX;
+      // Scroll-aware delta: accounts for scroll displacement during drag
+      const scrollDelta = (timelineRef.current?.scrollLeft ?? 0) - dragging.startScrollLeft;
+      const deltaX = (e.clientX - dragging.startX) + scrollDelta;
       const deltaDays = Math.round(deltaX / pixelsPerDay);
       const cacheKey = `/api/projects/${projectId}/schedule-items`;
 
@@ -994,37 +1037,46 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
       };
 
       if (dragging.type === 'move') {
-        // Move the entire bar (reschedule)
         if (deltaDays !== 0) {
-          const newStart = addDays(dragging.originalStart, deltaDays);
-          const newEnd = addDays(dragging.originalEnd, deltaDays);
+          // Preserve working-day duration when moving
+          const workingDuration = countWorkingDays(dragging.originalStart, dragging.originalEnd);
+          
+          let newStart = addDays(dragging.originalStart, deltaDays);
+          // Snap start based on drag direction
+          const snapDir = deltaDays > 0 ? 'forward' : 'backward';
+          newStart = snapToWorkingDay(newStart, snapDir);
+          // Compute end by adding working-day duration from snapped start
+          let newEnd = addWorkingDays(newStart, workingDuration);
+          
+          const totalOffset = differenceInDays(newStart, dragging.originalStart);
 
-          // Find dependent items BEFORE optimistic update
           const dependentItems = allItems.filter(item => 
             item.dependencies?.some((dep: any) => dep.id === dragging.id)
           );
 
-          // Optimistically update cache for main item - dependency lines update instantly
           updateCacheOptimistically(dragging.id, newStart, newEnd);
           
-          // Optimistically update cache for all dependents
+          const snapDepItem = (depItem: ScheduleItem) => {
+            const depWorkingDuration = countWorkingDays(new Date(depItem.startDate), new Date(depItem.endDate));
+            let depNewStart = addDays(new Date(depItem.startDate), totalOffset);
+            depNewStart = snapToWorkingDay(depNewStart, snapDir);
+            const depNewEnd = addWorkingDays(depNewStart, depWorkingDuration);
+            return { depNewStart, depNewEnd };
+          };
+          
           for (const depItem of dependentItems) {
-            const depNewStart = addDays(new Date(depItem.startDate), deltaDays);
-            const depNewEnd = addDays(new Date(depItem.endDate), deltaDays);
+            const { depNewStart, depNewEnd } = snapDepItem(depItem);
             updateCacheOptimistically(depItem.id, depNewStart, depNewEnd);
           }
 
-          // Now fire mutations (they will invalidate cache on completion for server truth)
           updateItemMutation.mutate({
             id: dragging.id,
             startDate: newStart,
             endDate: newEnd,
           });
           
-          // Move all dependents by the same delta
           for (const depItem of dependentItems) {
-            const depNewStart = addDays(new Date(depItem.startDate), deltaDays);
-            const depNewEnd = addDays(new Date(depItem.endDate), deltaDays);
+            const { depNewStart, depNewEnd } = snapDepItem(depItem);
             updateItemMutation.mutate({
               id: depItem.id,
               startDate: depNewStart,
@@ -1033,13 +1085,12 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
           }
         }
       } else if (dragging.type === 'resize-left') {
-        // Resize from the left (change start date)
         if (deltaDays !== 0) {
-          const newStart = addDays(dragging.originalStart, deltaDays);
+          let newStart = addDays(dragging.originalStart, deltaDays);
+          // Snap start: if extending left (deltaDays < 0), snap backward; if shrinking (>0), snap forward
+          newStart = snapToWorkingDay(newStart, deltaDays < 0 ? 'backward' : 'forward');
           
-          // Ensure start is before or equal to end (allows 1-day duration)
           if (newStart <= dragging.originalEnd) {
-            // Optimistic update for instant line update
             updateCacheOptimistically(dragging.id, newStart, dragging.originalEnd);
             
             updateItemMutation.mutate({
@@ -1050,13 +1101,12 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
           }
         }
       } else if (dragging.type === 'resize-right') {
-        // Resize from the right (change end date)
         if (deltaDays !== 0) {
-          const newEnd = addDays(dragging.originalEnd, deltaDays);
+          let newEnd = addDays(dragging.originalEnd, deltaDays);
+          // Snap end: if extending right (deltaDays > 0), snap forward; if shrinking (<0), snap backward
+          newEnd = snapToWorkingDay(newEnd, deltaDays > 0 ? 'forward' : 'backward');
           
-          // Ensure end is after or equal to start (allows 1-day duration)
           if (newEnd >= dragging.originalStart) {
-            // Optimistic update for instant line update
             updateCacheOptimistically(dragging.id, dragging.originalStart, newEnd);
             
             updateItemMutation.mutate({
@@ -1893,8 +1943,8 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
               </div>
             )}
 
-            {/* Timeline Bars */}
-            <div className="relative">
+            {/* Timeline Bars - minHeight ensures scroll area matches left panel */}
+            <div className="relative" style={{ minHeight: `${orderedItems.length * 40}px` }}>
               {/* Weekend column backgrounds */}
               {groupedTimelineHeaders && (
                 <div className="absolute top-0 bottom-0 left-0 right-0 pointer-events-none z-0">
@@ -1980,29 +2030,8 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                   previewWidth = Math.max(pixelsPerDay, originalWidth + deltaX);
                 }
                 
-                // Calculate the row index for this item (mirrors actual render ordering)
-                let foundRow = 0;
-                let found = false;
-                for (let i = 0; i < orderedParentItems.length && !found; i++) {
-                  // Check if this parent is the dragged item
-                  if (orderedParentItems[i].id === dragging.id) {
-                    found = true;
-                    break;
-                  }
-                  foundRow++; // Count this parent row
-                  
-                  // If not collapsed, check children
-                  if (!collapsedItems.has(orderedParentItems[i].id)) {
-                    const children = childItemsByParent[orderedParentItems[i].id] || [];
-                    for (let j = 0; j < children.length; j++) {
-                      if (children[j].id === dragging.id) {
-                        found = true;
-                        break;
-                      }
-                      foundRow++; // Count this child row
-                    }
-                  }
-                }
+                // Use itemRowIndexMap for row position (synced with left panel)
+                const foundRow = itemRowIndexMap.get(dragging.id) ?? 0;
                 
                 return (
                   <div
@@ -2021,114 +2050,106 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                 );
               })()}
               
-              {orderedParentItems.map((parentItem, parentIdx) => {
-                const isCollapsed = collapsedItems.has(parentItem.id);
-                const childItems = childItemsByParent[parentItem.id] || [];
-                
-                // Calculate effective dates (span across children if they exist)
-                const effectiveDates = getEffectiveDates(parentItem);
-                const parentStart = getPosition(effectiveDates.startDate);
-                const parentDuration = differenceInDays(effectiveDates.endDate, effectiveDates.startDate) + 1;
-                const parentWidth = parentDuration * pixelsPerDay;
-                const barColor = getBarColor(parentItem);
+              {orderedItems.map((item) => {
+                const isParent = !item.parentItemId;
+                const childItems = childItemsByParent[item.id] || [];
+                const hasChildren = isParent && childItems.length > 0;
+                const isChild = !!item.parentItemId;
 
-                // Check if name fits in bar (approximate: 7px per character + 16px padding)
-                const approximateTextWidth = parentItem.name.length * 7 + 16;
-                const nameFitsInBar = approximateTextWidth <= parentWidth;
+                const dates = hasChildren ? getEffectiveDates(item) : { startDate: new Date(item.startDate), endDate: new Date(item.endDate) };
+                const barStart = getPosition(dates.startDate);
+                const barDuration = differenceInDays(dates.endDate, dates.startDate) + 1;
+                const barWidth = barDuration * pixelsPerDay;
+                const barColor = getBarColor(item);
+
+                const approximateTextWidth = item.name.length * 7 + 16;
+                const nameFitsInBar = approximateTextWidth <= barWidth;
+
+                const displayProgress = progressDrag?.itemId === item.id 
+                  ? progressDrag.currentProgress 
+                  : (item.progressPercent ?? 0);
 
                 return (
-                  <div key={parentItem.id}>
-                    {/* Parent item bar row */}
-                    <div className={`h-10 relative group/row`}>
-                      {/* Bar wrapper for positioning dots relative to bar */}
-                      <div 
-                        className="absolute top-1 h-6"
-                        style={{ 
-                          left: `${parentStart + (dragging?.id === parentItem.id && dragging?.type === 'move' ? (dragging.currentDeltaX || 0) : 
-                            // Also show visual feedback if this item is a dependent of the item being dragged
-                            (dragging?.type === 'move' && parentItem.dependencies?.some((dep: any) => dep.id === dragging?.id) ? (dragging.currentDeltaX || 0) : 0))}px`, 
-                          width: `${parentWidth}px`,
-                          opacity: (dragging?.id === parentItem.id && dragging?.type === 'move') || 
-                            (dragging?.type === 'move' && parentItem.dependencies?.some((dep: any) => dep.id === dragging?.id)) ? 0.8 : 1,
-                          transition: dragging?.id === parentItem.id || (dragging?.type === 'move' && parentItem.dependencies?.some((dep: any) => dep.id === dragging?.id)) ? 'none' : 'opacity 0.2s',
+                  <div key={item.id} className="h-10 relative group/row">
+                    <div 
+                      className="absolute top-1 h-6"
+                      style={{ 
+                        left: `${barStart + (dragging?.id === item.id && dragging?.type === 'move' ? (dragging.currentDeltaX || 0) : 
+                          (dragging?.type === 'move' && item.dependencies?.some((dep: any) => dep.id === dragging?.id) ? (dragging.currentDeltaX || 0) : 0))}px`, 
+                        width: `${barWidth}px`,
+                        opacity: (dragging?.id === item.id && dragging?.type === 'move') || 
+                          (dragging?.type === 'move' && item.dependencies?.some((dep: any) => dep.id === dragging?.id)) ? 0.8 : 1,
+                        transition: dragging?.id === item.id || (dragging?.type === 'move' && item.dependencies?.some((dep: any) => dep.id === dragging?.id)) ? 'none' : 'opacity 0.2s',
+                      }}
+                    >
+                      <div
+                        className={`absolute top-1/2 -translate-y-1/2 -left-4 w-4 h-4 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30 ${hoveredBar === item.id && hoveredAnchor === 'start' ? 'scale-150' : ''}`}
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          handleBarMouseDown(e, item, 'dependency', 'start');
                         }}
+                        onMouseEnter={() => { setHoveredBar(item.id); setHoveredAnchor('start'); }}
+                        onMouseLeave={() => { setHoveredBar(null); setHoveredAnchor(null); }}
+                        title="Drag to create dependency from start"
+                        data-testid={`dependency-start-${item.id}`}
                       >
-                        {/* Left dependency dot (start anchor) - can drag or drop */}
-                        <div
-                          className={`absolute top-1/2 -translate-y-1/2 -left-4 w-4 h-4 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30 ${hoveredBar === parentItem.id && hoveredAnchor === 'start' ? 'scale-150' : ''}`}
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            handleBarMouseDown(e, parentItem, 'dependency', 'start');
-                          }}
-                          onMouseEnter={() => { setHoveredBar(parentItem.id); setHoveredAnchor('start'); }}
-                          onMouseLeave={() => { setHoveredBar(null); setHoveredAnchor(null); }}
-                          title="Drag to create dependency from start"
-                          data-testid={`dependency-start-${parentItem.id}`}
-                        >
-                          <div className="w-2 h-2 rounded-full bg-[#9b7fc7] hover:scale-150 transition-transform" />
-                        </div>
-                        
-                        {/* Main bar */}
-                        <div
-                          className={`absolute inset-0 rounded-sm flex items-center cursor-move transition-shadow z-10 group/bar overflow-hidden
-                            ${dragging?.id === parentItem.id ? 'shadow-lg ring-2 ring-[#bba7db]' : 'hover:shadow-md'}
-                          `}
-                          style={{
-                            backgroundColor: barColor,
-                          }}
-                          onClick={(e) => handleBarClick(e, parentItem)}
-                          onContextMenu={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setContextMenu({ x: e.clientX, y: e.clientY, item: parentItem });
-                          }}
-                          onMouseDown={(e) => handleBarMouseDown(e, parentItem, 'move')}
-                          onMouseEnter={() => setHoveredBar(parentItem.id)}
-                          onMouseLeave={() => setHoveredBar(null)}
-                          data-testid={`bar-parent-${parentItem.id}`}
-                        >
-                        {/* Left resize handle */}
-                        <div
-                          className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-background/30 opacity-0 group-hover/bar:opacity-100 transition-opacity"
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            handleBarMouseDown(e, parentItem, 'resize-left');
-                          }}
-                          data-testid={`resize-left-${parentItem.id}`}
-                        />
+                        <div className="w-2 h-2 rounded-full bg-[#9b7fc7] hover:scale-150 transition-transform" />
+                      </div>
+                      
+                      <div
+                        className={`absolute inset-0 rounded-sm flex items-center cursor-move transition-shadow z-10 group/bar overflow-hidden
+                          ${dragging?.id === item.id ? 'shadow-lg ring-2 ring-[#bba7db]' : 'hover:shadow-md'}
+                        `}
+                        style={{
+                          backgroundColor: barColor,
+                          ...(isChild ? { border: '2px dotted rgba(255, 255, 255, 0.6)' } : {}),
+                        }}
+                        onClick={(e) => handleBarClick(e, item)}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setContextMenu({ x: e.clientX, y: e.clientY, item });
+                        }}
+                        onMouseDown={(e) => handleBarMouseDown(e, item, 'move')}
+                        onMouseEnter={() => setHoveredBar(item.id)}
+                        onMouseLeave={() => setHoveredBar(null)}
+                        data-testid={`bar-${item.id}`}
+                      >
+                        {!hasChildren && (
+                          <div
+                            className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-background/30 opacity-0 group-hover/bar:opacity-100 transition-opacity"
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              handleBarMouseDown(e, item, 'resize-left');
+                            }}
+                            data-testid={`resize-left-${item.id}`}
+                          />
+                        )}
                         
                         {nameFitsInBar && (
                           <span className="text-xs font-medium text-white truncate pointer-events-none pl-2">
-                            {parentItem.name}
+                            {item.name}
                           </span>
                         )}
                         
-                        {/* Right resize handle */}
-                        <div
-                          className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-background/30 opacity-0 group-hover/bar:opacity-100 transition-opacity"
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            handleBarMouseDown(e, parentItem, 'resize-right');
+                        {!hasChildren && (
+                          <div
+                            className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-background/30 opacity-0 group-hover/bar:opacity-100 transition-opacity"
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              handleBarMouseDown(e, item, 'resize-right');
+                            }}
+                            data-testid={`resize-right-${item.id}`}
+                          />
+                        )}
+                        
+                        <div 
+                          className="absolute inset-0 pointer-events-none rounded-sm"
+                          style={{ 
+                            background: `linear-gradient(to right, rgba(0,0,0,0.25) ${displayProgress}%, transparent ${displayProgress}%)` 
                           }}
-                          data-testid={`resize-right-${parentItem.id}`}
                         />
                         
-                        {/* Progress overlay - darkens completed portion */}
-                        {(() => {
-                          const displayProgress = progressDrag?.itemId === parentItem.id 
-                            ? progressDrag.currentProgress 
-                            : (parentItem.progressPercent ?? 0);
-                          return (
-                            <div 
-                              className="absolute inset-0 pointer-events-none rounded-sm"
-                              style={{ 
-                                background: `linear-gradient(to right, rgba(0,0,0,0.25) ${displayProgress}%, transparent ${displayProgress}%)` 
-                              }}
-                            />
-                          );
-                        })()}
-                        
-                        {/* Progress slider handle at bottom - appears on hover, disabled when schedule is offline */}
                         <div
                           className={`absolute bottom-0 left-0 right-0 h-2 opacity-0 group-hover/bar:opacity-100 transition-opacity ${schedule?.status === 'offline' ? 'pointer-events-none' : 'cursor-ew-resize'}`}
                           onMouseDown={(e) => {
@@ -2139,17 +2160,15 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                             if (!barRect) return;
                             const clickX = e.clientX - barRect.left;
                             const clickPercent = Math.max(0, Math.min(100, Math.round((clickX / barRect.width) * 100)));
-                            updateProgressMutation.mutate({ id: parentItem.id, progressPercent: clickPercent });
+                            updateProgressMutation.mutate({ id: item.id, progressPercent: clickPercent });
                           }}
                           onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
-                          data-testid={`progress-track-${parentItem.id}`}
+                          data-testid={`progress-track-${item.id}`}
                         >
-                          {/* Track line */}
                           <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white/30" />
-                          {/* Slider thumb */}
                           <div 
                             className={`absolute bottom-0 w-2 h-2 bg-white rounded-full shadow-md -translate-x-1/2 transition-transform ${schedule?.status === 'offline' ? '' : 'cursor-ew-resize hover:scale-125'}`}
-                            style={{ left: `${progressDrag?.itemId === parentItem.id ? progressDrag.currentProgress : (parentItem.progressPercent ?? 0)}%` }}
+                            style={{ left: `${displayProgress}%` }}
                             onMouseDown={(e) => {
                               if (schedule?.status === 'offline') return;
                               e.stopPropagation();
@@ -2157,261 +2176,63 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                               const barRect = e.currentTarget.parentElement?.parentElement?.getBoundingClientRect();
                               if (!barRect) return;
                               setProgressDrag({
-                                itemId: parentItem.id,
+                                itemId: item.id,
                                 barWidth: barRect.width,
                                 startX: e.clientX,
-                                startProgress: parentItem.progressPercent ?? 0,
-                                currentProgress: parentItem.progressPercent ?? 0,
+                                startProgress: item.progressPercent ?? 0,
+                                currentProgress: item.progressPercent ?? 0,
                               });
                             }}
                             onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
-                            data-testid={`progress-thumb-${parentItem.id}`}
+                            data-testid={`progress-thumb-${item.id}`}
                           />
                         </div>
                       </div>
                       
-                      {/* Right dependency dot (end anchor) - can drag or drop */}
                       <div
-                        className={`absolute top-1/2 -translate-y-1/2 -right-4 w-4 h-4 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30 ${hoveredBar === parentItem.id && hoveredAnchor === 'end' ? 'scale-150' : ''}`}
+                        className={`absolute top-1/2 -translate-y-1/2 -right-4 w-4 h-4 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30 ${hoveredBar === item.id && hoveredAnchor === 'end' ? 'scale-150' : ''}`}
                         onMouseDown={(e) => {
                           e.stopPropagation();
-                          handleBarMouseDown(e, parentItem, 'dependency', 'end');
+                          handleBarMouseDown(e, item, 'dependency', 'end');
                         }}
-                        onMouseEnter={() => { setHoveredBar(parentItem.id); setHoveredAnchor('end'); }}
+                        onMouseEnter={() => { setHoveredBar(item.id); setHoveredAnchor('end'); }}
                         onMouseLeave={() => { setHoveredBar(null); setHoveredAnchor(null); }}
                         title="Drag to create dependency from end"
-                        data-testid={`dependency-end-${parentItem.id}`}
+                        data-testid={`dependency-end-${item.id}`}
                       >
                         <div className="w-2 h-2 rounded-full bg-[#9b7fc7] hover:scale-150 transition-transform" />
                       </div>
                     </div>
                       
-                      {/* Baseline ghost bar */}
-                      {baselineItems.length > 0 && (() => {
-                        const baselineItem = baselineItems.find((bi: any) => bi.scheduleItemId === parentItem.id);
-                        if (!baselineItem) return null;
-                        const blStart = getPosition(new Date(baselineItem.startDate));
-                        const blDuration = differenceInDays(new Date(baselineItem.endDate), new Date(baselineItem.startDate)) + 1;
-                        const blWidth = blDuration * pixelsPerDay;
-                        return (
-                          <div
-                            className="absolute h-2 rounded-sm border border-dashed border-purple-400/60 bg-purple-200/30 dark:bg-purple-800/20 pointer-events-none z-5"
-                            style={{
-                              left: `${blStart}px`,
-                              width: `${blWidth}px`,
-                              top: '28px',
-                            }}
-                            title={`Baseline: ${format(new Date(baselineItem.startDate), 'MMM d')} – ${format(new Date(baselineItem.endDate), 'MMM d')}`}
-                          />
-                        );
-                      })()}
-                      
-                      {!nameFitsInBar && (
-                        <div
-                          className="absolute top-2 h-6 flex items-center pl-2 z-20"
-                          style={{ left: `${parentStart + parentWidth + 20}px` }}
-                        >
-                          <span className="text-xs font-medium whitespace-nowrap">
-                            {parentItem.name}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Child item bar rows */}
-                    {!isCollapsed && childItems.map((childItem, childIdx) => {
-                      const childStart = getPosition(new Date(childItem.startDate));
-                      const childDuration = differenceInDays(new Date(childItem.endDate), new Date(childItem.startDate)) + 1;
-                      const childWidth = childDuration * pixelsPerDay;
-                      const childColor = getBarColor(childItem);
-                      const rowIdx = parentIdx * 1000 + childIdx + 1;
-
-                      // Check if child name fits in bar
-                      const childTextWidth = childItem.name.length * 7 + 16;
-                      const childNameFits = childTextWidth <= childWidth;
-
+                    {baselineItems.length > 0 && (() => {
+                      const baselineItem = baselineItems.find((bi: any) => bi.scheduleItemId === item.id);
+                      if (!baselineItem) return null;
+                      const blStart = getPosition(new Date(baselineItem.startDate));
+                      const blDuration = differenceInDays(new Date(baselineItem.endDate), new Date(baselineItem.startDate)) + 1;
+                      const blWidth = blDuration * pixelsPerDay;
                       return (
-                        <div key={childItem.id} className={`h-10 relative group/row`}>
-                          {/* Bar wrapper for positioning dots relative to bar */}
-                          <div 
-                            className="absolute top-1 h-6"
-                            style={{ 
-                              left: `${childStart + (dragging?.id === childItem.id && dragging?.type === 'move' ? (dragging.currentDeltaX || 0) : 
-                                // Also show visual feedback if this item is a dependent of the item being dragged
-                                (dragging?.type === 'move' && childItem.dependencies?.some((dep: any) => dep.id === dragging?.id) ? (dragging.currentDeltaX || 0) : 0))}px`, 
-                              width: `${childWidth}px`,
-                              opacity: (dragging?.id === childItem.id && dragging?.type === 'move') || 
-                                (dragging?.type === 'move' && childItem.dependencies?.some((dep: any) => dep.id === dragging?.id)) ? 0.8 : 1,
-                              transition: dragging?.id === childItem.id || (dragging?.type === 'move' && childItem.dependencies?.some((dep: any) => dep.id === dragging?.id)) ? 'none' : 'opacity 0.2s',
-                            }}
-                          >
-                            {/* Left dependency dot (start anchor) - can drag or drop */}
-                            <div
-                              className={`absolute top-1/2 -translate-y-1/2 -left-4 w-4 h-4 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30 ${hoveredBar === childItem.id && hoveredAnchor === 'start' ? 'scale-150' : ''}`}
-                              onMouseDown={(e) => {
-                                e.stopPropagation();
-                                handleBarMouseDown(e, childItem, 'dependency', 'start');
-                              }}
-                              onMouseEnter={() => { setHoveredBar(childItem.id); setHoveredAnchor('start'); }}
-                              onMouseLeave={() => { setHoveredBar(null); setHoveredAnchor(null); }}
-                              title="Drag to create dependency from start"
-                              data-testid={`dependency-start-${childItem.id}`}
-                            >
-                              <div className="w-2 h-2 rounded-full bg-[#9b7fc7] hover:scale-150 transition-transform" />
-                            </div>
-                            
-                            {/* Main bar */}
-                            <div
-                              className={`absolute inset-0 rounded-sm flex items-center cursor-move transition-shadow z-10 group/bar overflow-hidden
-                                ${dragging?.id === childItem.id ? 'shadow-lg ring-2 ring-[#bba7db]' : 'hover:shadow-md'}
-                              `}
-                              style={{
-                                backgroundColor: childColor,
-                                border: '2px dotted rgba(255, 255, 255, 0.6)',
-                              }}
-                              onClick={(e) => handleBarClick(e, childItem)}
-                              onContextMenu={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setContextMenu({ x: e.clientX, y: e.clientY, item: childItem });
-                              }}
-                              onMouseDown={(e) => handleBarMouseDown(e, childItem, 'move')}
-                              onMouseEnter={() => setHoveredBar(childItem.id)}
-                              onMouseLeave={() => setHoveredBar(null)}
-                              data-testid={`bar-child-${childItem.id}`}
-                            >
-                              {/* Left resize handle */}
-                              <div
-                                className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-background/30 opacity-0 group-hover/bar:opacity-100 transition-opacity"
-                                onMouseDown={(e) => {
-                                  e.stopPropagation();
-                                  handleBarMouseDown(e, childItem, 'resize-left');
-                                }}
-                                data-testid={`resize-left-${childItem.id}`}
-                              />
-                              
-                              {childNameFits && (
-                                <span className="text-xs font-medium text-white truncate pointer-events-none pl-2">
-                                  {childItem.name}
-                                </span>
-                              )}
-                              
-                              {/* Right resize handle */}
-                              <div
-                                className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-background/30 opacity-0 group-hover/bar:opacity-100 transition-opacity"
-                                onMouseDown={(e) => {
-                                  e.stopPropagation();
-                                  handleBarMouseDown(e, childItem, 'resize-right');
-                                }}
-                                data-testid={`resize-right-${childItem.id}`}
-                              />
-                              
-                              {/* Progress overlay - darkens completed portion */}
-                              {(() => {
-                                const displayProgress = progressDrag?.itemId === childItem.id 
-                                  ? progressDrag.currentProgress 
-                                  : (childItem.progressPercent ?? 0);
-                                return (
-                                  <div 
-                                    className="absolute inset-0 pointer-events-none rounded-sm"
-                                    style={{ 
-                                      background: `linear-gradient(to right, rgba(0,0,0,0.25) ${displayProgress}%, transparent ${displayProgress}%)` 
-                                    }}
-                                  />
-                                );
-                              })()}
-                              
-                              {/* Progress slider handle at bottom - appears on hover, disabled when schedule is offline */}
-                              <div
-                                className={`absolute bottom-0 left-0 right-0 h-2 opacity-0 group-hover/bar:opacity-100 transition-opacity ${schedule?.status === 'offline' ? 'pointer-events-none' : 'cursor-ew-resize'}`}
-                                onMouseDown={(e) => {
-                                  if (schedule?.status === 'offline') return;
-                                  e.stopPropagation();
-                                  e.preventDefault();
-                                  const barRect = e.currentTarget.parentElement?.getBoundingClientRect();
-                                  if (!barRect) return;
-                                  const clickX = e.clientX - barRect.left;
-                                  const clickPercent = Math.max(0, Math.min(100, Math.round((clickX / barRect.width) * 100)));
-                                  updateProgressMutation.mutate({ id: childItem.id, progressPercent: clickPercent });
-                                }}
-                                onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
-                                data-testid={`progress-track-${childItem.id}`}
-                              >
-                                {/* Track line */}
-                                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white/30" />
-                                {/* Slider thumb */}
-                                <div 
-                                  className={`absolute bottom-0 w-2 h-2 bg-white rounded-full shadow-md -translate-x-1/2 transition-transform ${schedule?.status === 'offline' ? '' : 'cursor-ew-resize hover:scale-125'}`}
-                                  style={{ left: `${progressDrag?.itemId === childItem.id ? progressDrag.currentProgress : (childItem.progressPercent ?? 0)}%` }}
-                                  onMouseDown={(e) => {
-                                    if (schedule?.status === 'offline') return;
-                                    e.stopPropagation();
-                                    e.preventDefault();
-                                    const barRect = e.currentTarget.parentElement?.parentElement?.getBoundingClientRect();
-                                    if (!barRect) return;
-                                    setProgressDrag({
-                                      itemId: childItem.id,
-                                      barWidth: barRect.width,
-                                      startX: e.clientX,
-                                      startProgress: childItem.progressPercent ?? 0,
-                                      currentProgress: childItem.progressPercent ?? 0,
-                                    });
-                                  }}
-                                  onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
-                                  data-testid={`progress-thumb-${childItem.id}`}
-                                />
-                              </div>
-                            </div>
-                            
-                            {/* Right dependency dot (end anchor) - can drag or drop */}
-                            <div
-                              className={`absolute top-1/2 -translate-y-1/2 -right-4 w-4 h-4 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30 ${hoveredBar === childItem.id && hoveredAnchor === 'end' ? 'scale-150' : ''}`}
-                              onMouseDown={(e) => {
-                                e.stopPropagation();
-                                handleBarMouseDown(e, childItem, 'dependency', 'end');
-                              }}
-                              onMouseEnter={() => { setHoveredBar(childItem.id); setHoveredAnchor('end'); }}
-                              onMouseLeave={() => { setHoveredBar(null); setHoveredAnchor(null); }}
-                              title="Drag to create dependency from end"
-                              data-testid={`dependency-end-${childItem.id}`}
-                            >
-                              <div className="w-2 h-2 rounded-full bg-[#9b7fc7] hover:scale-150 transition-transform" />
-                            </div>
-                          </div>
-                          
-                          {/* Baseline ghost bar */}
-                          {baselineItems.length > 0 && (() => {
-                            const baselineItem = baselineItems.find((bi: any) => bi.scheduleItemId === childItem.id);
-                            if (!baselineItem) return null;
-                            const blStart = getPosition(new Date(baselineItem.startDate));
-                            const blDuration = differenceInDays(new Date(baselineItem.endDate), new Date(baselineItem.startDate)) + 1;
-                            const blWidth = blDuration * pixelsPerDay;
-                            return (
-                              <div
-                                className="absolute h-2 rounded-sm border border-dashed border-purple-400/60 bg-purple-200/30 dark:bg-purple-800/20 pointer-events-none z-5"
-                                style={{
-                                  left: `${blStart}px`,
-                                  width: `${blWidth}px`,
-                                  top: '28px',
-                                }}
-                                title={`Baseline: ${format(new Date(baselineItem.startDate), 'MMM d')} – ${format(new Date(baselineItem.endDate), 'MMM d')}`}
-                              />
-                            );
-                          })()}
-                          
-                          {!childNameFits && (
-                            <div
-                              className="absolute top-2 h-6 flex items-center pl-2 z-20"
-                              style={{ left: `${childStart + childWidth + 20}px` }}
-                            >
-                              <span className="text-xs font-medium whitespace-nowrap">
-                                {childItem.name}
-                              </span>
-                            </div>
-                          )}
-                        </div>
+                        <div
+                          className="absolute h-2 rounded-sm border border-dashed border-purple-400/60 bg-purple-200/30 dark:bg-purple-800/20 pointer-events-none z-5"
+                          style={{
+                            left: `${blStart}px`,
+                            width: `${blWidth}px`,
+                            top: '28px',
+                          }}
+                          title={`Baseline: ${format(new Date(baselineItem.startDate), 'MMM d')} – ${format(new Date(baselineItem.endDate), 'MMM d')}`}
+                        />
                       );
-                    })}
+                    })()}
+                      
+                    {!nameFitsInBar && (
+                      <div
+                        className="absolute top-2 h-6 flex items-center pl-2 z-20"
+                        style={{ left: `${barStart + barWidth + 20}px` }}
+                      >
+                        <span className="text-xs font-medium whitespace-nowrap">
+                          {item.name}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 );
               })}
