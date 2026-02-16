@@ -22,6 +22,7 @@ interface ScheduleViewContextType {
   updateItemStatusMutation: UseMutationResult<ScheduleItem, Error, { itemId: string; status: string }, unknown>;
   setShowItemDialog: (show: boolean) => void;
   setEditingItem: (item: ScheduleItem | null) => void;
+  setPendingAutoLink?: (link: { successorId: string } | null) => void;
 }
 
 const ScheduleViewContext = createContext<ScheduleViewContextType | undefined>(undefined);

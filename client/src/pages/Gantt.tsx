@@ -6,8 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown, User, Search, Filter, Columns, MoreVertical, FileText, Edit, Eye, Copy, Check, Palette, Trash2, Settings, Download, Wifi, WifiOff, GanttChart, List as ListIcon, GripVertical, Link, Unlink, X } from "lucide-react";
-import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
+import { Plus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown, User, Search, Filter, Columns, MoreVertical, FileText, Edit, Eye, Copy, Check, Palette, Trash2, Settings, Download, Wifi, WifiOff, GanttChart, List as ListIcon, GripVertical, Link, Unlink, X, RotateCcw } from "lucide-react";
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent, DragOverEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useScheduleView } from "@/contexts/ScheduleViewContext";
@@ -159,6 +159,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     updateItemStatusMutation,
     setShowItemDialog,
     setEditingItem: setEditingItemContext,
+    setPendingAutoLink,
   } = useScheduleView();
   
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -183,6 +184,26 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
   } | null>(null);
   const draggingRef = useRef(dragging);
   draggingRef.current = dragging;
+  
+  const draggingCascadeIds = useMemo(() => {
+    if (!dragging || dragging.type !== 'move') return new Set<number | string>();
+    const items = allItems || [];
+    const visited = new Set<number | string>();
+    const queue: (number | string)[] = [dragging.id];
+    visited.add(dragging.id);
+    while (queue.length > 0) {
+      const currentId = queue.shift()!;
+      for (const item of items) {
+        if (!visited.has(item.id) && item.dependencies?.some((dep: any) => String(dep.id) === String(currentId))) {
+          visited.add(item.id);
+          queue.push(item.id);
+        }
+      }
+    }
+    visited.delete(dragging.id);
+    return visited;
+  }, [dragging?.id, dragging?.type, allItems]);
+  
   const allItemsRef = useRef<ScheduleItem[]>([]);
   const projectIdRef = useRef(projectId);
   projectIdRef.current = projectId;
@@ -207,6 +228,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
   const lastCursorPosition = useRef<{ x: number; y: number } | null>(null);
   const dragHappened = useRef<boolean>(false);
   const dragStartTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoScrollRafId = useRef<number | null>(null);
   
   // Context menu state for right-click on bars
   const [contextMenu, setContextMenu] = useState<{
@@ -267,14 +289,61 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
   const [sessionItemOrder, setSessionItemOrder] = useState<string[]>([]);
   const [orderInitialized, setOrderInitialized] = useState(false);
 
+  // Nest target state for drag-to-nest (drop item ON another to create parent-child)
+  const [nestTargetId, setNestTargetId] = useState<string | null>(null);
+  const nestTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastOverIdRef = useRef<string | null>(null);
+
+  const handleRowDragOver = (event: DragOverEvent) => {
+    const { active, over } = event;
+    const overId = over?.id as string | undefined;
+
+    if (!overId || overId === (active.id as string)) {
+      if (nestTimerRef.current) clearTimeout(nestTimerRef.current);
+      setNestTargetId(null);
+      lastOverIdRef.current = null;
+      return;
+    }
+
+    if (overId !== lastOverIdRef.current) {
+      lastOverIdRef.current = overId;
+      setNestTargetId(null);
+      if (nestTimerRef.current) clearTimeout(nestTimerRef.current);
+      nestTimerRef.current = setTimeout(() => {
+        setNestTargetId(overId);
+      }, 600);
+    }
+  };
+
   // Handle row drag end for reordering tasks (temporary, session-only)
   const handleRowDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
+    const currentNestTarget = nestTargetId;
+
+    if (nestTimerRef.current) clearTimeout(nestTimerRef.current);
+    setNestTargetId(null);
+    lastOverIdRef.current = null;
     
     if (!over || active.id === over.id) return;
     
     const activeId = active.id as string;
     const overId = over.id as string;
+
+    if (currentNestTarget && currentNestTarget === overId) {
+      const activeItem = allItems.find(i => i.id === activeId);
+      const targetItem = allItems.find(i => i.id === overId);
+      if (activeItem && targetItem) {
+        apiRequest(`/api/schedule-items/${activeId}`, "PATCH", {
+          parentItemId: overId,
+        }).then(() => {
+          queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+          toast({ title: "Item nested", description: `"${activeItem.name}" is now a child of "${targetItem.name}"` });
+        }).catch(() => {
+          toast({ title: "Failed to nest item", variant: "destructive" });
+        });
+      }
+      return;
+    }
     
     // Update the local session order
     setSessionItemOrder(currentOrder => {
@@ -1030,6 +1099,46 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
   };
 
   useEffect(() => {
+    const startAutoScroll = () => {
+      const tick = () => {
+        const drag = draggingRef.current;
+        const cursor = lastCursorPosition.current;
+        if (!drag || !cursor || !timelineRef.current) {
+          autoScrollRafId.current = null;
+          return;
+        }
+        if (drag.type === 'move' || drag.type === 'resize-left' || drag.type === 'resize-right') {
+          const rect = timelineRef.current.getBoundingClientRect();
+          const edgeZone = 60;
+          const scrollSpeed = 8;
+          let scrolled = false;
+          if (cursor.x < rect.left + edgeZone) {
+            timelineRef.current.scrollLeft -= scrollSpeed;
+            scrolled = true;
+          } else if (cursor.x > rect.right - edgeZone) {
+            timelineRef.current.scrollLeft += scrollSpeed;
+            scrolled = true;
+          }
+          if (scrolled) {
+            const scrollDelta = (timelineRef.current.scrollLeft) - drag.startScrollLeft;
+            const currentDeltaX = (cursor.x - drag.startX) + scrollDelta;
+            setDragging(prev => prev ? { ...prev, currentDeltaX } : null);
+          }
+        }
+        autoScrollRafId.current = requestAnimationFrame(tick);
+      };
+      if (autoScrollRafId.current === null) {
+        autoScrollRafId.current = requestAnimationFrame(tick);
+      }
+    };
+
+    const stopAutoScroll = () => {
+      if (autoScrollRafId.current !== null) {
+        cancelAnimationFrame(autoScrollRafId.current);
+        autoScrollRafId.current = null;
+      }
+    };
+
     const handleMouseMove = (e: MouseEvent) => {
       const drag = draggingRef.current;
       if (!drag) return;
@@ -1038,18 +1147,6 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
       const deltaY = Math.abs(e.clientY - drag.startY);
       if (deltaX > 3 || deltaY > 3) {
         dragHappened.current = true;
-      }
-
-      if (timelineRef.current && (drag.type === 'move' || drag.type === 'resize-left' || drag.type === 'resize-right')) {
-        const rect = timelineRef.current.getBoundingClientRect();
-        const edgeZone = 60;
-        const scrollSpeed = 8;
-        
-        if (e.clientX < rect.left + edgeZone) {
-          timelineRef.current.scrollLeft -= scrollSpeed;
-        } else if (e.clientX > rect.right - edgeZone) {
-          timelineRef.current.scrollLeft += scrollSpeed;
-        }
       }
 
       let currentX = e.clientX;
@@ -1061,9 +1158,12 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
       const currentDeltaX = (e.clientX - drag.startX) + scrollDelta;
 
       setDragging(prev => prev ? { ...prev, currentX, currentY, currentDeltaX } : null);
+
+      startAutoScroll();
     };
 
     const handleMouseUp = async (e: MouseEvent) => {
+      stopAutoScroll();
       const drag = draggingRef.current;
       if (!drag || !timelineRef.current) {
         setDragging(null);
@@ -1103,9 +1203,28 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
           
           const totalOffset = differenceInDays(newStart, drag.originalStart);
 
-          const dependentItems = currentItems.filter(item => 
-            item.dependencies?.some((dep: any) => dep.id === drag.id)
-          );
+          const getAllDownstreamSuccessors = (rootId: number | string): ScheduleItem[] => {
+            const visited = new Set<number | string>();
+            const result: ScheduleItem[] = [];
+            const queue = [rootId];
+            visited.add(rootId);
+            while (queue.length > 0) {
+              const currentId = queue.shift()!;
+              const successors = currentItems.filter(item =>
+                item.dependencies?.some((dep: any) => String(dep.id) === String(currentId))
+              );
+              for (const s of successors) {
+                if (!visited.has(s.id)) {
+                  visited.add(s.id);
+                  result.push(s);
+                  queue.push(s.id);
+                }
+              }
+            }
+            return result;
+          };
+
+          const dependentItems = getAllDownstreamSuccessors(drag.id);
 
           updateCacheOptimistically(drag.id, newStart, newEnd);
           
@@ -1215,6 +1334,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     }
     
     return () => {
+      stopAutoScroll();
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
       if (timeline) {
@@ -1481,36 +1601,26 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     }
   };
 
-  const handleCreatePredecessor = async (item: ScheduleItem) => {
-    try {
-      const itemStart = new Date(item.startDate);
-      const endDate = addDays(itemStart, -1);
-      const startDate = addDays(endDate, -4);
-      
-      const predecessorItem = {
-        scheduleId: item.scheduleId,
-        name: `Predecessor`,
-        status: "not_started",
-        startDate,
-        endDate,
-        parentItemId: item.parentItemId,
-        progressPercent: 0,
-      };
-      
-      const newItem: any = await apiRequest("/api/schedule-items", "POST", predecessorItem);
-      
-      if (newItem?.id) {
-        await apiRequest(`/api/schedule-items/${item.id}/dependencies`, "POST", {
-          predecessorId: newItem.id,
-          type: 'FS',
-        });
-      }
-      
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
-      toast({ title: "Predecessor created", description: "New predecessor item has been created and linked." });
-    } catch (error) {
-      toast({ title: "Failed to create predecessor", description: "Could not create predecessor item.", variant: "destructive" });
+  const handleCreatePredecessor = (item: ScheduleItem) => {
+    const dayBefore = addDays(new Date(item.startDate), -1);
+    const newItem = {
+      name: '',
+      scheduleId: item.scheduleId,
+      parentItemId: item.parentItemId,
+      startDate: dayBefore,
+      endDate: dayBefore,
+      status: 'not_started',
+      type: 'task',
+      priority: 'medium',
+      progressPercent: 0,
+    } as Partial<ScheduleItem>;
+    
+    if (setPendingAutoLink) {
+      setPendingAutoLink({ successorId: item.id });
     }
+    
+    setEditingItemContext(newItem as any);
+    setShowItemDialog(true);
   };
 
   const handleToggleComplete = async (item: ScheduleItem) => {
@@ -1568,7 +1678,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
       scheduleId: parentItem.scheduleId,
       parentItemId: parentItem.id,
       startDate: parentItem.startDate,
-      endDate: parentItem.endDate,
+      endDate: parentItem.startDate,
       status: 'not_started',
     } as Partial<ScheduleItem>;
     setEditingItemContext(childItem as any);
@@ -1660,6 +1770,18 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
               )}
             </div>
             
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 flex-shrink-0"
+              onClick={() => {
+                setSessionItemOrder([...defaultItemIds]);
+              }}
+              title="Reset order to start date"
+              data-testid="button-reset-order"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </Button>
             <Popover>
               <PopoverTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-6 w-6 flex-shrink-0" data-testid="button-columns">
@@ -1773,10 +1895,11 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
           </div>
           
           {/* Task rows */}
-          <div ref={leftPanelRef} onScroll={handleLeftPanelScroll} className="flex-1 overflow-y-auto">
+          <div ref={leftPanelRef} onScroll={handleLeftPanelScroll} className="flex-1 overflow-y-auto pb-20">
             <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
+              onDragOver={handleRowDragOver}
               onDragEnd={handleRowDragEnd}
             >
               <SortableContext items={sortableItemIds} strategy={verticalListSortingStrategy}>
@@ -1789,7 +1912,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                 <SortableTaskRow key={item.id} id={item.id}>
                   {({ attributes, listeners }) => (
                   <div
-                    className={`h-8 flex items-center px-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer group border-b border-border`}
+                    className={`h-8 flex items-center px-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer group border-b border-border ${nestTargetId === item.id ? 'ring-2 ring-inset ring-primary bg-primary/10' : ''}`}
                     onClick={(e) => handleRowClick(e, item)}
                     data-testid={`row-${isParent ? 'parent' : 'child'}-${item.id}`}
                   >
@@ -2110,7 +2233,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
             )}
 
             {/* Timeline Bars - minHeight ensures scroll area matches left panel */}
-            <div className="relative" style={{ minHeight: `${orderedItems.length * ROW_HEIGHT}px` }}>
+            <div className="relative pb-20" style={{ minHeight: `${orderedItems.length * ROW_HEIGHT}px` }}>
               {/* Weekend column backgrounds */}
               {groupedTimelineHeaders && (
                 <div className="absolute top-0 bottom-0 left-0 right-0 pointer-events-none z-0">
@@ -2241,11 +2364,11 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                       className={`absolute ${hasChildren ? 'top-[9px] h-[14px]' : 'top-1 h-6'}`}
                       style={{ 
                         left: `${barStart + (dragging?.id === item.id && dragging?.type === 'move' ? (dragging.currentDeltaX || 0) : 
-                          (dragging?.type === 'move' && item.dependencies?.some((dep: any) => dep.id === dragging?.id) ? (dragging.currentDeltaX || 0) : 0))}px`, 
+                          (dragging?.type === 'move' && draggingCascadeIds.has(item.id) ? (dragging.currentDeltaX || 0) : 0))}px`, 
                         width: `${barWidth}px`,
                         opacity: (dragging?.id === item.id && dragging?.type === 'move') || 
-                          (dragging?.type === 'move' && item.dependencies?.some((dep: any) => dep.id === dragging?.id)) ? 0.8 : 1,
-                        transition: dragging?.id === item.id || (dragging?.type === 'move' && item.dependencies?.some((dep: any) => dep.id === dragging?.id)) ? 'none' : 'opacity 0.2s',
+                          (dragging?.type === 'move' && draggingCascadeIds.has(item.id)) ? 0.8 : 1,
+                        transition: dragging?.id === item.id || (dragging?.type === 'move' && draggingCascadeIds.has(item.id)) ? 'none' : 'opacity 0.2s',
                       }}
                     >
                       <div
@@ -2435,9 +2558,8 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                     ? getPosition(targetEffective.startDate)
                     : getPosition(new Date(item.startDate));
                   
-                  // Apply drag delta to target if it's being dragged or is a dependent of dragged item
                   const dragDelta = dragging?.type === 'move' ? (dragging.currentDeltaX || 0) : 0;
-                  if (dragging?.type === 'move' && (item.id === dragging.id || item.dependencies?.some((d: any) => d.id === dragging.id))) {
+                  if (dragging?.type === 'move' && (item.id === dragging.id || draggingCascadeIds.has(item.id))) {
                     targetStart += dragDelta;
                   }
                   
@@ -2460,8 +2582,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                       ? getPosition(predEffective.startDate)
                       : getPosition(new Date(predItem.startDate));
                     
-                    // Apply drag delta to predecessor if it's being dragged
-                    if (dragging?.type === 'move' && predItem.id === dragging.id) {
+                    if (dragging?.type === 'move' && (predItem.id === dragging.id || draggingCascadeIds.has(predItem.id))) {
                       predStart += dragDelta;
                     }
                     

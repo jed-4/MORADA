@@ -108,6 +108,7 @@ export default function Schedule() {
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [showItemDialog, setShowItemDialog] = useState(false);
   const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
+  const [pendingAutoLink, setPendingAutoLink] = useState<{ successorId: string } | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
@@ -233,7 +234,22 @@ export default function Schedule() {
   }, [isUnlocked]);
 
   useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isUnlockedRef.current && scheduleRef.current) {
+        e.preventDefault();
+        e.returnValue = "Your schedule is unlocked. Leaving will auto-lock it.";
+        const s = scheduleRef.current;
+        fetch(`/api/schedules/${s.id}/status`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ status: "locked" }),
+        }).catch(() => {});
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
     return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
       if (isUnlockedRef.current && scheduleRef.current) {
         const s = scheduleRef.current;
         fetch(`/api/schedules/${s.id}/status`, {
@@ -378,8 +394,24 @@ export default function Schedule() {
       if (!response.ok) throw new Error("Failed to create item");
       return response.json() as Promise<ScheduleItem>;
     },
-    onSuccess: () => {
+    onSuccess: async (newItem) => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      
+      if (pendingAutoLink && newItem?.id) {
+        try {
+          await fetch(`/api/schedule-items/${pendingAutoLink.successorId}/dependencies`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ predecessorId: String(newItem.id), type: 'FS' }),
+          });
+          queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+        } catch (error) {
+          console.error("Failed to auto-link dependency:", error);
+        }
+        setPendingAutoLink(null);
+      }
+      
       setShowItemDialog(false);
       setEditingItem(null);
       resetForm();
@@ -415,10 +447,6 @@ export default function Schedule() {
       setShowItemDialog(false);
       setEditingItem(null);
       resetForm();
-      toast({
-        title: "Item updated",
-        description: "Schedule item has been updated.",
-      });
     },
     onError: (error: Error) => {
       toast({
@@ -1074,6 +1102,7 @@ export default function Schedule() {
         updateItemStatusMutation: updateStatusMutationInline,
         setShowItemDialog,
         setEditingItem,
+        setPendingAutoLink,
       }}
     >
       <div className="flex flex-col h-full bg-background rounded-lg border overflow-hidden">
@@ -1690,6 +1719,64 @@ export default function Schedule() {
               />
             </div>
 
+            {/* Dates Row */}
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="item-start-date">
+                  Start Date <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="item-start-date"
+                  type="date"
+                  value={formData.startDate}
+                  onChange={(e) => {
+                    setFormData({ ...formData, startDate: e.target.value });
+                  }}
+                  required
+                  data-testid="input-item-start-date"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="item-duration">Duration (days)</Label>
+                <Input
+                  id="item-duration"
+                  type="number"
+                  min="1"
+                  placeholder="Auto"
+                  value={
+                    formData.startDate && formData.endDate
+                      ? Math.ceil((new Date(formData.endDate).getTime() - new Date(formData.startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1
+                      : ''
+                  }
+                  onChange={(e) => {
+                    const days = parseInt(e.target.value, 10);
+                    if (formData.startDate && !isNaN(days) && days > 0) {
+                      const start = new Date(formData.startDate);
+                      const end = new Date(start);
+                      end.setDate(start.getDate() + days - 1);
+                      setFormData({ ...formData, endDate: end.toISOString().split('T')[0] });
+                    }
+                  }}
+                  data-testid="input-item-duration"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="item-end-date">
+                  End Date <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="item-end-date"
+                  type="date"
+                  value={formData.endDate}
+                  onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
+                  required
+                  data-testid="input-item-end-date"
+                />
+              </div>
+            </div>
+
             {/* Description */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -1773,44 +1860,24 @@ export default function Schedule() {
               </p>
             </div>
 
-            {/* Type and Priority Row */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="item-type">Type</Label>
-                <Select
-                  value={formData.type}
-                  onValueChange={(value) => setFormData({ ...formData, type: value })}
-                >
-                  <SelectTrigger id="item-type" data-testid="select-item-type">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="task">Task</SelectItem>
-                    <SelectItem value="milestone">Milestone</SelectItem>
-                    <SelectItem value="inspection">Inspection</SelectItem>
-                    <SelectItem value="delivery">Delivery</SelectItem>
-                    <SelectItem value="meeting">Meeting</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="item-priority">Priority</Label>
-                <Select
-                  value={formData.priority}
-                  onValueChange={(value) => setFormData({ ...formData, priority: value })}
-                >
-                  <SelectTrigger id="item-priority" data-testid="select-item-priority">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="low">Low</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="high">High</SelectItem>
-                    <SelectItem value="urgent">Urgent</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            {/* Type */}
+            <div className="space-y-2">
+              <Label htmlFor="item-type">Type</Label>
+              <Select
+                value={formData.type}
+                onValueChange={(value) => setFormData({ ...formData, type: value })}
+              >
+                <SelectTrigger id="item-type" data-testid="select-item-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="task">Task</SelectItem>
+                  <SelectItem value="milestone">Milestone</SelectItem>
+                  <SelectItem value="inspection">Inspection</SelectItem>
+                  <SelectItem value="delivery">Delivery</SelectItem>
+                  <SelectItem value="meeting">Meeting</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Status and Assignee Row */}
@@ -1842,64 +1909,6 @@ export default function Schedule() {
                   placeholder="None"
                   allowBusiness={true}
                   data-testid="select-item-assignee"
-                />
-              </div>
-            </div>
-
-            {/* Dates Row */}
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="item-start-date">
-                  Start Date <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  id="item-start-date"
-                  type="date"
-                  value={formData.startDate}
-                  onChange={(e) => {
-                    setFormData({ ...formData, startDate: e.target.value });
-                  }}
-                  required
-                  data-testid="input-item-start-date"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="item-duration">Duration (days)</Label>
-                <Input
-                  id="item-duration"
-                  type="number"
-                  min="1"
-                  placeholder="Auto"
-                  value={
-                    formData.startDate && formData.endDate
-                      ? Math.ceil((new Date(formData.endDate).getTime() - new Date(formData.startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1
-                      : ''
-                  }
-                  onChange={(e) => {
-                    const days = parseInt(e.target.value, 10);
-                    if (formData.startDate && !isNaN(days) && days > 0) {
-                      const start = new Date(formData.startDate);
-                      const end = new Date(start);
-                      end.setDate(start.getDate() + days - 1);
-                      setFormData({ ...formData, endDate: end.toISOString().split('T')[0] });
-                    }
-                  }}
-                  data-testid="input-item-duration"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="item-end-date">
-                  End Date <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  id="item-end-date"
-                  type="date"
-                  value={formData.endDate}
-                  onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                  required
-                  data-testid="input-item-end-date"
                 />
               </div>
             </div>
@@ -2005,41 +2014,90 @@ export default function Schedule() {
                       return predItem ? (
                         <div
                           key={dep.id}
-                          className="flex items-center justify-between p-2 rounded-md border bg-card"
+                          className="p-2 rounded-md border bg-card space-y-1.5"
                           data-testid={`dependency-${dep.id}`}
                         >
-                          <div className="flex items-center gap-2">
-                            <div className="text-sm font-medium">{predItem.name}</div>
-                            <Badge variant="outline" className="text-xs">
-                              {dep.type || "FS"}
-                            </Badge>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <div className="text-sm font-medium">{predItem.name}</div>
+                              <Badge variant="outline" className="text-xs">
+                                {dep.type || "FS"}
+                              </Badge>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                              onClick={async () => {
+                                try {
+                                  const updatedItem = await apiRequest(
+                                    `/api/schedule-items/${editingItem.id}/dependencies/${dep.id}`,
+                                    "DELETE"
+                                  );
+                                  setEditingItem(updatedItem);
+                                  queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+                                  toast({ title: "Dependency removed" });
+                                } catch (error) {
+                                  toast({
+                                    title: "Failed to remove dependency",
+                                    variant: "destructive",
+                                  });
+                                }
+                              }}
+                              data-testid={`button-remove-dependency-${dep.id}`}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
                           </div>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0"
-                            onClick={async () => {
-                              try {
-                                const updatedItem = await apiRequest(
-                                  `/api/schedule-items/${editingItem.id}/dependencies/${dep.id}`,
-                                  "DELETE"
-                                );
-                                // Update local editingItem state to reflect the change immediately
-                                setEditingItem(updatedItem);
-                                queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
-                                toast({ title: "Dependency removed" });
-                              } catch (error) {
-                                toast({
-                                  title: "Failed to remove dependency",
-                                  variant: "destructive",
-                                });
-                              }
-                            }}
-                            data-testid={`button-remove-dependency-${dep.id}`}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground whitespace-nowrap">Lag:</span>
+                            <Input
+                              type="number"
+                              min="0"
+                              value={dep.lag ?? 0}
+                              onChange={async (e) => {
+                                const newLag = parseInt(e.target.value) || 0;
+                                try {
+                                  const updatedItem = await apiRequest(
+                                    `/api/schedule-items/${editingItem.id}/dependencies/${dep.id}`,
+                                    "PATCH",
+                                    { lag: newLag }
+                                  );
+                                  setEditingItem(updatedItem);
+                                  if (predItem.endDate) {
+                                    const predEnd = new Date(predItem.endDate);
+                                    const newStart = new Date(predEnd);
+                                    newStart.setDate(newStart.getDate() + newLag + 1);
+                                    const startStr = newStart.toISOString().split("T")[0];
+                                    let endStr = startStr;
+                                    if (editingItem.startDate && editingItem.endDate) {
+                                      const oldStart = new Date(editingItem.startDate);
+                                      const oldEnd = new Date(editingItem.endDate);
+                                      const durationMs = oldEnd.getTime() - oldStart.getTime();
+                                      const newEnd = new Date(newStart.getTime() + durationMs);
+                                      endStr = newEnd.toISOString().split("T")[0];
+                                    }
+                                    await apiRequest(`/api/schedule-items/${editingItem.id}`, "PATCH", {
+                                      startDate: startStr,
+                                      endDate: endStr,
+                                    });
+                                    setFormData(prev => ({ ...prev, startDate: startStr, endDate: endStr }));
+                                    queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+                                  }
+                                } catch (error) {
+                                  toast({
+                                    title: "Failed to update lag",
+                                    variant: "destructive",
+                                  });
+                                }
+                              }}
+                              className="h-6 w-16 text-xs"
+                              placeholder="0"
+                              data-testid={`input-lag-${dep.id}`}
+                            />
+                            <span className="text-xs text-muted-foreground">days</span>
+                          </div>
                         </div>
                       ) : null;
                     })
