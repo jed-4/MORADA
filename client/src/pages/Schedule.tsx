@@ -186,7 +186,6 @@ export default function Schedule() {
   const scheduleRef = useRef(schedule);
   const isUnlockedRef = useRef(isUnlocked);
   const scrollToTodayRef = useRef<(() => void) | null>(null);
-  const calendarInitialized = useRef(false);
   useEffect(() => { scheduleRef.current = schedule; }, [schedule]);
   useEffect(() => { isUnlockedRef.current = isUnlocked; }, [isUnlocked]);
 
@@ -272,16 +271,6 @@ export default function Schedule() {
     enabled: !!projectId,
   });
 
-  useEffect(() => {
-    if (!calendarInitialized.current && scheduleItems.length > 0) {
-      calendarInitialized.current = true;
-      const earliest = scheduleItems.reduce((min, item) => {
-        const d = new Date(item.startDate);
-        return d < min ? d : min;
-      }, new Date(scheduleItems[0].startDate));
-      setCalendarDate(earliest);
-    }
-  }, [scheduleItems]);
 
   // Fetch note counts for all schedule items
   const { data: noteCounts = {} } = useQuery<Record<string, number>>({

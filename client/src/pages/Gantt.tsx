@@ -238,6 +238,8 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
   
   // Infinite scroll: track extra buffer days beyond data bounds
   const [timelineBuffer, setTimelineBuffer] = useState({ before: 60, after: 60 });
+  const prevTimelineStartRef = useRef<Date | null>(null);
+  const pendingScrollAdjustEarly = useRef<number>(0);
   const [visibleColumns, setVisibleColumns] = useState({
     assignee: true,
     status: true,
@@ -813,6 +815,16 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
 
     return { timelineStart: start, timelineEnd: end, totalDays: days, dataStart: dataStartDate, dataEnd: dataEndDate };
   }, [allItems, timelineBuffer]);
+
+  useEffect(() => {
+    if (prevTimelineStartRef.current && timelineRef.current && pendingScrollAdjustEarly.current === 0) {
+      const shiftDays = differenceInDays(prevTimelineStartRef.current, timelineStart);
+      if (shiftDays !== 0) {
+        timelineRef.current.scrollLeft += shiftDays * pixelsPerDay;
+      }
+    }
+    prevTimelineStartRef.current = timelineStart;
+  }, [timelineStart, pixelsPerDay]);
 
   // Generate timeline headers based on zoom level
   const timelineHeaders = useMemo(() => {
@@ -1516,19 +1528,30 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     });
   };
 
+  const ganttInitialScrollRef = useRef(false);
+
+  const scrollToToday = useCallback(() => {
+    if (!timelineRef.current) return;
+    const todayPos = differenceInDays(new Date(), timelineStart) * pixelsPerDay;
+    const containerWidth = timelineRef.current.clientWidth;
+    timelineRef.current.scrollLeft = todayPos - containerWidth / 2;
+  }, [timelineStart, pixelsPerDay]);
+
   useEffect(() => {
     if (scrollToTodayRef) {
-      scrollToTodayRef.current = () => {
-        if (!timelineRef.current) return;
-        const todayPos = differenceInDays(new Date(), timelineStart) * pixelsPerDay;
-        const containerWidth = timelineRef.current.clientWidth;
-        timelineRef.current.scrollLeft = todayPos - containerWidth / 2;
-      };
+      scrollToTodayRef.current = scrollToToday;
     }
     return () => {
       if (scrollToTodayRef) scrollToTodayRef.current = null;
     };
-  }, [scrollToTodayRef, timelineStart, pixelsPerDay]);
+  }, [scrollToTodayRef, scrollToToday]);
+
+  useEffect(() => {
+    if (!ganttInitialScrollRef.current && allItems.length > 0 && timelineRef.current) {
+      ganttInitialScrollRef.current = true;
+      requestAnimationFrame(() => scrollToToday());
+    }
+  }, [allItems, scrollToToday]);
 
   useEffect(() => {
     if (contextMenu && contextMenuRef.current) {
@@ -1556,16 +1579,13 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     requestAnimationFrame(() => { isScrollSyncing.current = false; });
   };
 
-  // Ref to track pending scroll adjustment after extending left (accumulated)
-  const pendingScrollAdjust = useRef<number>(0);
   const lastExtensionDirection = useRef<'left' | 'right' | null>(null);
   
   // Effect to adjust scroll position after extending left
   useEffect(() => {
-    if (pendingScrollAdjust.current > 0 && timelineRef.current) {
-      // Add the accumulated pixels for all new days added on the left
-      timelineRef.current.scrollLeft += pendingScrollAdjust.current;
-      pendingScrollAdjust.current = 0;
+    if (pendingScrollAdjustEarly.current > 0 && timelineRef.current) {
+      timelineRef.current.scrollLeft += pendingScrollAdjustEarly.current;
+      pendingScrollAdjustEarly.current = 0;
       lastExtensionDirection.current = null;
     }
   }, [timelineBuffer.before]);
@@ -1590,7 +1610,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     if (scrollLeft < edgeThreshold && lastExtensionDirection.current !== 'left') {
       // Accumulate pixels to add based on current zoom level
       const pixelsToAdd = extensionDays * pixelsPerDay;
-      pendingScrollAdjust.current += pixelsToAdd;
+      pendingScrollAdjustEarly.current += pixelsToAdd;
       lastExtensionDirection.current = 'left';
       setTimelineBuffer(prev => ({ ...prev, before: prev.before + extensionDays }));
     }
