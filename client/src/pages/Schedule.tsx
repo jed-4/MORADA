@@ -108,7 +108,7 @@ export default function Schedule() {
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [showItemDialog, setShowItemDialog] = useState(false);
   const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
-  const [pendingAutoLink, setPendingAutoLink] = useState<{ successorId: string } | null>(null);
+  const [pendingAutoLink, setPendingAutoLink] = useState<{ successorId?: string; predecessorId?: string; insertAfterItemId?: string; lag?: number } | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
@@ -186,6 +186,7 @@ export default function Schedule() {
   const scheduleRef = useRef(schedule);
   const isUnlockedRef = useRef(isUnlocked);
   const scrollToTodayRef = useRef<(() => void) | null>(null);
+  const insertAfterItemRef = useRef<((newItemId: string, afterItemId: string) => void) | null>(null);
   useEffect(() => { scheduleRef.current = schedule; }, [schedule]);
   useEffect(() => { isUnlockedRef.current = isUnlocked; }, [isUnlocked]);
 
@@ -401,13 +402,26 @@ export default function Schedule() {
       
       if (pendingAutoLink && newItem?.id) {
         try {
-          await fetch(`/api/schedule-items/${pendingAutoLink.successorId}/dependencies`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body: JSON.stringify({ predecessorId: String(newItem.id), type: 'FS' }),
-          });
+          if (pendingAutoLink.predecessorId) {
+            await fetch(`/api/schedule-items/${newItem.id}/dependencies`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify({ predecessorId: pendingAutoLink.predecessorId, type: 'FS', lag: pendingAutoLink.lag ?? 0 }),
+            });
+          } else if (pendingAutoLink.successorId) {
+            await fetch(`/api/schedule-items/${pendingAutoLink.successorId}/dependencies`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify({ predecessorId: String(newItem.id), type: 'FS' }),
+            });
+          }
           queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+          
+          if (pendingAutoLink.insertAfterItemId && insertAfterItemRef.current) {
+            insertAfterItemRef.current(newItem.id, pendingAutoLink.insertAfterItemId);
+          }
         } catch (error) {
           console.error("Failed to auto-link dependency:", error);
         }
@@ -423,6 +437,7 @@ export default function Schedule() {
       });
     },
     onError: (error: Error) => {
+      setPendingAutoLink(null);
       toast({
         title: "Failed to create item",
         description: error.message,
@@ -1105,6 +1120,7 @@ export default function Schedule() {
         setShowItemDialog,
         setEditingItem,
         setPendingAutoLink,
+        insertAfterItemRef,
         scrollToTodayRef,
       }}
     >
@@ -1700,7 +1716,10 @@ export default function Schedule() {
       </div>
 
       {/* Create/Edit Item Dialog */}
-      <Dialog open={showItemDialog} onOpenChange={setShowItemDialog}>
+      <Dialog open={showItemDialog} onOpenChange={(open) => {
+        setShowItemDialog(open);
+        if (!open) setPendingAutoLink(null);
+      }}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle>{editingItem && editingItem.id ? "Edit Schedule Item" : "Add Schedule Item"}</DialogTitle>
@@ -2014,7 +2033,8 @@ export default function Schedule() {
                 <div className="space-y-2">
                   {(editingItem.dependencies as any[] || []).length > 0 ? (
                     (editingItem.dependencies as any[]).map((dep: any) => {
-                      const predItem = scheduleItems.find(i => i.id === dep.id);
+                      const predItem = scheduleItems.find(i => i.id === dep.id) || (dep._name ? { id: dep.id, name: dep._name } as any : null);
+                      const isNewItem = !editingItem.id;
                       return predItem ? (
                         <div
                           key={dep.id}
@@ -2027,7 +2047,11 @@ export default function Schedule() {
                               <Badge variant="outline" className="text-xs">
                                 {dep.type || "FS"}
                               </Badge>
+                              {dep.lag != null && dep.lag > 0 && (
+                                <span className="text-xs text-muted-foreground">{dep.lag}d lag</span>
+                              )}
                             </div>
+                            {!isNewItem && (
                             <Button
                               type="button"
                               variant="ghost"
@@ -2053,7 +2077,9 @@ export default function Schedule() {
                             >
                               <Trash2 className="h-4 w-4 text-destructive" />
                             </Button>
+                            )}
                           </div>
+                          {!isNewItem && (
                           <div className="flex items-center gap-2">
                             <span className="text-xs text-muted-foreground whitespace-nowrap">Lag:</span>
                             <Input
@@ -2102,6 +2128,7 @@ export default function Schedule() {
                             />
                             <span className="text-xs text-muted-foreground">days</span>
                           </div>
+                          )}
                         </div>
                       ) : null;
                     })

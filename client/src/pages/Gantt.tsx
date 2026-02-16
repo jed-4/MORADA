@@ -160,6 +160,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     setShowItemDialog,
     setEditingItem: setEditingItemContext,
     setPendingAutoLink,
+    insertAfterItemRef,
     scrollToTodayRef,
   } = useScheduleView();
   
@@ -1546,6 +1547,30 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     };
   }, [scrollToTodayRef, scrollToToday]);
 
+  const latestDefaultItemIdsRef = useRef(defaultItemIds);
+  latestDefaultItemIdsRef.current = defaultItemIds;
+
+  useEffect(() => {
+    if (insertAfterItemRef) {
+      insertAfterItemRef.current = (newItemId: string, afterItemId: string) => {
+        setSessionItemOrder(currentOrder => {
+          const order = currentOrder.length > 0 ? [...currentOrder] : [...latestDefaultItemIdsRef.current];
+          if (order.includes(newItemId)) return currentOrder;
+          const afterIdx = order.indexOf(afterItemId);
+          if (afterIdx === -1) {
+            order.push(newItemId);
+          } else {
+            order.splice(afterIdx + 1, 0, newItemId);
+          }
+          return order;
+        });
+      };
+    }
+    return () => {
+      if (insertAfterItemRef) insertAfterItemRef.current = null;
+    };
+  }, [insertAfterItemRef]);
+
   useEffect(() => {
     if (!ganttInitialScrollRef.current && allItems.length > 0 && timelineRef.current) {
       ganttInitialScrollRef.current = true;
@@ -1707,21 +1732,22 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
   };
 
   const handleCreatePredecessor = (item: ScheduleItem) => {
-    const dayBefore = addDays(new Date(item.startDate), -1);
+    const dayAfterEnd = addDays(new Date(item.endDate), 1);
     const newItem = {
       name: '',
       scheduleId: item.scheduleId,
       parentItemId: item.parentItemId,
-      startDate: dayBefore,
-      endDate: dayBefore,
+      startDate: dayAfterEnd,
+      endDate: dayAfterEnd,
       status: 'not_started',
       type: 'task',
       priority: 'medium',
       progressPercent: 0,
+      dependencies: [{ id: item.id, type: 'FS', lag: 1, _name: item.name }],
     } as Partial<ScheduleItem>;
     
     if (setPendingAutoLink) {
-      setPendingAutoLink({ successorId: item.id });
+      setPendingAutoLink({ predecessorId: item.id, insertAfterItemId: item.id, lag: 1 });
     }
     
     setEditingItemContext(newItem as any);

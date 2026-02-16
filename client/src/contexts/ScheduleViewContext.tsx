@@ -22,7 +22,8 @@ interface ScheduleViewContextType {
   updateItemStatusMutation: UseMutationResult<ScheduleItem, Error, { itemId: string; status: string }, unknown>;
   setShowItemDialog: (show: boolean) => void;
   setEditingItem: (item: ScheduleItem | null) => void;
-  setPendingAutoLink?: (link: { successorId: string } | null) => void;
+  setPendingAutoLink?: (link: { successorId?: string; predecessorId?: string; insertAfterItemId?: string; lag?: number } | null) => void;
+  insertAfterItemRef?: React.MutableRefObject<((newItemId: string, afterItemId: string) => void) | null>;
   scrollToTodayRef?: React.MutableRefObject<(() => void) | null>;
 }
 
