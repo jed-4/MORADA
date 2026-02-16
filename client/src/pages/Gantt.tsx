@@ -57,6 +57,7 @@ import type { ScheduleItem } from "@shared/schema";
 import { useWeekStartDay } from "@/hooks/useWeekStartDay";
 
 type ZoomLevel = 'day' | 'week' | 'month';
+const ROW_HEIGHT = 32;
 
 interface GanttProps {
   onEditItem?: (item: ScheduleItem) => void;
@@ -205,7 +206,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
   } | null>(null);
   
   // Infinite scroll: track extra buffer days beyond data bounds
-  const [timelineBuffer, setTimelineBuffer] = useState({ before: 14, after: 28 });
+  const [timelineBuffer, setTimelineBuffer] = useState({ before: 60, after: 60 });
   const [visibleColumns, setVisibleColumns] = useState({
     assignee: true,
     status: true,
@@ -577,7 +578,6 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
-      toast({ title: "Item updated" });
     },
   });
 
@@ -781,8 +781,9 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
       // If we've moved to a new week, save the previous week
       if (weekStart.getTime() !== currentWeekStart.getTime() && currentWeekDays.length > 0) {
         const weekNumber = getProjectWeekNumber(currentWeekStart);
+        const monthLabel = format(currentWeekStart, 'MMM');
         weeks.push({
-          weekLabel: `Week ${weekNumber}`,
+          weekLabel: `${monthLabel} - Wk ${weekNumber}`,
           widthPx: currentWeekDays.length * 40,
           days: currentWeekDays,
         });
@@ -801,8 +802,9 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     // Add the last week
     if (currentWeekDays.length > 0) {
       const weekNumber = getProjectWeekNumber(currentWeekStart);
+      const monthLabel = format(currentWeekStart, 'MMM');
       weeks.push({
-        weekLabel: `Week ${weekNumber}`,
+        weekLabel: `${monthLabel} - Wk ${weekNumber}`,
         widthPx: currentWeekDays.length * 40,
         days: currentWeekDays,
       });
@@ -1463,6 +1465,19 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     }
   };
 
+  const handleAddChildItem = (parentItem: ScheduleItem) => {
+    const childItem = {
+      name: '',
+      scheduleId: parentItem.scheduleId,
+      parentItemId: parentItem.id,
+      startDate: parentItem.startDate,
+      endDate: parentItem.endDate,
+      status: 'not_started',
+    } as Partial<ScheduleItem>;
+    setEditingItemContext(childItem as any);
+    setShowItemDialog(true);
+  };
+
   const handleColorChange = async (item: ScheduleItem, color: string | null) => {
     try {
       await apiRequest(`/api/schedule-items/${item.id}`, "PATCH", { color });
@@ -1530,9 +1545,18 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                   placeholder="Search tasks..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-7 pr-2 py-0 h-6 text-xs border"
+                  className="pl-7 pr-7 py-0 h-6 text-xs border"
                   data-testid="input-search-gantt-tasks"
                 />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    data-testid="button-clear-search"
+                  >
+                    <span className="text-xs leading-none">&times;</span>
+                  </button>
+                )}
               </div>
               
               {/* Columns visibility/reorder popover */}
@@ -1662,7 +1686,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                 <SortableTaskRow key={item.id} id={item.id}>
                   {({ attributes, listeners }) => (
                   <div
-                    className={`h-10 flex items-center px-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer group border-b border-border`}
+                    className={`h-8 flex items-center px-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer group border-b border-border`}
                     onClick={(e) => handleRowClick(e, item)}
                     data-testid={`row-${isParent ? 'parent' : 'child'}-${item.id}`}
                   >
@@ -1817,6 +1841,12 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                             <Copy className="mr-2 h-4 w-4" />
                             Duplicate
                           </DropdownMenuItem>
+                          {!item.parentItemId && (
+                            <DropdownMenuItem onClick={() => handleAddChildItem(item)} data-testid="menu-add-child">
+                              <Plus className="mr-2 h-4 w-4" />
+                              Add Child Item
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuItem onClick={() => handleToggleComplete(item)} data-testid="menu-complete">
                             <Check className="mr-2 h-4 w-4" />
                             {item.status === "completed" ? "Mark Incomplete" : "Mark Complete"}
@@ -1944,7 +1974,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
             )}
 
             {/* Timeline Bars - minHeight ensures scroll area matches left panel */}
-            <div className="relative" style={{ minHeight: `${orderedItems.length * 40}px` }}>
+            <div className="relative" style={{ minHeight: `${orderedItems.length * ROW_HEIGHT}px` }}>
               {/* Weekend column backgrounds */}
               {groupedTimelineHeaders && (
                 <div className="absolute top-0 bottom-0 left-0 right-0 pointer-events-none z-0">
@@ -2039,7 +2069,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                     style={{
                       left: `${previewLeft}px`,
                       width: `${previewWidth}px`,
-                      top: `${foundRow * 40 + 4}px`,
+                      top: `${foundRow * ROW_HEIGHT + 4}px`,
                     }}
                     data-testid="ghost-preview-bar"
                   >
@@ -2070,9 +2100,9 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                   : (item.progressPercent ?? 0);
 
                 return (
-                  <div key={item.id} className="h-10 relative group/row">
+                  <div key={item.id} style={{ height: `${ROW_HEIGHT}px` }} className="relative group/row">
                     <div 
-                      className="absolute top-1 h-6"
+                      className={`absolute ${hasChildren ? 'top-[11px] h-[10px]' : 'top-1 h-6'}`}
                       style={{ 
                         left: `${barStart + (dragging?.id === item.id && dragging?.type === 'move' ? (dragging.currentDeltaX || 0) : 
                           (dragging?.type === 'move' && item.dependencies?.some((dep: any) => dep.id === dragging?.id) ? (dragging.currentDeltaX || 0) : 0))}px`, 
@@ -2105,6 +2135,11 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                           ...(isChild ? { border: '2px dotted rgba(255, 255, 255, 0.6)' } : {}),
                         }}
                         onClick={(e) => handleBarClick(e, item)}
+                        onDoubleClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (!dragHappened.current) handleEditItem(item);
+                        }}
                         onContextMenu={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
@@ -2216,7 +2251,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                           style={{
                             left: `${blStart}px`,
                             width: `${blWidth}px`,
-                            top: '28px',
+                            top: `${ROW_HEIGHT - 6}px`,
                           }}
                           title={`Baseline: ${format(new Date(baselineItem.startDate), 'MMM d')} – ${format(new Date(baselineItem.endDate), 'MMM d')}`}
                         />
@@ -2225,7 +2260,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                       
                     {!nameFitsInBar && (
                       <div
-                        className="absolute top-2 h-6 flex items-center pl-2 z-20"
+                        className="absolute top-1 h-6 flex items-center pl-2 z-20"
                         style={{ left: `${barStart + barWidth + 20}px` }}
                       >
                         <span className="text-xs font-medium whitespace-nowrap">
@@ -2250,14 +2285,20 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                   const targetRowIdx = itemRowIndexMap.get(item.id);
                   if (targetRowIdx === undefined) return []; // Item not visible
                   
-                  const targetY = targetRowIdx * 40 + 20;
+                  const targetY = targetRowIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
                   const targetChildItems = childItemsByParent[item.id] || [];
                   const targetEffective = item.parentId === null && targetChildItems.length > 0 
                     ? getEffectiveDates(item) 
                     : null;
-                  const targetStart = targetEffective 
+                  let targetStart = targetEffective 
                     ? getPosition(targetEffective.startDate)
                     : getPosition(new Date(item.startDate));
+                  
+                  // Apply drag delta to target if it's being dragged or is a dependent of dragged item
+                  const dragDelta = dragging?.type === 'move' ? (dragging.currentDeltaX || 0) : 0;
+                  if (dragging?.type === 'move' && (item.id === dragging.id || item.dependencies?.some((d: any) => d.id === dragging.id))) {
+                    targetStart += dragDelta;
+                  }
                   
                   return item.dependencies.map((dep: any) => {
                     // Find the predecessor item from GLOBAL map
@@ -2268,15 +2309,21 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                     const predRowIdx = itemRowIndexMap.get(predItem.id);
                     if (predRowIdx === undefined) return null; // Predecessor not visible
                     
-                    const predY = predRowIdx * 40 + 20;
+                    const predY = predRowIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
                     
                     const predChildItems = childItemsByParent[predItem.id] || [];
                     const predEffective = predItem.parentId === null && predChildItems.length > 0
                       ? getEffectiveDates(predItem)
                       : null;
-                    const predStart = predEffective
+                    let predStart = predEffective
                       ? getPosition(predEffective.startDate)
                       : getPosition(new Date(predItem.startDate));
+                    
+                    // Apply drag delta to predecessor if it's being dragged
+                    if (dragging?.type === 'move' && predItem.id === dragging.id) {
+                      predStart += dragDelta;
+                    }
+                    
                     // Calculate end position: position of start date + bar width
                     const predDuration = predEffective
                       ? differenceInDays(predEffective.endDate, predEffective.startDate) + 1
@@ -2456,7 +2503,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                   const sourceRowIdx = itemRowIndexMap.get(sourceItem.id);
                   if (sourceRowIdx === undefined) return null;
                   
-                  const sourceY = sourceRowIdx * 40 + 20;
+                  const sourceY = sourceRowIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
                   const sourceChildItems = childItemsByParent[sourceItem.id] || [];
                   const sourceEffective = sourceItem.parentId === null && sourceChildItems.length > 0
                     ? getEffectiveDates(sourceItem)
@@ -2765,6 +2812,20 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
             <Copy className="w-4 h-4 mr-2" />
             Duplicate
           </button>
+          
+          {!contextMenu.item.parentItemId && (
+            <button
+              className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left"
+              onClick={() => {
+                handleAddChildItem(contextMenu.item);
+                setContextMenu(null);
+              }}
+              data-testid="context-menu-add-child"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Add Child Item
+            </button>
+          )}
           
           <div className="-mx-1 my-1 h-0.5 bg-border" />
           
