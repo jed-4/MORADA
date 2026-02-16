@@ -292,7 +292,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
       if (nestTimerRef.current) clearTimeout(nestTimerRef.current);
       nestTimerRef.current = setTimeout(() => {
         setNestTargetId(overId);
-      }, 600);
+      }, 400);
     }
   };
 
@@ -1072,6 +1072,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     anchor?: 'start' | 'end'
   ) => {
     if (e.button !== 0) return;
+    if (schedule?.status === 'locked') return;
     
     e.preventDefault();
     e.stopPropagation();
@@ -1082,14 +1083,26 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     const startY = e.clientY;
     const startScrollLeft = timelineRef.current?.scrollLeft ?? 0;
     
+    const isParentItem = allItems.some(i => i.parentItemId === item.id);
+    let effectiveStart: Date;
+    let effectiveEnd: Date;
+    if (isParentItem) {
+      const effective = getEffectiveDates(item);
+      effectiveStart = effective.startDate;
+      effectiveEnd = effective.endDate;
+    } else {
+      effectiveStart = new Date(item.startDate);
+      effectiveEnd = new Date(item.endDate);
+    }
+    
     setDragging({
       id: item.id,
       type: dragType,
       startX,
       startY,
       startScrollLeft,
-      originalStart: new Date(item.startDate),
-      originalEnd: new Date(item.endDate),
+      originalStart: effectiveStart,
+      originalEnd: effectiveEnd,
       currentX: startX,
       currentY: startY,
       sourceAnchor: anchor,
@@ -1960,6 +1973,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                           className={`text-sm truncate ${isParent ? 'font-medium' : 'text-muted-foreground ml-1'}`}
                           onDoubleClick={(e) => {
                             e.stopPropagation();
+                            if (schedule?.status === 'locked') return;
                             setInlineEditId(item.id);
                             setInlineEditValue(item.name);
                           }}
@@ -2081,68 +2095,74 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" data-testid={`menu-${item.id}`}>
-                          <DropdownMenuItem onClick={() => handleEditItem(item)} data-testid="menu-edit">
-                            <Edit className="mr-2 h-4 w-4" />
-                            Edit
-                          </DropdownMenuItem>
+                          {schedule?.status !== 'locked' && (
+                            <DropdownMenuItem onClick={() => handleEditItem(item)} data-testid="menu-edit">
+                              <Edit className="mr-2 h-4 w-4" />
+                              Edit
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuItem onClick={() => handleViewItem(item)} data-testid="menu-view">
                             <Eye className="mr-2 h-4 w-4" />
                             View
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleDuplicateItem(item)} data-testid="menu-duplicate">
-                            <Copy className="mr-2 h-4 w-4" />
-                            Duplicate
-                          </DropdownMenuItem>
-                          {!item.parentItemId && (
-                            <DropdownMenuItem onClick={() => handleAddChildItem(item)} data-testid="menu-add-child">
-                              <Plus className="mr-2 h-4 w-4" />
-                              Add Child Item
-                            </DropdownMenuItem>
-                          )}
-                          <DropdownMenuItem 
-                            onClick={() => handleCreatePredecessor(item)} 
-                            data-testid="menu-create-predecessor"
-                          >
-                            <Link className="mr-2 h-4 w-4" />
-                            Create Predecessor
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleToggleComplete(item)} data-testid="menu-complete">
-                            <Check className="mr-2 h-4 w-4" />
-                            {item.status === "completed" ? "Mark Incomplete" : "Mark Complete"}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            asChild
-                            onSelect={(e) => e.preventDefault()}
-                            data-testid="menu-colour"
-                            onMouseEnter={() => handleColorPickerMouseEnter(item.id)}
-                            onMouseLeave={handleColorPickerMouseLeave}
-                          >
-                            <div className="flex items-center cursor-pointer">
-                              <Palette className="mr-2 h-4 w-4" />
-                              <span className="flex-1">Colour</span>
-                              <ScheduleColorPicker
-                                currentColor={item.color}
-                                assigneeId={item.assignedToId}
-                                assigneeName={item.assignedToName}
-                                onColorChange={(color) => {
-                                  handleColorChange(item, color);
-                                  setColorPickerOpen(null);
-                                }}
-                                align="end"
-                                open={colorPickerOpen === item.id}
+                          {schedule?.status !== 'locked' && (
+                            <>
+                              <DropdownMenuItem onClick={() => handleDuplicateItem(item)} data-testid="menu-duplicate">
+                                <Copy className="mr-2 h-4 w-4" />
+                                Duplicate
+                              </DropdownMenuItem>
+                              {!item.parentItemId && (
+                                <DropdownMenuItem onClick={() => handleAddChildItem(item)} data-testid="menu-add-child">
+                                  <Plus className="mr-2 h-4 w-4" />
+                                  Add Child Item
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuItem 
+                                onClick={() => handleCreatePredecessor(item)} 
+                                data-testid="menu-create-predecessor"
+                              >
+                                <Link className="mr-2 h-4 w-4" />
+                                Create Predecessor
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleToggleComplete(item)} data-testid="menu-complete">
+                                <Check className="mr-2 h-4 w-4" />
+                                {item.status === "completed" ? "Mark Incomplete" : "Mark Complete"}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                asChild
+                                onSelect={(e) => e.preventDefault()}
+                                data-testid="menu-colour"
                                 onMouseEnter={() => handleColorPickerMouseEnter(item.id)}
                                 onMouseLeave={handleColorPickerMouseLeave}
-                                triggerButton={
-                                  <div className="w-4 h-4 rounded border ml-2" style={{ backgroundColor: item.color || '#9ca3af' }} />
-                                }
-                              />
-                            </div>
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem onClick={() => handleDeleteItem(item)} className="text-destructive" data-testid="menu-delete">
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Delete
-                          </DropdownMenuItem>
+                              >
+                                <div className="flex items-center cursor-pointer">
+                                  <Palette className="mr-2 h-4 w-4" />
+                                  <span className="flex-1">Colour</span>
+                                  <ScheduleColorPicker
+                                    currentColor={item.color}
+                                    assigneeId={item.assignedToId}
+                                    assigneeName={item.assignedToName}
+                                    onColorChange={(color) => {
+                                      handleColorChange(item, color);
+                                      setColorPickerOpen(null);
+                                    }}
+                                    align="end"
+                                    open={colorPickerOpen === item.id}
+                                    onMouseEnter={() => handleColorPickerMouseEnter(item.id)}
+                                    onMouseLeave={handleColorPickerMouseLeave}
+                                    triggerButton={
+                                      <div className="w-4 h-4 rounded border ml-2" style={{ backgroundColor: item.color || '#9ca3af' }} />
+                                    }
+                                  />
+                                </div>
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => handleDeleteItem(item)} className="text-destructive" data-testid="menu-delete">
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete
+                              </DropdownMenuItem>
+                            </>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
@@ -2402,7 +2422,11 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                           }
                           setDragging(null);
                           dragHappened.current = false;
-                          handleEditItem(item);
+                          if (schedule?.status === 'locked') {
+                            handleViewItem(item);
+                          } else {
+                            handleEditItem(item);
+                          }
                         }}
                         onContextMenu={(e) => {
                           e.preventDefault();
@@ -3034,22 +3058,24 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
             onClick={() => setContextMenu(null)}
           />
           
-          <button
-            className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left"
-            onClick={() => {
-              if (onEditItem) {
-                onEditItem(contextMenu.item);
-              } else {
-                setEditingItemContext(contextMenu.item);
-                setShowItemDialog(true);
-              }
-              setContextMenu(null);
-            }}
-            data-testid="context-menu-edit"
-          >
-            <Edit className="w-4 h-4 mr-2" />
-            Edit Task
-          </button>
+          {schedule?.status !== 'locked' && (
+            <button
+              className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left"
+              onClick={() => {
+                if (onEditItem) {
+                  onEditItem(contextMenu.item);
+                } else {
+                  setEditingItemContext(contextMenu.item);
+                  setShowItemDialog(true);
+                }
+                setContextMenu(null);
+              }}
+              data-testid="context-menu-edit"
+            >
+              <Edit className="w-4 h-4 mr-2" />
+              Edit Task
+            </button>
+          )}
           
           <button
             className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left"
@@ -3063,94 +3089,98 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
             View Details
           </button>
           
-          <button
-            className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left"
-            onClick={() => {
-              duplicateItemMutation.mutate(contextMenu.item.id);
-              setContextMenu(null);
-            }}
-            data-testid="context-menu-duplicate"
-          >
-            <Copy className="w-4 h-4 mr-2" />
-            Duplicate
-          </button>
-          
-          {!contextMenu.item.parentItemId && (
-            <button
-              className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left"
-              onClick={() => {
-                handleAddChildItem(contextMenu.item);
-                setContextMenu(null);
-              }}
-              data-testid="context-menu-add-child"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Add Child Item
-            </button>
+          {schedule?.status !== 'locked' && (
+            <>
+              <button
+                className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left"
+                onClick={() => {
+                  duplicateItemMutation.mutate(contextMenu.item.id);
+                  setContextMenu(null);
+                }}
+                data-testid="context-menu-duplicate"
+              >
+                <Copy className="w-4 h-4 mr-2" />
+                Duplicate
+              </button>
+              
+              {!contextMenu.item.parentItemId && (
+                <button
+                  className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left"
+                  onClick={() => {
+                    handleAddChildItem(contextMenu.item);
+                    setContextMenu(null);
+                  }}
+                  data-testid="context-menu-add-child"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Child Item
+                </button>
+              )}
+              
+              <button
+                className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left"
+                onClick={() => {
+                  handleCreatePredecessor(contextMenu.item);
+                  setContextMenu(null);
+                }}
+                data-testid="context-menu-create-predecessor"
+              >
+                <Link className="w-4 h-4 mr-2" />
+                Create Predecessor
+              </button>
+              
+              <div className="-mx-1 my-1 h-0.5 bg-border" />
+              
+              <button
+                className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left"
+                onClick={() => {
+                  navigator.clipboard.writeText(contextMenu.item.name);
+                  toast({ title: "Copied", description: "Task name copied to clipboard" });
+                  setContextMenu(null);
+                }}
+                data-testid="context-menu-copy-name"
+              >
+                <Copy className="w-4 h-4 mr-2" />
+                Copy Name
+              </button>
+              
+              {contextMenu.item.dependencies && contextMenu.item.dependencies.length > 0 && (
+                <button
+                  className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left text-orange-600 dark:text-orange-400"
+                  onClick={() => {
+                    const deps = contextMenu.item.dependencies as Array<{ id: string }>;
+                    deps.forEach((dep) => {
+                      deleteDependencyMutation.mutate({
+                        itemId: contextMenu.item.id,
+                        predecessorId: dep.id,
+                      });
+                    });
+                    setContextMenu(null);
+                  }}
+                  data-testid="context-menu-remove-dependencies"
+                >
+                  <Unlink className="w-4 h-4 mr-2" />
+                  Remove All Dependencies
+                </button>
+              )}
+              
+              <div className="-mx-1 my-1 h-0.5 bg-border" />
+              
+              <button
+                className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left text-destructive"
+                onClick={() => {
+                  if (confirm(`Are you sure you want to delete "${contextMenu.item.name}"?`)) {
+                    deleteItemMutation.mutate(contextMenu.item.id);
+                  }
+                  setContextMenu(null);
+                }}
+                data-testid="context-menu-delete"
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete Task
+              </button>
+            </>
           )}
-          
-          <button
-            className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left"
-            onClick={() => {
-              handleCreatePredecessor(contextMenu.item);
-              setContextMenu(null);
-            }}
-            data-testid="context-menu-create-predecessor"
-          >
-            <Link className="w-4 h-4 mr-2" />
-            Create Predecessor
-          </button>
-          
-          <div className="-mx-1 my-1 h-0.5 bg-border" />
-          
-          <button
-            className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left"
-            onClick={() => {
-              navigator.clipboard.writeText(contextMenu.item.name);
-              toast({ title: "Copied", description: "Task name copied to clipboard" });
-              setContextMenu(null);
-            }}
-            data-testid="context-menu-copy-name"
-          >
-            <Copy className="w-4 h-4 mr-2" />
-            Copy Name
-          </button>
-          
-          {contextMenu.item.dependencies && contextMenu.item.dependencies.length > 0 && (
-            <button
-              className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left text-orange-600 dark:text-orange-400"
-              onClick={() => {
-                const deps = contextMenu.item.dependencies as Array<{ id: string }>;
-                deps.forEach((dep) => {
-                  deleteDependencyMutation.mutate({
-                    itemId: contextMenu.item.id,
-                    predecessorId: dep.id,
-                  });
-                });
-                setContextMenu(null);
-              }}
-              data-testid="context-menu-remove-dependencies"
-            >
-              <Unlink className="w-4 h-4 mr-2" />
-              Remove All Dependencies
-            </button>
-          )}
-          
-          <div className="-mx-1 my-1 h-0.5 bg-border" />
-          
-          <button
-            className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left text-destructive"
-            onClick={() => {
-              if (confirm(`Are you sure you want to delete "${contextMenu.item.name}"?`)) {
-                deleteItemMutation.mutate(contextMenu.item.id);
-              }
-              setContextMenu(null);
-            }}
-            data-testid="context-menu-delete"
-          >
-            <Trash2 className="w-4 h-4 mr-2" />
-            Delete Task
-          </button>
         </div>
       )}
     </div>
