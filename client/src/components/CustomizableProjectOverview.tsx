@@ -829,7 +829,7 @@ export default function CustomizableProjectOverview() {
       case "activity":
         return <ProjectActivity />;
       case "messages":
-        return <Messages />;
+        return <Messages projectId={currentProject.id} />;
       case "notes":
         return <Notes projectId={currentProject.id} />;
       case "scope":

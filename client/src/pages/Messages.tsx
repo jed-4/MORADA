@@ -261,10 +261,6 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     }
   });
 
-  useAllNewMessages(() => {
-    queryClient.invalidateQueries({ queryKey: ["/api/channels/unread/counts"] });
-  });
-
   const typingUserIds = useTypingIndicator(selectedChannelId);
 
   const { data: allUsers = [] } = useQuery<any[]>({
@@ -311,6 +307,8 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   }, [unreadCounts]);
 
   useAllNewMessages((message: Message) => {
+    queryClient.invalidateQueries({ queryKey: ["/api/channels/unread/counts"] });
+    
     if (message.userId === user?.id) return;
     if (selectedChannelId === message.channelId) return;
     

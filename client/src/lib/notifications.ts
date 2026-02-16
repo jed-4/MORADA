@@ -1,6 +1,3 @@
-import Favico from "favico.js";
-
-// Notification preferences stored in localStorage
 export interface NotificationPreferences {
   sound: boolean;
   push: boolean;
@@ -15,38 +12,59 @@ const DEFAULT_PREFS: NotificationPreferences = {
   mentionSound: true,
 };
 
-// Favicon badge instance
 let favicon: any = null;
+let faviconInitFailed = false;
+let faviconInitPromise: Promise<any> | null = null;
 
-// Initialize favicon badge
-export function initFavicon() {
-  if (!favicon) {
-    favicon = new Favico({
-      animation: "none",
-      bgColor: "#ef4444", // red
-      textColor: "#fff",
-    });
-  }
-  return favicon;
+export async function initFavicon(): Promise<any> {
+  if (favicon) return favicon;
+  if (faviconInitFailed) return null;
+  if (faviconInitPromise) return faviconInitPromise;
+
+  faviconInitPromise = (async () => {
+    try {
+      const mod = await import("favico.js");
+      const FavicoConstructor = mod.default || mod;
+      if (typeof FavicoConstructor !== 'function') {
+        faviconInitFailed = true;
+        return null;
+      }
+      favicon = new FavicoConstructor({
+        animation: "none",
+        bgColor: "#ef4444",
+        textColor: "#fff",
+      });
+      return favicon;
+    } catch (error) {
+      console.warn("Failed to initialize Favico:", error);
+      faviconInitFailed = true;
+      return null;
+    }
+  })();
+
+  return faviconInitPromise;
 }
 
-// Update favicon badge with unread count
 export function updateFaviconBadge(count: number) {
-  const faviconInstance = initFavicon();
-  if (count > 0) {
-    faviconInstance.badge(count > 99 ? 99 : count);
-  } else {
-    faviconInstance.reset();
-  }
+  initFavicon().then((faviconInstance) => {
+    try {
+      if (!faviconInstance) return;
+      if (count > 0) {
+        faviconInstance.badge(count > 99 ? 99 : count);
+      } else {
+        faviconInstance.reset();
+      }
+    } catch (error) {
+      console.warn("Failed to update favicon badge:", error);
+    }
+  }).catch(() => {});
 }
 
-// Play notification sound using Web Audio API
 export function playNotificationSound() {
   const prefs = getNotificationPreferences();
   if (!prefs.sound) return;
 
   try {
-    // Create a simple beep using Web Audio API
     const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
     const oscillator = audioContext.createOscillator();
     const gainNode = audioContext.createGain();
@@ -54,20 +72,17 @@ export function playNotificationSound() {
     oscillator.connect(gainNode);
     gainNode.connect(audioContext.destination);
 
-    // Configure beep sound
-    oscillator.frequency.value = 800; // Hz
+    oscillator.frequency.value = 800;
     oscillator.type = "sine";
-    gainNode.gain.value = 0.1; // Volume
+    gainNode.gain.value = 0.1;
 
-    // Play short beep
     oscillator.start(audioContext.currentTime);
-    oscillator.stop(audioContext.currentTime + 0.1); // 100ms beep
+    oscillator.stop(audioContext.currentTime + 0.1);
   } catch (error) {
     console.warn("Error playing notification sound:", error);
   }
 }
 
-// Get notification preferences from localStorage
 export function getNotificationPreferences(): NotificationPreferences {
   try {
     const stored = localStorage.getItem("notification-preferences");
@@ -80,7 +95,6 @@ export function getNotificationPreferences(): NotificationPreferences {
   return DEFAULT_PREFS;
 }
 
-// Save notification preferences to localStorage
 export function saveNotificationPreferences(prefs: NotificationPreferences) {
   try {
     localStorage.setItem("notification-preferences", JSON.stringify(prefs));
@@ -89,12 +103,10 @@ export function saveNotificationPreferences(prefs: NotificationPreferences) {
   }
 }
 
-// Check if browser supports notifications
 export function isNotificationSupported(): boolean {
   return "Notification" in window;
 }
 
-// Request notification permission
 export async function requestNotificationPermission(): Promise<NotificationPermission> {
   if (!isNotificationSupported()) {
     return "denied";
@@ -109,12 +121,10 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
   }
 }
 
-// Check if notifications are granted
 export function areNotificationsGranted(): boolean {
   return isNotificationSupported() && Notification.permission === "granted";
 }
 
-// Show browser notification
 export interface ShowNotificationOptions {
   title: string;
   body: string;
@@ -148,7 +158,6 @@ export function showBrowserNotification(options: ShowNotificationOptions) {
       };
     }
 
-    // Auto-close after 5 seconds
     setTimeout(() => notification.close(), 5000);
 
     return notification;
@@ -158,7 +167,6 @@ export function showBrowserNotification(options: ShowNotificationOptions) {
   }
 }
 
-// Show notification for new message
 export function showMessageNotification(params: {
   channelName: string;
   senderName: string;
@@ -169,19 +177,16 @@ export function showMessageNotification(params: {
 }) {
   const { channelName, senderName, messageContent, avatar, isMention, onClickChannel } = params;
 
-  // Play sound (different for mentions)
   if (isMention) {
     const prefs = getNotificationPreferences();
     if (prefs.mentionSound) {
       playNotificationSound();
-      // Play twice for mentions
       setTimeout(playNotificationSound, 200);
     }
   } else {
     playNotificationSound();
   }
 
-  // Show browser notification
   const title = isMention 
     ? `${senderName} mentioned you in #${channelName}`
     : `New message in #${channelName}`;
@@ -197,7 +202,6 @@ export function showMessageNotification(params: {
   });
 }
 
-// Check if service worker is supported (for future push notifications)
 export function isServiceWorkerSupported(): boolean {
   return "serviceWorker" in navigator;
 }
