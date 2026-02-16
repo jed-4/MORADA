@@ -458,6 +458,16 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
         }
       }
     }
+    const childQueue: (number | string)[] = [dragging.id];
+    while (childQueue.length > 0) {
+      const pid = childQueue.shift()!;
+      for (const item of items) {
+        if (item.parentItemId === pid && !visited.has(item.id)) {
+          visited.add(item.id);
+          childQueue.push(item.id);
+        }
+      }
+    }
     visited.delete(dragging.id);
     return visited;
   }, [dragging?.id, dragging?.type, allItems]);
@@ -1239,7 +1249,17 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
 
           const dependentItems = getAllDownstreamSuccessors(drag.id);
 
-          updateCacheOptimistically(drag.id, newStart, newEnd);
+          const childItems: ScheduleItem[] = [];
+          const childQ: (number | string)[] = [drag.id];
+          while (childQ.length > 0) {
+            const pid = childQ.shift()!;
+            for (const ci of currentItems) {
+              if (ci.parentItemId === pid) {
+                childItems.push(ci);
+                childQ.push(ci.id);
+              }
+            }
+          }
           
           const snapDepItem = (depItem: ScheduleItem) => {
             const depWorkingDuration = countWD(new Date(depItem.startDate), new Date(depItem.endDate));
@@ -1248,6 +1268,15 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
             const depNewEnd = addWD(depNewStart, depWorkingDuration);
             return { depNewStart, depNewEnd };
           };
+
+          updateCacheOptimistically(drag.id, newStart, newEnd);
+          
+          for (const child of childItems) {
+            if (!dependentItems.some(d => d.id === child.id)) {
+              const { depNewStart, depNewEnd } = snapDepItem(child);
+              updateCacheOptimistically(child.id, depNewStart, depNewEnd);
+            }
+          }
           
           for (const depItem of dependentItems) {
             const { depNewStart, depNewEnd } = snapDepItem(depItem);
@@ -1259,6 +1288,17 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
             startDate: newStart,
             endDate: newEnd,
           });
+          
+          for (const child of childItems) {
+            if (!dependentItems.some(d => d.id === child.id)) {
+              const { depNewStart, depNewEnd } = snapDepItem(child);
+              mutate.mutate({
+                id: child.id,
+                startDate: depNewStart,
+                endDate: depNewEnd,
+              });
+            }
+          }
           
           for (const depItem of dependentItems) {
             const { depNewStart, depNewEnd } = snapDepItem(depItem);
@@ -2484,6 +2524,13 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                             const clickX = e.clientX - barRect.left;
                             const clickPercent = Math.max(0, Math.min(100, Math.round((clickX / barRect.width) * 100)));
                             updateProgressMutation.mutate({ id: item.id, progressPercent: clickPercent });
+                            setProgressDrag({
+                              itemId: item.id,
+                              barWidth: barRect.width,
+                              startX: e.clientX,
+                              startProgress: clickPercent,
+                              currentProgress: clickPercent,
+                            });
                           }}
                           onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
                           data-testid={`progress-track-${item.id}`}

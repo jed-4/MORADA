@@ -837,7 +837,7 @@ export default function Schedule() {
       taskLinkOffsets: taskLinkOffsetsLocal.length > 0 ? taskLinkOffsetsLocal : undefined,
     };
 
-    if (editingItem) {
+    if (editingItem && editingItem.id) {
       updateItemMutation.mutate(data);
     } else {
       createItemMutation.mutate(data);
@@ -1699,9 +1699,9 @@ export default function Schedule() {
       <Dialog open={showItemDialog} onOpenChange={setShowItemDialog}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
-            <DialogTitle>{editingItem ? "Edit Schedule Item" : "Add Schedule Item"}</DialogTitle>
+            <DialogTitle>{editingItem && editingItem.id ? "Edit Schedule Item" : "Add Schedule Item"}</DialogTitle>
             <DialogDescription>
-              {editingItem ? "Update the schedule item details." : "Create a new item in the schedule."}
+              {editingItem && editingItem.id ? "Update the schedule item details." : "Create a new item in the schedule."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 overflow-y-auto flex-1 px-1">
