@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown, User, Search, Filter, Columns, MoreVertical, FileText, Edit, Eye, Copy, Check, Palette, Trash2, Settings, Download, Wifi, WifiOff, GanttChart, List as ListIcon, GripVertical, Link, Unlink } from "lucide-react";
+import { Plus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown, User, Search, Filter, Columns, MoreVertical, FileText, Edit, Eye, Copy, Check, Palette, Trash2, Settings, Download, Wifi, WifiOff, GanttChart, List as ListIcon, GripVertical, Link, Unlink, X } from "lucide-react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -204,6 +204,22 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     y: number;
     item: ScheduleItem;
   } | null>(null);
+  
+  // Inline editing state for task name in left table
+  const [inlineEditId, setInlineEditId] = useState<number | null>(null);
+  const [inlineEditValue, setInlineEditValue] = useState('');
+  
+  // Pending predecessor mode: after clicking "Create Predecessor", the next bar click creates the link
+  const [pendingPredecessor, setPendingPredecessor] = useState<number | null>(null);
+  
+  useEffect(() => {
+    if (pendingPredecessor === null) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPendingPredecessor(null);
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [pendingPredecessor]);
   
   // Infinite scroll: track extra buffer days beyond data bounds
   const [timelineBuffer, setTimelineBuffer] = useState({ before: 60, after: 60 });
@@ -916,21 +932,44 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
   };
 
   // Bar click handler - open modal (but not if a drag just happened)
+  const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
   const handleBarClick = (e: React.MouseEvent, item: ScheduleItem) => {
     e.preventDefault();
     e.stopPropagation();
     
-    // Skip if a drag just occurred - don't open modal after dragging
-    // The flag is reset in handleMouseUp after a short delay to allow click event to be suppressed
     if (dragHappened.current) {
       return;
     }
     
-    setSelectedTask(item);
-
-    // Ripple effect
-    setRipple({ x: e.clientX, y: e.clientY });
-    setTimeout(() => setRipple(null), 600);
+    // If in pending predecessor mode, create the dependency
+    if (pendingPredecessor !== null) {
+      if (item.id !== pendingPredecessor) {
+        createDependencyMutation.mutate({
+          itemId: pendingPredecessor,
+          predecessorId: item.id,
+          type: 'FS',
+        });
+      } else {
+        toast({ title: "Cannot link to itself" });
+      }
+      setPendingPredecessor(null);
+      return;
+    }
+    
+    // Delay single-click to allow double-click to cancel it
+    if (clickTimer.current) {
+      clearTimeout(clickTimer.current);
+      clickTimer.current = null;
+      return;
+    }
+    
+    clickTimer.current = setTimeout(() => {
+      clickTimer.current = null;
+      setSelectedTask(item);
+      setRipple({ x: e.clientX, y: e.clientY });
+      setTimeout(() => setRipple(null), 600);
+    }, 300);
   };
 
   // Drag handlers
@@ -1465,6 +1504,32 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     }
   };
 
+  const handleInlineEditSave = async (itemId: number) => {
+    const trimmed = inlineEditValue.trim();
+    const originalItem = allItems.find(i => i.id === itemId);
+    
+    if (!trimmed) {
+      setInlineEditId(null);
+      setInlineEditValue('');
+      return;
+    }
+    
+    if (originalItem && trimmed === originalItem.name) {
+      setInlineEditId(null);
+      setInlineEditValue('');
+      return;
+    }
+    
+    try {
+      await apiRequest(`/api/schedule-items/${itemId}`, "PATCH", { name: trimmed });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      setInlineEditId(null);
+      setInlineEditValue('');
+    } catch {
+      toast({ title: "Failed to rename", variant: "destructive" });
+    }
+  };
+
   const handleAddChildItem = (parentItem: ScheduleItem) => {
     const childItem = {
       name: '',
@@ -1526,6 +1591,14 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
 
   return (
     <div className="flex flex-col h-full bg-background">
+      {pendingPredecessor !== null && (
+        <div className="flex items-center justify-between px-3 py-1.5 bg-blue-50 dark:bg-blue-950 border-b border-blue-200 dark:border-blue-800 text-sm">
+          <span className="text-blue-700 dark:text-blue-300">Click a bar to set it as predecessor. Press Escape to cancel.</span>
+          <button onClick={() => setPendingPredecessor(null)} className="text-blue-500 hover:text-blue-700">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
       {/* Timeline Container */}
       <div className="flex-1 flex overflow-hidden">
         {/* Task Names Column (Resizable Panel) */}
@@ -1551,10 +1624,10 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                 {searchQuery && (
                   <button
                     onClick={() => setSearchQuery('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                     data-testid="button-clear-search"
                   >
-                    <span className="text-xs leading-none">&times;</span>
+                    <X className="w-3 h-3" />
                   </button>
                 )}
               </div>
@@ -1691,7 +1764,8 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                     data-testid={`row-${isParent ? 'parent' : 'child'}-${item.id}`}
                   >
                     {/* Task name column */}
-                    <div style={{ width: columnWidths.taskName }} className={`flex items-center min-w-0 flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all ${!isParent ? 'pl-4' : ''}`}>
+                    <div style={{ width: columnWidths.taskName }} className={`flex items-center min-w-0 flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all`}>
+                      {!isParent && <div className="w-6 flex-shrink-0" />}
                       <div 
                         {...attributes}
                         {...listeners}
@@ -1702,7 +1776,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                       </div>
                       {isParent && childItems.length > 0 && (
                         <button
-                          onClick={() => toggleCollapse(item.id)}
+                          onClick={(e) => { e.stopPropagation(); toggleCollapse(item.id); }}
                           className="p-1 hover:bg-accent rounded flex-shrink-0"
                           data-testid={`button-toggle-${item.id}`}
                         >
@@ -1714,7 +1788,32 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                         </button>
                       )}
                       {(isParent && childItems.length === 0) && <div className="w-6 flex-shrink-0" />}
-                      <span className={`text-sm truncate ${isParent ? 'font-medium' : 'text-muted-foreground ml-1'}`}>{item.name}</span>
+                      {inlineEditId === item.id ? (
+                        <input
+                          autoFocus
+                          className="text-sm bg-transparent border-b border-primary outline-none flex-1 min-w-0 px-1"
+                          value={inlineEditValue}
+                          onChange={(e) => setInlineEditValue(e.target.value)}
+                          onBlur={() => handleInlineEditSave(item.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleInlineEditSave(item.id);
+                            if (e.key === 'Escape') { setInlineEditId(null); setInlineEditValue(''); }
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          data-testid={`inline-edit-${item.id}`}
+                        />
+                      ) : (
+                        <span
+                          className={`text-sm truncate ${isParent ? 'font-medium' : 'text-muted-foreground ml-1'}`}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            setInlineEditId(item.id);
+                            setInlineEditValue(item.name);
+                          }}
+                        >
+                          {item.name}
+                        </span>
+                      )}
                     </div>
 
                     {/* Status column - clickable dropdown */}
@@ -1847,6 +1946,16 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                               Add Child Item
                             </DropdownMenuItem>
                           )}
+                          <DropdownMenuItem 
+                            onClick={() => {
+                              setPendingPredecessor(item.id);
+                              toast({ title: "Click another bar to set it as predecessor" });
+                            }} 
+                            data-testid="menu-create-predecessor"
+                          >
+                            <Link className="mr-2 h-4 w-4" />
+                            Create Predecessor
+                          </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleToggleComplete(item)} data-testid="menu-complete">
                             <Check className="mr-2 h-4 w-4" />
                             {item.status === "completed" ? "Mark Incomplete" : "Mark Complete"}
@@ -2102,7 +2211,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                 return (
                   <div key={item.id} style={{ height: `${ROW_HEIGHT}px` }} className="relative group/row">
                     <div 
-                      className={`absolute ${hasChildren ? 'top-[11px] h-[10px]' : 'top-1 h-6'}`}
+                      className={`absolute ${hasChildren ? 'top-[9px] h-[14px]' : 'top-1 h-6'}`}
                       style={{ 
                         left: `${barStart + (dragging?.id === item.id && dragging?.type === 'move' ? (dragging.currentDeltaX || 0) : 
                           (dragging?.type === 'move' && item.dependencies?.some((dep: any) => dep.id === dragging?.id) ? (dragging.currentDeltaX || 0) : 0))}px`, 
@@ -2132,12 +2241,15 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                         `}
                         style={{
                           backgroundColor: barColor,
-                          ...(isChild ? { border: '2px dotted rgba(255, 255, 255, 0.6)' } : {}),
                         }}
                         onClick={(e) => handleBarClick(e, item)}
                         onDoubleClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
+                          if (clickTimer.current) {
+                            clearTimeout(clickTimer.current);
+                            clickTimer.current = null;
+                          }
                           if (!dragHappened.current) handleEditItem(item);
                         }}
                         onContextMenu={(e) => {
@@ -2827,34 +2939,18 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
             </button>
           )}
           
-          <div className="-mx-1 my-1 h-0.5 bg-border" />
-          
-          {/* Status submenu */}
-          <div className="relative">
-            <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
-              Change Status
-            </div>
-            {statusOptions.slice(0, 5).map((status) => (
-              <button
-                key={status.id}
-                className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left"
-                onClick={() => {
-                  updateItemStatusMutation.mutate({ id: contextMenu.item.id, statusId: status.id });
-                  setContextMenu(null);
-                }}
-                data-testid={`context-menu-status-${status.id}`}
-              >
-                <div 
-                  className="w-3 h-3 rounded-full mr-2" 
-                  style={{ backgroundColor: status.color }}
-                />
-                {status.name}
-                {contextMenu.item.statusId === status.id && (
-                  <Check className="w-4 h-4 ml-auto" />
-                )}
-              </button>
-            ))}
-          </div>
+          <button
+            className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left"
+            onClick={() => {
+              setPendingPredecessor(contextMenu.item.id);
+              toast({ title: "Click another bar to set it as predecessor" });
+              setContextMenu(null);
+            }}
+            data-testid="context-menu-create-predecessor"
+          >
+            <Link className="w-4 h-4 mr-2" />
+            Create Predecessor
+          </button>
           
           <div className="-mx-1 my-1 h-0.5 bg-border" />
           
