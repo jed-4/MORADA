@@ -273,12 +273,20 @@ export default function ScheduleScreen({ navigation }: Props) {
   const [linkedChecklists, setLinkedChecklists] = useState<LinkedChecklist[]>([]);
   const [linkedTasks, setLinkedTasks] = useState<LinkedTask[]>([]);
   const [detailWeekendOverride, setDetailWeekendOverride] = useState<boolean>(false);
+  const [detailName, setDetailName] = useState('');
+  const [detailStartDate, setDetailStartDate] = useState('');
+  const [detailEndDate, setDetailEndDate] = useState('');
+  const [detailType, setDetailType] = useState('task');
+  const [detailPriority, setDetailPriority] = useState('medium');
+  const [detailDescription, setDetailDescription] = useState('');
+  const [showDetailTypePicker, setShowDetailTypePicker] = useState(false);
+  const [showDetailPriorityPicker, setShowDetailPriorityPicker] = useState(false);
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [addName, setAddName] = useState('');
   const [addType, setAddType] = useState('task');
   const [addStartDate, setAddStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [addEndDate, setAddEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [addEndDate, setAddEndDate] = useState(() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split('T')[0]; });
   const [addPriority, setAddPriority] = useState('medium');
   const [addDescription, setAddDescription] = useState('');
   const [addNotes, setAddNotes] = useState('');
@@ -393,6 +401,14 @@ export default function ScheduleScreen({ navigation }: Props) {
     setDetailStatus(item.status);
     setDetailProgress(String(item.progressPercent || 0));
     setDetailNotes(item.notes || '');
+    setDetailName(item.name || '');
+    setDetailStartDate(item.startDate ? item.startDate.split('T')[0] : '');
+    setDetailEndDate(item.endDate ? item.endDate.split('T')[0] : '');
+    setDetailType(item.type || 'task');
+    setDetailPriority(item.priority || 'medium');
+    setDetailDescription(item.description || '');
+    setShowDetailTypePicker(false);
+    setShowDetailPriorityPicker(false);
     setActivityNotes([]);
     setNewNoteText('');
     setShowStatusPicker(false);
@@ -412,10 +428,16 @@ export default function ScheduleScreen({ navigation }: Props) {
     setSaving(true);
     try {
       const body: any = {
+        name: detailName.trim() || undefined,
         status: detailStatus,
         progressPercent: parseInt(detailProgress) || 0,
         notes: detailNotes,
         useWorkingDaysOverride: detailWeekendOverride,
+        startDate: detailStartDate || undefined,
+        endDate: detailEndDate || undefined,
+        type: detailType || undefined,
+        priority: detailPriority || undefined,
+        description: detailDescription || null,
       };
       await apiRequest(`/api/schedule-items/${selectedItem.id}`, 'PATCH', body);
       if (selectedProjectId) {
@@ -496,7 +518,8 @@ export default function ScheduleScreen({ navigation }: Props) {
     setAddName('');
     setAddType('task');
     setAddStartDate(new Date().toISOString().split('T')[0]);
-    setAddEndDate(new Date().toISOString().split('T')[0]);
+    const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+    setAddEndDate(tomorrow.toISOString().split('T')[0]);
     setAddPriority('medium');
     setAddDescription('');
     setAddNotes('');
@@ -1291,51 +1314,125 @@ export default function ScheduleScreen({ navigation }: Props) {
 
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex1}>
             <ScrollView style={styles.flex1} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
-              <Text style={[styles.detailTitle, { color: colors.text }]}>{selectedItem.name}</Text>
+              <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Name</Text>
+              <TextInput
+                style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text, minHeight: 44, fontSize: 16, fontWeight: '600' }]}
+                value={detailName}
+                onChangeText={setDetailName}
+                placeholder="Item name"
+                placeholderTextColor={colors.secondary}
+              />
 
-              <View style={styles.detailBadgesRow}>
-                <View style={[styles.typeBadge, { backgroundColor: typeColor + '20' }]}>
-                  <Text style={[styles.typeBadgeText, { color: typeColor }]}>{TYPE_LABELS[selectedItem.type] || selectedItem.type}</Text>
-                </View>
-                <View style={[styles.typeBadge, { backgroundColor: statusColor + '20' }]}>
-                  <Text style={[styles.typeBadgeText, { color: statusColor }]}>{STATUS_LABELS[detailStatus] || detailStatus}</Text>
-                </View>
-                {selectedItem.priority && (
-                  <View style={[styles.typeBadge, { backgroundColor: selectedItem.priority === 'urgent' ? '#ef444420' : selectedItem.priority === 'high' ? '#f59e0b20' : colors.border }]}>
-                    <Text style={[styles.typeBadgeText, { color: selectedItem.priority === 'urgent' ? '#ef4444' : selectedItem.priority === 'high' ? '#f59e0b' : colors.secondary }]}>
-                      {selectedItem.priority.charAt(0).toUpperCase() + selectedItem.priority.slice(1)}
-                    </Text>
-                  </View>
-                )}
-              </View>
-
-              <View style={[styles.detailInfoSection, { borderColor: colors.border }]}>
-                <View style={styles.detailInfoRow}>
-                  <Ionicons name="calendar-outline" size={16} color={colors.secondary} />
-                  <Text style={[styles.detailInfoLabel, { color: colors.secondary }]}>Dates</Text>
-                  <Text style={[styles.detailInfoValue, { color: colors.text }]}>{formatDateRange(selectedItem.startDate, selectedItem.endDate)}</Text>
-                </View>
-                {selectedItem.assignedToName && (
+              {selectedItem.assignedToName && (
+                <View style={[styles.detailInfoSection, { borderColor: colors.border }]}>
                   <View style={styles.detailInfoRow}>
                     <Ionicons name="person-outline" size={16} color={colors.secondary} />
                     <Text style={[styles.detailInfoLabel, { color: colors.secondary }]}>Assigned</Text>
                     <Text style={[styles.detailInfoValue, { color: colors.text }]}>{selectedItem.assignedToName}</Text>
                   </View>
-                )}
-                {selectedItem.groupName && (
+                </View>
+              )}
+              {selectedItem.groupName && (
+                <View style={[styles.detailInfoSection, { borderColor: colors.border }]}>
                   <View style={styles.detailInfoRow}>
                     <Ionicons name="layers-outline" size={16} color={colors.secondary} />
                     <Text style={[styles.detailInfoLabel, { color: colors.secondary }]}>Group</Text>
                     <Text style={[styles.detailInfoValue, { color: colors.text }]}>{selectedItem.groupName}</Text>
                   </View>
-                )}
-                {selectedItem.description && (
-                  <View style={[styles.detailInfoRow, { alignItems: 'flex-start' }]}>
-                    <Ionicons name="document-text-outline" size={16} color={colors.secondary} style={{ marginTop: 2 }} />
-                    <Text style={[styles.detailInfoLabel, { color: colors.secondary }]}>Description</Text>
-                    <Text style={[styles.detailInfoValue, { color: colors.text, flex: 1 }]}>{selectedItem.description}</Text>
+                </View>
+              )}
+
+              <View style={[styles.detailEditSection, { borderColor: colors.border }]}>
+                <Text style={[styles.detailSectionTitle, { color: colors.text }]}>Details</Text>
+
+                <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Type</Text>
+                <TouchableOpacity
+                  style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
+                  onPress={() => { setShowDetailTypePicker(!showDetailTypePicker); setShowDetailPriorityPicker(false); setShowStatusPicker(false); }}
+                >
+                  <View style={[styles.statusDot, { backgroundColor: TYPE_COLORS[detailType] || '#3b82f6' }]} />
+                  <Text style={[styles.fieldPickerText, { color: colors.text }]}>{TYPE_LABELS[detailType] || detailType}</Text>
+                  <Ionicons name={showDetailTypePicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
+                </TouchableOpacity>
+                {showDetailTypePicker && (
+                  <View style={[styles.inlineStatusList, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+                    {Object.entries(TYPE_LABELS).map(([key, label]) => {
+                      const tc = TYPE_COLORS[key] || '#3b82f6';
+                      const isSelected = detailType === key;
+                      return (
+                        <TouchableOpacity
+                          key={key}
+                          style={[styles.inlineStatusOption, { borderBottomColor: colors.border }, isSelected && { backgroundColor: tc + '15' }]}
+                          onPress={() => { setDetailType(key); setShowDetailTypePicker(false); }}
+                        >
+                          <View style={[styles.statusDot, { backgroundColor: tc }]} />
+                          <Text style={[styles.inlineStatusText, { color: colors.text }]}>{label}</Text>
+                          {isSelected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
                 )}
+
+                <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Start Date</Text>
+                <TextInput
+                  style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text, minHeight: 44 }]}
+                  value={detailStartDate}
+                  onChangeText={setDetailStartDate}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={colors.secondary}
+                  keyboardType="numbers-and-punctuation"
+                />
+
+                <Text style={[styles.fieldLabel, { color: colors.secondary }]}>End Date</Text>
+                <TextInput
+                  style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text, minHeight: 44 }]}
+                  value={detailEndDate}
+                  onChangeText={setDetailEndDate}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={colors.secondary}
+                  keyboardType="numbers-and-punctuation"
+                />
+
+                <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Priority</Text>
+                <TouchableOpacity
+                  style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
+                  onPress={() => { setShowDetailPriorityPicker(!showDetailPriorityPicker); setShowDetailTypePicker(false); setShowStatusPicker(false); }}
+                >
+                  <View style={[styles.statusDot, { backgroundColor: PRIORITY_COLORS[detailPriority] || '#3b82f6' }]} />
+                  <Text style={[styles.fieldPickerText, { color: colors.text }]}>{PRIORITY_LABELS[detailPriority] || detailPriority}</Text>
+                  <Ionicons name={showDetailPriorityPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
+                </TouchableOpacity>
+                {showDetailPriorityPicker && (
+                  <View style={[styles.inlineStatusList, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+                    {Object.entries(PRIORITY_LABELS).map(([key, label]) => {
+                      const pc = PRIORITY_COLORS[key] || '#3b82f6';
+                      const isSelected = detailPriority === key;
+                      return (
+                        <TouchableOpacity
+                          key={key}
+                          style={[styles.inlineStatusOption, { borderBottomColor: colors.border }, isSelected && { backgroundColor: pc + '15' }]}
+                          onPress={() => { setDetailPriority(key); setShowDetailPriorityPicker(false); }}
+                        >
+                          <View style={[styles.statusDot, { backgroundColor: pc }]} />
+                          <Text style={[styles.inlineStatusText, { color: colors.text }]}>{label}</Text>
+                          {isSelected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+
+                <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Description</Text>
+                <TextInput
+                  style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
+                  value={detailDescription}
+                  onChangeText={setDetailDescription}
+                  multiline
+                  numberOfLines={2}
+                  placeholder="Optional description..."
+                  placeholderTextColor={colors.secondary}
+                />
               </View>
 
               <View style={[styles.detailEditSection, { borderColor: colors.border }]}>

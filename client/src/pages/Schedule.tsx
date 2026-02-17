@@ -222,18 +222,35 @@ export default function Schedule() {
       if (!anchor) return;
       const href = anchor.getAttribute("href") || "";
       if (href.startsWith("#") || href === "") return;
-      const isScheduleLink = href.includes("/schedule");
+      const isScheduleLink = href.includes("/schedule") && href.includes(projectId || "");
       if (isScheduleLink) return;
       e.preventDefault();
       e.stopPropagation();
       pendingNavigationRef.current = href;
       setShowLeaveGuardDialog(true);
     };
+
+    const handlePopState = () => {
+      if (isUnlockedRef.current && scheduleRef.current) {
+        const s = scheduleRef.current;
+        fetch(`/api/schedules/${s.id}/status`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ status: "locked" }),
+        }).then(() => {
+          queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedule"] });
+        }).catch(() => {});
+      }
+    };
+
     document.addEventListener("click", clickHandler, true);
+    window.addEventListener("popstate", handlePopState);
     return () => {
       document.removeEventListener("click", clickHandler, true);
+      window.removeEventListener("popstate", handlePopState);
     };
-  }, [isUnlocked]);
+  }, [isUnlocked, projectId]);
 
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -845,7 +862,7 @@ export default function Schedule() {
       return;
     }
 
-    const data = {
+    const data: any = {
       scheduleId: schedule.id,
       ...formData,
       assignedToId: formData.assignedToId || undefined,
@@ -857,6 +874,13 @@ export default function Schedule() {
     if (editingItem && editingItem.id) {
       updateItemMutation.mutate(data);
     } else {
+      if (editingItem?.dependencies && (editingItem.dependencies as any[]).length > 0) {
+        data.dependencies = (editingItem.dependencies as any[]).map((d: any) => ({
+          id: d.id,
+          type: d.type || 'FS',
+          lag: d.lag ?? 0,
+        }));
+      }
       createItemMutation.mutate(data);
     }
   };
@@ -1997,21 +2021,30 @@ export default function Schedule() {
                           <DropdownMenuItem
                             key={item.id}
                             onClick={async () => {
-                              try {
-                                const updatedItem = await apiRequest(`/api/schedule-items/${editingItem.id}/dependencies`, "POST", {
-                                  predecessorId: item.id,
-                                  type: "FS",
-                                });
-                                // Update local editingItem state to reflect the change immediately
-                                setEditingItem(updatedItem);
-                                queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+                              const isNewItem = !editingItem.id;
+                              if (isNewItem) {
+                                const currentDeps = (editingItem.dependencies as any[]) || [];
+                                setEditingItem({
+                                  ...editingItem,
+                                  dependencies: [...currentDeps, { id: item.id, type: 'FS', lag: 0, _name: item.name }],
+                                } as any);
                                 toast({ title: "Dependency added" });
-                              } catch (error: any) {
-                                toast({
-                                  title: "Failed to add dependency",
-                                  description: error.error || error.message || "This would create a circular dependency",
-                                  variant: "destructive",
-                                });
+                              } else {
+                                try {
+                                  const updatedItem = await apiRequest(`/api/schedule-items/${editingItem.id}/dependencies`, "POST", {
+                                    predecessorId: item.id,
+                                    type: "FS",
+                                  });
+                                  setEditingItem(updatedItem);
+                                  queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+                                  toast({ title: "Dependency added" });
+                                } catch (error: any) {
+                                  toast({
+                                    title: "Failed to add dependency",
+                                    description: error.error || error.message || "This would create a circular dependency",
+                                    variant: "destructive",
+                                  });
+                                }
                               }
                             }}
                             data-testid={`option-add-dependency-${item.id}`}
@@ -2051,35 +2084,41 @@ export default function Schedule() {
                                 <span className="text-xs text-muted-foreground">{dep.lag}d lag</span>
                               )}
                             </div>
-                            {!isNewItem && (
                             <Button
                               type="button"
                               variant="ghost"
                               size="sm"
                               className="h-8 w-8 p-0"
                               onClick={async () => {
-                                try {
-                                  const updatedItem = await apiRequest(
-                                    `/api/schedule-items/${editingItem.id}/dependencies/${dep.id}`,
-                                    "DELETE"
-                                  );
-                                  setEditingItem(updatedItem);
-                                  queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+                                if (isNewItem) {
+                                  const currentDeps = (editingItem.dependencies as any[]) || [];
+                                  setEditingItem({
+                                    ...editingItem,
+                                    dependencies: currentDeps.filter((d: any) => d.id !== dep.id),
+                                  } as any);
                                   toast({ title: "Dependency removed" });
-                                } catch (error) {
-                                  toast({
-                                    title: "Failed to remove dependency",
-                                    variant: "destructive",
-                                  });
+                                } else {
+                                  try {
+                                    const updatedItem = await apiRequest(
+                                      `/api/schedule-items/${editingItem.id}/dependencies/${dep.id}`,
+                                      "DELETE"
+                                    );
+                                    setEditingItem(updatedItem);
+                                    queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+                                    toast({ title: "Dependency removed" });
+                                  } catch (error) {
+                                    toast({
+                                      title: "Failed to remove dependency",
+                                      variant: "destructive",
+                                    });
+                                  }
                                 }
                               }}
                               data-testid={`button-remove-dependency-${dep.id}`}
                             >
                               <Trash2 className="h-4 w-4 text-destructive" />
                             </Button>
-                            )}
                           </div>
-                          {!isNewItem && (
                           <div className="flex items-center gap-2">
                             <span className="text-xs text-muted-foreground whitespace-nowrap">Lag:</span>
                             <Input
@@ -2088,13 +2127,15 @@ export default function Schedule() {
                               value={dep.lag ?? 0}
                               onChange={async (e) => {
                                 const newLag = parseInt(e.target.value) || 0;
-                                try {
-                                  const updatedItem = await apiRequest(
-                                    `/api/schedule-items/${editingItem.id}/dependencies/${dep.id}`,
-                                    "PATCH",
-                                    { lag: newLag }
+                                if (isNewItem) {
+                                  const currentDeps = (editingItem.dependencies as any[]) || [];
+                                  const updatedDeps = currentDeps.map((d: any) =>
+                                    d.id === dep.id ? { ...d, lag: newLag } : d
                                   );
-                                  setEditingItem(updatedItem);
+                                  setEditingItem({
+                                    ...editingItem,
+                                    dependencies: updatedDeps,
+                                  } as any);
                                   if (predItem.endDate) {
                                     const predEnd = new Date(predItem.endDate);
                                     const newStart = new Date(predEnd);
@@ -2102,24 +2143,48 @@ export default function Schedule() {
                                     const startStr = newStart.toISOString().split("T")[0];
                                     let endStr = startStr;
                                     if (editingItem.startDate && editingItem.endDate) {
-                                      const oldStart = new Date(editingItem.startDate);
-                                      const oldEnd = new Date(editingItem.endDate);
+                                      const oldStart = new Date(editingItem.startDate as string);
+                                      const oldEnd = new Date(editingItem.endDate as string);
                                       const durationMs = oldEnd.getTime() - oldStart.getTime();
                                       const newEnd = new Date(newStart.getTime() + durationMs);
                                       endStr = newEnd.toISOString().split("T")[0];
                                     }
-                                    await apiRequest(`/api/schedule-items/${editingItem.id}`, "PATCH", {
-                                      startDate: startStr,
-                                      endDate: endStr,
-                                    });
                                     setFormData(prev => ({ ...prev, startDate: startStr, endDate: endStr }));
-                                    queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
                                   }
-                                } catch (error) {
-                                  toast({
-                                    title: "Failed to update lag",
-                                    variant: "destructive",
-                                  });
+                                } else {
+                                  try {
+                                    const updatedItem = await apiRequest(
+                                      `/api/schedule-items/${editingItem.id}/dependencies/${dep.id}`,
+                                      "PATCH",
+                                      { lag: newLag }
+                                    );
+                                    setEditingItem(updatedItem);
+                                    if (predItem.endDate) {
+                                      const predEnd = new Date(predItem.endDate);
+                                      const newStart = new Date(predEnd);
+                                      newStart.setDate(newStart.getDate() + newLag + 1);
+                                      const startStr = newStart.toISOString().split("T")[0];
+                                      let endStr = startStr;
+                                      if (editingItem.startDate && editingItem.endDate) {
+                                        const oldStart = new Date(editingItem.startDate);
+                                        const oldEnd = new Date(editingItem.endDate);
+                                        const durationMs = oldEnd.getTime() - oldStart.getTime();
+                                        const newEnd = new Date(newStart.getTime() + durationMs);
+                                        endStr = newEnd.toISOString().split("T")[0];
+                                      }
+                                      await apiRequest(`/api/schedule-items/${editingItem.id}`, "PATCH", {
+                                        startDate: startStr,
+                                        endDate: endStr,
+                                      });
+                                      setFormData(prev => ({ ...prev, startDate: startStr, endDate: endStr }));
+                                      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+                                    }
+                                  } catch (error) {
+                                    toast({
+                                      title: "Failed to update lag",
+                                      variant: "destructive",
+                                    });
+                                  }
                                 }
                               }}
                               className="h-6 w-16 text-xs"
@@ -2128,7 +2193,6 @@ export default function Schedule() {
                             />
                             <span className="text-xs text-muted-foreground">days</span>
                           </div>
-                          )}
                         </div>
                       ) : null;
                     })

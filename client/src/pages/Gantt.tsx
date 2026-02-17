@@ -2837,31 +2837,6 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                           markerEnd="url(#arrow-elegant)"
                           style={{ pointerEvents: 'none', transition: 'stroke-width 0.15s, stroke 0.15s' }}
                         />
-                        {/* Lag indicator badge - show if lag is non-zero */}
-                        {dep.lag !== 0 && dep.lag !== undefined && (
-                          <g transform={`translate(${(startX + endX) / 2}, ${(startY + endY) / 2 - 8})`}>
-                            <rect
-                              x="-12"
-                              y="-8"
-                              width="24"
-                              height="16"
-                              rx="4"
-                              fill={isHovered || isSelected ? '#7c5fb3' : '#9b7fc7'}
-                              style={{ pointerEvents: 'none' }}
-                            />
-                            <text
-                              x="0"
-                              y="4"
-                              textAnchor="middle"
-                              fontSize="9"
-                              fill="white"
-                              fontWeight="500"
-                              style={{ pointerEvents: 'none' }}
-                            >
-                              {dep.lag > 0 ? `+${dep.lag}d` : `${dep.lag}d`}
-                            </text>
-                          </g>
-                        )}
                       </g>
                     );
                   }).filter(Boolean);
