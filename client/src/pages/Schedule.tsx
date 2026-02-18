@@ -199,6 +199,7 @@ export default function Schedule() {
           credentials: "include",
           body: JSON.stringify({ status: "locked" }),
         });
+        isUnlockedRef.current = false;
         queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedule"] });
         navigate(targetUrl);
       } catch (e) {
@@ -209,6 +210,7 @@ export default function Schedule() {
         });
       }
     } else {
+      isUnlockedRef.current = false;
       navigate(targetUrl);
     }
   }, [schedule, isUnlocked, projectId, navigate, toast]);
@@ -244,11 +246,31 @@ export default function Schedule() {
       }
     };
 
+    const origPushState = history.pushState.bind(history);
+    const origReplaceState = history.replaceState.bind(history);
+    const interceptNav = (orig: typeof history.pushState) =>
+      function (this: History, data: any, unused: string, url?: string | URL | null) {
+        if (url && isUnlockedRef.current) {
+          const urlStr = typeof url === 'string' ? url : url.toString();
+          const isScheduleLink = urlStr.includes("/schedule") && urlStr.includes(projectId || "");
+          if (!isScheduleLink) {
+            pendingNavigationRef.current = urlStr;
+            setShowLeaveGuardDialog(true);
+            return;
+          }
+        }
+        return orig.call(this, data, unused, url);
+      };
+    history.pushState = interceptNav(origPushState) as typeof history.pushState;
+    history.replaceState = interceptNav(origReplaceState) as typeof history.replaceState;
+
     document.addEventListener("click", clickHandler, true);
     window.addEventListener("popstate", handlePopState);
     return () => {
       document.removeEventListener("click", clickHandler, true);
       window.removeEventListener("popstate", handlePopState);
+      history.pushState = origPushState;
+      history.replaceState = origReplaceState;
     };
   }, [isUnlocked, projectId]);
 
@@ -1919,7 +1941,7 @@ export default function Schedule() {
 
             {/* Parent Item (Stage) Selector */}
             <div className="space-y-2">
-              <Label htmlFor="item-parent">Stage (Parent Item)</Label>
+              <Label htmlFor="item-parent">Stage</Label>
               <Select
                 value={formData.parentItemId || "none"}
                 onValueChange={(value) => setFormData({ ...formData, parentItemId: value === "none" ? "" : value })}

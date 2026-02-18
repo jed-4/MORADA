@@ -733,7 +733,22 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
 
   const updateDependencyMutation = useMutation({
     mutationFn: async ({ itemId, predecessorId, type, lag }: { itemId: string; predecessorId: string; type?: string; lag?: number }) => {
-      return apiRequest(`/api/schedule-items/${itemId}/dependencies/${predecessorId}`, "PATCH", { type, lag });
+      await apiRequest(`/api/schedule-items/${itemId}/dependencies/${predecessorId}`, "PATCH", { type, lag });
+      const depType = type || 'FS';
+      if (depType === 'FS' && lag !== undefined) {
+        const successor = scheduleItems.find(i => i.id === itemId);
+        const predecessor = scheduleItems.find(i => i.id === predecessorId);
+        if (successor && predecessor?.endDate) {
+          const predEnd = new Date(predecessor.endDate);
+          const newStart = addWorkingDays(predEnd, lag + 1);
+          const workDuration = countWorkingDays(new Date(successor.startDate), new Date(successor.endDate));
+          const newEnd = addWorkingDays(newStart, Math.max(0, workDuration - 1));
+          await apiRequest(`/api/schedule-items/${itemId}`, "PATCH", {
+            startDate: newStart.toISOString().split('T')[0],
+            endDate: newEnd.toISOString().split('T')[0],
+          });
+        }
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
@@ -2893,6 +2908,33 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                           markerEnd="url(#arrow-elegant)"
                           style={{ pointerEvents: 'none', transition: 'stroke-width 0.15s, stroke 0.15s' }}
                         />
+                        {dep.lag != null && dep.lag > 0 && (
+                          <g>
+                            <rect
+                              x={(startX + endX) / 2 - 10}
+                              y={(startY + endY) / 2 - 8}
+                              width={20}
+                              height={16}
+                              rx={3}
+                              fill="hsl(var(--background))"
+                              stroke={isHovered || isSelected ? '#7c5fb3' : '#9b7fc7'}
+                              strokeWidth={0.5}
+                              style={{ pointerEvents: 'none' }}
+                            />
+                            <text
+                              x={(startX + endX) / 2}
+                              y={(startY + endY) / 2 + 1}
+                              textAnchor="middle"
+                              dominantBaseline="middle"
+                              fill={isHovered || isSelected ? '#7c5fb3' : '#9b7fc7'}
+                              fontSize={9}
+                              fontWeight={500}
+                              style={{ pointerEvents: 'none' }}
+                            >
+                              +{dep.lag}
+                            </text>
+                          </g>
+                        )}
                       </g>
                     );
                   }).filter(Boolean);

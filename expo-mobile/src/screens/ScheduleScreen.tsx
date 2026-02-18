@@ -286,13 +286,15 @@ export default function ScheduleScreen({ navigation }: Props) {
   const [addName, setAddName] = useState('');
   const [addType, setAddType] = useState('task');
   const [addStartDate, setAddStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [addEndDate, setAddEndDate] = useState(() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split('T')[0]; });
+  const [addEndDate, setAddEndDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [addPriority, setAddPriority] = useState('medium');
   const [addDescription, setAddDescription] = useState('');
   const [addNotes, setAddNotes] = useState('');
   const [addSaving, setAddSaving] = useState(false);
+  const [addStatus, setAddStatus] = useState('not_started');
   const [showAddTypePicker, setShowAddTypePicker] = useState(false);
   const [showAddPriorityPicker, setShowAddPriorityPicker] = useState(false);
+  const [showAddStatusPicker, setShowAddStatusPicker] = useState(false);
 
   const ganttScrollRef = useRef<ScrollView>(null);
 
@@ -518,13 +520,14 @@ export default function ScheduleScreen({ navigation }: Props) {
     setAddName('');
     setAddType('task');
     setAddStartDate(new Date().toISOString().split('T')[0]);
-    const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
-    setAddEndDate(tomorrow.toISOString().split('T')[0]);
+    setAddEndDate(new Date().toISOString().split('T')[0]);
     setAddPriority('medium');
     setAddDescription('');
     setAddNotes('');
+    setAddStatus('not_started');
     setShowAddTypePicker(false);
     setShowAddPriorityPicker(false);
+    setShowAddStatusPicker(false);
   };
 
   const handleAddItem = async () => {
@@ -567,7 +570,7 @@ export default function ScheduleScreen({ navigation }: Props) {
         endDate: addEndDate,
         priority: addPriority || undefined,
         notes: addNotes.trim() || null,
-        status: 'not_started',
+        status: addStatus,
         duration,
       });
       await fetchItems(selectedProjectId);
@@ -1684,7 +1687,7 @@ export default function ScheduleScreen({ navigation }: Props) {
             <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Type</Text>
             <TouchableOpacity
               style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-              onPress={() => { setShowAddTypePicker(!showAddTypePicker); setShowAddPriorityPicker(false); }}
+              onPress={() => { setShowAddTypePicker(!showAddTypePicker); setShowAddPriorityPicker(false); setShowAddStatusPicker(false); }}
             >
               <View style={[styles.statusDot, { backgroundColor: TYPE_COLORS[addType] || '#3b82f6' }]} />
               <Text style={[styles.fieldPickerText, { color: colors.text }]}>{TYPE_LABELS[addType] || addType}</Text>
@@ -1733,7 +1736,7 @@ export default function ScheduleScreen({ navigation }: Props) {
             <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Priority</Text>
             <TouchableOpacity
               style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-              onPress={() => { setShowAddPriorityPicker(!showAddPriorityPicker); setShowAddTypePicker(false); }}
+              onPress={() => { setShowAddPriorityPicker(!showAddPriorityPicker); setShowAddTypePicker(false); setShowAddStatusPicker(false); }}
             >
               <View style={[styles.statusDot, { backgroundColor: PRIORITY_COLORS[addPriority] || '#3b82f6' }]} />
               <Text style={[styles.fieldPickerText, { color: colors.text }]}>{PRIORITY_LABELS[addPriority] || addPriority}</Text>
@@ -1751,6 +1754,35 @@ export default function ScheduleScreen({ navigation }: Props) {
                       onPress={() => { setAddPriority(key); setShowAddPriorityPicker(false); }}
                     >
                       <View style={[styles.statusDot, { backgroundColor: pc }]} />
+                      <Text style={[styles.inlineStatusText, { color: colors.text }]}>{label}</Text>
+                      {isSelected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+
+            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Status</Text>
+            <TouchableOpacity
+              style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
+              onPress={() => { setShowAddStatusPicker(!showAddStatusPicker); setShowAddTypePicker(false); setShowAddPriorityPicker(false); }}
+            >
+              <View style={[styles.statusDot, { backgroundColor: STATUS_COLORS[addStatus] || '#94a3b8' }]} />
+              <Text style={[styles.fieldPickerText, { color: colors.text }]}>{STATUS_LABELS[addStatus] || addStatus}</Text>
+              <Ionicons name={showAddStatusPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
+            </TouchableOpacity>
+            {showAddStatusPicker && (
+              <View style={[styles.inlineStatusList, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+                {Object.entries(STATUS_LABELS).map(([key, label]) => {
+                  const sc = STATUS_COLORS[key] || '#94a3b8';
+                  const isSelected = addStatus === key;
+                  return (
+                    <TouchableOpacity
+                      key={key}
+                      style={[styles.inlineStatusOption, { borderBottomColor: colors.border }, isSelected && { backgroundColor: sc + '15' }]}
+                      onPress={() => { setAddStatus(key); setShowAddStatusPicker(false); }}
+                    >
+                      <View style={[styles.statusDot, { backgroundColor: sc }]} />
                       <Text style={[styles.inlineStatusText, { color: colors.text }]}>{label}</Text>
                       {isSelected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
                     </TouchableOpacity>
