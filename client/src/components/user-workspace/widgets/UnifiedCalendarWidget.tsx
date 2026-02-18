@@ -390,12 +390,7 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
   const { effectiveTimezone } = useTimezone();
 
   const config = widget.config || {};
-  const typeDefaultView: Record<string, CalendarViewMode> = {
-    personalCalendar: "day",
-    dayCalendar: "day",
-    weekCalendar: "week",
-  };
-  const defaultViewMode = (config.defaultViewMode as CalendarViewMode) || (config.viewMode as CalendarViewMode) || typeDefaultView[widget.type] || "day";
+  const defaultViewMode = (config.defaultViewMode as CalendarViewMode) || (config.viewMode as CalendarViewMode) || "day";
 
   const [viewMode, setViewMode] = useState<CalendarViewMode>(defaultViewMode);
   const [selectedDate, setSelectedDate] = useState(new Date());

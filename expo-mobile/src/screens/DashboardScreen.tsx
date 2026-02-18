@@ -47,6 +47,30 @@ interface Notification {
   linkUrl?: string;
 }
 
+interface ScheduleItem {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+  startDate: string;
+  endDate: string;
+  startTime: string | null;
+  endTime: string | null;
+  assignedToName: string | null;
+  scheduleId: string;
+  projectId?: string;
+  projectName?: string;
+}
+
+interface CalendarEvent {
+  id: string;
+  title: string;
+  type: 'task' | 'schedule';
+  startTime?: string | null;
+  endTime?: string | null;
+  projectName?: string;
+}
+
 interface ActiveTimesheet {
   id: string;
   projectId: string;
@@ -89,6 +113,14 @@ function formatTimeSince(dateStr: string): string {
   return `${mins}m`;
 }
 
+function formatCalTime(timeStr: string | null | undefined): string {
+  if (!timeStr) return '';
+  const [h, m] = timeStr.split(':').map(Number);
+  const period = h >= 12 ? 'PM' : 'AM';
+  const displayH = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${displayH}:${(m || 0).toString().padStart(2, '0')} ${period}`;
+}
+
 function formatTimeAgo(dateStr: string): string {
   const d = new Date(dateStr);
   const now = new Date();
@@ -112,6 +144,7 @@ export default function DashboardScreen({ navigation }: Props) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [activeTimesheet, setActiveTimesheet] = useState<ActiveTimesheet | null>(null);
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -156,7 +189,7 @@ export default function DashboardScreen({ navigation }: Props) {
 
   const fetchData = useCallback(async () => {
     try {
-      const [projectsData, tasksData, notifData, unreadData, timesheetData, prefsData, collapsedData] = await Promise.all([
+      const [projectsData, tasksData, notifData, unreadData, timesheetData, prefsData, collapsedData, scheduleData] = await Promise.all([
         apiFetch<Project[]>('/api/projects').catch(() => []),
         apiFetch<Task[]>('/api/tasks').catch(() => []),
         apiFetch<Notification[]>('/api/notifications?limit=20').catch(() => []),
@@ -164,6 +197,7 @@ export default function DashboardScreen({ navigation }: Props) {
         apiFetch<ActiveTimesheet | null>('/api/timesheets/active').catch(() => null),
         apiFetch<any>('/api/user-view-preferences/mobile-dashboard-layout').catch(() => null),
         apiFetch<any>('/api/user-view-preferences/mobile-dashboard-collapsed').catch(() => null),
+        apiFetch<ScheduleItem[]>('/api/schedule-items/user-assigned').catch(() => []),
       ]);
       setProjects(projectsData || []);
       const myTasks = (tasksData || []).filter((t: any) => {
@@ -174,6 +208,46 @@ export default function DashboardScreen({ navigation }: Props) {
       setNotifications(notifData || []);
       setUnreadCount(unreadData?.count || 0);
       setActiveTimesheet(timesheetData || null);
+
+      const today = new Date();
+      const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
+
+      const todayCalEvents: CalendarEvent[] = [];
+
+      myTasks.forEach((task: Task) => {
+        if (task.dueDate) {
+          const dueDate = new Date(task.dueDate);
+          if (dueDate >= todayStart && dueDate <= todayEnd) {
+            todayCalEvents.push({
+              id: `task-${task.id}`,
+              title: task.title,
+              type: 'task',
+            });
+          }
+        }
+      });
+
+      (scheduleData || []).forEach((item: ScheduleItem) => {
+        if (!item.startDate) return;
+        const startDate = new Date(item.startDate);
+        startDate.setHours(0, 0, 0, 0);
+        const endDate = new Date(item.endDate || item.startDate);
+        endDate.setHours(23, 59, 59, 999);
+        if (todayStart >= startDate && todayStart <= endDate) {
+          todayCalEvents.push({
+            id: `schedule-${item.id}`,
+            title: item.name,
+            type: 'schedule',
+            startTime: item.startTime,
+            endTime: item.endTime,
+            projectName: item.projectName,
+          });
+        }
+      });
+
+      setCalendarEvents(todayCalEvents);
+
       if (prefsData?.preferences?.tiles && prefsData?.preferences?.sections) {
         const saved = prefsData.preferences as LayoutPrefs;
         const savedTileKeys = new Set(saved.tiles.map((t: LayoutItem) => t.key));
@@ -299,14 +373,21 @@ export default function DashboardScreen({ navigation }: Props) {
   const visibleTiles = layoutPrefs.tiles.filter(t => t.visible).map(t => ({ key: t.key, ...allCategoryCards[t.key] })).filter(t => t.icon);
   const visibleSections = layoutPrefs.sections.filter(s => s.visible);
 
-  const renderSectionHeader = (title: string, key: string, count?: number) => (
-    <TouchableOpacity
-      style={styles.sectionHeader}
-      onPress={() => toggleSection(key)}
-      activeOpacity={0.7}
-    >
-      <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
-      <View style={styles.sectionHeaderRight}>
+  const renderSectionHeader = (title: string, key: string, count?: number, onTitlePress?: () => void) => (
+    <View style={styles.sectionHeader}>
+      <TouchableOpacity
+        style={{ flex: 1 }}
+        onPress={onTitlePress || (() => toggleSection(key))}
+        activeOpacity={0.7}
+      >
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.sectionHeaderRight}
+        onPress={() => toggleSection(key)}
+        activeOpacity={0.7}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
         {count !== undefined && count > 0 && (
           <View style={[styles.sectionBadge, { backgroundColor: colors.accent + '20' }]}>
             <Text style={[styles.sectionBadgeText, { color: colors.accent }]}>{count}</Text>
@@ -317,8 +398,8 @@ export default function DashboardScreen({ navigation }: Props) {
           size={18}
           color={colors.secondary}
         />
-      </View>
-    </TouchableOpacity>
+      </TouchableOpacity>
+    </View>
   );
 
   const renderSection = (key: string) => {
@@ -435,11 +516,40 @@ export default function DashboardScreen({ navigation }: Props) {
       case 'calendar':
         return (
           <View key={key} style={styles.section}>
-            {renderSectionHeader("Today's Calendar", 'calendar')}
+            {renderSectionHeader("Today's Calendar", 'calendar', calendarEvents.length, () => navigation.navigate('Calendar'))}
             {!collapsed.calendar && (
-              <View style={[styles.emptySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <Ionicons name="calendar-outline" size={28} color={colors.muted} />
-                <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No events today</Text>
+              <View>
+                {calendarEvents.length === 0 ? (
+                  <View style={[styles.emptySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <Ionicons name="calendar-outline" size={28} color={colors.muted} />
+                    <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No events today</Text>
+                  </View>
+                ) : (
+                  calendarEvents.map(event => (
+                    <View key={event.id} style={[styles.calEventRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                      <View style={[styles.calEventIconBg, { backgroundColor: (event.type === 'task' ? '#3b82f6' : '#10b981') + '15' }]}>
+                        <Ionicons
+                          name={event.type === 'task' ? 'checkmark-circle-outline' : 'calendar-outline'}
+                          size={18}
+                          color={event.type === 'task' ? '#3b82f6' : '#10b981'}
+                        />
+                      </View>
+                      <View style={styles.calEventContent}>
+                        <Text style={[styles.calEventTitle, { color: colors.text }]} numberOfLines={1}>{event.title}</Text>
+                        {event.startTime && (
+                          <Text style={[styles.calEventTime, { color: colors.secondary }]}>
+                            {formatCalTime(event.startTime)}{event.endTime ? ` - ${formatCalTime(event.endTime)}` : ''}
+                          </Text>
+                        )}
+                      </View>
+                      <View style={[styles.calEventBadge, { backgroundColor: (event.type === 'task' ? '#3b82f6' : '#10b981') + '20' }]}>
+                        <Text style={[styles.calEventBadgeText, { color: event.type === 'task' ? '#3b82f6' : '#10b981' }]}>
+                          {event.type === 'task' ? 'Task' : 'Schedule'}
+                        </Text>
+                      </View>
+                    </View>
+                  ))
+                )}
               </View>
             )}
           </View>
@@ -920,6 +1030,44 @@ const styles = StyleSheet.create({
   },
   activityTime: {
     fontSize: 11,
+  },
+  calEventRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginBottom: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 10,
+  },
+  calEventIconBg: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calEventContent: {
+    flex: 1,
+  },
+  calEventTitle: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  calEventTime: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  calEventBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  calEventBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
   favouriteRow: {
     flexDirection: 'row',

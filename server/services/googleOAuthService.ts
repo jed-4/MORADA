@@ -316,6 +316,34 @@ export class GoogleOAuthService {
     const tokenExpiry = user?.googleCalendarTokenExpiry || null;
     const isExpired = tokenExpiry ? tokenExpiry.getTime() < Date.now() : false;
     
+    if (hasTokens && isExpired) {
+      try {
+        await this.getCalendarClient(userId);
+        const refreshedUser = await this.storage.getUser(userId);
+        const newExpiry = refreshedUser?.googleCalendarTokenExpiry || null;
+        return {
+          connected: true,
+          email: refreshedUser?.googleCalendarEmail || null,
+          tokenExpiry: newExpiry,
+          isExpired: false,
+          connectedAt: refreshedUser?.googleCalendarConnectedAt || null,
+        };
+      } catch (err: any) {
+        console.log('[GoogleOAuth] Status check refresh failed:', err.message);
+        const stillHasTokens = !!(
+          (await this.storage.getUser(userId))?.googleCalendarAccessToken &&
+          (await this.storage.getUser(userId))?.googleCalendarRefreshToken
+        );
+        return {
+          connected: stillHasTokens,
+          email: user?.googleCalendarEmail || null,
+          tokenExpiry,
+          isExpired: !stillHasTokens ? false : true,
+          connectedAt: user?.googleCalendarConnectedAt || null,
+        };
+      }
+    }
+    
     return {
       connected: hasTokens,
       email: user?.googleCalendarEmail || null,

@@ -8,6 +8,9 @@ import {
   ChevronLeft,
   ChevronRight,
   User,
+  Clock,
+  Briefcase,
+  ExternalLink,
 } from "lucide-react";
 import { format, parseISO, isWithinInterval, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths } from "date-fns";
 import type { Task, ScheduleItem, Project, User as UserType, FieldCategoryWithOptions, Schedule, CompanySettings } from "@shared/schema";
@@ -38,6 +41,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
+import { Button } from "@/components/ui/button";
+import { useLocation } from "wouter";
 import TaskEditModal from "@/components/TaskEditModal";
 
 // Helper function to normalize filter dates from API responses
@@ -58,6 +63,7 @@ export default function BusinessCalendar() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const [, navigate] = useLocation();
   const [filters, setFilters] = useState<CalendarFiltersType>({});
   const [calendarMode, setCalendarMode] = useState<string>("week");
   const [selectedViewId, setSelectedViewId] = useState<string | undefined>();
@@ -70,6 +76,8 @@ export default function BusinessCalendar() {
   const [selectedViewUserId, setSelectedViewUserId] = useState<string>("all");
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [showTaskDialog, setShowTaskDialog] = useState(false);
+  const [selectedScheduleItem, setSelectedScheduleItem] = useState<ScheduleItem | null>(null);
+  const [showScheduleItemDialog, setShowScheduleItemDialog] = useState(false);
   const defaultViewCreationAttempted = useRef(false);
 
   // Calculate date range for calendar data fetching (current view +/- 1 month buffer)
@@ -480,11 +488,16 @@ export default function BusinessCalendar() {
 
   const handleEventClick = (event: CalendarEvent) => {
     if (event.type === "task") {
-      // Find the task from allTasks by ID
       const task = allTasks.find(t => t.id === event.id);
       if (task) {
         setEditingTask(task);
         setShowTaskDialog(true);
+      }
+    } else if (event.type === "schedule") {
+      const item = allScheduleItems.find(s => s.id === event.id);
+      if (item) {
+        setSelectedScheduleItem(item);
+        setShowScheduleItemDialog(true);
       }
     }
   };
@@ -1202,6 +1215,90 @@ export default function BusinessCalendar() {
           onDelete={(taskId) => deleteTaskMutation.mutate(taskId)}
         />
       )}
+
+      {/* Schedule Item Detail Modal */}
+      <Dialog open={showScheduleItemDialog} onOpenChange={(open) => {
+        setShowScheduleItemDialog(open);
+        if (!open) setSelectedScheduleItem(null);
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CalendarIcon className="h-4 w-4 text-muted-foreground" />
+              {selectedScheduleItem?.name}
+            </DialogTitle>
+            <DialogDescription>Schedule item details</DialogDescription>
+          </DialogHeader>
+          {selectedScheduleItem && (() => {
+            const schedule = schedules.find(s => s.id === selectedScheduleItem.scheduleId);
+            const project = schedule ? projects.find(p => p.id === schedule.projectId) : null;
+            const assigneeName = selectedScheduleItem.assignedToName || null;
+            return (
+              <div className="space-y-4 py-2">
+                <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-3 text-sm">
+                  {selectedScheduleItem.type && (
+                    <>
+                      <span className="text-muted-foreground">Type</span>
+                      <Badge variant="outline" className="w-fit capitalize">{selectedScheduleItem.type}</Badge>
+                    </>
+                  )}
+                  {selectedScheduleItem.status && (
+                    <>
+                      <span className="text-muted-foreground">Status</span>
+                      <Badge variant="secondary" className="w-fit">{selectedScheduleItem.status}</Badge>
+                    </>
+                  )}
+                  {selectedScheduleItem.startDate && (
+                    <>
+                      <Clock className="h-4 w-4 text-muted-foreground mt-0.5" />
+                      <span>
+                        {format(parseISO(selectedScheduleItem.startDate), 'dd MMM yyyy')}
+                        {selectedScheduleItem.endDate && selectedScheduleItem.endDate !== selectedScheduleItem.startDate && (
+                          <> — {format(parseISO(selectedScheduleItem.endDate), 'dd MMM yyyy')}</>
+                        )}
+                        {selectedScheduleItem.startTime && (
+                          <span className="text-muted-foreground ml-2">
+                            {selectedScheduleItem.startTime}
+                            {selectedScheduleItem.endTime && ` – ${selectedScheduleItem.endTime}`}
+                          </span>
+                        )}
+                      </span>
+                    </>
+                  )}
+                  {assigneeName && (
+                    <>
+                      <User className="h-4 w-4 text-muted-foreground mt-0.5" />
+                      <span>{assigneeName}</span>
+                    </>
+                  )}
+                  {project && (
+                    <>
+                      <Briefcase className="h-4 w-4 text-muted-foreground mt-0.5" />
+                      <span>{project.name}</span>
+                    </>
+                  )}
+                </div>
+                {project && schedule && (
+                  <DialogFooter>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setShowScheduleItemDialog(false);
+                        setSelectedScheduleItem(null);
+                        navigate(`/projects/${project.id}/schedule`);
+                      }}
+                    >
+                      <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
+                      Open in Schedule
+                    </Button>
+                  </DialogFooter>
+                )}
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

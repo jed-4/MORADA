@@ -103,6 +103,7 @@ export function usePersonalCalendarEvents({
       }
     },
     enabled: includeGoogleCalendar,
+    refetchInterval: 15 * 60 * 1000,
   });
 
   // Fetch Google Calendar events directly (like UserCalendarDialog does)

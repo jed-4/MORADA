@@ -9,8 +9,6 @@ import {
   Sun,
   Activity,
   Sparkles,
-  CalendarDays,
-  CalendarRange,
   FileSpreadsheet,
   Pin,
   FolderOpen,
@@ -27,8 +25,6 @@ import PersonalRemindersWidget from "./PersonalRemindersWidget";
 import MyDayWidget from "./MyDayWidget";
 import PersonalActivityWidget from "./PersonalActivityWidget";
 import PersonalAISummaryWidget from "./PersonalAISummaryWidget";
-import DayCalendarWidget from "./DayCalendarWidget";
-import WeekCalendarWidget from "./WeekCalendarWidget";
 import UnifiedCalendarWidget from "./UnifiedCalendarWidget";
 import ActionableItemsWidget from "./ActionableItemsWidget";
 import PinnedItemsWidget from "./PinnedItemsWidget";
@@ -57,7 +53,7 @@ export const personalWidgetRegistry: Record<string, WidgetDefinition> = {
   personalCalendar: {
     type: "personalCalendar",
     name: "My Calendar",
-    description: "Upcoming events and appointments",
+    description: "View your events in day, week, or list mode with configurable defaults",
     icon: Calendar,
     component: UnifiedCalendarWidget,
     defaultSize: "md",
@@ -126,24 +122,6 @@ export const personalWidgetRegistry: Record<string, WidgetDefinition> = {
     defaultSize: "md",
     configurable: true,
   },
-  dayCalendar: {
-    type: "dayCalendar",
-    name: "Day Calendar",
-    description: "Scrollable timeline view of today's tasks, events, and schedule",
-    icon: CalendarDays,
-    component: UnifiedCalendarWidget,
-    defaultSize: "md",
-    configurable: true,
-  },
-  weekCalendar: {
-    type: "weekCalendar",
-    name: "Week Calendar",
-    description: "7-day grid view of your week with all events at a glance",
-    icon: CalendarRange,
-    component: UnifiedCalendarWidget,
-    defaultSize: "lg",
-    configurable: true,
-  },
   actionableItems: {
     type: "actionableItems",
     name: "Actionable Items",
@@ -182,6 +160,11 @@ export const personalWidgetRegistry: Record<string, WidgetDefinition> = {
   },
 };
 
+const legacyWidgetMap: Record<string, string> = {
+  dayCalendar: "personalCalendar",
+  weekCalendar: "personalCalendar",
+};
+
 export const getPersonalWidgetDefinition = (type: string): WidgetDefinition | undefined => {
-  return personalWidgetRegistry[type];
+  return personalWidgetRegistry[type] || personalWidgetRegistry[legacyWidgetMap[type]];
 };
