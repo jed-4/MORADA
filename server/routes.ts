@@ -14988,21 +14988,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const existingItems = await storage.getScheduleItems(scheduleId);
       const sortOrderOffset = existingItems.length;
 
+      const isNonWorkingDayBulk = (date: Date): boolean => {
+        const day = date.getDay();
+        if (day === 0 && !schedule.includeSunday) return true;
+        if (day === 6 && !schedule.includeSaturday) return true;
+        return false;
+      };
+
+      const addWorkingDaysBulk = (date: Date, days: number): Date => {
+        let d = new Date(date);
+        let remaining = Math.abs(days);
+        const step = days >= 0 ? 1 : -1;
+        while (remaining > 0) {
+          d = new Date(d);
+          d.setDate(d.getDate() + step);
+          if (!isNonWorkingDayBulk(d)) remaining--;
+        }
+        return d;
+      };
+
       const createdItems = [];
       const today = new Date();
       
-      let cumulativeDays = 0;
+      let currentStart = new Date(today);
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
         const duration = typeof item.duration === 'number' && item.duration >= 1 ? item.duration : 1;
         
-        const startDate = new Date(today);
-        startDate.setDate(startDate.getDate() + cumulativeDays);
+        const startDate = new Date(currentStart);
+        const endDate = duration <= 1 ? new Date(startDate) : addWorkingDaysBulk(startDate, duration - 1);
         
-        const endDate = new Date(startDate);
-        endDate.setDate(endDate.getDate() + duration - 1);
-        
-        cumulativeDays += duration;
+        currentStart = addWorkingDaysBulk(endDate, 1);
 
         const scheduleItem = await storage.createScheduleItem({
           scheduleId,
@@ -15765,22 +15781,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Company-level access is sufficient for applying templates
       // (project membership check removed as company ownership is already verified)
 
-      // Create schedule items from template data
+      const isNonWorkingDay = (date: Date): boolean => {
+        const day = date.getDay();
+        if (day === 0 && !schedule.includeSunday) return true;
+        if (day === 6 && !schedule.includeSaturday) return true;
+        return false;
+      };
+
+      const addWorkingDaysServer = (date: Date, days: number): Date => {
+        let d = new Date(date);
+        let remaining = Math.abs(days);
+        const step = days >= 0 ? 1 : -1;
+        while (remaining > 0) {
+          d = new Date(d);
+          d.setDate(d.getDate() + step);
+          if (!isNonWorkingDay(d)) remaining--;
+        }
+        return d;
+      };
+
       const templateItems = template.templateData as any[];
       const createdItems = [];
 
       for (const templateItem of templateItems) {
+        const duration = templateItem.duration || 1;
+        const startDate = new Date();
+        const endDate = duration <= 1 ? new Date(startDate) : addWorkingDaysServer(startDate, duration - 1);
+
         const newItem = await storage.createScheduleItem({
           scheduleId: scheduleId,
           name: templateItem.name,
           description: templateItem.description || null,
           notes: templateItem.notes || null,
           type: templateItem.type || "task",
-          status: "not_started", // Always start as not_started
+          status: "not_started",
           priority: templateItem.priority || "medium",
-          startDate: new Date(), // Default to today, user can adjust
-          endDate: new Date(Date.now() + ((templateItem.duration || 1) - 1) * 24 * 60 * 60 * 1000), // Duration of 1 = same day
-          duration: templateItem.duration || 1,
+          startDate,
+          endDate,
+          duration,
           progressPercent: 0,
           sortOrder: templateItem.sortOrder || 0,
         });

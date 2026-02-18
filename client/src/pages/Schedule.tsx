@@ -684,6 +684,41 @@ export default function Schedule() {
   const companyHolidays = (nonWorkingDays as any[]).filter((d: any) => !d.scheduleId);
   const scheduleSpecificDays = (nonWorkingDays as any[]).filter((d: any) => d.scheduleId);
 
+  const isNonWorkingDay = (date: Date): boolean => {
+    const day = date.getDay();
+    if (day === 0 && !schedule?.includeSunday) return true;
+    if (day === 6 && !schedule?.includeSaturday) return true;
+    return false;
+  };
+
+  const addWorkingDays = (date: Date, days: number): Date => {
+    let d = new Date(date);
+    let remaining = Math.abs(days);
+    const step = days >= 0 ? 1 : -1;
+    while (remaining > 0) {
+      d = new Date(d);
+      d.setDate(d.getDate() + step);
+      if (!isNonWorkingDay(d)) remaining--;
+    }
+    return d;
+  };
+
+  const countWorkingDays = (start: Date, end: Date): number => {
+    let count = 0;
+    const s = new Date(start);
+    s.setHours(0, 0, 0, 0);
+    const e = new Date(end);
+    e.setHours(0, 0, 0, 0);
+    if (s <= e) {
+      let current = new Date(s);
+      while (current <= e) {
+        if (!isNonWorkingDay(current)) count++;
+        current.setDate(current.getDate() + 1);
+      }
+    }
+    return count;
+  };
+
   const { data: companySettings } = useQuery<CompanySettings>({
     queryKey: ["/api/company-settings"],
   });
@@ -892,7 +927,7 @@ export default function Schedule() {
       return;
     }
     
-    const headers = ["Name", "Type", "Status", "Priority", "Start Date", "End Date", "Duration (days)", "Assignee", "Progress %", "Parent", "Notes"];
+    const headers = ["Name", "Type", "Status", "Priority", "Start Date", "End Date", "Duration (working days)", "Assignee", "Progress %", "Parent", "Notes"];
     
     const rows = scheduleItems.map(item => {
       const parentItem = scheduleItems.find(si => si.id === item.parentItemId);
@@ -903,7 +938,7 @@ export default function Schedule() {
         item.priority || "",
         item.startDate ? new Date(item.startDate).toLocaleDateString('en-AU') : "",
         item.endDate ? new Date(item.endDate).toLocaleDateString('en-AU') : "",
-        item.duration?.toString() || "",
+        item.startDate && item.endDate ? countWorkingDays(new Date(item.startDate), new Date(item.endDate)).toString() : (item.duration?.toString() || ""),
         item.assignedToName || "",
         (item.progressPercent || 0).toString(),
         parentItem?.name || "",
@@ -1785,7 +1820,7 @@ export default function Schedule() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="item-duration">Duration (days)</Label>
+                <Label htmlFor="item-duration">Duration (working days)</Label>
                 <Input
                   id="item-duration"
                   type="number"
@@ -1793,15 +1828,14 @@ export default function Schedule() {
                   placeholder="Auto"
                   value={
                     formData.startDate && formData.endDate
-                      ? Math.ceil((new Date(formData.endDate).getTime() - new Date(formData.startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1
+                      ? countWorkingDays(new Date(formData.startDate), new Date(formData.endDate))
                       : ''
                   }
                   onChange={(e) => {
                     const days = parseInt(e.target.value, 10);
                     if (formData.startDate && !isNaN(days) && days > 0) {
                       const start = new Date(formData.startDate);
-                      const end = new Date(start);
-                      end.setDate(start.getDate() + days - 1);
+                      const end = addWorkingDays(start, days - 1);
                       setFormData({ ...formData, endDate: end.toISOString().split('T')[0] });
                     }
                   }}
@@ -2149,15 +2183,12 @@ export default function Schedule() {
                                 if (isNewItem) {
                                   if (predItem.endDate) {
                                     const predEnd = new Date(predItem.endDate);
-                                    const newStart = new Date(predEnd);
-                                    newStart.setDate(newStart.getDate() + newLag + 1);
+                                    const newStart = addWorkingDays(predEnd, newLag + 1);
                                     const startStr = newStart.toISOString().split("T")[0];
                                     let endStr = startStr;
                                     if (editingItem.startDate && editingItem.endDate) {
-                                      const oldStart = new Date(editingItem.startDate as string);
-                                      const oldEnd = new Date(editingItem.endDate as string);
-                                      const durationMs = oldEnd.getTime() - oldStart.getTime();
-                                      const newEnd = new Date(newStart.getTime() + durationMs);
+                                      const workDuration = countWorkingDays(new Date(editingItem.startDate as string), new Date(editingItem.endDate as string));
+                                      const newEnd = addWorkingDays(newStart, Math.max(0, workDuration - 1));
                                       endStr = newEnd.toISOString().split("T")[0];
                                     }
                                     setFormData(prev => ({ ...prev, startDate: startStr, endDate: endStr }));
@@ -2171,15 +2202,12 @@ export default function Schedule() {
                                     );
                                     if (predItem.endDate) {
                                       const predEnd = new Date(predItem.endDate);
-                                      const newStart = new Date(predEnd);
-                                      newStart.setDate(newStart.getDate() + newLag + 1);
+                                      const newStart = addWorkingDays(predEnd, newLag + 1);
                                       const startStr = newStart.toISOString().split("T")[0];
                                       let endStr = startStr;
                                       if (editingItem.startDate && editingItem.endDate) {
-                                        const oldStart = new Date(editingItem.startDate);
-                                        const oldEnd = new Date(editingItem.endDate);
-                                        const durationMs = oldEnd.getTime() - oldStart.getTime();
-                                        const newEnd = new Date(newStart.getTime() + durationMs);
+                                        const workDuration = countWorkingDays(new Date(editingItem.startDate), new Date(editingItem.endDate));
+                                        const newEnd = addWorkingDays(newStart, Math.max(0, workDuration - 1));
                                         endStr = newEnd.toISOString().split("T")[0];
                                       }
                                       const dateUpdatedItem = await apiRequest(`/api/schedule-items/${editingItem.id}`, "PATCH", {
