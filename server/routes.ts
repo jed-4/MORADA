@@ -2384,10 +2384,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      const projectBefore = await storage.getProject(req.params.id);
       const project = await storage.updateProject(req.params.id, updateData);
       if (!project) {
         console.error("[PATCH /api/projects/:id] Project not found:", req.params.id);
         return res.status(404).json({ error: "Project not found" });
+      }
+
+      try {
+        const activityUser = req.user as any;
+        if (activityUser && project.id) {
+          const userName = activityUser.firstName && activityUser.lastName
+            ? `${activityUser.firstName} ${activityUser.lastName}`
+            : activityUser.email || "User";
+
+          const changedFields = Object.keys(validationResult.data);
+          const fieldLabels: Record<string, string> = {
+            name: "name",
+            projectStatus: "phase",
+            projectSubStatus: "status",
+            clientName: "client",
+            address: "address",
+            startDate: "start date",
+            endDate: "end date",
+            budget: "budget",
+            priority: "priority",
+            description: "description",
+            projectManager: "project manager",
+            siteManager: "site manager",
+          };
+
+          const meaningfulChanges = changedFields.filter(f => f in fieldLabels);
+          if (meaningfulChanges.length > 0) {
+            const changeDescriptions = meaningfulChanges.map(f => fieldLabels[f]).join(", ");
+            const metadata: Record<string, any> = {};
+            for (const field of meaningfulChanges) {
+              metadata[field] = {
+                from: (projectBefore as any)?.[field] ?? null,
+                to: (validationResult.data as any)[field] ?? null,
+              };
+            }
+
+            await storage.createActivity({
+              projectId: project.id,
+              companyId: project.companyId,
+              userId: activityUser.id,
+              userName,
+              activityType: "project",
+              action: "updated",
+              description: `${userName} updated project ${changeDescriptions}`,
+              entityId: project.id,
+              entityName: project.name,
+              metadata,
+            });
+          }
+        }
+      } catch (activityError) {
+        console.error("[PATCH /api/projects/:id] Failed to log activity:", activityError);
       }
       
       // Trigger automatic checklist creation when project status changes

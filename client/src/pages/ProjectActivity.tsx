@@ -28,6 +28,7 @@ import {
   PinOff,
   Plus,
   MessageSquare,
+  Briefcase,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import type { Activity, CompanySettings } from "@shared/schema";
@@ -120,6 +121,8 @@ export default function ProjectActivity() {
         return <GitBranch className="h-4 w-4" />;
       case "invoice":
         return <DollarSign className="h-4 w-4" />;
+      case "project":
+        return <Briefcase className="h-4 w-4" />;
       case "schedule":
         return <Calendar className="h-4 w-4" />;
       case "manual":
@@ -140,6 +143,8 @@ export default function ProjectActivity() {
       case "variation":
         return "text-[#bba7db] bg-[#bba7db]/10";
       case "invoice":
+        return "text-primary bg-primary/10";
+      case "project":
         return "text-primary bg-primary/10";
       case "schedule":
         return "text-[#bba7db] bg-[#bba7db]/10";

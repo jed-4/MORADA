@@ -19,6 +19,7 @@ import {
   Calendar,
   Plus,
   MessageSquare,
+  Briefcase,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -153,6 +154,8 @@ export default function ActivityWidget({ widget, onUpdate, isConfiguring, onClos
         return <GitBranch className="h-4 w-4" />;
       case "invoice":
         return <DollarSign className="h-4 w-4" />;
+      case "project":
+        return <Briefcase className="h-4 w-4" />;
       case "schedule":
         return <Calendar className="h-4 w-4" />;
       default:
@@ -172,6 +175,8 @@ export default function ActivityWidget({ widget, onUpdate, isConfiguring, onClos
         return "text-purple-600 bg-purple-50 dark:text-purple-400 dark:bg-purple-950";
       case "invoice":
         return "text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950";
+      case "project":
+        return "text-sky-600 bg-sky-50 dark:text-sky-400 dark:bg-sky-950";
       case "schedule":
         return "text-cyan-600 bg-cyan-50 dark:text-cyan-400 dark:bg-cyan-950";
       default:

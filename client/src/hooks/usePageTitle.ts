@@ -58,9 +58,8 @@ export function usePageTitle({ pageName, overrideContext }: PageTitleOptions): s
     }
   }
 
-  // Set document.title for browser tab
   useEffect(() => {
-    document.title = `${title} | BuildPro`;
+    document.title = "BuildPro";
   }, [title]);
 
   return title;
