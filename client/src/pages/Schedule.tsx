@@ -2205,6 +2205,41 @@ export default function Schedule() {
                 <p className="text-xs text-muted-foreground">
                   Dependencies control when this item can start. It will wait for predecessor items to finish (Finish-to-Start).
                 </p>
+
+                {editingItem.id && (() => {
+                  const successors = scheduleItems.filter(item =>
+                    item.id !== editingItem.id &&
+                    (item.dependencies as any[] || []).some((d: any) => d.id === editingItem.id)
+                  );
+                  if (successors.length === 0) return null;
+                  return (
+                    <div className="space-y-2 mt-4 pt-3 border-t border-dashed">
+                      <Label className="text-muted-foreground">Successors (depends on this item)</Label>
+                      <div className="space-y-1.5">
+                        {successors.map(successor => {
+                          const depInfo = (successor.dependencies as any[]).find((d: any) => d.id === editingItem.id);
+                          return (
+                            <div
+                              key={successor.id}
+                              className="p-2 rounded-md border border-dashed bg-muted/30 flex items-center justify-between"
+                            >
+                              <div className="flex items-center gap-2">
+                                <div className="text-sm">{successor.name}</div>
+                                <Badge variant="outline" className="text-xs">
+                                  {depInfo?.type || "FS"}
+                                </Badge>
+                                {depInfo?.lag != null && depInfo.lag > 0 && (
+                                  <span className="text-xs text-muted-foreground">{depInfo.lag}d lag</span>
+                                )}
+                              </div>
+                              <span className="text-xs text-muted-foreground">successor</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
