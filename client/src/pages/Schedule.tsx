@@ -2124,18 +2124,29 @@ export default function Schedule() {
                             <Input
                               type="number"
                               min="0"
-                              value={dep.lag ?? 0}
-                              onChange={async (e) => {
+                              value={dep.lag ?? ""}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                const currentDeps = (editingItem.dependencies as any[]) || [];
+                                const updatedDeps = currentDeps.map((d: any) =>
+                                  d.id === dep.id ? { ...d, lag: val === "" ? "" : parseInt(val) } : d
+                                );
+                                setEditingItem({
+                                  ...editingItem,
+                                  dependencies: updatedDeps,
+                                } as any);
+                              }}
+                              onBlur={async (e) => {
                                 const newLag = parseInt(e.target.value) || 0;
+                                const currentDeps = (editingItem.dependencies as any[]) || [];
+                                const updatedDeps = currentDeps.map((d: any) =>
+                                  d.id === dep.id ? { ...d, lag: newLag } : d
+                                );
+                                setEditingItem({
+                                  ...editingItem,
+                                  dependencies: updatedDeps,
+                                } as any);
                                 if (isNewItem) {
-                                  const currentDeps = (editingItem.dependencies as any[]) || [];
-                                  const updatedDeps = currentDeps.map((d: any) =>
-                                    d.id === dep.id ? { ...d, lag: newLag } : d
-                                  );
-                                  setEditingItem({
-                                    ...editingItem,
-                                    dependencies: updatedDeps,
-                                  } as any);
                                   if (predItem.endDate) {
                                     const predEnd = new Date(predItem.endDate);
                                     const newStart = new Date(predEnd);
@@ -2158,7 +2169,6 @@ export default function Schedule() {
                                       "PATCH",
                                       { lag: newLag }
                                     );
-                                    setEditingItem(updatedItem);
                                     if (predItem.endDate) {
                                       const predEnd = new Date(predItem.endDate);
                                       const newStart = new Date(predEnd);
@@ -2172,12 +2182,16 @@ export default function Schedule() {
                                         const newEnd = new Date(newStart.getTime() + durationMs);
                                         endStr = newEnd.toISOString().split("T")[0];
                                       }
-                                      await apiRequest(`/api/schedule-items/${editingItem.id}`, "PATCH", {
+                                      const dateUpdatedItem = await apiRequest(`/api/schedule-items/${editingItem.id}`, "PATCH", {
                                         startDate: startStr,
                                         endDate: endStr,
                                       });
+                                      setEditingItem({ ...dateUpdatedItem, dependencies: updatedDeps });
                                       setFormData(prev => ({ ...prev, startDate: startStr, endDate: endStr }));
                                       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+                                      toast({ title: "Lag updated and dates adjusted" });
+                                    } else {
+                                      setEditingItem({ ...updatedItem, dependencies: updatedDeps });
                                     }
                                   } catch (error) {
                                     toast({
@@ -2428,8 +2442,19 @@ export default function Schedule() {
                             <div className="flex items-center gap-2">
                               <Input
                                 type="number"
-                                value={offset?.offsetDays ?? 0}
+                                value={offset?.offsetDays ?? ""}
                                 onChange={(e) => {
+                                  const val = e.target.value;
+                                  const days = val === "" ? "" as any : parseInt(val);
+                                  setTaskLinkOffsetsLocal(prev => {
+                                    const existing = prev.find(o => o.taskId === taskId);
+                                    if (existing) {
+                                      return prev.map(o => o.taskId === taskId ? { ...o, offsetDays: days } : o);
+                                    }
+                                    return [...prev, { taskId, offsetDays: days, offsetFrom: "start" as const }];
+                                  });
+                                }}
+                                onBlur={(e) => {
                                   const days = parseInt(e.target.value) || 0;
                                   setTaskLinkOffsetsLocal(prev => {
                                     const existing = prev.find(o => o.taskId === taskId);

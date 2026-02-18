@@ -1158,8 +1158,9 @@ export default function ScheduleTemplateDetail() {
                   id="relativeStartDay"
                   type="number"
                   min={0}
-                  value={formData.relativeStartDay}
-                  onChange={(e) => setFormData({ ...formData, relativeStartDay: parseInt(e.target.value) || 0 })}
+                  value={formData.relativeStartDay ?? ""}
+                  onChange={(e) => setFormData({ ...formData, relativeStartDay: e.target.value === "" ? "" as any : parseInt(e.target.value) })}
+                  onBlur={(e) => setFormData({ ...formData, relativeStartDay: parseInt(e.target.value) || 0 })}
                   placeholder="0"
                   data-testid="input-item-start-day"
                 />

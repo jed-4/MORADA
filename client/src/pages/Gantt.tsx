@@ -3086,8 +3086,9 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                 <div className="flex items-center gap-2 mt-1">
                   <Input
                     type="number"
-                    value={selectedDependency.lag}
-                    onChange={(e) => setSelectedDependency({ ...selectedDependency, lag: parseInt(e.target.value) || 0 })}
+                    value={selectedDependency.lag ?? ""}
+                    onChange={(e) => setSelectedDependency({ ...selectedDependency, lag: e.target.value === "" ? "" as any : parseInt(e.target.value) })}
+                    onBlur={(e) => setSelectedDependency({ ...selectedDependency, lag: parseInt(e.target.value) || 0 })}
                     className="w-24"
                     data-testid="input-dependency-lag"
                   />

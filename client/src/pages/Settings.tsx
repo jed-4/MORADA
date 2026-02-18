@@ -1935,8 +1935,9 @@ function DefaultValuesSection() {
                   <Label>Due Value</Label>
                   <Input
                     type="number"
-                    value={newPaymentTerm.dueValue}
-                    onChange={(e) => setNewPaymentTerm({ ...newPaymentTerm, dueValue: parseInt(e.target.value) || 0 })}
+                    value={newPaymentTerm.dueValue ?? ""}
+                    onChange={(e) => setNewPaymentTerm({ ...newPaymentTerm, dueValue: e.target.value === "" ? "" as any : parseInt(e.target.value) })}
+                    onBlur={(e) => setNewPaymentTerm({ ...newPaymentTerm, dueValue: parseInt(e.target.value) || 0 })}
                     min="0"
                     className="mt-1.5"
                     data-testid="input-new-payment-term-value"
@@ -1996,8 +1997,9 @@ function DefaultValuesSection() {
                   <Label>Due Value</Label>
                   <Input
                     type="number"
-                    value={editingPaymentTerm.dueValue}
-                    onChange={(e) => setEditingPaymentTerm({ ...editingPaymentTerm, dueValue: parseInt(e.target.value) || 0 })}
+                    value={editingPaymentTerm.dueValue ?? ""}
+                    onChange={(e) => setEditingPaymentTerm({ ...editingPaymentTerm, dueValue: e.target.value === "" ? "" as any : parseInt(e.target.value) })}
+                    onBlur={(e) => setEditingPaymentTerm({ ...editingPaymentTerm, dueValue: parseInt(e.target.value) || 0 })}
                     min="0"
                     className="mt-1.5"
                     data-testid="input-edit-payment-term-value"

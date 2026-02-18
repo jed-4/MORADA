@@ -6360,7 +6360,8 @@ export default function EstimateDetail() {
                         min="0"
                         placeholder="0"
                         {...field}
-                        onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                        onChange={(e) => field.onChange(e.target.value === "" ? "" : parseInt(e.target.value))}
+                        onBlur={(e) => field.onChange(parseInt(e.target.value) || 0)}
                         data-testid="input-group-order"
                       />
                     </FormControl>

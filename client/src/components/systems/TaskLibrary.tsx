@@ -1242,8 +1242,9 @@ export const TaskLibrary = forwardRef<TaskLibraryHandle, TaskLibraryProps>(({ se
                 <Label className="text-[10px] text-muted-foreground">Duration (min)</Label>
                 <Input
                   type="number"
-                  value={templateForm.estimatedDuration}
-                  onChange={(e) => setTemplateForm({ ...templateForm, estimatedDuration: parseInt(e.target.value) || 0 })}
+                  value={templateForm.estimatedDuration ?? ""}
+                  onChange={(e) => setTemplateForm({ ...templateForm, estimatedDuration: e.target.value === "" ? "" as any : parseInt(e.target.value) })}
+                  onBlur={(e) => setTemplateForm({ ...templateForm, estimatedDuration: parseInt(e.target.value) || 0 })}
                   onFocus={(e) => e.target.select()}
                   placeholder="60"
                   className="h-7 text-[11px]"
