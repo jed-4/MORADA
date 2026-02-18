@@ -1230,6 +1230,56 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
       const addWD = addWorkingDaysRef.current;
       const mutate = updateItemMutationRef.current;
 
+      const calcFsLag = (predEnd: Date, succStart: Date): number => {
+        const pEnd = new Date(predEnd);
+        pEnd.setHours(0, 0, 0, 0);
+        const sStart = new Date(succStart);
+        sStart.setHours(0, 0, 0, 0);
+        const diffMs = sStart.getTime() - pEnd.getTime();
+        const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+        return Math.max(0, diffDays - 1);
+      };
+
+      const recalcLagForItem = (itemId: string | number, itemNewStart: Date, items: ScheduleItem[]) => {
+        const item = items.find(i => i.id === itemId);
+        if (!item?.dependencies || (item.dependencies as any[]).length === 0) return;
+        const deps = item.dependencies as any[];
+        const updatedDeps = deps.map((dep: any) => {
+          if (dep.type && dep.type !== 'FS') return dep;
+          const pred = items.find(i => String(i.id) === String(dep.id));
+          if (!pred) return dep;
+          const newLag = calcFsLag(new Date(pred.endDate), itemNewStart);
+          return { ...dep, lag: newLag };
+        });
+        const changed = deps.some((d: any, i: number) => d.lag !== updatedDeps[i].lag);
+        if (changed) {
+          apiRequest(`/api/schedule-items/${itemId}`, "PATCH", { dependencies: updatedDeps })
+            .then(() => queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectIdRef.current}/schedule-items`] }))
+            .catch(() => {});
+        }
+      };
+
+      const recalcLagForSuccessors = (predecessorId: string | number, predNewEnd: Date, items: ScheduleItem[]) => {
+        const successors = items.filter(item =>
+          (item.dependencies as any[] || []).some((dep: any) => String(dep.id) === String(predecessorId))
+        );
+        for (const succ of successors) {
+          const deps = succ.dependencies as any[];
+          const updatedDeps = deps.map((dep: any) => {
+            if (String(dep.id) !== String(predecessorId)) return dep;
+            if (dep.type && dep.type !== 'FS') return dep;
+            const newLag = calcFsLag(predNewEnd, new Date(succ.startDate));
+            return { ...dep, lag: newLag };
+          });
+          const changed = deps.some((d: any, i: number) => d.lag !== updatedDeps[i].lag);
+          if (changed) {
+            apiRequest(`/api/schedule-items/${succ.id}`, "PATCH", { dependencies: updatedDeps })
+              .then(() => queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectIdRef.current}/schedule-items`] }))
+              .catch(() => {});
+          }
+        }
+      };
+
       if (drag.type === 'move') {
         if (deltaDays !== 0) {
           const workingDuration = countWD(drag.originalStart, drag.originalEnd);
@@ -1323,6 +1373,8 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
               endDate: depNewEnd,
             });
           }
+
+          recalcLagForItem(drag.id, newStart, currentItems);
         }
       } else if (drag.type === 'resize-left') {
         if (deltaDays !== 0) {
@@ -1337,6 +1389,8 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
               startDate: newStart,
               endDate: drag.originalEnd,
             });
+
+            recalcLagForItem(drag.id, newStart, currentItems);
           }
         }
       } else if (drag.type === 'resize-right') {
@@ -1352,6 +1406,8 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
               startDate: drag.originalStart,
               endDate: newEnd,
             });
+
+            recalcLagForSuccessors(drag.id, newEnd, currentItems);
           }
         }
       } else if (drag.type === 'dependency') {
