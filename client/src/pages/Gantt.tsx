@@ -2908,33 +2908,37 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                           markerEnd="url(#arrow-elegant)"
                           style={{ pointerEvents: 'none', transition: 'stroke-width 0.15s, stroke 0.15s' }}
                         />
-                        {dep.lag != null && dep.lag > 0 && (
-                          <g>
-                            <rect
-                              x={(startX + endX) / 2 - 10}
-                              y={(startY + endY) / 2 - 8}
-                              width={20}
-                              height={16}
-                              rx={3}
-                              fill="hsl(var(--background))"
-                              stroke={isHovered || isSelected ? '#7c5fb3' : '#9b7fc7'}
-                              strokeWidth={0.5}
-                              style={{ pointerEvents: 'none' }}
-                            />
-                            <text
-                              x={(startX + endX) / 2}
-                              y={(startY + endY) / 2 + 1}
-                              textAnchor="middle"
-                              dominantBaseline="middle"
-                              fill={isHovered || isSelected ? '#7c5fb3' : '#9b7fc7'}
-                              fontSize={9}
-                              fontWeight={500}
-                              style={{ pointerEvents: 'none' }}
-                            >
-                              +{dep.lag}
-                            </text>
-                          </g>
-                        )}
+                        {dep.lag != null && dep.lag > 0 && (() => {
+                          const lagText = `+${dep.lag}`;
+                          const labelW = Math.max(20, lagText.length * 7 + 6);
+                          return (
+                            <g>
+                              <rect
+                                x={(startX + endX) / 2 - labelW / 2}
+                                y={(startY + endY) / 2 - 8}
+                                width={labelW}
+                                height={16}
+                                rx={3}
+                                fill="hsl(var(--background))"
+                                stroke={isHovered || isSelected ? '#7c5fb3' : '#9b7fc7'}
+                                strokeWidth={0.5}
+                                style={{ pointerEvents: 'none' }}
+                              />
+                              <text
+                                x={(startX + endX) / 2}
+                                y={(startY + endY) / 2 + 1}
+                                textAnchor="middle"
+                                dominantBaseline="middle"
+                                fill={isHovered || isSelected ? '#7c5fb3' : '#9b7fc7'}
+                                fontSize={9}
+                                fontWeight={500}
+                                style={{ pointerEvents: 'none' }}
+                              >
+                                {lagText}
+                              </text>
+                            </g>
+                          );
+                        })()}
                       </g>
                     );
                   }).filter(Boolean);
