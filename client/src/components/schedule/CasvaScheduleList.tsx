@@ -235,7 +235,7 @@ export function CasvaScheduleList({
               {visibleColumns.dueDate && <TableHead className="font-semibold w-36 h-8 py-0 text-xs">Due Date & Duration</TableHead>}
               {visibleColumns.status && <TableHead className="font-semibold w-32 h-8 py-0 text-xs">Status</TableHead>}
               <TableHead className="w-8 h-8 py-0 text-xs"></TableHead>
-              {visibleColumns.completion && <TableHead className="font-semibold w-20 h-8 py-0 text-xs text-center">%</TableHead>}
+              {visibleColumns.completion && <TableHead className="font-semibold w-16 h-8 py-0 text-xs text-center">Done</TableHead>}
               <TableHead className="w-12 h-8 py-0"></TableHead>
             </TableRow>
           </TableHeader>
