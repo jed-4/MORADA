@@ -782,11 +782,11 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
       <div className="flex items-center gap-1.5">
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="relative"
-              disabled={isGoogleConnected || connectingGoogle}
+            <button
+              className={`relative p-1 rounded-sm flex items-center justify-center ${
+                isGoogleConnected ? '' : 'hover-elevate active-elevate-2 cursor-pointer'
+              } ${connectingGoogle ? 'opacity-50' : ''}`}
+              disabled={connectingGoogle}
               onClick={async () => {
                 if (isGoogleConnected || connectingGoogle) return;
                 setConnectingGoogle(true);
@@ -803,13 +803,13 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
                 }
               }}
             >
-              <SiGoogle className={`h-3.5 w-3.5 ${isGoogleConnected ? 'text-foreground' : 'text-muted-foreground/40'}`} />
+              <SiGoogle className={`h-3 w-3 ${isGoogleConnected ? 'text-foreground' : 'text-muted-foreground/50'}`} />
               <span
-                className={`absolute top-1 right-1 h-1.5 w-1.5 rounded-full ${
-                  isGoogleConnected ? 'bg-green-500' : 'bg-muted-foreground/30'
+                className={`absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full border border-background ${
+                  isGoogleConnected ? 'bg-green-500' : 'bg-muted-foreground/40'
                 }`}
               />
-            </Button>
+            </button>
           </TooltipTrigger>
           <TooltipContent side="bottom" className="text-xs">
             {isGoogleConnected ? "Google Calendar connected" : "Click to connect Google Calendar"}

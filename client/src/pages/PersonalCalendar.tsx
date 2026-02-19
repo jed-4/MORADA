@@ -665,11 +665,11 @@ export default function PersonalCalendar() {
           <div className="flex items-center gap-1">
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="relative"
-                  disabled={isGoogleCalendarConnected || connectingGoogle}
+                <button
+                  className={`relative h-6 w-6 text-xs border rounded-md flex items-center justify-center ${
+                    isGoogleCalendarConnected ? '' : 'hover-elevate active-elevate-2 cursor-pointer'
+                  } ${connectingGoogle ? 'opacity-50' : ''}`}
+                  disabled={connectingGoogle}
                   onClick={async () => {
                     if (isGoogleCalendarConnected || connectingGoogle) return;
                     setConnectingGoogle(true);
@@ -687,13 +687,13 @@ export default function PersonalCalendar() {
                   }}
                   data-testid="button-google-calendar-status"
                 >
-                  <SiGoogle className={`h-3 w-3 ${isGoogleCalendarConnected ? 'text-foreground' : 'text-muted-foreground/40'}`} />
+                  <SiGoogle className={`h-3 w-3 ${isGoogleCalendarConnected ? 'text-foreground' : 'text-muted-foreground/50'}`} />
                   <span
-                    className={`absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full ${
-                      isGoogleCalendarConnected ? 'bg-green-500' : 'bg-muted-foreground/30'
+                    className={`absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full border border-background ${
+                      isGoogleCalendarConnected ? 'bg-green-500' : 'bg-muted-foreground/40'
                     }`}
                   />
-                </Button>
+                </button>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="text-xs">
                 {isGoogleCalendarConnected ? "Google Calendar connected" : "Click to connect Google Calendar"}
