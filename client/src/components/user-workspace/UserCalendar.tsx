@@ -56,6 +56,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
+import { SiGoogle } from "react-icons/si";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { User as UserType, FieldCategoryWithOptions } from "@shared/schema";
 
 // Helper function to normalize filter dates from API responses
@@ -97,6 +99,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
   const [newViewName, setNewViewName] = useState("");
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+  const [connectingGoogle, setConnectingGoogle] = useState(false);
   const { toast } = useToast();
   const defaultViewCreationAttempted = useRef(false);
 
@@ -574,8 +577,10 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
 
   return (
     <div className="flex flex-col h-full" data-testid="user-calendar">
+      {/* Header Panel - bordered like Tasks/Time */}
+      <div className="border border-border rounded-t-lg bg-card flex-shrink-0">
       {/* Row 1 - Saved Views & Settings (36px) */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+      <div className="h-9 flex items-center justify-between px-2 border-b border-border/50">
         <div className="flex items-center gap-1">
           {/* View Tabs */}
           <div className="flex items-center gap-0.5" data-testid="tabs-calendar-views">
@@ -630,10 +635,48 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
             <Settings className="w-3 h-3" />
           </button>
         </div>
+
+        {/* Google Calendar Status */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              className={`relative h-6 w-6 text-xs border rounded-md flex items-center justify-center ${
+                isGoogleCalendarConnected ? '' : 'hover-elevate active-elevate-2 cursor-pointer'
+              } ${connectingGoogle ? 'opacity-50' : ''}`}
+              disabled={connectingGoogle}
+              onClick={async () => {
+                if (isGoogleCalendarConnected || connectingGoogle) return;
+                setConnectingGoogle(true);
+                try {
+                  const response = await fetch("/api/google-calendar/auth-url");
+                  const data = await response.json();
+                  if (data.authUrl) {
+                    window.location.href = data.authUrl;
+                  }
+                } catch {
+                  toast({ title: "Could not connect", description: "Failed to start Google Calendar connection. Please try again.", variant: "destructive" });
+                } finally {
+                  setConnectingGoogle(false);
+                }
+              }}
+              data-testid="button-google-calendar-status"
+            >
+              <SiGoogle className={`h-3 w-3 ${isGoogleCalendarConnected ? 'text-foreground' : 'text-muted-foreground/50'}`} />
+              <span
+                className={`absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full border border-background ${
+                  isGoogleCalendarConnected ? 'bg-green-500' : 'bg-muted-foreground/40'
+                }`}
+              />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="text-xs">
+            {isGoogleCalendarConnected ? "Google Calendar connected" : "Click to connect Google Calendar"}
+          </TooltipContent>
+        </Tooltip>
       </div>
 
       {/* Row 2 - Filters & Controls (36px) */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
+      <div className="h-9 flex items-center justify-between px-2 gap-1.5">
         {/* Left: Filters */}
         <div className="flex items-center gap-1">
           {/* Projects Filter */}
@@ -938,6 +981,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
             <Plus className="w-3 h-3" />
           </button>
         </div>
+      </div>
       </div>
 
       {/* Calendar Content - No Card Wrapper, Flush with Header */}
