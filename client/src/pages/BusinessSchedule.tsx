@@ -10,8 +10,8 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { ZoomIn, ZoomOut, Filter, ChevronLeft, ChevronRight, Calendar, ExternalLink, Settings } from "lucide-react";
-import { format, differenceInDays, addDays, startOfWeek, eachWeekOfInterval, eachDayOfInterval, getISOWeek, endOfWeek, addWeeks } from "date-fns";
+import { ZoomIn, ZoomOut, Filter, ChevronLeft, ChevronRight, Calendar, ExternalLink, Settings, MoreHorizontal } from "lucide-react";
+import { format, differenceInDays, addDays, startOfWeek, startOfMonth, eachWeekOfInterval, eachMonthOfInterval, eachDayOfInterval, getISOWeek, endOfWeek, addWeeks } from "date-fns";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 
@@ -142,6 +142,10 @@ export default function BusinessSchedule() {
     return eachWeekOfInterval({ start: timelineStart, end: timelineEnd }, { weekStartsOn: 1 });
   }, [timelineStart, timelineEnd]);
 
+  const months = useMemo(() => {
+    return eachMonthOfInterval({ start: timelineStart, end: timelineEnd });
+  }, [timelineStart, timelineEnd]);
+
   const days = useMemo(() => {
     return eachDayOfInterval({ start: timelineStart, end: timelineEnd });
   }, [timelineStart, timelineEnd]);
@@ -182,7 +186,7 @@ export default function BusinessSchedule() {
   const panelWidth = 220;
 
   return (
-    <div className="flex flex-col h-full" data-testid="business-schedule-page">
+    <div className="flex flex-col h-full bg-white dark:bg-zinc-950" data-testid="business-schedule-page">
       {/* Toolbar */}
       <div className="h-10 flex items-center justify-between px-3 border-b border-border flex-shrink-0 gap-2">
         <div className="flex items-center gap-2">
@@ -271,15 +275,28 @@ export default function BusinessSchedule() {
               >
                 <div className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: project.color }} />
                 <span className="text-xs font-medium truncate flex-1">{project.name}</span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-5 w-5 opacity-0 group-hover/row:opacity-100 shrink-0"
-                  onClick={() => setSettingsProject(project)}
-                  data-testid={`settings-${project.id}`}
-                >
-                  <Settings className="w-3 h-3" />
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5 opacity-0 group-hover/row:opacity-100 shrink-0"
+                      data-testid={`menu-${project.id}`}
+                    >
+                      <MoreHorizontal className="w-3 h-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="min-w-[140px]">
+                    <DropdownMenuItem onClick={() => navigate(`/projects/${project.id}/schedule`)} className="text-xs gap-2">
+                      <ExternalLink className="w-3 h-3" />
+                      Open Schedule
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setSettingsProject(project)} className="text-xs gap-2">
+                      <Settings className="w-3 h-3" />
+                      Date Settings
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             ))}
             {visibleProjects.length === 0 && (
@@ -298,21 +315,19 @@ export default function BusinessSchedule() {
               className="h-full relative"
               style={{ width: totalWidth, transform: `translateX(-${timelineRef.current?.scrollLeft || 0}px)` }}
             >
-              {/* Month/Week row */}
+              {/* Month row */}
               <div className="h-[30px] flex items-center relative">
-                {weeks.map((weekStart, i) => {
-                  const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 });
-                  const left = getPosition(weekStart);
-                  const width = 7 * pixelsPerDay;
+                {months.map((monthStart, i) => {
+                  const left = getPosition(monthStart);
+                  const nextMonth = i < months.length - 1 ? months[i + 1] : timelineEnd;
+                  const width = differenceInDays(nextMonth, monthStart) * pixelsPerDay;
                   return (
                     <div
                       key={i}
-                      className="absolute top-0 h-full flex items-center justify-center text-[10px] text-muted-foreground border-l border-border/50"
+                      className="absolute top-0 h-full flex items-center px-3 text-[11px] font-medium text-muted-foreground border-l border-border/50"
                       style={{ left, width }}
                     >
-                      {zoomLevel === 'month'
-                        ? format(weekStart, 'MMM yyyy')
-                        : `W${getISOWeek(weekStart)} · ${format(weekStart, 'MMM d')}`}
+                      {format(monthStart, 'MMMM yyyy')}
                     </div>
                   );
                 })}
