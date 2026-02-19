@@ -138,6 +138,7 @@ export default function Schedule() {
     useWorkingDaysOverride: null as boolean | null,
   });
   const [taskLinkOffsetsLocal, setTaskLinkOffsetsLocal] = useState<Array<{taskId: string; offsetDays: number; offsetFrom: "start" | "end"}>>([]);
+  const [durationInput, setDurationInput] = useState<string>("");
   const [filters, setFilters] = useState({
     status: "all",
     assignee: "all",
@@ -895,6 +896,7 @@ export default function Schedule() {
       useWorkingDaysOverride: null,
     });
     setTaskLinkOffsetsLocal([]);
+    setDurationInput("");
     setDescriptionExpanded(false);
     setNotesExpanded(false);
   };
@@ -1004,6 +1006,13 @@ export default function Schedule() {
         useWorkingDaysOverride: editingItem.useWorkingDaysOverride ?? null,
       });
       setTaskLinkOffsetsLocal((editingItem as any).taskLinkOffsets || []);
+      const sd = editingItem.startDate ? new Date(editingItem.startDate) : null;
+      const ed = editingItem.endDate ? new Date(editingItem.endDate) : null;
+      if (sd && ed) {
+        setDurationInput(countWorkingDays(sd, ed).toString());
+      } else {
+        setDurationInput("");
+      }
       setDescriptionExpanded(!!(editingItem.description && editingItem.description.trim()));
       setNotesExpanded(!!(editingItem.notes && editingItem.notes.trim()));
     } else {
@@ -1834,7 +1843,11 @@ export default function Schedule() {
                   type="date"
                   value={formData.startDate}
                   onChange={(e) => {
-                    setFormData({ ...formData, startDate: e.target.value });
+                    const newStart = e.target.value;
+                    setFormData({ ...formData, startDate: newStart });
+                    if (newStart && formData.endDate) {
+                      setDurationInput(countWorkingDays(new Date(newStart), new Date(formData.endDate)).toString());
+                    }
                   }}
                   required
                   data-testid="input-item-start-date"
@@ -1848,17 +1861,26 @@ export default function Schedule() {
                   type="number"
                   min="1"
                   placeholder="Auto"
-                  value={
-                    formData.startDate && formData.endDate
-                      ? countWorkingDays(new Date(formData.startDate), new Date(formData.endDate))
-                      : ''
-                  }
+                  value={durationInput}
                   onChange={(e) => {
-                    const days = parseInt(e.target.value, 10);
+                    setDurationInput(e.target.value);
+                  }}
+                  onBlur={() => {
+                    const days = parseInt(durationInput, 10);
                     if (formData.startDate && !isNaN(days) && days > 0) {
                       const start = new Date(formData.startDate);
                       const end = addWorkingDays(start, days - 1);
                       setFormData({ ...formData, endDate: end.toISOString().split('T')[0] });
+                    } else if (durationInput === '' || isNaN(parseInt(durationInput, 10))) {
+                      if (formData.startDate && formData.endDate) {
+                        setDurationInput(countWorkingDays(new Date(formData.startDate), new Date(formData.endDate)).toString());
+                      }
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      (e.target as HTMLInputElement).blur();
                     }
                   }}
                   data-testid="input-item-duration"
@@ -1873,7 +1895,15 @@ export default function Schedule() {
                   id="item-end-date"
                   type="date"
                   value={formData.endDate}
-                  onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
+                  onChange={(e) => {
+                    const newEnd = e.target.value;
+                    setFormData({ ...formData, endDate: newEnd });
+                    if (formData.startDate && newEnd) {
+                      setDurationInput(countWorkingDays(new Date(formData.startDate), new Date(newEnd)).toString());
+                    } else {
+                      setDurationInput("");
+                    }
+                  }}
                   required
                   data-testid="input-item-end-date"
                 />

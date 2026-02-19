@@ -280,6 +280,17 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
   const nestTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastOverIdRef = useRef<string | null>(null);
 
+  const canNestItem = (activeId: string, targetId: string): boolean => {
+    const activeItem = allItems.find(i => i.id === activeId);
+    const targetItem = allItems.find(i => i.id === targetId);
+    if (!activeItem || !targetItem) return false;
+    if (targetItem.parentItemId) return false;
+    if (activeItem.parentItemId) return false;
+    const activeHasChildren = allItems.some(i => i.parentItemId === activeId);
+    if (activeHasChildren) return false;
+    return true;
+  };
+
   const handleRowDragOver = (event: DragOverEvent) => {
     const { active, over } = event;
     const overId = over?.id as string | undefined;
@@ -295,6 +306,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
       lastOverIdRef.current = overId;
       setNestTargetId(null);
       if (nestTimerRef.current) clearTimeout(nestTimerRef.current);
+      if (!canNestItem(active.id as string, overId)) return;
       nestTimerRef.current = setTimeout(() => {
         setNestTargetId(overId);
       }, 400);
@@ -316,6 +328,10 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     const overId = over.id as string;
 
     if (currentNestTarget && currentNestTarget === overId) {
+      if (!canNestItem(activeId, overId)) {
+        toast({ title: "Cannot nest item", description: "Items can only be nested one level deep.", variant: "destructive" });
+        return;
+      }
       const activeItem = allItems.find(i => i.id === activeId);
       const targetItem = allItems.find(i => i.id === overId);
       if (activeItem && targetItem) {
@@ -1875,12 +1891,15 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
   };
 
   const handleAddChildItem = (parentItem: ScheduleItem) => {
+    const rawStart = new Date(parentItem.startDate);
+    const start = snapToWorkingDay(rawStart, 'forward');
+    const end = new Date(start);
     const childItem = {
       name: '',
       scheduleId: parentItem.scheduleId,
       parentItemId: parentItem.id,
-      startDate: parentItem.startDate,
-      endDate: parentItem.startDate,
+      startDate: start.toISOString(),
+      endDate: end.toISOString(),
       status: 'not_started',
     } as Partial<ScheduleItem>;
     setEditingItemContext(childItem as any);
