@@ -2,8 +2,7 @@ import { ScheduleItem } from "@shared/schema";
 import { ColorChip } from "@/components/ui/color-chip";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Pencil, GripVertical, ChevronRight, ChevronDown, MoreVertical, Trash2, Copy } from "lucide-react";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Pencil, GripVertical, ChevronRight, ChevronDown, MoreVertical, Trash2, Copy, Check } from "lucide-react";
 import { format, differenceInDays } from "date-fns";
 import { cn } from "@/lib/utils";
 import { TableCell } from "@/components/ui/table";
@@ -207,16 +206,28 @@ export function CasvaScheduleRow({
 
       {/* Completion Column */}
       {visibleColumns.completion && (
-        <TableCell className="w-16 h-8 py-0 text-center">
-          <div className="flex items-center justify-center">
-            <Checkbox
-              checked={(item.progressPercent || 0) === 100}
-              onCheckedChange={(e) => {
+        <TableCell className="w-28 h-8 py-0">
+          <div className="flex items-center gap-2 justify-center">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
                 onCompletionToggle?.();
               }}
-              onClick={(e) => e.stopPropagation()}
+              className={cn(
+                "w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors cursor-pointer",
+                (item.progressPercent || 0) === 100
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-muted-foreground/40 hover:border-muted-foreground/70"
+              )}
               data-testid={`completion-toggle-${item.id}`}
-            />
+            >
+              {(item.progressPercent || 0) === 100 && (
+                <Check className="w-3 h-3" />
+              )}
+            </button>
+            <span className="inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground text-[11px] font-medium px-2 py-0.5 min-w-[40px]">
+              {item.progressPercent || 0} %
+            </span>
           </div>
         </TableCell>
       )}
