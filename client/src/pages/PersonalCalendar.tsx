@@ -56,6 +56,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
+import { SiGoogle } from "react-icons/si";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Button } from "@/components/ui/button";
 
 // Helper function to normalize filter dates from API responses
 function normalizeFilterDates(filters: CalendarFiltersType): CalendarFiltersType {
@@ -87,6 +90,7 @@ export default function PersonalCalendar() {
   const { toast } = useToast();
   const { user } = useAuth();
   const defaultViewCreationAttempted = useRef(false);
+  const [connectingGoogle, setConnectingGoogle] = useState(false);
 
   const displayedUserId = user?.id;
 
@@ -657,8 +661,44 @@ export default function PersonalCalendar() {
             </div>
           </div>
 
-          {/* Right: New View + Settings */}
+          {/* Right: Google Status + New View + Settings */}
           <div className="flex items-center gap-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="relative"
+                  disabled={isGoogleCalendarConnected || connectingGoogle}
+                  onClick={async () => {
+                    if (isGoogleCalendarConnected || connectingGoogle) return;
+                    setConnectingGoogle(true);
+                    try {
+                      const response = await fetch("/api/google-calendar/auth-url");
+                      const data = await response.json();
+                      if (data.authUrl) {
+                        window.location.href = data.authUrl;
+                      }
+                    } catch {
+                      toast({ title: "Could not connect", description: "Failed to start Google Calendar connection. Please try again.", variant: "destructive" });
+                    } finally {
+                      setConnectingGoogle(false);
+                    }
+                  }}
+                  data-testid="button-google-calendar-status"
+                >
+                  <SiGoogle className={`h-3 w-3 ${isGoogleCalendarConnected ? 'text-foreground' : 'text-muted-foreground/40'}`} />
+                  <span
+                    className={`absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full ${
+                      isGoogleCalendarConnected ? 'bg-green-500' : 'bg-muted-foreground/30'
+                    }`}
+                  />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">
+                {isGoogleCalendarConnected ? "Google Calendar connected" : "Click to connect Google Calendar"}
+              </TooltipContent>
+            </Tooltip>
             <button
               className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
               onClick={() => {
