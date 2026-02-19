@@ -225,7 +225,7 @@ export function CasvaScheduleRow({
                 <Check className="w-3 h-3" />
               )}
             </button>
-            <span className="inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground text-[11px] font-medium px-2 py-0.5 min-w-[40px]">
+            <span className="inline-flex items-center justify-center rounded-md bg-muted-foreground/20 text-muted-foreground text-[11px] font-medium px-2 py-0.5 min-w-[40px]">
               {item.progressPercent || 0} %
             </span>
           </div>

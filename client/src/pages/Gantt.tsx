@@ -2298,7 +2298,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                               >
                                 {percent === 100 && <Check className="w-2.5 h-2.5" />}
                               </button>
-                              <span className="inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground text-[10px] font-medium px-1.5 py-0.5 min-w-[32px]">
+                              <span className="inline-flex items-center justify-center rounded-md bg-muted-foreground/20 text-muted-foreground text-[10px] font-medium px-1.5 py-0.5 min-w-[32px]">
                                 {percent} %
                               </span>
                             </>
