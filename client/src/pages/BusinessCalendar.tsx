@@ -12,7 +12,7 @@ import {
   Briefcase,
   ExternalLink,
 } from "lucide-react";
-import { format, parseISO, isWithinInterval, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths } from "date-fns";
+import { format, isWithinInterval, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths } from "date-fns";
 import type { Task, ScheduleItem, Project, User as UserType, FieldCategoryWithOptions, Schedule, CompanySettings } from "@shared/schema";
 import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
 import { CalendarFilters as CalendarFiltersType } from "@/components/CalendarFilters";
@@ -1271,16 +1271,22 @@ export default function BusinessCalendar() {
                   {selectedScheduleItem.status && (
                     <>
                       <span className="text-muted-foreground">Status</span>
-                      <Badge variant="secondary" className="w-fit">{selectedScheduleItem.status}</Badge>
+                      <Badge variant="secondary" className="w-fit capitalize">{selectedScheduleItem.status.replace(/_/g, ' ')}</Badge>
+                    </>
+                  )}
+                  {selectedScheduleItem.priority && (
+                    <>
+                      <span className="text-muted-foreground">Priority</span>
+                      <Badge variant="outline" className="w-fit capitalize">{selectedScheduleItem.priority}</Badge>
                     </>
                   )}
                   {selectedScheduleItem.startDate && (
                     <>
                       <Clock className="h-4 w-4 text-muted-foreground mt-0.5" />
                       <span>
-                        {format(parseISO(selectedScheduleItem.startDate), 'dd MMM yyyy')}
-                        {selectedScheduleItem.endDate && selectedScheduleItem.endDate !== selectedScheduleItem.startDate && (
-                          <> — {format(parseISO(selectedScheduleItem.endDate), 'dd MMM yyyy')}</>
+                        {format(new Date(selectedScheduleItem.startDate), 'dd MMM yyyy')}
+                        {selectedScheduleItem.endDate && String(selectedScheduleItem.endDate) !== String(selectedScheduleItem.startDate) && (
+                          <> — {format(new Date(selectedScheduleItem.endDate), 'dd MMM yyyy')}</>
                         )}
                         {selectedScheduleItem.startTime && (
                           <span className="text-muted-foreground ml-2">
@@ -1291,10 +1297,10 @@ export default function BusinessCalendar() {
                       </span>
                     </>
                   )}
-                  {(selectedScheduleItem as any).duration != null && (
+                  {selectedScheduleItem.duration != null && selectedScheduleItem.duration > 0 && (
                     <>
                       <span className="text-muted-foreground">Duration</span>
-                      <span>{(selectedScheduleItem as any).duration} {(selectedScheduleItem as any).duration === 1 ? 'day' : 'days'}</span>
+                      <span>{selectedScheduleItem.duration} {selectedScheduleItem.duration === 1 ? 'day' : 'days'}</span>
                     </>
                   )}
                   {assigneeName && (
@@ -1303,30 +1309,36 @@ export default function BusinessCalendar() {
                       <span>{assigneeName}</span>
                     </>
                   )}
-                  {(selectedScheduleItem as any).trade && (
+                  {selectedScheduleItem.costCodeTitle && (
                     <>
-                      <span className="text-muted-foreground">Trade</span>
-                      <span>{(selectedScheduleItem as any).trade}</span>
+                      <span className="text-muted-foreground">Cost Code</span>
+                      <span>{selectedScheduleItem.costCodeTitle}</span>
                     </>
                   )}
-                  {(selectedScheduleItem as any).completionPercentage != null && (selectedScheduleItem as any).completionPercentage > 0 && (
+                  {selectedScheduleItem.groupName && (
+                    <>
+                      <span className="text-muted-foreground">Group</span>
+                      <span>{selectedScheduleItem.groupName}</span>
+                    </>
+                  )}
+                  {selectedScheduleItem.progressPercent != null && selectedScheduleItem.progressPercent > 0 && (
                     <>
                       <span className="text-muted-foreground">Progress</span>
                       <div className="flex items-center gap-2">
                         <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
                           <div
                             className="h-full bg-primary rounded-full"
-                            style={{ width: `${(selectedScheduleItem as any).completionPercentage}%` }}
+                            style={{ width: `${selectedScheduleItem.progressPercent}%` }}
                           />
                         </div>
-                        <span className="text-xs text-muted-foreground">{(selectedScheduleItem as any).completionPercentage}%</span>
+                        <span className="text-xs text-muted-foreground">{selectedScheduleItem.progressPercent}%</span>
                       </div>
                     </>
                   )}
-                  {(selectedScheduleItem as any).notes && (
+                  {selectedScheduleItem.notes && (
                     <>
                       <span className="text-muted-foreground">Notes</span>
-                      <span className="text-muted-foreground">{(selectedScheduleItem as any).notes}</span>
+                      <span className="text-muted-foreground">{selectedScheduleItem.notes}</span>
                     </>
                   )}
                 </div>
