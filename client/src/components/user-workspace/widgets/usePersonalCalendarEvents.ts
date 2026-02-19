@@ -58,24 +58,31 @@ export function usePersonalCalendarEvents({
   const REFETCH_INTERVAL = 15000; // Refresh every 15 seconds for real-time updates
 
   const { data: tasks = [], isLoading: tasksLoading } = useQuery<any[]>({
-    queryKey: ["/api/tasks", { assigneeId: userId }],
+    queryKey: ["/api/tasks", { calendarUser: userId }],
     queryFn: async () => {
       if (!userId) return [];
-      const response = await fetch(`/api/tasks?assigneeId=${userId}`, { credentials: 'include' });
-      if (!response.ok) return [];
-      return response.json();
+      const allTasks = await apiRequest("/api/tasks", "GET");
+      return Array.isArray(allTasks)
+        ? allTasks.filter((task: any) => {
+            const isAssigned = task.assigneeId === userId ||
+              (Array.isArray(task.assignedTo) && task.assignedTo.includes(userId));
+            return isAssigned && task.dueDate;
+          })
+        : [];
     },
     enabled: !!userId && includeTasks,
     refetchInterval: REFETCH_INTERVAL,
   });
 
   const { data: scheduleItems = [], isLoading: scheduleLoading } = useQuery<any[]>({
-    queryKey: ["/api/schedule", userId],
+    queryKey: ["/api/schedule-items/all", { calendarUser: userId }],
     queryFn: async () => {
-      const allSchedule = await apiRequest("/api/schedule", "GET");
-      return Array.isArray(allSchedule)
-        ? allSchedule.filter((item: any) => String(item.assigneeId) === String(userId))
-        : [];
+      try {
+        const allSchedule = await apiRequest("/api/schedule-items/all", "GET");
+        return Array.isArray(allSchedule) ? allSchedule : [];
+      } catch {
+        return [];
+      }
     },
     enabled: !!userId && includeSchedule,
     refetchInterval: REFETCH_INTERVAL,
@@ -172,25 +179,21 @@ export function usePersonalCalendarEvents({
 
     if (includeSchedule) {
       scheduleItems.forEach((item: any) => {
-        if (!item.date) return;
-        const itemDate = new Date(item.date);
-        if (!isWithinInterval(itemDate, { start: rangeStart, end: rangeEnd })) return;
+        const itemStartDate = item.startDate ? new Date(item.startDate) : null;
+        if (!itemStartDate) return;
+        if (!isWithinInterval(itemStartDate, { start: rangeStart, end: rangeEnd })) return;
 
-        const project = projects.find((p: any) => p.id === item.projectId);
         const hasTime = item.startTime && item.endTime;
 
         items.push({
           id: `schedule-${item.id}`,
-          title: item.title,
-          startDate: itemDate,
-          endDate: itemDate,
+          title: item.name || item.title || "Schedule Item",
+          startDate: itemStartDate,
+          endDate: item.endDate ? new Date(item.endDate) : itemStartDate,
           startTime: item.startTime || null,
           endTime: item.endTime || null,
           allDay: !hasTime,
           type: "schedule",
-          projectId: item.projectId,
-          projectName: project?.name,
-          projectColor: project?.color,
           description: item.description,
         });
       });

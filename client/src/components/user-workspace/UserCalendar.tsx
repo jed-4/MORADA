@@ -240,12 +240,14 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
 
   // Fetch schedule items for displayed user
   const { data: scheduleItems = [], isLoading: isLoadingSchedule } = useQuery({
-    queryKey: ["/api/schedule", displayedUserId],
+    queryKey: ["/api/schedule-items/all", { calendarUser: displayedUserId }],
     queryFn: async () => {
-      const allSchedule = await apiRequest("/api/schedule", "GET");
-      return Array.isArray(allSchedule)
-        ? allSchedule.filter((item: any) => item.assigneeId === displayedUserId)
-        : [];
+      try {
+        const allSchedule = await apiRequest("/api/schedule-items/all", "GET");
+        return Array.isArray(allSchedule) ? allSchedule : [];
+      } catch {
+        return [];
+      }
     },
     enabled: !!displayedUserId,
   });
@@ -367,21 +369,18 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
 
     // Add schedule items
     scheduleItems.forEach((item: any) => {
-      if (item.date) {
-        const project = projects.find((p: any) => p.id === item.projectId);
-        events.push({
-          id: item.id,
-          title: item.title,
-          startDate: new Date(item.date),
-          endDate: new Date(item.date),
-          startTime: item.startTime,
-          endTime: item.endTime,
-          type: "schedule",
-          projectId: item.projectId,
-          projectColor: project?.color,
-          description: item.description,
-        });
-      }
+      const itemStartDate = item.startDate ? new Date(item.startDate) : null;
+      if (!itemStartDate) return;
+      events.push({
+        id: item.id,
+        title: item.name || item.title || "Schedule Item",
+        startDate: itemStartDate,
+        endDate: item.endDate ? new Date(item.endDate) : itemStartDate,
+        startTime: item.startTime,
+        endTime: item.endTime,
+        type: "schedule",
+        description: item.description,
+      });
     });
 
     // Add Google Calendar events (always show when connected - events are from the logged-in user's account)
