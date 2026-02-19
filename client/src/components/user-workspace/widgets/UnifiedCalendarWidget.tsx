@@ -21,6 +21,9 @@ import {
 } from "lucide-react";
 import { WidgetProps } from "@/types/widgets";
 import { usePersonalCalendarEvents, CalendarItem } from "./usePersonalCalendarEvents";
+import { SiGoogle } from "react-icons/si";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useToast } from "@/hooks/use-toast";
 import {
   addDays,
   subDays,
@@ -388,12 +391,14 @@ function WeekStackedChip({ event, colorMode, onClick }: { event: CalendarItem; c
 export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring, onCloseConfig, userId }: WidgetProps) {
   const weekStartDay = useWeekStartDay();
   const { effectiveTimezone } = useTimezone();
+  const { toast } = useToast();
 
   const config = widget.config || {};
   const defaultViewMode = (config.defaultViewMode as CalendarViewMode) || (config.viewMode as CalendarViewMode) || "day";
 
   const [viewMode, setViewMode] = useState<CalendarViewMode>(defaultViewMode);
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [connectingGoogle, setConnectingGoogle] = useState(false);
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: weekStartDay }));
   const [editingTitle, setEditingTitle] = useState(widget.title);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
@@ -463,7 +468,7 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
   const hookDate = viewMode === "week" ? weekStart : selectedDate;
   const hookRange = viewMode === "week" ? "week" as const : "day" as const;
 
-  const { events: rawEvents, allDayEvents: rawAllDayEvents, timedEvents: rawTimedEvents, isLoading } = usePersonalCalendarEvents({
+  const { events: rawEvents, allDayEvents: rawAllDayEvents, timedEvents: rawTimedEvents, isLoading, isGoogleConnected } = usePersonalCalendarEvents({
     userId,
     date: hookDate,
     range: viewMode === "list" ? "week" : hookRange,
@@ -774,28 +779,65 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
           )}
         </span>
       </div>
-      <div className="flex items-center gap-0.5 border rounded-md p-0.5">
-        <button
-          className={`p-1 rounded-sm ${viewMode === 'list' ? 'bg-muted' : ''}`}
-          onClick={() => setViewMode('list')}
-          title="List view"
-        >
-          <List className="h-3 w-3" />
-        </button>
-        <button
-          className={`p-1 rounded-sm ${viewMode === 'day' ? 'bg-muted' : ''}`}
-          onClick={() => setViewMode('day')}
-          title="Day view"
-        >
-          <Calendar className="h-3 w-3" />
-        </button>
-        <button
-          className={`p-1 rounded-sm ${viewMode === 'week' ? 'bg-muted' : ''}`}
-          onClick={() => setViewMode('week')}
-          title="Week view"
-        >
-          <CalendarRange className="h-3 w-3" />
-        </button>
+      <div className="flex items-center gap-1.5">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="relative"
+              disabled={isGoogleConnected || connectingGoogle}
+              onClick={async () => {
+                if (isGoogleConnected || connectingGoogle) return;
+                setConnectingGoogle(true);
+                try {
+                  const response = await fetch("/api/google-calendar/auth-url");
+                  const data = await response.json();
+                  if (data.authUrl) {
+                    window.location.href = data.authUrl;
+                  }
+                } catch {
+                  toast({ title: "Could not connect", description: "Failed to start Google Calendar connection. Please try again.", variant: "destructive" });
+                } finally {
+                  setConnectingGoogle(false);
+                }
+              }}
+            >
+              <SiGoogle className={`h-3.5 w-3.5 ${isGoogleConnected ? 'text-foreground' : 'text-muted-foreground/40'}`} />
+              <span
+                className={`absolute top-1 right-1 h-1.5 w-1.5 rounded-full ${
+                  isGoogleConnected ? 'bg-green-500' : 'bg-muted-foreground/30'
+                }`}
+              />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="text-xs">
+            {isGoogleConnected ? "Google Calendar connected" : "Click to connect Google Calendar"}
+          </TooltipContent>
+        </Tooltip>
+        <div className="flex items-center gap-0.5 border rounded-md p-0.5">
+          <button
+            className={`p-1 rounded-sm ${viewMode === 'list' ? 'bg-muted' : ''}`}
+            onClick={() => setViewMode('list')}
+            title="List view"
+          >
+            <List className="h-3 w-3" />
+          </button>
+          <button
+            className={`p-1 rounded-sm ${viewMode === 'day' ? 'bg-muted' : ''}`}
+            onClick={() => setViewMode('day')}
+            title="Day view"
+          >
+            <Calendar className="h-3 w-3" />
+          </button>
+          <button
+            className={`p-1 rounded-sm ${viewMode === 'week' ? 'bg-muted' : ''}`}
+            onClick={() => setViewMode('week')}
+            title="Week view"
+          >
+            <CalendarRange className="h-3 w-3" />
+          </button>
+        </div>
       </div>
     </div>
   );
