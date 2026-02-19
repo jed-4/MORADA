@@ -124,6 +124,8 @@ import {
   insertPaymentTermsOptionSchema,
   insertPinnedItemSchema,
   pinnedItems,
+  businessScheduleProjects,
+  insertBusinessScheduleProjectSchema,
   insertChecklistStatusTriggerSchema,
   nonWorkingDays,
   insertNonWorkingDaySchema,
@@ -138,7 +140,7 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
-import { eq, and, asc, desc, or, isNull } from "drizzle-orm";
+import { eq, and, asc, desc, or, isNull, sql, min, max } from "drizzle-orm";
 import { PasswordUtils } from "./utils/auth";
 import { requireAuth, requireAdmin, requireTeamMember, requirePermission, toSafeUser } from "./middleware/auth";
 import multer from "multer";
@@ -18767,6 +18769,137 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
     } catch (error: any) {
       console.error("Error deleting notification:", error);
       res.status(500).json({ error: "Failed to delete notification" });
+    }
+  });
+
+  // ==========================================
+  // Business Schedule API
+  // ==========================================
+
+  app.get("/api/business-schedule/projects", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user.companyId;
+      if (!companyId) return res.status(400).json({ error: "No company" });
+
+      const allProjects = await storage.getProjects();
+      const companyProjects = allProjects.filter((p: any) => p.companyId === companyId && !p.isArchived && !p.isBusiness);
+
+      const bspRows = await db.select().from(businessScheduleProjects)
+        .where(eq(businessScheduleProjects.companyId, companyId));
+      const bspMap = new Map(bspRows.map(r => [r.projectId, r]));
+
+      let scheduleRows: any[] = [];
+      if (companyProjects.length > 0) {
+        scheduleRows = await db.select().from(schedules)
+          .where(sql`${schedules.projectId} IN (${sql.join(companyProjects.map((p: any) => sql`${p.id}`), sql`, `)})`);
+      }
+      const scheduleMap = new Map(scheduleRows.map(s => [s.projectId, s]));
+
+      const scheduleIds = scheduleRows.map(s => s.id);
+      let itemBoundsMap = new Map<string, { minStart: Date; maxEnd: Date }>();
+      if (scheduleIds.length > 0) {
+        const boundsResult = await db.select({
+          scheduleId: scheduleItems.scheduleId,
+          minStart: min(scheduleItems.startDate),
+          maxEnd: max(scheduleItems.endDate),
+        }).from(scheduleItems)
+          .where(sql`${scheduleItems.scheduleId} IN (${sql.join(scheduleIds.map(id => sql`${id}`), sql`, `)})`)
+          .groupBy(scheduleItems.scheduleId);
+
+        for (const row of boundsResult) {
+          if (row.minStart && row.maxEnd) {
+            itemBoundsMap.set(row.scheduleId, { minStart: row.minStart, maxEnd: row.maxEnd });
+          }
+        }
+      }
+
+      const result = companyProjects.map((project: any) => {
+        const bsp = bspMap.get(project.id);
+        const schedule = scheduleMap.get(project.id);
+        const itemBounds = schedule ? itemBoundsMap.get(schedule.id) : undefined;
+
+        const hasScheduleItems = !!itemBounds;
+        const scheduleStatus = schedule?.status || "none";
+
+        let category: "scheduled" | "unscheduled" | "prospective" = "scheduled";
+        if (project.currentSystemPhase === "lead") {
+          category = "prospective";
+        } else if (!hasScheduleItems || scheduleStatus === "offline") {
+          category = "unscheduled";
+        }
+
+        return {
+          id: project.id,
+          name: project.name,
+          color: project.color,
+          projectStatus: project.projectStatus,
+          currentSystemPhase: project.currentSystemPhase,
+          scheduleStatus,
+          category,
+          projectStartDate: project.startDate || null,
+          projectEndDate: project.endDate || null,
+          itemStartDate: itemBounds?.minStart || null,
+          itemEndDate: itemBounds?.maxEnd || null,
+          dateMode: bsp?.dateMode || "auto",
+          customStartDate: bsp?.customStartDate || null,
+          customWeeks: bsp?.customWeeks || null,
+          isVisible: bsp?.isVisible ?? true,
+          sortOrder: bsp?.sortOrder ?? 0,
+        };
+      });
+
+      result.sort((a: any, b: any) => a.sortOrder - b.sortOrder);
+      res.json(result);
+    } catch (error: any) {
+      console.error("Error fetching business schedule projects:", error);
+      res.status(500).json({ error: "Failed to fetch business schedule" });
+    }
+  });
+
+  app.patch("/api/business-schedule/projects/:projectId", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user.companyId;
+      if (!companyId) return res.status(400).json({ error: "No company" });
+
+      const { projectId } = req.params;
+      const { dateMode, customStartDate, customWeeks, isVisible, sortOrder } = req.body;
+
+      const existing = await db.select().from(businessScheduleProjects)
+        .where(and(
+          eq(businessScheduleProjects.projectId, projectId),
+          eq(businessScheduleProjects.companyId, companyId)
+        ));
+
+      if (existing.length > 0) {
+        const updates: any = {};
+        if (dateMode !== undefined) updates.dateMode = dateMode;
+        if (customStartDate !== undefined) updates.customStartDate = customStartDate ? new Date(customStartDate) : null;
+        if (customWeeks !== undefined) updates.customWeeks = customWeeks;
+        if (isVisible !== undefined) updates.isVisible = isVisible;
+        if (sortOrder !== undefined) updates.sortOrder = sortOrder;
+
+        const [updated] = await db.update(businessScheduleProjects)
+          .set(updates)
+          .where(eq(businessScheduleProjects.id, existing[0].id))
+          .returning();
+        return res.json(updated);
+      } else {
+        const [created] = await db.insert(businessScheduleProjects).values({
+          projectId,
+          companyId,
+          dateMode: dateMode || "auto",
+          customStartDate: customStartDate ? new Date(customStartDate) : null,
+          customWeeks: customWeeks || null,
+          isVisible: isVisible ?? true,
+          sortOrder: sortOrder ?? 0,
+        }).returning();
+        return res.json(created);
+      }
+    } catch (error: any) {
+      console.error("Error updating business schedule project:", error);
+      res.status(500).json({ error: "Failed to update" });
     }
   });
 

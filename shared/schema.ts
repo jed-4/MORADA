@@ -5443,3 +5443,25 @@ export const insertPinnedItemSchema = createInsertSchema(pinnedItems).omit({
 
 export type InsertPinnedItem = z.infer<typeof insertPinnedItemSchema>;
 export type PinnedItem = typeof pinnedItems.$inferSelect;
+
+export const businessScheduleProjects = pgTable("business_schedule_projects", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  dateMode: text("date_mode").notNull().default("auto"),
+  customStartDate: timestamp("custom_start_date"),
+  customWeeks: integer("custom_weeks"),
+  isVisible: boolean("is_visible").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueProjectCompany: uniqueIndex("bsp_project_company_unique").on(table.projectId, table.companyId),
+}));
+
+export const insertBusinessScheduleProjectSchema = createInsertSchema(businessScheduleProjects).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertBusinessScheduleProject = z.infer<typeof insertBusinessScheduleProjectSchema>;
+export type BusinessScheduleProject = typeof businessScheduleProjects.$inferSelect;
