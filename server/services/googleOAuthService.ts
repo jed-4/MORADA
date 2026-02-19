@@ -216,46 +216,62 @@ export class GoogleOAuthService {
     if (shouldRefresh) {
       console.log('[GoogleOAuth] Proactively refreshing token for user:', userId);
       
-      try {
-        const { credentials } = await userClient.refreshAccessToken();
-        
-        if (credentials.access_token) {
-          const encryptedAccessToken = encryptToken(credentials.access_token);
-          const expiryDate = credentials.expiry_date 
-            ? new Date(credentials.expiry_date)
-            : new Date(Date.now() + 3600 * 1000);
+      const MAX_RETRIES = 3;
+      let lastError: any = null;
+      
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          const { credentials } = await userClient.refreshAccessToken();
           
-          await this.storage.updateUser(userId, {
-            googleCalendarAccessToken: encryptedAccessToken,
-            googleCalendarTokenExpiry: expiryDate,
-          });
+          if (credentials.access_token) {
+            const encryptedAccessToken = encryptToken(credentials.access_token);
+            const expiryDate = credentials.expiry_date 
+              ? new Date(credentials.expiry_date)
+              : new Date(Date.now() + 3600 * 1000);
+            
+            await this.storage.updateUser(userId, {
+              googleCalendarAccessToken: encryptedAccessToken,
+              googleCalendarTokenExpiry: expiryDate,
+            });
+            
+            userClient.setCredentials(credentials);
+            
+            userClientCache.set(userId, {
+              client: userClient,
+              expiresAt: expiryDate.getTime(),
+            });
+            
+            console.log('[GoogleOAuth] Token refreshed on attempt', attempt, 'expires:', expiryDate);
+          }
+          lastError = null;
+          break;
+        } catch (refreshError: any) {
+          lastError = refreshError;
+          console.error(`[GoogleOAuth] Token refresh attempt ${attempt}/${MAX_RETRIES} failed for user:`, userId, refreshError.message);
           
-          userClient.setCredentials(credentials);
+          if (this.isPermanentTokenError(refreshError)) {
+            console.error('[GoogleOAuth] Permanent error - clearing tokens');
+            await this.storage.updateUser(userId, {
+              googleCalendarEmail: null,
+              googleCalendarAccessToken: null,
+              googleCalendarRefreshToken: null,
+              googleCalendarTokenExpiry: null,
+              googleCalendarConnectedAt: null,
+            });
+            userClientCache.delete(userId);
+            throw new Error('Google Calendar access has been revoked. Please reconnect your calendar.');
+          }
           
-          userClientCache.set(userId, {
-            client: userClient,
-            expiresAt: expiryDate.getTime(),
-          });
-          
-          console.log('[GoogleOAuth] Token refreshed, expires:', expiryDate);
+          if (attempt < MAX_RETRIES) {
+            const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 4000);
+            console.log(`[GoogleOAuth] Retrying in ${backoffMs}ms...`);
+            await new Promise(resolve => setTimeout(resolve, backoffMs));
+          }
         }
-      } catch (refreshError: any) {
-        console.error('[GoogleOAuth] Token refresh failed for user:', userId, refreshError.message);
-        
-        if (this.isPermanentTokenError(refreshError)) {
-          console.error('[GoogleOAuth] Permanent error - clearing tokens');
-          await this.storage.updateUser(userId, {
-            googleCalendarEmail: null,
-            googleCalendarAccessToken: null,
-            googleCalendarRefreshToken: null,
-            googleCalendarTokenExpiry: null,
-            googleCalendarConnectedAt: null,
-          });
-          userClientCache.delete(userId);
-          throw new Error('Google Calendar access has been revoked. Please reconnect your calendar.');
-        }
-        
-        console.log('[GoogleOAuth] Temporary error - keeping tokens, using existing credentials');
+      }
+      
+      if (lastError) {
+        console.log('[GoogleOAuth] All retry attempts exhausted - keeping tokens, using existing credentials');
       }
     } else {
       userClientCache.set(userId, {
@@ -309,24 +325,37 @@ export class GoogleOAuthService {
     tokenExpiry: Date | null;
     isExpired: boolean;
     connectedAt: Date | null;
+    health: 'healthy' | 'expiring_soon' | 'expired' | 'disconnected';
+    expiresIn: number | null;
   }> {
     const user = await this.storage.getUser(userId);
     
     const hasTokens = !!(user?.googleCalendarAccessToken && user?.googleCalendarRefreshToken);
     const tokenExpiry = user?.googleCalendarTokenExpiry || null;
     const isExpired = tokenExpiry ? tokenExpiry.getTime() < Date.now() : false;
+    const expiresIn = tokenExpiry ? Math.max(0, tokenExpiry.getTime() - Date.now()) : null;
+    
+    const getHealth = (connected: boolean, expired: boolean, expiresInMs: number | null): 'healthy' | 'expiring_soon' | 'expired' | 'disconnected' => {
+      if (!connected) return 'disconnected';
+      if (expired) return 'expired';
+      if (expiresInMs !== null && expiresInMs < 10 * 60 * 1000) return 'expiring_soon';
+      return 'healthy';
+    };
     
     if (hasTokens && isExpired) {
       try {
         await this.getCalendarClient(userId);
         const refreshedUser = await this.storage.getUser(userId);
         const newExpiry = refreshedUser?.googleCalendarTokenExpiry || null;
+        const newExpiresIn = newExpiry ? Math.max(0, newExpiry.getTime() - Date.now()) : null;
         return {
           connected: true,
           email: refreshedUser?.googleCalendarEmail || null,
           tokenExpiry: newExpiry,
           isExpired: false,
           connectedAt: refreshedUser?.googleCalendarConnectedAt || null,
+          health: getHealth(true, false, newExpiresIn),
+          expiresIn: newExpiresIn,
         };
       } catch (err: any) {
         console.log('[GoogleOAuth] Status check refresh failed:', err.message);
@@ -340,6 +369,8 @@ export class GoogleOAuthService {
           tokenExpiry,
           isExpired: !stillHasTokens ? false : true,
           connectedAt: user?.googleCalendarConnectedAt || null,
+          health: getHealth(stillHasTokens, true, expiresIn),
+          expiresIn,
         };
       }
     }
@@ -350,6 +381,8 @@ export class GoogleOAuthService {
       tokenExpiry,
       isExpired: hasTokens ? isExpired : false,
       connectedAt: user?.googleCalendarConnectedAt || null,
+      health: getHealth(hasTokens, isExpired, expiresIn),
+      expiresIn,
     };
   }
   

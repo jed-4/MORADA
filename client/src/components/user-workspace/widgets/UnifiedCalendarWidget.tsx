@@ -947,7 +947,7 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
                 style={{ top: `${hour * DAY_HOUR_HEIGHT}px`, height: `${DAY_HOUR_HEIGHT}px` }}
               >
                 <span className="absolute left-2 top-1 text-[10px] text-muted-foreground">
-                  {formatInTimezone(new Date(new Date().setHours(hour, 0)), effectiveTimezone, { hour: 'numeric', hour12: true })}
+                  {hour === 0 ? '12 AM' : hour < 12 ? `${hour} AM` : hour === 12 ? '12 PM' : `${hour - 12} PM`}
                 </span>
               </div>
             ))}

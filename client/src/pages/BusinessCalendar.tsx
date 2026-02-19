@@ -78,6 +78,7 @@ export default function BusinessCalendar() {
   const [showTaskDialog, setShowTaskDialog] = useState(false);
   const [selectedScheduleItem, setSelectedScheduleItem] = useState<ScheduleItem | null>(null);
   const [showScheduleItemDialog, setShowScheduleItemDialog] = useState(false);
+  const [hideParentItems, setHideParentItems] = useState(false);
   const defaultViewCreationAttempted = useRef(false);
 
   // Calculate date range for calendar data fetching (current view +/- 1 month buffer)
@@ -337,8 +338,18 @@ export default function BusinessCalendar() {
         };
       });
 
-    // Convert schedule items to calendar events
-    const scheduleEvents: CalendarEvent[] = allScheduleItems
+    // Convert schedule items to calendar events (optionally filtering out parent items)
+    const parentItemIds = new Set(
+      allScheduleItems
+        .filter((item: any) => item.parentId)
+        .map((item: any) => item.parentId)
+    );
+
+    const filteredScheduleItems = hideParentItems
+      ? allScheduleItems.filter(item => !parentItemIds.has(item.id))
+      : allScheduleItems;
+
+    const scheduleEvents: CalendarEvent[] = filteredScheduleItems
       .map(item => {
         const schedule = schedules.find(s => s.id === item.scheduleId);
         const project = schedule ? projects.find(p => p.id === schedule.projectId) : undefined;
@@ -418,7 +429,7 @@ export default function BusinessCalendar() {
     }
 
     return filtered;
-  }, [allTasks, allScheduleItems, schedules, projects, completedOption, filters, selectedViewUserId, companySettings?.brandColor]);
+  }, [allTasks, allScheduleItems, schedules, projects, completedOption, filters, selectedViewUserId, companySettings?.brandColor, hideParentItems]);
 
   const handleEventComplete = (eventId: string, completed: boolean) => {
     const event = filteredEvents.find(e => e.id === eventId);
@@ -948,6 +959,15 @@ export default function BusinessCalendar() {
             </PopoverContent>
           </Popover>
 
+          {/* Hide Parent Items Toggle */}
+          <button
+            className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 toggle-elevate ${hideParentItems ? "toggle-elevated" : ""}`}
+            onClick={() => setHideParentItems(!hideParentItems)}
+            data-testid="button-hide-parent-items"
+          >
+            <span>Hide Parents</span>
+          </button>
+
           {/* Date Range Filter */}
           <Popover>
             <PopoverTrigger asChild>
@@ -1236,6 +1256,12 @@ export default function BusinessCalendar() {
             return (
               <div className="space-y-4 py-2">
                 <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-3 text-sm">
+                  {project && (
+                    <>
+                      <Briefcase className="h-4 w-4 text-muted-foreground mt-0.5" />
+                      <span className="font-medium">{project.name}</span>
+                    </>
+                  )}
                   {selectedScheduleItem.type && (
                     <>
                       <span className="text-muted-foreground">Type</span>
@@ -1265,16 +1291,42 @@ export default function BusinessCalendar() {
                       </span>
                     </>
                   )}
+                  {(selectedScheduleItem as any).duration != null && (
+                    <>
+                      <span className="text-muted-foreground">Duration</span>
+                      <span>{(selectedScheduleItem as any).duration} {(selectedScheduleItem as any).duration === 1 ? 'day' : 'days'}</span>
+                    </>
+                  )}
                   {assigneeName && (
                     <>
                       <User className="h-4 w-4 text-muted-foreground mt-0.5" />
                       <span>{assigneeName}</span>
                     </>
                   )}
-                  {project && (
+                  {(selectedScheduleItem as any).trade && (
                     <>
-                      <Briefcase className="h-4 w-4 text-muted-foreground mt-0.5" />
-                      <span>{project.name}</span>
+                      <span className="text-muted-foreground">Trade</span>
+                      <span>{(selectedScheduleItem as any).trade}</span>
+                    </>
+                  )}
+                  {(selectedScheduleItem as any).completionPercentage != null && (selectedScheduleItem as any).completionPercentage > 0 && (
+                    <>
+                      <span className="text-muted-foreground">Progress</span>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-primary rounded-full"
+                            style={{ width: `${(selectedScheduleItem as any).completionPercentage}%` }}
+                          />
+                        </div>
+                        <span className="text-xs text-muted-foreground">{(selectedScheduleItem as any).completionPercentage}%</span>
+                      </div>
+                    </>
+                  )}
+                  {(selectedScheduleItem as any).notes && (
+                    <>
+                      <span className="text-muted-foreground">Notes</span>
+                      <span className="text-muted-foreground">{(selectedScheduleItem as any).notes}</span>
                     </>
                   )}
                 </div>

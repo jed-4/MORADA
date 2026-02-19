@@ -327,7 +327,9 @@ export function EnhancedCalendar({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const allDayScrollRef = useRef<HTMLDivElement>(null);
   const timeGridScrollRef = useRef<HTMLDivElement>(null);
-  
+  const monthScrollRef = useRef<HTMLDivElement>(null);
+  const monthScrolledToToday = useRef(false);
+
   // For infinite scrolling - track expanded date range
   const [weekRangeStart, setWeekRangeStart] = useState(() => startOfWeek(subWeeks(new Date(), 4), { weekStartsOn: weekStartDay }));
   const [weekRangeEnd, setWeekRangeEnd] = useState(() => endOfWeek(addWeeks(new Date(), 4), { weekStartsOn: weekStartDay }));
@@ -388,6 +390,25 @@ export function EnhancedCalendar({
       return [currentDate];
     }
   }, [currentDate, view, weekRangeStart, weekRangeEnd, monthRangeStart, monthRangeEnd]);
+
+  useEffect(() => {
+    if (view === "month" && monthScrollRef.current && !monthScrolledToToday.current) {
+      const todayStr = format(new Date(), "yyyy-MM-dd");
+      const todayCell = monthScrollRef.current.querySelector(`[data-testid="day-cell-${todayStr}"]`);
+      if (todayCell) {
+        const cellParent = todayCell.closest('[class*="min-h-"]');
+        if (cellParent) {
+          cellParent.scrollIntoView({ block: "center" });
+        } else {
+          todayCell.scrollIntoView({ block: "center" });
+        }
+        monthScrolledToToday.current = true;
+      }
+    }
+    if (view !== "month") {
+      monthScrolledToToday.current = false;
+    }
+  }, [view, dateRange]);
 
   // Navigate calendar
   const navigate = useCallback((direction: "prev" | "next") => {
@@ -779,7 +800,7 @@ export function EnhancedCalendar({
     };
 
     return (
-      <div className="flex-1 overflow-auto hide-scrollbar" onScroll={handleMonthScroll}>
+      <div className="flex-1 overflow-auto hide-scrollbar" ref={monthScrollRef} onScroll={handleMonthScroll}>
         <div className="grid grid-cols-7 border-b border-border sticky top-0 bg-background z-10">
           {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => (
             <div
