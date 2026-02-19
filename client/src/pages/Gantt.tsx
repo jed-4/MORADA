@@ -1,6 +1,7 @@
 import { useParams } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -244,7 +245,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
   const [visibleColumns, setVisibleColumns] = useState({
     assignee: true,
     status: true,
-    completion: false,
+    completion: true,
     notes: true,
   });
   
@@ -372,7 +373,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     taskName: 140,
     status: 70,
     notes: 32,
-    completion: 40,
+    completion: 90,
     assignee: 32,
     menu: 32,
   });
@@ -2085,7 +2086,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                         onMouseDown={(e) => handleColumnDividerMouseDown(e, 'notes')}
                         data-testid="divider-notes"
                       />
-                      <div style={{ width: columnWidths.completion }} className="text-center flex-shrink-0">%</div>
+                      <div style={{ width: columnWidths.completion }} className="text-center flex-shrink-0">Completion %</div>
                       {(() => { cumulativeOffset += columnWidths.completion; return null; })()}
                     </>
                   )}
@@ -2270,8 +2271,39 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
 
                     {/* Completion column */}
                     {visibleColumns.completion && (
-                      <div style={{ width: columnWidths.completion }} className="flex items-center justify-center flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
-                        <span className="text-xs text-muted-foreground">{isParent && childItems.length > 0 ? Math.round(childItems.reduce((sum, c) => sum + (c.progressPercent ?? 0), 0) / childItems.length) : (item.progressPercent || 0)}%</span>
+                      <div style={{ width: columnWidths.completion }} className="flex items-center justify-center gap-1.5 flex-shrink-0 px-1">
+                        {(() => {
+                          const percent = isParent && childItems.length > 0
+                            ? Math.round(childItems.reduce((sum, c) => sum + (c.progressPercent ?? 0), 0) / childItems.length)
+                            : (item.progressPercent || 0);
+                          return (
+                            <>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (isParent && childItems.length > 0) return;
+                                  const newPercent = percent === 100 ? 0 : 100;
+                                  updateProgressMutation.mutate({ id: item.id, progressPercent: newPercent });
+                                }}
+                                className={cn(
+                                  "w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors",
+                                  isParent && childItems.length > 0
+                                    ? "cursor-default opacity-60"
+                                    : "cursor-pointer",
+                                  percent === 100
+                                    ? "border-primary bg-primary text-primary-foreground"
+                                    : "border-muted-foreground/40 hover:border-muted-foreground/70"
+                                )}
+                                data-testid={`gantt-completion-toggle-${item.id}`}
+                              >
+                                {percent === 100 && <Check className="w-2.5 h-2.5" />}
+                              </button>
+                              <span className="inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground text-[10px] font-medium px-1.5 py-0.5 min-w-[32px]">
+                                {percent} %
+                              </span>
+                            </>
+                          );
+                        })()}
                       </div>
                     )}
 
