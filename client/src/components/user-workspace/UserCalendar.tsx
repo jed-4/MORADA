@@ -98,6 +98,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
   const [viewToDelete, setViewToDelete] = useState<CalendarView | null>(null);
   const [newViewName, setNewViewName] = useState("");
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [hideParentItems, setHideParentItems] = useState(false);
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [connectingGoogle, setConnectingGoogle] = useState(false);
   const { toast } = useToast();
@@ -367,8 +368,15 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
       }
     });
 
-    // Add schedule items
+    // Add schedule items (optionally filtering out parent items)
+    const parentIds = new Set(
+      scheduleItems
+        .filter((item: any) => item.parentId)
+        .map((item: any) => item.parentId)
+    );
+
     scheduleItems.forEach((item: any) => {
+      if (hideParentItems && parentIds.has(item.id)) return;
       const itemStartDate = item.startDate ? new Date(item.startDate) : null;
       if (!itemStartDate) return;
       events.push({
@@ -412,7 +420,7 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
     }
 
     return events;
-  }, [userTasks, scheduleItems, googleCalendarEvents, projects, taskTemplates]);
+  }, [userTasks, scheduleItems, googleCalendarEvents, projects, taskTemplates, hideParentItems]);
 
   // Apply filters
   const filteredEvents = useMemo(() => {
@@ -839,6 +847,15 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
               </PopoverContent>
             </Popover>
           )}
+
+          {/* Hide Parent Items Toggle */}
+          <button
+            className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 toggle-elevate ${hideParentItems ? "toggle-elevated" : ""}`}
+            onClick={() => setHideParentItems(!hideParentItems)}
+            data-testid="button-hide-parent-items"
+          >
+            <span>Hide Parents</span>
+          </button>
 
           {/* Date Range Filter */}
           <Popover>
