@@ -2319,19 +2319,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           const newSubStatus = validationResult.data.projectSubStatus;
           if (newSubStatus) {
-            // Look up the systemPhase for the new status
             const statusCategory = await storage.getFieldCategoryWithOptions("project.status");
             if (statusCategory?.options) {
               const statusOption = statusCategory.options.find(
                 opt => opt.key === newSubStatus
               );
-              if (statusOption?.systemPhase) {
-                updateData.currentSystemPhase = statusOption.systemPhase;
-                console.log(`[PATCH /api/projects/:id] Auto-updating currentSystemPhase to: ${statusOption.systemPhase}`);
+              const resolvedPhase = statusOption?.systemPhase
+                || (statusOption?.parentId
+                  ? statusCategory.options.find(p => p.id === statusOption.parentId)?.systemPhase
+                  : undefined);
+              if (resolvedPhase) {
+                updateData.currentSystemPhase = resolvedPhase;
+                console.log(`[PATCH /api/projects/:id] Auto-updating currentSystemPhase to: ${resolvedPhase}`);
               }
             }
           } else {
-            // Status is being cleared - keep current phase (don't clear it)
             console.log(`[PATCH /api/projects/:id] projectSubStatus cleared, keeping current phase`);
           }
         } catch (phaseError) {
