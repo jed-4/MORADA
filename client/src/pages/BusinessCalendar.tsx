@@ -11,7 +11,7 @@ import {
   Clock,
   Briefcase,
   ExternalLink,
-  Eye,
+  SlidersHorizontal,
 } from "lucide-react";
 import { format, isWithinInterval, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths } from "date-fns";
 import type { Task, ScheduleItem, Project, User as UserType, FieldCategoryWithOptions, Schedule, CompanySettings } from "@shared/schema";
@@ -967,33 +967,34 @@ export default function BusinessCalendar() {
                 <div className="space-y-1.5">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <Checkbox
-                      checked={filters.eventTypes?.includes("task") || false}
+                      checked={!filters.eventTypes || filters.eventTypes.includes("task")}
                       onCheckedChange={() => {
-                        const current = filters.eventTypes || [];
+                        const allTypes = ["task", "schedule-item"];
+                        const current = filters.eventTypes || [...allTypes];
                         const updated = current.includes("task")
                           ? current.filter(t => t !== "task")
                           : [...current, "task"];
-                        setFilters({...filters, eventTypes: updated.length > 0 ? updated : undefined});
+                        setFilters({...filters, eventTypes: updated.length === allTypes.length ? undefined : updated});
                       }}
                     />
                     <span className="text-xs">Tasks</span>
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
                     <Checkbox
-                      checked={filters.eventTypes?.includes("schedule-item") || false}
+                      checked={!filters.eventTypes || filters.eventTypes.includes("schedule-item")}
                       onCheckedChange={() => {
-                        const current = filters.eventTypes || [];
+                        const allTypes = ["task", "schedule-item"];
+                        const current = filters.eventTypes || [...allTypes];
                         const updated = current.includes("schedule-item")
                           ? current.filter(t => t !== "schedule-item")
                           : [...current, "schedule-item"];
-                        setFilters({...filters, eventTypes: updated.length > 0 ? updated : undefined});
+                        setFilters({...filters, eventTypes: updated.length === allTypes.length ? undefined : updated});
                       }}
                     />
                     <span className="text-xs">Schedule Items</span>
                   </label>
                   {(() => {
-                    const scheduleDisabled = filters.eventTypes?.includes("schedule-item") === false || 
-                      (filters.eventTypes && filters.eventTypes.length > 0 && !filters.eventTypes.includes("schedule-item"));
+                    const scheduleDisabled = filters.eventTypes && filters.eventTypes.length > 0 && !filters.eventTypes.includes("schedule-item");
                     return (
                       <>
                         <label className={`flex items-center gap-2 cursor-pointer pl-5 ${scheduleDisabled ? "opacity-40 pointer-events-none" : ""}`}>
@@ -1102,11 +1103,11 @@ export default function BusinessCalendar() {
           <Popover>
             <PopoverTrigger asChild>
               <button
-                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
                 data-testid="button-display-options"
+                title="Display options"
               >
-                <Eye className="w-3 h-3" />
-                <span>Display</span>
+                <SlidersHorizontal className="w-3 h-3" />
               </button>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-48 p-3">

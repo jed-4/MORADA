@@ -24,7 +24,7 @@ import { ProjectIcon } from "./ProjectIcon";
 import { Project } from "@shared/schema";
 
 const RECENT_PROJECTS_KEY = "recentProjectIds";
-const SELECTED_PHASE_KEY = "selectedProjectPhase";
+const SELECTED_PHASE_KEY = "selectedProjectPhase_v2";
 const FAVORITE_PROJECTS_KEY = "sidebar_favorite_projects";
 const MAX_RECENT = 5;
 
@@ -55,8 +55,11 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
   const [selectedPhaseIndex, setSelectedPhaseIndex] = useState<number>(() => {
     try {
       const saved = localStorage.getItem(SELECTED_PHASE_KEY);
-      const index = saved ? parseInt(saved, 10) : 0;
-      return index >= 0 && index < phases.length ? index : 0;
+      if (saved === null) return 0;
+      const index = parseInt(saved, 10);
+      if (index >= 0 && index < phases.length) return index;
+      localStorage.removeItem(SELECTED_PHASE_KEY);
+      return 0;
     } catch {
       return 0;
     }
