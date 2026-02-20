@@ -78,7 +78,8 @@ export default function BusinessCalendar() {
   const [showTaskDialog, setShowTaskDialog] = useState(false);
   const [selectedScheduleItem, setSelectedScheduleItem] = useState<ScheduleItem | null>(null);
   const [showScheduleItemDialog, setShowScheduleItemDialog] = useState(false);
-  const [hideParentItems, setHideParentItems] = useState(false);
+  const [showParentItems, setShowParentItems] = useState(true);
+  const [showChildItems, setShowChildItems] = useState(true);
   const defaultViewCreationAttempted = useRef(false);
 
   // Calculate date range for calendar data fetching (current view +/- 1 month buffer)
@@ -338,22 +339,27 @@ export default function BusinessCalendar() {
         };
       });
 
-    // Convert schedule items to calendar events (optionally filtering out parent items)
+    // Convert schedule items to calendar events with parent/child visibility toggles
     const parentItemIds = new Set(
       allScheduleItems
-        .filter((item: any) => item.parentId)
-        .map((item: any) => item.parentId)
+        .filter((item: any) => item.parentItemId)
+        .map((item: any) => item.parentItemId)
     );
 
-    const filteredScheduleItems = hideParentItems
-      ? allScheduleItems.filter(item => !parentItemIds.has(item.id))
-      : allScheduleItems;
+    const filteredScheduleItems = allScheduleItems.filter(item => {
+      const isParent = parentItemIds.has(item.id);
+      const isChild = !!(item as any).parentItemId;
+      if (isParent && !showParentItems) return false;
+      if (isChild && !showChildItems) return false;
+      return true;
+    });
 
     const scheduleEvents: CalendarEvent[] = filteredScheduleItems
       .map(item => {
         const schedule = schedules.find(s => s.id === item.scheduleId);
         const project = schedule ? projects.find(p => p.id === schedule.projectId) : undefined;
         const isCompleted = item.status === "completed";
+        const projectColor = project?.color || companySettings?.brandColor || "#3B82F6";
         
         return {
           id: item.id,
@@ -362,9 +368,9 @@ export default function BusinessCalendar() {
           endDate: new Date(item.endDate),
           startTime: item.startTime,
           endTime: item.endTime,
-          color: item.color || project?.color || companySettings?.brandColor || "#3B82F6",
+          color: projectColor,
           projectId: project?.id,
-          projectColor: project?.color || companySettings?.brandColor || "#3B82F6",
+          projectColor: projectColor,
           type: "schedule" as const,
           status: item.status,
           isCompleted,
@@ -429,7 +435,7 @@ export default function BusinessCalendar() {
     }
 
     return filtered;
-  }, [allTasks, allScheduleItems, schedules, projects, completedOption, filters, selectedViewUserId, companySettings?.brandColor, hideParentItems]);
+  }, [allTasks, allScheduleItems, schedules, projects, completedOption, filters, selectedViewUserId, companySettings?.brandColor, showParentItems, showChildItems]);
 
   const handleEventComplete = (eventId: string, completed: boolean) => {
     const event = filteredEvents.find(e => e.id === eventId);
@@ -959,13 +965,22 @@ export default function BusinessCalendar() {
             </PopoverContent>
           </Popover>
 
-          {/* Hide Parent Items Toggle */}
+          {/* Parent Items Toggle */}
           <button
-            className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 toggle-elevate ${hideParentItems ? "toggle-elevated" : ""}`}
-            onClick={() => setHideParentItems(!hideParentItems)}
-            data-testid="button-hide-parent-items"
+            className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 toggle-elevate ${showParentItems ? "toggle-elevated" : ""}`}
+            onClick={() => setShowParentItems(!showParentItems)}
+            data-testid="button-toggle-parents"
           >
-            <span>Hide Parents</span>
+            <span>Parents</span>
+          </button>
+
+          {/* Child Items Toggle */}
+          <button
+            className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 toggle-elevate ${showChildItems ? "toggle-elevated" : ""}`}
+            onClick={() => setShowChildItems(!showChildItems)}
+            data-testid="button-toggle-children"
+          >
+            <span>Children</span>
           </button>
 
           {/* Date Range Filter */}
