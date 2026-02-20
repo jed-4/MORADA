@@ -682,9 +682,10 @@ export default function BusinessCalendar() {
   }
 
   return (
-    <div className="flex flex-col h-full" data-testid="business-calendar">
+    <div className="flex flex-col h-full p-3 sm:p-4" data-testid="business-calendar">
+     <div className="flex flex-col flex-1 min-h-0 border border-border rounded-lg bg-card overflow-hidden">
       {/* Row 1 - Saved Views & Settings (36px) */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
+      <div className="h-9 bg-card flex items-center justify-between px-2 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-1">
           {/* View Tabs */}
           <div className="flex items-center gap-0.5" data-testid="tabs-calendar-views">
@@ -760,7 +761,7 @@ export default function BusinessCalendar() {
       </div>
 
       {/* Row 2 - Filters & Controls (36px) */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
+      <div className="h-9 bg-card flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
         {/* Left: Filters */}
         <div className="flex items-center gap-1">
           {/* Projects Filter */}
@@ -1141,6 +1142,7 @@ export default function BusinessCalendar() {
           hideInternalHeader={true}
         />
       </div>
+     </div>
 
       {/* Create View Dialog */}
       <Dialog open={showCreateViewDialog} onOpenChange={setShowCreateViewDialog}>
