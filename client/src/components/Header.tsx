@@ -1,4 +1,4 @@
-import { Calendar, User, Settings, LogOut, Building2, Plus, FileText, CheckSquare, Folder, Palette, ChevronDown, Home, MessageSquare, Clock, Calculator, FileBarChart, FileSearch, HelpCircle, File, DollarSign, Receipt, CreditCard, BookOpen, Timer, PiggyBank, FolderOpen, Users, ClipboardList, Sun, Moon, Kanban, Search, ChevronLeft, ChevronRight, Star } from "lucide-react";
+import { Calendar, User, Settings, LogOut, Building2, Plus, FileText, CheckSquare, Folder, Palette, ChevronDown, Home, MessageSquare, Clock, Calculator, FileBarChart, FileSearch, HelpCircle, File, DollarSign, Receipt, CreditCard, BookOpen, Timer, PiggyBank, FolderOpen, Users, ClipboardList, Sun, Moon, Kanban, Search, ChevronLeft, ChevronRight, Star, GanttChart, HardDrive, Clipboard } from "lucide-react";
 import { useLocation } from "wouter";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -257,14 +257,82 @@ export default function Header() {
           <Building2 className="h-3.5 w-3.5 text-primary-foreground" />
         </div>
 
-        {/* Business Name Button */}
-        <button 
-          onClick={() => navigate('/business')} 
-          className="h-7 px-3 rounded-md bg-muted/60 hover-elevate active-elevate-2 text-sm font-semibold flex items-center"
-          data-testid="business-name-link"
-        >
-          {companyDisplayName}
-        </button>
+        {/* Business Name Button with Dropdown */}
+        <div className="flex items-center">
+          <button 
+            onClick={() => navigate('/business')} 
+            className="h-7 px-3 rounded-l-md bg-muted/60 hover-elevate active-elevate-2 text-sm font-semibold flex items-center"
+            data-testid="business-name-link"
+          >
+            {companyDisplayName}
+          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="h-7 px-1 rounded-r-md bg-muted/60 hover-elevate active-elevate-2 flex items-center justify-center border-l border-border/40"
+                data-testid="button-business-dropdown"
+              >
+                <ChevronDown className="h-3 w-3" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-48">
+              <DropdownMenuLabel className="text-xs">Business</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => navigate('/business')} className="text-xs">
+                <Home className="h-3.5 w-3.5 mr-2" />
+                Overview
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate('/business/projects')} className="text-xs">
+                <FolderOpen className="h-3.5 w-3.5 mr-2" />
+                Projects
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate('/business/tasks')} className="text-xs">
+                <CheckSquare className="h-3.5 w-3.5 mr-2" />
+                Tasks
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate('/business/calendar')} className="text-xs">
+                <Calendar className="h-3.5 w-3.5 mr-2" />
+                Calendar
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate('/business/schedule')} className="text-xs">
+                <GanttChart className="h-3.5 w-3.5 mr-2" />
+                Schedule
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate('/business/files')} className="text-xs">
+                <HardDrive className="h-3.5 w-3.5 mr-2" />
+                Files
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate('/business/expenses')} className="text-xs">
+                <CreditCard className="h-3.5 w-3.5 mr-2" />
+                Expenses
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate('/business/timesheets')} className="text-xs">
+                <Timer className="h-3.5 w-3.5 mr-2" />
+                Timesheets
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate('/business/messages')} className="text-xs">
+                <MessageSquare className="h-3.5 w-3.5 mr-2" />
+                Messages
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate('/business/minutes')} className="text-xs">
+                <ClipboardList className="h-3.5 w-3.5 mr-2" />
+                Minutes
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate('/business/notes')} className="text-xs">
+                <FileText className="h-3.5 w-3.5 mr-2" />
+                Notes
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate('/business/leave')} className="text-xs">
+                <Calendar className="h-3.5 w-3.5 mr-2" />
+                Leave
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate('/business-team')} className="text-xs">
+                <Users className="h-3.5 w-3.5 mr-2" />
+                Team
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
 
         {/* Projects Dropdown with Phase Selector */}
         <DropdownMenu open={isProjectDropdownOpen} onOpenChange={setIsProjectDropdownOpen}>
@@ -410,6 +478,67 @@ export default function Header() {
                 Create New Project
               </DropdownMenuItem>
             </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {/* All Items Dropdown */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="h-7 w-7 border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+              data-testid="button-header-all-items"
+              title="All Items"
+            >
+              <Clipboard className="h-3.5 w-3.5" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-48">
+            <DropdownMenuLabel className="text-xs">All Items</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => navigate('/notes')} className="text-xs">
+              <FileText className="h-3.5 w-3.5 mr-2" />
+              Notes
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/minutes')} className="text-xs">
+              <ClipboardList className="h-3.5 w-3.5 mr-2" />
+              Minutes
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/tasks')} className="text-xs">
+              <CheckSquare className="h-3.5 w-3.5 mr-2" />
+              Tasks
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/timesheets')} className="text-xs">
+              <Timer className="h-3.5 w-3.5 mr-2" />
+              Timesheets
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/estimates')} className="text-xs">
+              <FileBarChart className="h-3.5 w-3.5 mr-2" />
+              Estimates
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/rfqs')} className="text-xs">
+              <FileSearch className="h-3.5 w-3.5 mr-2" />
+              RFQs
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/rfis')} className="text-xs">
+              <HelpCircle className="h-3.5 w-3.5 mr-2" />
+              RFIs
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/proposals')} className="text-xs">
+              <File className="h-3.5 w-3.5 mr-2" />
+              Proposals
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/purchase-orders')} className="text-xs">
+              <Receipt className="h-3.5 w-3.5 mr-2" />
+              Purchase Orders
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/variations')} className="text-xs">
+              <FileText className="h-3.5 w-3.5 mr-2" />
+              Variations
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/client-invoices')} className="text-xs">
+              <Receipt className="h-3.5 w-3.5 mr-2" />
+              Client Invoices
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

@@ -136,7 +136,8 @@ import {
   scheduleBaselines,
   scheduleBaselineItems,
   insertScheduleBaselineSchema,
-  contacts
+  contacts,
+  projects as projectsTable
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -14486,6 +14487,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       .where(eq(schedules.id, req.params.id))
       .returning();
     res.json(updated);
+  });
+
+  // Get all schedules for a company (used by Business Calendar to map schedule items to projects)
+  app.get("/api/schedules", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      const companySchedules = await db.select().from(schedules)
+        .innerJoin(projectsTable, eq(schedules.projectId, projectsTable.id))
+        .where(eq(projectsTable.companyId, user.companyId));
+      res.json(companySchedules.map(row => row.schedules));
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch schedules",
+        details: error.message 
+      });
+    }
   });
 
   // Schedule routes
