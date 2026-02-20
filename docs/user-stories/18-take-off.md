@@ -1,4 +1,4 @@
-# BuildPro User Stories: Take-off (Quantity Take-offs & Labour Hours)
+# Take-off (Quantity Take-offs & Labour Hours) - User Stories
 
 ## Epic Overview
 

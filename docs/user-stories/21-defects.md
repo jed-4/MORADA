@@ -1,4 +1,4 @@
-# BuildPro User Stories: Defects Management
+# Defects Management - User Stories
 
 ## Epic Overview
 

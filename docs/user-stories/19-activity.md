@@ -1,4 +1,4 @@
-# BuildPro User Stories: Activity Feed
+# Activity Feed - User Stories
 
 ## Epic Overview
 

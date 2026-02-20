@@ -1,4 +1,4 @@
-# BuildPro User Stories: Inbox (Notifications)
+# Inbox (Notifications) - User Stories
 
 ## Epic Overview
 
