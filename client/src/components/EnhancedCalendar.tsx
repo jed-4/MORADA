@@ -31,6 +31,9 @@ export interface CalendarEvent {
   color?: string | null;
   projectId?: string | null;
   projectColor?: string | null;
+  projectName?: string | null;
+  assigneeName?: string | null;
+  assigneeId?: string | null;
   type: "task" | "schedule" | "meeting" | "google-calendar";
   status?: string;
   isCompleted?: boolean;
@@ -38,8 +41,15 @@ export interface CalendarEvent {
   location?: string | null;
   templateId?: string | null;
   tagIds?: string[] | null;
-  isModified?: boolean; // True if task has been moved/rescheduled from original template time
-  resource?: any; // Original task/event data for click handlers
+  isModified?: boolean;
+  resource?: any;
+}
+
+export interface CalendarDisplayOptions {
+  showProject?: boolean;
+  showAssignee?: boolean;
+  showTime?: boolean;
+  showStatus?: boolean;
 }
 
 interface EnhancedCalendarProps {
@@ -56,6 +66,7 @@ interface EnhancedCalendarProps {
   view?: "month" | "week" | "day" | "roster";
   onViewChange?: (view: "month" | "week" | "day" | "roster") => void;
   hideInternalHeader?: boolean;
+  displayOptions?: CalendarDisplayOptions;
 }
 
 interface DraggableEventProps {
@@ -65,9 +76,10 @@ interface DraggableEventProps {
   onToggleComplete?: (e: React.MouseEvent, event: CalendarEvent) => void;
   showCompletionCheckbox: boolean;
   showResizeHandles?: boolean;
+  displayOptions?: CalendarDisplayOptions;
 }
 
-function DraggableEvent({ event, index, onEventClick, onToggleComplete, showCompletionCheckbox, showResizeHandles = false }: DraggableEventProps) {
+function DraggableEvent({ event, index, onEventClick, onToggleComplete, showCompletionCheckbox, showResizeHandles = false, displayOptions }: DraggableEventProps) {
   const isGoogleCalendarEvent = event.type === "google-calendar";
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: event.id,
@@ -180,12 +192,36 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
             </Badge>
           )}
         </div>
-        {showTime && (
+        {showTime && (displayOptions?.showTime !== false) && (
           <div 
             className="text-[9px] font-normal opacity-80 leading-tight"
             style={{ color: notionColors.darkText }}
           >
             {event.startTime}{event.endTime && ` - ${event.endTime}`}
+          </div>
+        )}
+        {displayOptions?.showProject && event.projectName && (
+          <div 
+            className="text-[9px] font-normal opacity-70 leading-tight truncate w-full"
+            style={{ color: notionColors.darkText }}
+          >
+            {event.projectName}
+          </div>
+        )}
+        {displayOptions?.showAssignee && event.assigneeName && (
+          <div 
+            className="text-[9px] font-normal opacity-70 leading-tight truncate w-full"
+            style={{ color: notionColors.darkText }}
+          >
+            {event.assigneeName}
+          </div>
+        )}
+        {displayOptions?.showStatus && event.status && (
+          <div 
+            className="text-[9px] font-normal opacity-70 leading-tight truncate w-full capitalize"
+            style={{ color: notionColors.darkText }}
+          >
+            {event.status}
           </div>
         )}
       </div>
@@ -271,7 +307,8 @@ export function EnhancedCalendar({
   onCurrentDateChange,
   view: externalView,
   onViewChange,
-  hideInternalHeader = false
+  hideInternalHeader = false,
+  displayOptions
 }: EnhancedCalendarProps) {
   const weekStartDay = useWeekStartDay();
   const { effectiveTimezone } = useTimezone();
@@ -855,6 +892,7 @@ export function EnhancedCalendar({
                               onEventClick={onEventClick}
                               onToggleComplete={handleToggleComplete}
                               showCompletionCheckbox={showCompletionCheckbox}
+                              displayOptions={displayOptions}
                             />
                           ))}
                           {dayEvents.length > 3 && (
@@ -961,6 +999,7 @@ export function EnhancedCalendar({
                       onEventClick={onEventClick}
                       onToggleComplete={handleToggleComplete}
                       showCompletionCheckbox={showCompletionCheckbox}
+                      displayOptions={displayOptions}
                     />
                   ))}
                   {hiddenCount > 0 && (
@@ -1165,6 +1204,7 @@ export function EnhancedCalendar({
                                   onToggleComplete={handleToggleComplete}
                                   showCompletionCheckbox={showCompletionCheckbox}
                                   showResizeHandles={true}
+                                  displayOptions={displayOptions}
                                 />
                               </div>
                             );

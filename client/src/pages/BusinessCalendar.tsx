@@ -11,10 +11,11 @@ import {
   Clock,
   Briefcase,
   ExternalLink,
+  Eye,
 } from "lucide-react";
 import { format, isWithinInterval, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths } from "date-fns";
 import type { Task, ScheduleItem, Project, User as UserType, FieldCategoryWithOptions, Schedule, CompanySettings } from "@shared/schema";
-import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
+import { EnhancedCalendar, CalendarEvent, CalendarDisplayOptions } from "@/components/EnhancedCalendar";
 import { CalendarFilters as CalendarFiltersType } from "@/components/CalendarFilters";
 import { CalendarView } from "@/components/SavedViews";
 import { apiRequest } from "@/lib/queryClient";
@@ -81,6 +82,18 @@ export default function BusinessCalendar() {
   const [showParentItems, setShowParentItems] = useState(true);
   const [showChildItems, setShowChildItems] = useState(true);
   const defaultViewCreationAttempted = useRef(false);
+
+  const [displayOptions, setDisplayOptions] = useState<CalendarDisplayOptions>(() => {
+    try {
+      const saved = localStorage.getItem('businessCalendar_displayOptions');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return { showProject: false, showAssignee: false, showTime: true, showStatus: false };
+  });
+
+  useEffect(() => {
+    localStorage.setItem('businessCalendar_displayOptions', JSON.stringify(displayOptions));
+  }, [displayOptions]);
 
   // Calculate date range for calendar data fetching (current view +/- 1 month buffer)
   const dateRange = useMemo(() => {
@@ -318,6 +331,7 @@ export default function BusinessCalendar() {
       .filter(task => task.dueDate)
       .map(task => {
         const project = projects.find(p => p.id === task.projectId);
+        const assignee = users.find(u => u.id === task.assigneeId);
         const isCompleted = task.status === completedOption?.key;
         
         return {
@@ -330,10 +344,12 @@ export default function BusinessCalendar() {
           color: project?.color || companySettings?.brandColor || "#3B82F6",
           projectId: task.projectId,
           projectColor: project?.color || companySettings?.brandColor || "#3B82F6",
+          projectName: project?.name || null,
+          assigneeName: assignee ? `${assignee.firstName || ''} ${assignee.lastName || ''}`.trim() || null : null,
+          assigneeId: task.assigneeId,
           type: "task" as const,
           status: task.status,
           isCompleted,
-          assigneeId: task.assigneeId,
           templateId: task.templateId,
           resource: task,
         };
@@ -358,6 +374,7 @@ export default function BusinessCalendar() {
       .map(item => {
         const schedule = schedules.find(s => s.id === item.scheduleId);
         const project = schedule ? projects.find(p => p.id === schedule.projectId) : undefined;
+        const assignee = item.assignedToId ? users.find(u => u.id === item.assignedToId) : undefined;
         const isCompleted = item.status === "completed";
         const projectColor = project?.color || companySettings?.brandColor || "#3B82F6";
         
@@ -371,10 +388,12 @@ export default function BusinessCalendar() {
           color: projectColor,
           projectId: project?.id,
           projectColor: projectColor,
+          projectName: project?.name || null,
+          assigneeName: assignee ? `${assignee.firstName || ''} ${assignee.lastName || ''}`.trim() || null : null,
+          assigneeId: item.assignedToId,
           type: "schedule" as const,
           status: item.status,
           isCompleted,
-          assigneeId: item.assignedToId,
         };
       });
 
@@ -435,7 +454,7 @@ export default function BusinessCalendar() {
     }
 
     return filtered;
-  }, [allTasks, allScheduleItems, schedules, projects, completedOption, filters, selectedViewUserId, companySettings?.brandColor, showParentItems, showChildItems]);
+  }, [allTasks, allScheduleItems, schedules, projects, users, completedOption, filters, selectedViewUserId, companySettings?.brandColor, showParentItems, showChildItems]);
 
   const handleEventComplete = (eventId: string, completed: boolean) => {
     const event = filteredEvents.find(e => e.id === eventId);
@@ -946,43 +965,60 @@ export default function BusinessCalendar() {
                   )}
                 </div>
                 <div className="space-y-1.5">
-                  {eventTypeOptions.map((type: any) => (
-                    <label key={type.key} className="flex items-center gap-2 cursor-pointer">
-                      <Checkbox
-                        checked={filters.eventTypes?.includes(type.key) || false}
-                        onCheckedChange={() => {
-                          const current = filters.eventTypes || [];
-                          const updated = current.includes(type.key)
-                            ? current.filter(t => t !== type.key)
-                            : [...current, type.key];
-                          setFilters({...filters, eventTypes: updated.length > 0 ? updated : undefined});
-                        }}
-                      />
-                      <span className="text-xs">{type.label}</span>
-                    </label>
-                  ))}
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox
+                      checked={filters.eventTypes?.includes("task") || false}
+                      onCheckedChange={() => {
+                        const current = filters.eventTypes || [];
+                        const updated = current.includes("task")
+                          ? current.filter(t => t !== "task")
+                          : [...current, "task"];
+                        setFilters({...filters, eventTypes: updated.length > 0 ? updated : undefined});
+                      }}
+                    />
+                    <span className="text-xs">Tasks</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox
+                      checked={filters.eventTypes?.includes("schedule-item") || false}
+                      onCheckedChange={() => {
+                        const current = filters.eventTypes || [];
+                        const updated = current.includes("schedule-item")
+                          ? current.filter(t => t !== "schedule-item")
+                          : [...current, "schedule-item"];
+                        setFilters({...filters, eventTypes: updated.length > 0 ? updated : undefined});
+                      }}
+                    />
+                    <span className="text-xs">Schedule Items</span>
+                  </label>
+                  {(() => {
+                    const scheduleDisabled = filters.eventTypes?.includes("schedule-item") === false || 
+                      (filters.eventTypes && filters.eventTypes.length > 0 && !filters.eventTypes.includes("schedule-item"));
+                    return (
+                      <>
+                        <label className={`flex items-center gap-2 cursor-pointer pl-5 ${scheduleDisabled ? "opacity-40 pointer-events-none" : ""}`}>
+                          <Checkbox
+                            checked={showParentItems}
+                            onCheckedChange={() => setShowParentItems(!showParentItems)}
+                            disabled={scheduleDisabled}
+                          />
+                          <span className="text-xs">Parents</span>
+                        </label>
+                        <label className={`flex items-center gap-2 cursor-pointer pl-5 ${scheduleDisabled ? "opacity-40 pointer-events-none" : ""}`}>
+                          <Checkbox
+                            checked={showChildItems}
+                            onCheckedChange={() => setShowChildItems(!showChildItems)}
+                            disabled={scheduleDisabled}
+                          />
+                          <span className="text-xs">Children</span>
+                        </label>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             </PopoverContent>
           </Popover>
-
-          {/* Parent Items Toggle */}
-          <button
-            className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 toggle-elevate ${showParentItems ? "toggle-elevated" : ""}`}
-            onClick={() => setShowParentItems(!showParentItems)}
-            data-testid="button-toggle-parents"
-          >
-            <span>Parents</span>
-          </button>
-
-          {/* Child Items Toggle */}
-          <button
-            className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 toggle-elevate ${showChildItems ? "toggle-elevated" : ""}`}
-            onClick={() => setShowChildItems(!showChildItems)}
-            data-testid="button-toggle-children"
-          >
-            <span>Children</span>
-          </button>
 
           {/* Date Range Filter */}
           <Popover>
@@ -1060,8 +1096,47 @@ export default function BusinessCalendar() {
           )}
         </div>
 
-        {/* Right: Navigation & View Controls */}
+        {/* Right: Display, Navigation & View Controls */}
         <div className="flex items-center gap-1.5">
+          {/* Display Options */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                data-testid="button-display-options"
+              >
+                <Eye className="w-3 h-3" />
+                <span>Display</span>
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-48 p-3">
+              <div className="space-y-3">
+                <div className="text-sm font-semibold">Display on Cards</div>
+                <div className="space-y-1.5">
+                  {[
+                    { key: "showTime" as const, label: "Time" },
+                    { key: "showProject" as const, label: "Project" },
+                    { key: "showAssignee" as const, label: "Assignee" },
+                    { key: "showStatus" as const, label: "Status" },
+                  ].map((opt) => (
+                    <label key={opt.key} className="flex items-center gap-2 cursor-pointer">
+                      <Checkbox
+                        checked={displayOptions[opt.key] !== false}
+                        onCheckedChange={() => {
+                          setDisplayOptions(prev => ({
+                            ...prev,
+                            [opt.key]: !prev[opt.key],
+                          }));
+                        }}
+                      />
+                      <span className="text-xs">{opt.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
+
           {/* Navigation: Previous, Today, Next */}
           <button
             className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
@@ -1139,6 +1214,7 @@ export default function BusinessCalendar() {
           onCurrentDateChange={setCurrentDate}
           view={calendarMode as any}
           onViewChange={(newView) => setCalendarMode(newView)}
+          displayOptions={displayOptions}
           hideInternalHeader={true}
         />
       </div>

@@ -9,8 +9,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Star,
-  List,
-  Columns,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,11 +26,9 @@ import { Project } from "@shared/schema";
 const RECENT_PROJECTS_KEY = "recentProjectIds";
 const SELECTED_PHASE_KEY = "selectedProjectPhase";
 const FAVORITE_PROJECTS_KEY = "sidebar_favorite_projects";
-const VIEW_MODE_KEY = "projectSwitcherViewMode";
 const MAX_RECENT = 5;
 
-type ProjectPhase = "lead" | "pre_construction" | "construction" | "post_construction";
-type ViewMode = "phase_scroll" | "grouped_list";
+type ProjectPhase = "all" | "lead" | "pre_construction" | "construction" | "post_construction";
 
 interface FavoriteProject {
   id: string;
@@ -40,6 +36,7 @@ interface FavoriteProject {
 }
 
 const phases: { id: ProjectPhase; label: string }[] = [
+  { id: "all", label: "All" },
   { id: "lead", label: "Lead" },
   { id: "pre_construction", label: "Pre-Con" },
   { id: "construction", label: "Construction" },
@@ -55,21 +52,13 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
   const { currentProject, setCurrentProject } = useProject();
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    try {
-      const saved = localStorage.getItem(VIEW_MODE_KEY);
-      return (saved === "grouped_list" ? "grouped_list" : "phase_scroll") as ViewMode;
-    } catch {
-      return "phase_scroll";
-    }
-  });
   const [selectedPhaseIndex, setSelectedPhaseIndex] = useState<number>(() => {
     try {
       const saved = localStorage.getItem(SELECTED_PHASE_KEY);
-      const index = saved ? parseInt(saved, 10) : 2;
-      return index >= 0 && index < phases.length ? index : 2;
+      const index = saved ? parseInt(saved, 10) : 0;
+      return index >= 0 && index < phases.length ? index : 0;
     } catch {
-      return 2;
+      return 0;
     }
   });
   const [recentProjectIds, setRecentProjectIds] = useState<string[]>(() => {
@@ -101,6 +90,7 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
   const selectedPhase = phases[selectedPhaseIndex];
 
   const phaseProjects = useMemo(() => {
+    if (selectedPhase.id === "all") return activeProjects;
     return activeProjects.filter(p => 
       p.currentSystemPhase === selectedPhase.id || 
       (!p.currentSystemPhase && selectedPhase.id === "construction")
@@ -110,6 +100,7 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
   const groupedByPhase = useMemo(() => {
     const groups: { phase: typeof phases[0]; projects: Project[] }[] = [];
     for (const phase of phases) {
+      if (phase.id === "all") continue;
       const matching = activeProjects.filter(p =>
         p.currentSystemPhase === phase.id ||
         (!p.currentSystemPhase && phase.id === "construction")
@@ -135,14 +126,6 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
     const newIndex = selectedPhaseIndex < phases.length - 1 ? selectedPhaseIndex + 1 : 0;
     setSelectedPhaseIndex(newIndex);
     localStorage.setItem(SELECTED_PHASE_KEY, String(newIndex));
-  };
-
-  const handleToggleViewMode = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    const newMode: ViewMode = viewMode === "phase_scroll" ? "grouped_list" : "phase_scroll";
-    setViewMode(newMode);
-    localStorage.setItem(VIEW_MODE_KEY, newMode);
   };
 
   const isLocalUpdateRef = useRef(false);
@@ -180,15 +163,15 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
   }, [favoriteProjects]);
 
   useEffect(() => {
-    if (currentProject && viewMode === "phase_scroll") {
+    if (currentProject) {
       const projectPhase = currentProject.currentSystemPhase || "construction";
       const phaseIndex = phases.findIndex(p => p.id === projectPhase);
-      if (phaseIndex !== -1 && phaseIndex !== selectedPhaseIndex) {
+      if (phaseIndex !== -1 && phaseIndex !== selectedPhaseIndex && selectedPhaseIndex !== 0) {
         setSelectedPhaseIndex(phaseIndex);
         localStorage.setItem(SELECTED_PHASE_KEY, String(phaseIndex));
       }
     }
-  }, [currentProject?.id, currentProject?.currentSystemPhase, viewMode]);
+  }, [currentProject?.id, currentProject?.currentSystemPhase]);
 
   useEffect(() => {
     if (currentProject && !recentProjectIds.includes(currentProject.id)) {
@@ -355,49 +338,27 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
             side="bottom"
             sideOffset={4}
           >
-            <div className="flex items-center justify-between gap-1 px-2 py-1.5 border-b">
-              {viewMode === "phase_scroll" ? (
-                <div className="flex items-center justify-center gap-1 flex-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={handlePrevPhase}
-                    className="h-5 w-5 flex-shrink-0"
-                    data-testid="button-prev-phase"
-                  >
-                    <ChevronLeft className="h-3 w-3" />
-                  </Button>
-                  <span className="text-[10px] text-muted-foreground font-medium min-w-[70px] text-center">
-                    {selectedPhase.label}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={handleNextPhase}
-                    className="h-5 w-5 flex-shrink-0"
-                    data-testid="button-next-phase"
-                  >
-                    <ChevronRight className="h-3 w-3" />
-                  </Button>
-                </div>
-              ) : (
-                <span className="text-[10px] text-muted-foreground font-medium flex-1 text-center">
-                  All Phases
-                </span>
-              )}
+            <div className="flex items-center justify-center gap-1 px-2 py-1.5 border-b">
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={handleToggleViewMode}
+                onClick={handlePrevPhase}
                 className="h-5 w-5 flex-shrink-0"
-                title={viewMode === "phase_scroll" ? "Show all phases" : "Scroll by phase"}
-                data-testid="button-toggle-view-mode"
+                data-testid="button-prev-phase"
               >
-                {viewMode === "phase_scroll" ? (
-                  <List className="h-3 w-3" />
-                ) : (
-                  <Columns className="h-3 w-3" />
-                )}
+                <ChevronLeft className="h-3 w-3" />
+              </Button>
+              <span className="text-[10px] text-muted-foreground font-medium min-w-[70px] text-center">
+                {selectedPhase.label}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleNextPhase}
+                className="h-5 w-5 flex-shrink-0"
+                data-testid="button-next-phase"
+              >
+                <ChevronRight className="h-3 w-3" />
               </Button>
             </div>
 
@@ -416,16 +377,7 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
 
             <ScrollArea className="max-h-[300px]">
               <div className="p-1">
-                {viewMode === "phase_scroll" ? (
-                  <>
-                    {filteredProjects.length === 0 && (
-                      <div className="px-2 py-4 text-center text-xs text-muted-foreground">
-                        {searchQuery.trim() ? "No projects found" : `No ${selectedPhase.label.toLowerCase()} projects`}
-                      </div>
-                    )}
-                    {filteredProjects.map(renderProjectRow)}
-                  </>
-                ) : (
+                {selectedPhase.id === "all" ? (
                   <>
                     {searchFilteredGrouped.length === 0 && (
                       <div className="px-2 py-4 text-center text-xs text-muted-foreground">
@@ -445,6 +397,15 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
                         {group.projects.map(renderProjectRow)}
                       </div>
                     ))}
+                  </>
+                ) : (
+                  <>
+                    {filteredProjects.length === 0 && (
+                      <div className="px-2 py-4 text-center text-xs text-muted-foreground">
+                        {searchQuery.trim() ? "No projects found" : `No ${selectedPhase.label.toLowerCase()} projects`}
+                      </div>
+                    )}
+                    {filteredProjects.map(renderProjectRow)}
                   </>
                 )}
               </div>
