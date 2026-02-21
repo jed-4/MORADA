@@ -41,10 +41,10 @@ interface FavoriteProject {
 
 const phases: { id: ProjectPhase; label: string }[] = [
   { id: "all", label: "All" },
-  { id: "lead", label: "Lead" },
-  { id: "pre_construction", label: "Pre-Con" },
-  { id: "construction", label: "Construction" },
   { id: "post_construction", label: "Post-Con" },
+  { id: "construction", label: "Construction" },
+  { id: "pre_construction", label: "Pre-Con" },
+  { id: "lead", label: "Lead" },
 ];
 
 export default function Header() {
@@ -309,7 +309,7 @@ export default function Header() {
                 <ChevronDown className="h-3 w-3" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-48">
+            <DropdownMenuContent align="end" className="w-48">
               <DropdownMenuLabel className="text-xs">Business</DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => navigate('/business')} className="text-xs">
@@ -379,7 +379,7 @@ export default function Header() {
               <Kanban className="h-3.5 w-3.5" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56 p-0">
+          <DropdownMenuContent align="start" className="w-56 p-0">
             {/* Phase selector row with search toggle */}
             <div className="flex items-center px-2 py-1.5 border-b">
               <div className="flex-1 flex items-center justify-center gap-1">
@@ -449,11 +449,11 @@ export default function Header() {
                     ) : (
                       searchFilteredGrouped.map((group) => (
                         <div key={group.phase.id}>
-                          <div className="px-2 pt-2 pb-1">
-                            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                          <div className="px-2 pt-1.5 pb-0.5">
+                            <span className="text-[9px] font-medium text-muted-foreground uppercase tracking-wider">
                               {group.phase.label}
                             </span>
-                            <span className="text-[10px] text-muted-foreground ml-1">
+                            <span className="text-[9px] text-muted-foreground ml-1">
                               ({group.projects.length})
                             </span>
                           </div>

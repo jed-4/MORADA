@@ -37,10 +37,10 @@ interface FavoriteProject {
 
 const phases: { id: ProjectPhase; label: string }[] = [
   { id: "all", label: "All" },
-  { id: "lead", label: "Lead" },
-  { id: "pre_construction", label: "Pre-Con" },
-  { id: "construction", label: "Construction" },
   { id: "post_construction", label: "Post-Con" },
+  { id: "construction", label: "Construction" },
+  { id: "pre_construction", label: "Pre-Con" },
+  { id: "lead", label: "Lead" },
 ];
 
 interface ProjectSwitcherProps {
@@ -389,11 +389,11 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
                     )}
                     {searchFilteredGrouped.map((group) => (
                       <div key={group.phase.id}>
-                        <div className="px-2 pt-2 pb-1">
-                          <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                        <div className="px-2 pt-1.5 pb-0.5">
+                          <span className="text-[9px] font-medium text-muted-foreground uppercase tracking-wider">
                             {group.phase.label}
                           </span>
-                          <span className="text-[10px] text-muted-foreground ml-1">
+                          <span className="text-[9px] text-muted-foreground ml-1">
                             ({group.projects.length})
                           </span>
                         </div>
