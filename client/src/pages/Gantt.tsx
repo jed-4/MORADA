@@ -2827,7 +2827,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                   
                   const targetY = targetRowIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
                   const targetChildItems = childItemsByParent[item.id] || [];
-                  const targetEffective = item.parentId === null && targetChildItems.length > 0 
+                  const targetEffective = item.parentItemId === null && targetChildItems.length > 0 
                     ? getEffectiveDates(item) 
                     : null;
                   let targetStart = targetEffective 
@@ -2851,7 +2851,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                     const predY = predRowIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
                     
                     const predChildItems = childItemsByParent[predItem.id] || [];
-                    const predEffective = predItem.parentId === null && predChildItems.length > 0
+                    const predEffective = predItem.parentItemId === null && predChildItems.length > 0
                       ? getEffectiveDates(predItem)
                       : null;
                     let predStart = predEffective
@@ -3049,7 +3049,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                   
                   const sourceY = sourceRowIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
                   const sourceChildItems = childItemsByParent[sourceItem.id] || [];
-                  const sourceEffective = sourceItem.parentId === null && sourceChildItems.length > 0
+                  const sourceEffective = sourceItem.parentItemId === null && sourceChildItems.length > 0
                     ? getEffectiveDates(sourceItem)
                     : null;
                   const sourceStart = sourceEffective

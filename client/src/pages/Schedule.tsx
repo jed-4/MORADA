@@ -65,6 +65,8 @@ import {
   Settings,
   ChevronDown,
   ChevronUp,
+  ChevronsDownUp,
+  ChevronsUpDown,
   Trash2,
   Search,
   ChevronLeft,
@@ -112,6 +114,8 @@ export default function Schedule() {
   const [showFilters, setShowFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [newItemDependencies, setNewItemDependencies] = useState<any[]>([]);
+  const [allCollapsed, setAllCollapsed] = useState(false);
   const [descriptionExpanded, setDescriptionExpanded] = useState(true);
   const [notesExpanded, setNotesExpanded] = useState(true);
   const [showSaveTemplateDialog, setShowSaveTemplateDialog] = useState(false);
@@ -901,6 +905,7 @@ export default function Schedule() {
     });
     setTaskLinkOffsetsLocal([]);
     setDurationInput("1");
+    setNewItemDependencies([]);
     setDescriptionExpanded(false);
     setNotesExpanded(false);
   };
@@ -925,6 +930,16 @@ export default function Schedule() {
       return;
     }
 
+    const dur = parseInt(durationInput, 10);
+    if (!dur || dur <= 0) {
+      toast({
+        title: "Validation Error",
+        description: "Duration must be at least 1 day",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const data: any = {
       scheduleId: schedule.id,
       ...formData,
@@ -937,8 +952,11 @@ export default function Schedule() {
     if (editingItem && editingItem.id) {
       updateItemMutation.mutate(data);
     } else {
-      if (editingItem?.dependencies && (editingItem.dependencies as any[]).length > 0) {
-        data.dependencies = (editingItem.dependencies as any[]).map((d: any) => ({
+      const deps = editingItem?.dependencies 
+        ? (editingItem.dependencies as any[]) 
+        : newItemDependencies;
+      if (deps && deps.length > 0) {
+        data.dependencies = deps.map((d: any) => ({
           id: d.id,
           type: d.type || 'FS',
           lag: d.lag ?? 0,
@@ -1357,7 +1375,18 @@ export default function Schedule() {
             {/* Separator */}
             <div className="w-px h-4 bg-border" />
 
-            {/* Search bar - only show for List/Calendar views */}
+            {/* Collapse/Expand all + Search bar - only show for List/Calendar views */}
+            {activeView !== 'gantt' && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={() => setAllCollapsed(prev => !prev)}
+                title={allCollapsed ? "Expand all" : "Collapse all"}
+              >
+                {allCollapsed ? <ChevronsUpDown className="h-3.5 w-3.5" /> : <ChevronsDownUp className="h-3.5 w-3.5" />}
+              </Button>
+            )}
             {activeView !== 'gantt' && (
               <div className="relative w-40">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
@@ -1735,6 +1764,7 @@ export default function Schedule() {
                       visibleColumns={visibleColumns}
                       selectedItems={selectedItems}
                       onSelectionChange={setSelectedItems}
+                      allCollapsed={allCollapsed}
                       onNestItem={(itemId, parentId) => {
                         nestItemMutation.mutate({ itemId, parentId });
                       }}
@@ -2140,7 +2170,23 @@ export default function Schedule() {
             </div>
 
             {/* Dependencies Section */}
-            {editingItem && (
+            {(() => {
+              const isEditingExisting = !!(editingItem && editingItem.id);
+              const isNewViaInsert = !!(editingItem && !editingItem.id);
+              const activeDeps: any[] = isEditingExisting
+                ? ((editingItem!.dependencies as any[]) || [])
+                : isNewViaInsert
+                  ? ((editingItem!.dependencies as any[]) || [])
+                  : newItemDependencies;
+              const setActiveDeps = (deps: any[]) => {
+                if (isEditingExisting || isNewViaInsert) {
+                  setEditingItem({ ...editingItem!, dependencies: deps } as any);
+                } else {
+                  setNewItemDependencies(deps);
+                }
+              };
+              const editingId = editingItem?.id || null;
+              return (
               <div className="space-y-2 pt-4 border-t">
                 <div className="flex items-center justify-between">
                   <Label>Dependencies (Predecessors)</Label>
@@ -2159,24 +2205,19 @@ export default function Schedule() {
                     <DropdownMenuContent align="end" className="w-56">
                       {scheduleItems
                         .filter(item => 
-                          item.id !== editingItem.id && 
-                          !(editingItem.dependencies as any[] || []).some((d: any) => d.id === item.id)
+                          item.id !== editingId && 
+                          !activeDeps.some((d: any) => d.id === item.id)
                         )
                         .map(item => (
                           <DropdownMenuItem
                             key={item.id}
                             onClick={async () => {
-                              const isNewItem = !editingItem.id;
-                              if (isNewItem) {
-                                const currentDeps = (editingItem.dependencies as any[]) || [];
-                                setEditingItem({
-                                  ...editingItem,
-                                  dependencies: [...currentDeps, { id: item.id, type: 'FS', lag: 0, _name: item.name }],
-                                } as any);
+                              if (!isEditingExisting) {
+                                setActiveDeps([...activeDeps, { id: item.id, type: 'FS', lag: 0, _name: item.name }]);
                                 toast({ title: "Dependency added" });
                               } else {
                                 try {
-                                  const updatedItem = await apiRequest(`/api/schedule-items/${editingItem.id}/dependencies`, "POST", {
+                                  const updatedItem = await apiRequest(`/api/schedule-items/${editingId}/dependencies`, "POST", {
                                     predecessorId: item.id,
                                     type: "FS",
                                   });
@@ -2198,8 +2239,8 @@ export default function Schedule() {
                           </DropdownMenuItem>
                         ))}
                       {scheduleItems.filter(item => 
-                        item.id !== editingItem.id && 
-                        !(editingItem.dependencies as any[] || []).some((d: any) => d.id === item.id)
+                        item.id !== editingId && 
+                        !activeDeps.some((d: any) => d.id === item.id)
                       ).length === 0 && (
                         <div className="px-2 py-1.5 text-sm text-muted-foreground">
                           No available items
@@ -2209,10 +2250,9 @@ export default function Schedule() {
                   </DropdownMenu>
                 </div>
                 <div className="space-y-2">
-                  {(editingItem.dependencies as any[] || []).length > 0 ? (
-                    (editingItem.dependencies as any[]).map((dep: any) => {
+                  {activeDeps.length > 0 ? (
+                    activeDeps.map((dep: any) => {
                       const predItem = scheduleItems.find(i => i.id === dep.id) || (dep._name ? { id: dep.id, name: dep._name } as any : null);
-                      const isNewItem = !editingItem.id;
                       return predItem ? (
                         <div
                           key={dep.id}
@@ -2235,17 +2275,13 @@ export default function Schedule() {
                               size="sm"
                               className="h-8 w-8 p-0"
                               onClick={async () => {
-                                if (isNewItem) {
-                                  const currentDeps = (editingItem.dependencies as any[]) || [];
-                                  setEditingItem({
-                                    ...editingItem,
-                                    dependencies: currentDeps.filter((d: any) => d.id !== dep.id),
-                                  } as any);
+                                if (!isEditingExisting) {
+                                  setActiveDeps(activeDeps.filter((d: any) => d.id !== dep.id));
                                   toast({ title: "Dependency removed" });
                                 } else {
                                   try {
                                     const updatedItem = await apiRequest(
-                                      `/api/schedule-items/${editingItem.id}/dependencies/${dep.id}`,
+                                      `/api/schedule-items/${editingId}/dependencies/${dep.id}`,
                                       "DELETE"
                                     );
                                     setEditingItem(updatedItem);
@@ -2272,33 +2308,25 @@ export default function Schedule() {
                               value={dep.lag ?? ""}
                               onChange={(e) => {
                                 const val = e.target.value;
-                                const currentDeps = (editingItem.dependencies as any[]) || [];
-                                const updatedDeps = currentDeps.map((d: any) =>
+                                const updatedDeps = activeDeps.map((d: any) =>
                                   d.id === dep.id ? { ...d, lag: val === "" ? "" : parseInt(val) } : d
                                 );
-                                setEditingItem({
-                                  ...editingItem,
-                                  dependencies: updatedDeps,
-                                } as any);
+                                setActiveDeps(updatedDeps);
                               }}
                               onBlur={async (e) => {
                                 const newLag = parseInt(e.target.value) || 0;
-                                const currentDeps = (editingItem.dependencies as any[]) || [];
-                                const updatedDeps = currentDeps.map((d: any) =>
+                                const updatedDeps = activeDeps.map((d: any) =>
                                   d.id === dep.id ? { ...d, lag: newLag } : d
                                 );
-                                setEditingItem({
-                                  ...editingItem,
-                                  dependencies: updatedDeps,
-                                } as any);
-                                if (isNewItem) {
+                                setActiveDeps(updatedDeps);
+                                if (!isEditingExisting) {
                                   if (predItem.endDate) {
                                     const predEnd = new Date(predItem.endDate);
                                     const newStart = addWorkingDays(predEnd, newLag + 1);
                                     const startStr = newStart.toISOString().split("T")[0];
                                     let endStr = startStr;
-                                    if (editingItem.startDate && editingItem.endDate) {
-                                      const workDuration = countWorkingDays(new Date(editingItem.startDate as string), new Date(editingItem.endDate as string));
+                                    if (formData.startDate && formData.endDate) {
+                                      const workDuration = countWorkingDays(new Date(formData.startDate), new Date(formData.endDate));
                                       const newEnd = addWorkingDays(newStart, Math.max(0, workDuration - 1));
                                       endStr = newEnd.toISOString().split("T")[0];
                                     }
@@ -2307,7 +2335,7 @@ export default function Schedule() {
                                 } else {
                                   try {
                                     const updatedItem = await apiRequest(
-                                      `/api/schedule-items/${editingItem.id}/dependencies/${dep.id}`,
+                                      `/api/schedule-items/${editingId}/dependencies/${dep.id}`,
                                       "PATCH",
                                       { lag: newLag }
                                     );
@@ -2316,12 +2344,12 @@ export default function Schedule() {
                                       const newStart = addWorkingDays(predEnd, newLag + 1);
                                       const startStr = newStart.toISOString().split("T")[0];
                                       let endStr = startStr;
-                                      if (editingItem.startDate && editingItem.endDate) {
-                                        const workDuration = countWorkingDays(new Date(editingItem.startDate), new Date(editingItem.endDate));
+                                      if (editingItem!.startDate && editingItem!.endDate) {
+                                        const workDuration = countWorkingDays(new Date(editingItem!.startDate), new Date(editingItem!.endDate));
                                         const newEnd = addWorkingDays(newStart, Math.max(0, workDuration - 1));
                                         endStr = newEnd.toISOString().split("T")[0];
                                       }
-                                      const dateUpdatedItem = await apiRequest(`/api/schedule-items/${editingItem.id}`, "PATCH", {
+                                      const dateUpdatedItem = await apiRequest(`/api/schedule-items/${editingId}`, "PATCH", {
                                         startDate: startStr,
                                         endDate: endStr,
                                       });
@@ -2359,7 +2387,7 @@ export default function Schedule() {
                   Dependencies control when this item can start. It will wait for predecessor items to finish (Finish-to-Start).
                 </p>
 
-                {editingItem.id && (() => {
+                {editingItem?.id && (() => {
                   const successors = scheduleItems.filter(item =>
                     item.id !== editingItem.id &&
                     (item.dependencies as any[] || []).some((d: any) => d.id === editingItem.id)
@@ -2394,7 +2422,8 @@ export default function Schedule() {
                   );
                 })()}
               </div>
-            )}
+              );
+            })()}
 
             {editingItem && (
               <div className="space-y-2 pt-4 border-t">

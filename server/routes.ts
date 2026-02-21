@@ -15457,11 +15457,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "This would create a circular dependency" });
       }
 
-      // Add dependency with lag
-      const updatedDependencies = [...dependencies, { id: predecessorId, type, lag: parseInt(lag) || 0 }];
-      const updatedItem = await storage.updateScheduleItem(req.params.id, {
-        dependencies: updatedDependencies
-      });
+      const parsedLag = parseInt(lag) || 0;
+      const updatedDependencies = [...dependencies, { id: predecessorId, type, lag: parsedLag }];
+      
+      const updateData: any = { dependencies: updatedDependencies };
+      
+      if (type === 'FS' && predecessor.endDate && parsedLag > 0) {
+        const addWD = (date: Date, days: number): Date => {
+          const result = new Date(date);
+          let added = 0;
+          while (added < days) {
+            result.setDate(result.getDate() + 1);
+            const dow = result.getDay();
+            if (dow !== 0 && dow !== 6) added++;
+          }
+          return result;
+        };
+        const countWD = (start: Date, end: Date): number => {
+          let count = 0;
+          const cur = new Date(start);
+          while (cur <= end) {
+            const dow = cur.getDay();
+            if (dow !== 0 && dow !== 6) count++;
+            cur.setDate(cur.getDate() + 1);
+          }
+          return count;
+        };
+        const predEnd = new Date(predecessor.endDate);
+        const newStart = addWD(predEnd, parsedLag + 1);
+        if (item.startDate && item.endDate) {
+          const workDuration = countWD(new Date(item.startDate), new Date(item.endDate));
+          const newEnd = addWD(newStart, Math.max(0, workDuration - 1));
+          updateData.startDate = newStart.toISOString().split('T')[0];
+          updateData.endDate = newEnd.toISOString().split('T')[0];
+        } else {
+          updateData.startDate = newStart.toISOString().split('T')[0];
+        }
+      }
+      
+      const updatedItem = await storage.updateScheduleItem(req.params.id, updateData);
 
       res.json(updatedItem);
     } catch (error: any) {
@@ -15494,17 +15528,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Invalid dependency type. Must be FS, SS, FF, or SF" });
       }
 
-      // Update the dependency
       const updatedDep = { ...dependencies[depIndex] };
       if (type !== undefined) updatedDep.type = type;
-      if (lag !== undefined) updatedDep.lag = parseInt(lag) || 0;
+      const parsedLag = lag !== undefined ? (parseInt(lag) || 0) : updatedDep.lag;
+      if (lag !== undefined) updatedDep.lag = parsedLag;
       
       const updatedDependencies = [...dependencies];
       updatedDependencies[depIndex] = updatedDep;
 
-      const updatedItem = await storage.updateScheduleItem(req.params.id, {
-        dependencies: updatedDependencies
-      });
+      const updateData: any = { dependencies: updatedDependencies };
+      
+      const depType = updatedDep.type || 'FS';
+      if (depType === 'FS' && lag !== undefined) {
+        const predecessor = await storage.getScheduleItem(req.params.predecessorId);
+        if (predecessor?.endDate) {
+          const addWD = (date: Date, days: number): Date => {
+            const result = new Date(date);
+            let added = 0;
+            while (added < days) {
+              result.setDate(result.getDate() + 1);
+              const dow = result.getDay();
+              if (dow !== 0 && dow !== 6) added++;
+            }
+            return result;
+          };
+          const countWD = (start: Date, end: Date): number => {
+            let count = 0;
+            const cur = new Date(start);
+            while (cur <= end) {
+              const dow = cur.getDay();
+              if (dow !== 0 && dow !== 6) count++;
+              cur.setDate(cur.getDate() + 1);
+            }
+            return count;
+          };
+          const predEnd = new Date(predecessor.endDate);
+          const newStart = addWD(predEnd, parsedLag + 1);
+          if (item.startDate && item.endDate) {
+            const workDuration = countWD(new Date(item.startDate), new Date(item.endDate));
+            const newEnd = addWD(newStart, Math.max(0, workDuration - 1));
+            updateData.startDate = newStart.toISOString().split('T')[0];
+            updateData.endDate = newEnd.toISOString().split('T')[0];
+          } else {
+            updateData.startDate = newStart.toISOString().split('T')[0];
+          }
+        }
+      }
+
+      const updatedItem = await storage.updateScheduleItem(req.params.id, updateData);
 
       res.json(updatedItem);
     } catch (error: any) {

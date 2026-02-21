@@ -36,6 +36,7 @@ export interface CasvaScheduleListProps {
   onReorderItem?: (itemId: string, afterItemId: string | null, newParentId: string | null) => void;
   onDuplicateItem?: (item: ScheduleItem) => void;
   onDeleteItem?: (itemId: string) => void;
+  allCollapsed?: boolean;
 }
 
 type DropTarget = {
@@ -61,9 +62,19 @@ export function CasvaScheduleList({
   onNestItem,
   onReorderItem,
   onDuplicateItem,
-  onDeleteItem
+  onDeleteItem,
+  allCollapsed
 }: CasvaScheduleListProps) {
   const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (allCollapsed) {
+      const parentIds = items.filter(item => !item.parentItemId && items.some(sub => sub.parentItemId === item.id)).map(item => item.id);
+      setCollapsedItems(new Set(parentIds));
+    } else {
+      setCollapsedItems(new Set());
+    }
+  }, [allCollapsed, items]);
   const [ripples, setRipples] = useState<{id: string, x: number, y: number}[]>([]);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [touchStartY, setTouchStartY] = useState<number | null>(null);
