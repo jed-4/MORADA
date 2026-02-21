@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown, User, Search, Filter, Columns, MoreVertical, FileText, Edit, Eye, Copy, Check, Palette, Trash2, Settings, Download, Wifi, WifiOff, GanttChart, List as ListIcon, GripVertical, Link, Unlink, X, RotateCcw } from "lucide-react";
+import { Plus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown, User, Search, Filter, Columns, MoreVertical, FileText, Edit, Eye, Copy, Check, Palette, Trash2, Settings, Download, Wifi, WifiOff, GanttChart, List as ListIcon, GripVertical, Link, Unlink, X, RotateCcw, ArrowUpLeft } from "lucide-react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent, DragOverEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -1831,11 +1831,12 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
       type: 'task',
       priority: 'medium',
       progressPercent: 0,
-      dependencies: [{ id: item.id, type: 'FS', lag: 1, _name: item.name }],
+      sortOrder: (item.sortOrder || 0) + 1,
+      dependencies: [{ id: item.id, type: 'FS', lag: 0, _name: item.name }],
     } as Partial<ScheduleItem>;
     
     if (setPendingAutoLink) {
-      setPendingAutoLink({ predecessorId: item.id, insertAfterItemId: item.id, lag: 1 });
+      setPendingAutoLink({ predecessorId: item.id, insertAfterItemId: item.id, lag: 0 });
     }
     
     setEditingItemContext(newItem as any);
@@ -3373,6 +3374,26 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                 >
                   <Plus className="w-4 h-4 mr-2" />
                   Add Child Item
+                </button>
+              )}
+              
+              {contextMenu.item.parentItemId && (
+                <button
+                  className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left"
+                  onClick={async () => {
+                    try {
+                      await apiRequest(`/api/schedule-items/${contextMenu.item.id}`, "PATCH", { parentId: null });
+                      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+                      toast({ title: "Item removed from parent" });
+                    } catch (error) {
+                      toast({ title: "Failed to remove parent", variant: "destructive" });
+                    }
+                    setContextMenu(null);
+                  }}
+                  data-testid="context-menu-remove-parent"
+                >
+                  <ArrowUpLeft className="w-4 h-4 mr-2" />
+                  Remove Parent
                 </button>
               )}
               

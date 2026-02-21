@@ -3,7 +3,7 @@ import { CasvaScheduleRow } from "./CasvaScheduleRow";
 import { Table, TableHeader, TableRow, TableHead, TableBody } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useState, Fragment, useEffect } from "react";
+import { useState, Fragment, useEffect, useRef, useCallback } from "react";
 
 interface StatusOption {
   id: string;
@@ -33,9 +33,19 @@ export interface CasvaScheduleListProps {
   selectedItems?: Set<string>;
   onSelectionChange?: (selectedIds: Set<string>) => void;
   onNestItem?: (itemId: string, newParentId: string | null) => void;
+  onReorderItem?: (itemId: string, afterItemId: string | null, newParentId: string | null) => void;
   onDuplicateItem?: (item: ScheduleItem) => void;
   onDeleteItem?: (itemId: string) => void;
 }
+
+type DropTarget = {
+  type: 'between';
+  afterItemId: string | null;
+  beforeItemId: string | null;
+} | {
+  type: 'nest';
+  targetId: string;
+};
 
 export function CasvaScheduleList({ 
   items, 
@@ -49,6 +59,7 @@ export function CasvaScheduleList({
   selectedItems = new Set(),
   onSelectionChange,
   onNestItem,
+  onReorderItem,
   onDuplicateItem,
   onDeleteItem
 }: CasvaScheduleListProps) {
@@ -56,7 +67,11 @@ export function CasvaScheduleList({
   const [ripples, setRipples] = useState<{id: string, x: number, y: number}[]>([]);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [touchStartY, setTouchStartY] = useState<number | null>(null);
-  const [dragOverItem, setDragOverItem] = useState<string | null>(null);
+
+  const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hoverItemRef = useRef<string | null>(null);
 
   const toggleSelection = (itemId: string, e?: React.MouseEvent) => {
     if (!onSelectionChange) return;
@@ -79,53 +94,163 @@ export function CasvaScheduleList({
     }
   };
 
-  // Check if targetId is a descendant of sourceId (would create a cycle)
   const isDescendant = (sourceId: string, targetId: string): boolean => {
     const target = items.find(i => i.id === targetId);
     if (!target) return false;
-    if (target.parentId === sourceId) return true;
-    if (target.parentId) {
-      return isDescendant(sourceId, target.parentId);
+    if (target.parentItemId === sourceId) return true;
+    if (target.parentItemId) {
+      return isDescendant(sourceId, target.parentItemId);
     }
     return false;
   };
 
-  const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
+  const flatRows = (() => {
+    const parentItems = items.filter(item => !item.parentItemId);
+    const subtasksByParent = items.reduce((acc, item) => {
+      if (item.parentItemId) {
+        if (!acc[item.parentItemId]) acc[item.parentItemId] = [];
+        acc[item.parentItemId].push(item);
+      }
+      return acc;
+    }, {} as Record<string, ScheduleItem[]>);
+
+    const rows: { item: ScheduleItem; isSubtask: boolean; parentId: string | null }[] = [];
+    for (const parent of parentItems) {
+      rows.push({ item: parent, isSubtask: false, parentId: null });
+      const subs = subtasksByParent[parent.id] || [];
+      if (!collapsedItems.has(parent.id)) {
+        for (const sub of subs) {
+          rows.push({ item: sub, isSubtask: true, parentId: parent.id });
+        }
+      }
+    }
+    return rows;
+  })();
 
   const handleDragStart = (e: React.DragEvent, itemId: string) => {
     e.dataTransfer.setData("scheduleItemId", itemId);
     e.dataTransfer.effectAllowed = "move";
     setDraggingItemId(itemId);
+    setDropTarget(null);
   };
+
+  const droppedRef = useRef(false);
 
   const handleDragEnd = () => {
-    setDraggingItemId(null);
-    setDragOverItem(null);
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    hoverItemRef.current = null;
+    
+    if (!droppedRef.current) {
+      setDraggingItemId(null);
+      setDropTarget(null);
+    }
+    droppedRef.current = false;
   };
 
-  const handleDragOver = (e: React.DragEvent, targetId: string) => {
+  const handleDragOver = useCallback((e: React.DragEvent, itemId: string, rowIndex: number) => {
     e.preventDefault();
-    // Prevent dropping on self or descendants
-    if (draggingItemId && (draggingItemId === targetId || isDescendant(draggingItemId, targetId))) {
+    if (!draggingItemId || draggingItemId === itemId || isDescendant(draggingItemId, itemId)) {
       e.dataTransfer.dropEffect = "none";
       return;
     }
     e.dataTransfer.dropEffect = "move";
-    setDragOverItem(targetId);
-  };
 
-  const handleDragLeave = () => {
-    setDragOverItem(null);
-  };
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const height = rect.height;
+    const inTopZone = y < height * 0.3;
+    const inBottomZone = y > height * 0.7;
 
-  const handleDrop = (e: React.DragEvent, targetId: string) => {
+    if (inTopZone) {
+      if (hoverTimerRef.current) {
+        clearTimeout(hoverTimerRef.current);
+        hoverTimerRef.current = null;
+      }
+      hoverItemRef.current = null;
+      const prevRow = rowIndex > 0 ? flatRows[rowIndex - 1] : null;
+      setDropTarget({
+        type: 'between',
+        afterItemId: prevRow ? prevRow.item.id : null,
+        beforeItemId: itemId,
+      });
+    } else if (inBottomZone) {
+      if (hoverTimerRef.current) {
+        clearTimeout(hoverTimerRef.current);
+        hoverTimerRef.current = null;
+      }
+      hoverItemRef.current = null;
+      setDropTarget({
+        type: 'between',
+        afterItemId: itemId,
+        beforeItemId: rowIndex < flatRows.length - 1 ? flatRows[rowIndex + 1].item.id : null,
+      });
+    } else {
+      if (hoverItemRef.current !== itemId) {
+        if (hoverTimerRef.current) {
+          clearTimeout(hoverTimerRef.current);
+        }
+        hoverItemRef.current = itemId;
+        setDropTarget({
+          type: 'between',
+          afterItemId: itemId,
+          beforeItemId: rowIndex < flatRows.length - 1 ? flatRows[rowIndex + 1].item.id : null,
+        });
+        hoverTimerRef.current = setTimeout(() => {
+          setDropTarget({ type: 'nest', targetId: itemId });
+          hoverTimerRef.current = null;
+        }, 1000);
+      }
+    }
+  }, [draggingItemId, flatRows]);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    const relatedTarget = e.relatedTarget as HTMLElement | null;
+    if (relatedTarget && (e.currentTarget as HTMLElement).contains(relatedTarget)) {
+      return;
+    }
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    hoverItemRef.current = null;
+    setDropTarget(null);
+  }, []);
+
+  const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
-    setDragOverItem(null);
+    droppedRef.current = true;
+    
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    hoverItemRef.current = null;
+    
+    const currentDrag = draggingItemId;
+    const currentTarget = dropTarget;
+    
     setDraggingItemId(null);
-    const sourceId = e.dataTransfer.getData("scheduleItemId");
-    // Don't allow dropping on self or descendants
-    if (sourceId && sourceId !== targetId && !isDescendant(sourceId, targetId) && onNestItem) {
-      onNestItem(sourceId, targetId);
+    setDropTarget(null);
+    
+    if (currentDrag && currentTarget) {
+      if (currentTarget.type === 'nest') {
+        if (onNestItem && !isDescendant(currentDrag, currentTarget.targetId)) {
+          onNestItem(currentDrag, currentTarget.targetId);
+        }
+      } else if (currentTarget.type === 'between') {
+        const draggedItem = items.find(i => i.id === currentDrag);
+        const afterItem = currentTarget.afterItemId ? items.find(i => i.id === currentTarget.afterItemId) : null;
+        const targetParentId = afterItem?.parentItemId || null;
+        
+        if (onReorderItem) {
+          onReorderItem(currentDrag, currentTarget.afterItemId, targetParentId);
+        } else if (onNestItem && draggedItem?.parentItemId !== targetParentId) {
+          onNestItem(currentDrag, targetParentId);
+        }
+      }
     }
   };
 
@@ -175,7 +300,6 @@ export function CasvaScheduleList({
     const deltaX = touch.clientX - touchStartX;
     const deltaY = touch.clientY - touchStartY;
     
-    // Only recognize horizontal swipes
     if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
       e.preventDefault();
     }
@@ -188,7 +312,6 @@ export function CasvaScheduleList({
     const deltaX = touch.clientX - touchStartX;
     const deltaY = touch.clientY - touchStartY;
     
-    // Swipe left to edit (> 100px)
     if (Math.abs(deltaX) > Math.abs(deltaY) && deltaX < -100) {
       onEditItem(item);
     }
@@ -197,18 +320,30 @@ export function CasvaScheduleList({
     setTouchStartY(null);
   };
 
-  // Group items by parent (if parentId exists)
-  const parentItems = items.filter(item => !item.parentId);
+  const parentItemsList = items.filter(item => !item.parentItemId);
   const subtasksByParent = items.reduce((acc, item) => {
-    if (item.parentId) {
-      if (!acc[item.parentId]) acc[item.parentId] = [];
-      acc[item.parentId].push(item);
+    if (item.parentItemId) {
+      if (!acc[item.parentItemId]) acc[item.parentItemId] = [];
+      acc[item.parentItemId].push(item);
     }
     return acc;
   }, {} as Record<string, ScheduleItem[]>);
 
   const isAllSelected = items.length > 0 && selectedItems.size === items.length;
   const isSomeSelected = selectedItems.size > 0 && selectedItems.size < items.length;
+
+  const getInsertionLinePosition = (itemId: string): 'top' | 'bottom' | null => {
+    if (!dropTarget || dropTarget.type !== 'between' || !draggingItemId) return null;
+    if (dropTarget.beforeItemId === itemId) return 'top';
+    if (dropTarget.afterItemId === itemId && !dropTarget.beforeItemId) return 'bottom';
+    return null;
+  };
+
+  const isNestTarget = (itemId: string): boolean => {
+    return !!dropTarget && dropTarget.type === 'nest' && dropTarget.targetId === itemId;
+  };
+
+  let rowIndex = 0;
 
   return (
     <div className="border rounded-lg bg-card overflow-hidden">
@@ -240,20 +375,22 @@ export function CasvaScheduleList({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {parentItems.map((item) => {
+            {parentItemsList.map((item) => {
               const subtasks = subtasksByParent[item.id] || [];
               const isCollapsed = collapsedItems.has(item.id);
               const hasSubtasks = subtasks.length > 0;
-              const isDragTarget = dragOverItem === item.id;
+              const currentRowIndex = rowIndex++;
+              const insertLine = getInsertionLinePosition(item.id);
+              const isNest = isNestTarget(item.id);
+              const isDragging = draggingItemId === item.id;
 
               return (
                 <Fragment key={item.id}>
-                  {/* Parent Row */}
                   <TableRow 
                     key={item.id} 
                     className={`group h-8 transition-colors border-b cursor-pointer relative overflow-visible hover-elevate ${
                       selectedItems.has(item.id) ? 'bg-accent/30' : ''
-                    } ${isDragTarget ? 'ring-2 ring-primary ring-inset bg-primary/10' : ''}`}
+                    } ${isNest ? 'ring-2 ring-primary ring-inset bg-primary/10' : ''} ${isDragging ? 'opacity-40' : ''}`}
                     data-testid={`schedule-row-${item.id}`}
                     onClick={(e) => handleRowClick(e, item.id)}
                     onTouchStart={(e) => handleTouchStart(e, item)}
@@ -262,10 +399,15 @@ export function CasvaScheduleList({
                     draggable={!!onNestItem}
                     onDragStart={(e) => handleDragStart(e, item.id)}
                     onDragEnd={handleDragEnd}
-                    onDragOver={(e) => handleDragOver(e, item.id)}
+                    onDragOver={(e) => handleDragOver(e, item.id, currentRowIndex)}
                     onDragLeave={handleDragLeave}
-                    onDrop={(e) => handleDrop(e, item.id)}
+                    onDrop={handleDrop}
                   >
+                    {insertLine === 'top' && (
+                      <td colSpan={99} className="absolute left-0 right-0 top-0 h-0 z-20" style={{ padding: 0, border: 'none' }}>
+                        <div className="h-0.5 bg-primary rounded-full" />
+                      </td>
+                    )}
                     {onSelectionChange && (
                       <td className="w-8 h-8 py-0 pl-2">
                         <Checkbox
@@ -294,7 +436,6 @@ export function CasvaScheduleList({
                       hasSubtasks={hasSubtasks}
                     />
                     
-                    {/* Ripple effect */}
                     {ripples.filter(r => r.id.startsWith(item.id)).map((ripple) => (
                       <span
                         key={ripple.id}
@@ -308,64 +449,87 @@ export function CasvaScheduleList({
                         }}
                       />
                     ))}
+                    {insertLine === 'bottom' && (
+                      <td colSpan={99} className="absolute left-0 right-0 bottom-0 h-0 z-20" style={{ padding: 0, border: 'none' }}>
+                        <div className="h-0.5 bg-primary rounded-full" />
+                      </td>
+                    )}
                   </TableRow>
 
-                  {/* Subtask Rows */}
-                  {!isCollapsed && subtasks.map((subtask) => (
-                    <TableRow 
-                      key={subtask.id} 
-                      className={`group h-8 transition-colors border-b cursor-pointer relative overflow-visible bg-muted/30 hover-elevate ${
-                        selectedItems.has(subtask.id) ? 'bg-accent/30' : ''
-                      }`}
-                      data-testid={`schedule-subtask-row-${subtask.id}`}
-                      onClick={(e) => handleRowClick(e, subtask.id)}
-                      onTouchStart={(e) => handleTouchStart(e, subtask)}
-                      onTouchMove={handleTouchMove}
-                      onTouchEnd={(e) => handleTouchEnd(e, subtask)}
-                      draggable={!!onNestItem}
-                      onDragStart={(e) => handleDragStart(e, subtask.id)}
-                      onDragEnd={handleDragEnd}
-                    >
-                      {onSelectionChange && (
-                        <td className="w-8 h-8 py-0 pl-2">
-                          <Checkbox
-                            checked={selectedItems.has(subtask.id)}
-                            onCheckedChange={() => toggleSelection(subtask.id)}
-                            onClick={(e) => e.stopPropagation()}
-                            className="h-3.5 w-3.5"
-                            data-testid={`checkbox-${subtask.id}`}
-                          />
-                        </td>
-                      )}
-                      <CasvaScheduleRow
-                        item={subtask}
-                        noteCount={noteCounts[subtask.id] || 0}
-                        onEdit={() => onEditItem(subtask)}
-                        onStatusChange={onStatusChange ? (status) => onStatusChange(subtask.id, status) : undefined}
-                        onDuplicate={onDuplicateItem ? () => onDuplicateItem(subtask) : undefined}
-                        onDelete={onDeleteItem ? () => onDeleteItem(subtask.id) : undefined}
-                        onCompletionToggle={onCompletionToggle ? () => onCompletionToggle(subtask.id, subtask.progressPercent || 0) : undefined}
-                        statusOptions={statusOptions}
-                        visibleColumns={visibleColumns}
-                        isSubtask={true}
-                      />
-                      
-                      {/* Ripple effect */}
-                      {ripples.filter(r => r.id.startsWith(subtask.id)).map((ripple) => (
-                        <span
-                          key={ripple.id}
-                          className="absolute rounded-full bg-primary opacity-30 animate-ripple pointer-events-none"
-                          style={{
-                            left: ripple.x,
-                            top: ripple.y,
-                            width: 0,
-                            height: 0,
-                            transform: 'translate(-50%, -50%)',
-                          }}
+                  {!isCollapsed && subtasks.map((subtask) => {
+                    const subRowIndex = rowIndex++;
+                    const subInsertLine = getInsertionLinePosition(subtask.id);
+                    const subIsNest = isNestTarget(subtask.id);
+                    const subIsDragging = draggingItemId === subtask.id;
+
+                    return (
+                      <TableRow 
+                        key={subtask.id} 
+                        className={`group h-8 transition-colors border-b cursor-pointer relative overflow-visible bg-muted/30 hover-elevate ${
+                          selectedItems.has(subtask.id) ? 'bg-accent/30' : ''
+                        } ${subIsNest ? 'ring-2 ring-primary ring-inset bg-primary/10' : ''} ${subIsDragging ? 'opacity-40' : ''}`}
+                        data-testid={`schedule-subtask-row-${subtask.id}`}
+                        onClick={(e) => handleRowClick(e, subtask.id)}
+                        onTouchStart={(e) => handleTouchStart(e, subtask)}
+                        onTouchMove={handleTouchMove}
+                        onTouchEnd={(e) => handleTouchEnd(e, subtask)}
+                        draggable={!!onNestItem}
+                        onDragStart={(e) => handleDragStart(e, subtask.id)}
+                        onDragEnd={handleDragEnd}
+                        onDragOver={(e) => handleDragOver(e, subtask.id, subRowIndex)}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                      >
+                        {subInsertLine === 'top' && (
+                          <td colSpan={99} className="absolute left-0 right-0 top-0 h-0 z-20" style={{ padding: 0, border: 'none' }}>
+                            <div className="h-0.5 bg-primary rounded-full" />
+                          </td>
+                        )}
+                        {onSelectionChange && (
+                          <td className="w-8 h-8 py-0 pl-2">
+                            <Checkbox
+                              checked={selectedItems.has(subtask.id)}
+                              onCheckedChange={() => toggleSelection(subtask.id)}
+                              onClick={(e) => e.stopPropagation()}
+                              className="h-3.5 w-3.5"
+                              data-testid={`checkbox-${subtask.id}`}
+                            />
+                          </td>
+                        )}
+                        <CasvaScheduleRow
+                          item={subtask}
+                          noteCount={noteCounts[subtask.id] || 0}
+                          onEdit={() => onEditItem(subtask)}
+                          onStatusChange={onStatusChange ? (status) => onStatusChange(subtask.id, status) : undefined}
+                          onDuplicate={onDuplicateItem ? () => onDuplicateItem(subtask) : undefined}
+                          onDelete={onDeleteItem ? () => onDeleteItem(subtask.id) : undefined}
+                          onCompletionToggle={onCompletionToggle ? () => onCompletionToggle(subtask.id, subtask.progressPercent || 0) : undefined}
+                          statusOptions={statusOptions}
+                          visibleColumns={visibleColumns}
+                          isSubtask={true}
                         />
-                      ))}
-                    </TableRow>
-                  ))}
+                        
+                        {ripples.filter(r => r.id.startsWith(subtask.id)).map((ripple) => (
+                          <span
+                            key={ripple.id}
+                            className="absolute rounded-full bg-primary opacity-30 animate-ripple pointer-events-none"
+                            style={{
+                              left: ripple.x,
+                              top: ripple.y,
+                              width: 0,
+                              height: 0,
+                              transform: 'translate(-50%, -50%)',
+                            }}
+                          />
+                        ))}
+                        {subInsertLine === 'bottom' && (
+                          <td colSpan={99} className="absolute left-0 right-0 bottom-0 h-0 z-20" style={{ padding: 0, border: 'none' }}>
+                            <div className="h-0.5 bg-primary rounded-full" />
+                          </td>
+                        )}
+                      </TableRow>
+                    );
+                  })}
                 </Fragment>
               );
             })}

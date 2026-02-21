@@ -457,10 +457,14 @@ export default function Schedule() {
               body: JSON.stringify({ predecessorId: String(newItem.id), type: 'FS' }),
             });
           }
-          queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+          await queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
           
           if (pendingAutoLink.insertAfterItemId && insertAfterItemRef.current) {
-            insertAfterItemRef.current(newItem.id, pendingAutoLink.insertAfterItemId);
+            setTimeout(() => {
+              if (insertAfterItemRef.current) {
+                insertAfterItemRef.current(newItem.id, pendingAutoLink.insertAfterItemId!);
+              }
+            }, 100);
           }
         } catch (error) {
           console.error("Failed to auto-link dependency:", error);
@@ -1272,7 +1276,7 @@ export default function Schedule() {
             )}
             <button
               className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-primary-foreground border-primary/20 hover:bg-primary/90 active-elevate-2"
-              onClick={() => setShowItemDialog(true)}
+              onClick={() => { setEditingItem(null); resetForm(); setShowItemDialog(true); }}
               disabled={schedule?.status === "locked"}
               data-testid="button-add-item"
             >
@@ -1659,7 +1663,7 @@ export default function Schedule() {
               <h3 className="text-lg font-semibold mb-2">Build Your Schedule</h3>
               <p className="text-sm text-muted-foreground mb-6">Get started by creating items, loading a template, or importing from a file.</p>
               <div className="flex items-center justify-center gap-3">
-                <Button onClick={() => setShowItemDialog(true)} disabled={schedule?.status === "locked"}>
+                <Button onClick={() => { setEditingItem(null); resetForm(); setShowItemDialog(true); }} disabled={schedule?.status === "locked"}>
                   <Plus className="w-4 h-4 mr-2" />
                   Create Item
                 </Button>
@@ -1733,6 +1737,41 @@ export default function Schedule() {
                       onSelectionChange={setSelectedItems}
                       onNestItem={(itemId, parentId) => {
                         nestItemMutation.mutate({ itemId, parentId });
+                      }}
+                      onReorderItem={async (itemId, afterItemId, newParentId) => {
+                        const movingItem = scheduleItems.find(i => i.id === itemId);
+                        if (!movingItem) return;
+                        
+                        const siblingItems = scheduleItems
+                          .filter(i => (i.parentItemId || null) === (newParentId || null))
+                          .filter(i => i.id !== itemId);
+                        
+                        let insertIdx = 0;
+                        if (afterItemId) {
+                          const afterIdx = siblingItems.findIndex(i => i.id === afterItemId);
+                          insertIdx = afterIdx >= 0 ? afterIdx + 1 : siblingItems.length;
+                        }
+                        siblingItems.splice(insertIdx, 0, movingItem);
+                        
+                        const updates = siblingItems.map((item, idx) => {
+                          const update: any = { id: item.id, sortOrder: idx };
+                          if (item.id === itemId) {
+                            update.parentItemId = newParentId;
+                          }
+                          return update;
+                        });
+                        
+                        try {
+                          await fetch("/api/schedule-items/batch-sort", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            credentials: "include",
+                            body: JSON.stringify({ updates }),
+                          });
+                          queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+                        } catch (error) {
+                          toast({ title: "Failed to reorder", variant: "destructive" });
+                        }
                       }}
                       onStatusChange={(itemId, status) => {
                         updateStatusMutationInline.mutate({ itemId, status });
@@ -1808,7 +1847,11 @@ export default function Schedule() {
       {/* Create/Edit Item Dialog */}
       <Dialog open={showItemDialog} onOpenChange={(open) => {
         setShowItemDialog(open);
-        if (!open) setPendingAutoLink(null);
+        if (!open) {
+          setPendingAutoLink(null);
+          setEditingItem(null);
+          resetForm();
+        }
       }}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
@@ -1844,9 +1887,15 @@ export default function Schedule() {
                   value={formData.startDate}
                   onChange={(e) => {
                     const newStart = e.target.value;
-                    setFormData({ ...formData, startDate: newStart });
+                    const dur = parseInt(durationInput, 10);
                     if (newStart && formData.endDate) {
+                      setFormData({ ...formData, startDate: newStart });
                       setDurationInput(countWorkingDays(new Date(newStart), new Date(formData.endDate)).toString());
+                    } else if (newStart && !formData.endDate && !isNaN(dur) && dur > 0) {
+                      const end = addWorkingDays(new Date(newStart), dur - 1);
+                      setFormData({ ...formData, startDate: newStart, endDate: end.toISOString().split('T')[0] });
+                    } else {
+                      setFormData({ ...formData, startDate: newStart });
                     }
                   }}
                   required
@@ -1867,10 +1916,16 @@ export default function Schedule() {
                   }}
                   onBlur={() => {
                     const days = parseInt(durationInput, 10);
-                    if (formData.startDate && !isNaN(days) && days > 0) {
-                      const start = new Date(formData.startDate);
-                      const end = addWorkingDays(start, days - 1);
-                      setFormData({ ...formData, endDate: end.toISOString().split('T')[0] });
+                    if (!isNaN(days) && days > 0) {
+                      if (formData.startDate) {
+                        const start = new Date(formData.startDate);
+                        const end = addWorkingDays(start, days - 1);
+                        setFormData({ ...formData, endDate: end.toISOString().split('T')[0] });
+                      } else if (formData.endDate) {
+                        const end = new Date(formData.endDate);
+                        const start = addWorkingDays(end, -(days - 1));
+                        setFormData({ ...formData, startDate: start.toISOString().split('T')[0] });
+                      }
                     } else if (durationInput === '' || isNaN(parseInt(durationInput, 10))) {
                       if (formData.startDate && formData.endDate) {
                         setDurationInput(countWorkingDays(new Date(formData.startDate), new Date(formData.endDate)).toString());
@@ -1897,10 +1952,15 @@ export default function Schedule() {
                   value={formData.endDate}
                   onChange={(e) => {
                     const newEnd = e.target.value;
-                    setFormData({ ...formData, endDate: newEnd });
+                    const dur = parseInt(durationInput, 10);
                     if (formData.startDate && newEnd) {
+                      setFormData({ ...formData, endDate: newEnd });
                       setDurationInput(countWorkingDays(new Date(formData.startDate), new Date(newEnd)).toString());
+                    } else if (!formData.startDate && newEnd && !isNaN(dur) && dur > 0) {
+                      const start = addWorkingDays(new Date(newEnd), -(dur - 1));
+                      setFormData({ ...formData, endDate: newEnd, startDate: start.toISOString().split('T')[0] });
                     } else {
+                      setFormData({ ...formData, endDate: newEnd });
                       setDurationInput("");
                     }
                   }}
