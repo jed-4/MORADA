@@ -39,6 +39,12 @@ export interface CasvaScheduleListProps {
   allCollapsed?: boolean;
 }
 
+interface FlatRow {
+  id: string;
+  parentId: string | null;
+  isParent: boolean;
+}
+
 export function CasvaScheduleList({ 
   items, 
   noteCounts = {},
@@ -72,14 +78,15 @@ export function CasvaScheduleList({
   const [touchStartY, setTouchStartY] = useState<number | null>(null);
 
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
-  const [indicatorY, setIndicatorY] = useState<number | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const [dropPosition, setDropPosition] = useState<'above' | 'below'>('below');
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const rowRefsMap = useRef<Map<string, HTMLTableRowElement>>(new Map());
   const dragStartedRef = useRef(false);
   const startMouseYRef = useRef(0);
   const startMouseXRef = useRef(0);
-  const dropAfterRef = useRef<string | null>(null);
-  const ghostRef = useRef<HTMLDivElement | null>(null);
+  const dropTargetIdRef = useRef<string | null>(null);
+  const dropPositionRef = useRef<'above' | 'below'>('below');
 
   const toggleSelection = (itemId: string, e?: React.MouseEvent) => {
     if (!onSelectionChange) return;
@@ -118,121 +125,181 @@ export function CasvaScheduleList({
     subtasksByParent[key].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
   }
 
-  const getSiblings = useCallback((itemId: string): ScheduleItem[] => {
-    const item = items.find(i => i.id === itemId);
-    if (!item) return [];
-    const parentId = item.parentItemId || null;
-    if (parentId) {
-      return (subtasksByParent[parentId] || []);
-    }
-    return parentItemsList;
-  }, [items, parentItemsList, subtasksByParent]);
-
-  const getVisibleSiblingRows = useCallback((itemId: string): { id: string; top: number; bottom: number }[] => {
-    const siblings = getSiblings(itemId);
-    const result: { id: string; top: number; bottom: number }[] = [];
-    for (const sib of siblings) {
-      const el = rowRefsMap.current.get(sib.id);
-      if (el) {
-        const rect = el.getBoundingClientRect();
-        result.push({ id: sib.id, top: rect.top, bottom: rect.bottom });
+  const buildFlatRows = useCallback((): FlatRow[] => {
+    const rows: FlatRow[] = [];
+    for (const parent of parentItemsList) {
+      const children = subtasksByParent[parent.id] || [];
+      const hasChildren = children.length > 0;
+      rows.push({ id: parent.id, parentId: null, isParent: hasChildren });
+      if (!collapsedItems.has(parent.id)) {
+        for (const child of children) {
+          rows.push({ id: child.id, parentId: parent.id, isParent: false });
+        }
       }
     }
-    return result;
-  }, [getSiblings]);
+    return rows;
+  }, [parentItemsList, subtasksByParent, collapsedItems]);
 
-  const removeGhost = useCallback(() => {
-    if (ghostRef.current) {
-      ghostRef.current.remove();
-      ghostRef.current = null;
+  const findDropTarget = useCallback((mouseY: number, draggingId: string): { targetId: string | null; position: 'above' | 'below' } => {
+    const flatRows = buildFlatRows();
+    let closest: { id: string; dist: number; position: 'above' | 'below' } | null = null;
+
+    for (const row of flatRows) {
+      if (row.id === draggingId) continue;
+      const el = rowRefsMap.current.get(row.id);
+      if (!el) continue;
+      const rect = el.getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+
+      const position: 'above' | 'below' = mouseY < midY ? 'above' : 'below';
+      const dist = Math.abs(mouseY - midY);
+
+      if (!closest || dist < closest.dist) {
+        closest = { id: row.id, dist, position };
+      }
     }
-  }, []);
 
-  const createGhost = useCallback((rowEl: HTMLTableRowElement, mouseX: number, mouseY: number) => {
-    const rect = rowEl.getBoundingClientRect();
-    const ghost = document.createElement('div');
-    ghost.style.position = 'fixed';
-    ghost.style.zIndex = '9999';
-    ghost.style.pointerEvents = 'none';
-    ghost.style.opacity = '0.85';
-    ghost.style.width = rect.width + 'px';
-    ghost.style.height = rect.height + 'px';
-    ghost.style.left = rect.left + 'px';
-    ghost.style.top = mouseY - (mouseY - rect.top) + 'px';
-    ghost.style.background = 'hsl(var(--card))';
-    ghost.style.borderRadius = '4px';
-    ghost.style.boxShadow = '0 4px 16px rgba(0,0,0,0.18), 0 1px 4px rgba(0,0,0,0.10)';
-    ghost.style.overflow = 'hidden';
-    ghost.style.transition = 'none';
+    return closest ? { targetId: closest.id, position: closest.position } : { targetId: null, position: 'below' };
+  }, [buildFlatRows]);
 
-    const table = document.createElement('table');
-    table.style.width = '100%';
-    table.style.borderCollapse = 'collapse';
-    const tbody = document.createElement('tbody');
-    const clonedRow = rowEl.cloneNode(true) as HTMLTableRowElement;
-    clonedRow.style.background = 'transparent';
-    tbody.appendChild(clonedRow);
-    table.appendChild(tbody);
-    ghost.appendChild(table);
+  const computeReorderParams = useCallback((draggingId: string, targetId: string, position: 'above' | 'below'): { afterItemId: string | null; newParentId: string | null } | null => {
+    const draggingItem = items.find(i => i.id === draggingId);
+    if (!draggingItem) return null;
 
-    document.body.appendChild(ghost);
-    ghostRef.current = ghost;
+    const flatRows = buildFlatRows();
+    const targetRow = flatRows.find(r => r.id === targetId);
+    if (!targetRow) return null;
 
-    return {
-      offsetX: mouseX - rect.left,
-      offsetY: mouseY - rect.top,
-    };
-  }, []);
+    const targetItem = items.find(i => i.id === targetId);
+    if (!targetItem) return null;
+
+    const draggingParentId = draggingItem.parentItemId || null;
+
+    if (draggingParentId) {
+      const parentEl = rowRefsMap.current.get(draggingParentId);
+      if (!parentEl) return null;
+      const parentRect = parentEl.getBoundingClientRect();
+
+      const siblings = flatRows.filter(r => r.parentId === draggingParentId && r.id !== draggingId);
+      const allGroupChildren = flatRows.filter(r => r.parentId === draggingParentId);
+      const lastChild = allGroupChildren[allGroupChildren.length - 1];
+      const lastChildEl = lastChild ? rowRefsMap.current.get(lastChild.id) : null;
+      const groupBottom = lastChildEl ? lastChildEl.getBoundingClientRect().bottom : parentRect.bottom;
+
+      const targetEl = rowRefsMap.current.get(targetId);
+      if (!targetEl) return null;
+      const targetRect = targetEl.getBoundingClientRect();
+      const mouseApproxY = position === 'above' ? targetRect.top : targetRect.bottom;
+
+      const isAboveParent = mouseApproxY <= parentRect.top;
+      const isBelowGroup = mouseApproxY >= groupBottom;
+
+      if (isAboveParent || isBelowGroup) {
+        if (isAboveParent) {
+          const targetIdx = flatRows.findIndex(r => r.id === targetId);
+          const prevTopLevel = [...parentItemsList].reverse().find(p => {
+            const pIdx = flatRows.findIndex(r => r.id === p.id);
+            return pIdx < targetIdx;
+          });
+          return { afterItemId: prevTopLevel?.id || null, newParentId: null };
+        } else {
+          return { afterItemId: draggingParentId, newParentId: null };
+        }
+      }
+
+      if (targetRow.parentId === draggingParentId) {
+        if (position === 'above') {
+          const sibIdx = siblings.findIndex(s => s.id === targetId);
+          const prevSib = sibIdx > 0 ? siblings[sibIdx - 1] : null;
+          if (prevSib && prevSib.id === draggingId) return null;
+          return { afterItemId: prevSib?.id || null, newParentId: draggingParentId };
+        } else {
+          if (targetId === draggingId) return null;
+          return { afterItemId: targetId, newParentId: draggingParentId };
+        }
+      }
+
+      return { afterItemId: draggingParentId, newParentId: null };
+    }
+
+    if (!draggingParentId) {
+      let effectiveTargetId = targetId;
+      let effectivePosition = position;
+
+      if (targetRow.parentId) {
+        effectiveTargetId = targetRow.parentId;
+        const parentChildren = flatRows.filter(r => r.parentId === targetRow.parentId);
+        const lastChild = parentChildren[parentChildren.length - 1];
+        const targetIdx = flatRows.findIndex(r => r.id === targetId);
+        const parentIdx = flatRows.findIndex(r => r.id === targetRow.parentId);
+
+        if (targetIdx <= parentIdx || position === 'above') {
+          effectivePosition = 'above';
+        } else if (lastChild && targetId === lastChild.id && position === 'below') {
+          effectivePosition = 'below';
+        } else {
+          effectivePosition = 'below';
+        }
+      }
+
+      if (effectivePosition === 'above') {
+        const idx = parentItemsList.findIndex(p => p.id === effectiveTargetId);
+        const prevParent = idx > 0 ? parentItemsList[idx - 1] : null;
+        if (prevParent && prevParent.id === draggingId) return null;
+        return { afterItemId: prevParent?.id || null, newParentId: null };
+      } else {
+        if (effectiveTargetId === draggingId) return null;
+        return { afterItemId: effectiveTargetId, newParentId: null };
+      }
+    }
+
+    return null;
+  }, [items, buildFlatRows, parentItemsList]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent, itemId: string) => {
+    if (!onReorderItem) return;
     e.preventDefault();
     e.stopPropagation();
-    console.log('[DRAG] mousedown on', itemId);
     dragStartedRef.current = false;
     startMouseYRef.current = e.clientY;
     startMouseXRef.current = e.clientX;
-    let ghostOffsetX = 0;
-    let ghostOffsetY = 0;
-
-    const preventScroll = (ev: Event) => { ev.preventDefault(); };
+    dropTargetIdRef.current = null;
+    dropPositionRef.current = 'below';
 
     const onMouseMove = (moveEvent: MouseEvent) => {
       moveEvent.preventDefault();
-      moveEvent.stopPropagation();
       const deltaY = Math.abs(moveEvent.clientY - startMouseYRef.current);
       const deltaX = Math.abs(moveEvent.clientX - startMouseXRef.current);
       if (!dragStartedRef.current && deltaY < 4 && deltaX < 4) return;
 
       if (!dragStartedRef.current) {
         dragStartedRef.current = true;
-        console.log('[DRAG] ghost created for', itemId);
-        const rowEl = rowRefsMap.current.get(itemId);
-        if (rowEl) {
-          const offsets = createGhost(rowEl, moveEvent.clientX, moveEvent.clientY);
-          ghostOffsetX = offsets.offsetX;
-          ghostOffsetY = offsets.offsetY;
-          rowEl.style.opacity = '0.35';
-        }
-        document.addEventListener('wheel', preventScroll, { passive: false });
-        document.addEventListener('touchmove', preventScroll, { passive: false });
+        setDraggingItemId(itemId);
       }
 
-      if (ghostRef.current) {
-        ghostRef.current.style.left = (moveEvent.clientX - ghostOffsetX) + 'px';
-        ghostRef.current.style.top = (moveEvent.clientY - ghostOffsetY) + 'px';
-      }
+      const { targetId, position } = findDropTarget(moveEvent.clientY, itemId);
+      dropTargetIdRef.current = targetId;
+      dropPositionRef.current = position;
+      setDropTargetId(targetId);
+      setDropPosition(position);
     };
 
     const onMouseUp = () => {
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
-      document.removeEventListener('wheel', preventScroll);
-      document.removeEventListener('touchmove', preventScroll);
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
-      const rowEl = rowRefsMap.current.get(itemId);
-      if (rowEl) rowEl.style.opacity = '';
-      removeGhost();
+
+      if (dragStartedRef.current && dropTargetIdRef.current) {
+        const params = computeReorderParams(itemId, dropTargetIdRef.current, dropPositionRef.current);
+        if (params) {
+          onReorderItem(itemId, params.afterItemId, params.newParentId);
+        }
+      }
+
+      setDraggingItemId(null);
+      setDropTargetId(null);
+      dropTargetIdRef.current = null;
       dragStartedRef.current = false;
     };
 
@@ -240,28 +307,7 @@ export function CasvaScheduleList({
     document.body.style.cursor = 'grabbing';
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
-  }, [createGhost, removeGhost]);
-
-  useEffect(() => {
-    const handleBlur = () => {
-      if (dragStartedRef.current) {
-        document.body.style.userSelect = '';
-        document.body.style.cursor = '';
-        removeGhost();
-        setDraggingItemId(null);
-        dropAfterRef.current = null;
-        setIndicatorY(null);
-        dragStartedRef.current = false;
-      }
-    };
-    window.addEventListener('blur', handleBlur);
-    return () => {
-      window.removeEventListener('blur', handleBlur);
-      removeGhost();
-      document.body.style.userSelect = '';
-      document.body.style.cursor = '';
-    };
-  }, [removeGhost]);
+  }, [onReorderItem, findDropTarget, computeReorderParams]);
 
   const toggleCollapse = (itemId: string) => {
     setCollapsedItems(prev => {
@@ -333,6 +379,26 @@ export function CasvaScheduleList({
   const isAllSelected = items.length > 0 && selectedItems.size === items.length;
   const isSomeSelected = selectedItems.size > 0 && selectedItems.size < items.length;
 
+  const getIndicatorPosition = (targetId: string, position: 'above' | 'below'): number | null => {
+    const el = rowRefsMap.current.get(targetId);
+    if (!el || !tableContainerRef.current) return null;
+    const containerRect = tableContainerRef.current.getBoundingClientRect();
+    const rowRect = el.getBoundingClientRect();
+    if (position === 'above') {
+      return rowRect.top - containerRect.top;
+    }
+    return rowRect.bottom - containerRect.top;
+  };
+
+  const indicatorY = draggingItemId && dropTargetId ? getIndicatorPosition(dropTargetId, dropPosition) : null;
+
+  const willUnparent = draggingItemId && dropTargetId ? (() => {
+    const draggingItem = items.find(i => i.id === draggingItemId);
+    if (!draggingItem?.parentItemId) return false;
+    const params = computeReorderParams(draggingItemId, dropTargetId, dropPosition);
+    return params?.newParentId === null;
+  })() : false;
+
   return (
     <div className="border rounded-lg bg-card overflow-hidden relative" ref={tableContainerRef}>
       <ScrollArea style={{ maxHeight }} className="w-full">
@@ -373,7 +439,7 @@ export function CasvaScheduleList({
                     ref={(el) => { if (el) rowRefsMap.current.set(item.id, el); }}
                     className={`group h-8 border-b cursor-pointer relative overflow-visible transition-colors hover-elevate ${
                       selectedItems.has(item.id) ? 'bg-accent/30' : ''
-                    }`}
+                    } ${draggingItemId === item.id ? 'opacity-40' : ''}`}
                     data-testid={`schedule-row-${item.id}`}
                     draggable={false}
                     onDragStart={(e) => e.preventDefault()}
@@ -433,7 +499,7 @@ export function CasvaScheduleList({
                         ref={(el) => { if (el) rowRefsMap.current.set(subtask.id, el); }}
                         className={`group h-8 border-b cursor-pointer relative overflow-visible transition-colors hover-elevate bg-muted/30 ${
                           selectedItems.has(subtask.id) ? 'bg-accent/30' : ''
-                        }`}
+                        } ${draggingItemId === subtask.id ? 'opacity-40' : ''}`}
                         data-testid={`schedule-subtask-row-${subtask.id}`}
                         draggable={false}
                         onDragStart={(e) => e.preventDefault()}
@@ -497,10 +563,15 @@ export function CasvaScheduleList({
           style={{ top: indicatorY, zIndex: 50 }}
         >
           <div className="flex items-center">
-            <div className="w-3 h-3 rounded-full bg-primary -ml-0.5 flex-shrink-0 shadow-sm" />
-            <div className="h-[3px] bg-primary flex-1 shadow-sm" />
-            <div className="w-3 h-3 rounded-full bg-primary -mr-0.5 flex-shrink-0 shadow-sm" />
+            <div className={`w-3 h-3 rounded-full -ml-0.5 flex-shrink-0 shadow-sm ${willUnparent ? 'bg-orange-500' : 'bg-primary'}`} />
+            <div className={`h-[3px] flex-1 shadow-sm ${willUnparent ? 'bg-orange-500' : 'bg-primary'}`} />
+            <div className={`w-3 h-3 rounded-full -mr-0.5 flex-shrink-0 shadow-sm ${willUnparent ? 'bg-orange-500' : 'bg-primary'}`} />
           </div>
+          {willUnparent && (
+            <div className="text-[9px] text-orange-500 font-medium ml-3 mt-0.5">
+              Will become top-level item
+            </div>
+          )}
         </div>
       )}
       
