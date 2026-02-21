@@ -272,15 +272,7 @@ export function CasvaScheduleList({
       document.body.style.cursor = '';
       removeGhost();
 
-      if (dragStartedRef.current && onReorderItem && dropAfterRef.current !== undefined) {
-        const draggedItem = items.find(i => i.id === itemId);
-        const siblings = getSiblings(itemId);
-        const hasValidTarget = siblings.filter(s => s.id !== itemId).length > 0;
-        if (draggedItem && hasValidTarget) {
-          const parentId = draggedItem.parentItemId || null;
-          onReorderItem(itemId, dropAfterRef.current, parentId);
-        }
-      }
+      // Reorder will be wired up in a later step - for now just ghost follows cursor
 
       setDraggingItemId(null);
       dropAfterRef.current = null;
