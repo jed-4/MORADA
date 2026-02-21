@@ -1790,10 +1790,12 @@ export default function Schedule() {
                         }
                         siblingItems.splice(insertIdx, 0, movingItem);
                         
+                        const targetParent = newParentId ?? null;
+                        
                         const updates = siblingItems.map((item, idx) => {
                           const update: any = { id: item.id, sortOrder: idx };
                           if (item.id === itemId) {
-                            update.parentItemId = newParentId;
+                            update.parentItemId = targetParent;
                           }
                           return update;
                         });

@@ -82,11 +82,11 @@ export function CasvaScheduleRow({
     <>
       {/* Title Column with Drag Handle & Collapse */}
       {visibleColumns.item && (
-        <TableCell className="h-8 py-0" style={{ paddingLeft: isSubtask ? '16px' : '2px' }}>
-          <div className="flex items-center gap-0.5">
+        <TableCell className="h-8 py-0 pl-0">
+          <div className="flex items-center gap-0">
             {isDraggable && (
               <div 
-                className="drag-handle-enhanced cursor-grab active:cursor-grabbing" 
+                className="drag-handle-enhanced cursor-grab active:cursor-grabbing flex-shrink-0 px-0.5" 
                 {...dragAttributes} 
                 {...dragListeners}
                 data-testid="drag-handle"
@@ -95,13 +95,13 @@ export function CasvaScheduleRow({
               </div>
             )}
             
-            {hasSubtasks && onToggleCollapse && (
+            {hasSubtasks && onToggleCollapse ? (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   onToggleCollapse();
                 }}
-                className="p-0.5 hover-elevate rounded transition-transform"
+                className="p-0.5 hover-elevate rounded transition-transform flex-shrink-0 w-4 h-4 flex items-center justify-center"
                 data-testid="button-toggle-collapse"
               >
                 {isCollapsed ? (
@@ -110,10 +110,13 @@ export function CasvaScheduleRow({
                   <ChevronDown className="w-3 h-3 text-muted-foreground" />
                 )}
               </button>
+            ) : (
+              <div className="w-4 h-4 flex-shrink-0" />
             )}
             
             <span 
               className="font-medium text-xs truncate" 
+              style={{ paddingLeft: isSubtask ? '10px' : '0' }}
               data-testid="schedule-item-title"
             >
               {item.name}

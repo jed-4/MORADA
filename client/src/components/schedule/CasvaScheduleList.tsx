@@ -461,9 +461,11 @@ export function CasvaScheduleList({
                 <Fragment key={item.id}>
                   <TableRow 
                     key={item.id} 
-                    className={`group h-8 transition-colors border-b cursor-pointer relative overflow-visible hover-elevate ${
+                    className={`group h-8 border-b cursor-pointer relative overflow-visible ${
+                      draggingItemId ? '' : 'transition-colors hover-elevate'
+                    } ${
                       selectedItems.has(item.id) ? 'bg-accent/30' : ''
-                    } ${isNest ? 'ring-2 ring-primary ring-inset bg-primary/10' : ''} ${isDragging ? 'opacity-40' : ''}`}
+                    } ${isNest ? 'ring-2 ring-primary ring-inset bg-primary/10' : ''} ${isDragging ? 'opacity-30 bg-muted' : ''}`}
                     data-testid={`schedule-row-${item.id}`}
                     onClick={(e) => handleRowClick(e, item.id)}
                     onTouchStart={(e) => handleTouchStart(e, item)}
@@ -477,10 +479,10 @@ export function CasvaScheduleList({
                     onDrop={handleDrop}
                   >
                     {insertLine?.position === 'top' && (
-                      <td colSpan={99} className="absolute left-0 right-0 top-0 h-0 z-20 pointer-events-none" style={{ padding: 0, border: 'none' }}>
+                      <td colSpan={99} className="absolute left-0 right-0 top-0 h-0 z-30 pointer-events-none" style={{ padding: 0, border: 'none' }}>
                         <div className="flex items-center" style={{ marginLeft: insertLine.indented ? '16px' : '0' }}>
-                          <div className="w-2 h-2 rounded-full bg-primary -ml-1 flex-shrink-0" />
-                          <div className="h-0.5 bg-primary flex-1" />
+                          <div className="w-2.5 h-2.5 rounded-full bg-primary border-2 border-primary -ml-1 flex-shrink-0" />
+                          <div className="h-[3px] bg-primary flex-1" />
                         </div>
                       </td>
                     )}
@@ -526,25 +528,18 @@ export function CasvaScheduleList({
                       />
                     ))}
                     {parentSplitLine && (
-                      <td colSpan={99} className="absolute left-0 right-0 bottom-0 h-0 z-20 pointer-events-none" style={{ padding: 0, border: 'none' }}>
-                        {parentSplitLine === 'top' ? (
-                          <div className="flex items-center" style={{ marginLeft: '16px' }}>
-                            <div className="w-2 h-2 rounded-full bg-primary -ml-1 flex-shrink-0" />
-                            <div className="h-0.5 bg-primary flex-1" />
-                          </div>
-                        ) : (
-                          <div className="flex items-center">
-                            <div className="w-2 h-2 rounded-full bg-primary -ml-1 flex-shrink-0" />
-                            <div className="h-0.5 bg-primary flex-1" />
-                          </div>
-                        )}
+                      <td colSpan={99} className="absolute left-0 right-0 bottom-0 h-0 z-30 pointer-events-none" style={{ padding: 0, border: 'none' }}>
+                        <div className="flex items-center" style={{ marginLeft: parentSplitLine === 'top' ? '16px' : '0' }}>
+                          <div className="w-2.5 h-2.5 rounded-full bg-primary border-2 border-primary -ml-1 flex-shrink-0" />
+                          <div className="h-[3px] bg-primary flex-1" />
+                        </div>
                       </td>
                     )}
                     {insertLine?.position === 'bottom' && !parentSplitLine && (
-                      <td colSpan={99} className="absolute left-0 right-0 bottom-0 h-0 z-20 pointer-events-none" style={{ padding: 0, border: 'none' }}>
+                      <td colSpan={99} className="absolute left-0 right-0 bottom-0 h-0 z-30 pointer-events-none" style={{ padding: 0, border: 'none' }}>
                         <div className="flex items-center" style={{ marginLeft: insertLine.indented ? '16px' : '0' }}>
-                          <div className="w-2 h-2 rounded-full bg-primary -ml-1 flex-shrink-0" />
-                          <div className="h-0.5 bg-primary flex-1" />
+                          <div className="w-2.5 h-2.5 rounded-full bg-primary border-2 border-primary -ml-1 flex-shrink-0" />
+                          <div className="h-[3px] bg-primary flex-1" />
                         </div>
                       </td>
                     )}
@@ -560,9 +555,11 @@ export function CasvaScheduleList({
                     return (
                       <TableRow 
                         key={subtask.id} 
-                        className={`group h-8 transition-colors border-b cursor-pointer relative overflow-visible bg-muted/30 hover-elevate ${
+                        className={`group h-8 border-b cursor-pointer relative overflow-visible ${
+                          draggingItemId ? '' : 'transition-colors hover-elevate'
+                        } ${!subIsDragging && !draggingItemId ? 'bg-muted/30' : ''} ${
                           selectedItems.has(subtask.id) ? 'bg-accent/30' : ''
-                        } ${subIsNest ? 'ring-2 ring-primary ring-inset bg-primary/10' : ''} ${subIsDragging ? 'opacity-40' : ''}`}
+                        } ${subIsNest ? 'ring-2 ring-primary ring-inset bg-primary/10' : ''} ${subIsDragging ? 'opacity-30 bg-muted' : ''}`}
                         data-testid={`schedule-subtask-row-${subtask.id}`}
                         onClick={(e) => handleRowClick(e, subtask.id)}
                         onTouchStart={(e) => handleTouchStart(e, subtask)}
@@ -576,10 +573,10 @@ export function CasvaScheduleList({
                         onDrop={handleDrop}
                       >
                         {subInsertLine?.position === 'top' && (
-                          <td colSpan={99} className="absolute left-0 right-0 top-0 h-0 z-20 pointer-events-none" style={{ padding: 0, border: 'none' }}>
+                          <td colSpan={99} className="absolute left-0 right-0 top-0 h-0 z-30 pointer-events-none" style={{ padding: 0, border: 'none' }}>
                             <div className="flex items-center" style={{ marginLeft: subInsertLine.indented ? '16px' : '0' }}>
-                              <div className="w-2 h-2 rounded-full bg-primary -ml-1 flex-shrink-0" />
-                              <div className="h-0.5 bg-primary flex-1" />
+                              <div className="w-2.5 h-2.5 rounded-full bg-primary border-2 border-primary -ml-1 flex-shrink-0" />
+                              <div className="h-[3px] bg-primary flex-1" />
                             </div>
                           </td>
                         )}
@@ -621,25 +618,18 @@ export function CasvaScheduleList({
                           />
                         ))}
                         {subSplitLine && (
-                          <td colSpan={99} className="absolute left-0 right-0 bottom-0 h-0 z-20 pointer-events-none" style={{ padding: 0, border: 'none' }}>
-                            {subSplitLine === 'top' ? (
-                              <div className="flex items-center" style={{ marginLeft: '16px' }}>
-                                <div className="w-2 h-2 rounded-full bg-primary -ml-1 flex-shrink-0" />
-                                <div className="h-0.5 bg-primary flex-1" />
-                              </div>
-                            ) : (
-                              <div className="flex items-center">
-                                <div className="w-2 h-2 rounded-full bg-primary -ml-1 flex-shrink-0" />
-                                <div className="h-0.5 bg-primary flex-1" />
-                              </div>
-                            )}
+                          <td colSpan={99} className="absolute left-0 right-0 bottom-0 h-0 z-30 pointer-events-none" style={{ padding: 0, border: 'none' }}>
+                            <div className="flex items-center" style={{ marginLeft: subSplitLine === 'top' ? '16px' : '0' }}>
+                              <div className="w-2.5 h-2.5 rounded-full bg-primary border-2 border-primary -ml-1 flex-shrink-0" />
+                              <div className="h-[3px] bg-primary flex-1" />
+                            </div>
                           </td>
                         )}
                         {subInsertLine?.position === 'bottom' && !subSplitLine && (
-                          <td colSpan={99} className="absolute left-0 right-0 bottom-0 h-0 z-20 pointer-events-none" style={{ padding: 0, border: 'none' }}>
+                          <td colSpan={99} className="absolute left-0 right-0 bottom-0 h-0 z-30 pointer-events-none" style={{ padding: 0, border: 'none' }}>
                             <div className="flex items-center" style={{ marginLeft: subInsertLine.indented ? '16px' : '0' }}>
-                              <div className="w-2 h-2 rounded-full bg-primary -ml-1 flex-shrink-0" />
-                              <div className="h-0.5 bg-primary flex-1" />
+                              <div className="w-2.5 h-2.5 rounded-full bg-primary border-2 border-primary -ml-1 flex-shrink-0" />
+                              <div className="h-[3px] bg-primary flex-1" />
                             </div>
                           </td>
                         )}
