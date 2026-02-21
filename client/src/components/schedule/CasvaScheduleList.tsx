@@ -39,21 +39,6 @@ export interface CasvaScheduleListProps {
   allCollapsed?: boolean;
 }
 
-type DropTarget = {
-  type: 'between';
-  afterItemId: string | null;
-  beforeItemId: string | null;
-  inParentGroup: string | null;
-} | {
-  type: 'nest';
-  targetId: string;
-} | {
-  type: 'split';
-  parentGroupId: string;
-  lastChildId: string;
-  zone: 'top' | 'bottom';
-};
-
 export function CasvaScheduleList({ 
   items, 
   noteCounts = {},
@@ -81,14 +66,18 @@ export function CasvaScheduleList({
       setCollapsedItems(new Set());
     }
   }, [allCollapsed, items]);
+
   const [ripples, setRipples] = useState<{id: string, x: number, y: number}[]>([]);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [touchStartY, setTouchStartY] = useState<number | null>(null);
 
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
-  const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
-  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hoverItemRef = useRef<string | null>(null);
+  const [indicatorY, setIndicatorY] = useState<number | null>(null);
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const rowRefsMap = useRef<Map<string, HTMLTableRowElement>>(new Map());
+  const dragStartedRef = useRef(false);
+  const startMouseYRef = useRef(0);
+  const dropAfterRef = useRef<string | null>(null);
 
   const toggleSelection = (itemId: string, e?: React.MouseEvent) => {
     if (!onSelectionChange) return;
@@ -111,219 +100,156 @@ export function CasvaScheduleList({
     }
   };
 
-  const isDescendant = (sourceId: string, targetId: string): boolean => {
-    const target = items.find(i => i.id === targetId);
-    if (!target) return false;
-    if (target.parentItemId === sourceId) return true;
-    if (target.parentItemId) {
-      return isDescendant(sourceId, target.parentItemId);
+  const parentItemsList = items
+    .filter(item => !item.parentItemId)
+    .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+
+  const subtasksByParent = items.reduce((acc, item) => {
+    if (item.parentItemId) {
+      if (!acc[item.parentItemId]) acc[item.parentItemId] = [];
+      acc[item.parentItemId].push(item);
     }
-    return false;
-  };
+    return acc;
+  }, {} as Record<string, ScheduleItem[]>);
 
-  const flatRows = (() => {
-    const parentItems = items.filter(item => !item.parentItemId);
-    const subtasksByParent = items.reduce((acc, item) => {
-      if (item.parentItemId) {
-        if (!acc[item.parentItemId]) acc[item.parentItemId] = [];
-        acc[item.parentItemId].push(item);
-      }
-      return acc;
-    }, {} as Record<string, ScheduleItem[]>);
-
-    const rows: { item: ScheduleItem; isSubtask: boolean; parentId: string | null }[] = [];
-    for (const parent of parentItems) {
-      rows.push({ item: parent, isSubtask: false, parentId: null });
-      const subs = subtasksByParent[parent.id] || [];
-      if (!collapsedItems.has(parent.id)) {
-        for (const sub of subs) {
-          rows.push({ item: sub, isSubtask: true, parentId: parent.id });
-        }
-      }
-    }
-    return rows;
-  })();
-
-  const handleDragStart = (e: React.DragEvent, itemId: string) => {
-    e.dataTransfer.setData("scheduleItemId", itemId);
-    e.dataTransfer.effectAllowed = "move";
-    setDraggingItemId(itemId);
-    setDropTarget(null);
-  };
-
-  const droppedRef = useRef(false);
-
-  const handleDragEnd = () => {
-    if (hoverTimerRef.current) {
-      clearTimeout(hoverTimerRef.current);
-      hoverTimerRef.current = null;
-    }
-    hoverItemRef.current = null;
-    
-    if (!droppedRef.current) {
-      setDraggingItemId(null);
-      setDropTarget(null);
-    }
-    droppedRef.current = false;
-  };
-
-  const handleDragOver = useCallback((e: React.DragEvent, itemId: string, rowIndex: number) => {
-    e.preventDefault();
-    if (!draggingItemId || draggingItemId === itemId || isDescendant(draggingItemId, itemId)) {
-      e.dataTransfer.dropEffect = "none";
-      return;
-    }
-    e.dataTransfer.dropEffect = "move";
-
-    const currentRow = flatRows[rowIndex];
-    const nextRow = rowIndex < flatRows.length - 1 ? flatRows[rowIndex + 1] : null;
-    const prevRow = rowIndex > 0 ? flatRows[rowIndex - 1] : null;
-    const currentParent = currentRow?.parentId || null;
-
-    const isLastChildOfParent = currentRow?.isSubtask && (!nextRow || !nextRow.isSubtask || nextRow.parentId !== currentParent);
-
-    const currentItem = currentRow?.item;
-    const hasChildren = currentItem && items.some(i => i.parentItemId === currentItem.id);
-    const isCollapsedParent = currentItem && hasChildren && collapsedItems.has(currentItem.id);
-    const isGroupBoundary = isLastChildOfParent || isCollapsedParent;
-    const boundaryParentId = isLastChildOfParent ? currentParent : (isCollapsedParent ? currentItem.id : null);
-
-    const lastChildId = (() => {
-      if (!boundaryParentId) return itemId;
-      const children = items
-        .filter(i => i.parentItemId === boundaryParentId)
-        .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-      return children.length > 0 ? children[children.length - 1].id : itemId;
-    })();
-
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const y = e.clientY - rect.top;
-    const height = rect.height;
-    const inTopZone = y < height * 0.3;
-    const inBottomZone = y > height * 0.7;
-
-    if (inTopZone) {
-      if (hoverTimerRef.current) {
-        clearTimeout(hoverTimerRef.current);
-        hoverTimerRef.current = null;
-      }
-      hoverItemRef.current = null;
-      setDropTarget({
-        type: 'between',
-        afterItemId: prevRow ? prevRow.item.id : null,
-        beforeItemId: itemId,
-        inParentGroup: currentParent,
-      });
-    } else if (inBottomZone) {
-      if (hoverTimerRef.current) {
-        clearTimeout(hoverTimerRef.current);
-        hoverTimerRef.current = null;
-      }
-      hoverItemRef.current = null;
-      if (isGroupBoundary && boundaryParentId) {
-        const splitY = y - height * 0.7;
-        const splitHeight = height * 0.3;
-        const inTopHalf = splitY < splitHeight * 0.5;
-        setDropTarget({
-          type: 'split',
-          parentGroupId: boundaryParentId,
-          lastChildId: lastChildId,
-          zone: inTopHalf ? 'top' : 'bottom',
-        });
-      } else {
-        setDropTarget({
-          type: 'between',
-          afterItemId: itemId,
-          beforeItemId: nextRow ? nextRow.item.id : null,
-          inParentGroup: currentParent,
-        });
-      }
-    } else {
-      if (hoverItemRef.current !== itemId) {
-        if (hoverTimerRef.current) {
-          clearTimeout(hoverTimerRef.current);
-        }
-        hoverItemRef.current = itemId;
-        setDropTarget({
-          type: 'between',
-          afterItemId: itemId,
-          beforeItemId: nextRow ? nextRow.item.id : null,
-          inParentGroup: currentParent,
-        });
-        hoverTimerRef.current = setTimeout(() => {
-          setDropTarget({ type: 'nest', targetId: itemId });
-          hoverTimerRef.current = null;
-        }, 1000);
-      }
-    }
-  }, [draggingItemId, flatRows, items, collapsedItems]);
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    const relatedTarget = e.relatedTarget as HTMLElement | null;
-    if (relatedTarget && (e.currentTarget as HTMLElement).contains(relatedTarget)) {
-      return;
-    }
-    if (hoverTimerRef.current) {
-      clearTimeout(hoverTimerRef.current);
-      hoverTimerRef.current = null;
-    }
-    hoverItemRef.current = null;
-    setDropTarget(null);
-  }, []);
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    droppedRef.current = true;
-    
-    if (hoverTimerRef.current) {
-      clearTimeout(hoverTimerRef.current);
-      hoverTimerRef.current = null;
-    }
-    hoverItemRef.current = null;
-    
-    const currentDrag = draggingItemId;
-    const currentTarget = dropTarget;
-    
-    setDraggingItemId(null);
-    setDropTarget(null);
-    
-    if (currentDrag && currentTarget) {
-      if (currentTarget.type === 'nest') {
-        if (onNestItem && !isDescendant(currentDrag, currentTarget.targetId)) {
-          onNestItem(currentDrag, currentTarget.targetId);
-        }
-      } else if (currentTarget.type === 'split') {
-        if (currentTarget.zone === 'top') {
-          if (onReorderItem) {
-            onReorderItem(currentDrag, currentTarget.lastChildId, currentTarget.parentGroupId);
-          }
-        } else {
-          if (onReorderItem) {
-            onReorderItem(currentDrag, currentTarget.lastChildId, null);
-          }
-        }
-      } else if (currentTarget.type === 'between') {
-        const targetParentId = currentTarget.inParentGroup;
-        
-        if (onReorderItem) {
-          onReorderItem(currentDrag, currentTarget.afterItemId, targetParentId);
-        } else if (onNestItem) {
-          const draggedItem = items.find(i => i.id === currentDrag);
-          if (draggedItem?.parentItemId !== targetParentId) {
-            onNestItem(currentDrag, targetParentId);
-          }
-        }
-      }
-    }
-  };
-
-  if (items.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-64 text-muted-foreground">
-        <p>No schedule items found</p>
-      </div>
-    );
+  for (const key of Object.keys(subtasksByParent)) {
+    subtasksByParent[key].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
   }
+
+  const getSiblings = useCallback((itemId: string): ScheduleItem[] => {
+    const item = items.find(i => i.id === itemId);
+    if (!item) return [];
+    const parentId = item.parentItemId || null;
+    if (parentId) {
+      return (subtasksByParent[parentId] || []);
+    }
+    return parentItemsList;
+  }, [items, parentItemsList, subtasksByParent]);
+
+  const getVisibleSiblingRows = useCallback((itemId: string): { id: string; top: number; bottom: number }[] => {
+    const siblings = getSiblings(itemId);
+    const result: { id: string; top: number; bottom: number }[] = [];
+    for (const sib of siblings) {
+      const el = rowRefsMap.current.get(sib.id);
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        result.push({ id: sib.id, top: rect.top, bottom: rect.bottom });
+      }
+    }
+    return result;
+  }, [getSiblings]);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent, itemId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragStartedRef.current = false;
+    startMouseYRef.current = e.clientY;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const deltaY = Math.abs(moveEvent.clientY - startMouseYRef.current);
+      if (!dragStartedRef.current && deltaY < 4) return;
+
+      if (!dragStartedRef.current) {
+        dragStartedRef.current = true;
+        setDraggingItemId(itemId);
+      }
+
+      const siblingRows = getVisibleSiblingRows(itemId);
+      if (siblingRows.length === 0) return;
+
+      const mouseY = moveEvent.clientY;
+      let bestAfter: string | null = null;
+      let bestIndicatorY: number | null = null;
+
+      const containerRect = tableContainerRef.current?.getBoundingClientRect();
+      if (!containerRect) return;
+
+      for (let i = 0; i < siblingRows.length; i++) {
+        const row = siblingRows[i];
+        if (row.id === itemId) continue;
+        const midY = (row.top + row.bottom) / 2;
+
+        if (mouseY < midY) {
+          const prevRow = i > 0 ? siblingRows[i - 1] : null;
+          if (prevRow && prevRow.id !== itemId) {
+            bestAfter = prevRow.id;
+            bestIndicatorY = row.top - containerRect.top;
+          } else if (!prevRow) {
+            bestAfter = null;
+            bestIndicatorY = row.top - containerRect.top;
+          } else {
+            const prevPrev = i > 1 ? siblingRows[i - 2] : null;
+            bestAfter = prevPrev ? prevPrev.id : null;
+            bestIndicatorY = row.top - containerRect.top;
+          }
+          break;
+        }
+      }
+
+      if (bestIndicatorY === null) {
+        const lastRow = siblingRows[siblingRows.length - 1];
+        if (lastRow && lastRow.id !== itemId) {
+          bestAfter = lastRow.id;
+          bestIndicatorY = lastRow.bottom - containerRect.top;
+        } else {
+          const secondLast = siblingRows.length > 1 ? siblingRows[siblingRows.length - 2] : null;
+          if (secondLast) {
+            bestAfter = secondLast.id;
+            bestIndicatorY = lastRow.bottom - containerRect.top;
+          }
+        }
+      }
+
+      dropAfterRef.current = bestAfter;
+      setIndicatorY(bestIndicatorY);
+    };
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+
+      if (dragStartedRef.current && onReorderItem && dropAfterRef.current !== undefined) {
+        const draggedItem = items.find(i => i.id === itemId);
+        const siblings = getSiblings(itemId);
+        const hasValidTarget = siblings.filter(s => s.id !== itemId).length > 0;
+        if (draggedItem && hasValidTarget) {
+          const parentId = draggedItem.parentItemId || null;
+          onReorderItem(itemId, dropAfterRef.current, parentId);
+        }
+      }
+
+      setDraggingItemId(null);
+      dropAfterRef.current = null;
+      setIndicatorY(null);
+      dragStartedRef.current = false;
+    };
+
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'grabbing';
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }, [items, getVisibleSiblingRows, getSiblings, onReorderItem]);
+
+  useEffect(() => {
+    const handleBlur = () => {
+      if (dragStartedRef.current) {
+        document.body.style.userSelect = '';
+        document.body.style.cursor = '';
+        setDraggingItemId(null);
+        dropAfterRef.current = null;
+        setIndicatorY(null);
+        dragStartedRef.current = false;
+      }
+    };
+    window.addEventListener('blur', handleBlur);
+    return () => {
+      window.removeEventListener('blur', handleBlur);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    };
+  }, []);
 
   const toggleCollapse = (itemId: string) => {
     setCollapsedItems(prev => {
@@ -338,6 +264,7 @@ export function CasvaScheduleList({
   };
 
   const handleRowClick = (e: React.MouseEvent, itemId: string) => {
+    if (dragStartedRef.current) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
@@ -383,42 +310,19 @@ export function CasvaScheduleList({
     setTouchStartY(null);
   };
 
-  const parentItemsList = items.filter(item => !item.parentItemId);
-  const subtasksByParent = items.reduce((acc, item) => {
-    if (item.parentItemId) {
-      if (!acc[item.parentItemId]) acc[item.parentItemId] = [];
-      acc[item.parentItemId].push(item);
-    }
-    return acc;
-  }, {} as Record<string, ScheduleItem[]>);
+  if (items.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-64 text-muted-foreground">
+        <p>No schedule items found</p>
+      </div>
+    );
+  }
 
   const isAllSelected = items.length > 0 && selectedItems.size === items.length;
   const isSomeSelected = selectedItems.size > 0 && selectedItems.size < items.length;
 
-  const getInsertionLine = (itemId: string): { position: 'top' | 'bottom'; indented: boolean } | null => {
-    if (!dropTarget || !draggingItemId) return null;
-    if (dropTarget.type === 'between') {
-      if (dropTarget.beforeItemId === itemId) return { position: 'top', indented: !!dropTarget.inParentGroup };
-      if (dropTarget.afterItemId === itemId && !dropTarget.beforeItemId) return { position: 'bottom', indented: !!dropTarget.inParentGroup };
-    }
-    return null;
-  };
-
-  const getSplitLine = (itemId: string): 'top' | 'bottom' | null => {
-    if (!dropTarget || dropTarget.type !== 'split' || !draggingItemId) return null;
-    if (dropTarget.lastChildId === itemId) return dropTarget.zone;
-    if (dropTarget.parentGroupId === itemId && collapsedItems.has(itemId)) return dropTarget.zone;
-    return null;
-  };
-
-  const isNestTarget = (itemId: string): boolean => {
-    return !!dropTarget && dropTarget.type === 'nest' && dropTarget.targetId === itemId;
-  };
-
-  let rowIndex = 0;
-
   return (
-    <div className="border rounded-lg bg-card overflow-hidden">
+    <div className="border rounded-lg bg-card overflow-hidden relative" ref={tableContainerRef}>
       <ScrollArea style={{ maxHeight }} className="w-full">
         <Table>
           <TableHeader className="sticky top-0 bg-background z-10">
@@ -436,7 +340,7 @@ export function CasvaScheduleList({
                   />
                 </TableHead>
               )}
-              {visibleColumns.item && <TableHead className="font-semibold h-8 py-0 text-xs">Item</TableHead>}
+              {visibleColumns.item && <TableHead className="font-semibold h-8 py-0 text-xs pl-0">Item</TableHead>}
               {visibleColumns.assignee && <TableHead className="font-semibold w-32 h-8 py-0 text-xs">Assignee</TableHead>}
               {visibleColumns.type && <TableHead className="font-semibold w-24 h-8 py-0 text-xs">Type</TableHead>}
               {visibleColumns.dueDate && <TableHead className="font-semibold w-36 h-8 py-0 text-xs">Due Date & Duration</TableHead>}
@@ -451,41 +355,21 @@ export function CasvaScheduleList({
               const subtasks = subtasksByParent[item.id] || [];
               const isCollapsed = collapsedItems.has(item.id);
               const hasSubtasks = subtasks.length > 0;
-              const currentRowIndex = rowIndex++;
-              const insertLine = getInsertionLine(item.id);
-              const parentSplitLine = getSplitLine(item.id);
-              const isNest = isNestTarget(item.id);
               const isDragging = draggingItemId === item.id;
 
               return (
                 <Fragment key={item.id}>
                   <TableRow 
-                    key={item.id} 
-                    className={`group h-8 border-b cursor-pointer relative overflow-visible ${
-                      draggingItemId ? '' : 'transition-colors hover-elevate'
-                    } ${
+                    ref={(el) => { if (el) rowRefsMap.current.set(item.id, el); }}
+                    className={`group h-8 border-b cursor-pointer relative overflow-visible transition-colors hover-elevate ${
                       selectedItems.has(item.id) ? 'bg-accent/30' : ''
-                    } ${isNest ? 'ring-2 ring-primary ring-inset bg-primary/10' : ''} ${isDragging ? 'opacity-30 bg-muted' : ''}`}
+                    } ${isDragging ? 'opacity-30 bg-muted' : ''}`}
                     data-testid={`schedule-row-${item.id}`}
                     onClick={(e) => handleRowClick(e, item.id)}
                     onTouchStart={(e) => handleTouchStart(e, item)}
                     onTouchMove={handleTouchMove}
                     onTouchEnd={(e) => handleTouchEnd(e, item)}
-                    draggable={!!onNestItem}
-                    onDragStart={(e) => handleDragStart(e, item.id)}
-                    onDragEnd={handleDragEnd}
-                    onDragOver={(e) => handleDragOver(e, item.id, currentRowIndex)}
-                    onDragLeave={handleDragLeave}
-                    onDrop={handleDrop}
                   >
-                    {insertLine?.position === 'top' && (
-                      <td colSpan={99} className="absolute left-0 right-0 top-0 h-0 z-30 pointer-events-none" style={{ padding: 0, border: 'none' }}>
-                        <div className="flex items-center" style={{ marginLeft: insertLine.indented ? '16px' : '0' }}>
-                          <div className="w-2.5 h-2.5 rounded-full bg-primary border-2 border-primary -ml-1 flex-shrink-0" />
-                          <div className="h-[3px] bg-primary flex-1" />
-                        </div>
-                      </td>
-                    )}
                     {onSelectionChange && (
                       <td className="w-8 h-8 py-0 pl-2">
                         <Checkbox
@@ -507,7 +391,8 @@ export function CasvaScheduleList({
                       onCompletionToggle={onCompletionToggle ? () => onCompletionToggle(item.id, item.progressPercent || 0) : undefined}
                       statusOptions={statusOptions}
                       visibleColumns={visibleColumns}
-                      isDraggable={true}
+                      isDraggable={!!onReorderItem}
+                      onDragHandleMouseDown={(e) => handleMouseDown(e, item.id)}
                       isParent={hasSubtasks}
                       isCollapsed={isCollapsed}
                       onToggleCollapse={hasSubtasks ? () => toggleCollapse(item.id) : undefined}
@@ -527,59 +412,24 @@ export function CasvaScheduleList({
                         }}
                       />
                     ))}
-                    {parentSplitLine && (
-                      <td colSpan={99} className="absolute left-0 right-0 bottom-0 h-0 z-30 pointer-events-none" style={{ padding: 0, border: 'none' }}>
-                        <div className="flex items-center" style={{ marginLeft: parentSplitLine === 'top' ? '16px' : '0' }}>
-                          <div className="w-2.5 h-2.5 rounded-full bg-primary border-2 border-primary -ml-1 flex-shrink-0" />
-                          <div className="h-[3px] bg-primary flex-1" />
-                        </div>
-                      </td>
-                    )}
-                    {insertLine?.position === 'bottom' && !parentSplitLine && (
-                      <td colSpan={99} className="absolute left-0 right-0 bottom-0 h-0 z-30 pointer-events-none" style={{ padding: 0, border: 'none' }}>
-                        <div className="flex items-center" style={{ marginLeft: insertLine.indented ? '16px' : '0' }}>
-                          <div className="w-2.5 h-2.5 rounded-full bg-primary border-2 border-primary -ml-1 flex-shrink-0" />
-                          <div className="h-[3px] bg-primary flex-1" />
-                        </div>
-                      </td>
-                    )}
                   </TableRow>
 
                   {!isCollapsed && subtasks.map((subtask) => {
-                    const subRowIndex = rowIndex++;
-                    const subInsertLine = getInsertionLine(subtask.id);
-                    const subSplitLine = getSplitLine(subtask.id);
-                    const subIsNest = isNestTarget(subtask.id);
                     const subIsDragging = draggingItemId === subtask.id;
 
                     return (
                       <TableRow 
-                        key={subtask.id} 
-                        className={`group h-8 border-b cursor-pointer relative overflow-visible ${
-                          draggingItemId ? '' : 'transition-colors hover-elevate'
-                        } ${!subIsDragging && !draggingItemId ? 'bg-muted/30' : ''} ${
+                        key={subtask.id}
+                        ref={(el) => { if (el) rowRefsMap.current.set(subtask.id, el); }}
+                        className={`group h-8 border-b cursor-pointer relative overflow-visible transition-colors hover-elevate bg-muted/30 ${
                           selectedItems.has(subtask.id) ? 'bg-accent/30' : ''
-                        } ${subIsNest ? 'ring-2 ring-primary ring-inset bg-primary/10' : ''} ${subIsDragging ? 'opacity-30 bg-muted' : ''}`}
+                        } ${subIsDragging ? 'opacity-30 bg-muted' : ''}`}
                         data-testid={`schedule-subtask-row-${subtask.id}`}
                         onClick={(e) => handleRowClick(e, subtask.id)}
                         onTouchStart={(e) => handleTouchStart(e, subtask)}
                         onTouchMove={handleTouchMove}
                         onTouchEnd={(e) => handleTouchEnd(e, subtask)}
-                        draggable={!!onNestItem}
-                        onDragStart={(e) => handleDragStart(e, subtask.id)}
-                        onDragEnd={handleDragEnd}
-                        onDragOver={(e) => handleDragOver(e, subtask.id, subRowIndex)}
-                        onDragLeave={handleDragLeave}
-                        onDrop={handleDrop}
                       >
-                        {subInsertLine?.position === 'top' && (
-                          <td colSpan={99} className="absolute left-0 right-0 top-0 h-0 z-30 pointer-events-none" style={{ padding: 0, border: 'none' }}>
-                            <div className="flex items-center" style={{ marginLeft: subInsertLine.indented ? '16px' : '0' }}>
-                              <div className="w-2.5 h-2.5 rounded-full bg-primary border-2 border-primary -ml-1 flex-shrink-0" />
-                              <div className="h-[3px] bg-primary flex-1" />
-                            </div>
-                          </td>
-                        )}
                         {onSelectionChange && (
                           <td className="w-8 h-8 py-0 pl-2">
                             <Checkbox
@@ -601,6 +451,8 @@ export function CasvaScheduleList({
                           onCompletionToggle={onCompletionToggle ? () => onCompletionToggle(subtask.id, subtask.progressPercent || 0) : undefined}
                           statusOptions={statusOptions}
                           visibleColumns={visibleColumns}
+                          isDraggable={!!onReorderItem}
+                          onDragHandleMouseDown={(e) => handleMouseDown(e, subtask.id)}
                           isSubtask={true}
                         />
                         
@@ -617,22 +469,6 @@ export function CasvaScheduleList({
                             }}
                           />
                         ))}
-                        {subSplitLine && (
-                          <td colSpan={99} className="absolute left-0 right-0 bottom-0 h-0 z-30 pointer-events-none" style={{ padding: 0, border: 'none' }}>
-                            <div className="flex items-center" style={{ marginLeft: subSplitLine === 'top' ? '16px' : '0' }}>
-                              <div className="w-2.5 h-2.5 rounded-full bg-primary border-2 border-primary -ml-1 flex-shrink-0" />
-                              <div className="h-[3px] bg-primary flex-1" />
-                            </div>
-                          </td>
-                        )}
-                        {subInsertLine?.position === 'bottom' && !subSplitLine && (
-                          <td colSpan={99} className="absolute left-0 right-0 bottom-0 h-0 z-30 pointer-events-none" style={{ padding: 0, border: 'none' }}>
-                            <div className="flex items-center" style={{ marginLeft: subInsertLine.indented ? '16px' : '0' }}>
-                              <div className="w-2.5 h-2.5 rounded-full bg-primary border-2 border-primary -ml-1 flex-shrink-0" />
-                              <div className="h-[3px] bg-primary flex-1" />
-                            </div>
-                          </td>
-                        )}
                       </TableRow>
                     );
                   })}
@@ -642,8 +478,20 @@ export function CasvaScheduleList({
           </TableBody>
         </Table>
       </ScrollArea>
+
+      {draggingItemId && indicatorY !== null && (
+        <div
+          className="absolute left-0 right-0 pointer-events-none"
+          style={{ top: indicatorY, zIndex: 50 }}
+        >
+          <div className="flex items-center">
+            <div className="w-3 h-3 rounded-full bg-primary -ml-0.5 flex-shrink-0 shadow-sm" />
+            <div className="h-[3px] bg-primary flex-1 shadow-sm" />
+            <div className="w-3 h-3 rounded-full bg-primary -mr-0.5 flex-shrink-0 shadow-sm" />
+          </div>
+        </div>
+      )}
       
-      {/* Item Count Footer */}
       <div className="px-2 h-8 border-t bg-background text-[10px] text-muted-foreground flex items-center justify-between">
         <span>
           {selectedItems.size > 0 

@@ -44,6 +44,7 @@ export interface CasvaScheduleRowProps {
   isDraggable?: boolean;
   dragAttributes?: any;
   dragListeners?: any;
+  onDragHandleMouseDown?: (e: React.MouseEvent) => void;
   isParent?: boolean;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
@@ -64,6 +65,7 @@ export function CasvaScheduleRow({
   isDraggable = false,
   dragAttributes,
   dragListeners,
+  onDragHandleMouseDown,
   isParent = false,
   isCollapsed = false,
   onToggleCollapse,
@@ -86,7 +88,8 @@ export function CasvaScheduleRow({
           <div className="flex items-center gap-0">
             {isDraggable && (
               <div 
-                className="drag-handle-enhanced cursor-grab active:cursor-grabbing flex-shrink-0 px-0.5" 
+                className="cursor-grab active:cursor-grabbing flex-shrink-0 px-0.5" 
+                onMouseDown={onDragHandleMouseDown}
                 {...dragAttributes} 
                 {...dragListeners}
                 data-testid="drag-handle"
