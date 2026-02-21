@@ -1766,9 +1766,11 @@ export default function Schedule() {
                       onSelectionChange={setSelectedItems}
                       allCollapsed={allCollapsed}
                       onNestItem={(itemId, parentId) => {
+                        console.log('[NEST ITEM CALLED]', itemId, parentId);
                         nestItemMutation.mutate({ itemId, parentId });
                       }}
                       onReorderItem={async (itemId, afterItemId, newParentId) => {
+                        console.log('[REORDER ITEM CALLED]', itemId, afterItemId, newParentId);
                         const movingItem = scheduleItems.find(i => i.id === itemId);
                         if (!movingItem) return;
                         

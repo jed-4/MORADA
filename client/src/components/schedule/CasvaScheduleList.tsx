@@ -187,96 +187,52 @@ export function CasvaScheduleList({
   const handleMouseDown = useCallback((e: React.MouseEvent, itemId: string) => {
     e.preventDefault();
     e.stopPropagation();
+    console.log('[DRAG] mousedown on', itemId);
     dragStartedRef.current = false;
     startMouseYRef.current = e.clientY;
     startMouseXRef.current = e.clientX;
     let ghostOffsetX = 0;
     let ghostOffsetY = 0;
 
+    const preventScroll = (ev: Event) => { ev.preventDefault(); };
+
     const onMouseMove = (moveEvent: MouseEvent) => {
+      moveEvent.preventDefault();
+      moveEvent.stopPropagation();
       const deltaY = Math.abs(moveEvent.clientY - startMouseYRef.current);
       const deltaX = Math.abs(moveEvent.clientX - startMouseXRef.current);
       if (!dragStartedRef.current && deltaY < 4 && deltaX < 4) return;
 
       if (!dragStartedRef.current) {
         dragStartedRef.current = true;
-        setDraggingItemId(itemId);
-
+        console.log('[DRAG] ghost created for', itemId);
         const rowEl = rowRefsMap.current.get(itemId);
         if (rowEl) {
           const offsets = createGhost(rowEl, moveEvent.clientX, moveEvent.clientY);
           ghostOffsetX = offsets.offsetX;
           ghostOffsetY = offsets.offsetY;
+          rowEl.style.opacity = '0.35';
         }
+        document.addEventListener('wheel', preventScroll, { passive: false });
+        document.addEventListener('touchmove', preventScroll, { passive: false });
       }
 
       if (ghostRef.current) {
         ghostRef.current.style.left = (moveEvent.clientX - ghostOffsetX) + 'px';
         ghostRef.current.style.top = (moveEvent.clientY - ghostOffsetY) + 'px';
       }
-
-      const siblingRows = getVisibleSiblingRows(itemId);
-      if (siblingRows.length === 0) return;
-
-      const mouseY = moveEvent.clientY;
-      let bestAfter: string | null = null;
-      let bestIndicatorY: number | null = null;
-
-      const containerRect = tableContainerRef.current?.getBoundingClientRect();
-      if (!containerRect) return;
-
-      for (let i = 0; i < siblingRows.length; i++) {
-        const row = siblingRows[i];
-        if (row.id === itemId) continue;
-        const midY = (row.top + row.bottom) / 2;
-
-        if (mouseY < midY) {
-          const prevRow = i > 0 ? siblingRows[i - 1] : null;
-          if (prevRow && prevRow.id !== itemId) {
-            bestAfter = prevRow.id;
-            bestIndicatorY = row.top - containerRect.top;
-          } else if (!prevRow) {
-            bestAfter = null;
-            bestIndicatorY = row.top - containerRect.top;
-          } else {
-            const prevPrev = i > 1 ? siblingRows[i - 2] : null;
-            bestAfter = prevPrev ? prevPrev.id : null;
-            bestIndicatorY = row.top - containerRect.top;
-          }
-          break;
-        }
-      }
-
-      if (bestIndicatorY === null) {
-        const lastRow = siblingRows[siblingRows.length - 1];
-        if (lastRow && lastRow.id !== itemId) {
-          bestAfter = lastRow.id;
-          bestIndicatorY = lastRow.bottom - containerRect.top;
-        } else {
-          const secondLast = siblingRows.length > 1 ? siblingRows[siblingRows.length - 2] : null;
-          if (secondLast) {
-            bestAfter = secondLast.id;
-            bestIndicatorY = lastRow.bottom - containerRect.top;
-          }
-        }
-      }
-
-      dropAfterRef.current = bestAfter;
-      setIndicatorY(bestIndicatorY);
     };
 
     const onMouseUp = () => {
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
+      document.removeEventListener('wheel', preventScroll);
+      document.removeEventListener('touchmove', preventScroll);
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
+      const rowEl = rowRefsMap.current.get(itemId);
+      if (rowEl) rowEl.style.opacity = '';
       removeGhost();
-
-      // Reorder will be wired up in a later step - for now just ghost follows cursor
-
-      setDraggingItemId(null);
-      dropAfterRef.current = null;
-      setIndicatorY(null);
       dragStartedRef.current = false;
     };
 
@@ -284,7 +240,7 @@ export function CasvaScheduleList({
     document.body.style.cursor = 'grabbing';
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
-  }, [items, getVisibleSiblingRows, getSiblings, onReorderItem, createGhost, removeGhost]);
+  }, [createGhost, removeGhost]);
 
   useEffect(() => {
     const handleBlur = () => {
