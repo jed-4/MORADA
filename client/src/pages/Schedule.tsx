@@ -138,7 +138,7 @@ export default function Schedule() {
     useWorkingDaysOverride: null as boolean | null,
   });
   const [taskLinkOffsetsLocal, setTaskLinkOffsetsLocal] = useState<Array<{taskId: string; offsetDays: number; offsetFrom: "start" | "end"}>>([]);
-  const [durationInput, setDurationInput] = useState<string>("");
+  const [durationInput, setDurationInput] = useState<string>("1");
   const [filters, setFilters] = useState({
     status: "all",
     assignee: "all",
@@ -900,7 +900,7 @@ export default function Schedule() {
       useWorkingDaysOverride: null,
     });
     setTaskLinkOffsetsLocal([]);
-    setDurationInput("");
+    setDurationInput("1");
     setDescriptionExpanded(false);
     setNotesExpanded(false);
   };
@@ -1961,7 +1961,6 @@ export default function Schedule() {
                       setFormData({ ...formData, endDate: newEnd, startDate: start.toISOString().split('T')[0] });
                     } else {
                       setFormData({ ...formData, endDate: newEnd });
-                      setDurationInput("");
                     }
                   }}
                   required

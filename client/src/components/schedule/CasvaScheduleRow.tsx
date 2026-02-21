@@ -2,6 +2,7 @@ import { ScheduleItem } from "@shared/schema";
 import { ColorChip } from "@/components/ui/color-chip";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Pencil, GripVertical, ChevronRight, ChevronDown, MoreVertical, Trash2, Copy, Check } from "lucide-react";
 import { format, differenceInDays } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -123,11 +124,18 @@ export function CasvaScheduleRow({
 
       {/* Assignee Column */}
       {visibleColumns.assignee && (
-        <TableCell className="w-32 h-8 py-0">
+        <TableCell className="w-32 h-8 py-0 overflow-hidden" data-testid="schedule-item-assignee">
           {item.assignedToName && (
-            <span className="text-xs text-muted-foreground truncate block" data-testid="schedule-item-assignee">
-              {item.assignedToName}
-            </span>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <Avatar className="w-5 h-5 flex-shrink-0">
+                <AvatarFallback className="text-[9px] bg-muted">
+                  {item.assignedToName.substring(0, 2).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              <span className="text-xs text-muted-foreground truncate">
+                {item.assignedToName}
+              </span>
+            </div>
           )}
         </TableCell>
       )}

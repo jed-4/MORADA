@@ -63,9 +63,14 @@ export function ContactSelect({
     }
     
     contacts.forEach((contact) => {
-      const displayName = contact.company 
-        ? `${contact.company}${contact.name ? ` - ${contact.name}` : ''}`
-        : contact.name || 'Unnamed Contact';
+      const companyName = (contact.company || '').trim();
+      const contactName = (contact.name || '').trim();
+      let displayName: string;
+      if (companyName && contactName && companyName.toLowerCase() !== contactName.toLowerCase()) {
+        displayName = `${companyName} - ${contactName}`;
+      } else {
+        displayName = companyName || contactName || 'Unnamed Contact';
+      }
         
       opts.push({
         value: contact.id,
