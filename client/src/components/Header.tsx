@@ -29,10 +29,10 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import type { Project, Company } from "@shared/schema";
 
-const SELECTED_PHASE_KEY = "selectedProjectPhase";
+const SELECTED_PHASE_KEY = "selectedProjectPhase_v2";
 const FAVORITE_PROJECTS_KEY = "sidebar_favorite_projects";
 
-type ProjectPhase = "lead" | "pre_construction" | "construction" | "post_construction";
+type ProjectPhase = "all" | "lead" | "pre_construction" | "construction" | "post_construction";
 
 interface FavoriteProject {
   id: string;
@@ -40,6 +40,7 @@ interface FavoriteProject {
 }
 
 const phases: { id: ProjectPhase; label: string }[] = [
+  { id: "all", label: "All" },
   { id: "lead", label: "Lead" },
   { id: "pre_construction", label: "Pre-Con" },
   { id: "construction", label: "Construction" },
@@ -59,10 +60,13 @@ export default function Header() {
   const [selectedPhaseIndex, setSelectedPhaseIndex] = useState<number>(() => {
     try {
       const saved = localStorage.getItem(SELECTED_PHASE_KEY);
-      const index = saved ? parseInt(saved, 10) : 2;
-      return index >= 0 && index < phases.length ? index : 2;
+      if (saved === null) return 0;
+      const index = parseInt(saved, 10);
+      if (index >= 0 && index < phases.length) return index;
+      localStorage.removeItem(SELECTED_PHASE_KEY);
+      return 0;
     } catch {
-      return 2;
+      return 0;
     }
   });
   const [favoriteProjects, setFavoriteProjects] = useState<FavoriteProject[]>(() => {
@@ -94,11 +98,27 @@ export default function Header() {
   const selectedPhase = phases[selectedPhaseIndex];
 
   const phaseProjects = useMemo(() => {
+    if (selectedPhase.id === "all") return activeProjects;
     return activeProjects.filter(p => 
       p.currentSystemPhase === selectedPhase.id || 
       (!p.currentSystemPhase && selectedPhase.id === "construction")
     );
   }, [activeProjects, selectedPhase.id]);
+
+  const groupedByPhase = useMemo(() => {
+    const groups: { phase: typeof phases[0]; projects: Project[] }[] = [];
+    for (const phase of phases) {
+      if (phase.id === "all") continue;
+      const matching = activeProjects.filter(p =>
+        p.currentSystemPhase === phase.id ||
+        (!p.currentSystemPhase && phase.id === "construction")
+      );
+      if (matching.length > 0) {
+        groups.push({ phase, projects: matching });
+      }
+    }
+    return groups;
+  }, [activeProjects]);
 
   const filteredProjects = useMemo(() => {
     if (!searchQuery.trim()) {
@@ -110,6 +130,20 @@ export default function Header() {
       p.description?.toLowerCase().includes(query)
     );
   }, [searchQuery, phaseProjects, activeProjects]);
+
+  const searchFilteredGrouped = useMemo(() => {
+    if (!searchQuery.trim()) return groupedByPhase;
+    const query = searchQuery.toLowerCase();
+    return groupedByPhase
+      .map(g => ({
+        ...g,
+        projects: g.projects.filter(p =>
+          p.name.toLowerCase().includes(query) ||
+          p.description?.toLowerCase().includes(query)
+        ),
+      }))
+      .filter(g => g.projects.length > 0);
+  }, [searchQuery, groupedByPhase]);
 
   const handlePrevPhase = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -169,7 +203,7 @@ export default function Header() {
 
   // Sync phase with current project when it changes
   useEffect(() => {
-    if (currentProject) {
+    if (currentProject && selectedPhaseIndex !== 0) {
       const projectPhase = currentProject.currentSystemPhase || "construction";
       const phaseIndex = phases.findIndex(p => p.id === projectPhase);
       if (phaseIndex !== -1 && phaseIndex !== selectedPhaseIndex) {
@@ -345,7 +379,7 @@ export default function Header() {
               <Kanban className="h-3.5 w-3.5" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-56 p-0">
+          <DropdownMenuContent align="end" className="w-56 p-0">
             {/* Phase selector row with search toggle */}
             <div className="flex items-center px-2 py-1.5 border-b">
               <div className="flex-1 flex items-center justify-center gap-1">
@@ -406,63 +440,140 @@ export default function Header() {
             {/* Project list */}
             <div className="max-h-[220px] overflow-y-auto">
               <div className="p-1">
-                {filteredProjects.length === 0 ? (
-                  <div className="px-2 py-4 text-center text-xs text-muted-foreground">
-                    {searchQuery.trim() ? "No projects found" : `No ${selectedPhase.label.toLowerCase()} projects`}
-                  </div>
-                ) : (
-                  filteredProjects.map((project) => {
-                    const isFavorite = isProjectFavorite(project.id);
-                    return (
-                      <div key={project.id} className="group flex items-center">
-                        <button
-                          onClick={() => {
-                            setIsProjectDropdownOpen(false);
-                            setSearchQuery("");
-                            setCurrentProject(project);
-                            if (project.isBusiness) {
-                              navigate('/business');
-                            } else {
-                              navigate(`/projects/${project.id}`);
-                            }
-                          }}
-                          className={`flex-1 flex items-center gap-2 px-2 py-1.5 rounded-md text-left hover-elevate transition-colors ${
-                            currentProject?.id === project.id 
-                              ? "bg-primary/10 text-primary" 
-                              : ""
-                          }`}
-                          data-testid={`header-project-option-${project.id}`}
-                        >
-                          <ProjectIcon 
-                            icon={project.icon} 
-                            color={project.color} 
-                            className="w-3.5 h-3.5 flex-shrink-0" 
-                          />
-                          <span className={`text-xs truncate flex-1 ${
-                            currentProject?.id === project.id ? "font-medium" : ""
-                          }`}>
-                            {project.name}
-                          </span>
-                          {project.isBusiness && (
-                            <Badge variant="secondary" className="text-[9px] px-1 py-0 h-3.5">
-                              Biz
-                            </Badge>
-                          )}
-                        </button>
-                        <button
-                          onClick={(e) => toggleFavoriteProject(project.id, e)}
-                          className={`p-1 rounded transition-opacity ${
-                            isFavorite 
-                              ? "text-primary opacity-100" 
-                              : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-primary"
-                          }`}
-                          data-testid={`button-header-favorite-project-${project.id}`}
-                        >
-                          <Star className={`h-3 w-3 ${isFavorite ? "fill-current" : ""}`} />
-                        </button>
+                {selectedPhase.id === "all" ? (
+                  <>
+                    {searchFilteredGrouped.length === 0 ? (
+                      <div className="px-2 py-4 text-center text-xs text-muted-foreground">
+                        {searchQuery.trim() ? "No projects found" : "No active projects"}
                       </div>
-                    );
-                  })
+                    ) : (
+                      searchFilteredGrouped.map((group) => (
+                        <div key={group.phase.id}>
+                          <div className="px-2 pt-2 pb-1">
+                            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                              {group.phase.label}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground ml-1">
+                              ({group.projects.length})
+                            </span>
+                          </div>
+                          {group.projects.map((project) => {
+                            const isFavorite = isProjectFavorite(project.id);
+                            return (
+                              <div key={project.id} className="group flex items-center">
+                                <button
+                                  onClick={() => {
+                                    setIsProjectDropdownOpen(false);
+                                    setSearchQuery("");
+                                    setCurrentProject(project);
+                                    if (project.isBusiness) {
+                                      navigate('/business');
+                                    } else {
+                                      navigate(`/projects/${project.id}`);
+                                    }
+                                  }}
+                                  className={`flex-1 flex items-center gap-2 px-2 py-1.5 rounded-md text-left hover-elevate transition-colors ${
+                                    currentProject?.id === project.id 
+                                      ? "bg-primary/10 text-primary" 
+                                      : ""
+                                  }`}
+                                  data-testid={`header-project-option-${project.id}`}
+                                >
+                                  <ProjectIcon 
+                                    icon={project.icon} 
+                                    color={project.color} 
+                                    className="w-3.5 h-3.5 flex-shrink-0" 
+                                  />
+                                  <span className={`text-xs truncate flex-1 ${
+                                    currentProject?.id === project.id ? "font-medium" : ""
+                                  }`}>
+                                    {project.name}
+                                  </span>
+                                  {project.isBusiness && (
+                                    <Badge variant="secondary" className="text-[9px] px-1 py-0 h-3.5">
+                                      Biz
+                                    </Badge>
+                                  )}
+                                </button>
+                                <button
+                                  onClick={(e) => toggleFavoriteProject(project.id, e)}
+                                  className={`p-1 rounded transition-opacity ${
+                                    isFavorite 
+                                      ? "text-primary opacity-100" 
+                                      : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-primary"
+                                  }`}
+                                  data-testid={`button-header-favorite-project-${project.id}`}
+                                >
+                                  <Star className={`h-3 w-3 ${isFavorite ? "fill-current" : ""}`} />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ))
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {filteredProjects.length === 0 ? (
+                      <div className="px-2 py-4 text-center text-xs text-muted-foreground">
+                        {searchQuery.trim() ? "No projects found" : `No ${selectedPhase.label.toLowerCase()} projects`}
+                      </div>
+                    ) : (
+                      filteredProjects.map((project) => {
+                        const isFavorite = isProjectFavorite(project.id);
+                        return (
+                          <div key={project.id} className="group flex items-center">
+                            <button
+                              onClick={() => {
+                                setIsProjectDropdownOpen(false);
+                                setSearchQuery("");
+                                setCurrentProject(project);
+                                if (project.isBusiness) {
+                                  navigate('/business');
+                                } else {
+                                  navigate(`/projects/${project.id}`);
+                                }
+                              }}
+                              className={`flex-1 flex items-center gap-2 px-2 py-1.5 rounded-md text-left hover-elevate transition-colors ${
+                                currentProject?.id === project.id 
+                                  ? "bg-primary/10 text-primary" 
+                                  : ""
+                              }`}
+                              data-testid={`header-project-option-${project.id}`}
+                            >
+                              <ProjectIcon 
+                                icon={project.icon} 
+                                color={project.color} 
+                                className="w-3.5 h-3.5 flex-shrink-0" 
+                              />
+                              <span className={`text-xs truncate flex-1 ${
+                                currentProject?.id === project.id ? "font-medium" : ""
+                              }`}>
+                                {project.name}
+                              </span>
+                              {project.isBusiness && (
+                                <Badge variant="secondary" className="text-[9px] px-1 py-0 h-3.5">
+                                  Biz
+                                </Badge>
+                              )}
+                            </button>
+                            <button
+                              onClick={(e) => toggleFavoriteProject(project.id, e)}
+                              className={`p-1 rounded transition-opacity ${
+                                isFavorite 
+                                  ? "text-primary opacity-100" 
+                                  : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-primary"
+                              }`}
+                              data-testid={`button-header-favorite-project-${project.id}`}
+                            >
+                              <Star className={`h-3 w-3 ${isFavorite ? "fill-current" : ""}`} />
+                            </button>
+                          </div>
+                        );
+                      })
+                    )}
+                  </>
                 )}
               </div>
             </div>
