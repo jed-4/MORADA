@@ -77,7 +77,9 @@ export function CasvaScheduleList({
   const rowRefsMap = useRef<Map<string, HTMLTableRowElement>>(new Map());
   const dragStartedRef = useRef(false);
   const startMouseYRef = useRef(0);
+  const startMouseXRef = useRef(0);
   const dropAfterRef = useRef<string | null>(null);
+  const ghostRef = useRef<HTMLDivElement | null>(null);
 
   const toggleSelection = (itemId: string, e?: React.MouseEvent) => {
     if (!onSelectionChange) return;
@@ -139,19 +141,78 @@ export function CasvaScheduleList({
     return result;
   }, [getSiblings]);
 
+  const removeGhost = useCallback(() => {
+    if (ghostRef.current) {
+      ghostRef.current.remove();
+      ghostRef.current = null;
+    }
+  }, []);
+
+  const createGhost = useCallback((rowEl: HTMLTableRowElement, mouseX: number, mouseY: number) => {
+    const rect = rowEl.getBoundingClientRect();
+    const ghost = document.createElement('div');
+    ghost.style.position = 'fixed';
+    ghost.style.zIndex = '9999';
+    ghost.style.pointerEvents = 'none';
+    ghost.style.opacity = '0.85';
+    ghost.style.width = rect.width + 'px';
+    ghost.style.height = rect.height + 'px';
+    ghost.style.left = rect.left + 'px';
+    ghost.style.top = mouseY - (mouseY - rect.top) + 'px';
+    ghost.style.background = 'hsl(var(--card))';
+    ghost.style.borderRadius = '4px';
+    ghost.style.boxShadow = '0 4px 16px rgba(0,0,0,0.18), 0 1px 4px rgba(0,0,0,0.10)';
+    ghost.style.overflow = 'hidden';
+    ghost.style.transition = 'none';
+
+    const table = document.createElement('table');
+    table.style.width = '100%';
+    table.style.borderCollapse = 'collapse';
+    const tbody = document.createElement('tbody');
+    const clonedRow = rowEl.cloneNode(true) as HTMLTableRowElement;
+    clonedRow.style.background = 'transparent';
+    tbody.appendChild(clonedRow);
+    table.appendChild(tbody);
+    ghost.appendChild(table);
+
+    document.body.appendChild(ghost);
+    ghostRef.current = ghost;
+
+    return {
+      offsetX: mouseX - rect.left,
+      offsetY: mouseY - rect.top,
+    };
+  }, []);
+
   const handleMouseDown = useCallback((e: React.MouseEvent, itemId: string) => {
     e.preventDefault();
     e.stopPropagation();
     dragStartedRef.current = false;
     startMouseYRef.current = e.clientY;
+    startMouseXRef.current = e.clientX;
+    let ghostOffsetX = 0;
+    let ghostOffsetY = 0;
 
     const onMouseMove = (moveEvent: MouseEvent) => {
       const deltaY = Math.abs(moveEvent.clientY - startMouseYRef.current);
-      if (!dragStartedRef.current && deltaY < 4) return;
+      const deltaX = Math.abs(moveEvent.clientX - startMouseXRef.current);
+      if (!dragStartedRef.current && deltaY < 4 && deltaX < 4) return;
 
       if (!dragStartedRef.current) {
         dragStartedRef.current = true;
         setDraggingItemId(itemId);
+
+        const rowEl = rowRefsMap.current.get(itemId);
+        if (rowEl) {
+          const offsets = createGhost(rowEl, moveEvent.clientX, moveEvent.clientY);
+          ghostOffsetX = offsets.offsetX;
+          ghostOffsetY = offsets.offsetY;
+        }
+      }
+
+      if (ghostRef.current) {
+        ghostRef.current.style.left = (moveEvent.clientX - ghostOffsetX) + 'px';
+        ghostRef.current.style.top = (moveEvent.clientY - ghostOffsetY) + 'px';
       }
 
       const siblingRows = getVisibleSiblingRows(itemId);
@@ -209,6 +270,7 @@ export function CasvaScheduleList({
       document.removeEventListener('mouseup', onMouseUp);
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
+      removeGhost();
 
       if (dragStartedRef.current && onReorderItem && dropAfterRef.current !== undefined) {
         const draggedItem = items.find(i => i.id === itemId);
@@ -230,13 +292,14 @@ export function CasvaScheduleList({
     document.body.style.cursor = 'grabbing';
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
-  }, [items, getVisibleSiblingRows, getSiblings, onReorderItem]);
+  }, [items, getVisibleSiblingRows, getSiblings, onReorderItem, createGhost, removeGhost]);
 
   useEffect(() => {
     const handleBlur = () => {
       if (dragStartedRef.current) {
         document.body.style.userSelect = '';
         document.body.style.cursor = '';
+        removeGhost();
         setDraggingItemId(null);
         dropAfterRef.current = null;
         setIndicatorY(null);
@@ -246,10 +309,11 @@ export function CasvaScheduleList({
     window.addEventListener('blur', handleBlur);
     return () => {
       window.removeEventListener('blur', handleBlur);
+      removeGhost();
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
     };
-  }, []);
+  }, [removeGhost]);
 
   const toggleCollapse = (itemId: string) => {
     setCollapsedItems(prev => {
@@ -355,16 +419,16 @@ export function CasvaScheduleList({
               const subtasks = subtasksByParent[item.id] || [];
               const isCollapsed = collapsedItems.has(item.id);
               const hasSubtasks = subtasks.length > 0;
-              const isDragging = draggingItemId === item.id;
-
               return (
                 <Fragment key={item.id}>
                   <TableRow 
                     ref={(el) => { if (el) rowRefsMap.current.set(item.id, el); }}
                     className={`group h-8 border-b cursor-pointer relative overflow-visible transition-colors hover-elevate ${
                       selectedItems.has(item.id) ? 'bg-accent/30' : ''
-                    } ${isDragging ? 'opacity-30 bg-muted' : ''}`}
+                    }`}
                     data-testid={`schedule-row-${item.id}`}
+                    draggable={false}
+                    onDragStart={(e) => e.preventDefault()}
                     onClick={(e) => handleRowClick(e, item.id)}
                     onTouchStart={(e) => handleTouchStart(e, item)}
                     onTouchMove={handleTouchMove}
@@ -415,16 +479,16 @@ export function CasvaScheduleList({
                   </TableRow>
 
                   {!isCollapsed && subtasks.map((subtask) => {
-                    const subIsDragging = draggingItemId === subtask.id;
-
                     return (
                       <TableRow 
                         key={subtask.id}
                         ref={(el) => { if (el) rowRefsMap.current.set(subtask.id, el); }}
                         className={`group h-8 border-b cursor-pointer relative overflow-visible transition-colors hover-elevate bg-muted/30 ${
                           selectedItems.has(subtask.id) ? 'bg-accent/30' : ''
-                        } ${subIsDragging ? 'opacity-30 bg-muted' : ''}`}
+                        }`}
                         data-testid={`schedule-subtask-row-${subtask.id}`}
+                        draggable={false}
+                        onDragStart={(e) => e.preventDefault()}
                         onClick={(e) => handleRowClick(e, subtask.id)}
                         onTouchStart={(e) => handleTouchStart(e, subtask)}
                         onTouchMove={handleTouchMove}

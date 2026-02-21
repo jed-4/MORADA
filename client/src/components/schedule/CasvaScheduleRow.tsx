@@ -90,8 +90,8 @@ export function CasvaScheduleRow({
               <div 
                 className="cursor-grab active:cursor-grabbing flex-shrink-0 px-0.5" 
                 onMouseDown={onDragHandleMouseDown}
-                {...dragAttributes} 
-                {...dragListeners}
+                draggable={false}
+                onDragStart={(e) => e.preventDefault()}
                 data-testid="drag-handle"
               >
                 <GripVertical className="h-3 w-3 text-muted-foreground" />
