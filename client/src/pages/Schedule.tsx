@@ -944,7 +944,7 @@ export default function Schedule() {
       scheduleId: schedule.id,
       ...formData,
       assignedToId: formData.assignedToId || undefined,
-      parentItemId: formData.parentItemId || undefined,
+      parentItemId: formData.parentItemId === "" ? null : formData.parentItemId,
       useWorkingDaysOverride: formData.useWorkingDaysOverride,
       taskLinkOffsets: taskLinkOffsetsLocal.length > 0 ? taskLinkOffsetsLocal : undefined,
     };
