@@ -686,7 +686,7 @@ export default function Schedule() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ parentId }),
+        body: JSON.stringify({ parentItemId: parentId }),
       });
       if (!response.ok) throw new Error("Failed to nest item");
       return response.json() as Promise<ScheduleItem>;
@@ -1774,11 +1774,18 @@ export default function Schedule() {
                         
                         const siblingItems = scheduleItems
                           .filter(i => (i.parentItemId || null) === (newParentId || null))
-                          .filter(i => i.id !== itemId);
+                          .filter(i => i.id !== itemId)
+                          .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
                         
                         let insertIdx = 0;
                         if (afterItemId) {
-                          const afterIdx = siblingItems.findIndex(i => i.id === afterItemId);
+                          let afterIdx = siblingItems.findIndex(i => i.id === afterItemId);
+                          if (afterIdx < 0) {
+                            const afterItem = scheduleItems.find(i => i.id === afterItemId);
+                            if (afterItem?.parentItemId) {
+                              afterIdx = siblingItems.findIndex(i => i.id === afterItem.parentItemId);
+                            }
+                          }
                           insertIdx = afterIdx >= 0 ? afterIdx + 1 : siblingItems.length;
                         }
                         siblingItems.splice(insertIdx, 0, movingItem);
@@ -1885,7 +1892,7 @@ export default function Schedule() {
       }}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
-            <DialogTitle>{editingItem && editingItem.id ? "Edit Schedule Item" : "Add Schedule Item"}</DialogTitle>
+            <DialogTitle>{editingItem && editingItem.id ? `Edit: ${editingItem.name || "Schedule Item"}` : "Add Schedule Item"}</DialogTitle>
             <DialogDescription>
               {editingItem && editingItem.id ? "Update the schedule item details." : "Create a new item in the schedule."}
             </DialogDescription>

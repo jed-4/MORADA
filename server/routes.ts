@@ -14797,8 +14797,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Prevent circular parent-child relationships
-      if (updateData.parentId !== undefined && updateData.parentId !== null) {
-        const parentId = updateData.parentId;
+      if (updateData.parentItemId !== undefined && updateData.parentItemId !== null) {
+        const parentId = updateData.parentItemId;
         const itemId = req.params.id;
         
         // Can't set self as parent
@@ -14810,9 +14810,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const isDescendant = async (ancestorId: string, potentialDescendantId: string): Promise<boolean> => {
           const descendant = await storage.getScheduleItem(potentialDescendantId);
           if (!descendant) return false;
-          if (descendant.parentId === ancestorId) return true;
-          if (descendant.parentId) {
-            return isDescendant(ancestorId, descendant.parentId);
+          if (descendant.parentItemId === ancestorId) return true;
+          if (descendant.parentItemId) {
+            return isDescendant(ancestorId, descendant.parentItemId);
           }
           return false;
         };

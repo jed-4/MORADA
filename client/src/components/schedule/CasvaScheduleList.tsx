@@ -43,9 +43,15 @@ type DropTarget = {
   type: 'between';
   afterItemId: string | null;
   beforeItemId: string | null;
+  inParentGroup: string | null;
 } | {
   type: 'nest';
   targetId: string;
+} | {
+  type: 'split';
+  parentGroupId: string;
+  lastChildId: string;
+  zone: 'top' | 'bottom';
 };
 
 export function CasvaScheduleList({ 
@@ -169,6 +175,27 @@ export function CasvaScheduleList({
     }
     e.dataTransfer.dropEffect = "move";
 
+    const currentRow = flatRows[rowIndex];
+    const nextRow = rowIndex < flatRows.length - 1 ? flatRows[rowIndex + 1] : null;
+    const prevRow = rowIndex > 0 ? flatRows[rowIndex - 1] : null;
+    const currentParent = currentRow?.parentId || null;
+
+    const isLastChildOfParent = currentRow?.isSubtask && (!nextRow || !nextRow.isSubtask || nextRow.parentId !== currentParent);
+
+    const currentItem = currentRow?.item;
+    const hasChildren = currentItem && items.some(i => i.parentItemId === currentItem.id);
+    const isCollapsedParent = currentItem && hasChildren && collapsedItems.has(currentItem.id);
+    const isGroupBoundary = isLastChildOfParent || isCollapsedParent;
+    const boundaryParentId = isLastChildOfParent ? currentParent : (isCollapsedParent ? currentItem.id : null);
+
+    const lastChildId = (() => {
+      if (!boundaryParentId) return itemId;
+      const children = items
+        .filter(i => i.parentItemId === boundaryParentId)
+        .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+      return children.length > 0 ? children[children.length - 1].id : itemId;
+    })();
+
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const y = e.clientY - rect.top;
     const height = rect.height;
@@ -181,11 +208,11 @@ export function CasvaScheduleList({
         hoverTimerRef.current = null;
       }
       hoverItemRef.current = null;
-      const prevRow = rowIndex > 0 ? flatRows[rowIndex - 1] : null;
       setDropTarget({
         type: 'between',
         afterItemId: prevRow ? prevRow.item.id : null,
         beforeItemId: itemId,
+        inParentGroup: currentParent,
       });
     } else if (inBottomZone) {
       if (hoverTimerRef.current) {
@@ -193,11 +220,24 @@ export function CasvaScheduleList({
         hoverTimerRef.current = null;
       }
       hoverItemRef.current = null;
-      setDropTarget({
-        type: 'between',
-        afterItemId: itemId,
-        beforeItemId: rowIndex < flatRows.length - 1 ? flatRows[rowIndex + 1].item.id : null,
-      });
+      if (isGroupBoundary && boundaryParentId) {
+        const splitY = y - height * 0.7;
+        const splitHeight = height * 0.3;
+        const inTopHalf = splitY < splitHeight * 0.5;
+        setDropTarget({
+          type: 'split',
+          parentGroupId: boundaryParentId,
+          lastChildId: lastChildId,
+          zone: inTopHalf ? 'top' : 'bottom',
+        });
+      } else {
+        setDropTarget({
+          type: 'between',
+          afterItemId: itemId,
+          beforeItemId: nextRow ? nextRow.item.id : null,
+          inParentGroup: currentParent,
+        });
+      }
     } else {
       if (hoverItemRef.current !== itemId) {
         if (hoverTimerRef.current) {
@@ -207,7 +247,8 @@ export function CasvaScheduleList({
         setDropTarget({
           type: 'between',
           afterItemId: itemId,
-          beforeItemId: rowIndex < flatRows.length - 1 ? flatRows[rowIndex + 1].item.id : null,
+          beforeItemId: nextRow ? nextRow.item.id : null,
+          inParentGroup: currentParent,
         });
         hoverTimerRef.current = setTimeout(() => {
           setDropTarget({ type: 'nest', targetId: itemId });
@@ -215,7 +256,7 @@ export function CasvaScheduleList({
         }, 1000);
       }
     }
-  }, [draggingItemId, flatRows]);
+  }, [draggingItemId, flatRows, items, collapsedItems]);
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     const relatedTarget = e.relatedTarget as HTMLElement | null;
@@ -251,15 +292,26 @@ export function CasvaScheduleList({
         if (onNestItem && !isDescendant(currentDrag, currentTarget.targetId)) {
           onNestItem(currentDrag, currentTarget.targetId);
         }
+      } else if (currentTarget.type === 'split') {
+        if (currentTarget.zone === 'top') {
+          if (onReorderItem) {
+            onReorderItem(currentDrag, currentTarget.lastChildId, currentTarget.parentGroupId);
+          }
+        } else {
+          if (onReorderItem) {
+            onReorderItem(currentDrag, currentTarget.lastChildId, null);
+          }
+        }
       } else if (currentTarget.type === 'between') {
-        const draggedItem = items.find(i => i.id === currentDrag);
-        const afterItem = currentTarget.afterItemId ? items.find(i => i.id === currentTarget.afterItemId) : null;
-        const targetParentId = afterItem?.parentItemId || null;
+        const targetParentId = currentTarget.inParentGroup;
         
         if (onReorderItem) {
           onReorderItem(currentDrag, currentTarget.afterItemId, targetParentId);
-        } else if (onNestItem && draggedItem?.parentItemId !== targetParentId) {
-          onNestItem(currentDrag, targetParentId);
+        } else if (onNestItem) {
+          const draggedItem = items.find(i => i.id === currentDrag);
+          if (draggedItem?.parentItemId !== targetParentId) {
+            onNestItem(currentDrag, targetParentId);
+          }
         }
       }
     }
@@ -343,10 +395,19 @@ export function CasvaScheduleList({
   const isAllSelected = items.length > 0 && selectedItems.size === items.length;
   const isSomeSelected = selectedItems.size > 0 && selectedItems.size < items.length;
 
-  const getInsertionLinePosition = (itemId: string): 'top' | 'bottom' | null => {
-    if (!dropTarget || dropTarget.type !== 'between' || !draggingItemId) return null;
-    if (dropTarget.beforeItemId === itemId) return 'top';
-    if (dropTarget.afterItemId === itemId && !dropTarget.beforeItemId) return 'bottom';
+  const getInsertionLine = (itemId: string): { position: 'top' | 'bottom'; indented: boolean } | null => {
+    if (!dropTarget || !draggingItemId) return null;
+    if (dropTarget.type === 'between') {
+      if (dropTarget.beforeItemId === itemId) return { position: 'top', indented: !!dropTarget.inParentGroup };
+      if (dropTarget.afterItemId === itemId && !dropTarget.beforeItemId) return { position: 'bottom', indented: !!dropTarget.inParentGroup };
+    }
+    return null;
+  };
+
+  const getSplitLine = (itemId: string): 'top' | 'bottom' | null => {
+    if (!dropTarget || dropTarget.type !== 'split' || !draggingItemId) return null;
+    if (dropTarget.lastChildId === itemId) return dropTarget.zone;
+    if (dropTarget.parentGroupId === itemId && collapsedItems.has(itemId)) return dropTarget.zone;
     return null;
   };
 
@@ -391,7 +452,8 @@ export function CasvaScheduleList({
               const isCollapsed = collapsedItems.has(item.id);
               const hasSubtasks = subtasks.length > 0;
               const currentRowIndex = rowIndex++;
-              const insertLine = getInsertionLinePosition(item.id);
+              const insertLine = getInsertionLine(item.id);
+              const parentSplitLine = getSplitLine(item.id);
               const isNest = isNestTarget(item.id);
               const isDragging = draggingItemId === item.id;
 
@@ -414,9 +476,12 @@ export function CasvaScheduleList({
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
                   >
-                    {insertLine === 'top' && (
-                      <td colSpan={99} className="absolute left-0 right-0 top-0 h-0 z-20" style={{ padding: 0, border: 'none' }}>
-                        <div className="h-0.5 bg-primary rounded-full" />
+                    {insertLine?.position === 'top' && (
+                      <td colSpan={99} className="absolute left-0 right-0 top-0 h-0 z-20 pointer-events-none" style={{ padding: 0, border: 'none' }}>
+                        <div className="flex items-center" style={{ marginLeft: insertLine.indented ? '16px' : '0' }}>
+                          <div className="w-2 h-2 rounded-full bg-primary -ml-1 flex-shrink-0" />
+                          <div className="h-0.5 bg-primary flex-1" />
+                        </div>
                       </td>
                     )}
                     {onSelectionChange && (
@@ -460,16 +525,35 @@ export function CasvaScheduleList({
                         }}
                       />
                     ))}
-                    {insertLine === 'bottom' && (
-                      <td colSpan={99} className="absolute left-0 right-0 bottom-0 h-0 z-20" style={{ padding: 0, border: 'none' }}>
-                        <div className="h-0.5 bg-primary rounded-full" />
+                    {parentSplitLine && (
+                      <td colSpan={99} className="absolute left-0 right-0 bottom-0 h-0 z-20 pointer-events-none" style={{ padding: 0, border: 'none' }}>
+                        {parentSplitLine === 'top' ? (
+                          <div className="flex items-center" style={{ marginLeft: '16px' }}>
+                            <div className="w-2 h-2 rounded-full bg-primary -ml-1 flex-shrink-0" />
+                            <div className="h-0.5 bg-primary flex-1" />
+                          </div>
+                        ) : (
+                          <div className="flex items-center">
+                            <div className="w-2 h-2 rounded-full bg-primary -ml-1 flex-shrink-0" />
+                            <div className="h-0.5 bg-primary flex-1" />
+                          </div>
+                        )}
+                      </td>
+                    )}
+                    {insertLine?.position === 'bottom' && !parentSplitLine && (
+                      <td colSpan={99} className="absolute left-0 right-0 bottom-0 h-0 z-20 pointer-events-none" style={{ padding: 0, border: 'none' }}>
+                        <div className="flex items-center" style={{ marginLeft: insertLine.indented ? '16px' : '0' }}>
+                          <div className="w-2 h-2 rounded-full bg-primary -ml-1 flex-shrink-0" />
+                          <div className="h-0.5 bg-primary flex-1" />
+                        </div>
                       </td>
                     )}
                   </TableRow>
 
                   {!isCollapsed && subtasks.map((subtask) => {
                     const subRowIndex = rowIndex++;
-                    const subInsertLine = getInsertionLinePosition(subtask.id);
+                    const subInsertLine = getInsertionLine(subtask.id);
+                    const subSplitLine = getSplitLine(subtask.id);
                     const subIsNest = isNestTarget(subtask.id);
                     const subIsDragging = draggingItemId === subtask.id;
 
@@ -491,9 +575,12 @@ export function CasvaScheduleList({
                         onDragLeave={handleDragLeave}
                         onDrop={handleDrop}
                       >
-                        {subInsertLine === 'top' && (
-                          <td colSpan={99} className="absolute left-0 right-0 top-0 h-0 z-20" style={{ padding: 0, border: 'none' }}>
-                            <div className="h-0.5 bg-primary rounded-full" />
+                        {subInsertLine?.position === 'top' && (
+                          <td colSpan={99} className="absolute left-0 right-0 top-0 h-0 z-20 pointer-events-none" style={{ padding: 0, border: 'none' }}>
+                            <div className="flex items-center" style={{ marginLeft: subInsertLine.indented ? '16px' : '0' }}>
+                              <div className="w-2 h-2 rounded-full bg-primary -ml-1 flex-shrink-0" />
+                              <div className="h-0.5 bg-primary flex-1" />
+                            </div>
                           </td>
                         )}
                         {onSelectionChange && (
@@ -533,9 +620,27 @@ export function CasvaScheduleList({
                             }}
                           />
                         ))}
-                        {subInsertLine === 'bottom' && (
-                          <td colSpan={99} className="absolute left-0 right-0 bottom-0 h-0 z-20" style={{ padding: 0, border: 'none' }}>
-                            <div className="h-0.5 bg-primary rounded-full" />
+                        {subSplitLine && (
+                          <td colSpan={99} className="absolute left-0 right-0 bottom-0 h-0 z-20 pointer-events-none" style={{ padding: 0, border: 'none' }}>
+                            {subSplitLine === 'top' ? (
+                              <div className="flex items-center" style={{ marginLeft: '16px' }}>
+                                <div className="w-2 h-2 rounded-full bg-primary -ml-1 flex-shrink-0" />
+                                <div className="h-0.5 bg-primary flex-1" />
+                              </div>
+                            ) : (
+                              <div className="flex items-center">
+                                <div className="w-2 h-2 rounded-full bg-primary -ml-1 flex-shrink-0" />
+                                <div className="h-0.5 bg-primary flex-1" />
+                              </div>
+                            )}
+                          </td>
+                        )}
+                        {subInsertLine?.position === 'bottom' && !subSplitLine && (
+                          <td colSpan={99} className="absolute left-0 right-0 bottom-0 h-0 z-20 pointer-events-none" style={{ padding: 0, border: 'none' }}>
+                            <div className="flex items-center" style={{ marginLeft: subInsertLine.indented ? '16px' : '0' }}>
+                              <div className="w-2 h-2 rounded-full bg-primary -ml-1 flex-shrink-0" />
+                              <div className="h-0.5 bg-primary flex-1" />
+                            </div>
                           </td>
                         )}
                       </TableRow>

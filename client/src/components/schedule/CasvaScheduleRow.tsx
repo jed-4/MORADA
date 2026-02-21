@@ -82,8 +82,8 @@ export function CasvaScheduleRow({
     <>
       {/* Title Column with Drag Handle & Collapse */}
       {visibleColumns.item && (
-        <TableCell className="h-8 py-0" style={{ paddingLeft: isSubtask ? '20px' : '8px' }}>
-          <div className="flex items-center gap-1.5">
+        <TableCell className="h-8 py-0" style={{ paddingLeft: isSubtask ? '16px' : '2px' }}>
+          <div className="flex items-center gap-0.5">
             {isDraggable && (
               <div 
                 className="drag-handle-enhanced cursor-grab active:cursor-grabbing" 
