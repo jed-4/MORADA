@@ -449,7 +449,7 @@ export default function Header() {
                     ) : (
                       searchFilteredGrouped.map((group) => (
                         <div key={group.phase.id}>
-                          <div className="px-2 pt-1 pb-0">
+                          <div className="px-2 pt-[0px] pb-[0px]">
                             <span className="text-[8px] font-medium text-muted-foreground uppercase tracking-wider leading-none">
                               {group.phase.label}
                             </span>
@@ -653,7 +653,6 @@ export default function Header() {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      
       {/* Global Search Bar - Centered */}
       <div className="flex-1 flex justify-center px-4">
         <button 
@@ -666,7 +665,6 @@ export default function Header() {
           <kbd className="ml-auto text-[10px] bg-muted px-1.5 py-0.5 rounded">⌘K</kbd>
         </button>
       </div>
-
       <div className="flex items-center gap-1">
         {/* Contacts Button */}
         <Button 
@@ -769,25 +767,21 @@ export default function Header() {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      
       {/* Create Project Dialog */}
       <CreateProjectDialog 
         open={isCreateProjectOpen} 
         onOpenChange={setIsCreateProjectOpen} 
       />
-
       {/* User Calendar Dialog */}
       <UserCalendarDialog 
         open={isCalendarOpen} 
         onOpenChange={setIsCalendarOpen} 
       />
-
       {/* Global Search Dialog */}
       <GlobalSearch 
         open={isGlobalSearchOpen} 
         onOpenChange={setIsGlobalSearchOpen} 
       />
-
       {/* Task Creation Modal */}
       <TaskEditModal
         open={isTaskModalOpen}
