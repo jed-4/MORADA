@@ -288,6 +288,26 @@ function useGanttRowDrag(
         } else if (dropTargetIdRef.current) {
           const targetId = dropTargetIdRef.current;
           const position = dropPositionRef.current;
+          const activeItem = allItems.find(i => i.id === itemId);
+          const targetItem = allItems.find(i => i.id === targetId);
+
+          if (activeItem?.parentItemId && targetItem) {
+            const isSibling = targetItem.parentItemId === activeItem.parentItemId;
+            const isDropOnParent = targetItem.id === activeItem.parentItemId;
+            const isSameGroup = isSibling || (isDropOnParent && position === 'below');
+            if (!isSameGroup) {
+              apiRequest(`/api/schedule-items/${itemId}`, "PATCH", {
+                parentItemId: null,
+              }).then(() => {
+                queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+                const parentItem = allItems.find(i => i.id === activeItem.parentItemId);
+                toast({ title: "Item removed from group", description: `"${activeItem.name}" is no longer a child of "${parentItem?.name || 'parent'}"` });
+              }).catch(() => {
+                toast({ title: "Failed to remove from group", variant: "destructive" });
+              });
+            }
+          }
+
           setSessionItemOrder(currentOrder => {
             const order = currentOrder.length > 0 ? [...currentOrder] : [...sortableItemIds];
             const oldIndex = order.indexOf(itemId);
