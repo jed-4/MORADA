@@ -160,7 +160,7 @@ export function CasvaScheduleList({
       const parentEl = rowRefsMap.current.get(draggingParentId);
       if (parentEl) {
         const parentRect = parentEl.getBoundingClientRect();
-        const groupChildren = flatRows.filter(r => r.parentId === draggingParentId);
+        const groupChildren = flatRows.filter(r => r.parentId === draggingParentId && r.id !== draggingId);
         const lastChild = groupChildren[groupChildren.length - 1];
         const lastChildEl = lastChild ? rowRefsMap.current.get(lastChild.id) : null;
         const groupBottom = lastChildEl ? lastChildEl.getBoundingClientRect().bottom : parentRect.bottom;
@@ -219,10 +219,9 @@ export function CasvaScheduleList({
       const parentRect = parentEl.getBoundingClientRect();
 
       const siblings = flatRows.filter(r => r.parentId === draggingParentId && r.id !== draggingId);
-      const allGroupChildren = flatRows.filter(r => r.parentId === draggingParentId);
-      const lastChild = allGroupChildren[allGroupChildren.length - 1];
-      const lastChildEl = lastChild ? rowRefsMap.current.get(lastChild.id) : null;
-      const groupBottom = lastChildEl ? lastChildEl.getBoundingClientRect().bottom : parentRect.bottom;
+      const lastSibling = siblings[siblings.length - 1];
+      const lastSiblingEl = lastSibling ? rowRefsMap.current.get(lastSibling.id) : null;
+      const groupBottom = lastSiblingEl ? lastSiblingEl.getBoundingClientRect().bottom : parentRect.bottom;
 
       const mouseY = currentMouseYRef.current;
 
