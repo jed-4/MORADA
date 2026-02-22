@@ -87,6 +87,7 @@ export function CasvaScheduleList({
   const startMouseXRef = useRef(0);
   const dropTargetIdRef = useRef<string | null>(null);
   const dropPositionRef = useRef<'above' | 'below'>('below');
+  const currentMouseYRef = useRef(0);
 
   const toggleSelection = (itemId: string, e?: React.MouseEvent) => {
     if (!onSelectionChange) return;
@@ -186,13 +187,10 @@ export function CasvaScheduleList({
       const lastChildEl = lastChild ? rowRefsMap.current.get(lastChild.id) : null;
       const groupBottom = lastChildEl ? lastChildEl.getBoundingClientRect().bottom : parentRect.bottom;
 
-      const targetEl = rowRefsMap.current.get(targetId);
-      if (!targetEl) return null;
-      const targetRect = targetEl.getBoundingClientRect();
-      const mouseApproxY = position === 'above' ? targetRect.top : targetRect.bottom;
+      const mouseY = currentMouseYRef.current;
 
-      const isAboveParent = mouseApproxY <= parentRect.top;
-      const isBelowGroup = mouseApproxY >= groupBottom;
+      const isAboveParent = mouseY <= parentRect.top;
+      const isBelowGroup = mouseY >= groupBottom;
 
       if (isAboveParent || isBelowGroup) {
         if (isAboveParent) {
@@ -277,6 +275,7 @@ export function CasvaScheduleList({
         setDraggingItemId(itemId);
       }
 
+      currentMouseYRef.current = moveEvent.clientY;
       const { targetId, position } = findDropTarget(moveEvent.clientY, itemId);
       dropTargetIdRef.current = targetId;
       dropPositionRef.current = position;
@@ -379,25 +378,40 @@ export function CasvaScheduleList({
   const isAllSelected = items.length > 0 && selectedItems.size === items.length;
   const isSomeSelected = selectedItems.size > 0 && selectedItems.size < items.length;
 
-  const getIndicatorPosition = (targetId: string, position: 'above' | 'below'): number | null => {
-    const el = rowRefsMap.current.get(targetId);
-    if (!el || !tableContainerRef.current) return null;
-    const containerRect = tableContainerRef.current.getBoundingClientRect();
-    const rowRect = el.getBoundingClientRect();
-    if (position === 'above') {
-      return rowRect.top - containerRect.top;
-    }
-    return rowRect.bottom - containerRect.top;
-  };
-
-  const indicatorY = draggingItemId && dropTargetId ? getIndicatorPosition(dropTargetId, dropPosition) : null;
-
-  const willUnparent = draggingItemId && dropTargetId ? (() => {
+  const dropIndicatorInfo = draggingItemId && dropTargetId ? (() => {
     const draggingItem = items.find(i => i.id === draggingItemId);
-    if (!draggingItem?.parentItemId) return false;
+    if (!draggingItem) return null;
     const params = computeReorderParams(draggingItemId, dropTargetId, dropPosition);
-    return params?.newParentId === null;
-  })() : false;
+    const willUnparent = draggingItem.parentItemId ? params?.newParentId === null : false;
+    return { targetId: dropTargetId, position: dropPosition, willUnparent };
+  })() : null;
+
+  const renderDropIndicator = (willUnparent: boolean, colSpan: number) => (
+    <tr className="pointer-events-none" style={{ height: 0 }}>
+      <td colSpan={colSpan} className="p-0 border-0 relative" style={{ height: 0 }}>
+        <div className="absolute left-0 right-0 flex items-center" style={{ top: -1.5, zIndex: 50 }}>
+          <div className={`w-3 h-3 rounded-full -ml-0.5 flex-shrink-0 shadow-sm ${willUnparent ? 'bg-orange-500' : 'bg-primary'}`} />
+          <div className={`h-[3px] flex-1 shadow-sm ${willUnparent ? 'bg-orange-500' : 'bg-primary'}`} />
+          <div className={`w-3 h-3 rounded-full -mr-0.5 flex-shrink-0 shadow-sm ${willUnparent ? 'bg-orange-500' : 'bg-primary'}`} />
+        </div>
+        {willUnparent && (
+          <div className="absolute left-3 text-[9px] text-orange-500 font-medium" style={{ top: 4, zIndex: 50 }}>
+            Will become top-level item
+          </div>
+        )}
+      </td>
+    </tr>
+  );
+
+  const totalColumns = (onSelectionChange ? 1 : 0) + 
+    (visibleColumns.item ? 1 : 0) + 
+    (visibleColumns.assignee ? 1 : 0) + 
+    (visibleColumns.type ? 1 : 0) + 
+    (visibleColumns.dueDate ? 1 : 0) + 
+    (visibleColumns.status ? 1 : 0) + 
+    1 + 
+    (visibleColumns.completion ? 1 : 0) + 
+    1;
 
   return (
     <div className="border rounded-lg bg-card overflow-hidden relative" ref={tableContainerRef}>
@@ -433,8 +447,12 @@ export function CasvaScheduleList({
               const subtasks = subtasksByParent[item.id] || [];
               const isCollapsed = collapsedItems.has(item.id);
               const hasSubtasks = subtasks.length > 0;
+              const showIndicatorAboveParent = dropIndicatorInfo && 
+                dropIndicatorInfo.targetId === item.id && 
+                dropIndicatorInfo.position === 'above';
               return (
                 <Fragment key={item.id}>
+                  {showIndicatorAboveParent && renderDropIndicator(dropIndicatorInfo.willUnparent, totalColumns)}
                   <TableRow 
                     ref={(el) => { if (el) rowRefsMap.current.set(item.id, el); }}
                     className={`group h-8 border-b cursor-pointer relative overflow-visible transition-colors hover-elevate ${
@@ -492,64 +510,79 @@ export function CasvaScheduleList({
                     ))}
                   </TableRow>
 
-                  {!isCollapsed && subtasks.map((subtask) => {
+                  {dropIndicatorInfo && 
+                    dropIndicatorInfo.targetId === item.id && 
+                    dropIndicatorInfo.position === 'below' && 
+                    renderDropIndicator(dropIndicatorInfo.willUnparent, totalColumns)}
+
+                  {!isCollapsed && subtasks.map((subtask, subtaskIdx) => {
+                    const showIndicatorAboveSubtask = dropIndicatorInfo && 
+                      dropIndicatorInfo.targetId === subtask.id && 
+                      dropIndicatorInfo.position === 'above';
+                    const showIndicatorBelowSubtask = dropIndicatorInfo && 
+                      dropIndicatorInfo.targetId === subtask.id && 
+                      dropIndicatorInfo.position === 'below';
                     return (
-                      <TableRow 
-                        key={subtask.id}
-                        ref={(el) => { if (el) rowRefsMap.current.set(subtask.id, el); }}
-                        className={`group h-8 border-b cursor-pointer relative overflow-visible transition-colors hover-elevate bg-muted/30 ${
-                          selectedItems.has(subtask.id) ? 'bg-accent/30' : ''
-                        } ${draggingItemId === subtask.id ? 'opacity-40' : ''}`}
-                        data-testid={`schedule-subtask-row-${subtask.id}`}
-                        draggable={false}
-                        onDragStart={(e) => e.preventDefault()}
-                        onClick={(e) => handleRowClick(e, subtask.id)}
-                        onTouchStart={(e) => handleTouchStart(e, subtask)}
-                        onTouchMove={handleTouchMove}
-                        onTouchEnd={(e) => handleTouchEnd(e, subtask)}
-                      >
-                        {onSelectionChange && (
-                          <td className="w-8 h-8 py-0 pl-2">
-                            <Checkbox
-                              checked={selectedItems.has(subtask.id)}
-                              onCheckedChange={() => toggleSelection(subtask.id)}
-                              onClick={(e) => e.stopPropagation()}
-                              className="h-3.5 w-3.5"
-                              data-testid={`checkbox-${subtask.id}`}
-                            />
-                          </td>
-                        )}
-                        <CasvaScheduleRow
-                          item={subtask}
-                          noteCount={noteCounts[subtask.id] || 0}
-                          onEdit={() => onEditItem(subtask)}
-                          onStatusChange={onStatusChange ? (status) => onStatusChange(subtask.id, status) : undefined}
-                          onDuplicate={onDuplicateItem ? () => onDuplicateItem(subtask) : undefined}
-                          onDelete={onDeleteItem ? () => onDeleteItem(subtask.id) : undefined}
-                          onCompletionToggle={onCompletionToggle ? () => onCompletionToggle(subtask.id, subtask.progressPercent || 0) : undefined}
-                          statusOptions={statusOptions}
-                          visibleColumns={visibleColumns}
-                          isDraggable={!!onReorderItem}
-                          onDragHandleMouseDown={(e) => handleMouseDown(e, subtask.id)}
-                          isSubtask={true}
-                        />
-                        
-                        {ripples.filter(r => r.id.startsWith(subtask.id)).map((ripple) => (
-                          <span
-                            key={ripple.id}
-                            className="absolute rounded-full bg-primary opacity-30 animate-ripple pointer-events-none"
-                            style={{
-                              left: ripple.x,
-                              top: ripple.y,
-                              width: 0,
-                              height: 0,
-                              transform: 'translate(-50%, -50%)',
-                            }}
+                      <Fragment key={subtask.id}>
+                        {showIndicatorAboveSubtask && renderDropIndicator(dropIndicatorInfo.willUnparent, totalColumns)}
+                        <TableRow 
+                          ref={(el) => { if (el) rowRefsMap.current.set(subtask.id, el); }}
+                          className={`group h-8 border-b cursor-pointer relative overflow-visible transition-colors hover-elevate bg-muted/30 ${
+                            selectedItems.has(subtask.id) ? 'bg-accent/30' : ''
+                          } ${draggingItemId === subtask.id ? 'opacity-40' : ''}`}
+                          data-testid={`schedule-subtask-row-${subtask.id}`}
+                          draggable={false}
+                          onDragStart={(e) => e.preventDefault()}
+                          onClick={(e) => handleRowClick(e, subtask.id)}
+                          onTouchStart={(e) => handleTouchStart(e, subtask)}
+                          onTouchMove={handleTouchMove}
+                          onTouchEnd={(e) => handleTouchEnd(e, subtask)}
+                        >
+                          {onSelectionChange && (
+                            <td className="w-8 h-8 py-0 pl-2">
+                              <Checkbox
+                                checked={selectedItems.has(subtask.id)}
+                                onCheckedChange={() => toggleSelection(subtask.id)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="h-3.5 w-3.5"
+                                data-testid={`checkbox-${subtask.id}`}
+                              />
+                            </td>
+                          )}
+                          <CasvaScheduleRow
+                            item={subtask}
+                            noteCount={noteCounts[subtask.id] || 0}
+                            onEdit={() => onEditItem(subtask)}
+                            onStatusChange={onStatusChange ? (status) => onStatusChange(subtask.id, status) : undefined}
+                            onDuplicate={onDuplicateItem ? () => onDuplicateItem(subtask) : undefined}
+                            onDelete={onDeleteItem ? () => onDeleteItem(subtask.id) : undefined}
+                            onCompletionToggle={onCompletionToggle ? () => onCompletionToggle(subtask.id, subtask.progressPercent || 0) : undefined}
+                            statusOptions={statusOptions}
+                            visibleColumns={visibleColumns}
+                            isDraggable={!!onReorderItem}
+                            onDragHandleMouseDown={(e) => handleMouseDown(e, subtask.id)}
+                            isSubtask={true}
                           />
-                        ))}
-                      </TableRow>
+                          
+                          {ripples.filter(r => r.id.startsWith(subtask.id)).map((ripple) => (
+                            <span
+                              key={ripple.id}
+                              className="absolute rounded-full bg-primary opacity-30 animate-ripple pointer-events-none"
+                              style={{
+                                left: ripple.x,
+                                top: ripple.y,
+                                width: 0,
+                                height: 0,
+                                transform: 'translate(-50%, -50%)',
+                              }}
+                            />
+                          ))}
+                        </TableRow>
+                        {showIndicatorBelowSubtask && renderDropIndicator(dropIndicatorInfo.willUnparent, totalColumns)}
+                      </Fragment>
                     );
                   })}
+
                 </Fragment>
               );
             })}
@@ -557,23 +590,6 @@ export function CasvaScheduleList({
         </Table>
       </ScrollArea>
 
-      {draggingItemId && indicatorY !== null && (
-        <div
-          className="absolute left-0 right-0 pointer-events-none"
-          style={{ top: indicatorY, zIndex: 50 }}
-        >
-          <div className="flex items-center">
-            <div className={`w-3 h-3 rounded-full -ml-0.5 flex-shrink-0 shadow-sm ${willUnparent ? 'bg-orange-500' : 'bg-primary'}`} />
-            <div className={`h-[3px] flex-1 shadow-sm ${willUnparent ? 'bg-orange-500' : 'bg-primary'}`} />
-            <div className={`w-3 h-3 rounded-full -mr-0.5 flex-shrink-0 shadow-sm ${willUnparent ? 'bg-orange-500' : 'bg-primary'}`} />
-          </div>
-          {willUnparent && (
-            <div className="text-[9px] text-orange-500 font-medium ml-3 mt-0.5">
-              Will become top-level item
-            </div>
-          )}
-        </div>
-      )}
       
       <div className="px-2 h-8 border-t bg-background text-[10px] text-muted-foreground flex items-center justify-between">
         <span>
