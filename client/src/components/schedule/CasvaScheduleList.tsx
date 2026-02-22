@@ -80,6 +80,7 @@ export function CasvaScheduleList({
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [dropPosition, setDropPosition] = useState<'above' | 'below'>('below');
+  const [indicatorRect, setIndicatorRect] = useState<{ top: number; left: number; width: number } | null>(null);
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const rowRefsMap = useRef<Map<string, HTMLTableRowElement>>(new Map());
   const dragStartedRef = useRef(false);
@@ -273,6 +274,7 @@ export function CasvaScheduleList({
       if (!dragStartedRef.current) {
         dragStartedRef.current = true;
         setDraggingItemId(itemId);
+        console.log('[DRAG] Started dragging:', itemId);
       }
 
       currentMouseYRef.current = moveEvent.clientY;
@@ -281,6 +283,20 @@ export function CasvaScheduleList({
       dropPositionRef.current = position;
       setDropTargetId(targetId);
       setDropPosition(position);
+
+      if (targetId) {
+        const targetEl = rowRefsMap.current.get(targetId);
+        if (targetEl) {
+          const rect = targetEl.getBoundingClientRect();
+          setIndicatorRect({
+            top: position === 'above' ? rect.top : rect.bottom,
+            left: rect.left,
+            width: rect.width,
+          });
+        }
+      } else {
+        setIndicatorRect(null);
+      }
     };
 
     const onMouseUp = () => {
@@ -298,6 +314,7 @@ export function CasvaScheduleList({
 
       setDraggingItemId(null);
       setDropTargetId(null);
+      setIndicatorRect(null);
       dropTargetIdRef.current = null;
       dragStartedRef.current = false;
     };
@@ -383,35 +400,10 @@ export function CasvaScheduleList({
     if (!draggingItem) return null;
     const params = computeReorderParams(draggingItemId, dropTargetId, dropPosition);
     const willUnparent = draggingItem.parentItemId ? params?.newParentId === null : false;
+    console.log('[DRAG] dropIndicatorInfo:', { targetId: dropTargetId, position: dropPosition, willUnparent, params });
     return { targetId: dropTargetId, position: dropPosition, willUnparent };
   })() : null;
 
-  const renderDropIndicator = (willUnparent: boolean, colSpan: number) => (
-    <tr className="pointer-events-none" style={{ height: 0 }}>
-      <td colSpan={colSpan} className="p-0 border-0 relative" style={{ height: 0 }}>
-        <div className="absolute left-0 right-0 flex items-center" style={{ top: -1.5, zIndex: 50 }}>
-          <div className={`w-3 h-3 rounded-full -ml-0.5 flex-shrink-0 shadow-sm ${willUnparent ? 'bg-orange-500' : 'bg-primary'}`} />
-          <div className={`h-[3px] flex-1 shadow-sm ${willUnparent ? 'bg-orange-500' : 'bg-primary'}`} />
-          <div className={`w-3 h-3 rounded-full -mr-0.5 flex-shrink-0 shadow-sm ${willUnparent ? 'bg-orange-500' : 'bg-primary'}`} />
-        </div>
-        {willUnparent && (
-          <div className="absolute left-3 text-[9px] text-orange-500 font-medium" style={{ top: 4, zIndex: 50 }}>
-            Will become top-level item
-          </div>
-        )}
-      </td>
-    </tr>
-  );
-
-  const totalColumns = (onSelectionChange ? 1 : 0) + 
-    (visibleColumns.item ? 1 : 0) + 
-    (visibleColumns.assignee ? 1 : 0) + 
-    (visibleColumns.type ? 1 : 0) + 
-    (visibleColumns.dueDate ? 1 : 0) + 
-    (visibleColumns.status ? 1 : 0) + 
-    1 + 
-    (visibleColumns.completion ? 1 : 0) + 
-    1;
 
   return (
     <div className="border rounded-lg bg-card overflow-hidden relative" ref={tableContainerRef}>
@@ -447,12 +439,8 @@ export function CasvaScheduleList({
               const subtasks = subtasksByParent[item.id] || [];
               const isCollapsed = collapsedItems.has(item.id);
               const hasSubtasks = subtasks.length > 0;
-              const showIndicatorAboveParent = dropIndicatorInfo && 
-                dropIndicatorInfo.targetId === item.id && 
-                dropIndicatorInfo.position === 'above';
               return (
                 <Fragment key={item.id}>
-                  {showIndicatorAboveParent && renderDropIndicator(dropIndicatorInfo.willUnparent, totalColumns)}
                   <TableRow 
                     ref={(el) => { if (el) rowRefsMap.current.set(item.id, el); }}
                     className={`group h-8 border-b cursor-pointer relative overflow-visible transition-colors hover-elevate ${
@@ -510,21 +498,9 @@ export function CasvaScheduleList({
                     ))}
                   </TableRow>
 
-                  {dropIndicatorInfo && 
-                    dropIndicatorInfo.targetId === item.id && 
-                    dropIndicatorInfo.position === 'below' && 
-                    renderDropIndicator(dropIndicatorInfo.willUnparent, totalColumns)}
-
                   {!isCollapsed && subtasks.map((subtask, subtaskIdx) => {
-                    const showIndicatorAboveSubtask = dropIndicatorInfo && 
-                      dropIndicatorInfo.targetId === subtask.id && 
-                      dropIndicatorInfo.position === 'above';
-                    const showIndicatorBelowSubtask = dropIndicatorInfo && 
-                      dropIndicatorInfo.targetId === subtask.id && 
-                      dropIndicatorInfo.position === 'below';
                     return (
                       <Fragment key={subtask.id}>
-                        {showIndicatorAboveSubtask && renderDropIndicator(dropIndicatorInfo.willUnparent, totalColumns)}
                         <TableRow 
                           ref={(el) => { if (el) rowRefsMap.current.set(subtask.id, el); }}
                           className={`group h-8 border-b cursor-pointer relative overflow-visible transition-colors hover-elevate bg-muted/30 ${
@@ -578,7 +554,6 @@ export function CasvaScheduleList({
                             />
                           ))}
                         </TableRow>
-                        {showIndicatorBelowSubtask && renderDropIndicator(dropIndicatorInfo.willUnparent, totalColumns)}
                       </Fragment>
                     );
                   })}
@@ -590,6 +565,29 @@ export function CasvaScheduleList({
         </Table>
       </ScrollArea>
 
+      {draggingItemId && indicatorRect && dropIndicatorInfo && (
+        <div
+          className="pointer-events-none"
+          style={{
+            position: 'fixed',
+            top: indicatorRect.top - 1.5,
+            left: indicatorRect.left,
+            width: indicatorRect.width,
+            zIndex: 9999,
+          }}
+        >
+          <div className="flex items-center">
+            <div className={`w-3 h-3 rounded-full -ml-0.5 flex-shrink-0 shadow-sm ${dropIndicatorInfo.willUnparent ? 'bg-orange-500' : 'bg-primary'}`} />
+            <div className={`h-[3px] flex-1 shadow-sm ${dropIndicatorInfo.willUnparent ? 'bg-orange-500' : 'bg-primary'}`} />
+            <div className={`w-3 h-3 rounded-full -mr-0.5 flex-shrink-0 shadow-sm ${dropIndicatorInfo.willUnparent ? 'bg-orange-500' : 'bg-primary'}`} />
+          </div>
+          {dropIndicatorInfo.willUnparent && (
+            <div className="text-[9px] text-orange-500 font-medium ml-3 mt-0.5">
+              Will become top-level item
+            </div>
+          )}
+        </div>
+      )}
       
       <div className="px-2 h-8 border-t bg-background text-[10px] text-muted-foreground flex items-center justify-between">
         <span>
