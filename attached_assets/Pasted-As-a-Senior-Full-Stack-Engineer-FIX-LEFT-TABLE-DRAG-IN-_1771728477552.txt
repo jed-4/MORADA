@@ -1,0 +1,37 @@
+As a Senior Full-Stack Engineer, **FIX LEFT TABLE DRAG IN SCHEDULE — GOOGLE SHEETS / CLICKUP STYLE WITH GHOST & INDICATOR LINE**
+
+Current problem: When dragging a schedule item up/down in the left table, other rows swap places live as I drag past them. I want the following exact behavior:
+
+- The grabbed item STAYS VISUALLY IN ITS ORIGINAL POSITION in the list during drag (no reordering or swapping of other rows while dragging)
+- A semi-transparent GHOST/PREVIEW copy of the dragged item follows the cursor (opacity 0.7, shadow-lg, grab cursor)
+- A thin horizontal INDICATOR LINE (lilac #bba7db, 2px) appears between rows to show exactly where the item will drop when released
+- ONLY WHEN THE MOUSE/TOUCH IS RELEASED (on drop) does the item insert into the position shown by the line
+- The right Gantt timeline instantly updates to match the new row order after drop
+- No gap or visual reordering happens during the drag — rows remain fixed and unmoving
+- Drag only starts from a visible handle (≡ icon on hover on left side of row)
+
+DO THIS:
+1. Use react-beautiful-dnd (install if missing: npm install react-beautiful-dnd)
+2. Make the left table a Droppable list with Draggable rows
+3. Disable live reordering:
+   - Set usePlaceholder = false (no auto-gap)
+   - Manually render a lilac 2px horizontal line at the calculated insertion point during drag
+4. Show ghost: semi-transparent copy of dragged row follows cursor (opacity 0.7, shadow-lg)
+5. On drag update (onDragUpdate):
+   - Calculate insertion index based on mouse/touch position
+   - Render lilac line between the two rows at that index
+6. On drag end (onDragEnd):
+   - Reorder the schedule_items array ONLY at that point
+   - Update order/position field in DB
+   - Re-sort array for right Gantt rendering
+7. Add drag handle (≡ icon) visible on row hover only (left side)
+8. Cursor: grab on handle, grabbing during drag
+9. Mobile touch support (tap-hold to drag)
+
+Show preview:
+- Hover row → drag handle appears
+- Grab handle → drag up/down → rows stay fixed, ghost floats, lilac line moves between rows
+- Release → row inserts at line position, Gantt updates
+- No swapping, no gaps, no jumping during drag
+
+When done, say: "LEFT TABLE DRAG FIXED — GHOST + INDICATOR LINE, NO LIVE REORDER"
