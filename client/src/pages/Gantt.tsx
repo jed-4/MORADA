@@ -2674,10 +2674,10 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
             )}
 
             {/* Timeline Bars - minHeight ensures scroll area matches left panel */}
-            <div className="relative pb-20" style={{ minHeight: `${orderedItems.length * ROW_HEIGHT}px` }}>
+            <div className="relative" style={{ minHeight: `${orderedItems.length * ROW_HEIGHT}px` }}>
               {/* Weekend column backgrounds */}
               {groupedTimelineHeaders && (
-                <div className="absolute top-0 bottom-0 left-0 right-0 pointer-events-none z-0">
+                <div className="absolute top-0 left-0 right-0 pointer-events-none z-0" style={{ height: `${orderedItems.length * ROW_HEIGHT}px` }}>
                   {groupedTimelineHeaders.flatMap(week =>
                     week.days.map((day, dayIdx) => {
                       if (!day.isWeekend) return null;
@@ -2687,10 +2687,11 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                       return (
                         <div
                           key={`weekend-${week.weekLabel}-${dayIdx}`}
-                          className="absolute top-0 bottom-0 bg-[#f3f4f6] dark:bg-muted/50"
+                          className="absolute top-0 bg-[#f3f4f6] dark:bg-muted/50"
                           style={{
                             left: `${previousDays * pixelsPerDay}px`,
                             width: `${pixelsPerDay}px`,
+                            height: `${orderedItems.length * ROW_HEIGHT}px`,
                           }}
                         />
                       );
@@ -2700,9 +2701,8 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
               )}
 
               {/* Vertical grid lines */}
-              <div className="absolute top-0 bottom-0 left-0 right-0 pointer-events-none z-0">
+              <div className="absolute top-0 left-0 right-0 pointer-events-none z-0" style={{ height: `${orderedItems.length * ROW_HEIGHT}px` }}>
                 {groupedTimelineHeaders ? (
-                  // Day zoom: one line per day at exact pixelsPerDay intervals
                   groupedTimelineHeaders.flatMap((week, weekIdx) =>
                     week.days.map((day, dayIdx) => {
                       const totalDayIdx = groupedTimelineHeaders
@@ -2718,7 +2718,6 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                     })
                   )
                 ) : (
-                  // Week/month zoom: use timelineHeaders
                   timelineHeaders.map((header, idx) => (
                     <div
                       key={idx}
@@ -2731,9 +2730,10 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
 
               {/* Today line - lilac color */}
               <div
-                className="absolute top-0 bottom-0 w-0.5 bg-[#bba7db] pointer-events-none z-20"
+                className="absolute top-0 w-0.5 bg-[#bba7db] pointer-events-none z-20"
                 style={{ 
                   left: `${todayPosition}px`,
+                  height: `${orderedItems.length * ROW_HEIGHT}px`,
                 }}
               />
               
@@ -3269,8 +3269,8 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
 
               {/* Today line */}
               <div
-                className="absolute top-0 bottom-0 w-0.5 bg-[#bba7db] pointer-events-none z-20"
-                style={{ left: `${todayPosition}px` }}
+                className="absolute top-0 w-0.5 bg-[#bba7db] pointer-events-none z-20"
+                style={{ left: `${todayPosition}px`, height: `${orderedItems.length * ROW_HEIGHT}px` }}
               />
             </div>
           </div>
