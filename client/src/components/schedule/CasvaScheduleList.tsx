@@ -93,6 +93,8 @@ export function CasvaScheduleList({
   const dropTargetIdRef = useRef<string | null>(null);
   const dropPositionRef = useRef<'above' | 'below'>('below');
   const nestTargetIdRef = useRef<string | null>(null);
+  const nestHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingNestIdRef = useRef<string | null>(null);
   const [nestHighlightId, setNestHighlightId] = useState<string | null>(null);
 
   const toggleSelection = (itemId: string, e?: React.MouseEvent) => {
@@ -372,12 +374,38 @@ export function CasvaScheduleList({
       const { targetId, position, nestInto } = findDropTarget(moveEvent.clientY, itemId);
       dropTargetIdRef.current = targetId;
       dropPositionRef.current = position;
-      nestTargetIdRef.current = nestInto;
 
       if (nestInto) {
-        setIndicatorLine(null);
-        setNestHighlightId(nestInto);
+        if (pendingNestIdRef.current !== nestInto) {
+          if (nestHoldTimerRef.current) clearTimeout(nestHoldTimerRef.current);
+          pendingNestIdRef.current = nestInto;
+          nestTargetIdRef.current = null;
+          setNestHighlightId(null);
+          nestHoldTimerRef.current = setTimeout(() => {
+            nestTargetIdRef.current = nestInto;
+            setNestHighlightId(nestInto);
+            setIndicatorLine(null);
+          }, 750);
+        }
+        if (!nestTargetIdRef.current) {
+          if (targetId) {
+            const targetEl2 = rowRefsMap.current.get(targetId);
+            if (targetEl2) {
+              const rect2 = targetEl2.getBoundingClientRect();
+              setIndicatorLine({
+                top: position === 'above' ? rect2.top : rect2.bottom,
+                left: rect2.left,
+                width: rect2.width,
+              });
+            }
+          }
+        } else {
+          setIndicatorLine(null);
+        }
       } else if (targetId) {
+        if (nestHoldTimerRef.current) { clearTimeout(nestHoldTimerRef.current); nestHoldTimerRef.current = null; }
+        pendingNestIdRef.current = null;
+        nestTargetIdRef.current = null;
         setNestHighlightId(null);
         const targetEl = rowRefsMap.current.get(targetId);
         if (targetEl) {
@@ -389,6 +417,9 @@ export function CasvaScheduleList({
           });
         }
       } else {
+        if (nestHoldTimerRef.current) { clearTimeout(nestHoldTimerRef.current); nestHoldTimerRef.current = null; }
+        pendingNestIdRef.current = null;
+        nestTargetIdRef.current = null;
         setIndicatorLine(null);
         setNestHighlightId(null);
       }
@@ -400,6 +431,7 @@ export function CasvaScheduleList({
       activeListenersRef.current = null;
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
+      if (nestHoldTimerRef.current) { clearTimeout(nestHoldTimerRef.current); nestHoldTimerRef.current = null; }
 
       if (dragStartedRef.current) {
         if (nestTargetIdRef.current && onNestItem) {
@@ -418,6 +450,7 @@ export function CasvaScheduleList({
       setNestHighlightId(null);
       dropTargetIdRef.current = null;
       nestTargetIdRef.current = null;
+      pendingNestIdRef.current = null;
       dragStartedRef.current = false;
     };
 

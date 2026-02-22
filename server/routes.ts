@@ -19041,7 +19041,14 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         };
       });
 
-      result.sort((a: any, b: any) => a.sortOrder - b.sortOrder);
+      result.sort((a: any, b: any) => {
+        const aDate = a.itemStartDate || a.projectStartDate;
+        const bDate = b.itemStartDate || b.projectStartDate;
+        if (aDate && bDate) return new Date(aDate).getTime() - new Date(bDate).getTime();
+        if (aDate) return -1;
+        if (bDate) return 1;
+        return a.name.localeCompare(b.name);
+      });
       res.json(result);
     } catch (error: any) {
       console.error("Error fetching business schedule projects:", error);
