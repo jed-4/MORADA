@@ -149,15 +149,9 @@ function useGanttRowDrag(
 
   const findDropTarget = useCallback((mouseY: number, draggingId: string): { targetId: string | null; position: 'above' | 'below' } => {
     let closest: { id: string; dist: number; position: 'above' | 'below' } | null = null;
-    const draggedItem = allItems.find(i => i.id === draggingId);
 
     for (const id of sortableItemIds) {
       if (id === draggingId) continue;
-      const candidate = allItems.find(i => i.id === id);
-      if (candidate?.parentItemId) {
-        const isSameSibling = draggedItem?.parentItemId === candidate.parentItemId;
-        if (!isSameSibling) continue;
-      }
       const el = rowRefsMap.current.get(id);
       if (!el) continue;
       const rect = el.getBoundingClientRect();
@@ -169,7 +163,7 @@ function useGanttRowDrag(
       }
     }
     return closest ? { targetId: closest.id, position: closest.position } : { targetId: null, position: 'below' };
-  }, [sortableItemIds, allItems]);
+  }, [sortableItemIds]);
 
   const handleDragHandleMouseDown = useCallback((e: React.MouseEvent, itemId: string) => {
     e.preventDefault();
@@ -235,15 +229,20 @@ function useGanttRowDrag(
       if (targetId) {
         const targetEl = rowRefsMap.current.get(targetId);
         const targetItem = allItems.find(i => i.id === targetId);
+        const draggedItem = allItems.find(i => i.id === itemId);
         const isParentTarget = targetItem && !targetItem.parentItemId && allItems.some(i => i.parentItemId === targetId);
         const nestIndent = 24;
+        const targetIsChild = !!targetItem?.parentItemId;
+        const draggedIsParentWithChildren = draggedItem && !draggedItem.parentItemId && allItems.some(i => i.parentItemId === draggedItem.id);
+        const canAdoptIntoGroup = targetIsChild && !draggedIsParentWithChildren;
 
         if (targetEl) {
           const rect = targetEl.getBoundingClientRect();
           setRowDragIndicator({
             top: position === 'above' ? rect.top : rect.bottom,
-            left: rect.left,
-            width: rect.width,
+            left: rect.left + (canAdoptIntoGroup ? nestIndent : 0),
+            width: rect.width - (canAdoptIntoGroup ? nestIndent : 0),
+            indent: canAdoptIntoGroup ? nestIndent : 0,
           });
         }
 
@@ -306,29 +305,47 @@ function useGanttRowDrag(
           const activeItem = allItems.find(i => i.id === itemId);
           const targetItem = allItems.find(i => i.id === targetId);
 
-          if (activeItem?.parentItemId && targetItem) {
-            const isSibling = targetItem.parentItemId === activeItem.parentItemId;
-            const isDropOnParent = targetItem.id === activeItem.parentItemId;
-            const isSameGroup = isSibling || (isDropOnParent && position === 'below');
-            if (!isSameGroup) {
-              const parentItem = allItems.find(i => i.id === activeItem.parentItemId);
-              queryClient.setQueryData(
-                [`/api/projects/${projectId}/schedule-items`],
-                (old: any) => {
-                  if (!Array.isArray(old)) return old;
-                  return old.map((i: any) => i.id === itemId ? { ...i, parentItemId: null } : i);
-                }
-              );
-              apiRequest(`/api/schedule-items/${itemId}`, "PATCH", {
-                parentItemId: null,
-              }).then(() => {
-                queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
-                toast({ title: "Item removed from group", description: `"${activeItem.name}" is no longer a child of "${parentItem?.name || 'parent'}"` });
-              }).catch(() => {
-                queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
-                toast({ title: "Failed to remove from group", variant: "destructive" });
-              });
-            }
+          const targetIsChild = !!targetItem?.parentItemId;
+          const targetParentId = targetItem?.parentItemId;
+          const draggedParentId = activeItem?.parentItemId;
+          const draggedIsParentWithChildren = activeItem && !activeItem.parentItemId && allItems.some(i => i.parentItemId === activeItem.id);
+
+          if (targetIsChild && targetParentId !== draggedParentId && !draggedIsParentWithChildren) {
+            const newParentItem = allItems.find(i => i.id === targetParentId);
+            queryClient.setQueryData(
+              [`/api/projects/${projectId}/schedule-items`],
+              (old: any) => {
+                if (!Array.isArray(old)) return old;
+                return old.map((i: any) => i.id === itemId ? { ...i, parentItemId: targetParentId } : i);
+              }
+            );
+            apiRequest(`/api/schedule-items/${itemId}`, "PATCH", {
+              parentItemId: targetParentId,
+            }).then(() => {
+              queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+              toast({ title: "Item added to group", description: `"${activeItem?.name}" is now a child of "${newParentItem?.name || 'parent'}"` });
+            }).catch(() => {
+              queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+              toast({ title: "Failed to add to group", variant: "destructive" });
+            });
+          } else if (activeItem?.parentItemId && !targetIsChild && targetItem?.id !== activeItem.parentItemId) {
+            const parentItem = allItems.find(i => i.id === activeItem.parentItemId);
+            queryClient.setQueryData(
+              [`/api/projects/${projectId}/schedule-items`],
+              (old: any) => {
+                if (!Array.isArray(old)) return old;
+                return old.map((i: any) => i.id === itemId ? { ...i, parentItemId: null } : i);
+              }
+            );
+            apiRequest(`/api/schedule-items/${itemId}`, "PATCH", {
+              parentItemId: null,
+            }).then(() => {
+              queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+              toast({ title: "Item removed from group", description: `"${activeItem.name}" is no longer a child of "${parentItem?.name || 'parent'}"` });
+            }).catch(() => {
+              queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+              toast({ title: "Failed to remove from group", variant: "destructive" });
+            });
           }
 
           setSessionItemOrder(currentOrder => {
@@ -2310,6 +2327,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                     <div style={{ width: columnWidths.taskName }} className={`flex items-center min-w-0 flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all`}>
                       <div 
                         className="cursor-grab active:cursor-grabbing p-0.5 hover:bg-accent rounded flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                        style={rowDragItemId && rowDragItemId !== item.id ? { pointerEvents: 'none' } : undefined}
                         onMouseDown={(e) => handleDragHandleMouseDown(e, item.id)}
                         data-testid={`drag-handle-${item.id}`}
                       >
@@ -2320,6 +2338,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                         <button
                           onClick={(e) => { e.stopPropagation(); toggleCollapse(item.id); }}
                           className="p-1 hover:bg-accent rounded flex-shrink-0"
+                          style={rowDragItemId && rowDragItemId !== item.id ? { pointerEvents: 'none' } : undefined}
                           data-testid={`button-toggle-${item.id}`}
                         >
                           {isCollapsed ? (
