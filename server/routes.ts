@@ -13648,6 +13648,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      if (validationResult.data.status && validationResult.data.status !== existingItem?.status && item.groupId) {
+        try {
+          const actingUser = (req as any).user;
+          const groupItems = await storage.getChecklistInstanceItemsByGroup(item.groupId);
+          const allItemsDone = groupItems.length > 0 && groupItems.every(i => i.status === "completed" || i.status === "na");
+          const group = await storage.getChecklistInstanceGroup(item.groupId);
+          
+          if (allItemsDone && group && group.status !== "completed") {
+            await storage.updateChecklistInstanceGroup(item.groupId, {
+              status: "completed",
+              completedAt: new Date().toISOString(),
+              completedBy: actingUser?.id || null,
+              completedByName: actingUser ? `${actingUser.firstName || ''} ${actingUser.lastName || ''}`.trim() : null,
+            } as any);
+          } else if (!allItemsDone && group && group.status === "completed") {
+            await storage.updateChecklistInstanceGroup(item.groupId, {
+              status: "in_progress",
+              completedAt: null,
+              completedBy: null,
+              completedByName: null,
+            } as any);
+          }
+
+          if (item.instanceId) {
+            const freshGroups = await storage.getChecklistInstanceGroups(item.instanceId);
+            const allGroupsDone = freshGroups.length > 0 && freshGroups.every(g => g.status === "completed");
+            const instance = await storage.getChecklistInstance(item.instanceId);
+            
+            if (allGroupsDone && instance && instance.status !== "completed") {
+              await storage.updateChecklistInstance(item.instanceId, {
+                status: "completed",
+                completedAt: new Date().toISOString(),
+                completedBy: actingUser?.id || null,
+                completedByName: actingUser ? `${actingUser.firstName || ''} ${actingUser.lastName || ''}`.trim() : null,
+              } as any);
+            } else if (!allGroupsDone && instance && instance.status === "completed") {
+              await storage.updateChecklistInstance(item.instanceId, {
+                status: "in_progress",
+                completedAt: null,
+                completedBy: null,
+                completedByName: null,
+              } as any);
+            }
+          }
+        } catch (autoCompleteError) {
+          console.error("Failed to auto-update group/instance status:", autoCompleteError);
+        }
+      }
+
       res.json(item);
     } catch (error: any) {
       res.status(500).json({ 
