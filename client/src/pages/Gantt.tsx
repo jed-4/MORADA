@@ -263,7 +263,7 @@ function useGanttRowDrag(
                   width: rect.width - nestIndent,
                   indent: nestIndent,
                 });
-              }, 400);
+              }, 750);
             } else {
               nestTargetRef.current = null;
               setNestHighlightId(null);
