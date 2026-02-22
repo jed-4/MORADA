@@ -192,7 +192,7 @@ function useGanttRowDrag(
           ghost.style.position = 'fixed';
           ghost.style.zIndex = '99999';
           ghost.style.pointerEvents = 'none';
-          ghost.style.opacity = '0.7';
+          ghost.style.opacity = '0.4';
           ghost.style.width = `${rect.width}px`;
           ghost.style.height = `${rect.height}px`;
           ghost.style.boxShadow = '0 10px 25px -5px rgba(0,0,0,0.15), 0 8px 10px -6px rgba(0,0,0,0.1)';
