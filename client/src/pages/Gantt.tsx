@@ -3134,39 +3134,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                           markerEnd="url(#arrow-elegant)"
                           style={{ pointerEvents: 'none' }}
                         />
-                        {dep.lag != null && dep.lag > 0 && (() => {
-                          const lagText = `+${dep.lag}`;
-                          const labelW = Math.max(20, lagText.length * 7 + 6);
-                          const labelX = deltaX >= stub * 2 ? startX + deltaX / 5 : startX + stub;
-                          const labelY = (startY + endY) / 2;
-                          return (
-                            <g>
-                              <rect
-                                x={labelX - labelW / 2}
-                                y={labelY - 8}
-                                width={labelW}
-                                height={16}
-                                rx={3}
-                                fill="hsl(var(--background))"
-                                stroke={isHovered || isSelected ? '#7c5fb3' : '#9b7fc7'}
-                                strokeWidth={0.5}
-                                style={{ pointerEvents: 'none' }}
-                              />
-                              <text
-                                x={labelX}
-                                y={labelY + 1}
-                                textAnchor="middle"
-                                dominantBaseline="middle"
-                                fill={isHovered || isSelected ? '#7c5fb3' : '#9b7fc7'}
-                                fontSize={9}
-                                fontWeight={500}
-                                style={{ pointerEvents: 'none' }}
-                              >
-                                {lagText}
-                              </text>
-                            </g>
-                          );
-                        })()}
+                        
                       </g>
                     );
                   }).filter(Boolean);
