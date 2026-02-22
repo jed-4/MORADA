@@ -449,11 +449,11 @@ export default function Header() {
                     ) : (
                       searchFilteredGrouped.map((group) => (
                         <div key={group.phase.id}>
-                          <div className="px-2 pt-1.5 pb-0.5">
-                            <span className="text-[9px] font-medium text-muted-foreground uppercase tracking-wider">
+                          <div className="px-2 pt-1 pb-0">
+                            <span className="text-[8px] font-medium text-muted-foreground uppercase tracking-wider leading-none">
                               {group.phase.label}
                             </span>
-                            <span className="text-[9px] text-muted-foreground ml-1">
+                            <span className="text-[8px] text-muted-foreground ml-0.5 leading-none">
                               ({group.projects.length})
                             </span>
                           </div>
