@@ -294,7 +294,7 @@ function useGanttRowDrag(
               parentItemId: nestTargetRef.current,
             }).then(() => {
               queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
-              toast({ title: "Item nested", description: `"${activeItem.name}" is now a child of "${targetItem.name}"` });
+              
             }).catch(() => {
               toast({ title: "Failed to nest item", variant: "destructive" });
             });
@@ -323,7 +323,7 @@ function useGanttRowDrag(
               parentItemId: targetParentId,
             }).then(() => {
               queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
-              toast({ title: "Item added to group", description: `"${activeItem?.name}" is now a child of "${newParentItem?.name || 'parent'}"` });
+              
             }).catch(() => {
               queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
               toast({ title: "Failed to add to group", variant: "destructive" });
@@ -341,7 +341,7 @@ function useGanttRowDrag(
               parentItemId: null,
             }).then(() => {
               queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
-              toast({ title: "Item removed from group", description: `"${activeItem.name}" is no longer a child of "${parentItem?.name || 'parent'}"` });
+              
             }).catch(() => {
               queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
               toast({ title: "Failed to remove from group", variant: "destructive" });
@@ -906,7 +906,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
-      toast({ title: "Dependency created" });
+      
     },
     onError: (error: any) => {
       const errorMsg = error?.error || error?.message || "This would create a circular dependency";
@@ -924,7 +924,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
-      toast({ title: "Dependency removed" });
+      
       setSelectedDependency(null);
     },
   });
@@ -935,8 +935,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
-      toast({ title: "Item duplicated" });
-    },
+      },
   });
 
   const updateDependencyMutation = useMutation({
@@ -960,7 +959,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
-      toast({ title: "Dependency updated" });
+      
       setSelectedDependency(null);
     },
     onError: (error: any) => {
@@ -988,7 +987,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
-      toast({ title: "Task deleted" });
+      
     },
     onError: (error: any) => {
       toast({ 
@@ -2008,7 +2007,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
       
       await apiRequest("/api/schedule-items", "POST", duplicatedItem);
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
-      toast({ title: "Item duplicated", description: "Schedule item has been copied." });
+      
     } catch (error) {
       toast({ title: "Failed to duplicate", description: "Could not duplicate item.", variant: "destructive" });
     }
@@ -2043,7 +2042,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
       const newStatus = item.status === "completed" ? "not_started" : "completed";
       await apiRequest(`/api/schedule-items/${item.id}`, "PATCH", { status: newStatus });
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
-      toast({ title: newStatus === "completed" ? "Marked complete" : "Marked incomplete" });
+      
     } catch (error) {
       toast({ title: "Failed to update", description: "Could not update item status.", variant: "destructive" });
     }
@@ -2055,7 +2054,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     try {
       await apiRequest(`/api/schedule-items/${item.id}`, "DELETE");
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
-      toast({ title: "Item deleted", description: "Schedule item has been removed." });
+      
     } catch (error) {
       toast({ title: "Failed to delete", description: "Could not delete item.", variant: "destructive" });
     }
@@ -2107,7 +2106,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     try {
       await apiRequest(`/api/schedule-items/${item.id}`, "PATCH", { color });
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
-      toast({ title: "Color updated", description: "Schedule item color has been changed." });
+      
     } catch (error) {
       toast({ title: "Failed to update color", description: "Could not update item color.", variant: "destructive" });
     }
@@ -3586,7 +3585,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                 className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left"
                 onClick={() => {
                   navigator.clipboard.writeText(contextMenu.item.name);
-                  toast({ title: "Copied", description: "Task name copied to clipboard" });
+                  
                   setContextMenu(null);
                 }}
                 data-testid="context-menu-copy-name"
