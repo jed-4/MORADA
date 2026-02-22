@@ -93,7 +93,7 @@ export function CreatePOFromEstimateDialog({
     setSupplierId(value);
     const supplier = suppliers.find((s: any) => s.id === value);
     if (supplier) {
-      setSupplierName(supplier.companyName || `${supplier.firstName || ""} ${supplier.lastName || ""}`.trim());
+      setSupplierName(supplier.name || `${supplier.firstName || ""} ${supplier.lastName || ""}`.trim());
       if (supplier.address) {
         setDeliveryAddress(supplier.address);
       }
@@ -237,7 +237,7 @@ export function CreatePOFromEstimateDialog({
                     <SelectItem key={supplier.id} value={supplier.id}>
                       <div className="flex items-center gap-2">
                         <Building2 className="w-3 h-3 text-muted-foreground" />
-                        {supplier.companyName || `${supplier.firstName || ""} ${supplier.lastName || ""}`.trim()}
+                        {supplier.name || `${supplier.firstName || ""} ${supplier.lastName || ""}`.trim()}
                       </div>
                     </SelectItem>
                   ))}
