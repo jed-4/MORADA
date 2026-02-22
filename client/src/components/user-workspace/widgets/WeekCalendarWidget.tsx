@@ -315,6 +315,7 @@ export default function WeekCalendarWidget({ widget, onUpdate, isConfiguring, on
     range: "week",
     weekStartDay,
     ...configState,
+    timezone: effectiveTimezone,
   });
 
   // Apply task filter

@@ -10,6 +10,7 @@ import {
   parseISO,
   isSameDay
 } from "date-fns";
+import { formatInTimezone } from "@/hooks/useTimezone";
 
 export interface CalendarItem {
   id: string;
@@ -39,6 +40,7 @@ interface UsePersonalCalendarEventsOptions {
   includeGoogleCalendar?: boolean;
   includeReminders?: boolean;
   weekStartDay?: 0 | 1;
+  timezone?: string;
 }
 
 export function usePersonalCalendarEvents({
@@ -51,6 +53,7 @@ export function usePersonalCalendarEvents({
   includeGoogleCalendar = true,
   includeReminders = true,
   weekStartDay = 1,
+  timezone = "Australia/Sydney",
 }: UsePersonalCalendarEventsOptions) {
   const rangeStart = range === "day" ? startOfDay(date) : startOfWeek(date, { weekStartsOn: weekStartDay });
   const rangeEnd = range === "day" ? endOfDay(date) : endOfWeek(date, { weekStartsOn: weekStartDay });
@@ -240,8 +243,8 @@ export function usePersonalCalendarEvents({
           title: event.summary || event.title || "Untitled Event",
           startDate: eventStart,
           endDate: endStr ? new Date(endStr) : eventStart,
-          startTime: event.startTime || (isAllDay ? null : eventStart.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })),
-          endTime: event.endTime || (isAllDay || !endStr ? null : new Date(endStr).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })),
+          startTime: event.startTime || (isAllDay ? null : formatInTimezone(eventStart, timezone, { hour: '2-digit', minute: '2-digit', hour12: false })),
+          endTime: event.endTime || (isAllDay || !endStr ? null : formatInTimezone(new Date(endStr), timezone, { hour: '2-digit', minute: '2-digit', hour12: false })),
           allDay: isAllDay,
           type: "google-calendar",
           description: event.description,
@@ -261,7 +264,7 @@ export function usePersonalCalendarEvents({
           title: reminder.title,
           startDate: triggerDate,
           endDate: triggerDate,
-          startTime: triggerDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }),
+          startTime: formatInTimezone(triggerDate, timezone, { hour: '2-digit', minute: '2-digit', hour12: false }),
           endTime: null,
           allDay: false,
           type: "reminder",
@@ -275,7 +278,7 @@ export function usePersonalCalendarEvents({
       if (!a.allDay && b.allDay) return 1;
       return a.startDate.getTime() - b.startDate.getTime();
     });
-  }, [tasks, scheduleItems, timesheets, googleEvents, reminders, projects, rangeStart, rangeEnd, includeTasks, includeSchedule, includeTimesheets, includeGoogleCalendar, includeReminders]);
+  }, [tasks, scheduleItems, timesheets, googleEvents, reminders, projects, rangeStart, rangeEnd, includeTasks, includeSchedule, includeTimesheets, includeGoogleCalendar, includeReminders, timezone]);
 
   const isLoading = tasksLoading || scheduleLoading || timesheetsLoading || googleLoading || remindersLoading;
 

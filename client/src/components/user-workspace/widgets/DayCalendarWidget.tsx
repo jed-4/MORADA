@@ -229,6 +229,7 @@ export default function DayCalendarWidget({ widget, onUpdate, isConfiguring, onC
     date: selectedDate,
     range: "day",
     ...configState,
+    timezone: effectiveTimezone,
   });
 
   useEffect(() => {

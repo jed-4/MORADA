@@ -478,6 +478,7 @@ export default function UnifiedCalendarWidget({ widget, onUpdate, isConfiguring,
     includeTimesheets: config.includeTimesheets ?? true,
     includeGoogleCalendar: config.includeGoogleCalendar ?? true,
     includeReminders: config.includeReminders ?? true,
+    timezone: effectiveTimezone,
   });
 
   const filterEvents = (eventList: CalendarItem[]) => {
