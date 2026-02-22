@@ -2265,7 +2265,6 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                 >
                     {/* Task name column */}
                     <div style={{ width: columnWidths.taskName }} className={`flex items-center min-w-0 flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all`}>
-                      {!isParent && <div className="w-6 flex-shrink-0" />}
                       <div 
                         className="cursor-grab active:cursor-grabbing p-0.5 hover:bg-accent rounded flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
                         onMouseDown={(e) => handleDragHandleMouseDown(e, item.id)}
@@ -2273,6 +2272,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                       >
                         <GripVertical className="w-3.5 h-3.5 text-muted-foreground" />
                       </div>
+                      {!isParent && <div className="w-6 flex-shrink-0" />}
                       {isParent && childItems.length > 0 && (
                         <button
                           onClick={(e) => { e.stopPropagation(); toggleCollapse(item.id); }}
