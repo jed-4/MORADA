@@ -425,7 +425,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
   
   const timelineRef = useRef<HTMLDivElement>(null);
   const leftPanelRef = useRef<HTMLDivElement>(null);
-  const isScrollSyncing = useRef(false);
+
   const [zoomLevel, setZoomLevel] = useState<ZoomLevel>('day');
   const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set());
   const [dragging, setDragging] = useState<{
@@ -1874,13 +1874,17 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
   }, [contextMenu?.x, contextMenu?.y]);
 
   // Scroll synchronization between left panel and timeline
+  // Uses a per-panel flag cleared via rAF to prevent infinite scroll loops
+  // while still allowing all user-initiated scroll events through
+  const syncingFromLeft = useRef(false);
+  const syncingFromTimeline = useRef(false);
   const handleLeftPanelScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    if (isScrollSyncing.current) return;
-    isScrollSyncing.current = true;
+    if (syncingFromTimeline.current) return;
+    syncingFromLeft.current = true;
     if (timelineRef.current) {
       timelineRef.current.scrollTop = e.currentTarget.scrollTop;
     }
-    requestAnimationFrame(() => { isScrollSyncing.current = false; });
+    requestAnimationFrame(() => { syncingFromLeft.current = false; });
   };
 
   const lastExtensionDirection = useRef<'left' | 'right' | null>(null);
@@ -1895,12 +1899,12 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
   }, [timelineBuffer.before]);
   
   const handleTimelineScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    if (isScrollSyncing.current) return;
-    isScrollSyncing.current = true;
+    if (syncingFromLeft.current) return;
+    syncingFromTimeline.current = true;
     if (leftPanelRef.current) {
       leftPanelRef.current.scrollTop = e.currentTarget.scrollTop;
     }
-    requestAnimationFrame(() => { isScrollSyncing.current = false; });
+    requestAnimationFrame(() => { syncingFromTimeline.current = false; });
     
     // Infinite scroll: extend timeline when near edges
     const target = e.currentTarget;
@@ -2236,7 +2240,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
           {/* Content wrapper with actual column widths */}
           <div style={{ width: totalPanelWidth }} className="flex flex-col flex-1 overflow-hidden">
             
-            {/* Bottom row - Column names (30px) */}
+            {/* Column names (30px) */}
             <div className="h-[30px] flex items-center px-2 text-xs font-medium text-muted-foreground relative border-b border-border">
             <div style={{ width: columnWidths.taskName }} className="px-1 flex-shrink-0">Task Name</div>
             
@@ -2673,8 +2677,8 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
               </div>
             )}
 
-            {/* Timeline Bars - minHeight ensures scroll area matches left panel */}
-            <div className="relative" style={{ minHeight: `${orderedItems.length * ROW_HEIGHT}px` }}>
+            {/* Timeline Bars - minHeight ensures scroll area matches left panel (pb-20 = 80px matches left panel padding) */}
+            <div className="relative pb-20" style={{ minHeight: `${orderedItems.length * ROW_HEIGHT}px` }}>
               {/* Weekend column backgrounds */}
               {groupedTimelineHeaders && (
                 <div className="absolute top-0 left-0 right-0 pointer-events-none z-0" style={{ height: `${orderedItems.length * ROW_HEIGHT}px` }}>
@@ -3083,7 +3087,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                     const stub = 12;
                     let path: string;
                     if (deltaX >= stub * 2) {
-                      const midX = startX + deltaX / 2;
+                      const midX = startX + deltaX / 5;
                       path = `M ${startX} ${startY} H ${midX} V ${endY} H ${endX}`;
                     } else {
                       const outX = startX + stub;
@@ -3129,12 +3133,12 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                           strokeLinecap="square"
                           strokeLinejoin="round"
                           markerEnd="url(#arrow-elegant)"
-                          style={{ pointerEvents: 'none', transition: 'stroke-width 0.15s, stroke 0.15s' }}
+                          style={{ pointerEvents: 'none' }}
                         />
                         {dep.lag != null && dep.lag > 0 && (() => {
                           const lagText = `+${dep.lag}`;
                           const labelW = Math.max(20, lagText.length * 7 + 6);
-                          const labelX = deltaX >= stub * 2 ? startX + deltaX / 2 : startX + stub;
+                          const labelX = deltaX >= stub * 2 ? startX + deltaX / 5 : startX + stub;
                           const labelY = (startY + endY) / 2;
                           return (
                             <g>
