@@ -119,7 +119,7 @@ function useGanttRowDrag(
   toast: any,
 ) {
   const [rowDragItemId, setRowDragItemId] = useState<string | null>(null);
-  const [rowDragIndicator, setRowDragIndicator] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [rowDragIndicator, setRowDragIndicator] = useState<{ top: number; left: number; width: number; indent?: number } | null>(null);
   const rowRefsMap = useRef<Map<string, HTMLDivElement>>(new Map());
   const ghostElRef = useRef<HTMLDivElement | null>(null);
   const dragStartedRef = useRef(false);
@@ -149,9 +149,15 @@ function useGanttRowDrag(
 
   const findDropTarget = useCallback((mouseY: number, draggingId: string): { targetId: string | null; position: 'above' | 'below' } => {
     let closest: { id: string; dist: number; position: 'above' | 'below' } | null = null;
+    const draggedItem = allItems.find(i => i.id === draggingId);
 
     for (const id of sortableItemIds) {
       if (id === draggingId) continue;
+      const candidate = allItems.find(i => i.id === id);
+      if (candidate?.parentItemId) {
+        const isSameSibling = draggedItem?.parentItemId === candidate.parentItemId;
+        if (!isSameSibling) continue;
+      }
       const el = rowRefsMap.current.get(id);
       if (!el) continue;
       const rect = el.getBoundingClientRect();
@@ -163,7 +169,7 @@ function useGanttRowDrag(
       }
     }
     return closest ? { targetId: closest.id, position: closest.position } : { targetId: null, position: 'below' };
-  }, [sortableItemIds]);
+  }, [sortableItemIds, allItems]);
 
   const handleDragHandleMouseDown = useCallback((e: React.MouseEvent, itemId: string) => {
     e.preventDefault();
@@ -228,6 +234,10 @@ function useGanttRowDrag(
 
       if (targetId) {
         const targetEl = rowRefsMap.current.get(targetId);
+        const targetItem = allItems.find(i => i.id === targetId);
+        const isParentTarget = targetItem && !targetItem.parentItemId && allItems.some(i => i.parentItemId === targetId);
+        const nestIndent = 24;
+
         if (targetEl) {
           const rect = targetEl.getBoundingClientRect();
           setRowDragIndicator({
@@ -248,7 +258,12 @@ function useGanttRowDrag(
               nestTimerRef.current = setTimeout(() => {
                 nestTargetRef.current = targetId;
                 setNestHighlightId(targetId);
-                setRowDragIndicator(null);
+                setRowDragIndicator({
+                  top: rect.bottom,
+                  left: rect.left + nestIndent,
+                  width: rect.width - nestIndent,
+                  indent: nestIndent,
+                });
               }, 400);
             } else {
               nestTargetRef.current = null;
@@ -296,13 +311,21 @@ function useGanttRowDrag(
             const isDropOnParent = targetItem.id === activeItem.parentItemId;
             const isSameGroup = isSibling || (isDropOnParent && position === 'below');
             if (!isSameGroup) {
+              const parentItem = allItems.find(i => i.id === activeItem.parentItemId);
+              queryClient.setQueryData(
+                [`/api/projects/${projectId}/schedule-items`],
+                (old: any) => {
+                  if (!Array.isArray(old)) return old;
+                  return old.map((i: any) => i.id === itemId ? { ...i, parentItemId: null } : i);
+                }
+              );
               apiRequest(`/api/schedule-items/${itemId}`, "PATCH", {
                 parentItemId: null,
               }).then(() => {
                 queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
-                const parentItem = allItems.find(i => i.id === activeItem.parentItemId);
                 toast({ title: "Item removed from group", description: `"${activeItem.name}" is no longer a child of "${parentItem?.name || 'parent'}"` });
               }).catch(() => {
+                queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
                 toast({ title: "Failed to remove from group", variant: "destructive" });
               });
             }
