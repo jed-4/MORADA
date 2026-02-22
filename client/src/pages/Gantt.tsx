@@ -2038,6 +2038,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
   };
 
   const handleToggleComplete = async (item: ScheduleItem) => {
+    if (schedule?.status === 'locked') return;
     try {
       const newStatus = item.status === "completed" ? "not_started" : "completed";
       await apiRequest(`/api/schedule-items/${item.id}`, "PATCH", { status: newStatus });
@@ -2385,8 +2386,8 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                       <div style={{ width: columnWidths.status }} className="flex items-center justify-center flex-shrink-0 px-1">
                         {item.status && statusOptions.length > 0 ? (
                           <DropdownMenu>
-                            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                              <button className="cursor-pointer hover-elevate rounded" data-testid={`status-dropdown-${item.id}`}>
+                            <DropdownMenuTrigger asChild onClick={(e) => { e.stopPropagation(); if (schedule?.status === 'locked') e.preventDefault(); }}>
+                              <button className={`${schedule?.status === 'locked' ? 'cursor-not-allowed opacity-70' : 'cursor-pointer hover-elevate'} rounded`} data-testid={`status-dropdown-${item.id}`}>
                                 {(() => {
                                   const statusInfo = getStatusInfo(item.status);
                                   return (
@@ -2552,10 +2553,12 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                                 <Link className="mr-2 h-4 w-4" />
                                 Create Predecessor
                               </DropdownMenuItem>
+                              {schedule?.status !== 'locked' && (
                               <DropdownMenuItem onClick={() => handleToggleComplete(item)} data-testid="menu-complete">
                                 <Check className="mr-2 h-4 w-4" />
                                 {item.status === "completed" ? "Mark Incomplete" : "Mark Complete"}
                               </DropdownMenuItem>
+                              )}
                               <DropdownMenuItem
                                 asChild
                                 onSelect={(e) => e.preventDefault()}

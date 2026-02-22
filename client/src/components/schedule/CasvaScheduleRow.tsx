@@ -50,6 +50,7 @@ export interface CasvaScheduleRowProps {
   onToggleCollapse?: () => void;
   isSubtask?: boolean;
   hasSubtasks?: boolean;
+  locked?: boolean;
 }
 
 export function CasvaScheduleRow({ 
@@ -68,6 +69,7 @@ export function CasvaScheduleRow({
   onDragHandleMouseDown,
   isParent = false,
   isCollapsed = false,
+  locked = false,
   onToggleCollapse,
   isSubtask = false,
   hasSubtasks = false
@@ -179,8 +181,8 @@ export function CasvaScheduleRow({
           <div className="flex items-center gap-1">
             {item.status && onStatusChange && statusOptions.length > 0 ? (
               <DropdownMenu>
-                <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                  <button className="cursor-pointer hover-elevate rounded" data-testid={`status-dropdown-${item.id}`}>
+                <DropdownMenuTrigger asChild onClick={(e) => { e.stopPropagation(); if (locked) e.preventDefault(); }}>
+                  <button className={`${locked ? 'cursor-not-allowed opacity-70' : 'cursor-pointer hover-elevate'} rounded`} data-testid={`status-dropdown-${item.id}`}>
                     <ColorChip type="status" value={item.status} />
                   </button>
                 </DropdownMenuTrigger>

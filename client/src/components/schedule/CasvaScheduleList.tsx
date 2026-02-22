@@ -38,6 +38,7 @@ export interface CasvaScheduleListProps {
   onDuplicateItem?: (item: ScheduleItem) => void;
   onDeleteItem?: (itemId: string) => void;
   allCollapsed?: boolean;
+  locked?: boolean;
 }
 
 interface FlatRow {
@@ -61,7 +62,8 @@ export function CasvaScheduleList({
   onReorderItem,
   onDuplicateItem,
   onDeleteItem,
-  allCollapsed
+  allCollapsed,
+  locked = false
 }: CasvaScheduleListProps) {
   const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set());
 
@@ -634,6 +636,7 @@ export function CasvaScheduleList({
                       isCollapsed={isCollapsed}
                       onToggleCollapse={hasSubtasks ? () => toggleCollapse(item.id) : undefined}
                       hasSubtasks={hasSubtasks}
+                      locked={locked}
                     />
                     
                     {ripples.filter(r => r.id.startsWith(item.id)).map((ripple) => (
@@ -691,6 +694,7 @@ export function CasvaScheduleList({
                             isDraggable={!!(onReorderItem || onNestItem)}
                             onDragHandleMouseDown={(e) => handleMouseDown(e, subtask.id)}
                             isSubtask={true}
+                            locked={locked}
                           />
                           
                           {ripples.filter(r => r.id.startsWith(subtask.id)).map((ripple) => (

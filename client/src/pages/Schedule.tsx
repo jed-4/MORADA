@@ -1765,6 +1765,7 @@ export default function Schedule() {
                       selectedItems={selectedItems}
                       onSelectionChange={setSelectedItems}
                       allCollapsed={allCollapsed}
+                      locked={schedule?.status === 'locked'}
                       onNestItem={(itemId, parentId) => {
                         nestItemMutation.mutate({ itemId, parentId });
                       }}
