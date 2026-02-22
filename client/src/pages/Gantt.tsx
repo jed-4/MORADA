@@ -2286,7 +2286,6 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                           )}
                         </button>
                       )}
-                      {(isParent && childItems.length === 0) && <div className="w-6 flex-shrink-0" />}
                       {inlineEditId === item.id ? (
                         <input
                           autoFocus
