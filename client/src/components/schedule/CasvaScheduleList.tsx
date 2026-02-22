@@ -153,6 +153,21 @@ export function CasvaScheduleList({
     let closest: { id: string; dist: number; position: 'above' | 'below' } | null = null;
     let nestCandidate: string | null = null;
 
+    const draggingParentId = draggingItem?.parentItemId || null;
+    let isOutsideParentGroup = false;
+
+    if (draggingParentId) {
+      const parentEl = rowRefsMap.current.get(draggingParentId);
+      if (parentEl) {
+        const parentRect = parentEl.getBoundingClientRect();
+        const groupChildren = flatRows.filter(r => r.parentId === draggingParentId);
+        const lastChild = groupChildren[groupChildren.length - 1];
+        const lastChildEl = lastChild ? rowRefsMap.current.get(lastChild.id) : null;
+        const groupBottom = lastChildEl ? lastChildEl.getBoundingClientRect().bottom : parentRect.bottom;
+        isOutsideParentGroup = mouseY <= parentRect.top || mouseY >= groupBottom;
+      }
+    }
+
     for (const row of flatRows) {
       if (row.id === draggingId) continue;
       const el = rowRefsMap.current.get(row.id);
@@ -160,7 +175,7 @@ export function CasvaScheduleList({
       const rect = el.getBoundingClientRect();
       const midY = rect.top + rect.height / 2;
 
-      if (!row.parentId && row.id !== draggingId) {
+      if (!row.parentId && row.id !== draggingId && !isOutsideParentGroup) {
         const nestZoneTop = rect.top + rect.height * 0.25;
         const nestZoneBottom = rect.top + rect.height * 0.75;
         const alreadyChild = draggingItem?.parentItemId === row.id;

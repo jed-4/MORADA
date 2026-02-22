@@ -3080,26 +3080,16 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                     const deltaX = endX - startX;
                     const deltaY = endY - startY;
                     
-                    // Minimum horizontal offset for curves (prevents ugly straight lines)
-                    const minHorizOffset = 24;
-                    const horizOffset = Math.max(minHorizOffset, Math.abs(deltaX) / 3);
-                    
-                    // Add vertical bias based on row direction (above/below)
-                    const vertBias = Math.max(16, Math.abs(deltaY) / 4);
-                    
+                    const stub = 12;
                     let path: string;
-                    if (deltaX >= 0) {
-                      // Forward dependency (normal case: predecessor ends before successor starts)
-                      const ctrl1X = startX + horizOffset;
-                      const ctrl1Y = startY + (deltaY > 0 ? vertBias : deltaY < 0 ? -vertBias : 0);
-                      const ctrl2X = endX - horizOffset;
-                      const ctrl2Y = endY + (deltaY > 0 ? -vertBias : deltaY < 0 ? vertBias : 0);
-                      path = `M ${startX} ${startY} C ${ctrl1X} ${ctrl1Y}, ${ctrl2X} ${ctrl2Y}, ${endX} ${endY}`;
+                    if (deltaX >= stub * 2) {
+                      const midX = startX + deltaX / 2;
+                      path = `M ${startX} ${startY} H ${midX} V ${endY} H ${endX}`;
                     } else {
-                      // Backward dependency (predecessor ends after successor starts - loop around)
-                      const loopOffset = Math.max(40, Math.abs(deltaX) / 2);
-                      const midY = (startY + endY) / 2 + (deltaY >= 0 ? loopOffset : -loopOffset);
-                      path = `M ${startX} ${startY} Q ${startX + loopOffset} ${startY}, ${startX + loopOffset} ${midY} T ${endX} ${endY}`;
+                      const outX = startX + stub;
+                      const stepY = startY + deltaY / 2;
+                      const inX = endX - stub;
+                      path = `M ${startX} ${startY} H ${outX} V ${stepY} H ${inX} V ${endY} H ${endX}`;
                     }
                     
                     const depKey = `${item.id}-${dep.id}`;
@@ -3136,18 +3126,21 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                           stroke={isHovered || isSelected ? '#7c5fb3' : '#9b7fc7'}
                           strokeWidth={isHovered || isSelected ? 2.5 : 1.5}
                           fill="none"
-                          strokeLinecap="round"
+                          strokeLinecap="square"
+                          strokeLinejoin="round"
                           markerEnd="url(#arrow-elegant)"
                           style={{ pointerEvents: 'none', transition: 'stroke-width 0.15s, stroke 0.15s' }}
                         />
                         {dep.lag != null && dep.lag > 0 && (() => {
                           const lagText = `+${dep.lag}`;
                           const labelW = Math.max(20, lagText.length * 7 + 6);
+                          const labelX = deltaX >= stub * 2 ? startX + deltaX / 2 : startX + stub;
+                          const labelY = (startY + endY) / 2;
                           return (
                             <g>
                               <rect
-                                x={(startX + endX) / 2 - labelW / 2}
-                                y={(startY + endY) / 2 - 8}
+                                x={labelX - labelW / 2}
+                                y={labelY - 8}
                                 width={labelW}
                                 height={16}
                                 rx={3}
@@ -3157,8 +3150,8 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                                 style={{ pointerEvents: 'none' }}
                               />
                               <text
-                                x={(startX + endX) / 2}
-                                y={(startY + endY) / 2 + 1}
+                                x={labelX}
+                                y={labelY + 1}
                                 textAnchor="middle"
                                 dominantBaseline="middle"
                                 fill={isHovered || isSelected ? '#7c5fb3' : '#9b7fc7'}
@@ -3253,13 +3246,26 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                   const cursorX = dragging.currentX - rect.left + scrollLeft;
                   const cursorY = dragging.currentY - rect.top + scrollTop - 60;
                   
+                  const dDeltaX = cursorX - startX;
+                  const dStub = 12;
+                  let dragPath: string;
+                  if (dDeltaX >= dStub * 2) {
+                    const midX = startX + dDeltaX / 2;
+                    dragPath = `M ${startX} ${startY} H ${midX} V ${cursorY} H ${cursorX}`;
+                  } else {
+                    const outX = startX + dStub;
+                    const stepY = startY + (cursorY - startY) / 2;
+                    const inX = cursorX - dStub;
+                    dragPath = `M ${startX} ${startY} H ${outX} V ${stepY} H ${inX} V ${cursorY} H ${cursorX}`;
+                  }
                   return (
                     <path
-                      d={`M ${startX} ${startY} Q ${(startX + cursorX) / 2 + 20} ${(startY + cursorY) / 2}, ${cursorX} ${cursorY}`}
+                      d={dragPath}
                       stroke="#9b7fc7"
                       strokeWidth="1.5"
                       strokeDasharray="4,3"
-                      strokeLinecap="round"
+                      strokeLinecap="square"
+                      strokeLinejoin="round"
                       fill="none"
                       markerEnd="url(#arrow-drag)"
                     />
