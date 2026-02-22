@@ -1587,6 +1587,7 @@ export const contacts = pgTable("contacts", {
   portalEnabled: boolean("portal_enabled").notNull().default(false),
   
   isArchived: boolean("is_archived").notNull().default(false),
+  archivedAt: timestamp("archived_at"),
   
   // Quick Review feature - track review progress for new contacts
   reviewStatus: contactReviewStatusEnum("review_status").default("pending"),

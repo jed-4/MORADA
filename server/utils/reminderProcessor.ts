@@ -6,6 +6,7 @@ import { emitNotification } from "../socketManager";
 let isProcessorRunning = false;
 let lastInsuranceCheckDate: string | null = null;
 let lastRecurringTasksCheckDate: string | null = null;
+let lastArchivedContactCleanupDate: string | null = null;
 let processorInterval: NodeJS.Timeout | null = null;
 const timesheetReminderSent = new Map<string, number>();
 
@@ -190,6 +191,7 @@ export async function processReminders() {
     await processInsuranceExpiryReminders();
     await processRecurringTaskTemplates();
     await processTimesheetOvertimeReminders();
+    await cleanupArchivedContacts();
   } catch (error) {
     console.error("[ReminderProcessor] Error processing reminders:", error);
   } finally {
@@ -541,5 +543,22 @@ export async function processTimesheetOvertimeReminders() {
     }
   } catch (error) {
     console.error("[ReminderProcessor] Error in timesheet overtime reminders:", error);
+  }
+}
+
+export async function cleanupArchivedContacts() {
+  const today = format(new Date(), "yyyy-MM-dd");
+  if (lastArchivedContactCleanupDate === today) return;
+
+  try {
+    console.log("[ReminderProcessor] Checking for archived contacts older than 30 days...");
+    const thirtyDaysAgo = addDays(new Date(), -30);
+    const deleted = await storage.deleteArchivedContactsOlderThan(thirtyDaysAgo);
+    lastArchivedContactCleanupDate = today;
+    if (deleted > 0) {
+      console.log(`[ReminderProcessor] Deleted ${deleted} archived contacts older than 30 days`);
+    }
+  } catch (error) {
+    console.error("[ReminderProcessor] Error cleaning up archived contacts:", error);
   }
 }

@@ -85,7 +85,7 @@ export function CreatePOFromEstimateDialog({
   });
 
   const suppliers = useMemo(
-    () => contacts.filter((c: any) => c.contactType === "supplier" || c.contactType === "trade"),
+    () => contacts.filter((c: any) => (c.contactType === "supplier" || c.contactType === "trade") && !c.isArchived),
     [contacts]
   );
 

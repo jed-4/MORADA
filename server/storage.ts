@@ -502,6 +502,7 @@ export interface IStorage {
   updateContact(id: string, contact: Partial<InsertContact>): Promise<Contact | undefined>;
   archiveContact(id: string): Promise<Contact | undefined>;
   restoreContact(id: string): Promise<Contact | undefined>;
+  deleteArchivedContactsOlderThan(date: Date): Promise<number>;
   deleteContact(id: string, companyId: string): Promise<void>;
   mergeContacts(sourceId: string, targetId: string, companyId: string): Promise<{ success: boolean; transferredCounts: Record<string, number> }>;
 
@@ -11014,7 +11015,7 @@ export class DbStorage implements IStorage {
   async archiveContact(id: string, companyId: string): Promise<Contact | undefined> {
     try {
       const archivedContacts = await db.update(schema.contacts)
-        .set({ isArchived: true, updatedAt: new Date() })
+        .set({ isArchived: true, archivedAt: new Date(), updatedAt: new Date() })
         .where(and(
           eq(schema.contacts.id, id),
           eq(schema.contacts.companyId, companyId)
@@ -11030,7 +11031,7 @@ export class DbStorage implements IStorage {
   async restoreContact(id: string, companyId: string): Promise<Contact | undefined> {
     try {
       const restoredContacts = await db.update(schema.contacts)
-        .set({ isArchived: false, updatedAt: new Date() })
+        .set({ isArchived: false, archivedAt: null, updatedAt: new Date() })
         .where(and(
           eq(schema.contacts.id, id),
           eq(schema.contacts.companyId, companyId)
@@ -11040,6 +11041,21 @@ export class DbStorage implements IStorage {
     } catch (error) {
       console.error("Database error in restoreContact:", error);
       throw error;
+    }
+  }
+
+  async deleteArchivedContactsOlderThan(date: Date): Promise<number> {
+    try {
+      const deleted = await db.delete(schema.contacts)
+        .where(and(
+          eq(schema.contacts.isArchived, true),
+          lte(schema.contacts.archivedAt, date)
+        ))
+        .returning();
+      return deleted.length;
+    } catch (error) {
+      console.error("Database error in deleteArchivedContactsOlderThan:", error);
+      return 0;
     }
   }
 
