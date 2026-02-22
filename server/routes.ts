@@ -14823,6 +14823,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
+      if (createData.startDate && createData.scheduleId) {
+        const schedule = await storage.getScheduleById(createData.scheduleId);
+        if (schedule) {
+          const weekendOverride = createData.useWorkingDaysOverride === true;
+          const inclSat = weekendOverride ? true : (schedule.includeSaturday ?? false);
+          const inclSun = weekendOverride ? true : (schedule.includeSunday ?? false);
+          const isWorkingDay = (d: Date): boolean => {
+            const dow = d.getDay();
+            if (dow === 0 && !inclSun) return false;
+            if (dow === 6 && !inclSat) return false;
+            return true;
+          };
+          const skipToWorkingDay = (d: Date): Date => {
+            const result = new Date(d);
+            while (!isWorkingDay(result)) { result.setDate(result.getDate() + 1); }
+            return result;
+          };
+          const addWD = (date: Date, days: number): Date => {
+            const r = new Date(date);
+            let added = 0;
+            while (added < days) { r.setDate(r.getDate() + 1); if (isWorkingDay(r)) added++; }
+            return r;
+          };
+          const countWD = (s: Date, e: Date): number => {
+            let count = 0; const cur = new Date(s);
+            while (cur <= e) { if (isWorkingDay(cur)) count++; cur.setDate(cur.getDate() + 1); }
+            return count;
+          };
+          const startDate = new Date(createData.startDate);
+          if (!isWorkingDay(startDate)) {
+            const newStart = skipToWorkingDay(startDate);
+            createData.startDate = newStart.toISOString().split('T')[0];
+            if (createData.endDate && createData.duration) {
+              const newEnd = addWD(newStart, Math.max(0, (createData.duration || 1) - 1));
+              createData.endDate = newEnd.toISOString().split('T')[0];
+            } else if (createData.endDate) {
+              const endDate = new Date(createData.endDate);
+              if (!isWorkingDay(endDate)) {
+                createData.endDate = skipToWorkingDay(endDate).toISOString().split('T')[0];
+              }
+            }
+          } else if (createData.endDate) {
+            const endDate = new Date(createData.endDate);
+            if (!isWorkingDay(endDate)) {
+              const workDuration = countWD(startDate, endDate);
+              const newEnd = addWD(startDate, Math.max(0, workDuration - 1));
+              createData.endDate = newEnd.toISOString().split('T')[0];
+            }
+          }
+        }
+      }
+      
       const item = await storage.createScheduleItem(createData);
       
       // Log activity for schedule item creation
@@ -15561,14 +15613,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const updateData: any = { dependencies: updatedDependencies };
       
-      if (type === 'FS' && predecessor.endDate && parsedLag > 0) {
+      if (type === 'FS' && predecessor.endDate) {
+        const schedule = await storage.getScheduleById(item.scheduleId);
+        const weekendOverride = item.useWorkingDaysOverride === true;
+        const inclSat = weekendOverride ? true : (schedule?.includeSaturday ?? false);
+        const inclSun = weekendOverride ? true : (schedule?.includeSunday ?? false);
+        const isWorkingDay = (d: Date): boolean => {
+          const dow = d.getDay();
+          if (dow === 0 && !inclSun) return false;
+          if (dow === 6 && !inclSat) return false;
+          return true;
+        };
         const addWD = (date: Date, days: number): Date => {
           const result = new Date(date);
           let added = 0;
           while (added < days) {
             result.setDate(result.getDate() + 1);
-            const dow = result.getDay();
-            if (dow !== 0 && dow !== 6) added++;
+            if (isWorkingDay(result)) added++;
+          }
+          return result;
+        };
+        const skipToWorkingDay = (date: Date): Date => {
+          const result = new Date(date);
+          while (!isWorkingDay(result)) {
+            result.setDate(result.getDate() + 1);
           }
           return result;
         };
@@ -15576,14 +15644,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           let count = 0;
           const cur = new Date(start);
           while (cur <= end) {
-            const dow = cur.getDay();
-            if (dow !== 0 && dow !== 6) count++;
+            if (isWorkingDay(cur)) count++;
             cur.setDate(cur.getDate() + 1);
           }
           return count;
         };
         const predEnd = new Date(predecessor.endDate);
-        const newStart = addWD(predEnd, parsedLag + 1);
+        const newStart = parsedLag > 0
+          ? addWD(predEnd, parsedLag + 1)
+          : skipToWorkingDay(new Date(predEnd.getTime() + 86400000));
         if (item.startDate && item.endDate) {
           const workDuration = countWD(new Date(item.startDate), new Date(item.endDate));
           const newEnd = addWD(newStart, Math.max(0, workDuration - 1));
@@ -15641,13 +15710,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (depType === 'FS' && lag !== undefined) {
         const predecessor = await storage.getScheduleItem(req.params.predecessorId);
         if (predecessor?.endDate) {
+          const schedule = await storage.getScheduleById(item.scheduleId);
+          const weekendOverride = item.useWorkingDaysOverride === true;
+          const inclSat = weekendOverride ? true : (schedule?.includeSaturday ?? false);
+          const inclSun = weekendOverride ? true : (schedule?.includeSunday ?? false);
+          const isWorkingDay = (d: Date): boolean => {
+            const dow = d.getDay();
+            if (dow === 0 && !inclSun) return false;
+            if (dow === 6 && !inclSat) return false;
+            return true;
+          };
           const addWD = (date: Date, days: number): Date => {
             const result = new Date(date);
             let added = 0;
             while (added < days) {
               result.setDate(result.getDate() + 1);
-              const dow = result.getDay();
-              if (dow !== 0 && dow !== 6) added++;
+              if (isWorkingDay(result)) added++;
+            }
+            return result;
+          };
+          const skipToWorkingDay = (date: Date): Date => {
+            const result = new Date(date);
+            while (!isWorkingDay(result)) {
+              result.setDate(result.getDate() + 1);
             }
             return result;
           };
@@ -15655,14 +15740,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
             let count = 0;
             const cur = new Date(start);
             while (cur <= end) {
-              const dow = cur.getDay();
-              if (dow !== 0 && dow !== 6) count++;
+              if (isWorkingDay(cur)) count++;
               cur.setDate(cur.getDate() + 1);
             }
             return count;
           };
           const predEnd = new Date(predecessor.endDate);
-          const newStart = addWD(predEnd, parsedLag + 1);
+          const newStart = parsedLag > 0
+            ? addWD(predEnd, parsedLag + 1)
+            : skipToWorkingDay(new Date(predEnd.getTime() + 86400000));
           if (item.startDate && item.endDate) {
             const workDuration = countWD(new Date(item.startDate), new Date(item.endDate));
             const newEnd = addWD(newStart, Math.max(0, workDuration - 1));
