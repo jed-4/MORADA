@@ -58,7 +58,7 @@ export function usePersonalCalendarEvents({
   const rangeStart = range === "day" ? startOfDay(date) : startOfWeek(date, { weekStartsOn: weekStartDay });
   const rangeEnd = range === "day" ? endOfDay(date) : endOfWeek(date, { weekStartsOn: weekStartDay });
 
-  const REFETCH_INTERVAL = 15000; // Refresh every 15 seconds for real-time updates
+  const REFETCH_INTERVAL = 5 * 60 * 1000; // Refresh every 5 minutes
 
   const { data: tasks = [], isLoading: tasksLoading } = useQuery<any[]>({
     queryKey: ["/api/tasks", { calendarUser: userId }],

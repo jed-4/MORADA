@@ -42,7 +42,7 @@ interface CalendarEvent {
 }
 
 function TimelineEvent({ event, compact, onClick }: { event: CalendarEvent; compact?: boolean; onClick?: () => void }) {
-  const startHour = event.startTime ? parseTimeString(event.startTime) : parseTimeFromDate(event.start);
+  const startHour = event.startTime ? parseTimeString(event.startTime) : null;
   const endHour = event.endTime ? parseTimeString(event.endTime) : (startHour !== null ? startHour + 1 : null);
   
   if (startHour === null) return null;
@@ -162,11 +162,13 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
     return map;
   }, [projects]);
 
-  const startDate = new Date();
-  startDate.setHours(0, 0, 0, 0);
-  const endDate = addDays(startDate, daysAhead);
+  const { startDate, endDate } = useMemo(() => {
+    const s = new Date();
+    s.setHours(0, 0, 0, 0);
+    return { startDate: s, endDate: addDays(s, daysAhead) };
+  }, [daysAhead]);
 
-  const allEvents: CalendarEvent[] = tasks
+  const allEvents: CalendarEvent[] = useMemo(() => tasks
     .filter(task => {
       if (!task.dueDate) return false;
       if (task.status === 'done' || task.status === 'complete') return false;
@@ -182,14 +184,18 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
       type: 'task',
       projectId: task.projectId,
       projectColor: task.projectId ? projectColorMap[String(task.projectId)] : undefined,
-    }));
+    })), [tasks, startDate, endDate, projectColorMap]);
 
-  // Scroll to 6 AM or earliest event on mount
+  const scrolledRef = useRef(false);
   useEffect(() => {
-    if (scrollRef.current && (viewMode === "day" || viewMode === "week")) {
-      const DEFAULT_START_HOUR = 6; // Default to 6 AM
+    scrolledRef.current = false;
+  }, [viewMode, selectedDate]);
+
+  useEffect(() => {
+    if (scrollRef.current && (viewMode === "day" || viewMode === "week") && !scrolledRef.current) {
+      scrolledRef.current = true;
+      const DEFAULT_START_HOUR = 6;
       
-      // Find earliest event time
       let earliestHour = DEFAULT_START_HOUR;
       allEvents.forEach(event => {
         if (event.startTime) {
@@ -203,7 +209,7 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
       const scrollPosition = Math.max(0, earliestHour * HOUR_HEIGHT);
       scrollRef.current.scrollTop = scrollPosition;
     }
-  }, [viewMode, allEvents]);
+  }, [viewMode, allEvents, selectedDate]);
 
   const isLoading = tasksLoading || projectsLoading;
 
@@ -442,52 +448,74 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
   // Render Day View
   const renderDayView = () => {
     const dayEvents = getEventsForDate(selectedDate);
+    const timedEvents = dayEvents.filter(e => e.startTime);
+    const allDayEvents = dayEvents.filter(e => !e.startTime);
     const currentMinutes = getTimeInTimezone(effectiveTimezone).totalMinutes;
     const showCurrentTime = isTodayInTimezone(selectedDate, effectiveTimezone);
 
     return (
-      <div 
-        ref={scrollRef}
-        className="relative overflow-auto flex-1"
-      >
-        <div className="relative" style={{ height: `${24 * HOUR_HEIGHT}px` }}>
-          {/* Hour lines */}
-          {HOURS.map((hour) => (
-            <div
-              key={hour}
-              className="absolute left-0 right-0 border-t border-border/30"
-              style={{ top: `${hour * HOUR_HEIGHT}px` }}
-            >
-              <span className="absolute left-0 -top-2 text-[9px] text-muted-foreground w-9 text-right pr-1">
-                {formatInTimezone(new Date(new Date().setHours(hour, 0)), effectiveTimezone, { hour: 'numeric', hour12: true })}
-              </span>
-            </div>
-          ))}
-          
-          {/* Current time indicator */}
-          {showCurrentTime && (
-            <div
-              className="absolute left-9 right-0 border-t-2 border-red-500 z-10"
-              style={{ top: `${(currentMinutes / 60) * HOUR_HEIGHT}px` }}
-            >
-              <div className="absolute -left-1 -top-1 w-2 h-2 rounded-full bg-red-500" />
-            </div>
-          )}
-          
-          {/* Events */}
-          {dayEvents.map((event) => (
-            <TimelineEvent 
-              key={event.id} 
-              event={event} 
-              onClick={() => event.type === 'task' && setSelectedTaskId(event.id)}
-            />
-          ))}
-          
-          {dayEvents.length === 0 && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <p className="text-xs text-muted-foreground">No events</p>
-            </div>
-          )}
+      <div className="flex flex-col flex-1 overflow-hidden">
+        {allDayEvents.length > 0 && (
+          <div className="border-b border-border/30 px-1 py-1 space-y-0.5 flex-shrink-0">
+            {allDayEvents.map((event) => {
+              const baseColor = event.projectColor || typeHexColors[event.type || 'task'] || "#3b82f6";
+              const notionColors = generateNotionColors(baseColor);
+              return (
+                <div
+                  key={event.id}
+                  className="rounded-sm text-[10px] px-1.5 py-0.5 cursor-pointer hover-elevate truncate ml-10"
+                  style={{
+                    backgroundColor: notionColors.pastelBg,
+                    borderLeft: `3px solid ${notionColors.originalHex}`,
+                  }}
+                  onClick={() => event.type === 'task' && setSelectedTaskId(event.id)}
+                >
+                  <span className="font-semibold" style={{ color: notionColors.darkText }}>{event.title}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <div 
+          ref={scrollRef}
+          className="relative overflow-auto flex-1"
+        >
+          <div className="relative" style={{ height: `${24 * HOUR_HEIGHT}px` }}>
+            {HOURS.map((hour) => (
+              <div
+                key={hour}
+                className="absolute left-0 right-0 border-t border-border/30"
+                style={{ top: `${hour * HOUR_HEIGHT}px` }}
+              >
+                <span className="absolute left-0 -top-2 text-[9px] text-muted-foreground w-9 text-right pr-1">
+                  {formatInTimezone(new Date(new Date().setHours(hour, 0)), effectiveTimezone, { hour: 'numeric', hour12: true })}
+                </span>
+              </div>
+            ))}
+            
+            {showCurrentTime && (
+              <div
+                className="absolute left-9 right-0 border-t-2 border-red-500 z-10"
+                style={{ top: `${(currentMinutes / 60) * HOUR_HEIGHT}px` }}
+              >
+                <div className="absolute -left-1 -top-1 w-2 h-2 rounded-full bg-red-500" />
+              </div>
+            )}
+            
+            {timedEvents.map((event) => (
+              <TimelineEvent 
+                key={event.id} 
+                event={event} 
+                onClick={() => event.type === 'task' && setSelectedTaskId(event.id)}
+              />
+            ))}
+            
+            {dayEvents.length === 0 && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <p className="text-xs text-muted-foreground">No events</p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -513,9 +541,9 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
     
     // Process events for a day with overlap handling
     const processEventsForDay = (dayEvents: CalendarEvent[]): EventPosition[] => {
-      // Calculate positions for each event
-      const eventsWithPosition: EventPosition[] = dayEvents.map((event) => {
-        const startHour = event.startTime ? parseTimeString(event.startTime) : parseTimeFromDate(event.start);
+      const timedOnly = dayEvents.filter(e => e.startTime);
+      const eventsWithPosition: EventPosition[] = timedOnly.map((event) => {
+        const startHour = parseTimeString(event.startTime!);
         const endHour = event.endTime ? parseTimeString(event.endTime) : (startHour !== null ? startHour + 1 : 9);
         
         const startMinutes = (startHour ?? 9) * 60;
@@ -561,24 +589,57 @@ export default function PersonalCalendarWidget({ widget, onUpdate, isConfiguring
     const RIGHT_MARGIN = 8; // Right margin percentage
     const MAX_OFFSET = 36; // Max offset (capped at 3 lanes worth)
     
+    const hasAnyAllDay = weekDays.some(day => getEventsForDate(day).some(e => !e.startTime));
+    
     return (
       <div 
         ref={scrollRef}
         className="overflow-auto flex-1"
       >
         {/* Day headers - sticky */}
-        <div className="grid grid-cols-7 gap-px border-b border-border sticky top-0 bg-background z-20">
-          {weekDays.map((day) => (
-            <div 
-              key={day.toISOString()} 
-              className={`text-center py-1 ${isToday(day) ? 'bg-[#bba7db]/10' : ''}`}
-            >
-              <div className="text-[9px] text-muted-foreground">{formatInTimezone(day, effectiveTimezone, { weekday: 'short' })}</div>
-              <div className={`text-xs font-medium ${isToday(day) ? 'text-[#bba7db]' : ''}`}>
-                {formatInTimezone(day, effectiveTimezone, { day: 'numeric' })}
+        <div className="sticky top-0 bg-background z-20 border-b border-border">
+          <div className="grid grid-cols-7 gap-px">
+            {weekDays.map((day) => (
+              <div 
+                key={day.toISOString()} 
+                className={`text-center py-1 ${isToday(day) ? 'bg-[#bba7db]/10' : ''}`}
+              >
+                <div className="text-[9px] text-muted-foreground">{formatInTimezone(day, effectiveTimezone, { weekday: 'short' })}</div>
+                <div className={`text-xs font-medium ${isToday(day) ? 'text-[#bba7db]' : ''}`}>
+                  {formatInTimezone(day, effectiveTimezone, { day: 'numeric' })}
+                </div>
               </div>
+            ))}
+          </div>
+          {hasAnyAllDay && (
+            <div className="grid grid-cols-7 gap-px border-t border-border/30">
+              {weekDays.map((day) => {
+                const allDayEvts = getEventsForDate(day).filter(e => !e.startTime);
+                return (
+                  <div key={day.toISOString()} className="px-0.5 py-0.5 space-y-0.5">
+                    {allDayEvts.map((event) => {
+                      const baseColor = event.projectColor || typeHexColors[event.type || 'task'] || "#3b82f6";
+                      const nc = generateNotionColors(baseColor);
+                      return (
+                        <div
+                          key={event.id}
+                          className="rounded-sm text-[7px] px-0.5 py-px cursor-pointer hover-elevate truncate"
+                          style={{
+                            backgroundColor: nc.pastelBg,
+                            borderLeft: `2px solid ${nc.originalHex}`,
+                          }}
+                          title={event.title}
+                          onClick={() => event.type === 'task' && setSelectedTaskId(event.id)}
+                        >
+                          <span className="font-semibold" style={{ color: nc.darkText }}>{event.title}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
             </div>
-          ))}
+          )}
         </div>
         
         {/* Timeline grid with day columns */}
