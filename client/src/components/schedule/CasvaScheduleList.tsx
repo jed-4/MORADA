@@ -4,6 +4,7 @@ import { Table, TableHeader, TableRow, TableHead, TableBody } from "@/components
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useState, Fragment, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 
 interface StatusOption {
   id: string;
@@ -78,17 +79,19 @@ export function CasvaScheduleList({
   const [touchStartY, setTouchStartY] = useState<number | null>(null);
 
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
-  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
-  const [dropPosition, setDropPosition] = useState<'above' | 'below'>('below');
-  const [indicatorRect, setIndicatorRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [indicatorLine, setIndicatorLine] = useState<{ top: number; left: number; width: number } | null>(null);
+
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const rowRefsMap = useRef<Map<string, HTMLTableRowElement>>(new Map());
+  const ghostElRef = useRef<HTMLDivElement | null>(null);
   const dragStartedRef = useRef(false);
   const startMouseYRef = useRef(0);
   const startMouseXRef = useRef(0);
+  const currentMouseYRef = useRef(0);
+  const activeListenersRef = useRef<{ move: (e: MouseEvent) => void; up: () => void } | null>(null);
+
   const dropTargetIdRef = useRef<string | null>(null);
   const dropPositionRef = useRef<'above' | 'below'>('below');
-  const currentMouseYRef = useRef(0);
 
   const toggleSelection = (itemId: string, e?: React.MouseEvent) => {
     if (!onSelectionChange) return;
@@ -255,6 +258,45 @@ export function CasvaScheduleList({
     return null;
   }, [items, buildFlatRows, parentItemsList]);
 
+  const createGhostElement = useCallback((rowEl: HTMLTableRowElement) => {
+    const rect = rowEl.getBoundingClientRect();
+    const ghost = document.createElement('div');
+    ghost.style.position = 'fixed';
+    ghost.style.zIndex = '99999';
+    ghost.style.pointerEvents = 'none';
+    ghost.style.opacity = '0.7';
+    ghost.style.width = `${rect.width}px`;
+    ghost.style.height = `${rect.height}px`;
+    ghost.style.boxShadow = '0 10px 25px -5px rgba(0,0,0,0.15), 0 8px 10px -6px rgba(0,0,0,0.1)';
+    ghost.style.borderRadius = '4px';
+    ghost.style.overflow = 'hidden';
+    ghost.style.background = 'var(--card)';
+    ghost.style.border = '1px solid #bba7db';
+    ghost.style.transition = 'none';
+
+    const table = document.createElement('table');
+    table.style.width = '100%';
+    table.style.height = '100%';
+    table.style.borderCollapse = 'collapse';
+    table.style.tableLayout = 'fixed';
+    
+    const clonedRow = rowEl.cloneNode(true) as HTMLElement;
+    clonedRow.style.opacity = '1';
+    clonedRow.style.background = 'var(--card)';
+    table.appendChild(clonedRow);
+    ghost.appendChild(table);
+
+    document.body.appendChild(ghost);
+    return ghost;
+  }, []);
+
+  const removeGhostElement = useCallback(() => {
+    if (ghostElRef.current) {
+      document.body.removeChild(ghostElRef.current);
+      ghostElRef.current = null;
+    }
+  }, []);
+
   const handleMouseDown = useCallback((e: React.MouseEvent, itemId: string) => {
     if (!onReorderItem) return;
     e.preventDefault();
@@ -274,34 +316,50 @@ export function CasvaScheduleList({
       if (!dragStartedRef.current) {
         dragStartedRef.current = true;
         setDraggingItemId(itemId);
-        console.log('[DRAG] Started dragging:', itemId);
+
+        const rowEl = rowRefsMap.current.get(itemId);
+        if (rowEl) {
+          ghostElRef.current = createGhostElement(rowEl);
+          const rect = rowEl.getBoundingClientRect();
+          ghostElRef.current.style.left = `${rect.left}px`;
+          ghostElRef.current.style.top = `${moveEvent.clientY - rect.height / 2}px`;
+        }
       }
 
       currentMouseYRef.current = moveEvent.clientY;
+
+      if (ghostElRef.current) {
+        const rowEl = rowRefsMap.current.get(itemId);
+        if (rowEl) {
+          const rect = rowEl.getBoundingClientRect();
+          ghostElRef.current.style.left = `${rect.left}px`;
+          ghostElRef.current.style.top = `${moveEvent.clientY - rect.height / 2}px`;
+        }
+      }
+
       const { targetId, position } = findDropTarget(moveEvent.clientY, itemId);
       dropTargetIdRef.current = targetId;
       dropPositionRef.current = position;
-      setDropTargetId(targetId);
-      setDropPosition(position);
 
       if (targetId) {
         const targetEl = rowRefsMap.current.get(targetId);
         if (targetEl) {
           const rect = targetEl.getBoundingClientRect();
-          setIndicatorRect({
+          setIndicatorLine({
             top: position === 'above' ? rect.top : rect.bottom,
             left: rect.left,
             width: rect.width,
           });
         }
       } else {
-        setIndicatorRect(null);
+        setIndicatorLine(null);
       }
     };
 
     const onMouseUp = () => {
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
+      activeListenersRef.current = null;
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
 
@@ -312,18 +370,32 @@ export function CasvaScheduleList({
         }
       }
 
+      removeGhostElement();
       setDraggingItemId(null);
-      setDropTargetId(null);
-      setIndicatorRect(null);
+      setIndicatorLine(null);
       dropTargetIdRef.current = null;
       dragStartedRef.current = false;
     };
 
     document.body.style.userSelect = 'none';
     document.body.style.cursor = 'grabbing';
+    activeListenersRef.current = { move: onMouseMove, up: onMouseUp };
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
-  }, [onReorderItem, findDropTarget, computeReorderParams]);
+  }, [onReorderItem, findDropTarget, computeReorderParams, createGhostElement, removeGhostElement]);
+
+  useEffect(() => {
+    return () => {
+      if (activeListenersRef.current) {
+        document.removeEventListener('mousemove', activeListenersRef.current.move);
+        document.removeEventListener('mouseup', activeListenersRef.current.up);
+        activeListenersRef.current = null;
+      }
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      removeGhostElement();
+    };
+  }, [removeGhostElement]);
 
   const toggleCollapse = (itemId: string) => {
     setCollapsedItems(prev => {
@@ -395,15 +467,13 @@ export function CasvaScheduleList({
   const isAllSelected = items.length > 0 && selectedItems.size === items.length;
   const isSomeSelected = selectedItems.size > 0 && selectedItems.size < items.length;
 
-  const dropIndicatorInfo = draggingItemId && dropTargetId ? (() => {
+  const willUnparent = (() => {
+    if (!draggingItemId || !dropTargetIdRef.current) return false;
     const draggingItem = items.find(i => i.id === draggingItemId);
-    if (!draggingItem) return null;
-    const params = computeReorderParams(draggingItemId, dropTargetId, dropPosition);
-    const willUnparent = draggingItem.parentItemId ? params?.newParentId === null : false;
-    console.log('[DRAG] dropIndicatorInfo:', { targetId: dropTargetId, position: dropPosition, willUnparent, params });
-    return { targetId: dropTargetId, position: dropPosition, willUnparent };
-  })() : null;
-
+    if (!draggingItem?.parentItemId) return false;
+    const params = computeReorderParams(draggingItemId, dropTargetIdRef.current, dropPositionRef.current);
+    return params?.newParentId === null;
+  })();
 
   return (
     <div className="border rounded-lg bg-card overflow-hidden relative" ref={tableContainerRef}>
@@ -445,7 +515,7 @@ export function CasvaScheduleList({
                     ref={(el) => { if (el) rowRefsMap.current.set(item.id, el); }}
                     className={`group h-8 border-b cursor-pointer relative overflow-visible transition-colors hover-elevate ${
                       selectedItems.has(item.id) ? 'bg-accent/30' : ''
-                    } ${draggingItemId === item.id ? 'opacity-40' : ''}`}
+                    } ${draggingItemId === item.id ? 'opacity-30' : ''}`}
                     data-testid={`schedule-row-${item.id}`}
                     draggable={false}
                     onDragStart={(e) => e.preventDefault()}
@@ -505,7 +575,7 @@ export function CasvaScheduleList({
                           ref={(el) => { if (el) rowRefsMap.current.set(subtask.id, el); }}
                           className={`group h-8 border-b cursor-pointer relative overflow-visible transition-colors hover-elevate bg-muted/30 ${
                             selectedItems.has(subtask.id) ? 'bg-accent/30' : ''
-                          } ${draggingItemId === subtask.id ? 'opacity-40' : ''}`}
+                          } ${draggingItemId === subtask.id ? 'opacity-30' : ''}`}
                           data-testid={`schedule-subtask-row-${subtask.id}`}
                           draggable={false}
                           onDragStart={(e) => e.preventDefault()}
@@ -564,30 +634,6 @@ export function CasvaScheduleList({
           </TableBody>
         </Table>
       </ScrollArea>
-
-      {draggingItemId && indicatorRect && dropIndicatorInfo && (
-        <div
-          className="pointer-events-none"
-          style={{
-            position: 'fixed',
-            top: indicatorRect.top - 1.5,
-            left: indicatorRect.left,
-            width: indicatorRect.width,
-            zIndex: 9999,
-          }}
-        >
-          <div className="flex items-center">
-            <div className={`w-3 h-3 rounded-full -ml-0.5 flex-shrink-0 shadow-sm ${dropIndicatorInfo.willUnparent ? 'bg-orange-500' : 'bg-primary'}`} />
-            <div className={`h-[3px] flex-1 shadow-sm ${dropIndicatorInfo.willUnparent ? 'bg-orange-500' : 'bg-primary'}`} />
-            <div className={`w-3 h-3 rounded-full -mr-0.5 flex-shrink-0 shadow-sm ${dropIndicatorInfo.willUnparent ? 'bg-orange-500' : 'bg-primary'}`} />
-          </div>
-          {dropIndicatorInfo.willUnparent && (
-            <div className="text-[9px] text-orange-500 font-medium ml-3 mt-0.5">
-              Will become top-level item
-            </div>
-          )}
-        </div>
-      )}
       
       <div className="px-2 h-8 border-t bg-background text-[10px] text-muted-foreground flex items-center justify-between">
         <span>
@@ -597,6 +643,63 @@ export function CasvaScheduleList({
           }
         </span>
       </div>
+
+      {draggingItemId && indicatorLine && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            top: indicatorLine.top - 1,
+            left: indicatorLine.left,
+            width: indicatorLine.width,
+            height: '2px',
+            backgroundColor: willUnparent ? '#f97316' : '#bba7db',
+            zIndex: 99998,
+            pointerEvents: 'none',
+            boxShadow: willUnparent 
+              ? '0 0 4px rgba(249, 115, 22, 0.5)' 
+              : '0 0 4px rgba(187, 167, 219, 0.5)',
+          }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              left: -4,
+              top: -3,
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              backgroundColor: willUnparent ? '#f97316' : '#bba7db',
+            }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              right: -4,
+              top: -3,
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              backgroundColor: willUnparent ? '#f97316' : '#bba7db',
+            }}
+          />
+          {willUnparent && (
+            <div
+              style={{
+                position: 'absolute',
+                left: 12,
+                top: 6,
+                fontSize: '9px',
+                color: '#f97316',
+                fontWeight: 600,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Will become top-level item
+            </div>
+          )}
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

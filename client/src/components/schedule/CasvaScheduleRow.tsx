@@ -88,7 +88,7 @@ export function CasvaScheduleRow({
           <div className="flex items-center gap-0">
             {isDraggable && (
               <div 
-                className="cursor-grab active:cursor-grabbing flex-shrink-0 px-0.5" 
+                className="cursor-grab active:cursor-grabbing flex-shrink-0 px-0.5 invisible group-hover:visible" 
                 onMouseDown={onDragHandleMouseDown}
                 draggable={false}
                 onDragStart={(e) => e.preventDefault()}
