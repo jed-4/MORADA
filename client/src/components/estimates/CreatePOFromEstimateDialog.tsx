@@ -80,10 +80,7 @@ export function CreatePOFromEstimateDialog({
   const [deliveryOpen, setDeliveryOpen] = useState(false);
 
   const { data: contacts = [] } = useQuery<Contact[]>({
-    queryKey: ["/api/contacts", { contactType: "supplier" }],
-    queryFn: async () => {
-      return apiRequest("/api/contacts?contactType=supplier", "GET");
-    },
+    queryKey: ["/api/contacts"],
     enabled: open,
   });
 
