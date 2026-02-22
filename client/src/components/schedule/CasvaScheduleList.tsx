@@ -92,6 +92,8 @@ export function CasvaScheduleList({
 
   const dropTargetIdRef = useRef<string | null>(null);
   const dropPositionRef = useRef<'above' | 'below'>('below');
+  const nestTargetIdRef = useRef<string | null>(null);
+  const [nestHighlightId, setNestHighlightId] = useState<string | null>(null);
 
   const toggleSelection = (itemId: string, e?: React.MouseEvent) => {
     if (!onSelectionChange) return;
@@ -145,9 +147,11 @@ export function CasvaScheduleList({
     return rows;
   }, [parentItemsList, subtasksByParent, collapsedItems]);
 
-  const findDropTarget = useCallback((mouseY: number, draggingId: string): { targetId: string | null; position: 'above' | 'below' } => {
+  const findDropTarget = useCallback((mouseY: number, draggingId: string): { targetId: string | null; position: 'above' | 'below'; nestInto: string | null } => {
     const flatRows = buildFlatRows();
+    const draggingItem = items.find(i => i.id === draggingId);
     let closest: { id: string; dist: number; position: 'above' | 'below' } | null = null;
+    let nestCandidate: string | null = null;
 
     for (const row of flatRows) {
       if (row.id === draggingId) continue;
@@ -155,6 +159,16 @@ export function CasvaScheduleList({
       if (!el) continue;
       const rect = el.getBoundingClientRect();
       const midY = rect.top + rect.height / 2;
+
+      if (!row.parentId && row.id !== draggingId) {
+        const nestZoneTop = rect.top + rect.height * 0.25;
+        const nestZoneBottom = rect.top + rect.height * 0.75;
+        const alreadyChild = draggingItem?.parentItemId === row.id;
+        const isOverThisRow = mouseY >= rect.top && mouseY <= rect.bottom;
+        if (isOverThisRow && mouseY >= nestZoneTop && mouseY <= nestZoneBottom && !alreadyChild) {
+          nestCandidate = row.id;
+        }
+      }
 
       const position: 'above' | 'below' = mouseY < midY ? 'above' : 'below';
       const dist = Math.abs(mouseY - midY);
@@ -164,8 +178,12 @@ export function CasvaScheduleList({
       }
     }
 
-    return closest ? { targetId: closest.id, position: closest.position } : { targetId: null, position: 'below' };
-  }, [buildFlatRows]);
+    if (nestCandidate) {
+      return { targetId: closest?.id || null, position: closest?.position || 'below', nestInto: nestCandidate };
+    }
+
+    return closest ? { targetId: closest.id, position: closest.position, nestInto: null } : { targetId: null, position: 'below', nestInto: null };
+  }, [buildFlatRows, items]);
 
   const computeReorderParams = useCallback((draggingId: string, targetId: string, position: 'above' | 'below'): { afterItemId: string | null; newParentId: string | null } | null => {
     const draggingItem = items.find(i => i.id === draggingId);
@@ -298,7 +316,7 @@ export function CasvaScheduleList({
   }, []);
 
   const handleMouseDown = useCallback((e: React.MouseEvent, itemId: string) => {
-    if (!onReorderItem) return;
+    if (!onReorderItem && !onNestItem) return;
     e.preventDefault();
     e.stopPropagation();
     dragStartedRef.current = false;
@@ -337,11 +355,16 @@ export function CasvaScheduleList({
         }
       }
 
-      const { targetId, position } = findDropTarget(moveEvent.clientY, itemId);
+      const { targetId, position, nestInto } = findDropTarget(moveEvent.clientY, itemId);
       dropTargetIdRef.current = targetId;
       dropPositionRef.current = position;
+      nestTargetIdRef.current = nestInto;
 
-      if (targetId) {
+      if (nestInto) {
+        setIndicatorLine(null);
+        setNestHighlightId(nestInto);
+      } else if (targetId) {
+        setNestHighlightId(null);
         const targetEl = rowRefsMap.current.get(targetId);
         if (targetEl) {
           const rect = targetEl.getBoundingClientRect();
@@ -353,6 +376,7 @@ export function CasvaScheduleList({
         }
       } else {
         setIndicatorLine(null);
+        setNestHighlightId(null);
       }
     };
 
@@ -363,17 +387,23 @@ export function CasvaScheduleList({
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
 
-      if (dragStartedRef.current && dropTargetIdRef.current) {
-        const params = computeReorderParams(itemId, dropTargetIdRef.current, dropPositionRef.current);
-        if (params) {
-          onReorderItem(itemId, params.afterItemId, params.newParentId);
+      if (dragStartedRef.current) {
+        if (nestTargetIdRef.current && onNestItem) {
+          onNestItem(itemId, nestTargetIdRef.current);
+        } else if (dropTargetIdRef.current && onReorderItem) {
+          const params = computeReorderParams(itemId, dropTargetIdRef.current, dropPositionRef.current);
+          if (params) {
+            onReorderItem(itemId, params.afterItemId, params.newParentId);
+          }
         }
       }
 
       removeGhostElement();
       setDraggingItemId(null);
       setIndicatorLine(null);
+      setNestHighlightId(null);
       dropTargetIdRef.current = null;
+      nestTargetIdRef.current = null;
       dragStartedRef.current = false;
     };
 
@@ -382,7 +412,7 @@ export function CasvaScheduleList({
     activeListenersRef.current = { move: onMouseMove, up: onMouseUp };
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
-  }, [onReorderItem, findDropTarget, computeReorderParams, createGhostElement, removeGhostElement]);
+  }, [onReorderItem, onNestItem, findDropTarget, computeReorderParams, createGhostElement, removeGhostElement]);
 
   useEffect(() => {
     return () => {
@@ -468,7 +498,7 @@ export function CasvaScheduleList({
   const isSomeSelected = selectedItems.size > 0 && selectedItems.size < items.length;
 
   const willUnparent = (() => {
-    if (!draggingItemId || !dropTargetIdRef.current) return false;
+    if (!draggingItemId || !dropTargetIdRef.current || nestHighlightId) return false;
     const draggingItem = items.find(i => i.id === draggingItemId);
     if (!draggingItem?.parentItemId) return false;
     const params = computeReorderParams(draggingItemId, dropTargetIdRef.current, dropPositionRef.current);
@@ -516,6 +546,12 @@ export function CasvaScheduleList({
                     className={`group h-8 border-b cursor-pointer relative overflow-visible transition-colors hover-elevate ${
                       selectedItems.has(item.id) ? 'bg-accent/30' : ''
                     } ${draggingItemId === item.id ? 'opacity-30' : ''}`}
+                    style={nestHighlightId === item.id ? {
+                      outline: '2px solid #bba7db',
+                      outlineOffset: '-2px',
+                      backgroundColor: 'rgba(187, 167, 219, 0.12)',
+                      borderRadius: '4px',
+                    } : undefined}
                     data-testid={`schedule-row-${item.id}`}
                     draggable={false}
                     onDragStart={(e) => e.preventDefault()}
@@ -545,7 +581,7 @@ export function CasvaScheduleList({
                       onCompletionToggle={onCompletionToggle ? () => onCompletionToggle(item.id, item.progressPercent || 0) : undefined}
                       statusOptions={statusOptions}
                       visibleColumns={visibleColumns}
-                      isDraggable={!!onReorderItem}
+                      isDraggable={!!(onReorderItem || onNestItem)}
                       onDragHandleMouseDown={(e) => handleMouseDown(e, item.id)}
                       isParent={hasSubtasks}
                       isCollapsed={isCollapsed}
@@ -605,7 +641,7 @@ export function CasvaScheduleList({
                             onCompletionToggle={onCompletionToggle ? () => onCompletionToggle(subtask.id, subtask.progressPercent || 0) : undefined}
                             statusOptions={statusOptions}
                             visibleColumns={visibleColumns}
-                            isDraggable={!!onReorderItem}
+                            isDraggable={!!(onReorderItem || onNestItem)}
                             onDragHandleMouseDown={(e) => handleMouseDown(e, subtask.id)}
                             isSubtask={true}
                           />
@@ -643,6 +679,32 @@ export function CasvaScheduleList({
           }
         </span>
       </div>
+
+      {draggingItemId && nestHighlightId && createPortal(
+        (() => {
+          const el = rowRefsMap.current.get(nestHighlightId);
+          if (!el) return null;
+          const rect = el.getBoundingClientRect();
+          return (
+            <div
+              style={{
+                position: 'fixed',
+                top: rect.bottom + 2,
+                left: rect.left + 12,
+                fontSize: '9px',
+                color: '#bba7db',
+                fontWeight: 600,
+                whiteSpace: 'nowrap',
+                zIndex: 99998,
+                pointerEvents: 'none',
+              }}
+            >
+              Drop to nest inside this item
+            </div>
+          );
+        })(),
+        document.body
+      )}
 
       {draggingItemId && indicatorLine && createPortal(
         <div
