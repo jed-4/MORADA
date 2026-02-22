@@ -8,12 +8,13 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Plus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown, User, Search, Filter, Columns, MoreVertical, FileText, Edit, Eye, Copy, Check, Palette, Trash2, Settings, Download, Wifi, WifiOff, GanttChart, List as ListIcon, GripVertical, Link, Unlink, X, RotateCcw } from "lucide-react";
-import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent, DragOverEvent } from '@dnd-kit/core';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useScheduleView } from "@/contexts/ScheduleViewContext";
 import { format, differenceInDays, addDays, startOfWeek, eachWeekOfInterval, eachDayOfInterval, getISOWeek, endOfWeek, getDay } from "date-fns";
 import { useState, useRef, useMemo, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import {
   Dialog,
   DialogContent,
@@ -109,38 +110,235 @@ function SortableColumnItem({
   );
 }
 
-function SortableTaskRow({ 
-  id, 
-  children 
-}: { 
-  id: string; 
-  children: (dragHandleProps: { attributes: any; listeners: any }) => React.ReactNode;
-}) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id });
-  
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.7 : 1,
-    zIndex: isDragging ? 50 : 'auto',
-    boxShadow: isDragging ? '0 8px 24px rgba(187, 167, 219, 0.4)' : 'none',
-    outline: isDragging ? '2px solid #bba7db' : 'none',
-    borderRadius: isDragging ? '4px' : '0',
-    background: isDragging ? 'var(--background)' : 'transparent',
+function useGanttRowDrag(
+  sortableItemIds: string[],
+  setSessionItemOrder: React.Dispatch<React.SetStateAction<string[]>>,
+  canNestItem: (activeId: string, targetId: string) => boolean,
+  allItems: ScheduleItem[],
+  projectId: string | undefined,
+  toast: any,
+) {
+  const [rowDragItemId, setRowDragItemId] = useState<string | null>(null);
+  const [rowDragIndicator, setRowDragIndicator] = useState<{ top: number; left: number; width: number } | null>(null);
+  const rowRefsMap = useRef<Map<string, HTMLDivElement>>(new Map());
+  const ghostElRef = useRef<HTMLDivElement | null>(null);
+  const dragStartedRef = useRef(false);
+  const startYRef = useRef(0);
+  const startXRef = useRef(0);
+  const dropTargetIdRef = useRef<string | null>(null);
+  const dropPositionRef = useRef<'above' | 'below'>('below');
+  const nestTargetRef = useRef<string | null>(null);
+  const nestTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeListenersRef = useRef<{ move: (e: MouseEvent) => void; up: () => void } | null>(null);
+  const [nestHighlightId, setNestHighlightId] = useState<string | null>(null);
+
+  const registerRowRef = useCallback((id: string, el: HTMLDivElement | null) => {
+    if (el) {
+      rowRefsMap.current.set(id, el);
+    } else {
+      rowRefsMap.current.delete(id);
+    }
+  }, []);
+
+  const removeGhost = useCallback(() => {
+    if (ghostElRef.current && ghostElRef.current.parentNode) {
+      ghostElRef.current.parentNode.removeChild(ghostElRef.current);
+      ghostElRef.current = null;
+    }
+  }, []);
+
+  const findDropTarget = useCallback((mouseY: number, draggingId: string): { targetId: string | null; position: 'above' | 'below' } => {
+    let closest: { id: string; dist: number; position: 'above' | 'below' } | null = null;
+
+    for (const id of sortableItemIds) {
+      if (id === draggingId) continue;
+      const el = rowRefsMap.current.get(id);
+      if (!el) continue;
+      const rect = el.getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+      const position: 'above' | 'below' = mouseY < midY ? 'above' : 'below';
+      const dist = Math.abs(mouseY - midY);
+      if (!closest || dist < closest.dist) {
+        closest = { id, dist, position };
+      }
+    }
+    return closest ? { targetId: closest.id, position: closest.position } : { targetId: null, position: 'below' };
+  }, [sortableItemIds]);
+
+  const handleDragHandleMouseDown = useCallback((e: React.MouseEvent, itemId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragStartedRef.current = false;
+    startYRef.current = e.clientY;
+    startXRef.current = e.clientX;
+    dropTargetIdRef.current = null;
+    dropPositionRef.current = 'below';
+    nestTargetRef.current = null;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      moveEvent.preventDefault();
+      const dy = Math.abs(moveEvent.clientY - startYRef.current);
+      const dx = Math.abs(moveEvent.clientX - startXRef.current);
+      if (!dragStartedRef.current && dy < 4 && dx < 4) return;
+
+      if (!dragStartedRef.current) {
+        dragStartedRef.current = true;
+        setRowDragItemId(itemId);
+
+        const rowEl = rowRefsMap.current.get(itemId);
+        if (rowEl) {
+          const rect = rowEl.getBoundingClientRect();
+          const ghost = document.createElement('div');
+          ghost.style.position = 'fixed';
+          ghost.style.zIndex = '99999';
+          ghost.style.pointerEvents = 'none';
+          ghost.style.opacity = '0.7';
+          ghost.style.width = `${rect.width}px`;
+          ghost.style.height = `${rect.height}px`;
+          ghost.style.boxShadow = '0 10px 25px -5px rgba(0,0,0,0.15), 0 8px 10px -6px rgba(0,0,0,0.1)';
+          ghost.style.borderRadius = '4px';
+          ghost.style.overflow = 'hidden';
+          ghost.style.background = 'var(--background)';
+          ghost.style.border = '2px solid #bba7db';
+
+          const clone = rowEl.cloneNode(true) as HTMLElement;
+          clone.style.opacity = '1';
+          clone.style.height = '100%';
+          ghost.appendChild(clone);
+          document.body.appendChild(ghost);
+          ghostElRef.current = ghost;
+
+          ghost.style.left = `${rect.left}px`;
+          ghost.style.top = `${moveEvent.clientY - rect.height / 2}px`;
+        }
+      }
+
+      if (ghostElRef.current) {
+        const rowEl = rowRefsMap.current.get(itemId);
+        if (rowEl) {
+          const rect = rowEl.getBoundingClientRect();
+          ghostElRef.current.style.left = `${rect.left}px`;
+          ghostElRef.current.style.top = `${moveEvent.clientY - rect.height / 2}px`;
+        }
+      }
+
+      const { targetId, position } = findDropTarget(moveEvent.clientY, itemId);
+      dropTargetIdRef.current = targetId;
+      dropPositionRef.current = position;
+
+      if (targetId) {
+        const targetEl = rowRefsMap.current.get(targetId);
+        if (targetEl) {
+          const rect = targetEl.getBoundingClientRect();
+          setRowDragIndicator({
+            top: position === 'above' ? rect.top : rect.bottom,
+            left: rect.left,
+            width: rect.width,
+          });
+        }
+
+        if (nestTimerRef.current) clearTimeout(nestTimerRef.current);
+        if (position === 'below' || position === 'above') {
+          const el = rowRefsMap.current.get(targetId);
+          if (el) {
+            const rect = el.getBoundingClientRect();
+            const midY = rect.top + rect.height / 2;
+            const distFromMid = Math.abs(moveEvent.clientY - midY);
+            if (distFromMid < rect.height * 0.25 && canNestItem(itemId, targetId)) {
+              nestTimerRef.current = setTimeout(() => {
+                nestTargetRef.current = targetId;
+                setNestHighlightId(targetId);
+                setRowDragIndicator(null);
+              }, 400);
+            } else {
+              nestTargetRef.current = null;
+              setNestHighlightId(null);
+            }
+          }
+        }
+      } else {
+        setRowDragIndicator(null);
+        nestTargetRef.current = null;
+        setNestHighlightId(null);
+        if (nestTimerRef.current) clearTimeout(nestTimerRef.current);
+      }
+    };
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      activeListenersRef.current = null;
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+
+      if (dragStartedRef.current) {
+        if (nestTargetRef.current && canNestItem(itemId, nestTargetRef.current)) {
+          const activeItem = allItems.find(i => i.id === itemId);
+          const targetItem = allItems.find(i => i.id === nestTargetRef.current);
+          if (activeItem && targetItem) {
+            apiRequest(`/api/schedule-items/${itemId}`, "PATCH", {
+              parentItemId: nestTargetRef.current,
+            }).then(() => {
+              queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+              toast({ title: "Item nested", description: `"${activeItem.name}" is now a child of "${targetItem.name}"` });
+            }).catch(() => {
+              toast({ title: "Failed to nest item", variant: "destructive" });
+            });
+          }
+        } else if (dropTargetIdRef.current) {
+          const targetId = dropTargetIdRef.current;
+          const position = dropPositionRef.current;
+          setSessionItemOrder(currentOrder => {
+            const order = currentOrder.length > 0 ? [...currentOrder] : [...sortableItemIds];
+            const oldIndex = order.indexOf(itemId);
+            let targetIndex = order.indexOf(targetId);
+            if (oldIndex === -1 || targetIndex === -1) return order;
+            const removed = order.splice(oldIndex, 1)[0];
+            targetIndex = order.indexOf(targetId);
+            const insertAt = position === 'below' ? targetIndex + 1 : targetIndex;
+            order.splice(insertAt, 0, removed);
+            return order;
+          });
+        }
+      }
+
+      removeGhost();
+      setRowDragItemId(null);
+      setRowDragIndicator(null);
+      setNestHighlightId(null);
+      nestTargetRef.current = null;
+      dropTargetIdRef.current = null;
+      dragStartedRef.current = false;
+      if (nestTimerRef.current) clearTimeout(nestTimerRef.current);
+    };
+
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'grabbing';
+    activeListenersRef.current = { move: onMouseMove, up: onMouseUp };
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }, [sortableItemIds, findDropTarget, setSessionItemOrder, canNestItem, allItems, projectId, toast, removeGhost]);
+
+  useEffect(() => {
+    return () => {
+      if (activeListenersRef.current) {
+        document.removeEventListener('mousemove', activeListenersRef.current.move);
+        document.removeEventListener('mouseup', activeListenersRef.current.up);
+        activeListenersRef.current = null;
+      }
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      removeGhost();
+    };
+  }, [removeGhost]);
+
+  return {
+    rowDragItemId,
+    rowDragIndicator,
+    nestHighlightId,
+    registerRowRef,
+    handleDragHandleMouseDown,
   };
-  
-  return (
-    <div ref={setNodeRef} style={style as React.CSSProperties}>
-      {children({ attributes, listeners })}
-    </div>
-  );
 }
 
 export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {}) {
@@ -276,11 +474,6 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
   const [sessionItemOrder, setSessionItemOrder] = useState<string[]>([]);
   const [orderInitialized, setOrderInitialized] = useState(false);
 
-  // Nest target state for drag-to-nest (drop item ON another to create parent-child)
-  const [nestTargetId, setNestTargetId] = useState<string | null>(null);
-  const nestTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastOverIdRef = useRef<string | null>(null);
-
   const canNestItem = (activeId: string, targetId: string): boolean => {
     const activeItem = allItems.find(i => i.id === activeId);
     const targetItem = allItems.find(i => i.id === targetId);
@@ -290,76 +483,6 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     const activeHasChildren = allItems.some(i => i.parentItemId === activeId);
     if (activeHasChildren) return false;
     return true;
-  };
-
-  const handleRowDragOver = (event: DragOverEvent) => {
-    const { active, over } = event;
-    const overId = over?.id as string | undefined;
-
-    if (!overId || overId === (active.id as string)) {
-      if (nestTimerRef.current) clearTimeout(nestTimerRef.current);
-      setNestTargetId(null);
-      lastOverIdRef.current = null;
-      return;
-    }
-
-    if (overId !== lastOverIdRef.current) {
-      lastOverIdRef.current = overId;
-      setNestTargetId(null);
-      if (nestTimerRef.current) clearTimeout(nestTimerRef.current);
-      if (!canNestItem(active.id as string, overId)) return;
-      nestTimerRef.current = setTimeout(() => {
-        setNestTargetId(overId);
-      }, 400);
-    }
-  };
-
-  // Handle row drag end for reordering tasks (temporary, session-only)
-  const handleRowDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    const currentNestTarget = nestTargetId;
-
-    if (nestTimerRef.current) clearTimeout(nestTimerRef.current);
-    setNestTargetId(null);
-    lastOverIdRef.current = null;
-    
-    if (!over || active.id === over.id) return;
-    
-    const activeId = active.id as string;
-    const overId = over.id as string;
-
-    if (currentNestTarget && currentNestTarget === overId) {
-      if (!canNestItem(activeId, overId)) {
-        toast({ title: "Cannot nest item", description: "Items can only be nested one level deep.", variant: "destructive" });
-        return;
-      }
-      const activeItem = allItems.find(i => i.id === activeId);
-      const targetItem = allItems.find(i => i.id === overId);
-      if (activeItem && targetItem) {
-        apiRequest(`/api/schedule-items/${activeId}`, "PATCH", {
-          parentItemId: overId,
-        }).then(() => {
-          queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
-          toast({ title: "Item nested", description: `"${activeItem.name}" is now a child of "${targetItem.name}"` });
-        }).catch(() => {
-          toast({ title: "Failed to nest item", variant: "destructive" });
-        });
-      }
-      return;
-    }
-    
-    // Update the local session order
-    setSessionItemOrder(currentOrder => {
-      // If order is empty, initialize from current sortableItemIds
-      const order = currentOrder.length > 0 ? [...currentOrder] : [...sortableItemIds];
-      
-      const oldIndex = order.indexOf(activeId);
-      const newIndex = order.indexOf(overId);
-      
-      if (oldIndex === -1 || newIndex === -1) return order;
-      
-      return arrayMove(order, oldIndex, newIndex);
-    });
   };
   
   const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
@@ -660,6 +783,14 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
       setOrderInitialized(true);
     }
   }, [defaultItemIds, orderInitialized]);
+
+  const {
+    rowDragItemId,
+    rowDragIndicator,
+    nestHighlightId,
+    registerRowRef,
+    handleDragHandleMouseDown,
+  } = useGanttRowDrag(sortableItemIds, setSessionItemOrder, canNestItem, allItems, projectId, toast);
 
   // Build ordered parent items list for rendering (respects session order)
   const orderedParentItems = useMemo(() => {
@@ -2119,33 +2250,25 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
           
           {/* Task rows */}
           <div ref={leftPanelRef} onScroll={handleLeftPanelScroll} className="flex-1 overflow-y-auto pb-20">
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragOver={handleRowDragOver}
-              onDragEnd={handleRowDragEnd}
-            >
-              <SortableContext items={sortableItemIds} strategy={verticalListSortingStrategy}>
             {orderedItems.map((item, idx) => {
               const isParent = !item.parentItemId;
               const childItems = childItemsByParent[item.id] || [];
               const isCollapsed = collapsedItems.has(item.id);
 
               return (
-                <SortableTaskRow key={item.id} id={item.id}>
-                  {({ attributes, listeners }) => (
-                  <div
-                    className={`h-8 flex items-center px-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer group border-b border-border ${nestTargetId === item.id ? 'ring-2 ring-inset ring-primary bg-primary/10' : ''}`}
-                    onClick={(e) => handleRowClick(e, item)}
-                    data-testid={`row-${isParent ? 'parent' : 'child'}-${item.id}`}
-                  >
+                <div
+                  key={item.id}
+                  ref={(el) => registerRowRef(item.id, el)}
+                  className={`h-8 flex items-center px-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer group border-b border-border ${nestHighlightId === item.id ? 'ring-2 ring-inset ring-primary bg-primary/10' : ''} ${rowDragItemId === item.id ? 'opacity-30' : ''}`}
+                  onClick={(e) => handleRowClick(e, item)}
+                  data-testid={`row-${isParent ? 'parent' : 'child'}-${item.id}`}
+                >
                     {/* Task name column */}
                     <div style={{ width: columnWidths.taskName }} className={`flex items-center min-w-0 flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all`}>
                       {!isParent && <div className="w-6 flex-shrink-0" />}
                       <div 
-                        {...attributes}
-                        {...listeners}
                         className="cursor-grab active:cursor-grabbing p-0.5 hover:bg-accent rounded flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onMouseDown={(e) => handleDragHandleMouseDown(e, item.id)}
                         data-testid={`drag-handle-${item.id}`}
                       >
                         <GripVertical className="w-3.5 h-3.5 text-muted-foreground" />
@@ -2407,13 +2530,9 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
-                  </div>
-                  )}
-                </SortableTaskRow>
+                </div>
               );
             })}
-              </SortableContext>
-            </DndContext>
           </div>
           </div>
 
@@ -3443,6 +3562,46 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
             </>
           )}
         </div>
+      )}
+
+      {rowDragItemId && rowDragIndicator && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            top: rowDragIndicator.top - 1,
+            left: rowDragIndicator.left,
+            width: rowDragIndicator.width,
+            height: '2px',
+            backgroundColor: '#bba7db',
+            zIndex: 99998,
+            pointerEvents: 'none',
+            boxShadow: '0 0 4px rgba(187, 167, 219, 0.5)',
+          }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              left: -4,
+              top: -3,
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              backgroundColor: '#bba7db',
+            }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              right: -4,
+              top: -3,
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              backgroundColor: '#bba7db',
+            }}
+          />
+        </div>,
+        document.body
       )}
     </div>
   );
