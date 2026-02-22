@@ -53,6 +53,7 @@ Preferred communication style: Simple, everyday language.
 - **Hierarchical Groups for Estimates**: Unlimited-depth nesting for estimate groups.
 - **Allowances System**: Tracks Prime Cost (PC) and Provisional Sum (PS) items.
 - **Proposals System**: PDF proposal builder with live preview, section-based editing, and template support.
+- **Purchase Orders System**: Create POs from estimate items via bulk selection with GST mode (inclusive/exclusive/gst_free), delivery details (reference, attention, contact, address, instructions), print/PDF with delivery instructions, send to supplier with status locking, receive goods workflow, duplicate PO, and delete. Shopping cart icons on estimate items indicate linked POs.
 - **User View Preferences**: Database-backed persistence for user-specific view settings (column order, visibility, filters).
 - **Optimistic UI Updates**: Implemented for responsiveness.
 - **Searchable Select Components**: Reusable typeahead components for dropdowns.

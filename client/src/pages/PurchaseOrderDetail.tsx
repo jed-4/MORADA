@@ -44,6 +44,7 @@ import {
   MoreHorizontal,
   Loader2,
   AlertCircle,
+  Package,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -271,6 +272,9 @@ export default function PurchaseOrderDetail() {
   const [scopeText, setScopeText] = useState("");
   const [termsAndConditions, setTermsAndConditions] = useState("");
   const [requiredByDate, setRequiredByDate] = useState("");
+  const [deliveryReference, setDeliveryReference] = useState("");
+  const [deliveryAttention, setDeliveryAttention] = useState("");
+  const [deliveryContact, setDeliveryContact] = useState("");
   const [deliveryAddress, setDeliveryAddress] = useState("");
   const [deliveryInstructions, setDeliveryInstructions] = useState("");
   const [includeGst, setIncludeGst] = useState(true);
@@ -280,6 +284,9 @@ export default function PurchaseOrderDetail() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isImportScopeDialogOpen, setIsImportScopeDialogOpen] = useState(false);
+  const [isSendDialogOpen, setIsSendDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [sendEmail, setSendEmail] = useState("");
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -330,6 +337,9 @@ export default function PurchaseOrderDetail() {
       setDescription(purchaseOrder.description || "");
       setScope(purchaseOrder.scope || "");
       setTermsAndConditions(purchaseOrder.termsAndConditions || "");
+      setDeliveryReference(purchaseOrder.deliveryReference || "");
+      setDeliveryAttention(purchaseOrder.deliveryAttention || "");
+      setDeliveryContact(purchaseOrder.deliveryContact || "");
       setDeliveryAddress(purchaseOrder.deliveryAddress || "");
       setDeliveryInstructions(purchaseOrder.deliveryInstructions || "");
       setRequiredByDate(
@@ -337,8 +347,11 @@ export default function PurchaseOrderDetail() {
           ? new Date(purchaseOrder.requiredByDate).toISOString().split("T")[0]
           : ""
       );
+      if (supplier?.email) {
+        setSendEmail(supplier.email);
+      }
     }
-  }, [purchaseOrder]);
+  }, [purchaseOrder, supplier]);
 
   useEffect(() => {
     setItems(poItems);
@@ -413,6 +426,9 @@ export default function PurchaseOrderDetail() {
         description,
         scope,
         termsAndConditions,
+        deliveryReference,
+        deliveryAttention,
+        deliveryContact,
         deliveryAddress,
         deliveryInstructions,
         requiredByDate: requiredByDate ? new Date(requiredByDate) : null,
@@ -420,6 +436,150 @@ export default function PurchaseOrderDetail() {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const sendPoMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest(`/api/purchase-orders/${poId}/send`, "POST", { email: sendEmail || undefined });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", poId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      setIsSendDialogOpen(false);
+      toast({ title: "Purchase order sent", description: "Status updated to Sent" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to send", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deletePoMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest(`/api/purchase-orders/${poId}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      toast({ title: "Purchase order deleted" });
+      handleGoBack();
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to delete", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const duplicatePoMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest(`/api/purchase-orders/${poId}/duplicate`, "POST");
+    },
+    onSuccess: (newPo: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      toast({ title: "Purchase order duplicated" });
+      setLocation(`/purchase-orders/${newPo.id}`);
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to duplicate", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const markReceivedMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest(`/api/purchase-orders/${poId}`, "PATCH", { status: "received" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", poId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      toast({ title: "Goods received", description: "Status updated to Received" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to update", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handlePrintPdf = () => {
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
+
+    const itemRows = items.map((item) => {
+      const qty = parseFloat(item.quantity || "1");
+      const uPrice = item.unitPrice || 0;
+      const lineTotal = Math.round(qty * uPrice);
+      const gst = item.isGstFree ? 0 : Math.round(lineTotal * 0.1);
+      return `<tr>
+        <td style="padding:8px;border-bottom:1px solid #e5e7eb;">${item.description || ""}</td>
+        <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;">${qty}</td>
+        <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:center;">${item.unit || ""}</td>
+        <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;">${formatCurrency(uPrice)}</td>
+        <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;">${formatCurrency(gst)}</td>
+        <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;">${formatCurrency(lineTotal + gst)}</td>
+      </tr>`;
+    }).join("");
+
+    const deliverySection = [
+      deliveryReference && `<p><strong>Reference:</strong> ${deliveryReference}</p>`,
+      deliveryAttention && `<p><strong>Attention:</strong> ${deliveryAttention}</p>`,
+      deliveryContact && `<p><strong>Contact:</strong> ${deliveryContact}</p>`,
+      deliveryAddress && `<p><strong>Address:</strong> ${deliveryAddress}</p>`,
+      deliveryInstructions && `<div style="margin-top:8px;padding:12px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;"><strong>Delivery Instructions:</strong><br/>${deliveryInstructions}</div>`,
+    ].filter(Boolean).join("");
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html><head><title>${purchaseOrder?.poNumber || "Purchase Order"}</title>
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 800px; margin: 0 auto; padding: 40px; color: #111; }
+        h1 { font-size: 24px; margin-bottom: 4px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+        th { text-align: left; padding: 8px; border-bottom: 2px solid #111; font-size: 13px; }
+        .totals { margin-top: 16px; text-align: right; }
+        .totals div { margin-bottom: 4px; }
+        .section { margin-top: 24px; }
+        @media print { body { padding: 20px; } }
+      </style></head><body>
+        <h1>PURCHASE ORDER</h1>
+        <p style="font-size:18px;color:#555;">${purchaseOrder?.poNumber || ""}</p>
+
+        <div style="display:flex;justify-content:space-between;margin-top:24px;">
+          <div>
+            <p style="font-size:12px;color:#888;margin-bottom:4px;">SUPPLIER</p>
+            <p style="font-weight:600;">${supplier?.name || "—"}</p>
+            ${supplier?.email ? `<p style="color:#555;">${supplier.email}</p>` : ""}
+            ${supplier?.phone ? `<p style="color:#555;">${supplier.phone}</p>` : ""}
+            ${supplier?.address ? `<p style="color:#555;">${supplier.address}</p>` : ""}
+          </div>
+          <div style="text-align:right;">
+            <p style="font-size:12px;color:#888;margin-bottom:4px;">PROJECT</p>
+            <p style="font-weight:600;">${project?.name || "—"}</p>
+            ${project?.address ? `<p style="color:#555;">${project.address}</p>` : ""}
+            ${requiredByDate ? `<p style="margin-top:12px;font-size:12px;color:#888;">REQUIRED BY</p><p>${new Date(requiredByDate).toLocaleDateString("en-AU")}</p>` : ""}
+          </div>
+        </div>
+
+        ${deliverySection ? `<div class="section"><p style="font-size:12px;color:#888;margin-bottom:8px;">DELIVERY DETAILS</p>${deliverySection}</div>` : ""}
+
+        <table>
+          <thead><tr>
+            <th>Description</th>
+            <th style="text-align:right;">Qty</th>
+            <th style="text-align:center;">Unit</th>
+            <th style="text-align:right;">Unit Price</th>
+            <th style="text-align:right;">GST</th>
+            <th style="text-align:right;">Total</th>
+          </tr></thead>
+          <tbody>${itemRows}</tbody>
+        </table>
+
+        <div class="totals">
+          <div><span style="color:#888;">Subtotal:</span> <strong>${formatCurrency(subtotal)}</strong></div>
+          ${includeGst ? `<div><span style="color:#888;">GST (10%):</span> <strong>${formatCurrency(gstAmount)}</strong></div>` : ""}
+          <div style="font-size:18px;margin-top:8px;"><span>Total:</span> <strong>${formatCurrency(total)}</strong></div>
+        </div>
+
+        ${scope ? `<div class="section"><p style="font-size:12px;color:#888;margin-bottom:8px;">SCOPE OF WORK</p><div>${scope}</div></div>` : ""}
+        ${termsAndConditions ? `<div class="section"><p style="font-size:12px;color:#888;margin-bottom:8px;">TERMS & CONDITIONS</p><div>${termsAndConditions}</div></div>` : ""}
+      </body></html>
+    `);
+    printWindow.document.close();
+    setTimeout(() => printWindow.print(), 500);
   };
 
   const handleItemUpdate = (itemId: string, updates: Partial<PurchaseOrderItem>) => {
@@ -584,19 +744,38 @@ export default function PurchaseOrderDetail() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => {}} data-testid="action-print-po">
+                <DropdownMenuItem onClick={handlePrintPdf} data-testid="action-print-po">
                   <Printer className="w-4 h-4 mr-2" />
                   Print / PDF
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => {}} data-testid="action-email-po">
+                <DropdownMenuItem onClick={() => setIsSendDialogOpen(true)} data-testid="action-email-po">
                   <Mail className="w-4 h-4 mr-2" />
                   Email to Supplier
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => {}} data-testid="action-duplicate-po">
+                {purchaseOrder.status === "sent" && (
+                  <DropdownMenuItem onClick={() => markReceivedMutation.mutate()} data-testid="action-receive-goods">
+                    <Package className="w-4 h-4 mr-2" />
+                    Mark as Received
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onClick={() => duplicatePoMutation.mutate()} data-testid="action-duplicate-po">
                   <Copy className="w-4 h-4 mr-2" />
                   Duplicate
                 </DropdownMenuItem>
+                {purchaseOrder.status === "draft" && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => setIsDeleteDialogOpen(true)}
+                      className="text-red-600 dark:text-red-400"
+                      data-testid="action-delete-po"
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Delete
+                    </DropdownMenuItem>
+                  </>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -604,11 +783,24 @@ export default function PurchaseOrderDetail() {
               <Button
                 size="sm"
                 className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
-                onClick={() => {}}
+                onClick={() => setIsSendDialogOpen(true)}
                 data-testid="button-send-po"
               >
                 <Send className="w-4 h-4 mr-1" />
                 Send to Supplier
+              </Button>
+            )}
+
+            {purchaseOrder.status === "sent" && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => markReceivedMutation.mutate()}
+                disabled={markReceivedMutation.isPending}
+                data-testid="button-receive-goods"
+              >
+                <Package className="w-4 h-4 mr-1" />
+                Receive Goods
               </Button>
             )}
           </div>
@@ -833,6 +1025,42 @@ export default function PurchaseOrderDetail() {
                   />
                 </div>
                 <div>
+                  <Label className="text-xs text-muted-foreground">Reference</Label>
+                  <Input
+                    value={deliveryReference}
+                    onChange={(e) => {
+                      setDeliveryReference(e.target.value);
+                      setHasUnsavedChanges(true);
+                    }}
+                    placeholder="PO reference number..."
+                    disabled={isLocked}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">Attention</Label>
+                  <Input
+                    value={deliveryAttention}
+                    onChange={(e) => {
+                      setDeliveryAttention(e.target.value);
+                      setHasUnsavedChanges(true);
+                    }}
+                    placeholder="Name or department..."
+                    disabled={isLocked}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">Contact</Label>
+                  <Input
+                    value={deliveryContact}
+                    onChange={(e) => {
+                      setDeliveryContact(e.target.value);
+                      setHasUnsavedChanges(true);
+                    }}
+                    placeholder="Phone / email..."
+                    disabled={isLocked}
+                  />
+                </div>
+                <div>
                   <Label className="text-xs text-muted-foreground">Delivery Address</Label>
                   <Textarea
                     value={deliveryAddress}
@@ -855,7 +1083,7 @@ export default function PurchaseOrderDetail() {
                       setHasUnsavedChanges(true);
                     }}
                     placeholder="Special delivery instructions..."
-                    rows={2}
+                    rows={3}
                     disabled={isLocked}
                     data-testid="textarea-delivery-instructions"
                   />
@@ -930,6 +1158,73 @@ export default function PurchaseOrderDetail() {
             </Button>
             <Button onClick={handleImportProjectScope}>
               Import Scope
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isSendDialogOpen} onOpenChange={setIsSendDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Send Purchase Order</DialogTitle>
+            <DialogDescription>
+              This will mark the PO as "Sent" and lock it from editing.
+              {supplier?.email && ` A copy can be emailed to ${supplier.email}.`}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <Label className="text-xs text-muted-foreground">Supplier Email</Label>
+              <Input
+                value={sendEmail}
+                onChange={(e) => setSendEmail(e.target.value)}
+                placeholder="supplier@example.com"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsSendDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => sendPoMutation.mutate()}
+              disabled={sendPoMutation.isPending}
+              className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
+            >
+              {sendPoMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-1" />
+              ) : (
+                <Send className="w-4 h-4 mr-1" />
+              )}
+              Send
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Purchase Order</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete {purchaseOrder?.poNumber}? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => deletePoMutation.mutate()}
+              disabled={deletePoMutation.isPending}
+            >
+              {deletePoMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-1" />
+              ) : (
+                <Trash2 className="w-4 h-4 mr-1" />
+              )}
+              Delete
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -9380,6 +9380,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Duplicate purchase order
+  app.post("/api/purchase-orders/:id/duplicate", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const existingPo = await storage.getPurchaseOrder(req.params.id);
+      if (!existingPo || existingPo.companyId !== req.user.companyId) {
+        return res.status(404).json({ error: "Purchase order not found" });
+      }
+
+      const existingItems = await storage.getPurchaseOrderItems(req.params.id);
+      const allPos = await storage.getPurchaseOrders(req.user.companyId);
+      const poNumbers = allPos.map((p: any) => p.poNumber);
+      let nextNum = 1;
+      for (const num of poNumbers) {
+        const match = num.match(/PO-(\d+)/);
+        if (match) {
+          const n = parseInt(match[1], 10);
+          if (n >= nextNum) nextNum = n + 1;
+        }
+      }
+      const newPoNumber = `PO-${String(nextNum).padStart(4, "0")}`;
+
+      const newPo = await storage.createPurchaseOrder({
+        companyId: existingPo.companyId,
+        projectId: existingPo.projectId,
+        supplierId: existingPo.supplierId,
+        poNumber: newPoNumber,
+        title: existingPo.title ? `${existingPo.title} (Copy)` : "Copy",
+        description: existingPo.description,
+        status: "draft",
+        type: existingPo.type || "standard",
+        scope: existingPo.scope,
+        termsAndConditions: existingPo.termsAndConditions,
+        deliveryAddress: existingPo.deliveryAddress,
+        deliveryInstructions: existingPo.deliveryInstructions,
+        deliveryReference: existingPo.deliveryReference,
+        deliveryAttention: existingPo.deliveryAttention,
+        deliveryContact: existingPo.deliveryContact,
+        requiredByDate: existingPo.requiredByDate,
+        createdBy: req.user.id,
+        subtotal: existingPo.subtotal,
+        gstAmount: existingPo.gstAmount,
+        total: existingPo.total,
+      } as any);
+
+      for (const item of existingItems) {
+        await storage.createPurchaseOrderItem({
+          purchaseOrderId: newPo.id,
+          description: item.description,
+          quantity: item.quantity,
+          unit: item.unit,
+          unitPrice: item.unitPrice,
+          total: item.total,
+          gstAmount: item.gstAmount,
+          isGstFree: item.isGstFree,
+          costCodeId: item.costCodeId,
+          displayOrder: item.displayOrder,
+        } as any);
+      }
+
+      res.status(201).json(newPo);
+    } catch (error) {
+      console.error("Failed to duplicate purchase order:", error);
+      res.status(500).json({ error: "Failed to duplicate purchase order" });
+    }
+  });
+
   // Send purchase order (change status and optionally send email)
   app.post("/api/purchase-orders/:id/send", async (req, res) => {
     try {
@@ -9646,6 +9716,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Failed to delete purchase order item:", error);
       res.status(500).json({ error: "Failed to delete purchase order item" });
+    }
+  });
+
+  // Get estimate items that have linked purchase order items
+  app.get("/api/estimates/:estimateId/po-links", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const { estimateId } = req.params;
+      
+      const result = await db.execute(sql`
+        SELECT 
+          poi.source_estimate_item_id as "estimateItemId",
+          po.id as "poId",
+          po.po_number as "poNumber",
+          po.status as "poStatus"
+        FROM purchase_order_items poi
+        JOIN purchase_orders po ON poi.purchase_order_id = po.id
+        WHERE po.source_estimate_id = ${estimateId}
+          AND poi.source_estimate_item_id IS NOT NULL
+          AND po.company_id = ${req.user.companyId}
+          AND po.status != 'cancelled'
+      `);
+      
+      res.json(result.rows || []);
+    } catch (error) {
+      console.error("Failed to fetch PO links for estimate:", error);
+      res.status(500).json({ error: "Failed to fetch PO links" });
     }
   });
 

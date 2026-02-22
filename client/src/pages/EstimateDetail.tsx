@@ -69,7 +69,13 @@ import { EstimateBreadcrumb } from "@/components/estimates/EstimateBreadcrumb";
 import { EstimateGroupCard } from "@/components/estimates/EstimateGroupCard";
 import { useUndoStack } from "@/hooks/useUndoStack";
 import { CreateRFQDialog } from "@/components/rfq/CreateRFQDialog";
-import { Package, Undo2, ChevronsUpDown, Search } from "lucide-react";
+import { CreatePOFromEstimateDialog } from "@/components/estimates/CreatePOFromEstimateDialog";
+import { Package, Undo2, ChevronsUpDown, Search, ShoppingCart } from "lucide-react";
+import {
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+} from "@/components/ui/dropdown-menu";
 // Table imports removed - now using CSS Grid for pixel-perfect alignment
 import {
   DropdownMenu,
@@ -425,6 +431,7 @@ export default function EstimateDetail() {
   
   // RFQ dialog
   const [isCreateRFQOpen, setIsCreateRFQOpen] = useState(false);
+  const [isCreatePOOpen, setIsCreatePOOpen] = useState(false);
   
   // Single item delete dialog
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -553,6 +560,27 @@ export default function EstimateDetail() {
     queryKey: ["/api/estimates", effectiveEstimateId, "groups"],
     enabled: !!effectiveEstimateId && !isNewEstimate,
   });
+
+  // Fetch PO links for estimate items (which items have linked purchase orders)
+  interface POLink {
+    estimateItemId: string;
+    poId: string;
+    poNumber: string;
+    poStatus: string;
+  }
+  const { data: poLinks = [] } = useQuery<POLink[]>({
+    queryKey: ["/api/estimates", effectiveEstimateId, "po-links"],
+    enabled: !!effectiveEstimateId && !isNewEstimate,
+  });
+  const poLinkMap = useMemo(() => {
+    const map = new Map<string, POLink[]>();
+    for (const link of poLinks) {
+      const existing = map.get(link.estimateItemId) || [];
+      existing.push(link);
+      map.set(link.estimateItemId, existing);
+    }
+    return map;
+  }, [poLinks]);
 
   // Fetch estimate item status field category options
   const { data: estimateItemStatusCategory } = useQuery<FieldCategoryWithOptions>({
@@ -3571,6 +3599,16 @@ export default function EstimateDetail() {
               >
                 {item.name}
               </span>
+              {poLinkMap.has(item.id) && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <ShoppingCart className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    <p className="text-xs">{poLinkMap.get(item.id)!.map(l => l.poNumber).join(', ')}</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
             </div>
           </div>
         );
@@ -4610,16 +4648,30 @@ export default function EstimateDetail() {
                   >
                     Move to Group
                   </Button>
-                  <Button
-                    variant="outline"
-                    className="h-6 px-2 text-xs"
-                    onClick={() => setIsCreateRFQOpen(true)}
-                    disabled={estimate?.isLocked}
-                    data-testid="button-create-rfq"
-                  >
-                    <Package className="w-3 h-3 mr-1" />
-                    Create RFQ
-                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="h-6 px-2 text-xs"
+                        disabled={estimate?.isLocked}
+                        data-testid="button-create-from-estimate"
+                      >
+                        <Plus className="w-3 h-3 mr-1" />
+                        Create
+                        <ChevronDown className="w-3 h-3 ml-1" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => setIsCreatePOOpen(true)}>
+                        <ShoppingCart className="w-3.5 h-3.5 mr-2" />
+                        Purchase Order
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setIsCreateRFQOpen(true)}>
+                        <Package className="w-3.5 h-3.5 mr-2" />
+                        RFQ
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </>
               )}
               <Button
@@ -4859,16 +4911,30 @@ export default function EstimateDetail() {
                                 >
                                   Move to Group
                                 </Button>
-                                <Button
-                                  variant="default"
-                                  size="sm"
-                                  className="h-7"
-                                  onClick={() => setIsCreateRFQOpen(true)}
-                                  data-testid="button-create-rfq"
-                                >
-                                  <FileText className="w-3 h-3 mr-1" />
-                                  Create RFQ
-                                </Button>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      variant="default"
+                                      size="sm"
+                                      className="h-7"
+                                      data-testid="button-create-from-estimate-inline"
+                                    >
+                                      <Plus className="w-3 h-3 mr-1" />
+                                      Create
+                                      <ChevronDown className="w-3 h-3 ml-1" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => setIsCreatePOOpen(true)}>
+                                      <ShoppingCart className="w-3.5 h-3.5 mr-2" />
+                                      Purchase Order
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => setIsCreateRFQOpen(true)}>
+                                      <Package className="w-3.5 h-3.5 mr-2" />
+                                      RFQ
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
                               </>
                             )}
                             <Button
@@ -6674,6 +6740,17 @@ export default function EstimateDetail() {
       <CreateRFQDialog
         open={isCreateRFQOpen}
         onOpenChange={setIsCreateRFQOpen}
+        estimateId={effectiveEstimateId || ""}
+        projectId={estimate?.projectId || ""}
+        selectedItemIds={selectedItems}
+        estimateItems={items}
+        estimateName={estimate?.name || ""}
+      />
+      
+      {/* Create PO from Estimate Dialog */}
+      <CreatePOFromEstimateDialog
+        open={isCreatePOOpen}
+        onOpenChange={setIsCreatePOOpen}
         estimateId={effectiveEstimateId || ""}
         projectId={estimate?.projectId || ""}
         selectedItemIds={selectedItems}

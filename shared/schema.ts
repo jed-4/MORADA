@@ -4512,6 +4512,9 @@ export const purchaseOrders = pgTable("purchase_orders", {
   requiredByDate: timestamp("required_by_date"),
   
   // Delivery
+  deliveryReference: text("delivery_reference"),
+  deliveryAttention: text("delivery_attention"),
+  deliveryContact: text("delivery_contact"),
   deliveryAddress: text("delivery_address"),
   deliveryInstructions: text("delivery_instructions"),
   
