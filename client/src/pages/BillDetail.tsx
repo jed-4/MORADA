@@ -447,7 +447,7 @@ export default function BillDetail() {
     unit: 60,
     tax: 110,
     account: 80,
-    unitCost: 90,
+    unitCost: 120,
     allowance: 140,
     exTax: 90,
     amtTax: 80,
@@ -1594,20 +1594,22 @@ export default function BillDetail() {
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="text-[11px] text-muted-foreground">Amounts are</span>
-                    <Select
-                      value={taxMode}
-                      onValueChange={(value: "inclusive" | "exclusive") =>
-                        setTaxMode(value)
-                      }
-                    >
-                      <SelectTrigger className="w-24 text-[11px]" data-testid="select-tax-mode">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="exclusive">Exclusive</SelectItem>
-                        <SelectItem value="inclusive">Inclusive</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <div className="inline-flex rounded-md border bg-muted/30 p-0.5" data-testid="select-tax-mode">
+                      <button
+                        type="button"
+                        onClick={() => setTaxMode("exclusive")}
+                        className={`px-2.5 py-0.5 text-[11px] rounded-sm transition-colors ${taxMode === "exclusive" ? "bg-background shadow-sm font-medium text-foreground" : "text-muted-foreground"}`}
+                      >
+                        Exclusive
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTaxMode("inclusive")}
+                        className={`px-2.5 py-0.5 text-[11px] rounded-sm transition-colors ${taxMode === "inclusive" ? "bg-background shadow-sm font-medium text-foreground" : "text-muted-foreground"}`}
+                      >
+                        Inclusive
+                      </button>
+                    </div>
                     <span className="text-[11px] text-muted-foreground">of tax</span>
                   </div>
                 </div>
@@ -1624,7 +1626,7 @@ export default function BillDetail() {
                         { key: "unit", label: "Unit", align: "left" },
                         { key: "tax", label: "Tax", align: "left" },
                         { key: "account", label: "Account", align: "left" },
-                        { key: "unitCost", label: "Unit Cost", align: "right" },
+                        { key: "unitCost", label: taxMode === "inclusive" ? "Unit Cost (inc GST)" : "Unit Cost (ex GST)", align: "right" },
                         ...(visibleAmountCols.exTax ? [{ key: "exTax", label: "Amt ex Tax", align: "right" as const }] : []),
                         ...(visibleAmountCols.tax ? [{ key: "amtTax", label: "Amt Tax", align: "right" as const }] : []),
                         ...(visibleAmountCols.incTax ? [{ key: "incTax", label: "Amt inc Tax", align: "right" as const }] : []),
@@ -1667,6 +1669,7 @@ export default function BillDetail() {
                               updateLineItem(index, "costCodeId", value)
                             }
                             placeholder="Select..."
+                            triggerClassName="border-0 shadow-none bg-transparent text-[11px]"
                             data-testid={`select-cost-code-${index}`}
                           />
                         </td>
@@ -1703,7 +1706,7 @@ export default function BillDetail() {
                               updateLineItem(index, "tax", value)
                             }
                           >
-                            <SelectTrigger className="text-[11px] border-0 shadow-none bg-transparent hover:bg-muted/50 focus:ring-1" data-testid={`select-tax-${index}`}>
+                            <SelectTrigger className="text-[11px] border-0 shadow-none bg-transparent" data-testid={`select-tax-${index}`}>
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -1768,7 +1771,7 @@ export default function BillDetail() {
                               }
                             }}
                           >
-                            <SelectTrigger className="text-[11px] border-0 shadow-none bg-transparent hover:bg-muted/50 focus:ring-1" data-testid={`select-allowance-${index}`}>
+                            <SelectTrigger className="text-[11px] border-0 shadow-none bg-transparent" data-testid={`select-allowance-${index}`}>
                               <SelectValue placeholder="None" />
                             </SelectTrigger>
                             <SelectContent>

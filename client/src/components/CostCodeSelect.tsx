@@ -11,6 +11,7 @@ interface CostCodeSelectProps {
   allowClear?: boolean;
   allowNone?: boolean;
   className?: string;
+  triggerClassName?: string;
   "data-testid"?: string;
 }
 
@@ -22,6 +23,7 @@ export function CostCodeSelect({
   allowClear = false,
   allowNone = true,
   className,
+  triggerClassName,
   "data-testid": testId,
 }: CostCodeSelectProps) {
   const { data: costCodes = [], isLoading } = useQuery<CostCode[]>({
@@ -81,6 +83,7 @@ export function CostCodeSelect({
       disabled={disabled || isLoading}
       allowClear={allowClear}
       className={className}
+      triggerClassName={triggerClassName}
       data-testid={testId}
     />
   );
