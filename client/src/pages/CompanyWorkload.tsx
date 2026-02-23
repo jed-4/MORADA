@@ -561,7 +561,7 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
                         )} />
                       </div>
                     </TooltipTrigger>
-                    <TooltipContent side="right" className="text-xs">
+                    <TooltipContent side="right" className="bg-gray-900 text-gray-100 text-[10px] px-1.5 py-0.5 border-0">
                       Up to {assigneeOverloads.get(row.id)?.maxConcurrent} concurrent items
                     </TooltipContent>
                   </Tooltip>
@@ -617,7 +617,7 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
                           }}
                         />
                       </TooltipTrigger>
-                      <TooltipContent side="top" className="text-xs">
+                      <TooltipContent side="top" className="bg-gray-900 text-gray-100 text-[10px] px-1.5 py-0.5 border-0">
                         {count} item{count !== 1 ? "s" : ""} on {format(day, "EEE d MMM")}
                       </TooltipContent>
                     </Tooltip>
@@ -740,15 +740,15 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
                               )}
                             </div>
                           </TooltipTrigger>
-                          <TooltipContent side="top" className="max-w-[240px]">
-                            <div className="text-xs">
+                          <TooltipContent side="top" className="bg-gray-900 text-gray-100 border-0 max-w-[240px]">
+                            <div className="text-[10px]">
                               <div className="font-medium">{item.name}</div>
-                              <div className="text-muted-foreground mt-0.5">{item.projectName}</div>
-                              <div className="text-muted-foreground mt-0.5">
+                              <div className="text-gray-400 mt-0.5">{item.projectName}</div>
+                              <div className="text-gray-400 mt-0.5">
                                 {format(new Date(item.startDate), "d MMM")} – {format(new Date(item.endDate), "d MMM yyyy")}
                               </div>
                               {item.progressPercent > 0 && (
-                                <div className="text-muted-foreground mt-0.5">{item.progressPercent}% complete</div>
+                                <div className="text-gray-400 mt-0.5">{item.progressPercent}% complete</div>
                               )}
                             </div>
                           </TooltipContent>

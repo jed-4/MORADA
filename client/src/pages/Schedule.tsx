@@ -34,6 +34,16 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -109,6 +119,7 @@ export default function Schedule() {
   const [calendarView, setCalendarView] = useState<"month" | "week" | "day" | "agenda">("month");
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [showItemDialog, setShowItemDialog] = useState(false);
+  const [showLockConfirm, setShowLockConfirm] = useState(false);
   const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
   const [pendingAutoLink, setPendingAutoLink] = useState<{ successorId?: string; predecessorId?: string; insertAfterItemId?: string; lag?: number } | null>(null);
   const [showFilters, setShowFilters] = useState(false);
@@ -1300,11 +1311,7 @@ export default function Schedule() {
               </button>
             ) : (
               <button
-                onClick={() => {
-                  if (confirm("Lock the schedule? This will make it read-only and visible to clients. Any unsaved changes will be committed.")) {
-                    updateStatusMutation.mutate("locked");
-                  }
-                }}
+                onClick={() => setShowLockConfirm(true)}
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs font-medium hover-elevate active-elevate-2 transition-all"
                 data-testid="button-lock-schedule"
               >
@@ -1903,6 +1910,23 @@ export default function Schedule() {
           </>
         )}
       </div>
+
+      <AlertDialog open={showLockConfirm} onOpenChange={setShowLockConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Lock Schedule</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will make the schedule read-only and visible to clients. Any unsaved changes will be committed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { updateStatusMutation.mutate("locked"); setShowLockConfirm(false); }}>
+              Lock Schedule
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Create/Edit Item Dialog */}
       <Dialog open={showItemDialog} onOpenChange={(open) => {

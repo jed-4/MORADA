@@ -51,6 +51,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { useScheduleItemStatusOptions } from "@/hooks/useScheduleItemStatusOptions";
 import { ScheduleColorPicker } from "@/components/schedule/ScheduleColorPicker";
@@ -2547,25 +2548,34 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                               setAssigneePopoverItemId(open ? item.id : null);
                             }}
                           >
-                            <PopoverTrigger asChild>
-                              <button 
-                                className={`${schedule?.status === 'locked' ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'} rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all flex items-center justify-center w-full h-full`}
-                                onClick={(e) => { e.stopPropagation(); if (schedule?.status === 'locked') e.preventDefault(); }}
-                                data-testid={`assignee-trigger-${item.id}`}
-                              >
-                                {item.assignedToName ? (
-                                  <Avatar className="w-5 h-5">
-                                    <AvatarFallback className="text-[10px]">
-                                      {item.assignedToName.substring(0, 2).toUpperCase()}
-                                    </AvatarFallback>
-                                  </Avatar>
-                                ) : (
-                                  <div className="w-5 h-5 rounded-full border border-dashed border-muted-foreground/40 flex items-center justify-center opacity-0 group-hover:opacity-60 transition-opacity">
-                                    <Plus className="w-3 h-3 text-muted-foreground/60" />
-                                  </div>
-                                )}
-                              </button>
-                            </PopoverTrigger>
+                            <Tooltip delayDuration={500}>
+                              <TooltipTrigger asChild>
+                                <PopoverTrigger asChild>
+                                  <button 
+                                    className={`${schedule?.status === 'locked' ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'} rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all flex items-center justify-center w-full h-full`}
+                                    onClick={(e) => { e.stopPropagation(); if (schedule?.status === 'locked') e.preventDefault(); }}
+                                    data-testid={`assignee-trigger-${item.id}`}
+                                  >
+                                    {item.assignedToName ? (
+                                      <Avatar className="w-5 h-5">
+                                        <AvatarFallback className="text-[10px]">
+                                          {item.assignedToName.substring(0, 2).toUpperCase()}
+                                        </AvatarFallback>
+                                      </Avatar>
+                                    ) : (
+                                      <div className="w-5 h-5 rounded-full border border-dashed border-muted-foreground/40 flex items-center justify-center opacity-0 group-hover:opacity-60 transition-opacity">
+                                        <Plus className="w-3 h-3 text-muted-foreground/60" />
+                                      </div>
+                                    )}
+                                  </button>
+                                </PopoverTrigger>
+                              </TooltipTrigger>
+                              {item.assignedToName && !assigneePopoverItemId && (
+                                <TooltipContent side="bottom" className="bg-gray-900 text-gray-100 text-[10px] px-1.5 py-0.5 border-0">
+                                  {item.assignedToName}
+                                </TooltipContent>
+                              )}
+                            </Tooltip>
                             <PopoverContent className="w-[240px] p-2" align="start" onClick={(e) => e.stopPropagation()}>
                               <ContactSelect
                                 value={item.assignedToId || ""}
