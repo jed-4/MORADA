@@ -688,8 +688,7 @@ export default function Settings() {
 
     const connectXeroMutation = useMutation({
       mutationFn: async () => {
-        const response = await apiRequest("/api/xero/connect", "GET");
-        return response.json();
+        return await apiRequest("/api/xero/connect", "GET");
       },
       onSuccess: (data) => {
         if (data.authUrl) {
@@ -707,8 +706,7 @@ export default function Settings() {
 
     const disconnectXeroMutation = useMutation({
       mutationFn: async () => {
-        const response = await apiRequest("/api/xero/disconnect", "POST");
-        return response.json();
+        return await apiRequest("/api/xero/disconnect", "POST");
       },
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ["/api/xero/status"] });

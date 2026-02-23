@@ -652,6 +652,16 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     if (!dragging || dragging.type !== 'move') return new Set<number | string>();
     const items = allItems || [];
     const visited = new Set<number | string>();
+
+    const addChildrenRecursive = (parentId: number | string) => {
+      for (const item of items) {
+        if (item.parentItemId === parentId && !visited.has(item.id)) {
+          visited.add(item.id);
+          addChildrenRecursive(item.id);
+        }
+      }
+    };
+
     const queue: (number | string)[] = [dragging.id];
     visited.add(dragging.id);
     while (queue.length > 0) {
@@ -660,19 +670,11 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
         if (!visited.has(item.id) && item.dependencies?.some((dep: any) => String(dep.id) === String(currentId))) {
           visited.add(item.id);
           queue.push(item.id);
+          addChildrenRecursive(item.id);
         }
       }
     }
-    const childQueue: (number | string)[] = [dragging.id];
-    while (childQueue.length > 0) {
-      const pid = childQueue.shift()!;
-      for (const item of items) {
-        if (item.parentItemId === pid && !visited.has(item.id)) {
-          visited.add(item.id);
-          childQueue.push(item.id);
-        }
-      }
-    }
+    addChildrenRecursive(dragging.id);
     visited.delete(dragging.id);
     return visited;
   }, [dragging?.id, dragging?.type, allItems]);
@@ -1536,14 +1538,27 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
 
           const dependentItems = getAllDownstreamSuccessors(drag.id);
 
-          const childItems: ScheduleItem[] = [];
-          const childQ: (number | string)[] = [drag.id];
-          while (childQ.length > 0) {
-            const pid = childQ.shift()!;
+          const getChildrenRecursive = (parentId: number | string): ScheduleItem[] => {
+            const children: ScheduleItem[] = [];
             for (const ci of currentItems) {
-              if (ci.parentItemId === pid) {
-                childItems.push(ci);
-                childQ.push(ci.id);
+              if (ci.parentItemId === parentId) {
+                children.push(ci);
+                children.push(...getChildrenRecursive(ci.id));
+              }
+            }
+            return children;
+          };
+
+          const childItems = getChildrenRecursive(drag.id);
+
+          const depChildItems: ScheduleItem[] = [];
+          const depChildIds = new Set<number | string>();
+          for (const depItem of dependentItems) {
+            const children = getChildrenRecursive(depItem.id);
+            for (const child of children) {
+              if (!depChildIds.has(child.id) && !dependentItems.some(d => d.id === child.id)) {
+                depChildIds.add(child.id);
+                depChildItems.push(child);
               }
             }
           }
@@ -1570,6 +1585,11 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
             updateCacheOptimistically(depItem.id, depNewStart, depNewEnd);
           }
 
+          for (const depChild of depChildItems) {
+            const { depNewStart, depNewEnd } = snapDepItem(depChild);
+            updateCacheOptimistically(depChild.id, depNewStart, depNewEnd);
+          }
+
           mutate.mutate({
             id: drag.id,
             startDate: newStart,
@@ -1591,6 +1611,15 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
             const { depNewStart, depNewEnd } = snapDepItem(depItem);
             mutate.mutate({
               id: depItem.id,
+              startDate: depNewStart,
+              endDate: depNewEnd,
+            });
+          }
+
+          for (const depChild of depChildItems) {
+            const { depNewStart, depNewEnd } = snapDepItem(depChild);
+            mutate.mutate({
+              id: depChild.id,
               startDate: depNewStart,
               endDate: depNewEnd,
             });
