@@ -18,7 +18,8 @@ import {
   Upload,
   FileText,
   Loader2,
-  ChevronDown
+  ChevronDown,
+  ChevronRight
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -125,6 +126,8 @@ export default function BillDetail() {
   const [ocrPreviewOpen, setOcrPreviewOpen] = useState(false);
   const [addSupplierDialogOpen, setAddSupplierDialogOpen] = useState(false);
   const [attachmentUrls, setAttachmentUrls] = useState<string[]>([]);
+  const [notesExpanded, setNotesExpanded] = useState(false);
+  const [remindersExpanded, setRemindersExpanded] = useState(false);
   const dueDateManuallySet = useRef(false);
 
   const { data: bill, isLoading: billLoading } = useQuery<Bill>({
@@ -141,8 +144,13 @@ export default function BillDetail() {
     queryKey: ["/api/projects"],
   });
 
-  const { data: suppliers = [] } = useQuery<Supplier[]>({
-    queryKey: ["/api/suppliers"],
+  const { data: suppliers = [] } = useQuery<any[]>({
+    queryKey: ["/api/contacts", { contactType: "supplier" }],
+    queryFn: async () => {
+      const res = await fetch("/api/contacts?contactType=supplier", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch suppliers");
+      return res.json();
+    },
   });
 
   const { data: costCodes = [] } = useQuery<CostCode[]>({
@@ -466,11 +474,10 @@ export default function BillDetail() {
 
   const createSupplierMutation = useMutation({
     mutationFn: async (data: AddSupplierFormData) => {
-      const res = await apiRequest("/api/suppliers", "POST", data);
-      return await res.json();
+      return await apiRequest("/api/contacts", "POST", { ...data, contactType: "supplier" });
     },
-    onSuccess: (newSupplier: Supplier) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/suppliers"] });
+    onSuccess: (newSupplier: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/contacts", { contactType: "supplier" }] });
       form.setValue("supplierId", newSupplier.id);
       setAddSupplierDialogOpen(false);
       supplierForm.reset();
@@ -1147,680 +1154,716 @@ export default function BillDetail() {
                   )}
                 />
 
-                <FormField
-                  control={form.control}
-                  name="notes"
-                  render={({ field }) => (
-                    <FormItem className="col-span-2">
-                      <FormLabel>Notes</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          {...field}
-                          placeholder="Add notes..."
-                          rows={3}
-                          data-testid="textarea-notes"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="reminders"
-                  render={({ field }) => (
-                    <FormItem className="col-span-2">
-                      <FormLabel>Reminders</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          {...field}
-                          placeholder="Add reminders..."
-                          rows={2}
-                          data-testid="textarea-reminders"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
               </div>
             </Card>
 
-            <Card className="p-6">
-              <h3 className="text-lg font-semibold mb-4">Upload Invoice for OCR</h3>
-              
-              <div className="space-y-4">
-                {!uploadedFile ? (
-                  <div
-                    className="border-2 border-dashed rounded-lg p-8 text-center hover-elevate cursor-pointer transition-colors"
-                    onDrop={handleDrop}
-                    onDragOver={(e) => e.preventDefault()}
-                    onClick={() => document.getElementById('file-upload')?.click()}
-                    data-testid="dropzone-upload"
-                  >
-                    <Upload className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground mb-2">
-                      Drag and drop your invoice here, or click to browse
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Supports PDF, JPG, JPEG, PNG
-                    </p>
-                    <input
-                      id="file-upload"
-                      type="file"
-                      accept=".pdf,.jpg,.jpeg,.png"
-                      onChange={handleFileUpload}
-                      className="hidden"
-                      data-testid="input-file-upload"
-                    />
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between p-4 border rounded-lg" data-testid="card-uploaded-file">
-                      <div className="flex items-center gap-3">
-                        <FileText className="h-8 w-8 text-muted-foreground" />
-                        <div>
-                          <p className="font-medium" data-testid="text-filename">{uploadedFile.name}</p>
-                          <p className="text-sm text-muted-foreground" data-testid="text-filesize">
-                            {formatFileSize(uploadedFile.size)}
-                          </p>
-                        </div>
+            <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-6">
+              <div className="space-y-6 min-w-0">
+                <Card className="p-6">
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-semibold">Cost Lines</h3>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground">Amounts are</span>
+                        <Select
+                          value={taxMode}
+                          onValueChange={(value: "inclusive" | "exclusive") =>
+                            setTaxMode(value)
+                          }
+                        >
+                          <SelectTrigger className="w-32" data-testid="select-tax-mode">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="exclusive">Exclusive</SelectItem>
+                            <SelectItem value="inclusive">Inclusive</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <span className="text-sm text-muted-foreground">of tax</span>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setUploadedFile(null);
-                          setOcrResults(null);
-                          setOcrPreviewOpen(false);
-                        }}
-                        data-testid="button-remove-file"
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
                     </div>
 
-                    {!ocrResults && (
-                      <Button
-                        onClick={handleProcessOCR}
-                        disabled={ocrMutation.isPending}
-                        className="w-full"
-                        data-testid="button-process-ocr"
-                      >
-                        {ocrMutation.isPending ? (
-                          <>
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            Extracting invoice data...
-                          </>
-                        ) : (
-                          <>
-                            <Upload className="h-4 w-4 mr-2" />
-                            Process with OCR
-                          </>
-                        )}
-                      </Button>
-                    )}
-
-                    {ocrResults && (
-                      <Collapsible open={ocrPreviewOpen} onOpenChange={setOcrPreviewOpen}>
-                        <CollapsibleTrigger asChild>
-                          <Button
-                            variant="outline"
-                            className="w-full justify-between"
-                            data-testid="button-toggle-ocr-preview"
-                          >
-                            <span>OCR Results</span>
-                            <ChevronDown className={`h-4 w-4 transition-transform ${ocrPreviewOpen ? 'rotate-180' : ''}`} />
-                          </Button>
-                        </CollapsibleTrigger>
-                        <CollapsibleContent className="mt-4 space-y-4" data-testid="card-ocr-results">
-                          <div className="border rounded-lg p-4 space-y-3">
-                            <div className="grid grid-cols-2 gap-3">
-                              <div>
-                                <p className="text-sm text-muted-foreground">Supplier</p>
-                                <p className="font-medium" data-testid="text-ocr-supplier">
-                                  {ocrResults.supplierName || "Not detected"}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-sm text-muted-foreground">Invoice Number</p>
-                                <p className="font-medium" data-testid="text-ocr-invoice-number">
-                                  {ocrResults.invoiceNumber || "Not detected"}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-sm text-muted-foreground">Invoice Date</p>
-                                <p className="font-medium" data-testid="text-ocr-invoice-date">
-                                  {ocrResults.invoiceDate ? format(new Date(ocrResults.invoiceDate), "dd/MM/yyyy") : "Not detected"}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-sm text-muted-foreground">Due Date</p>
-                                <p className="font-medium" data-testid="text-ocr-due-date">
-                                  {ocrResults.dueDate ? format(new Date(ocrResults.dueDate), "dd/MM/yyyy") : "Not detected"}
-                                </p>
-                              </div>
-                            </div>
-
-                            <div className="border-t pt-3">
-                              <div className="grid grid-cols-3 gap-3">
-                                <div>
-                                  <p className="text-sm text-muted-foreground">Subtotal</p>
-                                  <p className="font-medium" data-testid="text-ocr-subtotal">
-                                    {ocrResults.subtotalAmount ? formatCurrency(ocrResults.subtotalAmount / 100) : "—"}
-                                  </p>
-                                </div>
-                                <div>
-                                  <p className="text-sm text-muted-foreground">Tax</p>
-                                  <p className="font-medium" data-testid="text-ocr-tax">
-                                    {ocrResults.totalTax ? formatCurrency(ocrResults.totalTax / 100) : "—"}
-                                  </p>
-                                </div>
-                                <div>
-                                  <p className="text-sm text-muted-foreground">Total</p>
-                                  <p className="font-medium" data-testid="text-ocr-total">
-                                    {ocrResults.totalAmount ? formatCurrency(ocrResults.totalAmount / 100) : "—"}
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-
-                            {ocrResults.lineItems && ocrResults.lineItems.length > 0 && (
-                              <div className="border-t pt-3">
-                                <p className="text-sm font-medium mb-2">Line Items</p>
-                                <div className="space-y-2">
-                                  {ocrResults.lineItems.map((item: any, idx: number) => (
-                                    <div key={idx} className="flex justify-between text-sm p-2 bg-muted/50 rounded" data-testid={`text-ocr-line-item-${idx}`}>
-                                      <span>{item.description || "Unknown"}</span>
-                                      <div className="flex gap-4">
-                                        <span>Qty: {item.quantity || 1}</span>
-                                        <span className="font-medium">
-                                          {item.totalAmount ? formatCurrency(item.totalAmount / 100) : "—"}
-                                        </span>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-
-                          <Button
-                            onClick={handleApplyOCR}
-                            className="w-full"
-                            data-testid="button-apply-ocr"
-                          >
-                            Apply to Bill
-                          </Button>
-                        </CollapsibleContent>
-                      </Collapsible>
-                    )}
-                  </div>
-                )}
-              </div>
-            </Card>
-
-            <Card className="p-6">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold">Cost Lines</h3>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground">Amounts are</span>
-                    <Select
-                      value={taxMode}
-                      onValueChange={(value: "inclusive" | "exclusive") =>
-                        setTaxMode(value)
-                      }
-                    >
-                      <SelectTrigger className="w-32" data-testid="select-tax-mode">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="exclusive">Exclusive</SelectItem>
-                        <SelectItem value="inclusive">Inclusive</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <span className="text-sm text-muted-foreground">of tax</span>
-                  </div>
-                </div>
-
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-32">Type</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead>Cost Code</TableHead>
-                      <TableHead className="w-24">Quantity</TableHead>
-                      <TableHead className="w-24">Unit</TableHead>
-                      <TableHead className="w-40">Tax</TableHead>
-                      <TableHead className="w-32">Account</TableHead>
-                      <TableHead className="w-32">Amount</TableHead>
-                      <TableHead className="w-48">Allowance</TableHead>
-                      <TableHead className="w-12"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {lineItems.map((item, index) => (
-                      <TableRow key={index} data-testid={`row-line-item-${index}`}>
-                        <TableCell>
-                          <Select
-                            value={item.lineType}
-                            onValueChange={(value) =>
-                              updateLineItem(index, "lineType", value)
-                            }
-                          >
-                            <SelectTrigger data-testid={`select-line-type-${index}`}>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="estimate">Estimate</SelectItem>
-                              <SelectItem value="item">Item</SelectItem>
-                              <SelectItem value="custom">Custom</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            value={item.description}
-                            onChange={(e) =>
-                              updateLineItem(index, "description", e.target.value)
-                            }
-                            placeholder="Description..."
-                            data-testid={`input-description-${index}`}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <CostCodeSelect
-                            value={item.costCodeId || ""}
-                            onValueChange={(value) =>
-                              updateLineItem(index, "costCodeId", value)
-                            }
-                            placeholder="Select..."
-                            data-testid={`select-cost-code-${index}`}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            type="number"
-                            value={item.quantity}
-                            onChange={(e) =>
-                              updateLineItem(
-                                index,
-                                "quantity",
-                                parseFloat(e.target.value) || 0
-                              )
-                            }
-                            data-testid={`input-quantity-${index}`}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            value={item.unit}
-                            onChange={(e) =>
-                              updateLineItem(index, "unit", e.target.value)
-                            }
-                            placeholder="Unit"
-                            data-testid={`input-unit-${index}`}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Select
-                            value={item.tax}
-                            onValueChange={(value) =>
-                              updateLineItem(index, "tax", value)
-                            }
-                          >
-                            <SelectTrigger data-testid={`select-tax-${index}`}>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="GST on expenses">
-                                GST on expenses
-                              </SelectItem>
-                              <SelectItem value="No GST">No GST</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            value={item.account}
-                            onChange={(e) =>
-                              updateLineItem(index, "account", e.target.value)
-                            }
-                            placeholder="Account"
-                            data-testid={`input-account-${index}`}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            type="number"
-                            value={item.unitPrice}
-                            onChange={(e) =>
-                              updateLineItem(
-                                index,
-                                "unitPrice",
-                                parseFloat(e.target.value) || 0
-                              )
-                            }
-                            data-testid={`input-amount-${index}`}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <div className="space-y-2">
-                            <div className="flex items-center gap-2">
-                              <Checkbox
-                                checked={item.appliesToAllowances}
-                                onCheckedChange={(checked) =>
-                                  updateLineItem(index, "appliesToAllowances", checked === true)
-                                }
-                                data-testid={`checkbox-applies-to-allowances-${index}`}
-                              />
-                              <label className="text-sm">Applies to Allowances</label>
-                            </div>
-                            {item.appliesToAllowances && (
-                              <Select
-                                value={item.allowanceItemId || ""}
-                                onValueChange={(value) =>
-                                  updateLineItem(index, "allowanceItemId", value)
-                                }
-                              >
-                                <SelectTrigger data-testid={`select-allowance-${index}`}>
-                                  <SelectValue placeholder="Select allowance..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {allowances.map((allowance) => (
-                                    <SelectItem key={allowance.id} value={allowance.id}>
-                                      {allowance.description} ({allowance.itemType})
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-32">Type</TableHead>
+                            <TableHead>Description</TableHead>
+                            <TableHead>Cost Code</TableHead>
+                            <TableHead className="w-24">Quantity</TableHead>
+                            <TableHead className="w-24">Unit</TableHead>
+                            <TableHead className="w-40">Tax</TableHead>
+                            <TableHead className="w-32">Account</TableHead>
+                            <TableHead className="w-32">Amount</TableHead>
+                            <TableHead className="w-48">Allowance</TableHead>
+                            <TableHead className="w-12"></TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {lineItems.map((item, index) => (
+                            <TableRow key={index} data-testid={`row-line-item-${index}`}>
+                              <TableCell>
+                                <Select
+                                  value={item.lineType}
+                                  onValueChange={(value) =>
+                                    updateLineItem(index, "lineType", value)
+                                  }
+                                >
+                                  <SelectTrigger data-testid={`select-line-type-${index}`}>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="estimate">Estimate</SelectItem>
+                                    <SelectItem value="item">Item</SelectItem>
+                                    <SelectItem value="custom">Custom</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </TableCell>
+                              <TableCell>
+                                <Input
+                                  value={item.description}
+                                  onChange={(e) =>
+                                    updateLineItem(index, "description", e.target.value)
+                                  }
+                                  placeholder="Description..."
+                                  data-testid={`input-description-${index}`}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <CostCodeSelect
+                                  value={item.costCodeId || ""}
+                                  onValueChange={(value) =>
+                                    updateLineItem(index, "costCodeId", value)
+                                  }
+                                  placeholder="Select..."
+                                  data-testid={`select-cost-code-${index}`}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <Input
+                                  type="number"
+                                  value={item.quantity}
+                                  onChange={(e) =>
+                                    updateLineItem(
+                                      index,
+                                      "quantity",
+                                      parseFloat(e.target.value) || 0
+                                    )
+                                  }
+                                  data-testid={`input-quantity-${index}`}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <Input
+                                  value={item.unit}
+                                  onChange={(e) =>
+                                    updateLineItem(index, "unit", e.target.value)
+                                  }
+                                  placeholder="Unit"
+                                  data-testid={`input-unit-${index}`}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <Select
+                                  value={item.tax}
+                                  onValueChange={(value) =>
+                                    updateLineItem(index, "tax", value)
+                                  }
+                                >
+                                  <SelectTrigger data-testid={`select-tax-${index}`}>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="GST on expenses">
+                                      GST on expenses
                                     </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => deleteLineItem(index)}
-                            data-testid={`button-delete-line-${index}`}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={addLineItem}
-                  data-testid="button-add-line"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add new line
-                </Button>
-              </div>
-            </Card>
-
-            <Card className="p-6">
-              <div className="space-y-3">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Subtotal</span>
-                  <span className="font-medium" data-testid="text-subtotal">
-                    {formatCurrency(calculateSubtotal())}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Tax (GST)</span>
-                  <span className="font-medium" data-testid="text-tax">
-                    {formatCurrency(calculateTax())}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm border-t pt-3">
-                  <span className="font-semibold">Total</span>
-                  <span className="font-semibold" data-testid="text-total">
-                    {formatCurrency(total)}
-                  </span>
-                </div>
-                <FormField
-                  control={form.control}
-                  name="paidAmount"
-                  render={({ field }) => (
-                    <FormItem>
-                      <div className="flex justify-between items-center">
-                        <FormLabel>Paid</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            {...field}
-                            onChange={(e) =>
-                              field.onChange(parseFloat(e.target.value) || 0)
-                            }
-                            className="w-32 text-right"
-                            data-testid="input-paid"
-                          />
-                        </FormControl>
-                      </div>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <div className="flex justify-between text-sm font-semibold">
-                  <span>Due</span>
-                  <span data-testid="text-due">{formatCurrency(due)}</span>
-                </div>
-              </div>
-            </Card>
-
-            <Card className="p-6">
-              <div className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="sendToXero"
-                  render={({ field }) => (
-                    <FormItem className="flex items-center gap-2 space-y-0">
-                      <FormControl>
-                        <Checkbox
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                          data-testid="checkbox-send-to-xero"
-                        />
-                      </FormControl>
-                      <FormLabel className="!mt-0">Send to Xero</FormLabel>
-                    </FormItem>
-                  )}
-                />
-                {form.watch("sendToXero") && (
-                  <div className="text-sm text-muted-foreground space-y-1">
-                    {!form.watch("supplierId") && (
-                      <div data-testid="text-xero-validation-supplier">
-                        • Fill in Pay to field
-                      </div>
-                    )}
-                    {lineItems.some((item) => !item.costCodeId) && (
-                      <div data-testid="text-xero-validation-cost-codes">
-                        • Set the Cost Codes
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <Paperclip className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm font-medium">Attachments</span>
-                      {attachmentUrls.length > 0 && (
-                        <Badge variant="secondary" className="text-xs">{attachmentUrls.length}</Badge>
-                      )}
+                                    <SelectItem value="No GST">No GST</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </TableCell>
+                              <TableCell>
+                                <Input
+                                  value={item.account}
+                                  onChange={(e) =>
+                                    updateLineItem(index, "account", e.target.value)
+                                  }
+                                  placeholder="Account"
+                                  data-testid={`input-account-${index}`}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <Input
+                                  type="number"
+                                  value={item.unitPrice}
+                                  onChange={(e) =>
+                                    updateLineItem(
+                                      index,
+                                      "unitPrice",
+                                      parseFloat(e.target.value) || 0
+                                    )
+                                  }
+                                  data-testid={`input-amount-${index}`}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-2">
+                                    <Checkbox
+                                      checked={item.appliesToAllowances}
+                                      onCheckedChange={(checked) =>
+                                        updateLineItem(index, "appliesToAllowances", checked === true)
+                                      }
+                                      data-testid={`checkbox-applies-to-allowances-${index}`}
+                                    />
+                                    <label className="text-sm">Applies to Allowances</label>
+                                  </div>
+                                  {item.appliesToAllowances && (
+                                    <Select
+                                      value={item.allowanceItemId || ""}
+                                      onValueChange={(value) =>
+                                        updateLineItem(index, "allowanceItemId", value)
+                                      }
+                                    >
+                                      <SelectTrigger data-testid={`select-allowance-${index}`}>
+                                        <SelectValue placeholder="Select allowance..." />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {allowances.map((allowance) => (
+                                          <SelectItem key={allowance.id} value={allowance.id}>
+                                            {allowance.description} ({allowance.itemType})
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => deleteLineItem(index)}
+                                  data-testid={`button-delete-line-${index}`}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
                     </div>
-                    <label className="cursor-pointer">
-                      <input
-                        type="file"
-                        multiple
-                        className="hidden"
-                        onChange={handleAttachmentUpload}
-                        accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx"
-                        data-testid="input-attachments"
-                      />
-                      <Button variant="ghost" size="sm" asChild disabled={isUploadingAttachment}>
-                        <span>
-                          {isUploadingAttachment ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Plus className="h-3 w-3 mr-1" />}
-                          Add File
-                        </span>
-                      </Button>
-                    </label>
-                  </div>
-                  {attachmentUrls.length > 0 ? (
-                    <div className="space-y-1">
-                      {attachmentUrls.map((url, idx) => {
-                        const fileName = url.split('/').pop() || `Attachment ${idx + 1}`;
-                        return (
-                          <div key={idx} className="flex items-center justify-between gap-2 p-2 rounded-md border text-xs">
-                            <a
-                              href={url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center gap-2 text-foreground hover:underline truncate"
-                            >
-                              <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                              <span className="truncate">{decodeURIComponent(fileName)}</span>
-                            </a>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="shrink-0"
-                              onClick={() => setAttachmentUrls(prev => prev.filter((_, i) => i !== idx))}
-                              data-testid={`button-remove-attachment-${idx}`}
-                            >
-                              <X className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">No attachments yet</p>
-                  )}
-                </div>
 
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <MessageSquare className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm font-medium">Comments</span>
-                  </div>
-                  {isEditMode ? (
-                    <Textarea
-                      placeholder="Add a comment..."
-                      rows={3}
-                      data-testid="textarea-comments"
-                    />
-                  ) : (
-                    <div
-                      className="text-sm text-muted-foreground"
-                      data-testid="text-comments-unavailable"
-                    >
-                      Comments will be available after create
-                    </div>
-                  )}
-                </div>
-              </div>
-            </Card>
-
-            {isEditMode && approvals.length > 0 && (
-              <Card className="p-6">
-                <h3 className="text-lg font-semibold mb-4">Approval History</h3>
-                <div className="space-y-3">
-                  {approvals.map((approval) => (
-                    <div
-                      key={approval.id}
-                      className="flex items-start gap-3 p-3 border rounded-lg"
-                      data-testid={`approval-history-${approval.id}`}
-                    >
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">
-                            {approval.approvedById}
-                          </span>
-                          <span
-                            className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                              approval.status === "approved"
-                                ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-                                : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
-                            }`}
-                          >
-                            {approval.status === "approved" ? "Approved" : "Rejected"}
-                          </span>
-                        </div>
-                        {approval.comments && (
-                          <p className="text-sm text-muted-foreground mt-1">
-                            {approval.comments}
-                          </p>
-                        )}
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {format(new Date(approval.createdAt), "PPp")}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            )}
-
-            <div className="flex flex-col items-end gap-3">
-              {isEditMode && bill?.status === "draft" && (() => {
-                const validation = getSubmitForApprovalValidation();
-                return (
-                  <>
-                    {!validation.isValid && (
-                      <div className="text-sm text-destructive space-y-1" data-testid="text-submit-validation-errors">
-                        {validation.errors.map((error, index) => (
-                          <div key={index}>• {error}</div>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
-              <div className="flex items-center gap-3">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setLocation(projectId ? `/projects/${projectId}/bills` : "/bills")}
-                  data-testid="button-cancel"
-                >
-                  Cancel
-                </Button>
-                {isEditMode && bill?.status === "draft" && (() => {
-                  const validation = getSubmitForApprovalValidation();
-                  return (
                     <Button
                       type="button"
-                      variant="default"
-                      onClick={() => submitForApprovalMutation.mutate()}
-                      disabled={!validation.isValid || submitForApprovalMutation.isPending}
-                      data-testid="button-submit-for-approval"
-                      className="gap-2"
+                      variant="outline"
+                      onClick={addLineItem}
+                      data-testid="button-add-line"
                     >
-                      <Send className="h-4 w-4" />
-                      {submitForApprovalMutation.isPending ? "Submitting..." : "Submit for Approval"}
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add new line
                     </Button>
-                  );
-                })()}
-                <Button
-                  type="submit"
-                  disabled={createMutation.isPending || updateMutation.isPending}
-                  data-testid="button-save"
-                >
-                  {createMutation.isPending || updateMutation.isPending
-                    ? "Saving..."
-                    : "Save"}
-                </Button>
+
+                    <div className="border-t pt-4 mt-4">
+                      <div className="flex justify-end">
+                        <div className="w-72 space-y-2">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Subtotal</span>
+                            <span className="font-medium" data-testid="text-subtotal">
+                              {formatCurrency(calculateSubtotal())}
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Tax (GST)</span>
+                            <span className="font-medium" data-testid="text-tax">
+                              {formatCurrency(calculateTax())}
+                            </span>
+                          </div>
+                          <div className="flex justify-between border-t pt-2">
+                            <span className="text-base font-bold">Total</span>
+                            <span className="text-base font-bold" data-testid="text-total">
+                              {formatCurrency(total)}
+                            </span>
+                          </div>
+                          <FormField
+                            control={form.control}
+                            name="paidAmount"
+                            render={({ field }) => (
+                              <FormItem>
+                                <div className="flex justify-between items-center">
+                                  <FormLabel className="text-sm">Paid</FormLabel>
+                                  <FormControl>
+                                    <Input
+                                      type="number"
+                                      {...field}
+                                      onChange={(e) =>
+                                        field.onChange(parseFloat(e.target.value) || 0)
+                                      }
+                                      className="w-32 text-right"
+                                      data-testid="input-paid"
+                                    />
+                                  </FormControl>
+                                </div>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <div className="flex justify-between text-base font-bold text-primary border-t pt-2">
+                            <span>Due</span>
+                            <span data-testid="text-due">{formatCurrency(due)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+
+                {isEditMode && approvals.length > 0 && (
+                  <Card className="p-6">
+                    <h3 className="text-lg font-semibold mb-4">Approval History</h3>
+                    <div className="space-y-3">
+                      {approvals.map((approval) => (
+                        <div
+                          key={approval.id}
+                          className="flex items-start gap-3 p-3 border rounded-lg"
+                          data-testid={`approval-history-${approval.id}`}
+                        >
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">
+                                {approval.approvedById}
+                              </span>
+                              <span
+                                className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                  approval.status === "approved"
+                                    ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+                                    : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
+                                }`}
+                              >
+                                {approval.status === "approved" ? "Approved" : "Rejected"}
+                              </span>
+                            </div>
+                            {approval.comments && (
+                              <p className="text-sm text-muted-foreground mt-1">
+                                {approval.comments}
+                              </p>
+                            )}
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {format(new Date(approval.createdAt), "PPp")}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                )}
+
+                <div className="flex flex-col items-end gap-3">
+                  {isEditMode && bill?.status === "draft" && (() => {
+                    const validation = getSubmitForApprovalValidation();
+                    return (
+                      <>
+                        {!validation.isValid && (
+                          <div className="text-sm text-destructive space-y-1" data-testid="text-submit-validation-errors">
+                            {validation.errors.map((error, index) => (
+                              <div key={index}>• {error}</div>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                  <div className="flex items-center gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setLocation(projectId ? `/projects/${projectId}/bills` : "/bills")}
+                      data-testid="button-cancel"
+                    >
+                      Cancel
+                    </Button>
+                    {isEditMode && bill?.status === "draft" && (() => {
+                      const validation = getSubmitForApprovalValidation();
+                      return (
+                        <Button
+                          type="button"
+                          variant="default"
+                          onClick={() => submitForApprovalMutation.mutate()}
+                          disabled={!validation.isValid || submitForApprovalMutation.isPending}
+                          data-testid="button-submit-for-approval"
+                          className="gap-2"
+                        >
+                          <Send className="h-4 w-4" />
+                          {submitForApprovalMutation.isPending ? "Submitting..." : "Submit for Approval"}
+                        </Button>
+                      );
+                    })()}
+                    <Button
+                      type="submit"
+                      disabled={createMutation.isPending || updateMutation.isPending}
+                      data-testid="button-save"
+                    >
+                      {createMutation.isPending || updateMutation.isPending
+                        ? "Saving..."
+                        : "Save"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <Card className="p-4">
+                  <h3 className="text-sm font-semibold mb-3">Upload Invoice for OCR</h3>
+                  <div className="space-y-3">
+                    {!uploadedFile ? (
+                      <div
+                        className="border-2 border-dashed rounded-lg p-6 text-center hover-elevate cursor-pointer transition-colors"
+                        onDrop={handleDrop}
+                        onDragOver={(e) => e.preventDefault()}
+                        onClick={() => document.getElementById('file-upload')?.click()}
+                        data-testid="dropzone-upload"
+                      >
+                        <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                        <p className="text-xs text-muted-foreground mb-1">
+                          Drag and drop or click to browse
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          PDF, JPG, JPEG, PNG
+                        </p>
+                        <input
+                          id="file-upload"
+                          type="file"
+                          accept=".pdf,.jpg,.jpeg,.png"
+                          onChange={handleFileUpload}
+                          className="hidden"
+                          data-testid="input-file-upload"
+                        />
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between p-3 border rounded-lg" data-testid="card-uploaded-file">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate" data-testid="text-filename">{uploadedFile.name}</p>
+                              <p className="text-xs text-muted-foreground" data-testid="text-filesize">
+                                {formatFileSize(uploadedFile.size)}
+                              </p>
+                            </div>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              setUploadedFile(null);
+                              setOcrResults(null);
+                              setOcrPreviewOpen(false);
+                            }}
+                            data-testid="button-remove-file"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+
+                        {!ocrResults && (
+                          <Button
+                            onClick={handleProcessOCR}
+                            disabled={ocrMutation.isPending}
+                            className="w-full"
+                            size="sm"
+                            data-testid="button-process-ocr"
+                          >
+                            {ocrMutation.isPending ? (
+                              <>
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                Extracting...
+                              </>
+                            ) : (
+                              <>
+                                <Upload className="h-4 w-4 mr-2" />
+                                Process with OCR
+                              </>
+                            )}
+                          </Button>
+                        )}
+
+                        {ocrResults && (
+                          <Collapsible open={ocrPreviewOpen} onOpenChange={setOcrPreviewOpen}>
+                            <CollapsibleTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="w-full justify-between"
+                                data-testid="button-toggle-ocr-preview"
+                              >
+                                <span>OCR Results</span>
+                                <ChevronDown className={`h-4 w-4 transition-transform ${ocrPreviewOpen ? 'rotate-180' : ''}`} />
+                              </Button>
+                            </CollapsibleTrigger>
+                            <CollapsibleContent className="mt-3 space-y-3" data-testid="card-ocr-results">
+                              <div className="border rounded-lg p-3 space-y-2 text-sm">
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div>
+                                    <p className="text-xs text-muted-foreground">Supplier</p>
+                                    <p className="font-medium text-xs" data-testid="text-ocr-supplier">
+                                      {ocrResults.supplierName || "Not detected"}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs text-muted-foreground">Invoice #</p>
+                                    <p className="font-medium text-xs" data-testid="text-ocr-invoice-number">
+                                      {ocrResults.invoiceNumber || "Not detected"}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs text-muted-foreground">Date</p>
+                                    <p className="font-medium text-xs" data-testid="text-ocr-invoice-date">
+                                      {ocrResults.invoiceDate ? format(new Date(ocrResults.invoiceDate), "dd/MM/yyyy") : "Not detected"}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs text-muted-foreground">Due</p>
+                                    <p className="font-medium text-xs" data-testid="text-ocr-due-date">
+                                      {ocrResults.dueDate ? format(new Date(ocrResults.dueDate), "dd/MM/yyyy") : "Not detected"}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <div className="border-t pt-2">
+                                  <div className="grid grid-cols-3 gap-2">
+                                    <div>
+                                      <p className="text-xs text-muted-foreground">Subtotal</p>
+                                      <p className="font-medium text-xs" data-testid="text-ocr-subtotal">
+                                        {ocrResults.subtotalAmount ? formatCurrency(ocrResults.subtotalAmount / 100) : "—"}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-muted-foreground">Tax</p>
+                                      <p className="font-medium text-xs" data-testid="text-ocr-tax">
+                                        {ocrResults.totalTax ? formatCurrency(ocrResults.totalTax / 100) : "—"}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-muted-foreground">Total</p>
+                                      <p className="font-medium text-xs" data-testid="text-ocr-total">
+                                        {ocrResults.totalAmount ? formatCurrency(ocrResults.totalAmount / 100) : "—"}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {ocrResults.lineItems && ocrResults.lineItems.length > 0 && (
+                                  <div className="border-t pt-2">
+                                    <p className="text-xs font-medium mb-1">Line Items</p>
+                                    <div className="space-y-1">
+                                      {ocrResults.lineItems.map((item: any, idx: number) => (
+                                        <div key={idx} className="flex justify-between text-xs p-1.5 bg-muted/50 rounded" data-testid={`text-ocr-line-item-${idx}`}>
+                                          <span className="truncate mr-2">{item.description || "Unknown"}</span>
+                                          <span className="font-medium shrink-0">
+                                            {item.totalAmount ? formatCurrency(item.totalAmount / 100) : "—"}
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
+                              <Button
+                                onClick={handleApplyOCR}
+                                className="w-full"
+                                size="sm"
+                                data-testid="button-apply-ocr"
+                              >
+                                Apply to Bill
+                              </Button>
+                            </CollapsibleContent>
+                          </Collapsible>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </Card>
+
+                <Card className="p-4">
+                  <div className="space-y-4">
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <Paperclip className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-sm font-medium">Attachments</span>
+                          {attachmentUrls.length > 0 && (
+                            <Badge variant="secondary" className="text-xs">{attachmentUrls.length}</Badge>
+                          )}
+                        </div>
+                        <label className="cursor-pointer">
+                          <input
+                            type="file"
+                            multiple
+                            className="hidden"
+                            onChange={handleAttachmentUpload}
+                            accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx"
+                            data-testid="input-attachments"
+                          />
+                          <Button variant="ghost" size="sm" asChild disabled={isUploadingAttachment}>
+                            <span>
+                              {isUploadingAttachment ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Plus className="h-3 w-3 mr-1" />}
+                              Add
+                            </span>
+                          </Button>
+                        </label>
+                      </div>
+                      {attachmentUrls.length > 0 ? (
+                        <div className="space-y-1">
+                          {attachmentUrls.map((url, idx) => {
+                            const fileName = url.split('/').pop() || `Attachment ${idx + 1}`;
+                            return (
+                              <div key={idx} className="flex items-center justify-between gap-2 p-2 rounded-md border text-xs">
+                                <a
+                                  href={url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-2 text-foreground hover:underline truncate"
+                                >
+                                  <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                  <span className="truncate">{decodeURIComponent(fileName)}</span>
+                                </a>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="shrink-0"
+                                  onClick={() => setAttachmentUrls(prev => prev.filter((_, i) => i !== idx))}
+                                  data-testid={`button-remove-attachment-${idx}`}
+                                >
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">No attachments yet</p>
+                      )}
+                    </div>
+
+                    <div className="border-t pt-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <MessageSquare className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-sm font-medium">Comments</span>
+                      </div>
+                      {isEditMode ? (
+                        <Textarea
+                          placeholder="Add a comment..."
+                          rows={2}
+                          data-testid="textarea-comments"
+                        />
+                      ) : (
+                        <div
+                          className="text-xs text-muted-foreground"
+                          data-testid="text-comments-unavailable"
+                        >
+                          Comments will be available after create
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="border-t pt-3">
+                      <button
+                        type="button"
+                        className="flex items-center gap-2 w-full text-left text-sm font-medium mb-2"
+                        onClick={() => setNotesExpanded(!notesExpanded)}
+                      >
+                        {notesExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                        Notes
+                        {form.watch("notes") && <span className="text-xs text-muted-foreground ml-auto">has content</span>}
+                      </button>
+                      {notesExpanded && (
+                        <FormField
+                          control={form.control}
+                          name="notes"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormControl>
+                                <Textarea
+                                  {...field}
+                                  placeholder="Add notes..."
+                                  rows={3}
+                                  data-testid="textarea-notes"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      )}
+                    </div>
+
+                    <div className="border-t pt-3">
+                      <button
+                        type="button"
+                        className="flex items-center gap-2 w-full text-left text-sm font-medium mb-2"
+                        onClick={() => setRemindersExpanded(!remindersExpanded)}
+                      >
+                        {remindersExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                        Reminders
+                        {form.watch("reminders") && <span className="text-xs text-muted-foreground ml-auto">has content</span>}
+                      </button>
+                      {remindersExpanded && (
+                        <FormField
+                          control={form.control}
+                          name="reminders"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormControl>
+                                <Textarea
+                                  {...field}
+                                  placeholder="Add reminders..."
+                                  rows={2}
+                                  data-testid="textarea-reminders"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      )}
+                    </div>
+
+                    <div className="border-t pt-3">
+                      <FormField
+                        control={form.control}
+                        name="sendToXero"
+                        render={({ field }) => (
+                          <FormItem className="flex items-center gap-2 space-y-0">
+                            <FormControl>
+                              <Checkbox
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                                data-testid="checkbox-send-to-xero"
+                              />
+                            </FormControl>
+                            <FormLabel className="!mt-0 text-sm">Send to Xero</FormLabel>
+                          </FormItem>
+                        )}
+                      />
+                      {form.watch("sendToXero") && (
+                        <div className="text-xs text-muted-foreground space-y-1 mt-2">
+                          {!form.watch("supplierId") && (
+                            <div data-testid="text-xero-validation-supplier">
+                              Fill in Pay to field
+                            </div>
+                          )}
+                          {lineItems.some((item) => !item.costCodeId) && (
+                            <div data-testid="text-xero-validation-cost-codes">
+                              Set the Cost Codes
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </Card>
               </div>
             </div>
           </form>

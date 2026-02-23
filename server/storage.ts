@@ -11738,9 +11738,9 @@ export class DbStorage implements IStorage {
 
   async getNextBillNumber(): Promise<string> {
     try {
-      const settings = await this.getCompanySettings();
-      const prefix = settings?.billPrefix || "BILL-";
-      const startNumber = settings?.billStartNumber || 1000;
+      const sysConfig = await this.getSystemConfiguration();
+      const prefix = sysConfig?.billPrefix || "BILL-";
+      const startNumber = sysConfig?.billStartNumber || 1000;
 
       const existingBills = await db.select({ billNumber: schema.bills.billNumber })
         .from(schema.bills)
