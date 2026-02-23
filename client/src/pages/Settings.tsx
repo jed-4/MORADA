@@ -656,14 +656,35 @@ export default function Settings() {
 
   const XeroIntegrationCard = () => {
     const { toast } = useToast();
+    const [tc1Id, setTc1Id] = useState<string>("");
+    const [tc2Id, setTc2Id] = useState<string>("");
 
     const { data: xeroStatus, isLoading: isXeroLoading } = useQuery<{
       connected: boolean;
       tenantName?: string;
       connectedAt?: string;
+      trackingCategory1Id?: string;
+      trackingCategory1Name?: string;
+      trackingCategory2Id?: string;
+      trackingCategory2Name?: string;
     }>({
       queryKey: ["/api/xero/status"],
     });
+
+    const { data: xeroTrackingCategories } = useQuery<Array<{
+      trackingCategoryId: string;
+      name: string;
+      status: string;
+      options: Array<{ trackingOptionId: string; name: string; status: string }>;
+    }>>({
+      queryKey: ["/api/xero/tracking-categories"],
+      enabled: !!xeroStatus?.connected,
+    });
+
+    useEffect(() => {
+      if (xeroStatus?.trackingCategory1Id) setTc1Id(xeroStatus.trackingCategory1Id);
+      if (xeroStatus?.trackingCategory2Id) setTc2Id(xeroStatus.trackingCategory2Id);
+    }, [xeroStatus]);
 
     const connectXeroMutation = useMutation({
       mutationFn: async () => {
@@ -701,6 +722,31 @@ export default function Settings() {
         });
       },
     });
+
+    const saveTrackingSettingsMutation = useMutation({
+      mutationFn: async (data: { trackingCategory1Id: string; trackingCategory1Name: string; trackingCategory2Id: string; trackingCategory2Name: string }) => {
+        const response = await apiRequest("/api/xero/settings", "PATCH", data);
+        return response.json();
+      },
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/xero/status"] });
+        toast({ title: "Tracking category settings saved" });
+      },
+      onError: (error: any) => {
+        toast({ title: "Failed to save settings", description: error.message, variant: "destructive" });
+      },
+    });
+
+    const handleSaveTrackingSettings = () => {
+      const tc1 = xeroTrackingCategories?.find(tc => tc.trackingCategoryId === tc1Id);
+      const tc2 = xeroTrackingCategories?.find(tc => tc.trackingCategoryId === tc2Id);
+      saveTrackingSettingsMutation.mutate({
+        trackingCategory1Id: tc1Id,
+        trackingCategory1Name: tc1?.name || "",
+        trackingCategory2Id: tc2Id,
+        trackingCategory2Name: tc2?.name || "",
+      });
+    };
 
     return (
       <Card>
@@ -760,6 +806,61 @@ export default function Settings() {
                   )}
                 </Button>
               </div>
+
+              <div className="border rounded-lg p-4 space-y-4">
+                <h4 className="font-medium text-sm">Tracking Category Mapping</h4>
+                <p className="text-xs text-muted-foreground">
+                  Map your Xero tracking categories so cost codes and jobs are tagged on bills.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium">Cost Codes (TC1)</label>
+                    <Select value={tc1Id} onValueChange={setTc1Id}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select tracking category..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        {xeroTrackingCategories?.map(tc => (
+                          <SelectItem key={tc.trackingCategoryId} value={tc.trackingCategoryId}>
+                            {tc.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-[10px] text-muted-foreground">
+                      Map each cost code to an option in this category
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium">Jobs / Projects (TC2)</label>
+                    <Select value={tc2Id} onValueChange={setTc2Id}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select tracking category..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        {xeroTrackingCategories?.map(tc => (
+                          <SelectItem key={tc.trackingCategoryId} value={tc.trackingCategoryId}>
+                            {tc.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-[10px] text-muted-foreground">
+                      Projects auto-create as options in this category
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={handleSaveTrackingSettings}
+                  disabled={saveTrackingSettingsMutation.isPending}
+                >
+                  {saveTrackingSettingsMutation.isPending ? "Saving..." : "Save Mapping"}
+                </Button>
+              </div>
+
               <p className="text-sm text-muted-foreground">
                 Bills with "Send to Xero" checked will be synced when saved.
               </p>

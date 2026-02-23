@@ -135,6 +135,10 @@ export default function BillDetail() {
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
   const [colMenuOpen, setColMenuOpen] = useState(false);
   const resizingCol = useRef<{ key: string; startX: number; startW: number } | null>(null);
+  const [unmappedContactDialogOpen, setUnmappedContactDialogOpen] = useState(false);
+  const [unmappedSupplierName, setUnmappedSupplierName] = useState("");
+  const [selectedXeroContactId, setSelectedXeroContactId] = useState("");
+  const [pendingXeroBillId, setPendingXeroBillId] = useState<number | null>(null);
 
   const { data: bill, isLoading: billLoading } = useQuery<Bill>({
     queryKey: ["/api/bills", id],
@@ -161,6 +165,11 @@ export default function BillDetail() {
 
   const { data: costCodes = [] } = useQuery<CostCode[]>({
     queryKey: ["/api/cost-codes"],
+  });
+
+  const { data: xeroContacts = [] } = useQuery<Array<{ contactId: string; name: string; emailAddress?: string }>>({
+    queryKey: ["/api/xero/contacts"],
+    enabled: unmappedContactDialogOpen,
   });
 
   const { data: approvals = [] } = useQuery<BillApproval[]>({
@@ -530,10 +539,27 @@ export default function BillDetail() {
     onSuccess: async (newBill) => {
       if (form.getValues("sendToXero") && newBill?.id) {
         try {
-          await apiRequest("/api/xero/push-bill", "POST", { billId: newBill.id });
+          const pushRes = await fetch("/api/xero/push-bill", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ billId: newBill.id }),
+          });
+          if (!pushRes.ok) {
+            const errData = await pushRes.json().catch(() => ({}));
+            if (errData.error === "UNMAPPED_CONTACT") {
+              setUnmappedSupplierName(errData.supplierName || "Unknown Supplier");
+              setPendingXeroBillId(newBill.id);
+              setUnmappedContactDialogOpen(true);
+              queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+              toast({ title: "Bill created", description: "Please link the supplier to a Xero contact to complete the sync." });
+              return;
+            }
+            throw new Error(errData.message || "Failed to push to Xero");
+          }
           toast({ title: "Success", description: "Bill created and sent to Xero" });
-        } catch {
-          toast({ title: "Bill created", description: "Bill saved but failed to send to Xero. You can retry from the bill.", variant: "destructive" });
+        } catch (e: any) {
+          toast({ title: "Bill created", description: e.message || "Bill saved but failed to send to Xero. You can retry from the bill.", variant: "destructive" });
         }
       } else {
         toast({ title: "Success", description: "Bill created successfully" });
@@ -647,10 +673,28 @@ export default function BillDetail() {
     onSuccess: async () => {
       if (form.getValues("sendToXero") && id) {
         try {
-          await apiRequest("/api/xero/push-bill", "POST", { billId: id });
+          const pushRes = await fetch("/api/xero/push-bill", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ billId: id }),
+          });
+          if (!pushRes.ok) {
+            const errData = await pushRes.json().catch(() => ({}));
+            if (errData.error === "UNMAPPED_CONTACT") {
+              setUnmappedSupplierName(errData.supplierName || "Unknown Supplier");
+              setPendingXeroBillId(Number(id));
+              setUnmappedContactDialogOpen(true);
+              queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+              queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
+              toast({ title: "Bill saved", description: "Please link the supplier to a Xero contact to complete the sync." });
+              return;
+            }
+            throw new Error(errData.message || "Failed to push to Xero");
+          }
           toast({ title: "Success", description: "Bill updated and sent to Xero" });
-        } catch {
-          toast({ title: "Bill updated", description: "Bill saved but failed to send to Xero. You can retry later.", variant: "destructive" });
+        } catch (e: any) {
+          toast({ title: "Bill updated", description: e.message || "Bill saved but failed to send to Xero. You can retry later.", variant: "destructive" });
         }
       } else {
         toast({ title: "Success", description: "Bill updated successfully" });
@@ -803,12 +847,19 @@ export default function BillDetail() {
       });
       return response.json();
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       setOcrResults(data);
       setOcrPreviewOpen(true);
+      if (uploadedFile) {
+        try {
+          await uploadFile(uploadedFile);
+        } catch (e) {
+          console.error("Failed to auto-save attachment:", e);
+        }
+      }
       toast({
         title: "Success",
-        description: "Invoice data extracted successfully",
+        description: "Invoice data extracted and saved as attachment",
       });
     },
     onError: (error: Error) => {
@@ -1063,7 +1114,7 @@ export default function BillDetail() {
       <div className="flex-1 overflow-auto p-4">
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
-            <div className="grid grid-cols-1 xl:grid-cols-[1fr_280px] gap-3">
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-3">
               <Card className="p-4">
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                   <FormField
@@ -2172,6 +2223,64 @@ export default function BillDetail() {
               </DialogFooter>
             </form>
           </Form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={unmappedContactDialogOpen} onOpenChange={(open) => {
+        setUnmappedContactDialogOpen(open);
+        if (!open) {
+          setSelectedXeroContactId("");
+          setPendingXeroBillId(null);
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Link Supplier to Xero Contact</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            "{unmappedSupplierName}" is not linked to a Xero contact. Select the matching Xero contact below to continue sending this bill to Xero.
+          </p>
+          <Select value={selectedXeroContactId} onValueChange={setSelectedXeroContactId}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select Xero contact..." />
+            </SelectTrigger>
+            <SelectContent>
+              {xeroContacts.map((c) => (
+                <SelectItem key={c.contactId} value={c.contactId}>
+                  {c.name}{c.emailAddress ? ` (${c.emailAddress})` : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUnmappedContactDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={!selectedXeroContactId}
+              onClick={async () => {
+                const billIdToUse = pendingXeroBillId || id;
+                if (!selectedXeroContactId || !billIdToUse) return;
+                try {
+                  const res = await apiRequest("/api/xero/push-bill", "POST", {
+                    billId: billIdToUse,
+                    xeroContactId: selectedXeroContactId,
+                  });
+                  toast({ title: "Success", description: "Bill sent to Xero" });
+                  setUnmappedContactDialogOpen(false);
+                  setSelectedXeroContactId("");
+                  setPendingXeroBillId(null);
+                  queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+                  queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
+                  setLocation(projectId ? `/projects/${projectId}/bills` : "/bills");
+                } catch (e: any) {
+                  toast({ title: "Error", description: e.message || "Failed to send bill to Xero", variant: "destructive" });
+                }
+              }}
+            >
+              Link & Send to Xero
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

@@ -56,13 +56,17 @@ Return a JSON object with the following structure. All monetary values should be
 }
 
 Rules:
-- Extract ALL line items visible on the invoice
+- Extract ALL line items visible on the invoice/bill document
 - If a field is not found, set it to null
-- Dates must be in YYYY-MM-DD format
+- Dates must be in YYYY-MM-DD format. If dates use Australian DD/MM/YYYY format, convert them correctly (e.g., 15/03/2025 becomes 2025-03-15)
 - Monetary values are numbers (not strings), in dollars (e.g., 150.00 not 15000)
 - For quantity, default to 1 if not explicitly stated
-- Look for GST, VAT, or tax amounts
-- Return ONLY valid JSON, no markdown or explanation`;
+- Look for GST, VAT, or tax amounts. Australian invoices typically have 10% GST
+- If you see a tax invoice, statement, or bill - extract ALL data from it even if quality is low
+- If the document contains a table of items/charges, extract each row as a line item
+- For multi-page documents, combine data from all pages
+- Return ONLY valid JSON, no markdown or explanation
+- IMPORTANT: Always try your best to extract data. Even if the image quality is poor, extract whatever you can see`;
 
 function getMimeType(fileName: string): string {
   const ext = fileName.toLowerCase().split('.').pop();
@@ -152,15 +156,20 @@ export async function processInvoiceWithAI(base64Data: string, fileName: string)
     throw new Error("No response from AI model");
   }
 
+  console.log("[AI Bill Reader] Raw AI response length:", content.length);
+  console.log("[AI Bill Reader] Response preview:", content.substring(0, 500));
+
   let parsed: AIInvoiceResponse;
   try {
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
+      console.error("[AI Bill Reader] No JSON found in response:", content);
       throw new Error("No JSON found in response");
     }
     parsed = JSON.parse(jsonMatch[0]);
+    console.log("[AI Bill Reader] Parsed successfully - supplier:", parsed.supplierName, "lines:", parsed.lineItems?.length || 0);
   } catch (e: any) {
-    console.error("Failed to parse AI response:", content);
+    console.error("[AI Bill Reader] Failed to parse AI response:", content);
     throw new Error(`Failed to parse AI invoice response: ${e.message}`);
   }
 

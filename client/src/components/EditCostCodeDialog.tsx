@@ -37,6 +37,8 @@ const editCostCodeSchema = z.object({
   title: z.string().min(1, "Title is required"),
   categoryId: z.string().nullable(),
   availableInTimesheets: z.boolean(),
+  xeroTrackingOptionId: z.string().nullable().optional(),
+  xeroTrackingOptionName: z.string().nullable().optional(),
 });
 
 type EditCostCodeFormData = z.infer<typeof editCostCodeSchema>;
@@ -58,6 +60,24 @@ export default function EditCostCodeDialog({
     queryKey: ["/api/cost-categories"],
   });
 
+  const { data: xeroStatus } = useQuery<any>({
+    queryKey: ["/api/xero/status"],
+  });
+
+  const xeroConnected = xeroStatus?.connected === true;
+  const trackingCategory1Id = xeroStatus?.trackingCategory1Id;
+
+  const { data: trackingCategories = [] } = useQuery<any[]>({
+    queryKey: ["/api/xero/tracking-categories"],
+    enabled: xeroConnected,
+  });
+
+  const trackingCategory1 = trackingCategories.find(
+    (tc: any) => tc.trackingCategoryID === trackingCategory1Id
+  );
+  const trackingOptions: { trackingOptionID: string; name: string }[] =
+    trackingCategory1?.options || [];
+
   const form = useForm<EditCostCodeFormData>({
     resolver: zodResolver(editCostCodeSchema),
     defaultValues: {
@@ -65,6 +85,8 @@ export default function EditCostCodeDialog({
       title: "",
       categoryId: null,
       availableInTimesheets: false,
+      xeroTrackingOptionId: null,
+      xeroTrackingOptionName: null,
     },
   });
 
@@ -75,6 +97,8 @@ export default function EditCostCodeDialog({
         title: costCode.title,
         categoryId: costCode.categoryId,
         availableInTimesheets: costCode.availableInTimesheets ?? false,
+        xeroTrackingOptionId: (costCode as any).xeroTrackingOptionId ?? null,
+        xeroTrackingOptionName: (costCode as any).xeroTrackingOptionName ?? null,
       });
     }
   }, [costCode, open, form]);
@@ -188,6 +212,48 @@ export default function EditCostCodeDialog({
                 </FormItem>
               )}
             />
+
+            {xeroConnected && trackingOptions.length > 0 && (
+              <FormField
+                control={form.control}
+                name="xeroTrackingOptionId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Xero Tracking Option{trackingCategory1 ? ` (${trackingCategory1.name})` : ""}</FormLabel>
+                    <Select
+                      value={field.value ?? "__none__"}
+                      onValueChange={(value) => {
+                        if (value === "__none__") {
+                          field.onChange(null);
+                          form.setValue("xeroTrackingOptionName", null);
+                        } else {
+                          field.onChange(value);
+                          const option = trackingOptions.find(
+                            (o) => o.trackingOptionID === value
+                          );
+                          form.setValue("xeroTrackingOptionName", option?.name ?? null);
+                        }
+                      }}
+                    >
+                      <FormControl>
+                        <SelectTrigger data-testid="select-edit-xero-tracking-option">
+                          <SelectValue placeholder="Select tracking option" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="__none__">None</SelectItem>
+                        {trackingOptions.map((option) => (
+                          <SelectItem key={option.trackingOptionID} value={option.trackingOptionID}>
+                            {option.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
 
             <FormField
               control={form.control}

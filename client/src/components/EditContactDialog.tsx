@@ -52,6 +52,12 @@ export default function EditContactDialog({
     queryKey: ["/api/payment-terms-options"],
   });
 
+  const { data: xeroStatus } = useQuery<{ connected: boolean }>({
+    queryKey: ["/api/xero/status"],
+  });
+
+  const isXeroConnected = xeroStatus?.connected === true;
+
   const form = useForm<InsertContact>({
     resolver: zodResolver(insertContactSchema),
     defaultValues: {
@@ -83,6 +89,8 @@ export default function EditContactDialog({
       scheduleColor: contact.scheduleColor || "",
       portalEnabled: contact.portalEnabled || false,
       isArchived: contact.isArchived || false,
+      xeroContactId: contact.xeroContactId || "",
+      xeroDefaultAccountCode: contact.xeroDefaultAccountCode || "",
     },
   });
 
@@ -118,6 +126,8 @@ export default function EditContactDialog({
         scheduleColor: contact.scheduleColor || "",
         portalEnabled: contact.portalEnabled || false,
         isArchived: contact.isArchived || false,
+        xeroContactId: contact.xeroContactId || "",
+        xeroDefaultAccountCode: contact.xeroDefaultAccountCode || "",
       });
       setAvatarPreview(contact.avatarUrl || null);
     }
@@ -225,6 +235,8 @@ export default function EditContactDialog({
       if (cleanData.spousePhone === "") cleanData.spousePhone = undefined;
       if (cleanData.spouseEmail === "") cleanData.spouseEmail = undefined;
       if (cleanData.defaultCostCodeId === "__none__") cleanData.defaultCostCodeId = null;
+      if (cleanData.xeroContactId === "") cleanData.xeroContactId = null;
+      if (cleanData.xeroDefaultAccountCode === "") cleanData.xeroDefaultAccountCode = null;
       // Schema expects string or "" - convert null to empty string
       if (cleanData.hourlyRate === null || cleanData.hourlyRate === undefined) cleanData.hourlyRate = "";
       if (cleanData.hourlyPrice === null || cleanData.hourlyPrice === undefined) cleanData.hourlyPrice = "";
@@ -255,6 +267,18 @@ export default function EditContactDialog({
   const isSupplier = selectedType === "supplier";
   const isClient = selectedType === "client";
   const isBusinessType = isTrade || isSupplier; // Both use company-first layout
+
+  const showXeroFields = isXeroConnected && isBusinessType;
+
+  const { data: xeroContacts = [] } = useQuery<{ contactId: string; name: string; emailAddress: string; isSupplier: boolean; isCustomer: boolean }[]>({
+    queryKey: ["/api/xero/contacts"],
+    enabled: showXeroFields,
+  });
+
+  const { data: xeroAccounts = [] } = useQuery<{ accountId: string; code: string; name: string; type: string; status: string }[]>({
+    queryKey: ["/api/xero/accounts"],
+    enabled: showXeroFields,
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1003,6 +1027,72 @@ export default function EditContactDialog({
                   </FormItem>
                 )}
               />
+            )}
+
+            {/* Xero Integration */}
+            {showXeroFields && (
+              <div className="space-y-4 border-t pt-4">
+                <h3 className="text-sm font-medium">Xero Integration</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="xeroContactId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Xero Contact</FormLabel>
+                        <Select
+                          onValueChange={(val) => field.onChange(val === "__none__" ? "" : val)}
+                          value={field.value || "__none__"}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="select-xero-contact">
+                              <SelectValue placeholder="Select Xero contact" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="__none__">None</SelectItem>
+                            {xeroContacts.map((xc) => (
+                              <SelectItem key={xc.contactId} value={xc.contactId}>
+                                {xc.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="xeroDefaultAccountCode"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Default Xero Account</FormLabel>
+                        <Select
+                          onValueChange={(val) => field.onChange(val === "__none__" ? "" : val)}
+                          value={field.value || "__none__"}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="select-xero-account">
+                              <SelectValue placeholder="Select Xero account" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="__none__">None</SelectItem>
+                            {xeroAccounts.map((acc) => (
+                              <SelectItem key={acc.accountId} value={acc.code}>
+                                {acc.code} - {acc.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </div>
             )}
 
             {/* Notes */}

@@ -619,6 +619,11 @@ export default function CostCodes() {
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
+                              {(code as any).xeroTrackingOptionName && (
+                                <Badge variant="outline" className="gap-1">
+                                  Xero: {(code as any).xeroTrackingOptionName}
+                                </Badge>
+                              )}
                               {code.availableInTimesheets ? (
                                 <Badge variant="outline" className="gap-1">
                                   <Clock className="h-3 w-3" />
@@ -750,6 +755,11 @@ export default function CostCodes() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
+                          {(code as any).xeroTrackingOptionName && (
+                            <Badge variant="outline" className="gap-1">
+                              Xero: {(code as any).xeroTrackingOptionName}
+                            </Badge>
+                          )}
                           {code.availableInTimesheets ? (
                             <Badge variant="outline" className="gap-1">
                               <Clock className="h-3 w-3" />

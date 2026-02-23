@@ -19447,6 +19447,10 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         connectionId: connection.id,
         tenantName: connection.tenantName,
         tokenExpiresAt: connection.tokenExpiresAt,
+        trackingCategory1Id: connection.trackingCategory1Id,
+        trackingCategory1Name: connection.trackingCategory1Name,
+        trackingCategory2Id: connection.trackingCategory2Id,
+        trackingCategory2Name: connection.trackingCategory2Name,
       });
     } catch (error: any) {
       console.error("Error checking Xero status:", error);
@@ -19483,7 +19487,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         return res.status(401).json({ error: "Unauthorized - no company context" });
       }
 
-      const { billId } = req.body;
+      const { billId, xeroContactId: overrideXeroContactId } = req.body;
       if (!billId) {
         return res.status(400).json({ error: "billId is required" });
       }
@@ -19501,13 +19505,40 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       const lineItems = await storage.getBillLineItems(billId);
 
       let supplierName = "Unknown Supplier";
+      let supplierXeroContactId: string | undefined;
+      let supplierDefaultAccountCode: string | undefined;
+      
       if (bill.supplierId) {
         try {
           const contact = await storage.getContact(bill.supplierId, companyId);
           if (contact) {
-            supplierName = contact.companyName || `${contact.firstName || ""} ${contact.lastName || ""}`.trim() || "Unknown Supplier";
+            supplierName = contact.company || contact.name || `${contact.firstName || ""} ${contact.lastName || ""}`.trim() || "Unknown Supplier";
+            supplierXeroContactId = (contact as any).xeroContactId || undefined;
+            supplierDefaultAccountCode = (contact as any).xeroDefaultAccountCode || undefined;
           }
         } catch {}
+      }
+
+      if (overrideXeroContactId) {
+        supplierXeroContactId = overrideXeroContactId;
+        if (bill.supplierId) {
+          try {
+            await storage.updateContact(bill.supplierId, companyId, {
+              xeroContactId: overrideXeroContactId,
+            } as any);
+          } catch (e) {
+            console.error("Failed to save Xero contact link:", e);
+          }
+        }
+      }
+
+      if (!supplierXeroContactId && !overrideXeroContactId) {
+        return res.status(422).json({
+          error: "UNMAPPED_CONTACT",
+          message: "Supplier is not linked to a Xero contact",
+          supplierId: bill.supplierId,
+          supplierName,
+        });
       }
 
       const formatDate = (d: Date | string | null | undefined): string => {
@@ -19516,22 +19547,83 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         return date.toISOString().split("T")[0];
       };
 
+      let projectXeroTrackingOptionId: string | undefined;
+      if (bill.projectId && connection.trackingCategory2Id) {
+        try {
+          const project = await storage.getProject(bill.projectId);
+          if (project) {
+            if ((project as any).xeroTrackingOptionId) {
+              projectXeroTrackingOptionId = (project as any).xeroTrackingOptionId;
+            } else {
+              const option = await xeroService.createTrackingOption(
+                connection.id,
+                connection.trackingCategory2Id,
+                project.name
+              );
+              if (option?.TrackingOptionID) {
+                projectXeroTrackingOptionId = option.TrackingOptionID;
+                await storage.updateProject(bill.projectId, {
+                  xeroTrackingOptionId: option.TrackingOptionID,
+                  xeroTrackingOptionName: project.name,
+                } as any);
+              }
+            }
+          }
+        } catch (e) {
+          console.error("Failed to create/get Xero tracking option for project:", e);
+        }
+      }
+
+      let costCodeMap: Record<string, any> = {};
+      if (connection.trackingCategory1Id) {
+        try {
+          const allCostCodes = await storage.getCostCodes(companyId);
+          for (const cc of allCostCodes) {
+            costCodeMap[cc.id] = cc;
+          }
+        } catch (e) {
+          console.error("Failed to load cost codes for tracking:", e);
+        }
+      }
+
       const xeroLineItems = lineItems.map((item: any) => {
         let taxType = "INPUT";
         if (item.tax === "No GST" || item.tax === "NONE") {
           taxType = "NONE";
         }
+
+        const tracking: any[] = [];
+
+        if (item.costCodeId && connection.trackingCategory1Id) {
+          const costCode = costCodeMap[item.costCodeId];
+          if (costCode?.xeroTrackingOptionId) {
+            tracking.push({
+              TrackingCategoryID: connection.trackingCategory1Id,
+              TrackingOptionID: costCode.xeroTrackingOptionId,
+            });
+          }
+        }
+
+        if (projectXeroTrackingOptionId && connection.trackingCategory2Id) {
+          tracking.push({
+            TrackingCategoryID: connection.trackingCategory2Id,
+            TrackingOptionID: projectXeroTrackingOptionId,
+          });
+        }
+
         return {
           description: item.description || "",
           quantity: typeof item.quantity === "number" ? item.quantity : 1,
           unitAmount: typeof item.unitPrice === "number" ? item.unitPrice / 100 : 0,
           taxType,
-          accountCode: item.account || undefined,
+          accountCode: item.account || supplierDefaultAccountCode || undefined,
+          tracking: tracking.length > 0 ? tracking : undefined,
         };
       });
 
       const xeroBill = await xeroService.createBill(connection.id, {
         supplierName,
+        supplierXeroContactId,
         billDate: formatDate(bill.billDate),
         dueDate: bill.dueDate ? formatDate(bill.dueDate) : undefined,
         reference: bill.billReference || bill.billNumber,
@@ -19553,6 +19645,132 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
     } catch (error: any) {
       console.error("Error pushing bill to Xero:", error);
       res.status(500).json({ error: error.message || "Failed to push bill to Xero" });
+    }
+  });
+
+  // Xero: Fetch contacts from Xero org
+  app.get("/api/xero/contacts", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) return res.status(400).json({ error: "Xero is not connected" });
+
+      const contacts = await xeroService.getContacts(connection.id);
+      res.json(contacts.map((c: any) => ({
+        contactId: c.ContactID,
+        name: c.Name,
+        emailAddress: c.EmailAddress,
+        isSupplier: c.IsSupplier,
+        isCustomer: c.IsCustomer,
+      })));
+    } catch (error: any) {
+      console.error("Error fetching Xero contacts:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch Xero contacts" });
+    }
+  });
+
+  // Xero: Fetch tracking categories from Xero org
+  app.get("/api/xero/tracking-categories", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) return res.status(400).json({ error: "Xero is not connected" });
+
+      const categories = await xeroService.getTrackingCategories(connection.id);
+      res.json(categories.map((tc: any) => ({
+        trackingCategoryId: tc.TrackingCategoryID,
+        name: tc.Name,
+        status: tc.Status,
+        options: (tc.Options || []).map((opt: any) => ({
+          trackingOptionId: opt.TrackingOptionID,
+          name: opt.Name,
+          status: opt.Status,
+        })),
+      })));
+    } catch (error: any) {
+      console.error("Error fetching Xero tracking categories:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch tracking categories" });
+    }
+  });
+
+  // Xero: Fetch account codes from Xero org
+  app.get("/api/xero/accounts", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) return res.status(400).json({ error: "Xero is not connected" });
+
+      const accounts = await xeroService.getAccounts(connection.id);
+      res.json(accounts.map((a: any) => ({
+        accountId: a.AccountID,
+        code: a.Code,
+        name: a.Name,
+        type: a.Type,
+        status: a.Status,
+      })));
+    } catch (error: any) {
+      console.error("Error fetching Xero accounts:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch Xero accounts" });
+    }
+  });
+
+  // Xero: Update tracking category settings
+  app.patch("/api/xero/settings", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) return res.status(400).json({ error: "Xero is not connected" });
+
+      const { trackingCategory1Id, trackingCategory1Name, trackingCategory2Id, trackingCategory2Name } = req.body;
+
+      const updated = await storage.updateXeroConnection(connection.id, {
+        trackingCategory1Id: trackingCategory1Id || null,
+        trackingCategory1Name: trackingCategory1Name || null,
+        trackingCategory2Id: trackingCategory2Id || null,
+        trackingCategory2Name: trackingCategory2Name || null,
+      });
+
+      res.json({ success: true, connection: updated });
+    } catch (error: any) {
+      console.error("Error updating Xero settings:", error);
+      res.status(500).json({ error: error.message || "Failed to update Xero settings" });
+    }
+  });
+
+  // Xero: Link a BuildPro contact to a Xero contact
+  app.patch("/api/contacts/:id/xero-link", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { xeroContactId, xeroDefaultAccountCode } = req.body;
+      const contactId = req.params.id;
+
+      const contact = await storage.getContact(contactId, companyId);
+      if (!contact) return res.status(404).json({ error: "Contact not found" });
+
+      const updated = await storage.updateContact(contactId, companyId, {
+        xeroContactId: xeroContactId || null,
+        xeroDefaultAccountCode: xeroDefaultAccountCode || null,
+      } as any);
+
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error linking Xero contact:", error);
+      res.status(500).json({ error: error.message || "Failed to link Xero contact" });
     }
   });
 

@@ -7,7 +7,14 @@ const XERO_AUTHORIZE_URL = "https://login.xero.com/identity/connect/authorize";
 const XERO_TOKEN_URL = "https://identity.xero.com/connect/token";
 const XERO_CONNECTIONS_URL = "https://api.xero.com/connections";
 const XERO_API_BASE = "https://api.xero.com/api.xro/2.0";
-const XERO_SCOPES = "openid profile email accounting.transactions accounting.contacts offline_access";
+const XERO_SCOPES = "openid profile email accounting.transactions accounting.contacts accounting.settings offline_access";
+
+export interface XeroTracking {
+  TrackingCategoryID: string;
+  TrackingOptionID: string;
+  Name?: string;
+  Option?: string;
+}
 
 export interface XeroBillLineItem {
   description: string;
@@ -15,10 +22,12 @@ export interface XeroBillLineItem {
   unitAmount: number;
   taxType: string;
   accountCode?: string;
+  tracking?: XeroTracking[];
 }
 
 export interface XeroBillData {
   supplierName: string;
+  supplierXeroContactId?: string;
   billDate: string;
   dueDate?: string;
   reference?: string;
@@ -159,7 +168,7 @@ export class XeroService {
     const connection = await storage.getXeroConnection(connectionId);
     if (!connection) throw new Error("Connection not found");
 
-    const response = await fetch(`${XERO_API_BASE}/Contacts`, {
+    const response = await fetch(`${XERO_API_BASE}/Contacts?page=1&pageSize=500`, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Xero-Tenant-Id": connection.tenantId,
@@ -174,6 +183,75 @@ export class XeroService {
 
     const data = (await response.json()) as any;
     return data.Contacts || [];
+  }
+
+  async getTrackingCategories(connectionId: string): Promise<any[]> {
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Connection not found");
+
+    const response = await fetch(`${XERO_API_BASE}/TrackingCategories`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Xero-Tenant-Id": connection.tenantId,
+        Accept: "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to get tracking categories: ${response.status} ${errorText}`);
+    }
+
+    const data = (await response.json()) as any;
+    return data.TrackingCategories || [];
+  }
+
+  async getAccounts(connectionId: string): Promise<any[]> {
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Connection not found");
+
+    const response = await fetch(`${XERO_API_BASE}/Accounts?where=Type=="EXPENSE"||Type=="DIRECTCOSTS"||Type=="OVERHEADS"||Type=="CURRLIAB"`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Xero-Tenant-Id": connection.tenantId,
+        Accept: "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to get Xero accounts: ${response.status} ${errorText}`);
+    }
+
+    const data = (await response.json()) as any;
+    return data.Accounts || [];
+  }
+
+  async createTrackingOption(connectionId: string, trackingCategoryId: string, name: string): Promise<any> {
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Connection not found");
+
+    const response = await fetch(`${XERO_API_BASE}/TrackingCategories/${trackingCategoryId}/Options`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Xero-Tenant-Id": connection.tenantId,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ Name: name }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to create tracking option: ${response.status} ${errorText}`);
+    }
+
+    const data = (await response.json()) as any;
+    return data.Options?.[0] || data;
   }
 
   private async findOrCreateContact(
@@ -237,23 +315,41 @@ export class XeroService {
     const connection = await storage.getXeroConnection(connectionId);
     if (!connection) throw new Error("Connection not found");
 
-    const contact = await this.findOrCreateContact(
-      accessToken,
-      connection.tenantId,
-      billData.supplierName
-    );
+    let contactId: string;
 
-    const xeroLineItems = billData.lineItems.map((item) => ({
-      Description: item.description,
-      Quantity: item.quantity,
-      UnitAmount: item.unitAmount,
-      TaxType: item.taxType,
-      AccountCode: item.accountCode || undefined,
-    }));
+    if (billData.supplierXeroContactId) {
+      contactId = billData.supplierXeroContactId;
+    } else {
+      const contact = await this.findOrCreateContact(
+        accessToken,
+        connection.tenantId,
+        billData.supplierName
+      );
+      contactId = contact.ContactID;
+    }
+
+    const xeroLineItems = billData.lineItems.map((item) => {
+      const lineItem: any = {
+        Description: item.description,
+        Quantity: item.quantity,
+        UnitAmount: item.unitAmount,
+        TaxType: item.taxType,
+      };
+      if (item.accountCode) {
+        lineItem.AccountCode = item.accountCode;
+      }
+      if (item.tracking && item.tracking.length > 0) {
+        lineItem.Tracking = item.tracking.map(t => ({
+          TrackingCategoryID: t.TrackingCategoryID,
+          TrackingOptionID: t.TrackingOptionID,
+        }));
+      }
+      return lineItem;
+    });
 
     const invoicePayload: any = {
       Type: "ACCPAY",
-      Contact: { ContactID: contact.ContactID },
+      Contact: { ContactID: contactId },
       Date: billData.billDate,
       LineItems: xeroLineItems,
       LineAmountTypes: "Exclusive",

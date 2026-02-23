@@ -763,6 +763,10 @@ export const projects = pgTable("projects", {
   googleDriveFolderId: text("google_drive_folder_id"), // Linked Google Drive folder ID
   googleDriveFolderName: text("google_drive_folder_name"), // Display name of linked folder
   
+  // Xero tracking integration (TC2 - Jobs)
+  xeroTrackingOptionId: text("xero_tracking_option_id"), // Auto-created tracking option ID in Xero TC2
+  xeroTrackingOptionName: text("xero_tracking_option_name"), // Cached name for display
+  
   companyId: varchar("company_id").references(() => companies.id), // Multi-tenant isolation
   ownerId: varchar("owner_id").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -1157,7 +1161,9 @@ export const costCodes = pgTable("cost_codes", {
   categoryId: varchar("category_id").references(() => costCategories.id, { onDelete: "set null" }), // Nullable - can exist without category
   availableInTimesheets: boolean("available_in_timesheets").notNull().default(true),
   isSynced: boolean("is_synced").notNull().default(false), // Synced with Xero tracking category
-  xeroTrackingCategoryId: text("xero_tracking_category_id"), // For future Xero integration
+  xeroTrackingCategoryId: text("xero_tracking_category_id"), // Xero tracking category ID (TC1 for cost codes)
+  xeroTrackingOptionId: text("xero_tracking_option_id"), // Mapped Xero tracking option within TC1
+  xeroTrackingOptionName: text("xero_tracking_option_name"), // Cached name for display
   isActive: boolean("is_active").notNull().default(true),
   isArchived: boolean("is_archived").notNull().default(false),
   sortOrder: integer("sort_order").notNull().default(0),
@@ -1583,6 +1589,10 @@ export const contacts = pgTable("contacts", {
   avatarUrl: text("avatar_url"), // URL to uploaded avatar image (photo or logo)
   scheduleColor: text("schedule_color"), // Hex color for trade/supplier color-coding in schedules
   
+  // Xero integration
+  xeroContactId: text("xero_contact_id"), // Linked Xero contact ID
+  xeroDefaultAccountCode: text("xero_default_account_code"), // Default Xero account code for bills
+  
   // Portal access (for clients - future feature)
   portalEnabled: boolean("portal_enabled").notNull().default(false),
   
@@ -1829,8 +1839,10 @@ export const xeroConnections = pgTable("xero_connections", {
   accessToken: text("access_token").notNull(),
   refreshToken: text("refresh_token").notNull(),
   tokenExpiresAt: timestamp("token_expires_at").notNull(),
-  trackingCategory1Name: text("tracking_category_1_name"), // For job/project
-  trackingCategory2Name: text("tracking_category_2_name"), // For cost code
+  trackingCategory1Id: text("tracking_category_1_id"), // TC1: Cost Codes tracking category ID
+  trackingCategory1Name: text("tracking_category_1_name"), // TC1: Cost Codes tracking category name
+  trackingCategory2Id: text("tracking_category_2_id"), // TC2: Jobs/Projects tracking category ID
+  trackingCategory2Name: text("tracking_category_2_name"), // TC2: Jobs/Projects tracking category name
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
