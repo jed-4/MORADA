@@ -18,8 +18,7 @@ import {
   Upload,
   FileText,
   Loader2,
-  ChevronDown,
-  ChevronRight
+  ChevronDown
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -126,8 +125,6 @@ export default function BillDetail() {
   const [ocrPreviewOpen, setOcrPreviewOpen] = useState(false);
   const [addSupplierDialogOpen, setAddSupplierDialogOpen] = useState(false);
   const [attachmentUrls, setAttachmentUrls] = useState<string[]>([]);
-  const [notesExpanded, setNotesExpanded] = useState(false);
-  const [remindersExpanded, setRemindersExpanded] = useState(false);
   const dueDateManuallySet = useRef(false);
 
   const { data: bill, isLoading: billLoading } = useQuery<Bill>({
@@ -898,37 +895,37 @@ export default function BillDetail() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden" data-testid="page-bill-detail">
-      <div className="flex-none p-6 border-b">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
+      <div className="flex-none px-4 py-2 border-b">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
             <Button
               variant="ghost"
               size="icon"
               onClick={() => setLocation(projectId ? `/projects/${projectId}/bills` : "/bills")}
               data-testid="button-back"
             >
-              <ArrowLeft className="h-5 w-5" />
+              <ArrowLeft className="h-4 w-4" />
             </Button>
-            <h1 className="text-2xl font-bold" data-testid="text-page-title">
+            <h1 className="text-lg font-semibold" data-testid="text-page-title">
               {isEditMode
                 ? (form.watch("billType") === "credit" ? "Edit Vendor Credit" : "Edit Bill")
                 : (form.watch("billType") === "credit" ? "Create Vendor Credit" : "Create Bill")}
             </h1>
           </div>
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2 text-sm">
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex items-center gap-1.5 text-xs">
               <span className="text-muted-foreground">Total:</span>
               <span className="font-semibold" data-testid="text-header-total">
                 {formatCurrency(total)}
               </span>
             </div>
-            <div className="flex items-center gap-2 text-sm">
+            <div className="flex items-center gap-1.5 text-xs">
               <span className="text-muted-foreground">Paid:</span>
               <span className="font-semibold" data-testid="text-header-paid">
                 {formatCurrency(paid)}
               </span>
             </div>
-            <div className="flex items-center gap-2 text-sm">
+            <div className="flex items-center gap-1.5 text-xs">
               <span className="text-muted-foreground">Due:</span>
               <span className="font-semibold" data-testid="text-header-due">
                 {formatCurrency(due)}
@@ -942,9 +939,9 @@ export default function BillDetail() {
                   onClick={() => approveMutation.mutate(undefined)}
                   disabled={approveMutation.isPending}
                   data-testid="button-approve"
-                  className="gap-2"
+                  className="gap-1"
                 >
-                  <Check className="h-4 w-4" />
+                  <Check className="h-3.5 w-3.5" />
                   {approveMutation.isPending ? "Approving..." : "Approve"}
                 </Button>
                 <Button
@@ -953,9 +950,9 @@ export default function BillDetail() {
                   onClick={() => setRejectDialogOpen(true)}
                   disabled={rejectMutation.isPending}
                   data-testid="button-reject"
-                  className="gap-2"
+                  className="gap-1"
                 >
-                  <X className="h-4 w-4" />
+                  <X className="h-3.5 w-3.5" />
                   Reject
                 </Button>
               </>
@@ -968,30 +965,30 @@ export default function BillDetail() {
                 onClick={() => duplicateMutation.mutate()}
                 disabled={duplicateMutation.isPending}
               >
-                <Copy className="h-4 w-4" />
+                <Copy className="h-3.5 w-3.5" />
               </Button>
             )}
           </div>
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-6">
+      <div className="flex-1 overflow-auto p-4">
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-            <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-6">
-              <Card className="p-6">
-                <div className="grid grid-cols-2 gap-4">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
+            <div className="grid grid-cols-1 xl:grid-cols-[1fr_280px] gap-3">
+              <Card className="p-4">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                   <FormField
                     control={form.control}
                     name="billNumber"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Bill ID</FormLabel>
+                      <FormItem className="space-y-1">
+                        <FormLabel className="text-xs">Bill ID</FormLabel>
                         <FormControl>
                           <Input
                             {...field}
                             readOnly
-                            className="bg-muted"
+                            className="bg-muted text-xs"
                             data-testid="input-bill-number"
                           />
                         </FormControl>
@@ -1004,14 +1001,14 @@ export default function BillDetail() {
                     control={form.control}
                     name="billType"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Type</FormLabel>
+                      <FormItem className="space-y-1">
+                        <FormLabel className="text-xs">Type</FormLabel>
                         <Select
                           onValueChange={field.onChange}
                           value={field.value}
                         >
                           <FormControl>
-                            <SelectTrigger data-testid="select-bill-type">
+                            <SelectTrigger className="text-xs" data-testid="select-bill-type">
                               <SelectValue placeholder="Select type..." />
                             </SelectTrigger>
                           </FormControl>
@@ -1029,15 +1026,15 @@ export default function BillDetail() {
                     control={form.control}
                     name="projectId"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Project *</FormLabel>
+                      <FormItem className="space-y-1">
+                        <FormLabel className="text-xs">Project *</FormLabel>
                         <Select
                           onValueChange={field.onChange}
                           value={field.value}
                           disabled={!isEditMode && !!projectId}
                         >
                           <FormControl>
-                            <SelectTrigger data-testid="select-project">
+                            <SelectTrigger className="text-xs" data-testid="select-project">
                               <SelectValue placeholder="Select project..." />
                             </SelectTrigger>
                           </FormControl>
@@ -1058,14 +1055,14 @@ export default function BillDetail() {
                     control={form.control}
                     name="supplierId"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Pay to *</FormLabel>
+                      <FormItem className="space-y-1">
+                        <FormLabel className="text-xs">Pay to *</FormLabel>
                         <Select
                           onValueChange={field.onChange}
                           value={field.value}
                         >
                           <FormControl>
-                            <SelectTrigger data-testid="select-supplier">
+                            <SelectTrigger className="text-xs" data-testid="select-supplier">
                               <SelectValue placeholder="Select supplier..." />
                             </SelectTrigger>
                           </FormControl>
@@ -1083,10 +1080,10 @@ export default function BillDetail() {
                                   e.stopPropagation();
                                   setAddSupplierDialogOpen(true);
                                 }}
-                                className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-primary hover:bg-accent rounded-sm"
+                                className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-primary hover:bg-accent rounded-sm"
                                 data-testid="button-add-supplier"
                               >
-                                <Plus className="h-4 w-4" />
+                                <Plus className="h-3 w-3" />
                                 Add
                               </button>
                             </div>
@@ -1101,31 +1098,14 @@ export default function BillDetail() {
                     control={form.control}
                     name="billDate"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Date *</FormLabel>
+                      <FormItem className="space-y-1">
+                        <FormLabel className="text-xs">Date *</FormLabel>
                         <FormControl>
                           <Input
                             type="date"
                             {...field}
+                            className="text-xs"
                             data-testid="input-bill-date"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="billReference"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Bill reference</FormLabel>
-                        <FormControl>
-                          <Input
-                            {...field}
-                            placeholder="Enter reference..."
-                            data-testid="input-bill-reference"
                           />
                         </FormControl>
                         <FormMessage />
@@ -1137,8 +1117,8 @@ export default function BillDetail() {
                     control={form.control}
                     name="dueDate"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Due date</FormLabel>
+                      <FormItem className="space-y-1">
+                        <FormLabel className="text-xs">Due date</FormLabel>
                         <FormControl>
                           <Input
                             type="date"
@@ -1147,6 +1127,7 @@ export default function BillDetail() {
                               dueDateManuallySet.current = true;
                               field.onChange(e);
                             }}
+                            className="text-xs"
                             data-testid="input-due-date"
                           />
                         </FormControl>
@@ -1155,27 +1136,111 @@ export default function BillDetail() {
                     )}
                   />
 
+                  <FormField
+                    control={form.control}
+                    name="billReference"
+                    render={({ field }) => (
+                      <FormItem className="space-y-1">
+                        <FormLabel className="text-xs">Reference</FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            placeholder="Enter reference..."
+                            className="text-xs"
+                            data-testid="input-bill-reference"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="sendToXero"
+                    render={({ field }) => (
+                      <FormItem className="flex items-center gap-2 space-y-0 self-end pb-1">
+                        <FormControl>
+                          <Checkbox
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                            data-testid="checkbox-send-to-xero"
+                          />
+                        </FormControl>
+                        <FormLabel className="!mt-0 text-xs">Send to Xero</FormLabel>
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                {form.watch("sendToXero") && (
+                  <div className="text-xs text-destructive space-y-0.5 mt-2">
+                    {!form.watch("supplierId") && (
+                      <div data-testid="text-xero-validation-supplier">Fill in Pay to field</div>
+                    )}
+                    {lineItems.some((item) => !item.costCodeId) && (
+                      <div data-testid="text-xero-validation-cost-codes">Set the Cost Codes</div>
+                    )}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3 pt-3 border-t">
+                  <FormField
+                    control={form.control}
+                    name="notes"
+                    render={({ field }) => (
+                      <FormItem className="space-y-1">
+                        <FormLabel className="text-xs">Notes</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            {...field}
+                            placeholder="Add notes..."
+                            rows={2}
+                            className="text-xs resize-none"
+                            data-testid="textarea-notes"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="reminders"
+                    render={({ field }) => (
+                      <FormItem className="space-y-1">
+                        <FormLabel className="text-xs">Reminders</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            {...field}
+                            placeholder="Add reminders..."
+                            rows={2}
+                            className="text-xs resize-none"
+                            data-testid="textarea-reminders"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                 </div>
               </Card>
 
-              <div className="space-y-4">
-                <Card className="p-4">
-                  <h3 className="text-sm font-semibold mb-3">Upload Invoice for OCR</h3>
-                  <div className="space-y-3">
+              <div className="space-y-3">
+                <Card className="p-3">
+                  <h3 className="text-xs font-semibold mb-2">Upload Invoice (OCR)</h3>
+                  <div className="space-y-2">
                     {!uploadedFile ? (
                       <div
-                        className="border-2 border-dashed rounded-lg p-6 text-center hover-elevate cursor-pointer transition-colors"
+                        className="border-2 border-dashed rounded-md p-3 text-center hover-elevate cursor-pointer transition-colors"
                         onDrop={handleDrop}
                         onDragOver={(e) => e.preventDefault()}
                         onClick={() => document.getElementById('file-upload')?.click()}
                         data-testid="dropzone-upload"
                       >
-                        <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
-                        <p className="text-xs text-muted-foreground mb-1">
-                          Drag and drop or click to browse
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          PDF, JPG, JPEG, PNG
+                        <Upload className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
+                        <p className="text-[10px] text-muted-foreground">
+                          Drop or click to browse (PDF, JPG, PNG)
                         </p>
                         <input
                           id="file-upload"
@@ -1188,12 +1253,12 @@ export default function BillDetail() {
                       </div>
                     ) : (
                       <div className="space-y-2">
-                        <div className="flex items-center justify-between p-3 border rounded-lg" data-testid="card-uploaded-file">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
+                        <div className="flex items-center justify-between p-2 border rounded-md" data-testid="card-uploaded-file">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
                             <div className="min-w-0">
-                              <p className="text-sm font-medium truncate" data-testid="text-filename">{uploadedFile.name}</p>
-                              <p className="text-xs text-muted-foreground" data-testid="text-filesize">
+                              <p className="text-xs font-medium truncate" data-testid="text-filename">{uploadedFile.name}</p>
+                              <p className="text-[10px] text-muted-foreground" data-testid="text-filesize">
                                 {formatFileSize(uploadedFile.size)}
                               </p>
                             </div>
@@ -1208,7 +1273,7 @@ export default function BillDetail() {
                             }}
                             data-testid="button-remove-file"
                           >
-                            <X className="h-4 w-4" />
+                            <X className="h-3.5 w-3.5" />
                           </Button>
                         </div>
 
@@ -1222,12 +1287,12 @@ export default function BillDetail() {
                           >
                             {ocrMutation.isPending ? (
                               <>
-                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
                                 Extracting...
                               </>
                             ) : (
                               <>
-                                <Upload className="h-4 w-4 mr-2" />
+                                <Upload className="h-3.5 w-3.5 mr-1.5" />
                                 Process with OCR
                               </>
                             )}
@@ -1243,56 +1308,56 @@ export default function BillDetail() {
                                 className="w-full justify-between"
                                 data-testid="button-toggle-ocr-preview"
                               >
-                                <span>OCR Results</span>
-                                <ChevronDown className={`h-4 w-4 transition-transform ${ocrPreviewOpen ? 'rotate-180' : ''}`} />
+                                <span className="text-xs">OCR Results</span>
+                                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${ocrPreviewOpen ? 'rotate-180' : ''}`} />
                               </Button>
                             </CollapsibleTrigger>
-                            <CollapsibleContent className="mt-3 space-y-3" data-testid="card-ocr-results">
-                              <div className="border rounded-lg p-3 space-y-2 text-sm">
-                                <div className="grid grid-cols-2 gap-2">
+                            <CollapsibleContent className="mt-2 space-y-2" data-testid="card-ocr-results">
+                              <div className="border rounded-md p-2 space-y-1.5 text-[11px]">
+                                <div className="grid grid-cols-2 gap-1.5">
                                   <div>
-                                    <p className="text-xs text-muted-foreground">Supplier</p>
-                                    <p className="font-medium text-xs" data-testid="text-ocr-supplier">
+                                    <p className="text-muted-foreground">Supplier</p>
+                                    <p className="font-medium" data-testid="text-ocr-supplier">
                                       {ocrResults.supplierName || "Not detected"}
                                     </p>
                                   </div>
                                   <div>
-                                    <p className="text-xs text-muted-foreground">Invoice #</p>
-                                    <p className="font-medium text-xs" data-testid="text-ocr-invoice-number">
+                                    <p className="text-muted-foreground">Invoice #</p>
+                                    <p className="font-medium" data-testid="text-ocr-invoice-number">
                                       {ocrResults.invoiceNumber || "Not detected"}
                                     </p>
                                   </div>
                                   <div>
-                                    <p className="text-xs text-muted-foreground">Date</p>
-                                    <p className="font-medium text-xs" data-testid="text-ocr-invoice-date">
+                                    <p className="text-muted-foreground">Date</p>
+                                    <p className="font-medium" data-testid="text-ocr-invoice-date">
                                       {ocrResults.invoiceDate ? format(new Date(ocrResults.invoiceDate), "dd/MM/yyyy") : "Not detected"}
                                     </p>
                                   </div>
                                   <div>
-                                    <p className="text-xs text-muted-foreground">Due</p>
-                                    <p className="font-medium text-xs" data-testid="text-ocr-due-date">
+                                    <p className="text-muted-foreground">Due</p>
+                                    <p className="font-medium" data-testid="text-ocr-due-date">
                                       {ocrResults.dueDate ? format(new Date(ocrResults.dueDate), "dd/MM/yyyy") : "Not detected"}
                                     </p>
                                   </div>
                                 </div>
 
-                                <div className="border-t pt-2">
-                                  <div className="grid grid-cols-3 gap-2">
+                                <div className="border-t pt-1.5">
+                                  <div className="grid grid-cols-3 gap-1.5">
                                     <div>
-                                      <p className="text-xs text-muted-foreground">Subtotal</p>
-                                      <p className="font-medium text-xs" data-testid="text-ocr-subtotal">
+                                      <p className="text-muted-foreground">Subtotal</p>
+                                      <p className="font-medium" data-testid="text-ocr-subtotal">
                                         {ocrResults.subtotalAmount ? formatCurrency(ocrResults.subtotalAmount / 100) : "—"}
                                       </p>
                                     </div>
                                     <div>
-                                      <p className="text-xs text-muted-foreground">Tax</p>
-                                      <p className="font-medium text-xs" data-testid="text-ocr-tax">
+                                      <p className="text-muted-foreground">Tax</p>
+                                      <p className="font-medium" data-testid="text-ocr-tax">
                                         {ocrResults.totalTax ? formatCurrency(ocrResults.totalTax / 100) : "—"}
                                       </p>
                                     </div>
                                     <div>
-                                      <p className="text-xs text-muted-foreground">Total</p>
-                                      <p className="font-medium text-xs" data-testid="text-ocr-total">
+                                      <p className="text-muted-foreground">Total</p>
+                                      <p className="font-medium" data-testid="text-ocr-total">
                                         {ocrResults.totalAmount ? formatCurrency(ocrResults.totalAmount / 100) : "—"}
                                       </p>
                                     </div>
@@ -1300,11 +1365,11 @@ export default function BillDetail() {
                                 </div>
 
                                 {ocrResults.lineItems && ocrResults.lineItems.length > 0 && (
-                                  <div className="border-t pt-2">
-                                    <p className="text-xs font-medium mb-1">Line Items</p>
-                                    <div className="space-y-1">
+                                  <div className="border-t pt-1.5">
+                                    <p className="font-medium mb-1">Line Items</p>
+                                    <div className="space-y-0.5">
                                       {ocrResults.lineItems.map((item: any, idx: number) => (
-                                        <div key={idx} className="flex justify-between text-xs p-1.5 bg-muted/50 rounded" data-testid={`text-ocr-line-item-${idx}`}>
+                                        <div key={idx} className="flex justify-between p-1 bg-muted/50 rounded text-[10px]" data-testid={`text-ocr-line-item-${idx}`}>
                                           <span className="truncate mr-2">{item.description || "Unknown"}</span>
                                           <span className="font-medium shrink-0">
                                             {item.totalAmount ? formatCurrency(item.totalAmount / 100) : "—"}
@@ -1332,15 +1397,15 @@ export default function BillDetail() {
                   </div>
                 </Card>
 
-                <Card className="p-4">
-                  <div className="space-y-4">
+                <Card className="p-3">
+                  <div className="space-y-3">
                     <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <Paperclip className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-sm font-medium">Attachments</span>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div className="flex items-center gap-1.5">
+                          <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span className="text-xs font-medium">Attachments</span>
                           {attachmentUrls.length > 0 && (
-                            <Badge variant="secondary" className="text-xs">{attachmentUrls.length}</Badge>
+                            <Badge variant="secondary" className="text-[10px] px-1">{attachmentUrls.length}</Badge>
                           )}
                         </div>
                         <label className="cursor-pointer">
@@ -1361,18 +1426,18 @@ export default function BillDetail() {
                         </label>
                       </div>
                       {attachmentUrls.length > 0 ? (
-                        <div className="space-y-1">
+                        <div className="space-y-0.5">
                           {attachmentUrls.map((url, idx) => {
                             const fileName = url.split('/').pop() || `Attachment ${idx + 1}`;
                             return (
-                              <div key={idx} className="flex items-center justify-between gap-2 p-2 rounded-md border text-xs">
+                              <div key={idx} className="flex items-center justify-between gap-1.5 p-1.5 rounded-md border text-[11px]">
                                 <a
                                   href={url}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="flex items-center gap-2 text-foreground hover:underline truncate"
+                                  className="flex items-center gap-1.5 text-foreground hover:underline truncate"
                                 >
-                                  <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                  <FileText className="h-3 w-3 text-muted-foreground shrink-0" />
                                   <span className="truncate">{decodeURIComponent(fileName)}</span>
                                 </a>
                                 <Button
@@ -1389,122 +1454,28 @@ export default function BillDetail() {
                           })}
                         </div>
                       ) : (
-                        <p className="text-xs text-muted-foreground">No attachments yet</p>
+                        <p className="text-[10px] text-muted-foreground">No attachments</p>
                       )}
                     </div>
 
-                    <div className="border-t pt-3">
-                      <div className="flex items-center gap-2 mb-2">
-                        <MessageSquare className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm font-medium">Comments</span>
+                    <div className="border-t pt-2">
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="text-xs font-medium">Comments</span>
                       </div>
                       {isEditMode ? (
                         <Textarea
                           placeholder="Add a comment..."
                           rows={2}
+                          className="text-xs resize-none"
                           data-testid="textarea-comments"
                         />
                       ) : (
                         <div
-                          className="text-xs text-muted-foreground"
+                          className="text-[10px] text-muted-foreground"
                           data-testid="text-comments-unavailable"
                         >
-                          Comments will be available after create
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="border-t pt-3">
-                      <button
-                        type="button"
-                        className="flex items-center gap-2 w-full text-left text-sm font-medium mb-2"
-                        onClick={() => setNotesExpanded(!notesExpanded)}
-                      >
-                        {notesExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                        Notes
-                        {form.watch("notes") && <span className="text-xs text-muted-foreground ml-auto">has content</span>}
-                      </button>
-                      {notesExpanded && (
-                        <FormField
-                          control={form.control}
-                          name="notes"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormControl>
-                                <Textarea
-                                  {...field}
-                                  placeholder="Add notes..."
-                                  rows={3}
-                                  data-testid="textarea-notes"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      )}
-                    </div>
-
-                    <div className="border-t pt-3">
-                      <button
-                        type="button"
-                        className="flex items-center gap-2 w-full text-left text-sm font-medium mb-2"
-                        onClick={() => setRemindersExpanded(!remindersExpanded)}
-                      >
-                        {remindersExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                        Reminders
-                        {form.watch("reminders") && <span className="text-xs text-muted-foreground ml-auto">has content</span>}
-                      </button>
-                      {remindersExpanded && (
-                        <FormField
-                          control={form.control}
-                          name="reminders"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormControl>
-                                <Textarea
-                                  {...field}
-                                  placeholder="Add reminders..."
-                                  rows={2}
-                                  data-testid="textarea-reminders"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      )}
-                    </div>
-
-                    <div className="border-t pt-3">
-                      <FormField
-                        control={form.control}
-                        name="sendToXero"
-                        render={({ field }) => (
-                          <FormItem className="flex items-center gap-2 space-y-0">
-                            <FormControl>
-                              <Checkbox
-                                checked={field.value}
-                                onCheckedChange={field.onChange}
-                                data-testid="checkbox-send-to-xero"
-                              />
-                            </FormControl>
-                            <FormLabel className="!mt-0 text-sm">Send to Xero</FormLabel>
-                          </FormItem>
-                        )}
-                      />
-                      {form.watch("sendToXero") && (
-                        <div className="text-xs text-muted-foreground space-y-1 mt-2">
-                          {!form.watch("supplierId") && (
-                            <div data-testid="text-xero-validation-supplier">
-                              Fill in Pay to field
-                            </div>
-                          )}
-                          {lineItems.some((item) => !item.costCodeId) && (
-                            <div data-testid="text-xero-validation-cost-codes">
-                              Set the Cost Codes
-                            </div>
-                          )}
+                          Available after create
                         </div>
                       )}
                     </div>
@@ -1513,283 +1484,287 @@ export default function BillDetail() {
               </div>
             </div>
 
-            <Card className="p-4">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold">Cost Lines</h3>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground">Amounts are</span>
-                    <Select
-                      value={taxMode}
-                      onValueChange={(value: "inclusive" | "exclusive") =>
-                        setTaxMode(value)
-                      }
-                    >
-                      <SelectTrigger className="w-32" data-testid="select-tax-mode">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="exclusive">Exclusive</SelectItem>
-                        <SelectItem value="inclusive">Inclusive</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <span className="text-sm text-muted-foreground">of tax</span>
+            <Card className="p-0 overflow-hidden">
+              <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
+                <h3 className="text-xs font-semibold">Cost Lines</h3>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] text-muted-foreground">Amounts are</span>
+                  <Select
+                    value={taxMode}
+                    onValueChange={(value: "inclusive" | "exclusive") =>
+                      setTaxMode(value)
+                    }
+                  >
+                    <SelectTrigger className="w-24 text-[11px]" data-testid="select-tax-mode">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="exclusive">Exclusive</SelectItem>
+                      <SelectItem value="inclusive">Inclusive</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <span className="text-[11px] text-muted-foreground">of tax</span>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-[11px]">
+                  <thead>
+                    <tr className="border-b bg-muted/20">
+                      <th className="text-left font-medium text-muted-foreground px-2 py-1.5 w-[90px]">Type</th>
+                      <th className="text-left font-medium text-muted-foreground px-2 py-1.5 min-w-[140px]">Description</th>
+                      <th className="text-left font-medium text-muted-foreground px-2 py-1.5 w-[130px]">Cost Code</th>
+                      <th className="text-right font-medium text-muted-foreground px-2 py-1.5 w-[65px]">Qty</th>
+                      <th className="text-left font-medium text-muted-foreground px-2 py-1.5 w-[60px]">Unit</th>
+                      <th className="text-left font-medium text-muted-foreground px-2 py-1.5 w-[110px]">Tax</th>
+                      <th className="text-left font-medium text-muted-foreground px-2 py-1.5 w-[80px]">Account</th>
+                      <th className="text-right font-medium text-muted-foreground px-2 py-1.5 w-[90px]">Amount</th>
+                      <th className="text-left font-medium text-muted-foreground px-2 py-1.5 w-[140px]">Allowance</th>
+                      <th className="w-[32px] px-1 py-1.5"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lineItems.map((item, index) => (
+                      <tr key={index} className="border-b last:border-b-0 hover:bg-muted/10" data-testid={`row-line-item-${index}`}>
+                        <td className="px-1 py-0.5">
+                          <Select
+                            value={item.lineType}
+                            onValueChange={(value) =>
+                              updateLineItem(index, "lineType", value)
+                            }
+                          >
+                            <SelectTrigger className="h-7 text-[11px] border-0 shadow-none bg-transparent hover:bg-muted/50 focus:ring-1" data-testid={`select-line-type-${index}`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="estimate">Estimate</SelectItem>
+                              <SelectItem value="item">Item</SelectItem>
+                              <SelectItem value="custom">Custom</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </td>
+                        <td className="px-1 py-0.5">
+                          <input
+                            value={item.description}
+                            onChange={(e) =>
+                              updateLineItem(index, "description", e.target.value)
+                            }
+                            placeholder="Description..."
+                            className="w-full h-7 px-1.5 text-[11px] bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm"
+                            data-testid={`input-description-${index}`}
+                          />
+                        </td>
+                        <td className="px-1 py-0.5">
+                          <CostCodeSelect
+                            value={item.costCodeId || ""}
+                            onValueChange={(value) =>
+                              updateLineItem(index, "costCodeId", value)
+                            }
+                            placeholder="Select..."
+                            data-testid={`select-cost-code-${index}`}
+                          />
+                        </td>
+                        <td className="px-1 py-0.5">
+                          <input
+                            type="number"
+                            value={item.quantity}
+                            onChange={(e) =>
+                              updateLineItem(
+                                index,
+                                "quantity",
+                                parseFloat(e.target.value) || 0
+                              )
+                            }
+                            className="w-full h-7 px-1.5 text-[11px] text-right bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm"
+                            data-testid={`input-quantity-${index}`}
+                          />
+                        </td>
+                        <td className="px-1 py-0.5">
+                          <input
+                            value={item.unit}
+                            onChange={(e) =>
+                              updateLineItem(index, "unit", e.target.value)
+                            }
+                            placeholder="Unit"
+                            className="w-full h-7 px-1.5 text-[11px] bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm"
+                            data-testid={`input-unit-${index}`}
+                          />
+                        </td>
+                        <td className="px-1 py-0.5">
+                          <Select
+                            value={item.tax}
+                            onValueChange={(value) =>
+                              updateLineItem(index, "tax", value)
+                            }
+                          >
+                            <SelectTrigger className="h-7 text-[11px] border-0 shadow-none bg-transparent hover:bg-muted/50 focus:ring-1" data-testid={`select-tax-${index}`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="GST on expenses">
+                                GST on expenses
+                              </SelectItem>
+                              <SelectItem value="No GST">No GST</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </td>
+                        <td className="px-1 py-0.5">
+                          <input
+                            value={item.account}
+                            onChange={(e) =>
+                              updateLineItem(index, "account", e.target.value)
+                            }
+                            placeholder="Account"
+                            className="w-full h-7 px-1.5 text-[11px] bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm"
+                            data-testid={`input-account-${index}`}
+                          />
+                        </td>
+                        <td className="px-1 py-0.5">
+                          <input
+                            type="number"
+                            value={item.unitPrice}
+                            onChange={(e) =>
+                              updateLineItem(
+                                index,
+                                "unitPrice",
+                                parseFloat(e.target.value) || 0
+                              )
+                            }
+                            className="w-full h-7 px-1.5 text-[11px] text-right bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm"
+                            data-testid={`input-amount-${index}`}
+                          />
+                        </td>
+                        <td className="px-1 py-0.5">
+                          <div className="flex items-center gap-1">
+                            <Checkbox
+                              checked={item.appliesToAllowances}
+                              onCheckedChange={(checked) =>
+                                updateLineItem(index, "appliesToAllowances", checked === true)
+                              }
+                              className="h-3.5 w-3.5"
+                              data-testid={`checkbox-applies-to-allowances-${index}`}
+                            />
+                            {item.appliesToAllowances ? (
+                              <Select
+                                value={item.allowanceItemId || ""}
+                                onValueChange={(value) =>
+                                  updateLineItem(index, "allowanceItemId", value)
+                                }
+                              >
+                                <SelectTrigger className="h-7 text-[11px] border-0 shadow-none bg-transparent hover:bg-muted/50 focus:ring-1 flex-1" data-testid={`select-allowance-${index}`}>
+                                  <SelectValue placeholder="Select..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {allowances.map((allowance) => (
+                                    <SelectItem key={allowance.id} value={allowance.id}>
+                                      {allowance.description} ({allowance.itemType})
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <span className="text-[10px] text-muted-foreground">Allowance</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-0.5 py-0.5 text-center">
+                          <button
+                            type="button"
+                            onClick={() => deleteLineItem(index)}
+                            className="p-1 rounded-sm text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                            data-testid={`button-delete-line-${index}`}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="px-3 py-1.5 border-t">
+                <button
+                  type="button"
+                  onClick={addLineItem}
+                  className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors py-1"
+                  data-testid="button-add-line"
+                >
+                  <Plus className="h-3 w-3" />
+                  Add line
+                </button>
+              </div>
+
+              <div className="border-t px-3 py-2">
+                <div className="flex justify-end">
+                  <div className="w-60 space-y-1">
+                    <div className="flex justify-between gap-4 text-xs">
+                      <span className="text-muted-foreground">Subtotal</span>
+                      <span className="font-medium" data-testid="text-subtotal">
+                        {formatCurrency(calculateSubtotal())}
+                      </span>
+                    </div>
+                    <div className="flex justify-between gap-4 text-xs">
+                      <span className="text-muted-foreground">Tax (GST)</span>
+                      <span className="font-medium" data-testid="text-tax">
+                        {formatCurrency(calculateTax())}
+                      </span>
+                    </div>
+                    <div className="flex justify-between gap-4 border-t pt-1">
+                      <span className="text-sm font-bold">Total</span>
+                      <span className="text-sm font-bold" data-testid="text-total">
+                        {formatCurrency(total)}
+                      </span>
+                    </div>
+                    <FormField
+                      control={form.control}
+                      name="paidAmount"
+                      render={({ field }) => (
+                        <FormItem>
+                          <div className="flex justify-between items-center gap-4">
+                            <FormLabel className="text-xs">Paid</FormLabel>
+                            <FormControl>
+                              <input
+                                type="number"
+                                value={field.value}
+                                onChange={(e) =>
+                                  field.onChange(parseFloat(e.target.value) || 0)
+                                }
+                                className="w-28 h-7 px-1.5 text-xs text-right bg-transparent border rounded-sm outline-none focus:ring-1 focus:ring-ring"
+                                data-testid="input-paid"
+                              />
+                            </FormControl>
+                          </div>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <div className="flex justify-between gap-4 text-sm font-bold text-primary border-t pt-1">
+                      <span>Due</span>
+                      <span data-testid="text-due">{formatCurrency(due)}</span>
+                    </div>
                   </div>
                 </div>
-
-                <div className="overflow-x-auto">
-                  <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="w-32">Type</TableHead>
-                            <TableHead>Description</TableHead>
-                            <TableHead>Cost Code</TableHead>
-                            <TableHead className="w-24">Quantity</TableHead>
-                            <TableHead className="w-24">Unit</TableHead>
-                            <TableHead className="w-40">Tax</TableHead>
-                            <TableHead className="w-32">Account</TableHead>
-                            <TableHead className="w-32">Amount</TableHead>
-                            <TableHead className="w-48">Allowance</TableHead>
-                            <TableHead className="w-12"></TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {lineItems.map((item, index) => (
-                            <TableRow key={index} data-testid={`row-line-item-${index}`}>
-                              <TableCell>
-                                <Select
-                                  value={item.lineType}
-                                  onValueChange={(value) =>
-                                    updateLineItem(index, "lineType", value)
-                                  }
-                                >
-                                  <SelectTrigger data-testid={`select-line-type-${index}`}>
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="estimate">Estimate</SelectItem>
-                                    <SelectItem value="item">Item</SelectItem>
-                                    <SelectItem value="custom">Custom</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </TableCell>
-                              <TableCell>
-                                <Input
-                                  value={item.description}
-                                  onChange={(e) =>
-                                    updateLineItem(index, "description", e.target.value)
-                                  }
-                                  placeholder="Description..."
-                                  data-testid={`input-description-${index}`}
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <CostCodeSelect
-                                  value={item.costCodeId || ""}
-                                  onValueChange={(value) =>
-                                    updateLineItem(index, "costCodeId", value)
-                                  }
-                                  placeholder="Select..."
-                                  data-testid={`select-cost-code-${index}`}
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <Input
-                                  type="number"
-                                  value={item.quantity}
-                                  onChange={(e) =>
-                                    updateLineItem(
-                                      index,
-                                      "quantity",
-                                      parseFloat(e.target.value) || 0
-                                    )
-                                  }
-                                  data-testid={`input-quantity-${index}`}
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <Input
-                                  value={item.unit}
-                                  onChange={(e) =>
-                                    updateLineItem(index, "unit", e.target.value)
-                                  }
-                                  placeholder="Unit"
-                                  data-testid={`input-unit-${index}`}
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <Select
-                                  value={item.tax}
-                                  onValueChange={(value) =>
-                                    updateLineItem(index, "tax", value)
-                                  }
-                                >
-                                  <SelectTrigger data-testid={`select-tax-${index}`}>
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="GST on expenses">
-                                      GST on expenses
-                                    </SelectItem>
-                                    <SelectItem value="No GST">No GST</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </TableCell>
-                              <TableCell>
-                                <Input
-                                  value={item.account}
-                                  onChange={(e) =>
-                                    updateLineItem(index, "account", e.target.value)
-                                  }
-                                  placeholder="Account"
-                                  data-testid={`input-account-${index}`}
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <Input
-                                  type="number"
-                                  value={item.unitPrice}
-                                  onChange={(e) =>
-                                    updateLineItem(
-                                      index,
-                                      "unitPrice",
-                                      parseFloat(e.target.value) || 0
-                                    )
-                                  }
-                                  data-testid={`input-amount-${index}`}
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <div className="space-y-2">
-                                  <div className="flex items-center gap-2">
-                                    <Checkbox
-                                      checked={item.appliesToAllowances}
-                                      onCheckedChange={(checked) =>
-                                        updateLineItem(index, "appliesToAllowances", checked === true)
-                                      }
-                                      data-testid={`checkbox-applies-to-allowances-${index}`}
-                                    />
-                                    <label className="text-sm">Applies to Allowances</label>
-                                  </div>
-                                  {item.appliesToAllowances && (
-                                    <Select
-                                      value={item.allowanceItemId || ""}
-                                      onValueChange={(value) =>
-                                        updateLineItem(index, "allowanceItemId", value)
-                                      }
-                                    >
-                                      <SelectTrigger data-testid={`select-allowance-${index}`}>
-                                        <SelectValue placeholder="Select allowance..." />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {allowances.map((allowance) => (
-                                          <SelectItem key={allowance.id} value={allowance.id}>
-                                            {allowance.description} ({allowance.itemType})
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  )}
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => deleteLineItem(index)}
-                                  data-testid={`button-delete-line-${index}`}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={addLineItem}
-                      data-testid="button-add-line"
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add new line
-                    </Button>
-
-                    <div className="border-t pt-4 mt-4">
-                      <div className="flex justify-end">
-                        <div className="w-72 space-y-2">
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">Subtotal</span>
-                            <span className="font-medium" data-testid="text-subtotal">
-                              {formatCurrency(calculateSubtotal())}
-                            </span>
-                          </div>
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">Tax (GST)</span>
-                            <span className="font-medium" data-testid="text-tax">
-                              {formatCurrency(calculateTax())}
-                            </span>
-                          </div>
-                          <div className="flex justify-between border-t pt-2">
-                            <span className="text-base font-bold">Total</span>
-                            <span className="text-base font-bold" data-testid="text-total">
-                              {formatCurrency(total)}
-                            </span>
-                          </div>
-                          <FormField
-                            control={form.control}
-                            name="paidAmount"
-                            render={({ field }) => (
-                              <FormItem>
-                                <div className="flex justify-between items-center">
-                                  <FormLabel className="text-sm">Paid</FormLabel>
-                                  <FormControl>
-                                    <Input
-                                      type="number"
-                                      {...field}
-                                      onChange={(e) =>
-                                        field.onChange(parseFloat(e.target.value) || 0)
-                                      }
-                                      className="w-32 text-right"
-                                      data-testid="input-paid"
-                                    />
-                                  </FormControl>
-                                </div>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <div className="flex justify-between text-base font-bold text-primary border-t pt-2">
-                            <span>Due</span>
-                            <span data-testid="text-due">{formatCurrency(due)}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </Card>
+              </div>
+            </Card>
 
                 {isEditMode && approvals.length > 0 && (
-                  <Card className="p-6">
-                    <h3 className="text-lg font-semibold mb-4">Approval History</h3>
-                    <div className="space-y-3">
+                  <Card className="p-3">
+                    <h3 className="text-xs font-semibold mb-2">Approval History</h3>
+                    <div className="space-y-1.5">
                       {approvals.map((approval) => (
                         <div
                           key={approval.id}
-                          className="flex items-start gap-3 p-3 border rounded-lg"
+                          className="flex items-start gap-2 p-2 border rounded-md"
                           data-testid={`approval-history-${approval.id}`}
                         >
                           <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-medium">
                                 {approval.approvedById}
                               </span>
                               <span
-                                className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium ${
                                   approval.status === "approved"
                                     ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
                                     : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
@@ -1799,11 +1774,11 @@ export default function BillDetail() {
                               </span>
                             </div>
                             {approval.comments && (
-                              <p className="text-sm text-muted-foreground mt-1">
+                              <p className="text-[11px] text-muted-foreground mt-0.5">
                                 {approval.comments}
                               </p>
                             )}
-                            <p className="text-xs text-muted-foreground mt-1">
+                            <p className="text-[10px] text-muted-foreground mt-0.5">
                               {format(new Date(approval.createdAt), "PPp")}
                             </p>
                           </div>
@@ -1813,25 +1788,24 @@ export default function BillDetail() {
                   </Card>
                 )}
 
-                <div className="flex flex-col items-end gap-3">
-                  {isEditMode && bill?.status === "draft" && (() => {
-                    const validation = getSubmitForApprovalValidation();
-                    return (
-                      <>
-                        {!validation.isValid && (
-                          <div className="text-sm text-destructive space-y-1" data-testid="text-submit-validation-errors">
-                            {validation.errors.map((error, index) => (
-                              <div key={index}>• {error}</div>
-                            ))}
-                          </div>
-                        )}
-                      </>
-                    );
-                  })()}
-                  <div className="flex items-center gap-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    {isEditMode && bill?.status === "draft" && (() => {
+                      const validation = getSubmitForApprovalValidation();
+                      return !validation.isValid ? (
+                        <div className="text-[11px] text-destructive space-y-0.5" data-testid="text-submit-validation-errors">
+                          {validation.errors.map((error, index) => (
+                            <div key={index}>{error}</div>
+                          ))}
+                        </div>
+                      ) : null;
+                    })()}
+                  </div>
+                  <div className="flex items-center gap-2">
                     <Button
                       type="button"
                       variant="outline"
+                      size="sm"
                       onClick={() => setLocation(projectId ? `/projects/${projectId}/bills` : "/bills")}
                       data-testid="button-cancel"
                     >
@@ -1843,18 +1817,20 @@ export default function BillDetail() {
                         <Button
                           type="button"
                           variant="default"
+                          size="sm"
                           onClick={() => submitForApprovalMutation.mutate()}
                           disabled={!validation.isValid || submitForApprovalMutation.isPending}
                           data-testid="button-submit-for-approval"
-                          className="gap-2"
+                          className="gap-1"
                         >
-                          <Send className="h-4 w-4" />
+                          <Send className="h-3.5 w-3.5" />
                           {submitForApprovalMutation.isPending ? "Submitting..." : "Submit for Approval"}
                         </Button>
                       );
                     })()}
                     <Button
                       type="submit"
+                      size="sm"
                       disabled={createMutation.isPending || updateMutation.isPending}
                       data-testid="button-save"
                     >
