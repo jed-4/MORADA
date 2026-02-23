@@ -15819,10 +15819,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (item.startDate && item.endDate) {
           const workDuration = countWD(new Date(item.startDate), new Date(item.endDate));
           const newEnd = addWD(newStart, Math.max(0, workDuration - 1));
-          updateData.startDate = newStart.toISOString().split('T')[0];
-          updateData.endDate = newEnd.toISOString().split('T')[0];
+          updateData.startDate = newStart;
+          updateData.endDate = newEnd;
         } else {
-          updateData.startDate = newStart.toISOString().split('T')[0];
+          updateData.startDate = newStart;
         }
       }
       

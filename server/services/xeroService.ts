@@ -49,10 +49,17 @@ interface XeroTenant {
 }
 
 function getRedirectUri(): string {
-  const host = process.env.REPLIT_DEV_DOMAIN || process.env.REPL_SLUG
-    ? `https://${process.env.REPLIT_DEV_DOMAIN || `${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`}`
-    : "http://localhost:5000";
-  return `${host}/api/xero/callback`;
+  if (process.env.REPLIT_DOMAINS) {
+    const domains = process.env.REPLIT_DOMAINS.split(',');
+    const canonicalDomain = domains.find(d => d.trim().endsWith('.replit.app')) || domains[0]?.trim();
+    if (canonicalDomain) {
+      return `https://${canonicalDomain}/api/xero/callback`;
+    }
+  }
+  if (process.env.REPLIT_DEV_DOMAIN) {
+    return `https://${process.env.REPLIT_DEV_DOMAIN}/api/xero/callback`;
+  }
+  return "http://localhost:5000/api/xero/callback";
 }
 
 export class XeroService {

@@ -2827,6 +2827,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                         transition: dragging?.id === item.id || (dragging?.type === 'move' && draggingCascadeIds.has(item.id)) ? 'none' : 'opacity 0.2s',
                       }}
                     >
+                      {schedule?.status !== 'locked' && (
                       <div
                         className={`absolute top-1/2 -translate-y-1/2 -left-4 w-4 h-4 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30 ${hoveredBar === item.id && hoveredAnchor === 'start' ? 'scale-150' : ''}`}
                         onMouseDown={(e) => {
@@ -2840,6 +2841,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                       >
                         <div className="w-2 h-2 rounded-full bg-[#9b7fc7] hover:scale-150 transition-transform" />
                       </div>
+                      )}
                       
                       <div
                         className={`absolute inset-0 rounded-sm flex items-center cursor-move transition-shadow z-10 group/bar overflow-hidden
@@ -2959,6 +2961,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                         )}
                       </div>
                       
+                      {schedule?.status !== 'locked' && (
                       <div
                         className={`absolute top-1/2 -translate-y-1/2 -right-4 w-4 h-4 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30 ${hoveredBar === item.id && hoveredAnchor === 'end' ? 'scale-150' : ''}`}
                         onMouseDown={(e) => {
@@ -2972,6 +2975,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                       >
                         <div className="w-2 h-2 rounded-full bg-[#9b7fc7] hover:scale-150 transition-transform" />
                       </div>
+                      )}
                     </div>
                       
                     {baselineItems.length > 0 && (() => {
