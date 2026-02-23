@@ -118,6 +118,7 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
   const [visibleDays, setVisibleDays] = useState(28);
   const [hiddenAssignees, setHiddenAssignees] = useState<Set<string>>(new Set());
   const [hiddenProjects, setHiddenProjects] = useState<Set<string>>(new Set());
+  const [hideUnassigned, setHideUnassigned] = useState(false);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   const toggleRowExpanded = useCallback((id: string) => {
@@ -130,6 +131,7 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
   }, []);
   const timelineRef = useRef<HTMLDivElement>(null);
   const leftPanelRef = useRef<HTMLDivElement>(null);
+  const headerTimelineRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -137,8 +139,8 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
       if (!containerRef.current) return;
       const availableWidth = containerRef.current.clientWidth - PANEL_WIDTH;
       const avgDayWidth = (DAY_WIDTH * 5 + WEEKEND_DAY_WIDTH * 2) / 7;
-      const daysCount = Math.ceil(availableWidth / avgDayWidth);
-      setVisibleDays(Math.max(daysCount, 7));
+      const viewportDays = Math.ceil(availableWidth / avgDayWidth);
+      setVisibleDays(Math.max(viewportDays + 60, 90));
     }
     calculateDays();
     const observer = new ResizeObserver(calculateDays);
@@ -172,6 +174,15 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
         if (!map.has(item.assignedToId)) {
           map.set(item.assignedToId, {
             id: item.assignedToId,
+            name: item.assignedToName,
+            color: item.assignedToColor || "#6b7280",
+          });
+        }
+      } else if (!item.assignedToId && item.assignedToName) {
+        const bizKey = `biz:${item.assignedToName}`;
+        if (!map.has(bizKey)) {
+          map.set(bizKey, {
+            id: bizKey,
             name: item.assignedToName,
             color: item.assignedToColor || "#6b7280",
           });
@@ -213,7 +224,7 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
     });
   }, []);
 
-  const activeFilterCount = hiddenAssignees.size + hiddenProjects.size;
+  const activeFilterCount = hiddenAssignees.size + hiddenProjects.size + (hideUnassigned ? 1 : 0);
 
   const { contactRows, unassignedRow } = useMemo(() => {
     const contactMap = new Map<string, ContactRow>();
@@ -221,24 +232,27 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
 
     for (const item of items) {
       if (item.status === "completed" || item.status === "cancelled") continue;
+      if (item.type === "parent") continue;
       if (hiddenProjects.has(item.projectId)) continue;
 
-      if (!item.assignedToId || !item.assignedToName) {
+      if (!item.assignedToId && !item.assignedToName) {
         unassigned.push(item);
         continue;
       }
 
-      if (hiddenAssignees.has(item.assignedToId)) continue;
+      const rowKey = item.assignedToId || `biz:${item.assignedToName}`;
 
-      let row = contactMap.get(item.assignedToId);
+      if (hiddenAssignees.has(rowKey)) continue;
+
+      let row = contactMap.get(rowKey);
       if (!row) {
         row = {
-          id: item.assignedToId,
-          name: item.assignedToName,
+          id: rowKey,
+          name: item.assignedToName || "Unknown",
           color: item.assignedToColor || "#6b7280",
           items: [],
         };
-        contactMap.set(item.assignedToId, row);
+        contactMap.set(rowKey, row);
       }
       row.items.push(item);
     }
@@ -252,9 +266,9 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
 
   const allRows = useMemo(() => {
     const rows = [...contactRows];
-    if (unassignedRow) rows.push(unassignedRow);
+    if (unassignedRow && !hideUnassigned) rows.push(unassignedRow);
     return rows;
-  }, [contactRows, unassignedRow]);
+  }, [contactRows, unassignedRow, hideUnassigned]);
 
   const dayOffsets = useMemo(() => {
     const offsets: number[] = [];
@@ -355,6 +369,9 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
     if (leftPanelRef.current) {
       leftPanelRef.current.scrollTop = e.target.scrollTop;
     }
+    if (headerTimelineRef.current) {
+      headerTimelineRef.current.scrollLeft = e.target.scrollLeft;
+    }
   }, []);
 
   const navigateRange = (direction: number) => {
@@ -444,6 +461,16 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
                         </label>
                       ))}
                     </div>
+                    {unassignedRow && (
+                      <label className="flex items-center gap-2 py-1 px-1 rounded cursor-pointer hover-elevate mt-1 border-t border-border/50 pt-2">
+                        <Checkbox
+                          checked={!hideUnassigned}
+                          onCheckedChange={() => setHideUnassigned((prev) => !prev)}
+                        />
+                        <div className="w-2.5 h-2.5 rounded-full shrink-0 bg-muted-foreground/40" />
+                        <span className="text-xs truncate text-muted-foreground">Unassigned</span>
+                      </label>
+                    )}
                   </div>
                 )}
                 {allProjects.length > 0 && (
@@ -581,7 +608,7 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
         </div>
 
         <div className="flex-1 overflow-hidden flex flex-col">
-          <div className="h-[56px] border-b border-border flex-shrink-0 overflow-hidden">
+          <div ref={headerTimelineRef} className="h-[56px] border-b border-border flex-shrink-0 overflow-hidden">
             <div
               className="h-full flex"
               style={{ width: totalWidth }}
@@ -600,7 +627,7 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
                     key={key}
                     className={cn(
                       "flex flex-col items-center justify-end shrink-0 border-l border-border/20 pb-1",
-                      isWkend && "bg-muted/30",
+                      isWkend && "bg-[#f3f4f6] dark:bg-muted/50",
                       isToday && "bg-[#bba7db]/10"
                     )}
                     style={{ width: colWidth }}
@@ -635,7 +662,7 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
 
           <div
             ref={timelineRef}
-            className="flex-1 overflow-y-auto overflow-x-hidden"
+            className="flex-1 overflow-y-auto overflow-x-auto"
             onScroll={(e) => {
               handleSyncScroll(e);
             }}
@@ -687,7 +714,7 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
                           key={key}
                           className={cn(
                             "absolute top-0 h-full border-l border-border/10",
-                            isWkend && "bg-muted/20",
+                            isWkend && "bg-[#f3f4f6] dark:bg-muted/50",
                             isToday && "bg-[#bba7db]/5",
                             isOverloadedDay && "bg-red-500/8"
                           )}
