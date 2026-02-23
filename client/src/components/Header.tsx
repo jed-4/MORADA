@@ -356,6 +356,10 @@ export default function Header() {
                 <FileText className="h-3.5 w-3.5 mr-2" />
                 Notes
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate('/bills')} className="text-xs">
+                <Receipt className="h-3.5 w-3.5 mr-2" />
+                Bills
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => navigate('/business/leave')} className="text-xs">
                 <Calendar className="h-3.5 w-3.5 mr-2" />
                 Leave
@@ -645,6 +649,10 @@ export default function Header() {
             <DropdownMenuItem onClick={() => navigate('/variations')} className="text-xs">
               <FileText className="h-3.5 w-3.5 mr-2" />
               Variations
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/bills')} className="text-xs">
+              <Receipt className="h-3.5 w-3.5 mr-2" />
+              Bills
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => navigate('/client-invoices')} className="text-xs">
               <Receipt className="h-3.5 w-3.5 mr-2" />

@@ -556,6 +556,7 @@ export interface IStorage {
   // Bills CRUD
   getBills(projectId?: string, status?: string): Promise<Bill[]>;
   getBillById(id: string): Promise<Bill | null>;
+  getNextBillNumber(): Promise<string>;
   createBill(bill: InsertBill): Promise<Bill>;
   updateBill(id: string, bill: Partial<InsertBill>): Promise<Bill>;
   deleteBill(id: string): Promise<void>;
@@ -11735,6 +11736,34 @@ export class DbStorage implements IStorage {
     }
   }
 
+  async getNextBillNumber(): Promise<string> {
+    try {
+      const settings = await this.getCompanySettings();
+      const prefix = settings?.billPrefix || "BILL-";
+      const startNumber = settings?.billStartNumber || 1000;
+
+      const existingBills = await db.select({ billNumber: schema.bills.billNumber })
+        .from(schema.bills)
+        .orderBy(desc(schema.bills.billNumber));
+
+      let maxNumber = startNumber - 1;
+      const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`^${escapedPrefix}(\\d+)$`);
+      for (const b of existingBills) {
+        const match = b.billNumber.match(regex);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (num > maxNumber) maxNumber = num;
+        }
+      }
+
+      return `${prefix}${maxNumber + 1}`;
+    } catch (error) {
+      console.error("Database error in getNextBillNumber:", error);
+      throw error;
+    }
+  }
+
   async createBill(bill: InsertBill): Promise<Bill> {
     try {
       const newBills = await db.insert(schema.bills)
@@ -13701,7 +13730,10 @@ export class DbStorage implements IStorage {
         .from(schema.bills)
         .where(eq(schema.bills.projectId, projectId));
       
-      const actualAmount = bills.reduce((sum, bill) => sum + (bill.total || 0), 0);
+      const actualAmount = bills.reduce((sum, bill) => {
+        const amount = bill.total || 0;
+        return sum + (bill.billType === 'credit' ? -amount : amount);
+      }, 0);
 
       // Calculate variations
       const variations = await db.select()

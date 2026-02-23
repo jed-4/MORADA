@@ -8718,6 +8718,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/bills/next-number", async (req, res) => {
+    try {
+      const billNumber = await storage.getNextBillNumber();
+      res.json({ billNumber });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get next bill number" });
+    }
+  });
+
   app.get("/api/bills/:id", async (req, res) => {
     try {
       const bill = await storage.getBillById(req.params.id);
@@ -8732,7 +8741,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/bills", async (req, res) => {
     try {
-      const validationResult = insertBillSchema.safeParse(req.body);
+      const billData = { ...req.body };
+      if (!billData.billNumber || billData.billNumber.startsWith("BILL-") && /BILL-\d{13,}/.test(billData.billNumber)) {
+        billData.billNumber = await storage.getNextBillNumber();
+      }
+
+      const validationResult = insertBillSchema.safeParse(billData);
       if (!validationResult.success) {
         return res.status(400).json({ 
           error: "Validation failed", 
@@ -8764,6 +8778,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Bill not found" });
       }
       res.status(500).json({ error: "Failed to update bill" });
+    }
+  });
+
+  app.post("/api/bills/:id/duplicate", async (req, res) => {
+    try {
+      const originalBill = await storage.getBillById(req.params.id);
+      if (!originalBill) {
+        return res.status(404).json({ error: "Bill not found" });
+      }
+
+      const newBillNumber = await storage.getNextBillNumber();
+      const newBill = await storage.createBill({
+        billNumber: newBillNumber,
+        projectId: originalBill.projectId,
+        supplierId: originalBill.supplierId,
+        billType: originalBill.billType as "bill" | "credit",
+        status: "draft",
+        billDate: new Date(),
+        dueDate: originalBill.dueDate ? new Date(originalBill.dueDate) : undefined,
+        billReference: originalBill.billReference ? `${originalBill.billReference} (copy)` : undefined,
+        notes: originalBill.notes,
+        reminders: originalBill.reminders,
+        subtotal: originalBill.subtotal,
+        tax: originalBill.tax,
+        total: originalBill.total,
+        paidAmount: 0,
+        sendToXero: false,
+        attachmentUrls: [],
+        createdById: req.user!.id,
+      });
+
+      const lineItems = await storage.getBillLineItems(req.params.id);
+      for (const item of lineItems) {
+        await storage.createBillLineItem({
+          billId: newBill.id,
+          lineType: item.lineType as "estimate" | "item" | "custom",
+          description: item.description,
+          costCodeId: item.costCodeId,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          tax: item.tax as "GST on expenses" | "No GST",
+          account: item.account,
+          total: item.total,
+          order: item.order,
+        });
+      }
+
+      res.status(201).json(newBill);
+    } catch (error) {
+      console.error("Error duplicating bill:", error);
+      res.status(500).json({ error: "Failed to duplicate bill" });
     }
   });
 

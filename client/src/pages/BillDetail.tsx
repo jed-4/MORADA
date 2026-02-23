@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { format } from "date-fns";
+import { format, addDays, endOfMonth, addMonths } from "date-fns";
 import { 
   ArrowLeft, 
   Copy, 
@@ -62,6 +62,8 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
+import { useUpload } from "@/hooks/use-upload";
+import { Badge } from "@/components/ui/badge";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
 import type { Bill, Supplier, Project, CostCode, BillLineItem, BillApproval, BillLineItemAllowance, EstimateItem } from "@shared/schema";
@@ -122,6 +124,8 @@ export default function BillDetail() {
   const [ocrResults, setOcrResults] = useState<any>(null);
   const [ocrPreviewOpen, setOcrPreviewOpen] = useState(false);
   const [addSupplierDialogOpen, setAddSupplierDialogOpen] = useState(false);
+  const [attachmentUrls, setAttachmentUrls] = useState<string[]>([]);
+  const dueDateManuallySet = useRef(false);
 
   const { data: bill, isLoading: billLoading } = useQuery<Bill>({
     queryKey: ["/api/bills", id],
@@ -153,6 +157,11 @@ export default function BillDetail() {
   const { data: canApprove = false } = useQuery<boolean>({
     queryKey: ["/api/user/can-approve-bills"],
     enabled: isEditMode,
+  });
+
+  const { data: nextBillNumberData } = useQuery<{ billNumber: string }>({
+    queryKey: ["/api/bills/next-number"],
+    enabled: !isEditMode,
   });
 
   const form = useForm<BillFormData>({
@@ -220,6 +229,7 @@ export default function BillDetail() {
         paidAmount: bill.paidAmount / 100,
         sendToXero: bill.sendToXero,
       });
+      setAttachmentUrls(Array.isArray(bill.attachmentUrls) ? (bill.attachmentUrls as string[]) : []);
     }
   }, [bill, isEditMode, form]);
 
@@ -253,12 +263,60 @@ export default function BillDetail() {
       const projectIdToUse = projectId || projects[0]?.id;
       if (projectIdToUse) {
         form.setValue("projectId", projectIdToUse);
-        
-        const billNumber = `BILL-${Date.now().toString().slice(-6)}`;
-        form.setValue("billNumber", billNumber);
       }
     }
   }, [projects, isEditMode, form, projectId]);
+
+  useEffect(() => {
+    if (!isEditMode && nextBillNumberData?.billNumber) {
+      form.setValue("billNumber", nextBillNumberData.billNumber);
+    }
+  }, [nextBillNumberData, isEditMode, form]);
+
+  const watchedSupplierId = form.watch("supplierId");
+  const watchedBillDate = form.watch("billDate");
+
+  const { data: companySettings } = useQuery<any>({
+    queryKey: ["/api/company-settings"],
+  });
+
+  const { uploadFile, isUploading: isUploadingAttachment } = useUpload({
+    onSuccess: (response) => {
+      setAttachmentUrls(prev => [...prev, response.objectPath]);
+    },
+  });
+
+  useEffect(() => {
+    if (!watchedSupplierId || !watchedBillDate) return;
+    if (isEditMode || dueDateManuallySet.current) return;
+    
+    const supplier = suppliers.find(s => s.id === watchedSupplierId);
+    const terms = supplier?.paymentTerms || companySettings?.defaultPaymentTerms || "net_30";
+    const billDate = new Date(watchedBillDate);
+    
+    if (isNaN(billDate.getTime())) return;
+    
+    let dueDate: Date;
+    const termsLower = terms.toLowerCase().replace(/\s+/g, "_");
+    
+    if (termsLower === "on_receipt" || termsLower === "cod") {
+      dueDate = billDate;
+    } else if (termsLower === "net_7" || termsLower === "net 7") {
+      dueDate = addDays(billDate, 7);
+    } else if (termsLower === "net_14" || termsLower === "net 14") {
+      dueDate = addDays(billDate, 14);
+    } else if (termsLower === "net_30" || termsLower === "net 30") {
+      dueDate = addDays(billDate, 30);
+    } else if (termsLower === "eom") {
+      dueDate = endOfMonth(billDate);
+    } else if (termsLower === "end_of_next_month") {
+      dueDate = endOfMonth(addMonths(billDate, 1));
+    } else {
+      dueDate = addDays(billDate, 30);
+    }
+    
+    form.setValue("dueDate", format(dueDate, "yyyy-MM-dd"));
+  }, [watchedSupplierId, watchedBillDate, suppliers, companySettings, isEditMode, form]);
 
   const addLineItem = () => {
     setLineItems([
@@ -355,6 +413,7 @@ export default function BillDetail() {
         total: Math.round(calculateTotal() * 100),
         paidAmount: Math.round((data.paidAmount || 0) * 100),
         createdById: "temp-user-id",
+        attachmentUrls,
       };
 
       const billRes = await apiRequest("/api/bills", "POST", billData);
@@ -439,6 +498,7 @@ export default function BillDetail() {
         tax: Math.round(calculateTax() * 100),
         total: Math.round(calculateTotal() * 100),
         paidAmount: Math.round((data.paidAmount || 0) * 100),
+        attachmentUrls,
       };
 
       const billRes = await apiRequest(`/api/bills/${id}`, "PATCH", billData);
@@ -609,6 +669,27 @@ export default function BillDetail() {
     },
   });
 
+  const duplicateMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest(`/api/bills/${id}/duplicate`, "POST");
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      toast({
+        title: "Success",
+        description: "Bill duplicated successfully",
+      });
+      setLocation(`/bills/${data.id}`);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to duplicate bill",
+        variant: "destructive",
+      });
+    },
+  });
+
   const ocrMutation = useMutation({
     mutationFn: async (file: File) => {
       const reader = new FileReader();
@@ -653,6 +734,15 @@ export default function BillDetail() {
     } else {
       createMutation.mutate(data);
     }
+  };
+
+  const handleAttachmentUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    for (let i = 0; i < files.length; i++) {
+      await uploadFile(files[i]);
+    }
+    e.target.value = '';
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -813,7 +903,9 @@ export default function BillDetail() {
               <ArrowLeft className="h-5 w-5" />
             </Button>
             <h1 className="text-2xl font-bold" data-testid="text-page-title">
-              {isEditMode ? "Edit Bill" : "Create Bill"}
+              {isEditMode
+                ? (form.watch("billType") === "credit" ? "Edit Vendor Credit" : "Edit Bill")
+                : (form.watch("billType") === "credit" ? "Create Vendor Credit" : "Create Bill")}
             </h1>
           </div>
           <div className="flex items-center gap-6">
@@ -862,7 +954,13 @@ export default function BillDetail() {
               </>
             )}
             {isEditMode && (
-              <Button variant="ghost" size="icon" data-testid="button-duplicate">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                data-testid="button-duplicate"
+                onClick={() => duplicateMutation.mutate()}
+                disabled={duplicateMutation.isPending}
+              >
                 <Copy className="h-4 w-4" />
               </Button>
             )}
@@ -889,6 +987,31 @@ export default function BillDetail() {
                           data-testid="input-bill-number"
                         />
                       </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="billType"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Type</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value}
+                      >
+                        <FormControl>
+                          <SelectTrigger data-testid="select-bill-type">
+                            <SelectValue placeholder="Select type..." />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="bill">Bill</SelectItem>
+                          <SelectItem value="credit">Vendor Credit</SelectItem>
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -1012,6 +1135,10 @@ export default function BillDetail() {
                         <Input
                           type="date"
                           {...field}
+                          onChange={(e) => {
+                            dueDateManuallySet.current = true;
+                            field.onChange(e);
+                          }}
                           data-testid="input-due-date"
                         />
                       </FormControl>
@@ -1524,11 +1651,62 @@ export default function BillDetail() {
                 )}
 
                 <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Paperclip className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm font-medium">Attachments</span>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Paperclip className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm font-medium">Attachments</span>
+                      {attachmentUrls.length > 0 && (
+                        <Badge variant="secondary" className="text-xs">{attachmentUrls.length}</Badge>
+                      )}
+                    </div>
+                    <label className="cursor-pointer">
+                      <input
+                        type="file"
+                        multiple
+                        className="hidden"
+                        onChange={handleAttachmentUpload}
+                        accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx"
+                        data-testid="input-attachments"
+                      />
+                      <Button variant="ghost" size="sm" asChild disabled={isUploadingAttachment}>
+                        <span>
+                          {isUploadingAttachment ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Plus className="h-3 w-3 mr-1" />}
+                          Add File
+                        </span>
+                      </Button>
+                    </label>
                   </div>
-                  <Input type="file" data-testid="input-attachments" />
+                  {attachmentUrls.length > 0 ? (
+                    <div className="space-y-1">
+                      {attachmentUrls.map((url, idx) => {
+                        const fileName = url.split('/').pop() || `Attachment ${idx + 1}`;
+                        return (
+                          <div key={idx} className="flex items-center justify-between gap-2 p-2 rounded-md border text-xs">
+                            <a
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-2 text-foreground hover:underline truncate"
+                            >
+                              <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                              <span className="truncate">{decodeURIComponent(fileName)}</span>
+                            </a>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="shrink-0"
+                              onClick={() => setAttachmentUrls(prev => prev.filter((_, i) => i !== idx))}
+                              data-testid={`button-remove-attachment-${idx}`}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">No attachments yet</p>
+                  )}
                 </div>
 
                 <div>

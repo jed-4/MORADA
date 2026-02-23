@@ -1,11 +1,12 @@
 import { useState, useMemo, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useSearch, useParams } from "wouter";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -25,6 +26,20 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Plus,
   FileText,
   Paperclip,
@@ -37,11 +52,13 @@ import {
   Calendar,
   Building2,
   LayoutList,
+  Trash2,
 } from "lucide-react";
 import { type Bill, type Project, type Supplier } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 const STATUS_OPTIONS = [
   { key: "all", label: "All" },
@@ -65,8 +82,69 @@ export default function Bills() {
   const [setupInstructionsOpen, setSetupInstructionsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedPhases, setSelectedPhases] = useState<string[]>([]);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [changeProjectDialogOpen, setChangeProjectDialogOpen] = useState(false);
+  const [changeSupplierDialogOpen, setChangeSupplierDialogOpen] = useState(false);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [selectedSupplierId, setSelectedSupplierId] = useState<string>("");
 
   const { toast } = useToast();
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (billIds: string[]) => {
+      const results = await Promise.allSettled(billIds.map((id) => apiRequest(`/api/bills/${id}`, "DELETE")));
+      const failed = results.filter(r => r.status === "rejected").length;
+      if (failed > 0) throw new Error(`${failed} of ${billIds.length} bills failed to delete`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      setSelectedBills(new Set());
+      setDeleteDialogOpen(false);
+      toast({ title: "Bills deleted", description: `Successfully deleted ${selectedBills.size} bill(s).` });
+    },
+    onError: (error: Error) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      toast({ title: "Partial failure", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const bulkChangeProjectMutation = useMutation({
+    mutationFn: async ({ billIds, projectId }: { billIds: string[]; projectId: string }) => {
+      const results = await Promise.allSettled(billIds.map((id) => apiRequest(`/api/bills/${id}`, "PATCH", { projectId })));
+      const failed = results.filter(r => r.status === "rejected").length;
+      if (failed > 0) throw new Error(`${failed} of ${billIds.length} bills failed to update`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      setSelectedBills(new Set());
+      setChangeProjectDialogOpen(false);
+      setSelectedProjectId("");
+      toast({ title: "Project updated", description: `Successfully updated project for ${selectedBills.size} bill(s).` });
+    },
+    onError: (error: Error) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      toast({ title: "Partial failure", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const bulkChangeSupplierMutation = useMutation({
+    mutationFn: async ({ billIds, supplierId }: { billIds: string[]; supplierId: string }) => {
+      const results = await Promise.allSettled(billIds.map((id) => apiRequest(`/api/bills/${id}`, "PATCH", { supplierId })));
+      const failed = results.filter(r => r.status === "rejected").length;
+      if (failed > 0) throw new Error(`${failed} of ${billIds.length} bills failed to update`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      setSelectedBills(new Set());
+      setChangeSupplierDialogOpen(false);
+      setSelectedSupplierId("");
+      toast({ title: "Supplier updated", description: `Successfully updated supplier for ${selectedBills.size} bill(s).` });
+    },
+    onError: (error: Error) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      toast({ title: "Partial failure", description: error.message, variant: "destructive" });
+    },
+  });
 
   useEffect(() => {
     setSelectedStatus(statusFromUrl);
@@ -180,7 +258,8 @@ export default function Bills() {
     };
 
     bills.forEach((bill) => {
-      const amount = bill.total / 100;
+      const rawAmount = bill.total / 100;
+      const amount = (bill as any).billType === "credit" ? -rawAmount : rawAmount;
       if (bill.status === "draft") {
         totals.draft += amount;
       } else if (bill.status === "awaiting_approval") {
@@ -492,6 +571,126 @@ export default function Bills() {
         </div>
       </div>
 
+      {selectedBills.size > 0 && (
+        <div className="h-8 bg-muted/60 flex items-center justify-between px-2 mx-2 mt-1 rounded-md flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">{selectedBills.size} selected</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs"
+              onClick={() => setSelectedBills(new Set())}
+            >
+              Deselect
+            </Button>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs"
+              style={{ backgroundColor: "#bba7db", color: "white", borderColor: "rgba(187,167,219,0.2)" }}
+              onClick={() => setChangeProjectDialogOpen(true)}
+            >
+              Change Project
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs"
+              style={{ backgroundColor: "#bba7db", color: "white", borderColor: "rgba(187,167,219,0.2)" }}
+              onClick={() => setChangeSupplierDialogOpen(true)}
+            >
+              Change Supplier
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs text-destructive"
+              onClick={() => setDeleteDialogOpen(true)}
+            >
+              <Trash2 className="w-3 h-3 mr-1" />
+              Delete
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete {selectedBills.size} bill(s)?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">This action cannot be undone. Are you sure you want to delete the selected bills?</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={bulkDeleteMutation.isPending}
+              onClick={() => bulkDeleteMutation.mutate(Array.from(selectedBills))}
+            >
+              {bulkDeleteMutation.isPending ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={changeProjectDialogOpen} onOpenChange={(open) => { setChangeProjectDialogOpen(open); if (!open) setSelectedProjectId(""); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Change project for {selectedBills.size} bill(s)</DialogTitle>
+          </DialogHeader>
+          <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select a project" />
+            </SelectTrigger>
+            <SelectContent>
+              {projects.map((project) => (
+                <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setChangeProjectDialogOpen(false); setSelectedProjectId(""); }}>Cancel</Button>
+            <Button
+              disabled={!selectedProjectId || bulkChangeProjectMutation.isPending}
+              style={{ backgroundColor: "#bba7db", color: "white" }}
+              onClick={() => bulkChangeProjectMutation.mutate({ billIds: Array.from(selectedBills), projectId: selectedProjectId })}
+            >
+              {bulkChangeProjectMutation.isPending ? "Updating..." : "Update"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={changeSupplierDialogOpen} onOpenChange={(open) => { setChangeSupplierDialogOpen(open); if (!open) setSelectedSupplierId(""); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Change supplier for {selectedBills.size} bill(s)</DialogTitle>
+          </DialogHeader>
+          <Select value={selectedSupplierId} onValueChange={setSelectedSupplierId}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select a supplier" />
+            </SelectTrigger>
+            <SelectContent>
+              {suppliers.map((supplier) => (
+                <SelectItem key={supplier.id} value={supplier.id}>{supplier.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setChangeSupplierDialogOpen(false); setSelectedSupplierId(""); }}>Cancel</Button>
+            <Button
+              disabled={!selectedSupplierId || bulkChangeSupplierMutation.isPending}
+              style={{ backgroundColor: "#bba7db", color: "white" }}
+              onClick={() => bulkChangeSupplierMutation.mutate({ billIds: Array.from(selectedBills), supplierId: selectedSupplierId })}
+            >
+              {bulkChangeSupplierMutation.isPending ? "Updating..." : "Update"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Content */}
       <div className="flex-1 overflow-auto p-2">
         {billsLoading ? (
@@ -563,7 +762,14 @@ export default function Bills() {
                         />
                       </TableCell>
                       <TableCell className="font-medium text-xs" data-testid={`text-bill-number-${bill.id}`}>
-                        {bill.billNumber}
+                        <div className="flex items-center gap-1.5">
+                          {bill.billNumber}
+                          {(bill as any).billType === "credit" && (
+                            <Badge variant="outline" className="text-[10px] px-1 py-0 text-green-600 dark:text-green-400 border-green-300 dark:border-green-600">
+                              Credit
+                            </Badge>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell data-testid={`badge-bill-status-${bill.id}`}>
                         {getStatusBadge(bill.status, "sm")}
@@ -597,8 +803,8 @@ export default function Bills() {
                           {formatDate(bill.billDate)}
                         </div>
                       </TableCell>
-                      <TableCell className="text-xs font-medium text-right" data-testid={`text-total-${bill.id}`}>
-                        {formatCurrency(bill.total)}
+                      <TableCell className={`text-xs font-medium text-right ${(bill as any).billType === "credit" ? "text-green-600 dark:text-green-400" : ""}`} data-testid={`text-total-${bill.id}`}>
+                        {(bill as any).billType === "credit" ? `-${formatCurrency(bill.total)}` : formatCurrency(bill.total)}
                       </TableCell>
                       <TableCell className="text-center" data-testid={`icon-sync-${bill.id}`}>
                         {bill.xeroInvoiceId && (

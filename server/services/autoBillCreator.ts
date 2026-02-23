@@ -146,9 +146,7 @@ export class AutoBillCreatorService {
       }
     }
 
-    // Generate bill number
-    const bills = await storage.getBills();
-    const billNumber = `BILL-${String(bills.length + 1).padStart(5, '0')}`;
+    const billNumber = await storage.getNextBillNumber();
 
     // Create bill
     const billData: InsertBill = {
