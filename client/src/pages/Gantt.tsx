@@ -485,7 +485,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
   const [inlineEditValue, setInlineEditValue] = useState('');
   
   // Pending predecessor mode: after clicking "Create Predecessor", the next bar click creates the link
-  const [pendingPredecessor, setPendingPredecessor] = useState<number | null>(null);
+  const [pendingPredecessor, setPendingPredecessor] = useState<string | null>(null);
   
   useEffect(() => {
     if (pendingPredecessor === null) return;
@@ -1635,7 +1635,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
       } else if (drag.type === 'dependency') {
         const hBar = hoveredBarRef.current;
         const hAnchor = hoveredAnchorRef.current;
-        if (hBar && hBar !== drag.id && hAnchor) {
+        if (hBar && hBar !== drag.id) {
           const sourceAnchor = drag.sourceAnchor || 'end';
           const targetAnchor = hAnchor || 'start';
           
@@ -2153,7 +2153,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     <div className="flex flex-col h-full bg-background">
       {pendingPredecessor !== null && (
         <div className="flex items-center justify-between px-3 py-1.5 bg-blue-50 dark:bg-blue-950 border-b border-blue-200 dark:border-blue-800 text-sm">
-          <span className="text-blue-700 dark:text-blue-300">Click a bar to set it as predecessor. Press Escape to cancel.</span>
+          <span className="text-blue-700 dark:text-blue-300">Click a bar to link it as a predecessor (it must finish before this item starts). Press Escape to cancel.</span>
           <button onClick={() => setPendingPredecessor(null)} className="text-blue-500 hover:text-blue-700">
             <X className="w-4 h-4" />
           </button>
@@ -2553,6 +2553,13 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                                 <Link className="mr-2 h-4 w-4" />
                                 Create Predecessor
                               </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                onClick={() => setPendingPredecessor(item.id)} 
+                                data-testid="menu-link-dependency"
+                              >
+                                <Link className="mr-2 h-4 w-4" />
+                                Link Dependency
+                              </DropdownMenuItem>
                               {schedule?.status !== 'locked' && (
                               <DropdownMenuItem onClick={() => handleToggleComplete(item)} data-testid="menu-complete">
                                 <Check className="mr-2 h-4 w-4" />
@@ -2837,6 +2844,8 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                       <div
                         className={`absolute inset-0 rounded-sm flex items-center cursor-move transition-shadow z-10 group/bar overflow-hidden
                           ${dragging?.id === item.id ? 'shadow-lg ring-2 ring-[#bba7db]' : 'hover:shadow-md'}
+                          ${(dragging?.type === 'dependency' || pendingPredecessor !== null) && hoveredBar === item.id && item.id !== (dragging?.id ?? pendingPredecessor) ? 'ring-2 ring-[#9b7fc7] shadow-lg' : ''}
+                          ${pendingPredecessor === item.id ? 'ring-2 ring-blue-500 shadow-md' : ''}
                         `}
                         style={{
                           backgroundColor: barColor,
@@ -2863,8 +2872,8 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                           setContextMenu({ x: e.clientX, y: e.clientY, item });
                         }}
                         onMouseDown={(e) => handleBarMouseDown(e, item, 'move')}
-                        onMouseEnter={() => setHoveredBar(item.id)}
-                        onMouseLeave={() => setHoveredBar(null)}
+                        onMouseEnter={() => { setHoveredBar(item.id); if (!hoveredAnchor) setHoveredAnchor('start'); }}
+                        onMouseLeave={() => { setHoveredBar(null); setHoveredAnchor(null); }}
                         data-testid={`bar-${item.id}`}
                       >
                         {!hasChildren && (
@@ -3548,6 +3557,17 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
               >
                 <Link className="w-4 h-4 mr-2" />
                 Create Predecessor
+              </button>
+              <button
+                className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left"
+                onClick={() => {
+                  setPendingPredecessor(contextMenu.item.id);
+                  setContextMenu(null);
+                }}
+                data-testid="context-menu-link-dependency"
+              >
+                <Link className="w-4 h-4 mr-2" />
+                Link Dependency
               </button>
               
               <div className="-mx-1 my-1 h-0.5 bg-border" />
