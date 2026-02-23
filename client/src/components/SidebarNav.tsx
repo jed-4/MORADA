@@ -50,6 +50,7 @@ import {
   Calendar,
   Bell,
   User as UserIcon,
+  Tag,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -150,6 +151,7 @@ const sections: Record<SectionId, { label: string; icon: React.ComponentType<{ c
     icon: Library,
     items: [
       { title: "Templates", url: "/templates", icon: LayoutTemplate },
+      { title: "Cost Codes", url: "/cost-codes", icon: Tag },
       { title: "Price List", url: "/price-list", icon: DollarSign },
       { title: "AI Price Review", url: "/ai-price-review", icon: Sparkles },
       { title: "Suppliers", url: "/suppliers", icon: Truck },

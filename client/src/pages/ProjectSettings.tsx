@@ -1171,6 +1171,9 @@ export default function ProjectSettings() {
         </CardContent>
       </Card>
 
+      {/* Xero Integration */}
+      <XeroProjectMapping project={currentProject} />
+
       {/* Danger Zone */}
       <Card className="border-destructive">
         <CardHeader>
@@ -1332,6 +1335,103 @@ function ArchiveProjectButton({ project }: { project: Project }) {
 }
 
 // Delete Project Button Component
+function XeroProjectMapping({ project }: { project: Project }) {
+  const { toast } = useToast();
+  const [selectedOptionId, setSelectedOptionId] = useState<string>(
+    (project as any).xeroTrackingOptionId || ""
+  );
+
+  const { data: xeroStatus } = useQuery<any>({
+    queryKey: ["/api/xero/status"],
+  });
+
+  const { data: xeroTrackingCategories } = useQuery<any[]>({
+    queryKey: ["/api/xero/tracking-categories"],
+    enabled: !!xeroStatus?.connected,
+  });
+
+  useEffect(() => {
+    setSelectedOptionId((project as any).xeroTrackingOptionId || "");
+  }, [project]);
+
+  const tc2Id = xeroStatus?.trackingCategory2Id;
+  const tc2Category = xeroTrackingCategories?.find(
+    (tc: any) => tc.trackingCategoryId === tc2Id
+  );
+  const trackingOptions = tc2Category?.options || [];
+
+  const saveMapping = useMutation({
+    mutationFn: async () => {
+      const effectiveId = selectedOptionId === "__none__" ? "" : selectedOptionId;
+      const selectedOption = trackingOptions.find(
+        (opt: any) => opt.trackingOptionId === effectiveId
+      );
+      return await apiRequest(`/api/projects/${project.id}`, "PATCH", {
+        xeroTrackingOptionId: effectiveId || null,
+        xeroTrackingOptionName: selectedOption?.name || null,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", project.id] });
+      toast({ title: "Xero mapping saved" });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to save Xero mapping",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  if (!xeroStatus?.connected || !tc2Id) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Settings className="h-5 w-5" />
+          Xero Integration
+        </CardTitle>
+        <CardDescription>
+          Map this project to a tracking option in Xero
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <Label>Xero Tracking Option (TC2 - Jobs)</Label>
+          <Select
+            value={selectedOptionId}
+            onValueChange={setSelectedOptionId}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="None (auto-create on bill push)" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">None (auto-create on bill push)</SelectItem>
+              {trackingOptions.map((opt: any) => (
+                <SelectItem key={opt.trackingOptionId} value={opt.trackingOptionId}>
+                  {opt.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Select an existing Xero tracking option to link this project, or leave empty to auto-create when pushing bills.
+          </p>
+        </div>
+        <Button
+          onClick={() => saveMapping.mutate()}
+          disabled={saveMapping.isPending}
+        >
+          {saveMapping.isPending ? "Saving..." : "Save Xero Mapping"}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 function DeleteProjectButton({ project }: { project: Project }) {
   const [open, setOpen] = useState(false);
   const [confirmText, setConfirmText] = useState("");

@@ -313,7 +313,7 @@ export default function Settings() {
         });
       }
       
-      return response.json();
+      return response;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
@@ -373,7 +373,7 @@ export default function Settings() {
     const saveCredentialsMutation = useMutation({
       mutationFn: async (data: { clientId: string; clientSecret: string }) => {
         const response = await apiRequest("/api/google-drive/credentials", "POST", data);
-        return response.json();
+        return response;
       },
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ["/api/google-drive/status"] });
@@ -394,7 +394,7 @@ export default function Settings() {
     const connectDriveMutation = useMutation({
       mutationFn: async () => {
         const response = await apiRequest("/api/google-drive/auth-url", "GET");
-        return response.json();
+        return response;
       },
       onSuccess: (data) => {
         if (data.authUrl) {
@@ -414,7 +414,7 @@ export default function Settings() {
     const disconnectDriveMutation = useMutation({
       mutationFn: async () => {
         const response = await apiRequest("/api/google-drive/disconnect", "POST");
-        return response.json();
+        return response;
       },
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ["/api/google-drive/status"] });
@@ -724,7 +724,7 @@ export default function Settings() {
     const saveTrackingSettingsMutation = useMutation({
       mutationFn: async (data: { trackingCategory1Id: string; trackingCategory1Name: string; trackingCategory2Id: string; trackingCategory2Name: string }) => {
         const response = await apiRequest("/api/xero/settings", "PATCH", data);
-        return response.json();
+        return response;
       },
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ["/api/xero/status"] });
@@ -1960,7 +1960,7 @@ function DefaultValuesSection() {
   const createPaymentTermMutation = useMutation({
     mutationFn: async (data: any) => {
       const response = await apiRequest("/api/payment-terms-options", "POST", data);
-      return response.json();
+      return response;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/payment-terms-options'] });
@@ -1976,7 +1976,7 @@ function DefaultValuesSection() {
   const updatePaymentTermMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: any }) => {
       const response = await apiRequest(`/api/payment-terms-options/${id}`, "PATCH", data);
-      return response.json();
+      return response;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/payment-terms-options'] });
@@ -2680,7 +2680,7 @@ function ActivitySection() {
       const response = await apiRequest("/api/company-settings", "PATCH", {
         activityTypesVisible: newVisibility
       });
-      return response.json();
+      return response;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
@@ -2956,7 +2956,7 @@ function FieldSettingsSection() {
   const createFieldMutation = useMutation({
     mutationFn: async (data: InsertCustomFieldDef) => {
       const response = await apiRequest("/api/custom-field-defs", "POST", data);
-      return response.json();
+      return response;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/custom-field-defs"] });
@@ -2977,7 +2977,7 @@ function FieldSettingsSection() {
   const updateFieldMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<InsertCustomFieldDef> }) => {
       const response = await apiRequest(`/api/custom-field-defs/${id}`, "PATCH", data);
-      return response.json();
+      return response;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/custom-field-defs"] });
@@ -3731,7 +3731,7 @@ function FieldCategoriesSection() {
     mutationFn: async (optionsData: any[]) => {
       if (!selectedCategoryId) throw new Error("No category selected");
       const response = await apiRequest(`/api/field-categories/${selectedCategoryId}/options/batch`, "POST", optionsData);
-      return response.json();
+      return response;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/field-categories"] });

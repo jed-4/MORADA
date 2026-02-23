@@ -734,7 +734,7 @@ export default function BillDetail() {
       const response = await apiRequest(`/api/bills/${id}`, "PATCH", {
         status: "awaiting_approval"
       });
-      return response.json();
+      return response;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
@@ -758,7 +758,7 @@ export default function BillDetail() {
       const response = await apiRequest(`/api/bills/${id}/approve`, "POST", {
         comments: comments || null,
       });
-      return response.json();
+      return response;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
@@ -783,7 +783,7 @@ export default function BillDetail() {
       const response = await apiRequest(`/api/bills/${id}/reject`, "POST", {
         comments,
       });
-      return response.json();
+      return response;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
@@ -845,7 +845,7 @@ export default function BillDetail() {
         fileData: base64Data,
         fileName: file.name,
       });
-      return response.json();
+      return response;
     },
     onSuccess: async (data) => {
       setOcrResults(data);
