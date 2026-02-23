@@ -115,8 +115,7 @@ export default function SystemConfigurationPage() {
 
   const updateMutation = useMutation({
     mutationFn: async (data: any) => {
-      const response = await apiRequest("/api/system-configuration", "PUT", data);
-      return response.json();
+      return await apiRequest("/api/system-configuration", "PUT", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/system-configuration"] });
