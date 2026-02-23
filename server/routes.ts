@@ -9,6 +9,7 @@ import { setupAuth, isAuthenticated, sessionMiddleware, ensureLegacySessionField
 import { sendInvitationEmail, initializeEmailServices } from "./utils/email";
 import { GoogleOAuthService } from "./services/googleOAuthService";
 import { ObjectStorageService } from "./replit_integrations/object_storage";
+import { xeroService } from "./services/xeroService";
 import { 
   insertNoteSchema,
   insertTaskSchema,
@@ -11181,11 +11182,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // OCR Invoice Processing endpoint
+  // OCR Invoice Processing endpoint (using OpenAI Vision)
   app.post("/api/ocr/process-invoice", async (req, res) => {
     try {
-      const { getOCRService } = await import("./services/ocr");
-      const ocrService = getOCRService();
+      const { processInvoiceWithAI } = await import("./services/aiBillReader");
 
       const { fileData, fileName } = req.body;
 
@@ -11193,7 +11193,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "File data and file name are required" });
       }
 
-      const result = await ocrService.processInvoiceFromBase64(fileData, fileName);
+      const result = await processInvoiceWithAI(fileData, fileName);
       res.json(result);
     } catch (error: any) {
       console.error("OCR processing error:", error);
@@ -19348,6 +19348,211 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
     } catch (error: any) {
       console.error("Error updating business schedule project:", error);
       res.status(500).json({ error: "Failed to update" });
+    }
+  });
+
+  // ============== Xero Integration Routes ==============
+
+  app.get("/api/xero/connect", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      const state = Buffer.from(JSON.stringify({ companyId })).toString("base64");
+      const authUrl = xeroService.getAuthUrl(state);
+      res.json({ authUrl });
+    } catch (error: any) {
+      console.error("Error initiating Xero connect:", error);
+      res.status(500).json({ error: "Failed to initiate Xero connection" });
+    }
+  });
+
+  app.get("/api/xero/callback", requireAuth, async (req, res) => {
+    try {
+      const { code, state } = req.query;
+      if (!code || typeof code !== "string") {
+        return res.status(400).json({ error: "Missing authorization code" });
+      }
+
+      let companyId: string | undefined;
+      if (state && typeof state === "string") {
+        try {
+          const stateData = JSON.parse(Buffer.from(state, "base64").toString());
+          companyId = stateData.companyId;
+        } catch {}
+      }
+
+      const user = req.user as any;
+      companyId = companyId || user?.companyId;
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+
+      const tokenData = await xeroService.exchangeCodeForTokens(code);
+      const tenants = await xeroService.getTenants(tokenData.access_token);
+
+      if (!tenants || tenants.length === 0) {
+        return res.status(400).json({ error: "No Xero organizations found" });
+      }
+
+      const tenant = tenants[0];
+      const expiresAt = new Date(Date.now() + tokenData.expires_in * 1000);
+
+      const existing = await storage.getXeroConnectionByCompanyId(companyId);
+      if (existing) {
+        await storage.updateXeroConnection(existing.id, {
+          tenantId: tenant.tenantId,
+          tenantName: tenant.tenantName,
+          accessToken: tokenData.access_token,
+          refreshToken: tokenData.refresh_token,
+          tokenExpiresAt: expiresAt,
+          isActive: true,
+        });
+      } else {
+        await storage.createXeroConnection({
+          companyId,
+          tenantId: tenant.tenantId,
+          tenantName: tenant.tenantName,
+          accessToken: tokenData.access_token,
+          refreshToken: tokenData.refresh_token,
+          tokenExpiresAt: expiresAt,
+          isActive: true,
+        });
+      }
+
+      res.redirect("/settings?tab=integrations&xero=connected");
+    } catch (error: any) {
+      console.error("Error handling Xero callback:", error);
+      res.redirect("/settings?tab=integrations&xero=error");
+    }
+  });
+
+  app.get("/api/xero/status", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) {
+        return res.json({ connected: false });
+      }
+
+      res.json({
+        connected: true,
+        connectionId: connection.id,
+        tenantName: connection.tenantName,
+        tokenExpiresAt: connection.tokenExpiresAt,
+      });
+    } catch (error: any) {
+      console.error("Error checking Xero status:", error);
+      res.status(500).json({ error: "Failed to check Xero status" });
+    }
+  });
+
+  app.post("/api/xero/disconnect", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) {
+        return res.status(404).json({ error: "No Xero connection found" });
+      }
+
+      await storage.deleteXeroConnection(connection.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error disconnecting Xero:", error);
+      res.status(500).json({ error: "Failed to disconnect Xero" });
+    }
+  });
+
+  app.post("/api/xero/push-bill", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+
+      const { billId } = req.body;
+      if (!billId) {
+        return res.status(400).json({ error: "billId is required" });
+      }
+
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) {
+        return res.status(400).json({ error: "Xero is not connected" });
+      }
+
+      const bill = await storage.getBillById(billId);
+      if (!bill) {
+        return res.status(404).json({ error: "Bill not found" });
+      }
+
+      const lineItems = await storage.getBillLineItems(billId);
+
+      let supplierName = "Unknown Supplier";
+      if (bill.supplierId) {
+        try {
+          const contact = await storage.getContact(bill.supplierId, companyId);
+          if (contact) {
+            supplierName = contact.companyName || `${contact.firstName || ""} ${contact.lastName || ""}`.trim() || "Unknown Supplier";
+          }
+        } catch {}
+      }
+
+      const formatDate = (d: Date | string | null | undefined): string => {
+        if (!d) return new Date().toISOString().split("T")[0];
+        const date = d instanceof Date ? d : new Date(d);
+        return date.toISOString().split("T")[0];
+      };
+
+      const xeroLineItems = lineItems.map((item: any) => {
+        let taxType = "INPUT";
+        if (item.tax === "No GST" || item.tax === "NONE") {
+          taxType = "NONE";
+        }
+        return {
+          description: item.description || "",
+          quantity: typeof item.quantity === "number" ? item.quantity : 1,
+          unitAmount: typeof item.unitPrice === "number" ? item.unitPrice / 100 : 0,
+          taxType,
+          accountCode: item.account || undefined,
+        };
+      });
+
+      const xeroBill = await xeroService.createBill(connection.id, {
+        supplierName,
+        billDate: formatDate(bill.billDate),
+        dueDate: bill.dueDate ? formatDate(bill.dueDate) : undefined,
+        reference: bill.billReference || bill.billNumber,
+        lineItems: xeroLineItems,
+      });
+
+      if (xeroBill?.InvoiceID) {
+        await storage.updateBill(billId, {
+          xeroInvoiceId: xeroBill.InvoiceID,
+          sendToXero: true,
+        } as any);
+      }
+
+      res.json({
+        success: true,
+        xeroInvoiceId: xeroBill?.InvoiceID,
+        xeroInvoiceNumber: xeroBill?.InvoiceNumber,
+      });
+    } catch (error: any) {
+      console.error("Error pushing bill to Xero:", error);
+      res.status(500).json({ error: error.message || "Failed to push bill to Xero" });
     }
   });
 

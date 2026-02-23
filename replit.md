@@ -54,6 +54,9 @@ Preferred communication style: Simple, everyday language.
 - **Allowances System**: Tracks Prime Cost (PC) and Provisional Sum (PS) items.
 - **Proposals System**: PDF proposal builder with live preview, section-based editing, and template support.
 - **Purchase Orders System**: Create POs from estimate items via bulk selection with GST mode (inclusive/exclusive/gst_free), delivery details (reference, attention, contact, address, instructions), print/PDF with delivery instructions, send to supplier with status locking, receive goods workflow, duplicate PO, and delete. Shopping cart icons on estimate items indicate linked POs.
+- **AI Bill Reader**: OpenAI GPT-4o vision-based invoice/bill extraction replacing Mindee OCR. Extracts supplier, dates, reference, line items, quantities, unit prices, tax, and totals from uploaded images/PDFs. Auto-fills bill form fields.
+- **Xero Integration**: OAuth2 connection flow with token storage and auto-refresh. Bills with "Send to Xero" checkbox push to Xero as AP invoices on save. Xero connection management in Business Settings > Integrations.
+- **Bill Attachment Viewer**: Inline preview of PDF and image attachments in bill sidebar with click-to-expand fullscreen overlay.
 - **User View Preferences**: Database-backed persistence for user-specific view settings (column order, visibility, filters).
 - **Optimistic UI Updates**: Implemented for responsiveness.
 - **Searchable Select Components**: Reusable typeahead components for dropdowns.

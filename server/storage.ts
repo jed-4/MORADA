@@ -1058,6 +1058,13 @@ export interface IStorage {
   markAllNotificationsAsRead(userId: string, companyId: string): Promise<number>;
   deleteNotification(id: string, userId: string): Promise<boolean>;
   getUnreadNotificationCount(userId: string, companyId: string): Promise<number>;
+
+  // Xero Connection operations
+  getXeroConnectionByCompanyId(companyId: string): Promise<import("@shared/schema").XeroConnection | undefined>;
+  getXeroConnection(id: string): Promise<import("@shared/schema").XeroConnection | undefined>;
+  createXeroConnection(data: import("@shared/schema").InsertXeroConnection): Promise<import("@shared/schema").XeroConnection>;
+  updateXeroConnection(id: string, data: Partial<import("@shared/schema").XeroConnection>): Promise<import("@shared/schema").XeroConnection | undefined>;
+  deleteXeroConnection(id: string): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
@@ -5433,6 +5440,22 @@ export class MemStorage implements IStorage {
     return undefined;
   }
   async deleteChecklistStatusTrigger(id: string): Promise<boolean> {
+    return false;
+  }
+
+  async getXeroConnectionByCompanyId(companyId: string): Promise<import("@shared/schema").XeroConnection | undefined> {
+    return undefined;
+  }
+  async getXeroConnection(id: string): Promise<import("@shared/schema").XeroConnection | undefined> {
+    return undefined;
+  }
+  async createXeroConnection(data: import("@shared/schema").InsertXeroConnection): Promise<import("@shared/schema").XeroConnection> {
+    throw new Error("Not implemented in MemStorage");
+  }
+  async updateXeroConnection(id: string, data: Partial<import("@shared/schema").XeroConnection>): Promise<import("@shared/schema").XeroConnection | undefined> {
+    return undefined;
+  }
+  async deleteXeroConnection(id: string): Promise<boolean> {
     return false;
   }
 }
@@ -18927,6 +18950,71 @@ export class DbStorage implements IStorage {
       return Number(result?.count || 0);
     } catch (error) {
       console.error("Database error in getUnreadNotificationCount:", error);
+      throw error;
+    }
+  }
+
+  async getXeroConnectionByCompanyId(companyId: string): Promise<import("@shared/schema").XeroConnection | undefined> {
+    try {
+      const [connection] = await db.select()
+        .from(schema.xeroConnections)
+        .where(and(
+          eq(schema.xeroConnections.companyId, companyId),
+          eq(schema.xeroConnections.isActive, true)
+        ))
+        .limit(1);
+      return connection;
+    } catch (error) {
+      console.error("Database error in getXeroConnectionByCompanyId:", error);
+      throw error;
+    }
+  }
+
+  async getXeroConnection(id: string): Promise<import("@shared/schema").XeroConnection | undefined> {
+    try {
+      const [connection] = await db.select()
+        .from(schema.xeroConnections)
+        .where(eq(schema.xeroConnections.id, id))
+        .limit(1);
+      return connection;
+    } catch (error) {
+      console.error("Database error in getXeroConnection:", error);
+      throw error;
+    }
+  }
+
+  async createXeroConnection(data: import("@shared/schema").InsertXeroConnection): Promise<import("@shared/schema").XeroConnection> {
+    try {
+      const [connection] = await db.insert(schema.xeroConnections)
+        .values(data)
+        .returning();
+      return connection;
+    } catch (error) {
+      console.error("Database error in createXeroConnection:", error);
+      throw error;
+    }
+  }
+
+  async updateXeroConnection(id: string, data: Partial<import("@shared/schema").XeroConnection>): Promise<import("@shared/schema").XeroConnection | undefined> {
+    try {
+      const [connection] = await db.update(schema.xeroConnections)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(schema.xeroConnections.id, id))
+        .returning();
+      return connection;
+    } catch (error) {
+      console.error("Database error in updateXeroConnection:", error);
+      throw error;
+    }
+  }
+
+  async deleteXeroConnection(id: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.xeroConnections)
+        .where(eq(schema.xeroConnections.id, id));
+      return (result as any).rowCount > 0;
+    } catch (error) {
+      console.error("Database error in deleteXeroConnection:", error);
       throw error;
     }
   }

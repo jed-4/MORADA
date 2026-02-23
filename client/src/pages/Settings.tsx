@@ -225,7 +225,9 @@ const companyInfoSchema = z.object({
 
 export default function Settings() {
   const [, navigate] = useLocation();
-  const [activeSection, setActiveSection] = useState("branding");
+  const urlParams = new URLSearchParams(window.location.search);
+  const tabParam = urlParams.get("tab");
+  const [activeSection, setActiveSection] = useState(tabParam || "branding");
   const [isEditing, setIsEditing] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
@@ -645,7 +647,153 @@ export default function Settings() {
             )}
           </CardContent>
         </Card>
+
+        {/* Xero Integration */}
+        <XeroIntegrationCard />
       </div>
+    );
+  };
+
+  const XeroIntegrationCard = () => {
+    const { toast } = useToast();
+
+    const { data: xeroStatus, isLoading: isXeroLoading } = useQuery<{
+      connected: boolean;
+      tenantName?: string;
+      connectedAt?: string;
+    }>({
+      queryKey: ["/api/xero/status"],
+    });
+
+    const connectXeroMutation = useMutation({
+      mutationFn: async () => {
+        const response = await apiRequest("/api/xero/connect", "GET");
+        return response.json();
+      },
+      onSuccess: (data) => {
+        if (data.authUrl) {
+          window.location.href = data.authUrl;
+        }
+      },
+      onError: (error: any) => {
+        toast({
+          title: "Failed to connect Xero",
+          description: error.message,
+          variant: "destructive",
+        });
+      },
+    });
+
+    const disconnectXeroMutation = useMutation({
+      mutationFn: async () => {
+        const response = await apiRequest("/api/xero/disconnect", "POST");
+        return response.json();
+      },
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/xero/status"] });
+        toast({ title: "Xero disconnected successfully" });
+      },
+      onError: (error: any) => {
+        toast({
+          title: "Failed to disconnect Xero",
+          description: error.message,
+          variant: "destructive",
+        });
+      },
+    });
+
+    return (
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-sky-100 dark:bg-sky-900 rounded-lg">
+              <FileText className="h-6 w-6 text-sky-600 dark:text-sky-400" />
+            </div>
+            <div className="flex-1">
+              <CardTitle className="flex items-center gap-2">
+                Xero
+                {xeroStatus?.connected && (
+                  <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                    Connected
+                  </Badge>
+                )}
+              </CardTitle>
+              <p className="text-sm text-muted-foreground mt-1">
+                Sync bills and invoices with your Xero accounting software
+              </p>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {isXeroLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <RefreshCw className="h-4 w-4 animate-spin" />
+              Checking connection...
+            </div>
+          ) : xeroStatus?.connected ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-4 border rounded-lg">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-green-100 dark:bg-green-900 rounded-full">
+                    <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
+                  </div>
+                  <div>
+                    <p className="font-medium">Connected to Xero</p>
+                    <p className="text-sm text-muted-foreground">
+                      Organisation: {xeroStatus.tenantName || "Unknown"}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => disconnectXeroMutation.mutate()}
+                  disabled={disconnectXeroMutation.isPending}
+                >
+                  {disconnectXeroMutation.isPending ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                      Disconnecting...
+                    </>
+                  ) : (
+                    "Disconnect"
+                  )}
+                </Button>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Bills with "Send to Xero" checked will be synced when saved.
+              </p>
+            </div>
+          ) : (
+            <div className="border rounded-lg p-4 bg-muted/30">
+              <h4 className="font-medium mb-2 flex items-center gap-2">
+                <Plug className="h-4 w-4" />
+                Connect Xero
+              </h4>
+              <p className="text-sm text-muted-foreground mb-4">
+                Connect your Xero account to automatically sync bills and invoices.
+                You'll be redirected to Xero to authorise access.
+              </p>
+              <Button
+                onClick={() => connectXeroMutation.mutate()}
+                disabled={connectXeroMutation.isPending}
+              >
+                {connectXeroMutation.isPending ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Connecting...
+                  </>
+                ) : (
+                  <>
+                    <Plug className="h-4 w-4 mr-2" />
+                    Connect Xero
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     );
   };
 

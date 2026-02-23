@@ -1822,8 +1822,9 @@ export type AllowanceItem = typeof allowanceItems.$inferSelect;
 // Xero Connections
 export const xeroConnections = pgTable("xero_connections", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").references(() => projects.id), // Nullable for global connection
-  tenantId: text("tenant_id").notNull(), // Xero organization ID
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  projectId: varchar("project_id").references(() => projects.id),
+  tenantId: text("tenant_id").notNull(),
   tenantName: text("tenant_name").notNull(),
   accessToken: text("access_token").notNull(),
   refreshToken: text("refresh_token").notNull(),

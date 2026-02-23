@@ -19,7 +19,9 @@ import {
   FileText,
   Loader2,
   ChevronDown,
-  Settings2
+  Settings2,
+  Eye,
+  Maximize2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -126,6 +128,8 @@ export default function BillDetail() {
   const [ocrPreviewOpen, setOcrPreviewOpen] = useState(false);
   const [addSupplierDialogOpen, setAddSupplierDialogOpen] = useState(false);
   const [attachmentUrls, setAttachmentUrls] = useState<string[]>([]);
+  const [previewAttachment, setPreviewAttachment] = useState<string | null>(null);
+  const [fullscreenPreview, setFullscreenPreview] = useState(false);
   const dueDateManuallySet = useRef(false);
   const [visibleAmountCols, setVisibleAmountCols] = useState<{ exTax: boolean; tax: boolean; incTax: boolean }>({ exTax: false, tax: false, incTax: false });
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
@@ -523,13 +527,19 @@ export default function BillDetail() {
 
       return newBill;
     },
-    onSuccess: () => {
+    onSuccess: async (newBill) => {
+      if (form.getValues("sendToXero") && newBill?.id) {
+        try {
+          await apiRequest("/api/xero/push-bill", "POST", { billId: newBill.id });
+          toast({ title: "Success", description: "Bill created and sent to Xero" });
+        } catch {
+          toast({ title: "Bill created", description: "Bill saved but failed to send to Xero. You can retry from the bill.", variant: "destructive" });
+        }
+      } else {
+        toast({ title: "Success", description: "Bill created successfully" });
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects", form.getValues("projectId"), "allowances"] });
-      toast({
-        title: "Success",
-        description: "Bill created successfully",
-      });
       setLocation(projectId ? `/projects/${projectId}/bills` : "/bills");
     },
     onError: (error: Error) => {
@@ -634,15 +644,21 @@ export default function BillDetail() {
 
       return updatedBill;
     },
-    onSuccess: () => {
+    onSuccess: async () => {
+      if (form.getValues("sendToXero") && id) {
+        try {
+          await apiRequest("/api/xero/push-bill", "POST", { billId: id });
+          toast({ title: "Success", description: "Bill updated and sent to Xero" });
+        } catch {
+          toast({ title: "Bill updated", description: "Bill saved but failed to send to Xero. You can retry later.", variant: "destructive" });
+        }
+      } else {
+        toast({ title: "Success", description: "Bill updated successfully" });
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
       queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
       queryClient.invalidateQueries({ queryKey: ["/api/bills", id, "line-item-allowances"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects", form.getValues("projectId"), "allowances"] });
-      toast({
-        title: "Success",
-        description: "Bill updated successfully",
-      });
       setLocation(projectId ? `/projects/${projectId}/bills` : "/bills");
     },
     onError: (error: Error) => {
@@ -1360,12 +1376,12 @@ export default function BillDetail() {
                             {ocrMutation.isPending ? (
                               <>
                                 <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                                Extracting...
+                                Reading bill...
                               </>
                             ) : (
                               <>
                                 <Upload className="h-3.5 w-3.5 mr-1.5" />
-                                Process with OCR
+                                Read with AI
                               </>
                             )}
                           </Button>
@@ -1380,7 +1396,7 @@ export default function BillDetail() {
                                 className="w-full justify-between"
                                 data-testid="button-toggle-ocr-preview"
                               >
-                                <span className="text-xs">OCR Results</span>
+                                <span className="text-xs">AI Extracted Data</span>
                                 <ChevronDown className={`h-3.5 w-3.5 transition-transform ${ocrPreviewOpen ? 'rotate-180' : ''}`} />
                               </Button>
                             </CollapsibleTrigger>
@@ -1498,29 +1514,91 @@ export default function BillDetail() {
                         </label>
                       </div>
                       {attachmentUrls.length > 0 ? (
-                        <div className="space-y-0.5">
+                        <div className="space-y-1">
+                          {previewAttachment && (
+                            <div className="relative rounded-md border overflow-hidden bg-muted/20 mb-2">
+                              <div className="flex items-center justify-between px-2 py-1 border-b bg-muted/30">
+                                <span className="text-[10px] text-muted-foreground truncate">
+                                  {decodeURIComponent(previewAttachment.split('/').pop() || 'Preview')}
+                                </span>
+                                <div className="flex items-center gap-0.5">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => setFullscreenPreview(true)}
+                                  >
+                                    <Maximize2 className="h-3 w-3" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => setPreviewAttachment(null)}
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              </div>
+                              {/\.(pdf)$/i.test(previewAttachment) ? (
+                                <iframe
+                                  src={previewAttachment}
+                                  className="w-full h-[300px] border-0"
+                                  title="PDF Preview"
+                                />
+                              ) : /\.(jpe?g|png|gif|webp|bmp|tiff?)$/i.test(previewAttachment) ? (
+                                <img
+                                  src={previewAttachment}
+                                  alt="Attachment preview"
+                                  className="w-full max-h-[300px] object-contain"
+                                />
+                              ) : (
+                                <div className="flex items-center justify-center h-20 text-[11px] text-muted-foreground">
+                                  Preview not available for this file type
+                                </div>
+                              )}
+                            </div>
+                          )}
                           {attachmentUrls.map((url, idx) => {
                             const fileName = url.split('/').pop() || `Attachment ${idx + 1}`;
+                            const isImage = /\.(jpe?g|png|gif|webp|bmp|tiff?)$/i.test(url);
+                            const isPdf = /\.(pdf)$/i.test(url);
+                            const canPreview = isImage || isPdf;
+                            const isActive = previewAttachment === url;
                             return (
-                              <div key={idx} className="flex items-center justify-between gap-1.5 p-1.5 rounded-md border text-[11px]">
-                                <a
-                                  href={url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="flex items-center gap-1.5 text-foreground hover:underline truncate"
+                              <div key={idx} className={`flex items-center justify-between gap-1.5 p-1.5 rounded-md border text-[11px] ${isActive ? 'border-primary bg-primary/5' : ''}`}>
+                                <button
+                                  type="button"
+                                  onClick={() => canPreview ? setPreviewAttachment(isActive ? null : url) : window.open(url, '_blank')}
+                                  className="flex items-center gap-1.5 text-foreground hover:underline truncate text-left"
                                 >
-                                  <FileText className="h-3 w-3 text-muted-foreground shrink-0" />
+                                  {isImage ? (
+                                    <img src={url} alt="" className="h-5 w-5 rounded-sm object-cover shrink-0" />
+                                  ) : (
+                                    <FileText className="h-3 w-3 text-muted-foreground shrink-0" />
+                                  )}
                                   <span className="truncate">{decodeURIComponent(fileName)}</span>
-                                </a>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="shrink-0"
-                                  onClick={() => setAttachmentUrls(prev => prev.filter((_, i) => i !== idx))}
-                                  data-testid={`button-remove-attachment-${idx}`}
-                                >
-                                  <X className="h-3 w-3" />
-                                </Button>
+                                </button>
+                                <div className="flex items-center gap-0.5 shrink-0">
+                                  {canPreview && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => setPreviewAttachment(isActive ? null : url)}
+                                    >
+                                      <Eye className="h-3 w-3" />
+                                    </Button>
+                                  )}
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => {
+                                      setAttachmentUrls(prev => prev.filter((_, i) => i !== idx));
+                                      if (previewAttachment === url) setPreviewAttachment(null);
+                                    }}
+                                    data-testid={`button-remove-attachment-${idx}`}
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </Button>
+                                </div>
                               </div>
                             );
                           })}
@@ -2096,6 +2174,34 @@ export default function BillDetail() {
           </Form>
         </DialogContent>
       </Dialog>
+
+      {fullscreenPreview && previewAttachment && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center" onClick={() => setFullscreenPreview(false)}>
+          <div className="relative w-[90vw] h-[90vh]" onClick={(e) => e.stopPropagation()}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute top-2 right-2 z-10 bg-black/50 text-white"
+              onClick={() => setFullscreenPreview(false)}
+            >
+              <X className="h-5 w-5" />
+            </Button>
+            {/\.(pdf)$/i.test(previewAttachment) ? (
+              <iframe
+                src={previewAttachment}
+                className="w-full h-full border-0 rounded-md"
+                title="PDF Preview Fullscreen"
+              />
+            ) : /\.(jpe?g|png|gif|webp|bmp|tiff?)$/i.test(previewAttachment) ? (
+              <img
+                src={previewAttachment}
+                alt="Attachment preview fullscreen"
+                className="w-full h-full object-contain"
+              />
+            ) : null}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
