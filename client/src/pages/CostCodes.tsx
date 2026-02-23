@@ -47,6 +47,7 @@ import MergeCostCodeDialog from "@/components/MergeCostCodeDialog";
 import EditCategoryDialog from "@/components/EditCategoryDialog";
 import MergeCategoryDialog from "@/components/MergeCategoryDialog";
 import EditCostCodeDialog from "@/components/EditCostCodeDialog";
+import BulkXeroMappingDialog from "@/components/BulkXeroMappingDialog";
 
 export default function CostCodes() {
   const { toast } = useToast();
@@ -65,6 +66,7 @@ export default function CostCodes() {
   const [selectedCategoryForMerge, setSelectedCategoryForMerge] = useState<CostCategory | null>(null);
   const [isEditCostCodeOpen, setIsEditCostCodeOpen] = useState(false);
   const [selectedCostCodeForEdit, setSelectedCostCodeForEdit] = useState<CostCode | null>(null);
+  const [isBulkXeroMappingOpen, setIsBulkXeroMappingOpen] = useState(false);
   const [selectedCodeIds, setSelectedCodeIds] = useState<Set<string>>(new Set());
 
   const { data: categories = [], isLoading: categoriesLoading } = useQuery<CostCategory[]>({
@@ -74,6 +76,11 @@ export default function CostCodes() {
   const { data: codes = [], isLoading: codesLoading } = useQuery<CostCode[]>({
     queryKey: ["/api/cost-codes"],
   });
+
+  const { data: xeroStatus } = useQuery<any>({
+    queryKey: ["/api/xero/status"],
+  });
+  const xeroConnected = xeroStatus?.connected === true && !!xeroStatus?.trackingCategory1Id;
 
   const archiveMutation = useMutation({
     mutationFn: (codeId: string) =>
@@ -336,6 +343,14 @@ export default function CostCodes() {
             <Upload className="w-3 h-3" />
             <span>Import</span>
           </button>
+          {xeroConnected && (
+            <button
+              className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 text-[#13B5EA] border-[#13B5EA]/30"
+              onClick={() => setIsBulkXeroMappingOpen(true)}
+            >
+              <span>Map to Xero</span>
+            </button>
+          )}
           <button
             className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
             onClick={() => setIsAddCostCodeOpen(true)}
@@ -882,6 +897,10 @@ export default function CostCodes() {
         open={isEditCostCodeOpen}
         onOpenChange={setIsEditCostCodeOpen}
         costCode={selectedCostCodeForEdit}
+      />
+      <BulkXeroMappingDialog
+        open={isBulkXeroMappingOpen}
+        onOpenChange={setIsBulkXeroMappingOpen}
       />
     </div>
   );

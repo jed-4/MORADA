@@ -3976,39 +3976,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/cost-codes/:id", async (req, res) => {
-    try {
-      const updateSchema = insertCostCodeSchema.partial();
-      const validationResult = updateSchema.safeParse(req.body);
-      if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
-        });
-      }
-
-      const costCode = await storage.updateCostCode(req.params.id, validationResult.data);
-      if (!costCode) {
-        return res.status(404).json({ error: "Cost code not found" });
-      }
-      res.json(costCode);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to update cost code" });
-    }
-  });
-
-  app.delete("/api/cost-codes/:id", async (req, res) => {
-    try {
-      const deleted = await storage.deleteCostCode(req.params.id);
-      if (!deleted) {
-        return res.status(404).json({ error: "Cost code not found" });
-      }
-      res.status(204).send();
-    } catch (error) {
-      res.status(500).json({ error: "Failed to delete cost code" });
-    }
-  });
-
   // Versioning and Locking API Routes
   app.post("/api/estimates/:id/version", async (req, res) => {
     try {
