@@ -6767,20 +6767,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/project-access/grant", requireTeamMember, async (req, res) => {
     try {
-      const { userId, projectId, accessLevel, grantedBy } = req.body;
-      if (!userId || !projectId || !accessLevel || !grantedBy) {
+      const currentUser = req.user as any;
+      const { userId, projectId, accessLevel } = req.body;
+      if (!userId || !projectId || !accessLevel) {
         return res.status(400).json({ 
-          error: "userId, projectId, accessLevel, and grantedBy are required" 
+          error: "userId, projectId, and accessLevel are required" 
         });
       }
 
-      const access = await storage.grantProjectAccess(userId, projectId, accessLevel, grantedBy);
+      const grantedById = currentUser?.id ? String(currentUser.id) : req.body.grantedBy;
+      if (!grantedById) {
+        return res.status(400).json({ error: "Could not determine granting user" });
+      }
+
+      const access = await storage.grantProjectAccess(userId, projectId, accessLevel, grantedById);
       
       // Auto-add user to project channel if it exists
       try {
-        const user = await storage.getUser(grantedBy);
-        if (user?.companyId) {
-          const channels = await storage.getChannels(user.companyId);
+        const granter = await storage.getUser(grantedById);
+        if (granter?.companyId) {
+          const channels = await storage.getChannels(granter.companyId);
           const projectChannel = channels.find(c => c.projectId === projectId);
           
           if (projectChannel) {
@@ -6803,8 +6809,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       res.status(201).json(access);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to grant project access" });
+    } catch (error: any) {
+      console.error("[POST /api/project-access/grant] Error:", error);
+      res.status(500).json({ error: "Failed to grant project access", details: error?.message });
     }
   });
 
@@ -14939,17 +14946,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (company) {
           createData.assignedToName = company.nickname || company.name;
         }
+        createData.assignedToId = null;
+        createData.assignedToColor = null;
       }
       
-      // Copy contact's scheduleColor to assignedToColor when assigning a contact
+      // Copy contact's scheduleColor and name to assignedTo fields when assigning a contact
       if (createData.assignedToId && !createData.assignedToId.startsWith('company:')) {
         try {
           const [contact] = await db.select().from(contacts).where(eq(contacts.id, createData.assignedToId)).limit(1);
-          if (contact?.scheduleColor) {
-            createData.assignedToColor = contact.scheduleColor;
+          if (contact) {
+            createData.assignedToColor = contact.scheduleColor || null;
+            createData.assignedToName = contact.company || `${contact.firstName || ''} ${contact.lastName || ''}`.trim() || null;
           }
         } catch (e) {
-          // Non-critical - continue without color
+          // Non-critical - continue without color/name
         }
       }
       
@@ -15061,16 +15071,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (company) {
           updateData.assignedToName = company.nickname || company.name;
         }
+        updateData.assignedToId = null;
+        updateData.assignedToColor = null;
       }
       
-      // Copy contact's scheduleColor to assignedToColor when assignedToId changes
+      // Copy contact's scheduleColor and name to assignedTo fields when assignedToId changes
       if (updateData.assignedToId !== undefined) {
         if (updateData.assignedToId && !updateData.assignedToId.startsWith('company:')) {
           try {
             const [contact] = await db.select().from(contacts).where(eq(contacts.id, updateData.assignedToId)).limit(1);
-            updateData.assignedToColor = contact?.scheduleColor || null;
+            if (contact) {
+              updateData.assignedToColor = contact.scheduleColor || null;
+              updateData.assignedToName = contact.company || `${contact.firstName || ''} ${contact.lastName || ''}`.trim() || null;
+            }
           } catch (e) {
-            // Non-critical - continue without color
+            // Non-critical - continue without color/name
           }
         } else if (!updateData.assignedToId) {
           updateData.assignedToColor = null;

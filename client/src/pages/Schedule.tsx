@@ -619,6 +619,26 @@ export default function Schedule() {
     onSuccess: () => refetchSteps(),
   });
 
+  // Reorder step mutation
+  const reorderStepMutation = useMutation({
+    mutationFn: async ({ id, sortOrder }: { id: string; sortOrder: number }) => {
+      return await apiRequest(`/api/schedule-item-steps/${id}`, "PATCH", { sortOrder });
+    },
+    onSuccess: () => refetchSteps(),
+  });
+
+  const handleMoveStep = (index: number, direction: 'up' | 'down') => {
+    const steps = itemSteps as any[];
+    const swapIndex = direction === 'up' ? index - 1 : index + 1;
+    if (swapIndex < 0 || swapIndex >= steps.length) return;
+    const currentStep = steps[index];
+    const swapStep = steps[swapIndex];
+    const currentOrder = currentStep.sortOrder ?? index;
+    const swapOrder = swapStep.sortOrder ?? swapIndex;
+    reorderStepMutation.mutate({ id: currentStep.id, sortOrder: swapOrder });
+    reorderStepMutation.mutate({ id: swapStep.id, sortOrder: currentOrder });
+  };
+
   // Bulk delete mutation
   const bulkDeleteMutation = useMutation({
     mutationFn: async (itemIds: string[]) => {
@@ -2112,38 +2132,44 @@ export default function Schedule() {
               </Select>
             </div>
 
-            {/* Status and Assignee Row */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="item-status">Status</Label>
-                <Select
-                  value={formData.status}
-                  onValueChange={(value) => setFormData({ ...formData, status: value })}
-                >
-                  <SelectTrigger id="item-status" data-testid="select-item-status">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {statusOptions.map((option: any) => (
-                      <SelectItem key={option.id} value={option.key}>
-                        {option.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+            {/* Status and Assignee Row (hidden for parent items with children) */}
+            {(() => {
+              const isEditingParentWithChildren = editingItem && !editingItem.parentItemId && scheduleItems.some(i => i.parentItemId === editingItem.id);
+              if (isEditingParentWithChildren) return null;
+              return (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="item-status">Status</Label>
+                    <Select
+                      value={formData.status}
+                      onValueChange={(value) => setFormData({ ...formData, status: value })}
+                    >
+                      <SelectTrigger id="item-status" data-testid="select-item-status">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {statusOptions.map((option: any) => (
+                          <SelectItem key={option.id} value={option.key}>
+                            {option.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="item-assignee">Assignee</Label>
-                <ContactSelect
-                  value={formData.assignedToId || ""}
-                  onValueChange={(value) => setFormData({ ...formData, assignedToId: value || "" })}
-                  placeholder="None"
-                  allowBusiness={true}
-                  data-testid="select-item-assignee"
-                />
-              </div>
-            </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="item-assignee">Assignee</Label>
+                    <ContactSelect
+                      value={formData.assignedToId || ""}
+                      onValueChange={(value) => setFormData({ ...formData, assignedToId: value || "" })}
+                      placeholder="None"
+                      allowBusiness={true}
+                      data-testid="select-item-assignee"
+                    />
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Progress */}
             {(editingItem || formData.status === "in_progress") && (
@@ -2438,15 +2464,15 @@ export default function Schedule() {
             {editingItem && (
               <div className="space-y-2 pt-4 border-t">
                 <div className="flex items-center justify-between">
-                  <Label>Checklist Steps</Label>
+                  <Label>Sub-items</Label>
                   <span className="text-xs text-muted-foreground">
                     {(itemSteps as any[]).filter((s: any) => s.isCompleted).length}/{(itemSteps as any[]).length} done
                   </span>
                 </div>
                 
-                {/* Steps List */}
+                {/* Sub-items List */}
                 <div className="space-y-1">
-                  {(itemSteps as any[]).map((step: any) => (
+                  {(itemSteps as any[]).map((step: any, index: number) => (
                     <div key={step.id} className="flex items-center gap-2 py-0.5 group">
                       <Checkbox
                         checked={step.isCompleted}
@@ -2457,22 +2483,42 @@ export default function Schedule() {
                       <span className={`text-sm flex-1 ${step.isCompleted ? 'line-through text-muted-foreground' : ''}`}>
                         {step.name}
                       </span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-5 w-5 opacity-0 group-hover:opacity-100"
-                        onClick={() => deleteStepMutation.mutate(step.id)}
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
+                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-5 w-5"
+                          onClick={() => handleMoveStep(index, 'up')}
+                          disabled={index === 0}
+                        >
+                          <ChevronUp className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-5 w-5"
+                          onClick={() => handleMoveStep(index, 'down')}
+                          disabled={index === (itemSteps as any[]).length - 1}
+                        >
+                          <ChevronDown className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-5 w-5"
+                          onClick={() => deleteStepMutation.mutate(step.id)}
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
                 
-                {/* Add Step Input */}
+                {/* Add Sub-item Input */}
                 <div className="flex items-center gap-2">
                   <Input
-                    placeholder="Add a step..."
+                    placeholder="Add a sub-item..."
                     value={newStepName}
                     onChange={(e) => setNewStepName(e.target.value)}
                     onKeyDown={(e) => {

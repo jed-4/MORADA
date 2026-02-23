@@ -11,6 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ZoomIn, ZoomOut, Filter, ChevronLeft, ChevronRight, Calendar, ExternalLink, Settings, MoreHorizontal, GanttChart, Users } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { format, differenceInDays, addDays, startOfWeek, startOfMonth, eachWeekOfInterval, eachMonthOfInterval, eachDayOfInterval, getISOWeek, endOfWeek, addWeeks } from "date-fns";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -263,18 +264,39 @@ export default function BusinessSchedule() {
 
       {/* Legend */}
       <div className="h-8 flex items-center px-3 gap-4 border-b border-border/50 flex-shrink-0">
-        <div className="flex items-center gap-1.5">
-          <div className="w-5 h-3 rounded-sm bg-blue-500" />
-          <span className="text-[10px] text-muted-foreground">Scheduled</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-5 h-3 rounded-sm border-2 border-dashed border-amber-600" />
-          <span className="text-[10px] text-muted-foreground">Unscheduled</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-5 h-3 rounded-sm border-2 border-dotted border-gray-400" />
-          <span className="text-[10px] text-muted-foreground">Prospective</span>
-        </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex items-center gap-1.5 cursor-default">
+              <div className="w-5 h-3 rounded-sm bg-blue-500" />
+              <span className="text-[10px] text-muted-foreground">Scheduled</span>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            <p className="text-xs">Projects with schedule items that have dates assigned</p>
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex items-center gap-1.5 cursor-default">
+              <div className="w-5 h-3 rounded-sm border-2 border-dashed border-amber-600" />
+              <span className="text-[10px] text-muted-foreground">Unscheduled</span>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            <p className="text-xs">Projects without any scheduled items yet</p>
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex items-center gap-1.5 cursor-default">
+              <div className="w-5 h-3 rounded-sm border-2 border-dotted border-gray-400" />
+              <span className="text-[10px] text-muted-foreground">Prospective</span>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            <p className="text-xs">Lead or pre-construction projects not yet confirmed</p>
+          </TooltipContent>
+        </Tooltip>
       </div>
 
       {/* Main content */}

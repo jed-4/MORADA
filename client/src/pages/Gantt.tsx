@@ -55,6 +55,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useScheduleItemStatusOptions } from "@/hooks/useScheduleItemStatusOptions";
 import { ScheduleColorPicker } from "@/components/schedule/ScheduleColorPicker";
 import { ActivityNotesPopover } from "@/components/ActivityNotesPopover";
+import { ContactSelect } from "@/components/ContactSelect";
 import type { ScheduleItem } from "@shared/schema";
 import { useWeekStartDay } from "@/hooks/useWeekStartDay";
 
@@ -484,6 +485,9 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
   const [inlineEditId, setInlineEditId] = useState<number | null>(null);
   const [inlineEditValue, setInlineEditValue] = useState('');
   
+  // Inline assignee editing popover state
+  const [assigneePopoverItemId, setAssigneePopoverItemId] = useState<string | null>(null);
+  
   // Pending predecessor mode: after clicking "Create Predecessor", the next bar click creates the link
   const [pendingPredecessor, setPendingPredecessor] = useState<string | null>(null);
   
@@ -647,6 +651,12 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     queryKey: [`/api/projects/${projectId}/schedule-items`],
   });
   allItemsRef.current = allItems;
+
+  // Fetch sub-items for the selected task view dialog
+  const { data: viewTaskSteps = [] } = useQuery({
+    queryKey: [`/api/schedule-items/${selectedTask?.id}/steps`],
+    enabled: !!selectedTask?.id,
+  });
 
   const draggingCascadeIds = useMemo(() => {
     if (!dragging || dragging.type !== 'move') return new Set<number | string>();
@@ -2346,6 +2356,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
             {orderedItems.map((item, idx) => {
               const isParent = !item.parentItemId;
               const childItems = childItemsByParent[item.id] || [];
+              const hasChildren = isParent && childItems.length > 0;
               const isCollapsed = collapsedItems.has(item.id);
 
               return (
@@ -2410,10 +2421,10 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                       )}
                     </div>
 
-                    {/* Status column - clickable dropdown */}
+                    {/* Status column - clickable dropdown (hidden for parent items with children) */}
                     {visibleColumns.status && (
                       <div style={{ width: columnWidths.status }} className="flex items-center justify-center flex-shrink-0 px-1">
-                        {item.status && statusOptions.length > 0 ? (
+                        {hasChildren ? null : item.status && statusOptions.length > 0 ? (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild onClick={(e) => { e.stopPropagation(); if (schedule?.status === 'locked') e.preventDefault(); }}>
                               <button className={`${schedule?.status === 'locked' ? 'cursor-not-allowed opacity-70' : 'cursor-pointer hover-elevate'} rounded`} data-testid={`status-dropdown-${item.id}`}>
@@ -2525,16 +2536,57 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                       </div>
                     )}
 
-                    {/* Assignee column */}
+                    {/* Assignee column - clickable inline edit (hidden for parent items with children) */}
                     {visibleColumns.assignee && (
-                      <div style={{ width: columnWidths.assignee }} className="flex items-center justify-center flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
-                        {item.assignedToName && (
-                          <Avatar className="w-5 h-5">
-                            <AvatarFallback className="text-[10px]">
-                              {item.assignedToName.substring(0, 2).toUpperCase()}
-                            </AvatarFallback>
-                          </Avatar>
-                        )}
+                      <div style={{ width: columnWidths.assignee }} className="flex items-center justify-center flex-shrink-0 px-1">
+                        {!hasChildren ? (
+                          <Popover 
+                            open={assigneePopoverItemId === item.id} 
+                            onOpenChange={(open) => {
+                              if (schedule?.status === 'locked') return;
+                              setAssigneePopoverItemId(open ? item.id : null);
+                            }}
+                          >
+                            <PopoverTrigger asChild>
+                              <button 
+                                className={`${schedule?.status === 'locked' ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'} rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all flex items-center justify-center w-full h-full`}
+                                onClick={(e) => { e.stopPropagation(); if (schedule?.status === 'locked') e.preventDefault(); }}
+                                data-testid={`assignee-trigger-${item.id}`}
+                              >
+                                {item.assignedToName ? (
+                                  <Avatar className="w-5 h-5">
+                                    <AvatarFallback className="text-[10px]">
+                                      {item.assignedToName.substring(0, 2).toUpperCase()}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                ) : (
+                                  <div className="w-5 h-5 rounded-full border border-dashed border-muted-foreground/40 flex items-center justify-center opacity-0 group-hover:opacity-60 transition-opacity">
+                                    <Plus className="w-3 h-3 text-muted-foreground/60" />
+                                  </div>
+                                )}
+                              </button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[240px] p-2" align="start" onClick={(e) => e.stopPropagation()}>
+                              <ContactSelect
+                                value={item.assignedToId || ""}
+                                onValueChange={async (newValue) => {
+                                  setAssigneePopoverItemId(null);
+                                  try {
+                                    await apiRequest(`/api/schedule-items/${item.id}`, "PATCH", {
+                                      assignedToId: newValue || null,
+                                    });
+                                    queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+                                  } catch (error) {
+                                    toast({ title: "Failed to update assignee", variant: "destructive" });
+                                  }
+                                }}
+                                allowBusiness
+                                allowClear
+                                placeholder="Select assignee..."
+                              />
+                            </PopoverContent>
+                          </Popover>
+                        ) : null}
                       </div>
                     )}
 
@@ -2589,12 +2641,13 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                                 <Link className="mr-2 h-4 w-4" />
                                 Link Dependency
                               </DropdownMenuItem>
-                              {schedule?.status !== 'locked' && (
+                              {schedule?.status !== 'locked' && !hasChildren && (
                               <DropdownMenuItem onClick={() => handleToggleComplete(item)} data-testid="menu-complete">
                                 <Check className="mr-2 h-4 w-4" />
                                 {item.status === "completed" ? "Mark Incomplete" : "Mark Complete"}
                               </DropdownMenuItem>
                               )}
+                              {!hasChildren && (
                               <DropdownMenuItem
                                 asChild
                                 onSelect={(e) => e.preventDefault()}
@@ -2623,6 +2676,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                                   />
                                 </div>
                               </DropdownMenuItem>
+                              )}
                               <DropdownMenuSeparator />
                               <DropdownMenuItem onClick={() => handleDeleteItem(item)} className="text-destructive" data-testid="menu-delete">
                                 <Trash2 className="mr-2 h-4 w-4" />
@@ -3382,6 +3436,31 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                 <Badge variant="outline" className="mt-1">
                   {selectedTask.priority}
                 </Badge>
+              </div>
+            )}
+
+            {(viewTaskSteps as any[]).length > 0 && (
+              <div>
+                <h3 className="text-sm font-medium text-muted-foreground mb-1">
+                  Sub-items ({(viewTaskSteps as any[]).filter((s: any) => s.isCompleted).length}/{(viewTaskSteps as any[]).length} done)
+                </h3>
+                <div className="space-y-1 mt-2">
+                  {(viewTaskSteps as any[]).map((step: any) => (
+                    <div key={step.id} className="flex items-center gap-2 py-0.5">
+                      <div className={cn(
+                        "w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0",
+                        step.isCompleted
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-muted-foreground/40"
+                      )}>
+                        {step.isCompleted && <Check className="w-2.5 h-2.5" />}
+                      </div>
+                      <span className={`text-sm ${step.isCompleted ? 'line-through text-muted-foreground' : ''}`}>
+                        {step.name}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>

@@ -4,13 +4,15 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { ChevronLeft, ChevronRight, Users, BarChart3, GanttChart } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronRight as ChevronRightIcon, Users, BarChart3, GanttChart, Filter, Calendar, ExternalLink, AlertTriangle } from "lucide-react";
+import { useLocation } from "wouter";
 import {
   format,
   addDays,
-  addWeeks,
   startOfWeek,
-  endOfWeek,
   eachDayOfInterval,
   differenceInDays,
   isSameDay,
@@ -42,15 +44,66 @@ interface ContactRow {
   items: WorkloadItem[];
 }
 
-const ROW_HEIGHT = 36;
-const DAY_WIDTH = 44;
-const PANEL_WIDTH = 200;
+interface BarLayout {
+  item: WorkloadItem;
+  lane: number;
+  leftPx: number;
+  widthPx: number;
+}
 
-function generatePastelBg(hex: string): string {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r}, ${g}, ${b}, 0.15)`;
+const BAR_HEIGHT = 20;
+const BAR_GAP = 2;
+const ROW_PADDING = 4;
+const DAY_WIDTH = 44;
+const WEEKEND_DAY_WIDTH = 22;
+const PANEL_WIDTH = 200;
+const NAV_STEP_DAYS = 7;
+const MIN_ROW_HEIGHT = 36;
+const OVERLOAD_THRESHOLD = 3;
+
+function getDayWidth(day: Date): number {
+  return isWeekend(day) ? WEEKEND_DAY_WIDTH : DAY_WIDTH;
+}
+
+function assignLanes(items: WorkloadItem[]): { layouts: BarLayout[]; laneCount: number } {
+  const sorted = [...items].sort((a, b) => {
+    const aStart = new Date(a.startDate).getTime();
+    const bStart = new Date(b.startDate).getTime();
+    if (aStart !== bStart) return aStart - bStart;
+    return new Date(b.endDate).getTime() - new Date(a.endDate).getTime();
+  });
+
+  const lanes: { end: number }[] = [];
+  const layouts: BarLayout[] = [];
+
+  for (const item of sorted) {
+    const itemStart = startOfDay(new Date(item.startDate)).getTime();
+    const itemEnd = startOfDay(new Date(item.endDate)).getTime();
+
+    let assignedLane = -1;
+    for (let i = 0; i < lanes.length; i++) {
+      if (lanes[i].end < itemStart) {
+        assignedLane = i;
+        break;
+      }
+    }
+
+    if (assignedLane === -1) {
+      assignedLane = lanes.length;
+      lanes.push({ end: itemEnd });
+    } else {
+      lanes[assignedLane].end = itemEnd;
+    }
+
+    layouts.push({
+      item,
+      lane: assignedLane,
+      leftPx: 0,
+      widthPx: 0,
+    });
+  }
+
+  return { layouts, laneCount: Math.max(lanes.length, 1) };
 }
 
 interface CompanyWorkloadProps {
@@ -58,13 +111,42 @@ interface CompanyWorkloadProps {
 }
 
 export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) {
+  const [, navigate] = useLocation();
+  const [selectedItem, setSelectedItem] = useState<WorkloadItem | null>(null);
   const [weekStartDay] = useState(1);
   const [rangeStart, setRangeStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: weekStartDay }));
-  const [weeksToShow, setWeeksToShow] = useState(4);
+  const [visibleDays, setVisibleDays] = useState(28);
+  const [hiddenAssignees, setHiddenAssignees] = useState<Set<string>>(new Set());
+  const [hiddenProjects, setHiddenProjects] = useState<Set<string>>(new Set());
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+
+  const toggleRowExpanded = useCallback((id: string) => {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
   const timelineRef = useRef<HTMLDivElement>(null);
   const leftPanelRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  const rangeEnd = useMemo(() => addWeeks(rangeStart, weeksToShow), [rangeStart, weeksToShow]);
+  useEffect(() => {
+    function calculateDays() {
+      if (!containerRef.current) return;
+      const availableWidth = containerRef.current.clientWidth - PANEL_WIDTH;
+      const avgDayWidth = (DAY_WIDTH * 5 + WEEKEND_DAY_WIDTH * 2) / 7;
+      const daysCount = Math.ceil(availableWidth / avgDayWidth);
+      setVisibleDays(Math.max(daysCount, 7));
+    }
+    calculateDays();
+    const observer = new ResizeObserver(calculateDays);
+    if (containerRef.current) observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  const rangeEnd = useMemo(() => addDays(rangeStart, visibleDays), [rangeStart, visibleDays]);
 
   const days = useMemo(
     () => eachDayOfInterval({ start: rangeStart, end: addDays(rangeEnd, -1) }),
@@ -83,17 +165,70 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
     queryKey: [workloadUrl],
   });
 
+  const allAssignees = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; color: string }>();
+    for (const item of items) {
+      if (item.assignedToId && item.assignedToName) {
+        if (!map.has(item.assignedToId)) {
+          map.set(item.assignedToId, {
+            id: item.assignedToId,
+            name: item.assignedToName,
+            color: item.assignedToColor || "#6b7280",
+          });
+        }
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [items]);
+
+  const allProjects = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; color: string }>();
+    for (const item of items) {
+      if (!map.has(item.projectId)) {
+        map.set(item.projectId, {
+          id: item.projectId,
+          name: item.projectName,
+          color: item.projectColor || "#6b7280",
+        });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [items]);
+
+  const toggleAssignee = useCallback((id: string) => {
+    setHiddenAssignees((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleProject = useCallback((id: string) => {
+    setHiddenProjects((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const activeFilterCount = hiddenAssignees.size + hiddenProjects.size;
+
   const { contactRows, unassignedRow } = useMemo(() => {
     const contactMap = new Map<string, ContactRow>();
     const unassigned: WorkloadItem[] = [];
 
     for (const item of items) {
       if (item.status === "completed" || item.status === "cancelled") continue;
+      if (hiddenProjects.has(item.projectId)) continue;
 
       if (!item.assignedToId || !item.assignedToName) {
         unassigned.push(item);
         continue;
       }
+
+      if (hiddenAssignees.has(item.assignedToId)) continue;
 
       let row = contactMap.get(item.assignedToId);
       if (!row) {
@@ -113,13 +248,50 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
       contactRows: sorted,
       unassignedRow: unassigned.length > 0 ? { id: "__unassigned__", name: "Unassigned", color: "#9ca3af", items: unassigned } : null,
     };
-  }, [items]);
+  }, [items, hiddenAssignees, hiddenProjects]);
 
   const allRows = useMemo(() => {
     const rows = [...contactRows];
     if (unassignedRow) rows.push(unassignedRow);
     return rows;
   }, [contactRows, unassignedRow]);
+
+  const rowBarLayouts = useMemo(() => {
+    const result = new Map<string, { layouts: BarLayout[]; laneCount: number; rowHeight: number }>();
+    for (const row of allRows) {
+      const { layouts, laneCount } = assignLanes(row.items);
+
+      const rangeStartTime = startOfDay(rangeStart).getTime();
+      const msPerDay = 86400000;
+      const offsets = dayOffsets.offsets;
+      const tw = dayOffsets.totalWidth;
+
+      for (const layout of layouts) {
+        const itemStart = startOfDay(new Date(layout.item.startDate));
+        const itemEnd = startOfDay(new Date(layout.item.endDate));
+
+        const startIdx = Math.round((itemStart.getTime() - rangeStartTime) / msPerDay);
+        const endIdx = Math.round((itemEnd.getTime() - rangeStartTime) / msPerDay);
+
+        const clampedStartIdx = Math.max(startIdx, 0);
+        const clampedEndIdx = Math.min(endIdx, days.length - 1);
+
+        const leftPx = clampedStartIdx < offsets.length ? offsets[clampedStartIdx] : tw;
+        const rightPx = clampedEndIdx + 1 < offsets.length
+          ? offsets[clampedEndIdx + 1]
+          : (clampedEndIdx < offsets.length ? offsets[clampedEndIdx] + getDayWidth(days[clampedEndIdx]) : tw);
+
+        layout.leftPx = leftPx;
+        layout.widthPx = Math.max(rightPx - leftPx, 4);
+      }
+
+      const isExpanded = expandedRows.has(row.id);
+      const effectiveRows = isExpanded ? row.items.length : laneCount;
+      const rowHeight = Math.max(MIN_ROW_HEIGHT, effectiveRows * (BAR_HEIGHT + BAR_GAP) + ROW_PADDING * 2);
+      result.set(row.id, { layouts, laneCount, rowHeight });
+    }
+    return result;
+  }, [allRows, rangeStart, visibleDays, days, dayOffsets, expandedRows]);
 
   const dailyTotals = useMemo(() => {
     const totals = new Map<string, number>();
@@ -128,6 +300,7 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
       let count = 0;
       for (const item of items) {
         if (item.status === "completed" || item.status === "cancelled") continue;
+        if (hiddenProjects.has(item.projectId)) continue;
         const itemStart = startOfDay(new Date(item.startDate));
         const itemEnd = startOfDay(new Date(item.endDate));
         if (day >= itemStart && day <= itemEnd) count++;
@@ -135,20 +308,36 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
       totals.set(key, count);
     }
     return totals;
-  }, [days, items]);
+  }, [days, items, hiddenProjects]);
 
   const maxDailyTotal = useMemo(() => Math.max(1, ...Array.from(dailyTotals.values())), [dailyTotals]);
 
-  const getItemsForDay = useCallback(
-    (row: ContactRow, day: Date) => {
-      return row.items.filter((item) => {
-        const itemStart = startOfDay(new Date(item.startDate));
-        const itemEnd = startOfDay(new Date(item.endDate));
-        return day >= itemStart && day <= itemEnd;
+  const assigneeOverloads = useMemo(() => {
+    const result = new Map<string, { isOverloaded: boolean; maxConcurrent: number; overloadedDays: Set<string> }>();
+    for (const row of allRows) {
+      const overloadedDays = new Set<string>();
+      let maxConcurrent = 0;
+      for (const day of days) {
+        const dayStart = startOfDay(day);
+        let count = 0;
+        for (const item of row.items) {
+          const itemStart = startOfDay(new Date(item.startDate));
+          const itemEnd = startOfDay(new Date(item.endDate));
+          if (dayStart >= itemStart && dayStart <= itemEnd) count++;
+        }
+        if (count > maxConcurrent) maxConcurrent = count;
+        if (count >= OVERLOAD_THRESHOLD) {
+          overloadedDays.add(format(day, "yyyy-MM-dd"));
+        }
+      }
+      result.set(row.id, {
+        isOverloaded: maxConcurrent >= OVERLOAD_THRESHOLD,
+        maxConcurrent,
+        overloadedDays,
       });
-    },
-    []
-  );
+    }
+    return result;
+  }, [allRows, days]);
 
   const handleSyncScroll = useCallback((e: any) => {
     if (leftPanelRef.current) {
@@ -157,14 +346,24 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
   }, []);
 
   const navigateRange = (direction: number) => {
-    setRangeStart((prev) => addWeeks(prev, direction * weeksToShow));
+    setRangeStart((prev) => addDays(prev, direction * NAV_STEP_DAYS));
   };
 
   const goToToday = () => {
     setRangeStart(startOfWeek(new Date(), { weekStartsOn: weekStartDay }));
   };
 
-  const totalWidth = days.length * DAY_WIDTH;
+  const dayOffsets = useMemo(() => {
+    const offsets: number[] = [];
+    let x = 0;
+    for (const day of days) {
+      offsets.push(x);
+      x += getDayWidth(day);
+    }
+    return { offsets, totalWidth: x };
+  }, [days]);
+
+  const totalWidth = dayOffsets.totalWidth;
   const today = new Date();
 
   if (isLoading) {
@@ -176,8 +375,7 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
   }
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Toolbar */}
+    <div ref={containerRef} className="flex flex-col h-full">
       <div className="h-10 flex items-center justify-between px-3 border-b border-border flex-shrink-0 gap-2">
         <div className="flex items-center gap-2">
           {onSwitchView && (
@@ -200,6 +398,94 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
           <Badge variant="secondary" className="text-[10px]">
             {contactRows.length} trade{contactRows.length !== 1 ? "s" : ""}
           </Badge>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className="text-xs h-7 px-2 gap-1">
+                <Filter className="w-3 h-3" />
+                Filter
+                {activeFilterCount > 0 && (
+                  <Badge variant="default" className="text-[9px] px-1 py-0 min-w-[16px] h-4">
+                    {activeFilterCount}
+                  </Badge>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-72 p-0">
+              <div className="max-h-80 overflow-y-auto">
+                {allAssignees.length > 0 && (
+                  <div className="p-3 pb-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Assignees</span>
+                      {hiddenAssignees.size > 0 && (
+                        <button
+                          className="text-[10px] text-primary hover:underline"
+                          onClick={() => setHiddenAssignees(new Set())}
+                        >
+                          Show all
+                        </button>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      {allAssignees.map((a) => (
+                        <label
+                          key={a.id}
+                          className="flex items-center gap-2 py-1 px-1 rounded cursor-pointer hover-elevate"
+                        >
+                          <Checkbox
+                            checked={!hiddenAssignees.has(a.id)}
+                            onCheckedChange={() => toggleAssignee(a.id)}
+                          />
+                          <div
+                            className="w-2.5 h-2.5 rounded-full shrink-0"
+                            style={{ backgroundColor: a.color }}
+                          />
+                          <span className="text-xs truncate">{a.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {allProjects.length > 0 && (
+                  <div className="p-3 pt-1 border-t border-border">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Projects</span>
+                      {hiddenProjects.size > 0 && (
+                        <button
+                          className="text-[10px] text-primary hover:underline"
+                          onClick={() => setHiddenProjects(new Set())}
+                        >
+                          Show all
+                        </button>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      {allProjects.map((p) => (
+                        <label
+                          key={p.id}
+                          className="flex items-center gap-2 py-1 px-1 rounded cursor-pointer hover-elevate"
+                        >
+                          <Checkbox
+                            checked={!hiddenProjects.has(p.id)}
+                            onCheckedChange={() => toggleProject(p.id)}
+                          />
+                          <div
+                            className="w-2.5 h-2.5 rounded-full shrink-0"
+                            style={{ backgroundColor: p.color }}
+                          />
+                          <span className="text-xs truncate">{p.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {allAssignees.length === 0 && allProjects.length === 0 && (
+                  <div className="p-4 text-xs text-muted-foreground text-center">
+                    No items to filter
+                  </div>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
         <div className="flex items-center gap-1">
           <Button variant="ghost" size="icon" onClick={() => navigateRange(-1)}>
@@ -214,29 +500,15 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
           <span className="text-xs text-muted-foreground ml-1">
             {format(rangeStart, "d MMM")} – {format(addDays(rangeEnd, -1), "d MMM yyyy")}
           </span>
-          <div className="flex items-center border rounded-md overflow-hidden ml-2">
-            {[2, 4, 8].map((w) => (
-              <button
-                key={w}
-                className={`h-7 px-2 text-xs ${weeksToShow === w ? "bg-primary text-primary-foreground" : "hover-elevate"}`}
-                onClick={() => setWeeksToShow(w)}
-              >
-                {w}w
-              </button>
-            ))}
-          </div>
         </div>
       </div>
 
-      {/* Main content */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left panel - contact names */}
         <div
           ref={leftPanelRef}
           className="flex-shrink-0 border-r border-border overflow-hidden"
           style={{ width: PANEL_WIDTH }}
         >
-          {/* Summary header */}
           <div className="h-[56px] border-b border-border flex items-end px-2 pb-1">
             <div className="flex items-center gap-1.5">
               <BarChart3 className="w-3.5 h-3.5 text-muted-foreground" />
@@ -244,25 +516,61 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
             </div>
           </div>
 
-          {/* Contact rows */}
-          {allRows.map((row) => (
-            <div
-              key={row.id}
-              style={{ height: ROW_HEIGHT }}
-              className="flex items-center px-2 gap-2 border-b border-border/30"
-            >
+          {allRows.map((row) => {
+            const barData = rowBarLayouts.get(row.id);
+            const rowHeight = barData?.rowHeight || MIN_ROW_HEIGHT;
+            const isExpanded = expandedRows.has(row.id);
+            const hasMultipleItems = row.items.length > 1;
+            return (
               <div
-                className="w-2.5 h-2.5 rounded-full shrink-0"
-                style={{ backgroundColor: row.color }}
-              />
-              <span className="text-xs font-medium truncate flex-1">
-                {row.name}
-              </span>
-              <span className="text-[10px] text-muted-foreground shrink-0">
-                {row.items.length}
-              </span>
-            </div>
-          ))}
+                key={row.id}
+                style={{ height: rowHeight }}
+                className="flex items-start px-2 gap-1.5 border-b border-border/30 pt-2"
+              >
+                {hasMultipleItems ? (
+                  <button
+                    className="shrink-0 mt-px p-0.5 rounded hover-elevate"
+                    onClick={() => toggleRowExpanded(row.id)}
+                  >
+                    {isExpanded ? (
+                      <ChevronDown className="w-3 h-3 text-muted-foreground" />
+                    ) : (
+                      <ChevronRightIcon className="w-3 h-3 text-muted-foreground" />
+                    )}
+                  </button>
+                ) : (
+                  <div className="w-4 shrink-0" />
+                )}
+                <div
+                  className="w-2.5 h-2.5 rounded-full shrink-0 mt-0.5"
+                  style={{ backgroundColor: row.color }}
+                />
+                <span className="text-xs font-medium truncate flex-1">
+                  {row.name}
+                </span>
+                {assigneeOverloads.get(row.id)?.isOverloaded && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="shrink-0">
+                        <AlertTriangle className={cn(
+                          "w-3.5 h-3.5",
+                          (assigneeOverloads.get(row.id)?.maxConcurrent ?? 0) >= OVERLOAD_THRESHOLD + 2
+                            ? "text-red-500"
+                            : "text-amber-500"
+                        )} />
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" className="text-xs">
+                      Up to {assigneeOverloads.get(row.id)?.maxConcurrent} concurrent items
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+                <span className="text-[10px] text-muted-foreground shrink-0">
+                  {row.items.length}
+                </span>
+              </div>
+            );
+          })}
 
           {allRows.length === 0 && (
             <div className="p-4 text-xs text-muted-foreground text-center">
@@ -271,16 +579,11 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
           )}
         </div>
 
-        {/* Right panel - Timeline grid */}
         <div className="flex-1 overflow-hidden flex flex-col">
-          {/* Day headers with summary bars */}
           <div className="h-[56px] border-b border-border flex-shrink-0 overflow-hidden">
             <div
               className="h-full flex"
-              style={{
-                width: totalWidth,
-                transform: `translateX(-${timelineRef.current?.scrollLeft || 0}px)`,
-              }}
+              style={{ width: totalWidth }}
             >
               {days.map((day) => {
                 const key = format(day, "yyyy-MM-dd");
@@ -288,6 +591,8 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
                 const barHeight = maxDailyTotal > 0 ? Math.round((count / maxDailyTotal) * 20) : 0;
                 const isWkend = isWeekend(day);
                 const isToday = isSameDay(day, today);
+                const colWidth = getDayWidth(day);
+                const barW = isWkend ? 10 : 20;
 
                 return (
                   <div
@@ -297,13 +602,14 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
                       isWkend && "bg-muted/30",
                       isToday && "bg-[#bba7db]/10"
                     )}
-                    style={{ width: DAY_WIDTH }}
+                    style={{ width: colWidth }}
                   >
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <div
-                          className="w-5 rounded-sm mb-0.5"
+                          className="rounded-sm mb-0.5"
                           style={{
+                            width: barW,
                             height: Math.max(barHeight, count > 0 ? 3 : 0),
                             backgroundColor: count > 0 ? (count > maxDailyTotal * 0.7 ? "#ef4444" : count > maxDailyTotal * 0.4 ? "#f59e0b" : "#22c55e") : "transparent",
                             opacity: isWkend ? 0.5 : 1,
@@ -315,7 +621,7 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
                       </TooltipContent>
                     </Tooltip>
                     <div className={cn("text-[9px]", isToday ? "font-bold text-[#bba7db]" : isWkend ? "text-muted-foreground/50" : "text-muted-foreground")}>
-                      {format(day, "EEE")}
+                      {isWkend ? format(day, "EEEEE") : format(day, "EEE")}
                     </div>
                     <div className={cn("text-[9px]", isToday ? "font-bold text-[#bba7db]" : isWkend ? "text-muted-foreground/50" : "text-muted-foreground")}>
                       {format(day, "d")}
@@ -326,96 +632,235 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
             </div>
           </div>
 
-          {/* Grid body */}
           <div
             ref={timelineRef}
-            className="flex-1 overflow-auto"
+            className="flex-1 overflow-y-auto overflow-x-hidden"
             onScroll={(e) => {
               handleSyncScroll(e);
-              const headerEl = (e.target as HTMLElement).previousElementSibling?.querySelector("div") as HTMLElement;
-              if (headerEl) {
-                headerEl.style.transform = `translateX(-${(e.target as HTMLElement).scrollLeft}px)`;
-              }
             }}
           >
-            <div className="relative" style={{ width: totalWidth, minHeight: allRows.length * ROW_HEIGHT }}>
-              {/* Today line */}
-              {days.some((d) => isSameDay(d, today)) && (
-                <div
-                  className="absolute top-0 bottom-0 w-0.5 bg-[#bba7db] pointer-events-none z-10"
-                  style={{ left: differenceInDays(today, rangeStart) * DAY_WIDTH + DAY_WIDTH / 2 }}
-                />
-              )}
+            <div className="relative" style={{ width: totalWidth }}>
+              {(() => {
+                const todayIdx = days.findIndex((d) => isSameDay(d, today));
+                if (todayIdx === -1) return null;
+                return (
+                  <div
+                    className="absolute top-0 bottom-0 w-0.5 bg-[#bba7db] pointer-events-none z-10"
+                    style={{ left: dayOffsets.offsets[todayIdx] + getDayWidth(days[todayIdx]) / 2 }}
+                  />
+                );
+              })()}
 
-              {/* Contact rows */}
-              {allRows.map((row, rowIndex) => (
-                <div
-                  key={row.id}
-                  className="relative border-b border-border/10"
-                  style={{ height: ROW_HEIGHT }}
-                >
-                  {/* Day cells background */}
-                  {days.map((day) => {
-                    const key = format(day, "yyyy-MM-dd");
-                    const isWkend = isWeekend(day);
-                    const isToday = isSameDay(day, today);
-                    const dayItems = getItemsForDay(row, day);
-                    const dayIdx = differenceInDays(day, rangeStart);
+              {allRows.map((row) => {
+                const barData = rowBarLayouts.get(row.id);
+                const rowHeight = barData?.rowHeight || MIN_ROW_HEIGHT;
+                const layouts = barData?.layouts || [];
+                const isExpanded = expandedRows.has(row.id);
 
-                    return (
-                      <div
-                        key={key}
-                        className={cn(
-                          "absolute top-0 h-full border-l border-border/10",
-                          isWkend && "bg-muted/20",
-                          isToday && "bg-[#bba7db]/5"
-                        )}
-                        style={{ left: dayIdx * DAY_WIDTH, width: DAY_WIDTH }}
-                      >
-                        {dayItems.length > 0 && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <div className="absolute inset-1 flex flex-col justify-center gap-px overflow-hidden">
-                                {dayItems.slice(0, 3).map((item) => (
-                                  <div
-                                    key={item.id}
-                                    className="h-2 rounded-sm w-full"
-                                    style={{
-                                      backgroundColor: item.projectColor || row.color,
-                                      opacity: 0.7,
-                                    }}
-                                  />
-                                ))}
-                                {dayItems.length > 3 && (
-                                  <div className="text-[7px] text-center text-muted-foreground">
-                                    +{dayItems.length - 3}
-                                  </div>
-                                )}
+                const sortedItemsForExpanded = isExpanded
+                  ? [...row.items].sort((a, b) => {
+                      const aStart = new Date(a.startDate).getTime();
+                      const bStart = new Date(b.startDate).getTime();
+                      if (aStart !== bStart) return aStart - bStart;
+                      return new Date(b.endDate).getTime() - new Date(a.endDate).getTime();
+                    })
+                  : [];
+                const expandedItemIndexMap = new Map<string, number>();
+                sortedItemsForExpanded.forEach((item, idx) => expandedItemIndexMap.set(item.id, idx));
+
+                return (
+                  <div
+                    key={row.id}
+                    className="relative border-b border-border/10"
+                    style={{ height: rowHeight }}
+                  >
+                    {days.map((day, dayIdx) => {
+                      const key = format(day, "yyyy-MM-dd");
+                      const isWkend = isWeekend(day);
+                      const isToday = isSameDay(day, today);
+                      const colWidth = getDayWidth(day);
+                      const isOverloadedDay = assigneeOverloads.get(row.id)?.overloadedDays.has(key) ?? false;
+
+                      return (
+                        <div
+                          key={key}
+                          className={cn(
+                            "absolute top-0 h-full border-l border-border/10",
+                            isWkend && "bg-muted/20",
+                            isToday && "bg-[#bba7db]/5",
+                            isOverloadedDay && "bg-red-500/8"
+                          )}
+                          style={{ left: dayOffsets.offsets[dayIdx], width: colWidth }}
+                        />
+                      );
+                    })}
+
+                    {isExpanded && sortedItemsForExpanded.length > 1 && sortedItemsForExpanded.map((_, idx) => {
+                      if (idx === 0) return null;
+                      const y = ROW_PADDING + idx * (BAR_HEIGHT + BAR_GAP) - 1;
+                      return (
+                        <div
+                          key={`sep-${idx}`}
+                          className="absolute left-0 right-0 border-t border-border/5"
+                          style={{ top: y }}
+                        />
+                      );
+                    })}
+
+                    {layouts.map((barLayout) => {
+                      const { item, lane, leftPx, widthPx } = barLayout;
+                      const rowIdx = isExpanded ? (expandedItemIndexMap.get(item.id) ?? lane) : lane;
+                      const topPx = ROW_PADDING + rowIdx * (BAR_HEIGHT + BAR_GAP);
+                      const barColor = item.projectColor || row.color;
+                      const showLabel = widthPx > 60;
+
+                      return (
+                        <Tooltip key={item.id}>
+                          <TooltipTrigger asChild>
+                            <div
+                              className="absolute rounded-sm cursor-pointer flex items-center overflow-hidden z-[5] transition-opacity hover:opacity-100"
+                              style={{
+                                left: leftPx,
+                                width: widthPx,
+                                top: topPx,
+                                height: BAR_HEIGHT,
+                                backgroundColor: barColor,
+                                opacity: 0.85,
+                              }}
+                              onClick={() => setSelectedItem(item)}
+                            >
+                              {showLabel && (
+                                <span
+                                  className="text-[10px] font-medium truncate px-1.5 leading-none"
+                                  style={{ color: "#fff" }}
+                                >
+                                  {item.name}
+                                </span>
+                              )}
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-[240px]">
+                            <div className="text-xs">
+                              <div className="font-medium">{item.name}</div>
+                              <div className="text-muted-foreground mt-0.5">{item.projectName}</div>
+                              <div className="text-muted-foreground mt-0.5">
+                                {format(new Date(item.startDate), "d MMM")} – {format(new Date(item.endDate), "d MMM yyyy")}
                               </div>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className="max-w-[220px]">
-                              <div className="text-xs font-medium mb-1">{row.name} - {format(day, "EEE d MMM")}</div>
-                              {dayItems.map((item) => (
-                                <div key={item.id} className="flex items-center gap-1.5 py-0.5">
-                                  <div
-                                    className="w-2 h-2 rounded-sm shrink-0"
-                                    style={{ backgroundColor: item.projectColor || "#6b7280" }}
-                                  />
-                                  <span className="text-[10px] truncate">{item.projectName}: {item.name}</span>
-                                </div>
-                              ))}
-                            </TooltipContent>
-                          </Tooltip>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
+                              {item.progressPercent > 0 && (
+                                <div className="text-muted-foreground mt-0.5">{item.progressPercent}% complete</div>
+                              )}
+                            </div>
+                          </TooltipContent>
+                        </Tooltip>
+                      );
+                    })}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
       </div>
+      <Dialog open={!!selectedItem} onOpenChange={(open) => { if (!open) setSelectedItem(null); }}>
+        <DialogContent className="sm:max-w-[400px]">
+          {selectedItem && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="text-base">{selectedItem.name}</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3 pt-1">
+                <div className="flex items-center gap-2">
+                  <div
+                    className="w-3 h-3 rounded-full shrink-0"
+                    style={{ backgroundColor: selectedItem.projectColor || "#6b7280" }}
+                  />
+                  <span className="text-sm">{selectedItem.projectName}</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="text-xs text-muted-foreground mb-0.5">Start Date</div>
+                    <div className="text-sm flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
+                      {format(new Date(selectedItem.startDate), "d MMM yyyy")}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground mb-0.5">End Date</div>
+                    <div className="text-sm flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
+                      {format(new Date(selectedItem.endDate), "d MMM yyyy")}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="text-xs text-muted-foreground mb-0.5">Status</div>
+                    <Badge variant="secondary" className="text-xs capitalize">
+                      {selectedItem.status.replace(/_/g, " ")}
+                    </Badge>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground mb-0.5">Duration</div>
+                    <div className="text-sm">{selectedItem.duration} day{selectedItem.duration !== 1 ? "s" : ""}</div>
+                  </div>
+                </div>
+
+                {selectedItem.progressPercent > 0 && (
+                  <div>
+                    <div className="text-xs text-muted-foreground mb-1">Progress</div>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${selectedItem.progressPercent}%`,
+                            backgroundColor: selectedItem.projectColor || "#6b7280",
+                          }}
+                        />
+                      </div>
+                      <span className="text-xs text-muted-foreground">{selectedItem.progressPercent}%</span>
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <div className="text-xs text-muted-foreground mb-0.5">Assignee</div>
+                  <div className="text-sm flex items-center gap-1.5">
+                    {selectedItem.assignedToName ? (
+                      <>
+                        <div
+                          className="w-3 h-3 rounded-full shrink-0"
+                          style={{ backgroundColor: selectedItem.assignedToColor || "#6b7280" }}
+                        />
+                        {selectedItem.assignedToName}
+                      </>
+                    ) : (
+                      <span className="text-muted-foreground">Unassigned</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-border">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full text-xs gap-1.5"
+                    onClick={() => {
+                      navigate(`/projects/${selectedItem.projectId}/schedule`);
+                      setSelectedItem(null);
+                    }}
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    View in Project Schedule
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

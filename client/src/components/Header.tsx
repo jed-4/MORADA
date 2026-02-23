@@ -674,17 +674,6 @@ export default function Header() {
         </button>
       </div>
       <div className="flex items-center gap-1">
-        {/* Contacts Button */}
-        <Button 
-          variant="ghost" 
-          size="icon" 
-          onClick={() => navigate("/contacts")}
-          data-testid="button-contacts"
-          className="h-7 w-7"
-        >
-          <Users className="h-3.5 w-3.5" />
-        </Button>
-
         {/* Calendar Button */}
         <Button 
           variant="ghost" 

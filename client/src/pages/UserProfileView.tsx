@@ -272,15 +272,14 @@ export default function UserProfileView() {
         userId,
         projectId,
         accessLevel: "edit",
-        grantedBy: String(currentUser?.id),
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users", userId, "project-access"] });
       toast({ title: "Project access granted" });
     },
-    onError: () => {
-      toast({ title: "Failed to grant project access", variant: "destructive" });
+    onError: (error: any) => {
+      toast({ title: "Failed to grant project access", description: error?.message || "Please try again", variant: "destructive" });
     },
   });
 

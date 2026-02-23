@@ -744,6 +744,30 @@ export function SidebarNav() {
           </Tooltip>
         </div>
         
+        {/* Contacts */}
+        <div className="pb-0.5">
+          <Tooltip delayDuration={0}>
+            <TooltipTrigger asChild>
+              <Link href="/contacts">
+                <button
+                  className={cn(
+                    "flex items-center justify-center h-8 w-8 mx-auto rounded-md transition-colors",
+                    "hover-elevate active-elevate-2",
+                    location.startsWith("/contacts")
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                  data-testid="rail-contacts"
+                >
+                  <Users className="h-4 w-4" />
+                </button>
+              </Link>
+            </TooltipTrigger>
+            <TooltipContent side="right" sideOffset={8}>
+              Contacts
+            </TooltipContent>
+          </Tooltip>
+        </div>
         {/* Settings at bottom */}
         <div className="pb-1">
           <Tooltip delayDuration={0}>
