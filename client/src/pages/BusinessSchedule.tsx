@@ -10,10 +10,11 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { ZoomIn, ZoomOut, Filter, ChevronLeft, ChevronRight, Calendar, ExternalLink, Settings, MoreHorizontal } from "lucide-react";
+import { ZoomIn, ZoomOut, Filter, ChevronLeft, ChevronRight, Calendar, ExternalLink, Settings, MoreHorizontal, GanttChart, Users } from "lucide-react";
 import { format, differenceInDays, addDays, startOfWeek, startOfMonth, eachWeekOfInterval, eachMonthOfInterval, eachDayOfInterval, getISOWeek, endOfWeek, addWeeks } from "date-fns";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
+import CompanyWorkload from "./CompanyWorkload";
 
 const ROW_HEIGHT = 40;
 const ZOOM_LEVELS = { day: 30, week: 150, month: 600 };
@@ -75,6 +76,7 @@ function getProjectDates(project: BusinessProject): { start: Date | null; end: D
 export default function BusinessSchedule() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const [viewMode, setViewMode] = useState<"schedule" | "workload">("schedule");
   const [zoomLevel, setZoomLevel] = useState<"day" | "week" | "month">("week");
   const pixelsPerDay = ZOOM_LEVELS[zoomLevel] / 7;
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -185,12 +187,35 @@ export default function BusinessSchedule() {
 
   const panelWidth = 220;
 
+  if (viewMode === "workload") {
+    return (
+      <div className="flex flex-col h-full bg-white dark:bg-zinc-950" data-testid="business-schedule-page">
+        <CompanyWorkload onSwitchView={() => setViewMode("schedule")} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full bg-white dark:bg-zinc-950" data-testid="business-schedule-page">
       {/* Toolbar */}
       <div className="h-10 flex items-center justify-between px-3 border-b border-border flex-shrink-0 gap-2">
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold">Business Schedule</h3>
+          <div className="flex items-center border rounded-md overflow-hidden mr-2">
+            <button
+              className={`h-7 px-2.5 text-xs flex items-center gap-1.5 ${viewMode === 'schedule' ? 'bg-primary text-primary-foreground' : 'hover-elevate'}`}
+              onClick={() => setViewMode('schedule')}
+            >
+              <GanttChart className="w-3 h-3" />
+              Projects
+            </button>
+            <button
+              className={`h-7 px-2.5 text-xs flex items-center gap-1.5 ${viewMode === 'workload' ? 'bg-primary text-primary-foreground' : 'hover-elevate'}`}
+              onClick={() => setViewMode('workload')}
+            >
+              <Users className="w-3 h-3" />
+              Workload
+            </button>
+          </div>
         </div>
         <div className="flex items-center gap-1">
           <Popover open={showFilter} onOpenChange={setShowFilter}>

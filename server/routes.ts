@@ -141,7 +141,7 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
-import { eq, and, asc, desc, or, isNull, sql, min, max } from "drizzle-orm";
+import { eq, and, asc, desc, or, isNull, sql, min, max, gte, lte } from "drizzle-orm";
 import { PasswordUtils } from "./utils/auth";
 import { requireAuth, requireAdmin, requireTeamMember, requirePermission, toSafeUser } from "./middleware/auth";
 import multer from "multer";
@@ -14795,6 +14795,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to fetch schedule items",
+        details: error.message 
+      });
+    }
+  });
+
+  // Get all schedule items with project info for company workload view
+  app.get("/api/schedule-items/workload", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+      
+      const { startDate, endDate } = req.query;
+      const conditions = [eq(projectsTable.companyId, user.companyId)];
+      
+      if (startDate) {
+        conditions.push(gte(scheduleItems.endDate, new Date(startDate as string)));
+      }
+      if (endDate) {
+        conditions.push(lte(scheduleItems.startDate, new Date(endDate as string)));
+      }
+      
+      const items = await db.select({
+        id: scheduleItems.id,
+        name: scheduleItems.name,
+        status: scheduleItems.status,
+        startDate: scheduleItems.startDate,
+        endDate: scheduleItems.endDate,
+        duration: scheduleItems.duration,
+        assignedToId: scheduleItems.assignedToId,
+        assignedToName: scheduleItems.assignedToName,
+        assignedToColor: scheduleItems.assignedToColor,
+        progressPercent: scheduleItems.progressPercent,
+        type: scheduleItems.type,
+        projectId: projectsTable.id,
+        projectName: projectsTable.name,
+        projectColor: projectsTable.color,
+      })
+        .from(scheduleItems)
+        .innerJoin(schedules, eq(scheduleItems.scheduleId, schedules.id))
+        .innerJoin(projectsTable, eq(schedules.projectId, projectsTable.id))
+        .where(and(...conditions))
+        .orderBy(scheduleItems.startDate);
+      
+      res.json(items);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch workload items",
         details: error.message 
       });
     }
