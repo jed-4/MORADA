@@ -978,539 +978,185 @@ export default function BillDetail() {
       <div className="flex-1 overflow-auto p-6">
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-            <Card className="p-6">
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="billNumber"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Bill ID</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          readOnly
-                          className="bg-muted"
-                          data-testid="input-bill-number"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="billType"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Type</FormLabel>
-                      <Select
-                        onValueChange={field.onChange}
-                        value={field.value}
-                      >
-                        <FormControl>
-                          <SelectTrigger data-testid="select-bill-type">
-                            <SelectValue placeholder="Select type..." />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="bill">Bill</SelectItem>
-                          <SelectItem value="credit">Vendor Credit</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="projectId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Project *</FormLabel>
-                      <Select
-                        onValueChange={field.onChange}
-                        value={field.value}
-                        disabled={!isEditMode && !!projectId}
-                      >
-                        <FormControl>
-                          <SelectTrigger data-testid="select-project">
-                            <SelectValue placeholder="Select project..." />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {projects.map((project) => (
-                            <SelectItem key={project.id} value={project.id}>
-                              {project.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="supplierId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Pay to *</FormLabel>
-                      <Select
-                        onValueChange={field.onChange}
-                        value={field.value}
-                      >
-                        <FormControl>
-                          <SelectTrigger data-testid="select-supplier">
-                            <SelectValue placeholder="Select supplier..." />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {suppliers.map((supplier) => (
-                            <SelectItem key={supplier.id} value={supplier.id}>
-                              {supplier.name}
-                            </SelectItem>
-                          ))}
-                          <div className="border-t mt-1 pt-1">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setAddSupplierDialogOpen(true);
-                              }}
-                              className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-primary hover:bg-accent rounded-sm"
-                              data-testid="button-add-supplier"
-                            >
-                              <Plus className="h-4 w-4" />
-                              Add
-                            </button>
-                          </div>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="billDate"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Date *</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="date"
-                          {...field}
-                          data-testid="input-bill-date"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="billReference"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Bill reference</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          placeholder="Enter reference..."
-                          data-testid="input-bill-reference"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="dueDate"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Due date</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="date"
-                          {...field}
-                          onChange={(e) => {
-                            dueDateManuallySet.current = true;
-                            field.onChange(e);
-                          }}
-                          data-testid="input-due-date"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-              </div>
-            </Card>
-
             <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-6">
-              <div className="space-y-6 min-w-0">
-                <Card className="p-6">
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-lg font-semibold">Cost Lines</h3>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-muted-foreground">Amounts are</span>
+              <Card className="p-6">
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="billNumber"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Bill ID</FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            readOnly
+                            className="bg-muted"
+                            data-testid="input-bill-number"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="billType"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Type</FormLabel>
                         <Select
-                          value={taxMode}
-                          onValueChange={(value: "inclusive" | "exclusive") =>
-                            setTaxMode(value)
-                          }
+                          onValueChange={field.onChange}
+                          value={field.value}
                         >
-                          <SelectTrigger className="w-32" data-testid="select-tax-mode">
-                            <SelectValue />
-                          </SelectTrigger>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-bill-type">
+                              <SelectValue placeholder="Select type..." />
+                            </SelectTrigger>
+                          </FormControl>
                           <SelectContent>
-                            <SelectItem value="exclusive">Exclusive</SelectItem>
-                            <SelectItem value="inclusive">Inclusive</SelectItem>
+                            <SelectItem value="bill">Bill</SelectItem>
+                            <SelectItem value="credit">Vendor Credit</SelectItem>
                           </SelectContent>
                         </Select>
-                        <span className="text-sm text-muted-foreground">of tax</span>
-                      </div>
-                    </div>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
-                    <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="w-32">Type</TableHead>
-                            <TableHead>Description</TableHead>
-                            <TableHead>Cost Code</TableHead>
-                            <TableHead className="w-24">Quantity</TableHead>
-                            <TableHead className="w-24">Unit</TableHead>
-                            <TableHead className="w-40">Tax</TableHead>
-                            <TableHead className="w-32">Account</TableHead>
-                            <TableHead className="w-32">Amount</TableHead>
-                            <TableHead className="w-48">Allowance</TableHead>
-                            <TableHead className="w-12"></TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {lineItems.map((item, index) => (
-                            <TableRow key={index} data-testid={`row-line-item-${index}`}>
-                              <TableCell>
-                                <Select
-                                  value={item.lineType}
-                                  onValueChange={(value) =>
-                                    updateLineItem(index, "lineType", value)
-                                  }
-                                >
-                                  <SelectTrigger data-testid={`select-line-type-${index}`}>
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="estimate">Estimate</SelectItem>
-                                    <SelectItem value="item">Item</SelectItem>
-                                    <SelectItem value="custom">Custom</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </TableCell>
-                              <TableCell>
-                                <Input
-                                  value={item.description}
-                                  onChange={(e) =>
-                                    updateLineItem(index, "description", e.target.value)
-                                  }
-                                  placeholder="Description..."
-                                  data-testid={`input-description-${index}`}
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <CostCodeSelect
-                                  value={item.costCodeId || ""}
-                                  onValueChange={(value) =>
-                                    updateLineItem(index, "costCodeId", value)
-                                  }
-                                  placeholder="Select..."
-                                  data-testid={`select-cost-code-${index}`}
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <Input
-                                  type="number"
-                                  value={item.quantity}
-                                  onChange={(e) =>
-                                    updateLineItem(
-                                      index,
-                                      "quantity",
-                                      parseFloat(e.target.value) || 0
-                                    )
-                                  }
-                                  data-testid={`input-quantity-${index}`}
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <Input
-                                  value={item.unit}
-                                  onChange={(e) =>
-                                    updateLineItem(index, "unit", e.target.value)
-                                  }
-                                  placeholder="Unit"
-                                  data-testid={`input-unit-${index}`}
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <Select
-                                  value={item.tax}
-                                  onValueChange={(value) =>
-                                    updateLineItem(index, "tax", value)
-                                  }
-                                >
-                                  <SelectTrigger data-testid={`select-tax-${index}`}>
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="GST on expenses">
-                                      GST on expenses
-                                    </SelectItem>
-                                    <SelectItem value="No GST">No GST</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </TableCell>
-                              <TableCell>
-                                <Input
-                                  value={item.account}
-                                  onChange={(e) =>
-                                    updateLineItem(index, "account", e.target.value)
-                                  }
-                                  placeholder="Account"
-                                  data-testid={`input-account-${index}`}
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <Input
-                                  type="number"
-                                  value={item.unitPrice}
-                                  onChange={(e) =>
-                                    updateLineItem(
-                                      index,
-                                      "unitPrice",
-                                      parseFloat(e.target.value) || 0
-                                    )
-                                  }
-                                  data-testid={`input-amount-${index}`}
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <div className="space-y-2">
-                                  <div className="flex items-center gap-2">
-                                    <Checkbox
-                                      checked={item.appliesToAllowances}
-                                      onCheckedChange={(checked) =>
-                                        updateLineItem(index, "appliesToAllowances", checked === true)
-                                      }
-                                      data-testid={`checkbox-applies-to-allowances-${index}`}
-                                    />
-                                    <label className="text-sm">Applies to Allowances</label>
-                                  </div>
-                                  {item.appliesToAllowances && (
-                                    <Select
-                                      value={item.allowanceItemId || ""}
-                                      onValueChange={(value) =>
-                                        updateLineItem(index, "allowanceItemId", value)
-                                      }
-                                    >
-                                      <SelectTrigger data-testid={`select-allowance-${index}`}>
-                                        <SelectValue placeholder="Select allowance..." />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {allowances.map((allowance) => (
-                                          <SelectItem key={allowance.id} value={allowance.id}>
-                                            {allowance.description} ({allowance.itemType})
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  )}
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => deleteLineItem(index)}
-                                  data-testid={`button-delete-line-${index}`}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={addLineItem}
-                      data-testid="button-add-line"
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add new line
-                    </Button>
-
-                    <div className="border-t pt-4 mt-4">
-                      <div className="flex justify-end">
-                        <div className="w-72 space-y-2">
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">Subtotal</span>
-                            <span className="font-medium" data-testid="text-subtotal">
-                              {formatCurrency(calculateSubtotal())}
-                            </span>
-                          </div>
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">Tax (GST)</span>
-                            <span className="font-medium" data-testid="text-tax">
-                              {formatCurrency(calculateTax())}
-                            </span>
-                          </div>
-                          <div className="flex justify-between border-t pt-2">
-                            <span className="text-base font-bold">Total</span>
-                            <span className="text-base font-bold" data-testid="text-total">
-                              {formatCurrency(total)}
-                            </span>
-                          </div>
-                          <FormField
-                            control={form.control}
-                            name="paidAmount"
-                            render={({ field }) => (
-                              <FormItem>
-                                <div className="flex justify-between items-center">
-                                  <FormLabel className="text-sm">Paid</FormLabel>
-                                  <FormControl>
-                                    <Input
-                                      type="number"
-                                      {...field}
-                                      onChange={(e) =>
-                                        field.onChange(parseFloat(e.target.value) || 0)
-                                      }
-                                      className="w-32 text-right"
-                                      data-testid="input-paid"
-                                    />
-                                  </FormControl>
-                                </div>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <div className="flex justify-between text-base font-bold text-primary border-t pt-2">
-                            <span>Due</span>
-                            <span data-testid="text-due">{formatCurrency(due)}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </Card>
-
-                {isEditMode && approvals.length > 0 && (
-                  <Card className="p-6">
-                    <h3 className="text-lg font-semibold mb-4">Approval History</h3>
-                    <div className="space-y-3">
-                      {approvals.map((approval) => (
-                        <div
-                          key={approval.id}
-                          className="flex items-start gap-3 p-3 border rounded-lg"
-                          data-testid={`approval-history-${approval.id}`}
+                  <FormField
+                    control={form.control}
+                    name="projectId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Project *</FormLabel>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value}
+                          disabled={!isEditMode && !!projectId}
                         >
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium">
-                                {approval.approvedById}
-                              </span>
-                              <span
-                                className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                                  approval.status === "approved"
-                                    ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-                                    : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
-                                }`}
-                              >
-                                {approval.status === "approved" ? "Approved" : "Rejected"}
-                              </span>
-                            </div>
-                            {approval.comments && (
-                              <p className="text-sm text-muted-foreground mt-1">
-                                {approval.comments}
-                              </p>
-                            )}
-                            <p className="text-xs text-muted-foreground mt-1">
-                              {format(new Date(approval.createdAt), "PPp")}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </Card>
-                )}
-
-                <div className="flex flex-col items-end gap-3">
-                  {isEditMode && bill?.status === "draft" && (() => {
-                    const validation = getSubmitForApprovalValidation();
-                    return (
-                      <>
-                        {!validation.isValid && (
-                          <div className="text-sm text-destructive space-y-1" data-testid="text-submit-validation-errors">
-                            {validation.errors.map((error, index) => (
-                              <div key={index}>• {error}</div>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-project">
+                              <SelectValue placeholder="Select project..." />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {projects.map((project) => (
+                              <SelectItem key={project.id} value={project.id}>
+                                {project.name}
+                              </SelectItem>
                             ))}
-                          </div>
-                        )}
-                      </>
-                    );
-                  })()}
-                  <div className="flex items-center gap-3">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setLocation(projectId ? `/projects/${projectId}/bills` : "/bills")}
-                      data-testid="button-cancel"
-                    >
-                      Cancel
-                    </Button>
-                    {isEditMode && bill?.status === "draft" && (() => {
-                      const validation = getSubmitForApprovalValidation();
-                      return (
-                        <Button
-                          type="button"
-                          variant="default"
-                          onClick={() => submitForApprovalMutation.mutate()}
-                          disabled={!validation.isValid || submitForApprovalMutation.isPending}
-                          data-testid="button-submit-for-approval"
-                          className="gap-2"
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="supplierId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Pay to *</FormLabel>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value}
                         >
-                          <Send className="h-4 w-4" />
-                          {submitForApprovalMutation.isPending ? "Submitting..." : "Submit for Approval"}
-                        </Button>
-                      );
-                    })()}
-                    <Button
-                      type="submit"
-                      disabled={createMutation.isPending || updateMutation.isPending}
-                      data-testid="button-save"
-                    >
-                      {createMutation.isPending || updateMutation.isPending
-                        ? "Saving..."
-                        : "Save"}
-                    </Button>
-                  </div>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-supplier">
+                              <SelectValue placeholder="Select supplier..." />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {suppliers.map((supplier) => (
+                              <SelectItem key={supplier.id} value={supplier.id}>
+                                {supplier.name}
+                              </SelectItem>
+                            ))}
+                            <div className="border-t mt-1 pt-1">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setAddSupplierDialogOpen(true);
+                                }}
+                                className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-primary hover:bg-accent rounded-sm"
+                                data-testid="button-add-supplier"
+                              >
+                                <Plus className="h-4 w-4" />
+                                Add
+                              </button>
+                            </div>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="billDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Date *</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="date"
+                            {...field}
+                            data-testid="input-bill-date"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="billReference"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Bill reference</FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            placeholder="Enter reference..."
+                            data-testid="input-bill-reference"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="dueDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Due date</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="date"
+                            {...field}
+                            onChange={(e) => {
+                              dueDateManuallySet.current = true;
+                              field.onChange(e);
+                            }}
+                            data-testid="input-due-date"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
                 </div>
-              </div>
+              </Card>
 
               <div className="space-y-4">
                 <Card className="p-4">
@@ -1866,6 +1512,358 @@ export default function BillDetail() {
                 </Card>
               </div>
             </div>
+
+            <Card className="p-4">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold">Cost Lines</h3>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">Amounts are</span>
+                    <Select
+                      value={taxMode}
+                      onValueChange={(value: "inclusive" | "exclusive") =>
+                        setTaxMode(value)
+                      }
+                    >
+                      <SelectTrigger className="w-32" data-testid="select-tax-mode">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="exclusive">Exclusive</SelectItem>
+                        <SelectItem value="inclusive">Inclusive</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <span className="text-sm text-muted-foreground">of tax</span>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-32">Type</TableHead>
+                            <TableHead>Description</TableHead>
+                            <TableHead>Cost Code</TableHead>
+                            <TableHead className="w-24">Quantity</TableHead>
+                            <TableHead className="w-24">Unit</TableHead>
+                            <TableHead className="w-40">Tax</TableHead>
+                            <TableHead className="w-32">Account</TableHead>
+                            <TableHead className="w-32">Amount</TableHead>
+                            <TableHead className="w-48">Allowance</TableHead>
+                            <TableHead className="w-12"></TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {lineItems.map((item, index) => (
+                            <TableRow key={index} data-testid={`row-line-item-${index}`}>
+                              <TableCell>
+                                <Select
+                                  value={item.lineType}
+                                  onValueChange={(value) =>
+                                    updateLineItem(index, "lineType", value)
+                                  }
+                                >
+                                  <SelectTrigger data-testid={`select-line-type-${index}`}>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="estimate">Estimate</SelectItem>
+                                    <SelectItem value="item">Item</SelectItem>
+                                    <SelectItem value="custom">Custom</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </TableCell>
+                              <TableCell>
+                                <Input
+                                  value={item.description}
+                                  onChange={(e) =>
+                                    updateLineItem(index, "description", e.target.value)
+                                  }
+                                  placeholder="Description..."
+                                  data-testid={`input-description-${index}`}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <CostCodeSelect
+                                  value={item.costCodeId || ""}
+                                  onValueChange={(value) =>
+                                    updateLineItem(index, "costCodeId", value)
+                                  }
+                                  placeholder="Select..."
+                                  data-testid={`select-cost-code-${index}`}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <Input
+                                  type="number"
+                                  value={item.quantity}
+                                  onChange={(e) =>
+                                    updateLineItem(
+                                      index,
+                                      "quantity",
+                                      parseFloat(e.target.value) || 0
+                                    )
+                                  }
+                                  data-testid={`input-quantity-${index}`}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <Input
+                                  value={item.unit}
+                                  onChange={(e) =>
+                                    updateLineItem(index, "unit", e.target.value)
+                                  }
+                                  placeholder="Unit"
+                                  data-testid={`input-unit-${index}`}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <Select
+                                  value={item.tax}
+                                  onValueChange={(value) =>
+                                    updateLineItem(index, "tax", value)
+                                  }
+                                >
+                                  <SelectTrigger data-testid={`select-tax-${index}`}>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="GST on expenses">
+                                      GST on expenses
+                                    </SelectItem>
+                                    <SelectItem value="No GST">No GST</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </TableCell>
+                              <TableCell>
+                                <Input
+                                  value={item.account}
+                                  onChange={(e) =>
+                                    updateLineItem(index, "account", e.target.value)
+                                  }
+                                  placeholder="Account"
+                                  data-testid={`input-account-${index}`}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <Input
+                                  type="number"
+                                  value={item.unitPrice}
+                                  onChange={(e) =>
+                                    updateLineItem(
+                                      index,
+                                      "unitPrice",
+                                      parseFloat(e.target.value) || 0
+                                    )
+                                  }
+                                  data-testid={`input-amount-${index}`}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-2">
+                                    <Checkbox
+                                      checked={item.appliesToAllowances}
+                                      onCheckedChange={(checked) =>
+                                        updateLineItem(index, "appliesToAllowances", checked === true)
+                                      }
+                                      data-testid={`checkbox-applies-to-allowances-${index}`}
+                                    />
+                                    <label className="text-sm">Applies to Allowances</label>
+                                  </div>
+                                  {item.appliesToAllowances && (
+                                    <Select
+                                      value={item.allowanceItemId || ""}
+                                      onValueChange={(value) =>
+                                        updateLineItem(index, "allowanceItemId", value)
+                                      }
+                                    >
+                                      <SelectTrigger data-testid={`select-allowance-${index}`}>
+                                        <SelectValue placeholder="Select allowance..." />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {allowances.map((allowance) => (
+                                          <SelectItem key={allowance.id} value={allowance.id}>
+                                            {allowance.description} ({allowance.itemType})
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => deleteLineItem(index)}
+                                  data-testid={`button-delete-line-${index}`}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={addLineItem}
+                      data-testid="button-add-line"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add new line
+                    </Button>
+
+                    <div className="border-t pt-4 mt-4">
+                      <div className="flex justify-end">
+                        <div className="w-72 space-y-2">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Subtotal</span>
+                            <span className="font-medium" data-testid="text-subtotal">
+                              {formatCurrency(calculateSubtotal())}
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Tax (GST)</span>
+                            <span className="font-medium" data-testid="text-tax">
+                              {formatCurrency(calculateTax())}
+                            </span>
+                          </div>
+                          <div className="flex justify-between border-t pt-2">
+                            <span className="text-base font-bold">Total</span>
+                            <span className="text-base font-bold" data-testid="text-total">
+                              {formatCurrency(total)}
+                            </span>
+                          </div>
+                          <FormField
+                            control={form.control}
+                            name="paidAmount"
+                            render={({ field }) => (
+                              <FormItem>
+                                <div className="flex justify-between items-center">
+                                  <FormLabel className="text-sm">Paid</FormLabel>
+                                  <FormControl>
+                                    <Input
+                                      type="number"
+                                      {...field}
+                                      onChange={(e) =>
+                                        field.onChange(parseFloat(e.target.value) || 0)
+                                      }
+                                      className="w-32 text-right"
+                                      data-testid="input-paid"
+                                    />
+                                  </FormControl>
+                                </div>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <div className="flex justify-between text-base font-bold text-primary border-t pt-2">
+                            <span>Due</span>
+                            <span data-testid="text-due">{formatCurrency(due)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+
+                {isEditMode && approvals.length > 0 && (
+                  <Card className="p-6">
+                    <h3 className="text-lg font-semibold mb-4">Approval History</h3>
+                    <div className="space-y-3">
+                      {approvals.map((approval) => (
+                        <div
+                          key={approval.id}
+                          className="flex items-start gap-3 p-3 border rounded-lg"
+                          data-testid={`approval-history-${approval.id}`}
+                        >
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">
+                                {approval.approvedById}
+                              </span>
+                              <span
+                                className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                  approval.status === "approved"
+                                    ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+                                    : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
+                                }`}
+                              >
+                                {approval.status === "approved" ? "Approved" : "Rejected"}
+                              </span>
+                            </div>
+                            {approval.comments && (
+                              <p className="text-sm text-muted-foreground mt-1">
+                                {approval.comments}
+                              </p>
+                            )}
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {format(new Date(approval.createdAt), "PPp")}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                )}
+
+                <div className="flex flex-col items-end gap-3">
+                  {isEditMode && bill?.status === "draft" && (() => {
+                    const validation = getSubmitForApprovalValidation();
+                    return (
+                      <>
+                        {!validation.isValid && (
+                          <div className="text-sm text-destructive space-y-1" data-testid="text-submit-validation-errors">
+                            {validation.errors.map((error, index) => (
+                              <div key={index}>• {error}</div>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                  <div className="flex items-center gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setLocation(projectId ? `/projects/${projectId}/bills` : "/bills")}
+                      data-testid="button-cancel"
+                    >
+                      Cancel
+                    </Button>
+                    {isEditMode && bill?.status === "draft" && (() => {
+                      const validation = getSubmitForApprovalValidation();
+                      return (
+                        <Button
+                          type="button"
+                          variant="default"
+                          onClick={() => submitForApprovalMutation.mutate()}
+                          disabled={!validation.isValid || submitForApprovalMutation.isPending}
+                          data-testid="button-submit-for-approval"
+                          className="gap-2"
+                        >
+                          <Send className="h-4 w-4" />
+                          {submitForApprovalMutation.isPending ? "Submitting..." : "Submit for Approval"}
+                        </Button>
+                      );
+                    })()}
+                    <Button
+                      type="submit"
+                      disabled={createMutation.isPending || updateMutation.isPending}
+                      data-testid="button-save"
+                    >
+                      {createMutation.isPending || updateMutation.isPending
+                        ? "Saving..."
+                        : "Save"}
+                    </Button>
+                  </div>
+                </div>
           </form>
         </Form>
       </div>
