@@ -18,7 +18,8 @@ import {
   Upload,
   FileText,
   Loader2,
-  ChevronDown
+  ChevronDown,
+  Settings2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -126,6 +127,10 @@ export default function BillDetail() {
   const [addSupplierDialogOpen, setAddSupplierDialogOpen] = useState(false);
   const [attachmentUrls, setAttachmentUrls] = useState<string[]>([]);
   const dueDateManuallySet = useRef(false);
+  const [visibleAmountCols, setVisibleAmountCols] = useState<{ exTax: boolean; tax: boolean; incTax: boolean }>({ exTax: false, tax: false, incTax: false });
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
+  const [colMenuOpen, setColMenuOpen] = useState(false);
+  const resizingCol = useRef<{ key: string; startX: number; startW: number } | null>(null);
 
   const { data: bill, isLoading: billLoading } = useQuery<Bill>({
     queryKey: ["/api/bills", id],
@@ -278,6 +283,18 @@ export default function BillDetail() {
     }
   }, [nextBillNumberData, isEditMode, form]);
 
+  useEffect(() => {
+    if (!colMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest("[data-testid='button-column-visibility']") && !target.closest("[data-col-menu]")) {
+        setColMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [colMenuOpen]);
+
   const watchedSupplierId = form.watch("supplierId");
   const watchedBillDate = form.watch("billDate");
 
@@ -396,7 +413,6 @@ export default function BillDetail() {
   };
 
   const formatCurrency = (amount: number) => {
-    // Check if it's a whole number
     const isWholeNumber = amount % 1 === 0;
     
     return new Intl.NumberFormat("en-AU", {
@@ -405,6 +421,62 @@ export default function BillDetail() {
       minimumFractionDigits: isWholeNumber ? 0 : 2,
       maximumFractionDigits: 2
     }).format(amount);
+  };
+
+  const getLineExTax = (item: LineItem) => {
+    if (taxMode === "inclusive" && item.tax === "GST on expenses") {
+      return item.total - item.total / 11;
+    }
+    return item.total;
+  };
+
+  const getLineTax = (item: LineItem) => {
+    if (item.tax !== "GST on expenses") return 0;
+    if (taxMode === "inclusive") return item.total / 11;
+    return item.total * 0.1;
+  };
+
+  const getLineIncTax = (item: LineItem) => {
+    return getLineExTax(item) + getLineTax(item);
+  };
+
+  const defaultColWidths: Record<string, number> = {
+    description: 140,
+    costCode: 130,
+    qty: 65,
+    unit: 60,
+    tax: 110,
+    account: 80,
+    unitCost: 90,
+    allowance: 140,
+    exTax: 90,
+    amtTax: 80,
+    incTax: 90,
+  };
+
+  const getColWidth = (key: string) => columnWidths[key] || defaultColWidths[key] || 100;
+
+  const onResizeStart = (key: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = getColWidth(key);
+    resizingCol.current = { key, startX, startW };
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!resizingCol.current) return;
+      const diff = ev.clientX - resizingCol.current.startX;
+      const newW = Math.max(40, resizingCol.current.startW + diff);
+      setColumnWidths((prev) => ({ ...prev, [resizingCol.current!.key]: newW }));
+    };
+
+    const onMouseUp = () => {
+      resizingCol.current = null;
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
   };
 
   const createMutation = useMutation({
@@ -1487,63 +1559,97 @@ export default function BillDetail() {
             <Card className="p-0 overflow-hidden">
               <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
                 <h3 className="text-xs font-semibold">Cost Lines</h3>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[11px] text-muted-foreground">Amounts are</span>
-                  <Select
-                    value={taxMode}
-                    onValueChange={(value: "inclusive" | "exclusive") =>
-                      setTaxMode(value)
-                    }
-                  >
-                    <SelectTrigger className="w-24 text-[11px]" data-testid="select-tax-mode">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="exclusive">Exclusive</SelectItem>
-                      <SelectItem value="inclusive">Inclusive</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <span className="text-[11px] text-muted-foreground">of tax</span>
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => setColMenuOpen(!colMenuOpen)}
+                      data-testid="button-column-visibility"
+                    >
+                      <Settings2 className="h-3.5 w-3.5" />
+                    </Button>
+                    {colMenuOpen && (
+                      <div data-col-menu className="absolute right-0 top-full mt-1 z-50 bg-popover border rounded-md shadow-md p-2 min-w-[160px]">
+                        <div className="text-[11px] font-medium text-muted-foreground mb-1.5 px-1">Show columns</div>
+                        {[
+                          { key: "exTax" as const, label: "Amount ex Tax" },
+                          { key: "tax" as const, label: "Amount Tax" },
+                          { key: "incTax" as const, label: "Amount inc Tax" },
+                        ].map(({ key, label }) => (
+                          <label key={key} className="flex items-center gap-2 px-1 py-1 text-[11px] cursor-pointer rounded-sm hover-elevate">
+                            <Checkbox
+                              checked={visibleAmountCols[key]}
+                              onCheckedChange={(checked) =>
+                                setVisibleAmountCols((prev) => ({ ...prev, [key]: checked === true }))
+                              }
+                              className="h-3.5 w-3.5"
+                            />
+                            {label}
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] text-muted-foreground">Amounts are</span>
+                    <Select
+                      value={taxMode}
+                      onValueChange={(value: "inclusive" | "exclusive") =>
+                        setTaxMode(value)
+                      }
+                    >
+                      <SelectTrigger className="w-24 text-[11px]" data-testid="select-tax-mode">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="exclusive">Exclusive</SelectItem>
+                        <SelectItem value="inclusive">Inclusive</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <span className="text-[11px] text-muted-foreground">of tax</span>
+                  </div>
                 </div>
               </div>
 
               <div className="overflow-x-auto">
-                <table className="w-full text-[11px]">
+                <table className="w-full text-[11px]" style={{ tableLayout: "fixed" }}>
                   <thead>
                     <tr className="border-b bg-muted/20">
-                      <th className="text-left font-medium text-muted-foreground px-2 py-1.5 w-[90px]">Type</th>
-                      <th className="text-left font-medium text-muted-foreground px-2 py-1.5 min-w-[140px]">Description</th>
-                      <th className="text-left font-medium text-muted-foreground px-2 py-1.5 w-[130px]">Cost Code</th>
-                      <th className="text-right font-medium text-muted-foreground px-2 py-1.5 w-[65px]">Qty</th>
-                      <th className="text-left font-medium text-muted-foreground px-2 py-1.5 w-[60px]">Unit</th>
-                      <th className="text-left font-medium text-muted-foreground px-2 py-1.5 w-[110px]">Tax</th>
-                      <th className="text-left font-medium text-muted-foreground px-2 py-1.5 w-[80px]">Account</th>
-                      <th className="text-right font-medium text-muted-foreground px-2 py-1.5 w-[90px]">Amount</th>
-                      <th className="text-left font-medium text-muted-foreground px-2 py-1.5 w-[140px]">Allowance</th>
+                      {[
+                        { key: "description", label: "Description", align: "left" },
+                        { key: "costCode", label: "Cost Code", align: "left" },
+                        { key: "qty", label: "Qty", align: "right" },
+                        { key: "unit", label: "Unit", align: "left" },
+                        { key: "tax", label: "Tax", align: "left" },
+                        { key: "account", label: "Account", align: "left" },
+                        { key: "unitCost", label: "Unit Cost", align: "right" },
+                        ...(visibleAmountCols.exTax ? [{ key: "exTax", label: "Amt ex Tax", align: "right" as const }] : []),
+                        ...(visibleAmountCols.tax ? [{ key: "amtTax", label: "Amt Tax", align: "right" as const }] : []),
+                        ...(visibleAmountCols.incTax ? [{ key: "incTax", label: "Amt inc Tax", align: "right" as const }] : []),
+                        { key: "allowance", label: "Allowance", align: "left" },
+                      ].map((col) => (
+                        <th
+                          key={col.key}
+                          className={`relative font-medium text-muted-foreground px-2 py-1.5 select-none group ${col.align === "right" ? "text-right" : "text-left"}`}
+                          style={{ width: getColWidth(col.key), minWidth: col.key === "description" ? 100 : 40 }}
+                        >
+                          {col.label}
+                          <div
+                            className="absolute right-0 top-0 bottom-0 w-[5px] cursor-col-resize invisible group-hover:visible bg-primary/20"
+                            onMouseDown={(e) => onResizeStart(col.key, e)}
+                            data-testid={`resize-${col.key}`}
+                          />
+                        </th>
+                      ))}
                       <th className="w-[32px] px-1 py-1.5"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {lineItems.map((item, index) => (
                       <tr key={index} className="border-b last:border-b-0 hover:bg-muted/10" data-testid={`row-line-item-${index}`}>
-                        <td className="px-1 py-0.5">
-                          <Select
-                            value={item.lineType}
-                            onValueChange={(value) =>
-                              updateLineItem(index, "lineType", value)
-                            }
-                          >
-                            <SelectTrigger className="h-7 text-[11px] border-0 shadow-none bg-transparent hover:bg-muted/50 focus:ring-1" data-testid={`select-line-type-${index}`}>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="estimate">Estimate</SelectItem>
-                              <SelectItem value="item">Item</SelectItem>
-                              <SelectItem value="custom">Custom</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </td>
-                        <td className="px-1 py-0.5">
+                        <td className="px-1 py-0.5" style={{ width: getColWidth("description") }}>
                           <input
                             value={item.description}
                             onChange={(e) =>
@@ -1554,7 +1660,7 @@ export default function BillDetail() {
                             data-testid={`input-description-${index}`}
                           />
                         </td>
-                        <td className="px-1 py-0.5">
+                        <td className="px-1 py-0.5" style={{ width: getColWidth("costCode") }}>
                           <CostCodeSelect
                             value={item.costCodeId || ""}
                             onValueChange={(value) =>
@@ -1564,7 +1670,7 @@ export default function BillDetail() {
                             data-testid={`select-cost-code-${index}`}
                           />
                         </td>
-                        <td className="px-1 py-0.5">
+                        <td className="px-1 py-0.5" style={{ width: getColWidth("qty") }}>
                           <input
                             type="number"
                             value={item.quantity}
@@ -1579,7 +1685,7 @@ export default function BillDetail() {
                             data-testid={`input-quantity-${index}`}
                           />
                         </td>
-                        <td className="px-1 py-0.5">
+                        <td className="px-1 py-0.5" style={{ width: getColWidth("unit") }}>
                           <input
                             value={item.unit}
                             onChange={(e) =>
@@ -1590,14 +1696,14 @@ export default function BillDetail() {
                             data-testid={`input-unit-${index}`}
                           />
                         </td>
-                        <td className="px-1 py-0.5">
+                        <td className="px-1 py-0.5" style={{ width: getColWidth("tax") }}>
                           <Select
                             value={item.tax}
                             onValueChange={(value) =>
                               updateLineItem(index, "tax", value)
                             }
                           >
-                            <SelectTrigger className="h-7 text-[11px] border-0 shadow-none bg-transparent hover:bg-muted/50 focus:ring-1" data-testid={`select-tax-${index}`}>
+                            <SelectTrigger className="text-[11px] border-0 shadow-none bg-transparent hover:bg-muted/50 focus:ring-1" data-testid={`select-tax-${index}`}>
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -1608,7 +1714,7 @@ export default function BillDetail() {
                             </SelectContent>
                           </Select>
                         </td>
-                        <td className="px-1 py-0.5">
+                        <td className="px-1 py-0.5" style={{ width: getColWidth("account") }}>
                           <input
                             value={item.account}
                             onChange={(e) =>
@@ -1619,7 +1725,7 @@ export default function BillDetail() {
                             data-testid={`input-account-${index}`}
                           />
                         </td>
-                        <td className="px-1 py-0.5">
+                        <td className="px-1 py-0.5" style={{ width: getColWidth("unitCost") }}>
                           <input
                             type="number"
                             value={item.unitPrice}
@@ -1634,38 +1740,46 @@ export default function BillDetail() {
                             data-testid={`input-amount-${index}`}
                           />
                         </td>
-                        <td className="px-1 py-0.5">
-                          <div className="flex items-center gap-1">
-                            <Checkbox
-                              checked={item.appliesToAllowances}
-                              onCheckedChange={(checked) =>
-                                updateLineItem(index, "appliesToAllowances", checked === true)
+                        {visibleAmountCols.exTax && (
+                          <td className="px-1 py-0.5 text-right text-[11px] text-muted-foreground" style={{ width: getColWidth("exTax") }}>
+                            {formatCurrency(getLineExTax(item))}
+                          </td>
+                        )}
+                        {visibleAmountCols.tax && (
+                          <td className="px-1 py-0.5 text-right text-[11px] text-muted-foreground" style={{ width: getColWidth("amtTax") }}>
+                            {formatCurrency(getLineTax(item))}
+                          </td>
+                        )}
+                        {visibleAmountCols.incTax && (
+                          <td className="px-1 py-0.5 text-right text-[11px] text-muted-foreground" style={{ width: getColWidth("incTax") }}>
+                            {formatCurrency(getLineIncTax(item))}
+                          </td>
+                        )}
+                        <td className="px-1 py-0.5" style={{ width: getColWidth("allowance") }}>
+                          <Select
+                            value={item.allowanceItemId || "none"}
+                            onValueChange={(value) => {
+                              if (value === "none") {
+                                updateLineItem(index, "appliesToAllowances", false);
+                                updateLineItem(index, "allowanceItemId", undefined);
+                              } else {
+                                updateLineItem(index, "appliesToAllowances", true);
+                                updateLineItem(index, "allowanceItemId", value);
                               }
-                              className="h-3.5 w-3.5"
-                              data-testid={`checkbox-applies-to-allowances-${index}`}
-                            />
-                            {item.appliesToAllowances ? (
-                              <Select
-                                value={item.allowanceItemId || ""}
-                                onValueChange={(value) =>
-                                  updateLineItem(index, "allowanceItemId", value)
-                                }
-                              >
-                                <SelectTrigger className="h-7 text-[11px] border-0 shadow-none bg-transparent hover:bg-muted/50 focus:ring-1 flex-1" data-testid={`select-allowance-${index}`}>
-                                  <SelectValue placeholder="Select..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {allowances.map((allowance) => (
-                                    <SelectItem key={allowance.id} value={allowance.id}>
-                                      {allowance.description} ({allowance.itemType})
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            ) : (
-                              <span className="text-[10px] text-muted-foreground">Allowance</span>
-                            )}
-                          </div>
+                            }}
+                          >
+                            <SelectTrigger className="text-[11px] border-0 shadow-none bg-transparent hover:bg-muted/50 focus:ring-1" data-testid={`select-allowance-${index}`}>
+                              <SelectValue placeholder="None" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">None</SelectItem>
+                              {allowances.map((allowance) => (
+                                <SelectItem key={allowance.id} value={allowance.id}>
+                                  {allowance.description} ({allowance.itemType})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </td>
                         <td className="px-0.5 py-0.5 text-center">
                           <button
