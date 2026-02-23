@@ -73,9 +73,9 @@ export default function EditCostCodeDialog({
   });
 
   const trackingCategory1 = trackingCategories.find(
-    (tc: any) => tc.trackingCategoryID === trackingCategory1Id
+    (tc: any) => tc.trackingCategoryId === trackingCategory1Id
   );
-  const trackingOptions: { trackingOptionID: string; name: string }[] =
+  const trackingOptions: { trackingOptionId: string; name: string }[] =
     trackingCategory1?.options || [];
 
   const form = useForm<EditCostCodeFormData>({
@@ -229,7 +229,7 @@ export default function EditCostCodeDialog({
                         } else {
                           field.onChange(value);
                           const option = trackingOptions.find(
-                            (o) => o.trackingOptionID === value
+                            (o) => o.trackingOptionId === value
                           );
                           form.setValue("xeroTrackingOptionName", option?.name ?? null);
                         }
@@ -243,7 +243,7 @@ export default function EditCostCodeDialog({
                       <SelectContent>
                         <SelectItem value="__none__">None</SelectItem>
                         {trackingOptions.map((option) => (
-                          <SelectItem key={option.trackingOptionID} value={option.trackingOptionID}>
+                          <SelectItem key={option.trackingOptionId} value={option.trackingOptionId}>
                             {option.name}
                           </SelectItem>
                         ))}
