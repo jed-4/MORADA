@@ -256,6 +256,18 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
     return rows;
   }, [contactRows, unassignedRow]);
 
+  const dayOffsets = useMemo(() => {
+    const offsets: number[] = [];
+    let x = 0;
+    for (const day of days) {
+      offsets.push(x);
+      x += getDayWidth(day);
+    }
+    return { offsets, totalWidth: x };
+  }, [days]);
+
+  const totalWidth = dayOffsets.totalWidth;
+
   const rowBarLayouts = useMemo(() => {
     const result = new Map<string, { layouts: BarLayout[]; laneCount: number; rowHeight: number }>();
     for (const row of allRows) {
@@ -353,17 +365,6 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
     setRangeStart(startOfWeek(new Date(), { weekStartsOn: weekStartDay }));
   };
 
-  const dayOffsets = useMemo(() => {
-    const offsets: number[] = [];
-    let x = 0;
-    for (const day of days) {
-      offsets.push(x);
-      x += getDayWidth(day);
-    }
-    return { offsets, totalWidth: x };
-  }, [days]);
-
-  const totalWidth = dayOffsets.totalWidth;
   const today = new Date();
 
   if (isLoading) {
