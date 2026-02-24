@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown, User, Search, Filter, Columns, MoreVertical, FileText, Edit, Eye, Copy, Check, Palette, Trash2, Settings, Download, Wifi, WifiOff, GanttChart, List as ListIcon, GripVertical, Link, Unlink, X, RotateCcw } from "lucide-react";
+import { Plus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown, User, Search, Filter, Columns, MoreVertical, FileText, Edit, Eye, Copy, Check, Palette, Trash2, Settings, Download, Wifi, WifiOff, GanttChart, List as ListIcon, GripVertical, Link, Unlink, X, RotateCcw, ChevronsDownUp, ChevronsUpDown } from "lucide-react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -2228,6 +2228,28 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
               )}
             </div>
             
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 flex-shrink-0"
+              onClick={() => {
+                const parentIds = parentItems.map(p => p.id);
+                const allCollapsed = parentIds.length > 0 && parentIds.every(id => collapsedItems.has(id));
+                if (allCollapsed) {
+                  setCollapsedItems(new Set());
+                } else {
+                  setCollapsedItems(new Set(parentIds));
+                }
+              }}
+              title={parentItems.length > 0 && parentItems.every(p => collapsedItems.has(p.id)) ? "Expand all" : "Collapse all"}
+              data-testid="button-collapse-all"
+            >
+              {parentItems.length > 0 && parentItems.every(p => collapsedItems.has(p.id)) ? (
+                <ChevronsUpDown className="w-3.5 h-3.5" />
+              ) : (
+                <ChevronsDownUp className="w-3.5 h-3.5" />
+              )}
+            </Button>
             <Button
               variant="ghost"
               size="icon"
