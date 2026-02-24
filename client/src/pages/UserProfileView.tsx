@@ -20,13 +20,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -43,8 +43,6 @@ import { useAuth } from "@/hooks/use-auth";
 import { getUserDisplayName, getUserInitials } from "@/lib/utils";
 import { useState } from "react";
 import type { UserWithRole, UserProjectAccess, UserRole } from "@shared/schema";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   User,
   Mail,
@@ -59,8 +57,7 @@ import {
   KeyRound,
   HardHat,
   DollarSign,
-  FolderPlus,
-  Search,
+  X,
   Building2,
 } from "lucide-react";
 
@@ -264,7 +261,6 @@ export default function UserProfileView() {
   });
 
   const [projectSearchQuery, setProjectSearchQuery] = useState("");
-  const [isProjectPopoverOpen, setIsProjectPopoverOpen] = useState(false);
 
   const grantProjectAccessMutation = useMutation({
     mutationFn: async (projectId: string) => {
@@ -299,12 +295,6 @@ export default function UserProfileView() {
   const accessibleProjectIds = projectAccess.map((a: UserProjectAccess) => a.projectId);
 
   const activeProjects = (projects as any[]).filter((p: any) => p.isActive !== false);
-
-  const filteredProjectsForDropdown = activeProjects.filter((p: any) => {
-    if (!projectSearchQuery) return true;
-    const search = projectSearchQuery.toLowerCase();
-    return p.name?.toLowerCase().includes(search) || p.jobNumber?.toLowerCase().includes(search);
-  });
 
   const isProjectMutating = grantProjectAccessMutation.isPending || revokeProjectAccessMutation.isPending;
 
@@ -475,120 +465,97 @@ export default function UserProfileView() {
         {/* Project Access Card */}
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <Building2 className="h-5 w-5" />
-                  Project Access
-                </CardTitle>
-                <CardDescription>
-                  Projects this user has access to ({projectAccess.length})
-                </CardDescription>
+            <CardTitle className="flex items-center gap-2">
+              <Building2 className="h-5 w-5" />
+              Project Access
+            </CardTitle>
+            <CardDescription>
+              Projects this user has access to ({projectAccess.length})
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Assigned project pills */}
+            {projectAccess.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No projects assigned yet</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {projectAccess.map((access: any) => {
+                  const project = (projects as any[]).find((p: any) => p.id === access.projectId);
+                  const label = project
+                    ? `${project.jobNumber ? project.jobNumber + " - " : ""}${project.name}`
+                    : "Unknown Project";
+                  return (
+                    <Badge
+                      key={access.id}
+                      variant="secondary"
+                      className="flex items-center gap-1.5 pr-1 text-sm font-normal"
+                      data-testid={`project-pill-${access.projectId}`}
+                    >
+                      <span>{label}</span>
+                      {isAdmin && !isCurrentUser && (
+                        <button
+                          onClick={() => handleToggleProject(access.projectId)}
+                          disabled={isProjectMutating}
+                          className="ml-0.5 rounded-sm opacity-60 hover:opacity-100 disabled:pointer-events-none"
+                          aria-label={`Remove ${label}`}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      )}
+                    </Badge>
+                  );
+                })}
               </div>
-              {isAdmin && !isCurrentUser && (
-                <Popover open={isProjectPopoverOpen} onOpenChange={setIsProjectPopoverOpen}>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" size="sm">
-                      <FolderPlus className="h-4 w-4 mr-1.5" />
-                      Manage Projects
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-80 p-0" align="end">
-                    <div className="p-3 border-b">
-                      <div className="relative">
-                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                        <Input
-                          placeholder="Search projects..."
-                          value={projectSearchQuery}
-                          onChange={(e) => setProjectSearchQuery(e.target.value)}
-                          className="pl-8 h-8 text-sm"
-                        />
-                      </div>
-                    </div>
-                    <div className="max-h-64 overflow-y-auto p-1">
-                      {filteredProjectsForDropdown.length === 0 ? (
-                        <p className="text-sm text-muted-foreground text-center py-4">
-                          No projects found
-                        </p>
-                      ) : (
-                        filteredProjectsForDropdown.map((project: any) => {
-                          const isChecked = accessibleProjectIds.includes(project.id);
+            )}
+
+            {/* Add projects combobox — admin only */}
+            {isAdmin && !isCurrentUser && (
+              <div className="border rounded-md">
+                <Command shouldFilter={false}>
+                  <CommandInput
+                    placeholder="Search projects to add..."
+                    value={projectSearchQuery}
+                    onValueChange={setProjectSearchQuery}
+                  />
+                  <CommandList className="max-h-56">
+                    <CommandEmpty>No matching projects found</CommandEmpty>
+                    <CommandGroup>
+                      {activeProjects
+                        .filter((p: any) => {
+                          if (accessibleProjectIds.includes(p.id)) return false;
+                          if (!projectSearchQuery) return true;
+                          const q = projectSearchQuery.toLowerCase();
                           return (
-                            <label
-                              key={project.id}
-                              className="flex items-center gap-2.5 px-2.5 py-2 rounded-md cursor-pointer hover-elevate"
-                            >
-                              <Checkbox
-                                checked={isChecked}
-                                onCheckedChange={() => handleToggleProject(project.id)}
-                                disabled={isProjectMutating}
-                              />
-                              <div className="flex-1 min-w-0">
-                                <div className="text-sm font-medium truncate">
-                                  {project.jobNumber ? `${project.jobNumber} - ` : ""}{project.name}
-                                </div>
-                                {project.location && (
-                                  <div className="text-xs text-muted-foreground truncate">
-                                    {project.location}
-                                  </div>
-                                )}
-                              </div>
-                            </label>
+                            p.name?.toLowerCase().includes(q) ||
+                            p.jobNumber?.toLowerCase().includes(q)
                           );
                         })
-                      )}
-                    </div>
-                  </PopoverContent>
-                </Popover>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent>
-            {projectAccess.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8">
-                No project access assigned yet
-              </p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Project</TableHead>
-                    <TableHead>Access Level</TableHead>
-                    <TableHead>Granted</TableHead>
-                    {isAdmin && !isCurrentUser && <TableHead className="text-right">Actions</TableHead>}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {projectAccess.map((access: any) => {
-                    const project = (projects as any[]).find((p: any) => p.id === access.projectId);
-                    return (
-                      <TableRow key={access.id} data-testid={`project-access-${access.id}`}>
-                        <TableCell className="font-medium">
-                          {project?.jobNumber ? `${project.jobNumber} - ` : ""}{project?.name || "Unknown Project"}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{access.accessLevel}</Badge>
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {new Date(access.createdAt).toLocaleDateString()}
-                        </TableCell>
-                        {isAdmin && !isCurrentUser && (
-                          <TableCell className="text-right">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => handleToggleProject(access.projectId)}
-                              disabled={isProjectMutating}
-                            >
-                              <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                            </Button>
-                          </TableCell>
-                        )}
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+                        .map((project: any) => (
+                          <CommandItem
+                            key={project.id}
+                            value={project.id}
+                            onSelect={() => {
+                              grantProjectAccessMutation.mutate(project.id);
+                              setProjectSearchQuery("");
+                            }}
+                            disabled={isProjectMutating}
+                            className="cursor-pointer"
+                          >
+                            <span className="font-medium">
+                              {project.jobNumber ? `${project.jobNumber} - ` : ""}
+                              {project.name}
+                            </span>
+                            {project.location && (
+                              <span className="ml-2 text-xs text-muted-foreground">
+                                {project.location}
+                              </span>
+                            )}
+                          </CommandItem>
+                        ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </div>
             )}
           </CardContent>
         </Card>
