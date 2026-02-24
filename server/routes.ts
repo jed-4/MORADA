@@ -6709,7 +6709,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // User Project Access Routes
-  app.get("/api/users/:userId/project-access", requireTeamMember, async (req, res) => {
+  app.get("/api/users/:userId/project-access", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const projectAccess = await storage.getUserProjectAccess(req.params.userId);
       res.json(projectAccess);
@@ -6718,7 +6718,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/users/:userId/project-access", requireTeamMember, async (req, res) => {
+  app.post("/api/users/:userId/project-access", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const validationResult = insertUserProjectAccessSchema.safeParse(req.body);
       if (!validationResult.success) {
@@ -6765,7 +6765,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/project-access/grant", requireTeamMember, async (req, res) => {
+  app.post("/api/project-access/grant", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const currentUser = req.user as any;
       const { userId, projectId, accessLevel } = req.body;
