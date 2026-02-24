@@ -370,7 +370,8 @@ export default function UserProfileView() {
 
 
   const isCurrentUser = currentUser?.id === userId;
-  const isAdmin = currentUser?.role?.name === "General admin" || currentUser?.role?.name === "Admin";
+  const adminRoleName = (currentUser?.roleName || "").toLowerCase();
+  const isAdmin = adminRoleName.includes("admin") || adminRoleName.includes("general manage") || adminRoleName.includes("owner") || adminRoleName.includes("director");
 
   return (
     <div className="p-6 space-y-6">
