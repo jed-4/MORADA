@@ -389,6 +389,90 @@ export class XeroService {
     const data = (await response.json()) as any;
     return data.Invoices?.[0] || data;
   }
+
+  async createInvoice(connectionId: string, invoiceData: {
+    clientName: string;
+    clientXeroContactId?: string;
+    invoiceDate: string;
+    dueDate?: string;
+    reference?: string;
+    invoiceNumber?: string;
+    lineItems: XeroBillLineItem[];
+  }): Promise<any> {
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Connection not found");
+
+    let contactId: string;
+
+    if (invoiceData.clientXeroContactId) {
+      contactId = invoiceData.clientXeroContactId;
+    } else {
+      const contact = await this.findOrCreateContact(
+        accessToken,
+        connection.tenantId,
+        invoiceData.clientName
+      );
+      contactId = contact.ContactID;
+    }
+
+    const xeroLineItems = invoiceData.lineItems.map((item) => {
+      const lineItem: any = {
+        Description: item.description,
+        Quantity: item.quantity,
+        UnitAmount: item.unitAmount,
+        TaxType: item.taxType === "INPUT" ? "OUTPUT" : item.taxType,
+      };
+      if (item.accountCode) {
+        lineItem.AccountCode = item.accountCode;
+      }
+      if (item.tracking && item.tracking.length > 0) {
+        lineItem.Tracking = item.tracking.map(t => ({
+          TrackingCategoryID: t.TrackingCategoryID,
+          TrackingOptionID: t.TrackingOptionID,
+        }));
+      }
+      return lineItem;
+    });
+
+    const invoicePayload: any = {
+      Type: "ACCREC",
+      Contact: { ContactID: contactId },
+      Date: invoiceData.invoiceDate,
+      LineItems: xeroLineItems,
+      LineAmountTypes: "Exclusive",
+      Status: "AUTHORISED",
+    };
+
+    if (invoiceData.dueDate) {
+      invoicePayload.DueDate = invoiceData.dueDate;
+    }
+    if (invoiceData.reference) {
+      invoicePayload.Reference = invoiceData.reference;
+    }
+    if (invoiceData.invoiceNumber) {
+      invoicePayload.InvoiceNumber = invoiceData.invoiceNumber;
+    }
+
+    const response = await fetch(`${XERO_API_BASE}/Invoices`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Xero-Tenant-Id": connection.tenantId,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ Invoices: [invoicePayload] }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to create Xero invoice: ${response.status} ${errorText}`);
+    }
+
+    const data = (await response.json()) as any;
+    return data.Invoices?.[0] || data;
+  }
 }
 
 export const xeroService = new XeroService();

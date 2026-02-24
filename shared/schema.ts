@@ -1952,6 +1952,8 @@ export const clientInvoices = pgTable("client_invoices", {
   status: text("status").notNull().default("draft"),
   sentDate: timestamp("sent_date"),
   notes: text("notes"),
+  sendToXero: boolean("send_to_xero").notNull().default(false),
+  xeroInvoiceId: text("xero_invoice_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -1973,6 +1975,7 @@ export const insertClientInvoiceSchema = createInsertSchema(clientInvoices).omit
   totalAmount: z.number().default(0),
   paidAmount: z.number().default(0),
   balanceAmount: z.number().default(0),
+  sendToXero: z.boolean().default(false),
 });
 
 export type InsertClientInvoice = z.infer<typeof insertClientInvoiceSchema>;

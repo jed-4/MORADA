@@ -129,6 +129,11 @@ export default function ClientInvoiceDetail() {
   const [selectedVariationIds, setSelectedVariationIds] = useState<string[]>([]);
   const [selectedBillIds, setSelectedBillIds] = useState<string[]>([]);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [xeroPushing, setXeroPushing] = useState(false);
+
+  const { data: xeroStatus } = useQuery<{ connected: boolean }>({
+    queryKey: ["/api/xero/status"],
+  });
 
   const { data: invoice, isLoading: invoiceLoading } = useQuery<ClientInvoice>({
     queryKey: [`/api/client-invoices/${effectiveInvoiceId}`],
@@ -728,6 +733,33 @@ export default function ClientInvoiceDetail() {
     sendInvoiceMutation.mutate();
   };
 
+  const handlePushToXero = async () => {
+    if (!effectiveInvoiceId || xeroPushing) return;
+    setXeroPushing(true);
+    try {
+      const res = await apiRequest("/api/xero/push-client-invoice", "POST", {
+        invoiceId: effectiveInvoiceId,
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast({
+          title: "Sent to Xero",
+          description: `Invoice pushed to Xero successfully (${data.xeroInvoiceNumber || data.xeroInvoiceId})`,
+        });
+        queryClient.invalidateQueries({ queryKey: [`/api/client-invoices/${effectiveInvoiceId}`] });
+      }
+    } catch (error: any) {
+      const errData = error?.response ? await error.response.json().catch(() => ({})) : {};
+      toast({
+        title: "Failed to send to Xero",
+        description: errData.message || error.message || "Could not push invoice to Xero",
+        variant: "destructive",
+      });
+    } finally {
+      setXeroPushing(false);
+    }
+  };
+
   const handleCancel = () => {
     if (projectIdFromParams) {
       setLocation(`/projects/${projectIdFromParams}/client-invoices`);
@@ -808,18 +840,37 @@ export default function ClientInvoiceDetail() {
               </div>
             </div>
 
-            {isEditMode && invoice?.status === "draft" && (
-              <button
-                type="button"
-                onClick={handleSendInvoice}
-                disabled={sendInvoiceMutation.isPending}
-                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                data-testid="button-send-invoice"
-              >
-                <Send className="w-3 h-3" />
-                <span>Send Invoice</span>
-              </button>
-            )}
+            <div className="flex items-center gap-1.5">
+              {isEditMode && invoice?.status === "draft" && (
+                <button
+                  type="button"
+                  onClick={handleSendInvoice}
+                  disabled={sendInvoiceMutation.isPending}
+                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                  data-testid="button-send-invoice"
+                >
+                  <Send className="w-3 h-3" />
+                  <span>Send Invoice</span>
+                </button>
+              )}
+              {isEditMode && xeroStatus?.connected && !(invoice as any)?.xeroInvoiceId && (
+                <button
+                  type="button"
+                  onClick={handlePushToXero}
+                  disabled={xeroPushing}
+                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 text-blue-600 dark:text-blue-400 border-blue-300 dark:border-blue-600"
+                  data-testid="button-send-to-xero"
+                >
+                  {xeroPushing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                  <span>Send to Xero</span>
+                </button>
+              )}
+              {isEditMode && (invoice as any)?.xeroInvoiceId && (
+                <span className="text-[10px] text-green-600 dark:text-green-400 flex items-center gap-0.5 px-1">
+                  Synced to Xero
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Main Content */}

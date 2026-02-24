@@ -138,11 +138,14 @@ import {
   scheduleBaselineItems,
   insertScheduleBaselineSchema,
   contacts,
-  projects as projectsTable
+  projects as projectsTable,
+  users as usersTable,
+  userProjectAccess as userProjectAccessTable,
+  userRoles as userRolesTable
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
-import { eq, and, asc, desc, or, isNull, sql, min, max, gte, lte } from "drizzle-orm";
+import { eq, and, asc, desc, or, isNull, sql, min, max, gte, lte, inArray } from "drizzle-orm";
 import { PasswordUtils } from "./utils/auth";
 import { requireAuth, requireAdmin, requireTeamMember, requirePermission, toSafeUser } from "./middleware/auth";
 import multer from "multer";
@@ -2115,10 +2118,80 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }, {} as Record<string, number>);
       console.log(`[GET /api/projects] Phase distribution for company ${user.companyId}:`, phaseDistribution);
       
+      // Enrich projects with clientName, foreman, and progress for board view
+      const projectIds = visibleProjects.map(p => p.id);
+      
+      // 1. Batch-fetch client names from contacts
+      const clientIds = visibleProjects.map(p => p.clientId).filter(Boolean) as string[];
+      let clientMap: Record<string, string> = {};
+      if (clientIds.length > 0) {
+        const clientContacts = await db.select({ id: contacts.id, company: contacts.company, name: contacts.name, firstName: contacts.firstName, lastName: contacts.lastName })
+          .from(contacts).where(inArray(contacts.id, clientIds));
+        clientMap = Object.fromEntries(clientContacts.map(c => [c.id, c.company || c.name || `${c.firstName || ''} ${c.lastName || ''}`.trim() || 'Unknown']));
+      }
+      
+      // 2. Batch-fetch foremen from project team members
+      let foremanMap: Record<string, string> = {};
+      if (projectIds.length > 0) {
+        const allAccess = await db.select().from(userProjectAccessTable).where(inArray(userProjectAccessTable.projectId, projectIds));
+        const teamUserIds = [...new Set(allAccess.map(a => a.userId))];
+        if (teamUserIds.length > 0) {
+          const teamUsers = await db.select({ id: usersTable.id, firstName: usersTable.firstName, lastName: usersTable.lastName, roleId: usersTable.roleId })
+            .from(usersTable).where(inArray(usersTable.id, teamUserIds));
+          const roleIds = teamUsers.map(u => u.roleId).filter(Boolean) as string[];
+          let roleNameMap: Record<string, string> = {};
+          if (roleIds.length > 0) {
+            const roles = await db.select({ id: userRolesTable.id, name: userRolesTable.name }).from(userRolesTable).where(inArray(userRolesTable.id, roleIds));
+            roleNameMap = Object.fromEntries(roles.map(r => [r.id, r.name || '']));
+          }
+          const foremanUsers = teamUsers.filter(u => u.roleId && roleNameMap[u.roleId]?.toLowerCase().includes('foreman'));
+          for (const access of allAccess) {
+            if (foremanMap[access.projectId]) continue;
+            const foreman = foremanUsers.find(u => u.id === access.userId);
+            if (foreman) {
+              foremanMap[access.projectId] = `${foreman.firstName || ''} ${foreman.lastName || ''}`.trim();
+            }
+          }
+        }
+      }
+      
+      // 3. Batch-fetch schedule progress
+      let progressMap: Record<string, number> = {};
+      if (projectIds.length > 0) {
+        const projectSchedules = await db.select({ id: schedules.id, projectId: schedules.projectId }).from(schedules).where(inArray(schedules.projectId, projectIds));
+        const scheduleIds = projectSchedules.map(s => s.id);
+        if (scheduleIds.length > 0) {
+          const items = await db.select({ scheduleId: scheduleItems.scheduleId, progressPercent: scheduleItems.progressPercent, parentItemId: scheduleItems.parentItemId })
+            .from(scheduleItems).where(inArray(scheduleItems.scheduleId, scheduleIds));
+          const scheduleToProject = Object.fromEntries(projectSchedules.map(s => [s.id, s.projectId]));
+          const projectItems: Record<string, number[]> = {};
+          for (const item of items) {
+            if (item.parentItemId) continue;
+            const pid = scheduleToProject[item.scheduleId];
+            if (pid) {
+              if (!projectItems[pid]) projectItems[pid] = [];
+              projectItems[pid].push(item.progressPercent || 0);
+            }
+          }
+          for (const [pid, values] of Object.entries(projectItems)) {
+            if (values.length > 0) {
+              progressMap[pid] = Math.round(values.reduce((a, b) => a + b, 0) / values.length);
+            }
+          }
+        }
+      }
+      
+      const enrichedProjects = visibleProjects.map(p => ({
+        ...p,
+        clientName: p.clientId ? (clientMap[p.clientId] || null) : null,
+        foreman: foremanMap[p.id] || null,
+        progress: progressMap[p.id] ?? null,
+      }));
+      
       // Prevent caching to ensure fresh data after updates
       res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
       res.set('Pragma', 'no-cache');
-      res.json(visibleProjects);
+      res.json(enrichedProjects);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch projects" });
     }
@@ -19631,6 +19704,140 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
     } catch (error: any) {
       console.error("Error pushing bill to Xero:", error);
       res.status(500).json({ error: error.message || "Failed to push bill to Xero" });
+    }
+  });
+
+  // Xero: Push client invoice as AR invoice
+  app.post("/api/xero/push-client-invoice", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+
+      const { invoiceId } = req.body;
+      if (!invoiceId) {
+        return res.status(400).json({ error: "invoiceId is required" });
+      }
+
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) {
+        return res.status(400).json({ error: "Xero is not connected" });
+      }
+
+      const invoice = await storage.getClientInvoice(invoiceId);
+      if (!invoice) {
+        return res.status(404).json({ error: "Client invoice not found" });
+      }
+
+      if (invoice.xeroInvoiceId) {
+        return res.status(400).json({ error: "Invoice already pushed to Xero", xeroInvoiceId: invoice.xeroInvoiceId });
+      }
+
+      const lineItems = await storage.getClientInvoiceItems(invoiceId);
+
+      let clientName = "Unknown Client";
+      let clientXeroContactId: string | undefined;
+
+      const project = await storage.getProject(invoice.projectId);
+      if (project?.clientId) {
+        try {
+          const client = await storage.getContact(project.clientId, companyId);
+          if (client) {
+            clientName = client.company || client.name || `${client.firstName || ""} ${client.lastName || ""}`.trim() || "Unknown Client";
+            clientXeroContactId = (client as any).xeroContactId || undefined;
+          }
+        } catch {}
+      }
+
+      if (!clientXeroContactId) {
+        return res.status(422).json({
+          error: "UNMAPPED_CONTACT",
+          message: "Client is not linked to a Xero contact. Please link the client contact to Xero first.",
+          clientName,
+          projectId: invoice.projectId,
+        });
+      }
+
+      let projectXeroTrackingOptionId: string | undefined;
+      if (project && connection.trackingCategory2Id) {
+        try {
+          if ((project as any).xeroTrackingOptionId) {
+            projectXeroTrackingOptionId = (project as any).xeroTrackingOptionId;
+          } else {
+            const option = await xeroService.createTrackingOption(
+              connection.id,
+              connection.trackingCategory2Id,
+              project.name
+            );
+            if (option?.TrackingOptionID) {
+              projectXeroTrackingOptionId = option.TrackingOptionID;
+              await storage.updateProject(invoice.projectId, {
+                xeroTrackingOptionId: option.TrackingOptionID,
+                xeroTrackingOptionName: project.name,
+              } as any);
+            }
+          }
+        } catch (e) {
+          console.error("Failed to create/get Xero tracking option for project:", e);
+        }
+      }
+
+      const formatDate = (d: Date | string | null | undefined): string => {
+        if (!d) return new Date().toISOString().split("T")[0];
+        const date = d instanceof Date ? d : new Date(d);
+        return date.toISOString().split("T")[0];
+      };
+
+      const xeroLineItems = lineItems.map((item: any) => {
+        const tracking: any[] = [];
+
+        if (projectXeroTrackingOptionId && connection.trackingCategory2Id) {
+          tracking.push({
+            TrackingCategoryID: connection.trackingCategory2Id,
+            TrackingOptionID: projectXeroTrackingOptionId,
+          });
+        }
+
+        return {
+          description: item.description || "",
+          quantity: typeof item.quantity === "number" ? item.quantity : 1,
+          unitAmount: typeof item.unitPrice === "number" ? item.unitPrice / 100 : 0,
+          taxType: item.taxable ? "OUTPUT" : "NONE",
+          tracking: tracking.length > 0 ? tracking : undefined,
+        };
+      });
+
+      if (xeroLineItems.length === 0) {
+        return res.status(400).json({ error: "Invoice has no line items to push" });
+      }
+
+      const xeroInvoice = await xeroService.createInvoice(connection.id, {
+        clientName,
+        clientXeroContactId,
+        invoiceDate: formatDate(invoice.invoiceDate),
+        dueDate: invoice.dueDate ? formatDate(invoice.dueDate) : undefined,
+        reference: invoice.invoiceNumber,
+        invoiceNumber: invoice.invoiceNumber,
+        lineItems: xeroLineItems,
+      });
+
+      if (xeroInvoice?.InvoiceID) {
+        await storage.updateClientInvoice(invoiceId, {
+          xeroInvoiceId: xeroInvoice.InvoiceID,
+          sendToXero: true,
+        } as any);
+      }
+
+      res.json({
+        success: true,
+        xeroInvoiceId: xeroInvoice?.InvoiceID,
+        xeroInvoiceNumber: xeroInvoice?.InvoiceNumber,
+      });
+    } catch (error: any) {
+      console.error("Error pushing client invoice to Xero:", error);
+      res.status(500).json({ error: error.message || "Failed to push client invoice to Xero" });
     }
   });
 
