@@ -444,6 +444,36 @@ export default function Bills() {
         </div>
       </div>
 
+      {/* Status Tabs Row */}
+      <div className="flex items-center px-2 border-b border-border flex-shrink-0 bg-background overflow-x-auto">
+        {STATUS_OPTIONS.map((status) => {
+          const isActive = selectedStatus === status.key;
+          const showCount = status.key !== "all" && status.key !== "paid";
+          const count = statusCounts[status.key as keyof typeof statusCounts];
+          return (
+            <button
+              key={status.key}
+              onClick={() => handleStatusChange(status.key)}
+              className={`relative flex items-center gap-1.5 px-3 py-2 text-xs font-medium whitespace-nowrap transition-colors ${
+                isActive
+                  ? "text-foreground border-b-2 border-[#bba7db]"
+                  : "text-muted-foreground hover:text-foreground border-b-2 border-transparent"
+              }`}
+              data-testid={`tab-status-${status.key}`}
+            >
+              {status.label}
+              {showCount && count > 0 && (
+                <span className={`inline-flex items-center justify-center rounded-full text-[10px] min-w-4 h-4 px-1 ${
+                  isActive ? "bg-[#bba7db]/20 text-[#bba7db]" : "bg-muted text-muted-foreground"
+                }`}>
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
       {/* Row 2 - Filters & Search (36px) */}
       <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-1.5">
@@ -469,44 +499,6 @@ export default function Bills() {
               data-testid="bills-search-input"
             />
           </div>
-
-          {/* Status Filter */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <button 
-                className="h-6 w-auto px-2 py-0 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
-                data-testid="filter-status-popover"
-              >
-                <span>Status</span>
-                {selectedStatus !== "all" && (
-                  <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
-                    1
-                  </Badge>
-                )}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-48 p-2" align="start">
-              <div className="space-y-1">
-                {STATUS_OPTIONS.map((status) => (
-                  <button
-                    key={status.key}
-                    onClick={() => handleStatusChange(status.key)}
-                    className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors flex items-center justify-between ${
-                      selectedStatus === status.key ? "bg-[#bba7db]/10 text-[#bba7db] font-medium" : ""
-                    }`}
-                    data-testid={`filter-status-${status.key}`}
-                  >
-                    <span>{status.label}</span>
-                    {statusCounts[status.key as keyof typeof statusCounts] > 0 && (
-                      <span className="text-xs text-muted-foreground">
-                        {statusCounts[status.key as keyof typeof statusCounts]}
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </PopoverContent>
-          </Popover>
 
           {/* Phase Filter */}
           <Popover>

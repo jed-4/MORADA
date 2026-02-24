@@ -152,7 +152,7 @@ export default function UserWorkspace() {
           {isOwnPage && (
             <button
               type="button"
-              onClick={() => navigate("/settings/profile")}
+              onClick={() => navigate("/user-settings")}
               className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
               data-testid="button-settings"
             >
