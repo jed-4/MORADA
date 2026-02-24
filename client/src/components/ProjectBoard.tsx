@@ -338,20 +338,18 @@ function DroppableColumn({
     },
   });
 
-  // Calculate total value using price hierarchy: budget → estimate → contract → $0
   const totalValue = projects.reduce((sum, project) => {
-    // Price hierarchy: use first available value
-    const value = project.budget || project.estimateTotal || project.contractValue || 0;
+    const value = project.contractCost || project.clientBudget || project.budget || 0;
     return sum + value;
   }, 0);
 
-  const formatCurrency = (dollars: number) => {
-    if (!dollars) return "$0";
+  const formatCurrency = (cents: number) => {
+    if (!cents) return "$0";
     return new Intl.NumberFormat('en-AU', {
       style: 'currency',
       currency: 'AUD',
       minimumFractionDigits: 0,
-    }).format(dollars);
+    }).format(cents / 100);
   };
 
   return (
@@ -829,6 +827,14 @@ export function ProjectBoard({
     }));
   };
 
+  const cardFieldSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    })
+  );
+
   // Card Fields Dialog handlers
   const handleToggleCardField = (fieldId: string) => {
     setCardFields(prev =>
@@ -1179,7 +1185,7 @@ export function ProjectBoard({
                 </div>
 
                 <DndContext
-                  sensors={sensors}
+                  sensors={cardFieldSensors}
                   collisionDetection={closestCorners}
                   onDragStart={handleFieldDragStart}
                   onDragEnd={handleFieldDragEnd}

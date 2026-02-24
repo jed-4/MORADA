@@ -118,31 +118,45 @@ export default function BulkXeroMappingDialog({
 
   const handleAutoMatch = () => {
     const newMappings: Record<string, string | null> = {};
+    const usedOptionIds = new Set<string>();
+    const assignedCodes = new Set<string>();
     let matched = 0;
 
     for (const code of activeCodes) {
-      const codeLabel = `${code.code} ${code.title}`.trim();
-      let bestMatch: TrackingOption | null = null;
-      let bestScore = 0;
+      const existing = getCurrentMapping(code);
+      if (existing) {
+        usedOptionIds.add(existing);
+        assignedCodes.add(code.id);
+      }
+    }
 
+    const scoredPairs: { codeId: string; optionId: string; score: number }[] = [];
+    for (const code of activeCodes) {
+      if (assignedCodes.has(code.id)) continue;
+      const codeLabel = `${code.code} ${code.title}`.trim();
       for (const option of trackingOptions) {
+        if (usedOptionIds.has(option.trackingOptionId)) continue;
         const score = similarity(codeLabel, option.name);
-        if (score > bestScore && score >= 0.4) {
-          bestScore = score;
-          bestMatch = option;
+        if (score >= 0.4) {
+          scoredPairs.push({ codeId: code.id, optionId: option.trackingOptionId, score });
         }
       }
+    }
 
-      if (bestMatch) {
-        newMappings[code.id] = bestMatch.trackingOptionId;
-        matched++;
-      }
+    scoredPairs.sort((a, b) => b.score - a.score);
+
+    for (const pair of scoredPairs) {
+      if (assignedCodes.has(pair.codeId) || usedOptionIds.has(pair.optionId)) continue;
+      newMappings[pair.codeId] = pair.optionId;
+      assignedCodes.add(pair.codeId);
+      usedOptionIds.add(pair.optionId);
+      matched++;
     }
 
     setMappings((prev) => ({ ...prev, ...newMappings }));
     toast({
       title: "Auto-match complete",
-      description: `Matched ${matched} of ${activeCodes.length} cost codes.`,
+      description: `Matched ${matched} of ${activeCodes.length - (assignedCodes.size - matched)} unmapped cost codes.`,
     });
   };
 
@@ -281,6 +295,17 @@ export default function BulkXeroMappingDialog({
                 const isChanged =
                   code.id in mappings && mappings[code.id] !== original;
 
+                const usedOptionIds = new Set<string>();
+                for (const otherCode of activeCodes) {
+                  if (otherCode.id === code.id) continue;
+                  const otherMapping = getCurrentMapping(otherCode);
+                  if (otherMapping) usedOptionIds.add(otherMapping);
+                }
+
+                const availableOptions = trackingOptions.filter(
+                  (o) => !usedOptionIds.has(o.trackingOptionId) || o.trackingOptionId === currentMapping
+                );
+
                 return (
                   <tr
                     key={code.id}
@@ -310,7 +335,7 @@ export default function BulkXeroMappingDialog({
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="__none__">None</SelectItem>
-                            {trackingOptions.map((option) => (
+                            {availableOptions.map((option) => (
                               <SelectItem
                                 key={option.trackingOptionId}
                                 value={option.trackingOptionId}

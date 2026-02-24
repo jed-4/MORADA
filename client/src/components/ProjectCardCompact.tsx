@@ -46,13 +46,13 @@ const getInitials = (name: string | null | undefined): string => {
   return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 };
 
-const formatCurrency = (dollars: number | null) => {
-  if (!dollars) return "$0";
+const formatCurrency = (cents: number | null) => {
+  if (!cents) return "$0";
   return new Intl.NumberFormat('en-AU', {
     style: 'currency',
     currency: 'AUD',
     minimumFractionDigits: 0,
-  }).format(dollars);
+  }).format(cents / 100);
 };
 
 export default function ProjectCardCompact({ 
@@ -128,10 +128,10 @@ export default function ProjectCardCompact({
                     {project.clientName}
                   </span>
                 )}
-                {visibleFields.budget && (project.budget || project.estimateTotal || project.contractValue) && (
+                {visibleFields.budget && (project.contractCost || project.clientBudget || project.budget) && (
                   <span className="flex items-center gap-0.5">
                     <DollarSign className="h-2.5 w-2.5" />
-                    {formatCurrency(project.budget || project.estimateTotal || project.contractValue)}
+                    {formatCurrency(project.contractCost || project.clientBudget || project.budget)}
                   </span>
                 )}
                 {visibleFields.progress && project.progress !== null && project.progress !== undefined && (
