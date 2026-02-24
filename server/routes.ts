@@ -8768,6 +8768,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/bills/check-reference", requireAuth, async (req, res) => {
+    try {
+      const { reference, excludeBillId } = req.query;
+      if (!reference) {
+        return res.json({ exists: false });
+      }
+      const allBills = await storage.getBills();
+      const duplicate = allBills.find((b: any) => 
+        b.billReference === reference && (!excludeBillId || b.id !== excludeBillId)
+      );
+      res.json({ 
+        exists: !!duplicate, 
+        existingBillNumber: duplicate?.billNumber || null 
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to check reference" });
+    }
+  });
+
   app.get("/api/bills/next-number", async (req, res) => {
     try {
       const billNumber = await storage.getNextBillNumber();
@@ -8789,12 +8808,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/bills", async (req, res) => {
+  app.post("/api/bills", requireAuth, async (req, res) => {
     try {
       const billData = { ...req.body };
       if (!billData.billNumber || billData.billNumber.startsWith("BILL-") && /BILL-\d{13,}/.test(billData.billNumber)) {
         billData.billNumber = await storage.getNextBillNumber();
       }
+
+      const currentUser = (req as any).user;
+      billData.createdById = currentUser.id;
 
       const validationResult = insertBillSchema.safeParse(billData);
       if (!validationResult.success) {
@@ -8807,6 +8829,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const bill = await storage.createBill(validationResult.data);
       res.status(201).json(bill);
     } catch (error) {
+      console.error("Error creating bill:", error);
       res.status(500).json({ error: "Failed to create bill" });
     }
   });

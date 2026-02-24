@@ -502,7 +502,7 @@ export default function BillDetail() {
         tax: Math.round(calculateTax() * 100),
         total: Math.round(calculateTotal() * 100),
         paidAmount: Math.round((data.paidAmount || 0) * 100),
-        createdById: "temp-user-id",
+        
         attachmentUrls,
       };
 
@@ -871,7 +871,21 @@ export default function BillDetail() {
     },
   });
 
-  const onSubmit = (data: BillFormData) => {
+  const onSubmit = async (data: BillFormData) => {
+    if (data.billReference) {
+      try {
+        const checkRes = await fetch(`/api/bills/check-reference?reference=${encodeURIComponent(data.billReference)}${isEditMode ? `&excludeBillId=${id}` : ''}`, { credentials: "include" });
+        const checkData = await checkRes.json();
+        if (checkData.exists) {
+          const proceed = window.confirm(
+            `A bill with reference "${data.billReference}" already exists (${checkData.existingBillNumber}). This is likely a duplicate. Do you still want to save?`
+          );
+          if (!proceed) return;
+        }
+      } catch (e) {
+      }
+    }
+
     if (isEditMode) {
       updateMutation.mutate(data);
     } else {
@@ -958,9 +972,15 @@ export default function BillDetail() {
     }
 
     if (ocrResults.supplierName) {
-      const matchedSupplier = suppliers.find(
-        (s) => s.name.toLowerCase() === ocrResults.supplierName.toLowerCase()
-      );
+      const searchName = ocrResults.supplierName.toLowerCase().trim();
+      const matchedSupplier = suppliers.find((s: any) => {
+        const company = (s.company || "").toLowerCase().trim();
+        const name = (s.name || "").toLowerCase().trim();
+        const fullName = `${s.firstName || ""} ${s.lastName || ""}`.toLowerCase().trim();
+        return company === searchName || name === searchName || fullName === searchName
+          || company.includes(searchName) || searchName.includes(company)
+          || name.includes(searchName) || searchName.includes(name);
+      });
       if (matchedSupplier) {
         form.setValue("supplierId", matchedSupplier.id);
       }
