@@ -65,7 +65,14 @@ export default function BusinessProjects() {
     console.log('[BusinessProjects] userPreferences changed:', userPreferences);
     if (userPreferences?.preferences) {
       console.log('[BusinessProjects] Applying loaded preferences');
-      setPreferences({ ...DEFAULT_PREFERENCES, ...userPreferences.preferences });
+      setPreferences({
+        ...DEFAULT_PREFERENCES,
+        ...userPreferences.preferences,
+        visibleFields: {
+          ...DEFAULT_PREFERENCES.visibleFields,
+          ...(userPreferences.preferences.visibleFields || {}),
+        },
+      });
       if (userPreferences.preferences.activeTab) {
         setActiveTab(userPreferences.preferences.activeTab);
       }

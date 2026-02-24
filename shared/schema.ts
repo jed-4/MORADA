@@ -2900,7 +2900,8 @@ export type TimesheetCostCode = typeof timesheetCostCodes.$inferSelect;
 // Schedules (project-level schedule with offline/online/locked states)
 export const schedules = pgTable("schedules", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }).unique(), // One schedule per project
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  scheduleCategory: text("schedule_category").notNull().default("construction"), // "construction" | "preconstruction"
   name: text("name").notNull().default("Project Schedule"),
   status: text("status").notNull().default("offline"), // "offline" | "online" | "locked"
   description: text("description"),
@@ -2926,6 +2927,7 @@ export const insertScheduleSchema = createInsertSchema(schedules).omit({
   updatedAt: true,
 }).extend({
   status: z.enum(["offline", "online", "locked"]).default("offline"),
+  scheduleCategory: z.enum(["construction", "preconstruction"]).default("construction"),
   startDate: z.coerce.date().optional(),
   endDate: z.coerce.date().optional(),
   lockedAt: z.coerce.date().optional(),

@@ -119,6 +119,7 @@ function useGanttRowDrag(
   allItems: ScheduleItem[],
   projectId: string | undefined,
   toast: any,
+  itemsCacheKey?: string,
 ) {
   const [rowDragItemId, setRowDragItemId] = useState<string | null>(null);
   const [rowDragIndicator, setRowDragIndicator] = useState<{ top: number; left: number; width: number; indent?: number } | null>(null);
@@ -295,7 +296,7 @@ function useGanttRowDrag(
             apiRequest(`/api/schedule-items/${itemId}`, "PATCH", {
               parentItemId: nestTargetRef.current,
             }).then(() => {
-              queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+              invalidateScheduleItems();
               
             }).catch(() => {
               toast({ title: "Failed to nest item", variant: "destructive" });
@@ -314,8 +315,9 @@ function useGanttRowDrag(
 
           if (targetIsChild && targetParentId !== draggedParentId && !draggedIsParentWithChildren) {
             const newParentItem = allItems.find(i => i.id === targetParentId);
+            const ck = itemsCacheKey || `/api/projects/${projectId}/schedule-items`;
             queryClient.setQueryData(
-              [`/api/projects/${projectId}/schedule-items`],
+              [ck],
               (old: any) => {
                 if (!Array.isArray(old)) return old;
                 return old.map((i: any) => i.id === itemId ? { ...i, parentItemId: targetParentId } : i);
@@ -324,16 +326,17 @@ function useGanttRowDrag(
             apiRequest(`/api/schedule-items/${itemId}`, "PATCH", {
               parentItemId: targetParentId,
             }).then(() => {
-              queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+              invalidateScheduleItems();
               
             }).catch(() => {
-              queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+              invalidateScheduleItems();
               toast({ title: "Failed to add to group", variant: "destructive" });
             });
           } else if (activeItem?.parentItemId && !targetIsChild && targetItem?.id !== activeItem.parentItemId) {
             const parentItem = allItems.find(i => i.id === activeItem.parentItemId);
+            const ck2 = itemsCacheKey || `/api/projects/${projectId}/schedule-items`;
             queryClient.setQueryData(
-              [`/api/projects/${projectId}/schedule-items`],
+              [ck2],
               (old: any) => {
                 if (!Array.isArray(old)) return old;
                 return old.map((i: any) => i.id === itemId ? { ...i, parentItemId: null } : i);
@@ -342,10 +345,10 @@ function useGanttRowDrag(
             apiRequest(`/api/schedule-items/${itemId}`, "PATCH", {
               parentItemId: null,
             }).then(() => {
-              queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+              invalidateScheduleItems();
               
             }).catch(() => {
-              queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+              invalidateScheduleItems();
               toast({ title: "Failed to remove from group", variant: "destructive" });
             });
           }
@@ -424,6 +427,13 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     insertAfterItemRef,
     scrollToTodayRef,
   } = useScheduleView();
+
+  const invalidateScheduleItems = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+    if (schedule?.id) {
+      queryClient.invalidateQueries({ queryKey: [`/api/schedules/${schedule.id}/items`] });
+    }
+  }, [projectId, schedule?.id]);
   
   const timelineRef = useRef<HTMLDivElement>(null);
   const leftPanelRef = useRef<HTMLDivElement>(null);
@@ -647,9 +657,9 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     }
   }, [columnWidths, visibleColumns, zoomLevel, leftPanelWidth, columnOrder, preferencesLoaded]);
 
-  // Fetch schedule items for this project
+  // Fetch schedule items - use scheduleId when available for category-specific items
   const { data: allItems = [], isLoading } = useQuery<ScheduleItem[]>({
-    queryKey: [`/api/projects/${projectId}/schedule-items`],
+    queryKey: schedule?.id ? [`/api/schedules/${schedule.id}/items`] : [`/api/projects/${projectId}/schedule-items`],
   });
   allItemsRef.current = allItems;
 
@@ -857,13 +867,14 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     }
   }, [defaultItemIds, orderInitialized]);
 
+  const itemsCacheKey = schedule?.id ? `/api/schedules/${schedule.id}/items` : `/api/projects/${projectId}/schedule-items`;
   const {
     rowDragItemId,
     rowDragIndicator,
     nestHighlightId,
     registerRowRef,
     handleDragHandleMouseDown,
-  } = useGanttRowDrag(sortableItemIds, setSessionItemOrder, canNestItem, allItems, projectId, toast);
+  } = useGanttRowDrag(sortableItemIds, setSessionItemOrder, canNestItem, allItems, projectId, toast, itemsCacheKey);
 
   // Build ordered parent items list for rendering (respects session order)
   const orderedParentItems = useMemo(() => {
@@ -909,7 +920,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
       return apiRequest(`/api/schedule-items/${id}`, "PATCH", { startDate, endDate });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      invalidateScheduleItems();
     },
   });
 
@@ -918,7 +929,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
       return apiRequest(`/api/schedule-items/${itemId}/dependencies`, "POST", { predecessorId, type });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      invalidateScheduleItems();
       
     },
     onError: (error: any) => {
@@ -936,7 +947,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
       return apiRequest(`/api/schedule-items/${itemId}/dependencies/${predecessorId}`, "DELETE");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      invalidateScheduleItems();
       
       setSelectedDependency(null);
     },
@@ -947,7 +958,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
       return await apiRequest(`/api/schedule-items/${itemId}/duplicate`, "POST");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      invalidateScheduleItems();
       },
   });
 
@@ -971,7 +982,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      invalidateScheduleItems();
       
       setSelectedDependency(null);
     },
@@ -990,7 +1001,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
       return apiRequest(`/api/schedule-items/${id}`, "PATCH", { progressPercent });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      invalidateScheduleItems();
     },
   });
 
@@ -999,7 +1010,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
       return apiRequest(`/api/schedule-items/${id}`, "DELETE");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      invalidateScheduleItems();
       
     },
     onError: (error: any) => {
@@ -1446,7 +1457,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
       const scrollDelta = (timelineRef.current?.scrollLeft ?? 0) - drag.startScrollLeft;
       const deltaX = (e.clientX - drag.startX) + scrollDelta;
       const deltaDays = Math.round(deltaX / pixelsPerDayRef.current);
-      const cacheKey = `/api/projects/${projectIdRef.current}/schedule-items`;
+      const cacheKey = schedule?.id ? `/api/schedules/${schedule.id}/items` : `/api/projects/${projectIdRef.current}/schedule-items`;
 
       const updateCacheOptimistically = (itemId: number, newStart: Date, newEnd: Date) => {
         queryClient.setQueryData<ScheduleItem[]>([cacheKey], (oldData) => {
@@ -1489,7 +1500,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
         const changed = deps.some((d: any, i: number) => d.lag !== updatedDeps[i].lag);
         if (changed) {
           apiRequest(`/api/schedule-items/${itemId}`, "PATCH", { dependencies: updatedDeps })
-            .then(() => queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectIdRef.current}/schedule-items`] }))
+            .then(() => invalidateScheduleItems())
             .catch(() => {});
         }
       };
@@ -1509,7 +1520,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
           const changed = deps.some((d: any, i: number) => d.lag !== updatedDeps[i].lag);
           if (changed) {
             apiRequest(`/api/schedule-items/${succ.id}`, "PATCH", { dependencies: updatedDeps })
-              .then(() => queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectIdRef.current}/schedule-items`] }))
+              .then(() => invalidateScheduleItems())
               .catch(() => {});
           }
         }
@@ -2046,7 +2057,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
       };
       
       await apiRequest("/api/schedule-items", "POST", duplicatedItem);
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      invalidateScheduleItems();
       
     } catch (error) {
       toast({ title: "Failed to duplicate", description: "Could not duplicate item.", variant: "destructive" });
@@ -2082,7 +2093,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     try {
       const newStatus = item.status === "completed" ? "not_started" : "completed";
       await apiRequest(`/api/schedule-items/${item.id}`, "PATCH", { status: newStatus });
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      invalidateScheduleItems();
       
     } catch (error) {
       toast({ title: "Failed to update", description: "Could not update item status.", variant: "destructive" });
@@ -2094,7 +2105,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     
     try {
       await apiRequest(`/api/schedule-items/${item.id}`, "DELETE");
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      invalidateScheduleItems();
       
     } catch (error) {
       toast({ title: "Failed to delete", description: "Could not delete item.", variant: "destructive" });
@@ -2119,7 +2130,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     
     try {
       await apiRequest(`/api/schedule-items/${itemId}`, "PATCH", { name: trimmed });
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      invalidateScheduleItems();
       setInlineEditId(null);
       setInlineEditValue('');
     } catch {
@@ -2146,7 +2157,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
   const handleColorChange = async (item: ScheduleItem, color: string | null) => {
     try {
       await apiRequest(`/api/schedule-items/${item.id}`, "PATCH", { color });
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      invalidateScheduleItems();
       
     } catch (error) {
       toast({ title: "Failed to update color", description: "Could not update item color.", variant: "destructive" });
@@ -2617,7 +2628,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                                     }
                                   }
                                   queryClient.setQueryData<any[]>(
-                                    [`/api/projects/${projectId}/schedule-items`],
+                                    [itemsCacheKey],
                                     (old) => old?.map((si: any) => si.id === item.id ? {
                                       ...si,
                                       assignedToId: (newValue && !newValue.startsWith("company:")) ? newValue : null,
@@ -2629,9 +2640,9 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                                     await apiRequest(`/api/schedule-items/${item.id}`, "PATCH", {
                                       assignedToId: newValue || null,
                                     });
-                                    queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+                                    invalidateScheduleItems();
                                   } catch (error) {
-                                    queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+                                    invalidateScheduleItems();
                                     toast({ title: "Failed to update assignee", variant: "destructive" });
                                   }
                                 }}

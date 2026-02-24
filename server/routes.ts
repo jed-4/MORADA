@@ -6843,6 +6843,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const currentUser = req.user as any;
       const { userId, projectId, accessLevel } = req.body;
       if (!userId || !projectId || !accessLevel) {
+        console.error("[POST /api/project-access/grant] Missing fields:", { userId: !!userId, projectId: !!projectId, accessLevel: !!accessLevel });
         return res.status(400).json({ 
           error: "userId, projectId, and accessLevel are required" 
         });
@@ -6850,6 +6851,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const grantedById = currentUser?.id ? String(currentUser.id) : req.body.grantedBy;
       if (!grantedById) {
+        console.error("[POST /api/project-access/grant] Could not determine granting user, currentUser.id:", currentUser?.id);
         return res.status(400).json({ error: "Could not determine granting user" });
       }
 
@@ -14771,7 +14773,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Schedule routes
   app.get("/api/projects/:projectId/schedule", async (req, res) => {
     try {
-      const schedule = await storage.getSchedule(req.params.projectId);
+      const category = (req.query.category as string) || "construction";
+      const schedule = await storage.getSchedule(req.params.projectId, category);
       if (!schedule) {
         return res.status(404).json({ error: "Schedule not found" });
       }
@@ -14779,6 +14782,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to fetch schedule",
+        details: error.message 
+      });
+    }
+  });
+
+  // Get all schedules for a project (both construction and preconstruction)
+  app.get("/api/projects/:projectId/schedules", async (req, res) => {
+    try {
+      const projectSchedules = await storage.getSchedulesByProject(req.params.projectId);
+      res.json(projectSchedules);
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "Failed to fetch project schedules",
         details: error.message 
       });
     }
@@ -14921,7 +14937,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const { startDate, endDate } = req.query;
-      const conditions = [eq(projectsTable.companyId, user.companyId)];
+      const conditions = [
+        eq(projectsTable.companyId, user.companyId),
+        eq(schedules.scheduleCategory, "construction"),
+      ];
       
       if (startDate) {
         conditions.push(gte(scheduleItems.endDate, new Date(startDate as string)));

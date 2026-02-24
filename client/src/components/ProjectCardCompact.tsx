@@ -84,47 +84,34 @@ export default function ProjectCardCompact({
       onMouseLeave={() => setIsHovered(false)}
       data-testid={`project-card-${project.id}`}
     >
-      <CardContent className="p-2 h-full flex flex-col justify-between gap-1">
+      <CardContent className="p-2.5 h-full flex flex-col gap-1.5">
         <div className="flex items-start gap-1.5">
           <ProjectIcon
             icon={project.icon}
             color={project.color}
             className="w-3.5 h-3.5 flex-shrink-0 mt-0.5"
           />
-
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5">
-              <h3 className="text-sm leading-5 truncate text-foreground font-medium flex-1 min-w-0">
-                {project.name}
-              </h3>
-              {costValue ? (
-                <span className="text-xs font-semibold text-foreground shrink-0">
-                  {formatCurrency(costValue)}
-                </span>
-              ) : null}
-            </div>
-
-            {(visibleFields.client || visibleFields.progress) && (
-              <div className="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground">
-                {visibleFields.client && project.clientName && (
-                  <span className="flex items-center gap-0.5 truncate">
-                    <Users className="h-2.5 w-2.5 flex-shrink-0" />
-                    {project.clientName}
-                  </span>
-                )}
-                {visibleFields.progress && project.progress !== null && project.progress !== undefined && (
-                  <span className="flex items-center gap-0.5">
-                    {project.progress}%
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-
+          <h3 className="text-sm leading-5 truncate text-foreground font-medium flex-1 min-w-0">
+            {project.name}
+          </h3>
           <Pencil className={`h-3 w-3 text-muted-foreground shrink-0 transition-opacity ${isHovered ? 'opacity-100' : 'opacity-0'}`} style={{ visibility: isHovered ? 'visible' : 'hidden' }} />
         </div>
 
-        <div className="flex items-center justify-between gap-1.5">
+        {visibleFields.client && project.clientName && (
+          <div className="flex items-center gap-1 text-[11px] text-muted-foreground pl-5">
+            <Users className="h-2.5 w-2.5 flex-shrink-0" />
+            <span className="truncate">{project.clientName}</span>
+          </div>
+        )}
+
+        {visibleFields.budget && costValue ? (
+          <div className="flex items-center gap-1 text-[11px] font-semibold text-foreground pl-5">
+            <DollarSign className="h-2.5 w-2.5 flex-shrink-0" />
+            <span>{formatCurrency(costValue)}</span>
+          </div>
+        ) : null}
+
+        <div className="flex items-end justify-between gap-1.5 mt-auto">
           <div className="flex items-center gap-1.5 flex-wrap min-w-0">
             {groupBy === "phase" && statusOption && (
               <Badge 
@@ -146,15 +133,22 @@ export default function ProjectCardCompact({
             )}
           </div>
 
-          {visibleFields.foreman && project.foreman ? (
-            <Avatar className="h-5 w-5 border border-border/50 shrink-0">
-              <AvatarFallback className="text-[10px] bg-muted text-muted-foreground">
-                {getInitials(project.foreman)}
-              </AvatarFallback>
-            </Avatar>
-          ) : !visibleFields.foreman ? null : (
-            <div className="w-5 h-5 rounded-full border border-dashed border-muted-foreground/20 shrink-0" />
-          )}
+          <div className="flex flex-col items-center gap-0.5 shrink-0">
+            {visibleFields.progress && project.progress !== null && project.progress !== undefined && (
+              <span className="text-[10px] font-medium text-muted-foreground">
+                {project.progress}%
+              </span>
+            )}
+            {visibleFields.foreman && project.foreman ? (
+              <Avatar className="h-5 w-5 border border-border/50">
+                <AvatarFallback className="text-[10px] bg-muted text-muted-foreground">
+                  {getInitials(project.foreman)}
+                </AvatarFallback>
+              </Avatar>
+            ) : visibleFields.foreman ? (
+              <div className="w-5 h-5 rounded-full border border-dashed border-muted-foreground/20" />
+            ) : null}
+          </div>
         </div>
       </CardContent>
     </Card>

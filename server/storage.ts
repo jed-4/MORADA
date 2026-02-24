@@ -780,7 +780,8 @@ export interface IStorage {
   deleteTimesheetCostCode(id: string): Promise<boolean>;
 
   // Schedule CRUD
-  getSchedule(projectId: string): Promise<Schedule | undefined>;
+  getSchedule(projectId: string, category?: string): Promise<Schedule | undefined>;
+  getSchedulesByProject(projectId: string): Promise<Schedule[]>;
   getScheduleById(id: string): Promise<Schedule | undefined>;
   createSchedule(schedule: InsertSchedule): Promise<Schedule>;
   updateSchedule(id: string, schedule: Partial<InsertSchedule>): Promise<Schedule | undefined>;
@@ -14409,15 +14410,27 @@ export class DbStorage implements IStorage {
   }
 
   // Schedule CRUD
-  async getSchedule(projectId: string): Promise<Schedule | undefined> {
+  async getSchedule(projectId: string, category: string = "construction"): Promise<Schedule | undefined> {
     try {
       const result = await db.select()
         .from(schema.schedules)
-        .where(eq(schema.schedules.projectId, projectId))
+        .where(and(eq(schema.schedules.projectId, projectId), eq(schema.schedules.scheduleCategory, category)))
         .limit(1);
       return result[0];
     } catch (error) {
       console.error("Database error in getSchedule:", error);
+      throw error;
+    }
+  }
+
+  async getSchedulesByProject(projectId: string): Promise<Schedule[]> {
+    try {
+      const result = await db.select()
+        .from(schema.schedules)
+        .where(eq(schema.schedules.projectId, projectId));
+      return result;
+    } catch (error) {
+      console.error("Database error in getSchedulesByProject:", error);
       throw error;
     }
   }

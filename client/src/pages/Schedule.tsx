@@ -86,6 +86,7 @@ import {
   X,
   Bookmark,
   Globe,
+  HardHat,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CasvaScheduleList } from "@/components/schedule/CasvaScheduleList";
@@ -114,6 +115,7 @@ export default function Schedule() {
   const params = useParams<ScheduleParams>();
   const projectId = params.projectId || currentProject?.id;
 
+  const [scheduleCategory, setScheduleCategory] = useState<"construction" | "preconstruction">("construction");
   const [activeView, setActiveView] = useState<"list" | "gantt" | "calendar">("gantt");
   const [zoomLevel, setZoomLevel] = useState<"day" | "week" | "month">("day");
   const [calendarView, setCalendarView] = useState<"month" | "week" | "day" | "agenda">("month");
@@ -188,11 +190,33 @@ export default function Schedule() {
     }));
   };
 
-  // Fetch schedule for project
-  const { data: schedule, isLoading: scheduleLoading } = useQuery<ScheduleType>({
-    queryKey: ["/api/projects", projectId, "schedule"],
+  // Fetch all schedules for project to detect preconstruction
+  const { data: allProjectSchedules = [] } = useQuery<ScheduleType[]>({
+    queryKey: ["/api/projects", projectId, "schedules"],
     enabled: !!projectId,
   });
+  const hasPreconstruction = allProjectSchedules.some(s => (s as any).scheduleCategory === "preconstruction");
+
+  // Fetch schedule for project (filtered by category)
+  const { data: schedule, isLoading: scheduleLoading } = useQuery<ScheduleType>({
+    queryKey: ["/api/projects", projectId, "schedule", { category: scheduleCategory }],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/${projectId}/schedule?category=${scheduleCategory}`, { credentials: "include" });
+      if (!res.ok) {
+        if (res.status === 404) return null;
+        throw new Error("Failed to fetch schedule");
+      }
+      return res.json();
+    },
+    enabled: !!projectId,
+  });
+
+  const invalidateScheduleItems = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+    if (schedule?.id) {
+      queryClient.invalidateQueries({ queryKey: [`/api/schedules/${schedule.id}/items`] });
+    }
+  }, [projectId, schedule?.id]);
 
   const isUnlocked = schedule?.status !== "locked" && !!schedule;
   const [showLeaveGuardDialog, setShowLeaveGuardDialog] = useState(false);
@@ -217,6 +241,7 @@ export default function Schedule() {
         });
         isUnlockedRef.current = false;
         queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedule"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedules"] });
         navigate(targetUrl);
       } catch (e) {
         toast({
@@ -321,10 +346,10 @@ export default function Schedule() {
     };
   }, [projectId]);
 
-  // Fetch schedule items using unified endpoint (all three views use the same data)
+  // Fetch schedule items - when we have a schedule, fetch by scheduleId for category-specific items
   const { data: scheduleItems = [], isLoading: itemsLoading } = useQuery<ScheduleItem[]>({
-    queryKey: [`/api/projects/${projectId}/schedule-items`],
-    enabled: !!projectId,
+    queryKey: schedule?.id ? [`/api/schedules/${schedule.id}/items`] : [`/api/projects/${projectId}/schedule-items`],
+    enabled: !!projectId && (!!schedule?.id || scheduleCategory === "construction"),
   });
 
 
@@ -453,7 +478,7 @@ export default function Schedule() {
       return response.json() as Promise<ScheduleItem>;
     },
     onSuccess: async (newItem) => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      invalidateScheduleItems();
       
       if (pendingAutoLink && newItem?.id) {
         try {
@@ -472,7 +497,7 @@ export default function Schedule() {
               body: JSON.stringify({ predecessorId: String(newItem.id), type: 'FS' }),
             });
           }
-          await queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+          await invalidateScheduleItems();
           
           if (pendingAutoLink.insertAfterItemId && insertAfterItemRef.current) {
             setTimeout(() => {
@@ -519,7 +544,7 @@ export default function Schedule() {
       return response.json() as Promise<ScheduleItem>;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      invalidateScheduleItems();
       setShowItemDialog(false);
       setEditingItem(null);
       resetForm();
@@ -546,7 +571,7 @@ export default function Schedule() {
       return response.json() as Promise<ScheduleItem>;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      invalidateScheduleItems();
     },
     onError: (error: Error) => {
       toast({
@@ -570,7 +595,7 @@ export default function Schedule() {
       return response.json() as Promise<ScheduleItem>;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      invalidateScheduleItems();
     },
     onError: (error: Error) => {
       toast({
@@ -595,7 +620,7 @@ export default function Schedule() {
       return response.json() as Promise<ScheduleItem>;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      invalidateScheduleItems();
     },
     onError: (error: Error) => {
       toast({
@@ -666,7 +691,7 @@ export default function Schedule() {
       return response.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      invalidateScheduleItems();
       setSelectedItems(new Set());
       toast({
         title: "Items deleted",
@@ -688,7 +713,7 @@ export default function Schedule() {
       return await apiRequest(`/api/schedule-items/${itemId}/duplicate`, "POST");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      invalidateScheduleItems();
       toast({ title: "Item duplicated" });
     },
     onError: (error: any) => {
@@ -702,7 +727,7 @@ export default function Schedule() {
       return await apiRequest(`/api/schedule-items/${itemId}`, "DELETE");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      invalidateScheduleItems();
       toast({ title: "Item deleted" });
     },
     onError: (error: any) => {
@@ -723,7 +748,7 @@ export default function Schedule() {
       return response.json() as Promise<ScheduleItem>;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      invalidateScheduleItems();
       toast({
         title: "Item nested",
         description: "The item has been nested under the parent.",
@@ -792,6 +817,21 @@ export default function Schedule() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedule"] });
       toast({ title: "Working days updated" });
+    },
+  });
+
+  const createPreconstructionMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("/api/schedules", "POST", {
+        projectId,
+        scheduleCategory: "preconstruction",
+        name: "Preconstruction Schedule",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedules"] });
+      setScheduleCategory("preconstruction");
+      toast({ title: "Preconstruction schedule created" });
     },
   });
 
@@ -902,7 +942,7 @@ export default function Schedule() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+      invalidateScheduleItems();
       setShowLoadTemplateDialog(false);
       toast({
         title: "Template loaded",
@@ -1268,6 +1308,33 @@ export default function Schedule() {
       }}
     >
       <div className="flex flex-col h-full bg-background rounded-lg border overflow-hidden">
+        {/* Schedule Category Tabs - only shown when preconstruction schedule exists */}
+        {hasPreconstruction && (
+          <div className="h-8 bg-muted/30 flex items-center px-2 gap-1 border-b border-border flex-shrink-0">
+            <button
+              onClick={() => setScheduleCategory("construction")}
+              className={`h-6 px-3 text-xs rounded-md flex items-center gap-1.5 transition-colors ${
+                scheduleCategory === "construction"
+                  ? "bg-primary text-primary-foreground"
+                  : "hover-elevate text-muted-foreground"
+              }`}
+            >
+              <GanttChart className="w-3 h-3" />
+              Construction
+            </button>
+            <button
+              onClick={() => setScheduleCategory("preconstruction")}
+              className={`h-6 px-3 text-xs rounded-md flex items-center gap-1.5 transition-colors ${
+                scheduleCategory === "preconstruction"
+                  ? "bg-primary text-primary-foreground"
+                  : "hover-elevate text-muted-foreground"
+              }`}
+            >
+              <HardHat className="w-3 h-3" />
+              Preconstruction
+            </button>
+          </div>
+        )}
         {/* UNIFIED 3-ROW HEADER FOR ALL VIEWS */}
         
         {/* Row 1 - Project Controls (36px) */}
@@ -1362,6 +1429,18 @@ export default function Schedule() {
                   <Settings className="w-4 h-4 mr-2" />
                   Schedule Settings
                 </DropdownMenuItem>
+                {!hasPreconstruction && scheduleCategory === "construction" && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => createPreconstructionMutation.mutate()}
+                      disabled={createPreconstructionMutation.isPending}
+                    >
+                      <HardHat className="w-4 h-4 mr-2" />
+                      {createPreconstructionMutation.isPending ? "Creating..." : "Open Preconstruction Schedule"}
+                    </DropdownMenuItem>
+                  </>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -1835,7 +1914,7 @@ export default function Schedule() {
                             credentials: "include",
                             body: JSON.stringify({ updates }),
                           });
-                          queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+                          invalidateScheduleItems();
                         } catch (error) {
                           toast({ title: "Failed to reorder", variant: "destructive" });
                         }
@@ -2282,7 +2361,7 @@ export default function Schedule() {
                                     type: "FS",
                                   });
                                   setEditingItem(updatedItem);
-                                  queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+                                  invalidateScheduleItems();
                                   toast({ title: "Dependency added" });
                                 } catch (error: any) {
                                   toast({
@@ -2345,7 +2424,7 @@ export default function Schedule() {
                                       "DELETE"
                                     );
                                     setEditingItem(updatedItem);
-                                    queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+                                    invalidateScheduleItems();
                                     toast({ title: "Dependency removed" });
                                   } catch (error) {
                                     toast({
@@ -2415,7 +2494,7 @@ export default function Schedule() {
                                       });
                                       setEditingItem({ ...dateUpdatedItem, dependencies: updatedDeps });
                                       setFormData(prev => ({ ...prev, startDate: startStr, endDate: endStr }));
-                                      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
+                                      invalidateScheduleItems();
                                       toast({ title: "Lag updated and dates adjusted" });
                                     } else {
                                       setEditingItem({ ...updatedItem, dependencies: updatedDeps });
