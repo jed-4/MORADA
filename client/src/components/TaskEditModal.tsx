@@ -7,7 +7,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { type Task, type FieldCategoryWithOptions, type Project, type Reminder } from "@shared/schema";
 import { z } from "zod";
-import { format } from "date-fns";
+import { format, addDays } from "date-fns";
 import {
   DndContext,
   closestCenter,
@@ -1720,11 +1720,27 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                     className="h-9 flex-1"
                     data-testid="input-due-date"
                   />
+                  <button
+                    type="button"
+                    className="h-7 px-2 text-xs border rounded-md hover-elevate active-elevate-2 text-muted-foreground shrink-0"
+                    onClick={() => form.setValue("dueDate", format(new Date(), "yyyy-MM-dd"), { shouldDirty: true, shouldTouch: true })}
+                    data-testid="button-due-today"
+                  >
+                    Today
+                  </button>
+                  <button
+                    type="button"
+                    className="h-7 px-2 text-xs border rounded-md hover-elevate active-elevate-2 text-muted-foreground shrink-0"
+                    onClick={() => form.setValue("dueDate", format(addDays(new Date(), 1), "yyyy-MM-dd"), { shouldDirty: true, shouldTouch: true })}
+                    data-testid="button-due-tomorrow"
+                  >
+                    Tmrw
+                  </button>
                   {form.watch("dueDate") && (
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-9 w-9 shrink-0"
+                      className="shrink-0"
                       onClick={() => form.setValue("dueDate", undefined, { shouldDirty: true, shouldTouch: true })}
                     >
                       <X className="h-3 w-3" />

@@ -201,6 +201,7 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
   
   const [activeView, setActiveView] = useState<ViewType>("list");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [initialBoardStatus, setInitialBoardStatus] = useState("");
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [listColumnOrder, setListColumnOrder] = useState<('status' | 'priority' | 'assignee' | 'project' | 'dueDate')[]>(['status', 'priority', 'assignee', 'project', 'dueDate']);
   const [listSortConfig, setListSortConfig] = useState<{ column: string; direction: 'asc' | 'desc' | null } | undefined>(undefined);
@@ -1218,6 +1219,10 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
               tasks={tasksWithProjects}
               isLoading={isLoading}
               onTaskClick={(task) => setEditingTask(task)}
+              onAddTask={(status) => {
+                setInitialBoardStatus(status);
+                setShowCreateDialog(true);
+              }}
               onDelete={handleDeleteTask}
               showActions={true}
               groupBy={groupBy === 'none' ? 'status' : groupBy as BoardGroupByType}
@@ -1248,8 +1253,12 @@ export default function UserTasks({ user, isOwnPage }: UserTasksProps) {
       {/* Task Modals */}
       <TaskEditModal
         open={showCreateDialog}
-        onOpenChange={setShowCreateDialog}
+        onOpenChange={(open) => {
+          setShowCreateDialog(open);
+          if (!open) setInitialBoardStatus("");
+        }}
         defaultAssigneeId={user.id}
+        initialStatus={initialBoardStatus || undefined}
       />
       <TaskEditModal
         task={editingTask || undefined}

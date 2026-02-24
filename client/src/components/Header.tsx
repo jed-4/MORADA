@@ -783,8 +783,7 @@ export default function Header() {
       <TaskEditModal
         open={isTaskModalOpen}
         onOpenChange={setIsTaskModalOpen}
-        projectId={currentProject?.id}
-        defaultScope={currentProject ? "project" : "personal"}
+        defaultScope="personal"
       />
     </header>
   );
