@@ -2871,8 +2871,10 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                 const dragItem = allItems.find(item => item.id === dragging.id);
                 if (!dragItem) return null;
                 
-                const originalStart = getPosition(new Date(dragItem.startDate));
-                const originalDuration = differenceInDays(new Date(dragItem.endDate), new Date(dragItem.startDate)) + 1;
+                const isParentWithChildren = !dragItem.parentItemId && (childItemsByParent[dragItem.id]?.length > 0);
+                const effectiveDates = isParentWithChildren ? getEffectiveDates(dragItem) : { startDate: new Date(dragItem.startDate), endDate: new Date(dragItem.endDate) };
+                const originalStart = getPosition(effectiveDates.startDate);
+                const originalDuration = differenceInDays(effectiveDates.endDate, effectiveDates.startDate) + 1;
                 const originalWidth = originalDuration * pixelsPerDay;
                 
                 // Calculate preview dimensions based on drag type
@@ -2960,7 +2962,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                       )}
                       
                       <div
-                        className={`absolute inset-0 rounded-sm flex items-center cursor-move transition-shadow z-10 group/bar overflow-hidden
+                        className={`absolute inset-0 rounded-sm flex items-center ${hasChildren ? 'cursor-default' : 'cursor-move'} transition-shadow z-10 group/bar overflow-hidden
                           ${dragging?.id === item.id ? 'shadow-lg ring-2 ring-[#bba7db]' : 'hover:shadow-md'}
                           ${(dragging?.type === 'dependency' || pendingPredecessor !== null) && hoveredBar === item.id && item.id !== (dragging?.id ?? pendingPredecessor) ? 'ring-2 ring-[#9b7fc7] shadow-lg' : ''}
                           ${pendingPredecessor === item.id ? 'ring-2 ring-blue-500 shadow-md' : ''}
@@ -2989,7 +2991,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                           e.stopPropagation();
                           setContextMenu({ x: e.clientX, y: e.clientY, item });
                         }}
-                        onMouseDown={(e) => handleBarMouseDown(e, item, 'move')}
+                        onMouseDown={(e) => { if (!hasChildren) handleBarMouseDown(e, item, 'move'); }}
                         onMouseEnter={() => { setHoveredBar(item.id); if (!hoveredAnchor) setHoveredAnchor('start'); }}
                         onMouseLeave={() => { setHoveredBar(null); setHoveredAnchor(null); }}
                         data-testid={`bar-${item.id}`}

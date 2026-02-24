@@ -974,7 +974,7 @@ export default function Schedule() {
     const data: any = {
       scheduleId: schedule.id,
       ...formData,
-      assignedToId: formData.assignedToId || undefined,
+      assignedToId: formData.assignedToId === "" ? null : formData.assignedToId,
       parentItemId: formData.parentItemId === "" ? null : formData.parentItemId,
       useWorkingDaysOverride: formData.useWorkingDaysOverride,
       taskLinkOffsets: taskLinkOffsetsLocal.length > 0 ? taskLinkOffsetsLocal : undefined,
