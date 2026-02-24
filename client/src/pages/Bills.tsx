@@ -186,9 +186,10 @@ export default function Bills() {
     return projects.find((p) => p.id === projectId);
   };
 
-  const getSupplierName = (supplierId: string) => {
+  const getSupplierName = (supplierId: string, bill?: any) => {
+    if (bill?.supplierName) return bill.supplierName;
     const supplier = suppliers.find((s) => s.id === supplierId);
-    return supplier?.name || "Unknown Supplier";
+    return supplier?.name || "—";
   };
 
   const formatCurrency = (amount: number) => {
@@ -223,10 +224,11 @@ export default function Bills() {
         const supplier = suppliers.find(s => s.id === bill.supplierId);
         const project = projects.find(p => p.id === bill.projectId);
         const searchLower = searchTerm.toLowerCase();
+        const supplierName = (bill as any).supplierName || supplier?.name || "";
         const matchesSearch = 
           bill.billNumber?.toLowerCase().includes(searchLower) ||
           bill.billReference?.toLowerCase().includes(searchLower) ||
-          supplier?.name?.toLowerCase().includes(searchLower) ||
+          supplierName.toLowerCase().includes(searchLower) ||
           project?.name?.toLowerCase().includes(searchLower);
         if (!matchesSearch) return false;
       }
@@ -769,7 +771,7 @@ export default function Bills() {
                       <TableCell className="text-xs" data-testid={`text-supplier-name-${bill.id}`}>
                         <div className="flex items-center gap-1">
                           <Building2 className="w-3 h-3 text-muted-foreground" />
-                          {getSupplierName(bill.supplierId)}
+                          {getSupplierName(bill.supplierId, bill)}
                         </div>
                       </TableCell>
                       {!projectIdFromUrl && (

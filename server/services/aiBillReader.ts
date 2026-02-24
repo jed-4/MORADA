@@ -1,4 +1,24 @@
-import type { MindeeInvoiceData } from "./ocr";
+export interface InvoiceData {
+  invoiceNumber?: string;
+  invoiceDate?: string;
+  dueDate?: string;
+  supplierName?: string;
+  supplierAddress?: string;
+  supplierEmail?: string;
+  supplierPhone?: string;
+  totalAmount?: number;
+  totalTax?: number;
+  subtotalAmount?: number;
+  lineItems?: Array<{
+    description?: string;
+    quantity?: number;
+    unitPrice?: number;
+    totalAmount?: number;
+    taxAmount?: number;
+  }>;
+  currency?: string;
+  confidence?: number;
+}
 import { exec } from "child_process";
 import { promisify } from "util";
 import * as fs from "fs";
@@ -105,7 +125,7 @@ async function convertPdfToImages(pdfBuffer: Buffer): Promise<string[]> {
   return base64Images;
 }
 
-export async function processInvoiceWithAI(base64Data: string, fileName: string): Promise<MindeeInvoiceData> {
+export async function processInvoiceWithAI(base64Data: string, fileName: string): Promise<InvoiceData> {
   const OpenAI = (await import('openai')).default;
   const openai = new OpenAI({
     baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
@@ -178,7 +198,7 @@ export async function processInvoiceWithAI(base64Data: string, fileName: string)
     return Math.round(val * 100);
   };
 
-  const result: MindeeInvoiceData = {
+  const result: InvoiceData = {
     invoiceNumber: parsed.invoiceNumber || undefined,
     invoiceDate: parsed.invoiceDate || undefined,
     dueDate: parsed.dueDate || undefined,

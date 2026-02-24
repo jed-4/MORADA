@@ -1,5 +1,3 @@
-import type { MindeeInvoiceData } from "./ocr";
-
 // Email attachment type
 export interface EmailAttachment {
   filename: string;

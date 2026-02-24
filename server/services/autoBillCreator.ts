@@ -1,4 +1,4 @@
-import { getOCRService } from "./ocr";
+import { processInvoiceWithAI } from "./aiBillReader";
 import { getEmailParserService, type ParsedEmail } from "./emailParser";
 import { storage } from "../storage";
 import type { InsertBill, InsertBillLineItem } from "@shared/schema";
@@ -20,19 +20,14 @@ export interface AutoBillOptions {
 }
 
 export class AutoBillCreatorService {
-  /**
-   * Process email and create bills from attachments
-   */
   async processEmailInvoices(
     email: ParsedEmail,
     options: AutoBillOptions
   ): Promise<AutoBillResult[]> {
     const emailParser = getEmailParserService();
-    const ocrService = getOCRService();
-    
-    // Filter to invoice-like attachments
+
     const invoiceAttachments = emailParser.filterInvoiceAttachments(email.attachments);
-    
+
     if (invoiceAttachments.length === 0) {
       return [{
         success: false,
@@ -42,7 +37,6 @@ export class AutoBillCreatorService {
 
     const results: AutoBillResult[] = [];
 
-    // Process each attachment
     for (const attachment of invoiceAttachments) {
       try {
         const result = await this.createBillFromAttachment(
@@ -63,42 +57,33 @@ export class AutoBillCreatorService {
     return results;
   }
 
-  /**
-   * Create a bill from a single attachment
-   */
   private async createBillFromAttachment(
     fileContent: Buffer | string,
     fileName: string,
     email: ParsedEmail,
     options: AutoBillOptions
   ): Promise<AutoBillResult> {
-    const ocrService = getOCRService();
     const emailParser = getEmailParserService();
 
-    // Convert to base64 if buffer
     const base64Data = Buffer.isBuffer(fileContent)
       ? fileContent.toString('base64')
       : fileContent;
 
-    // Run OCR
-    const ocrData = await ocrService.processInvoiceFromBase64(base64Data, fileName);
+    const invoiceData = await processInvoiceWithAI(base64Data, fileName);
 
-    // Determine project
     let projectId = options.defaultProjectId;
     if (!projectId) {
-      // Try to find project from email hints
       const projectHint = emailParser.extractProjectHint(email);
       if (projectHint && options.autoMatch) {
         const projects = await storage.getProjects();
-        const matchedProject = projects.find(p => 
+        const matchedProject = projects.find(p =>
           p.name.toLowerCase().includes(projectHint.toLowerCase())
         );
         if (matchedProject) {
           projectId = matchedProject.id;
         }
       }
-      
-      // Fallback to first active project
+
       if (!projectId) {
         const projects = await storage.getProjects();
         const activeProject = projects.find(p => p.isActive);
@@ -110,33 +95,30 @@ export class AutoBillCreatorService {
       }
     }
 
-    // Match or create supplier
     let supplierId: string | undefined;
-    let supplierName = ocrData.supplierName || emailParser.extractSupplierHint(email) || "Unknown Supplier";
+    let supplierName = invoiceData.supplierName || emailParser.extractSupplierHint(email) || "Unknown Supplier";
 
-    if (options.autoMatch && ocrData.supplierName) {
+    if (options.autoMatch && invoiceData.supplierName) {
       const suppliers = await storage.getSuppliers();
-      const matchedSupplier = suppliers.find(s => 
-        s.name.toLowerCase() === ocrData.supplierName!.toLowerCase()
+      const matchedSupplier = suppliers.find(s =>
+        s.name.toLowerCase() === invoiceData.supplierName!.toLowerCase()
       );
-      
+
       if (matchedSupplier) {
         supplierId = matchedSupplier.id;
         supplierName = matchedSupplier.name;
       } else {
-        // Create new supplier
         const newSupplier = await storage.createSupplier({
-          name: ocrData.supplierName,
-          email: ocrData.supplierEmail,
-          phone: ocrData.supplierPhone,
-          address: ocrData.supplierAddress,
+          name: invoiceData.supplierName,
+          email: invoiceData.supplierEmail,
+          phone: invoiceData.supplierPhone,
+          address: invoiceData.supplierAddress,
           isActive: true,
         });
         supplierId = newSupplier.id;
         supplierName = newSupplier.name;
       }
     } else {
-      // Use first supplier as fallback
       const suppliers = await storage.getSuppliers();
       if (suppliers.length > 0) {
         supplierId = suppliers[0].id;
@@ -148,39 +130,36 @@ export class AutoBillCreatorService {
 
     const billNumber = await storage.getNextBillNumber();
 
-    // Create bill
     const billData: InsertBill = {
       billNumber,
       projectId,
       supplierId,
       billType: "bill",
       status: "draft",
-      billDate: ocrData.invoiceDate ? new Date(ocrData.invoiceDate) : new Date(),
-      dueDate: ocrData.dueDate ? new Date(ocrData.dueDate) : undefined,
-      billReference: ocrData.invoiceNumber,
+      billDate: invoiceData.invoiceDate ? new Date(invoiceData.invoiceDate) : new Date(),
+      dueDate: invoiceData.dueDate ? new Date(invoiceData.dueDate) : undefined,
+      billReference: invoiceData.invoiceNumber,
       notes: `Auto-created from email: ${email.subject}\nFrom: ${email.from}`,
-      subtotal: ocrData.subtotalAmount || 0,
-      tax: ocrData.totalTax || 0,
-      total: ocrData.totalAmount || 0,
+      subtotal: invoiceData.subtotalAmount || 0,
+      tax: invoiceData.totalTax || 0,
+      total: invoiceData.totalAmount || 0,
       paidAmount: 0,
       sendToXero: false,
       ocrProcessed: true,
-      ocrData: ocrData as any,
-      attachmentUrls: [], // Would store file URL here if we had file storage
+      ocrData: invoiceData as any,
+      attachmentUrls: [],
       createdById: options.defaultUserId,
     };
 
     const createdBill = await storage.createBill(billData);
 
-    // Create line items if OCR extracted them
-    if (ocrData.lineItems && ocrData.lineItems.length > 0) {
-      // Get first available cost code for the project
+    if (invoiceData.lineItems && invoiceData.lineItems.length > 0) {
       const costCodes = await storage.getCostCodes(projectId);
       const defaultCostCode = costCodes.find(cc => cc.isActive);
 
-      for (let i = 0; i < ocrData.lineItems.length; i++) {
-        const item = ocrData.lineItems[i];
-        
+      for (let i = 0; i < invoiceData.lineItems.length; i++) {
+        const item = invoiceData.lineItems[i];
+
         const lineItemData: InsertBillLineItem = {
           billId: createdBill.id,
           lineType: "custom",
@@ -211,7 +190,6 @@ export class AutoBillCreatorService {
   }
 }
 
-// Singleton instance
 let autoBillCreatorService: AutoBillCreatorService | null = null;
 
 export function getAutoBillCreatorService(): AutoBillCreatorService {

@@ -8798,7 +8798,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         projectId as string | undefined, 
         status as string | undefined
       );
-      res.json(bills);
+
+      // Enrich bills with supplier name from contacts table
+      const companyId = (req as any).user?.companyId;
+      const supplierIds = [...new Set(bills.map((b: any) => b.supplierId).filter(Boolean))];
+      const contactMap: Record<string, string> = {};
+      if (supplierIds.length > 0 && companyId) {
+        await Promise.all(
+          supplierIds.map(async (id) => {
+            const contact = await storage.getContact(id as string, companyId);
+            if (contact?.name) contactMap[id as string] = contact.name;
+          })
+        );
+      }
+
+      const enriched = bills.map((bill: any) => ({
+        ...bill,
+        supplierName: bill.supplierId ? (contactMap[bill.supplierId] ?? null) : null,
+      }));
+
+      res.json(enriched);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch bills" });
     }
