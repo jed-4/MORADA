@@ -154,6 +154,7 @@ const sections: Record<SectionId, { label: string; icon: React.ComponentType<{ c
       { title: "Cost Codes", url: "/cost-codes", icon: Tag },
       { title: "Price List", url: "/price-list", icon: DollarSign },
       { title: "AI Price Review", url: "/ai-price-review", icon: Sparkles },
+      { title: "Contacts", url: "/contacts", icon: Users },
       { title: "Suppliers", url: "/suppliers", icon: Truck },
       { title: "Trades", url: "/trades", icon: HardHat },
       { title: "Archived Projects", url: "/archived-projects", icon: Archive },

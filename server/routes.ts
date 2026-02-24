@@ -14956,7 +14956,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const [contact] = await db.select().from(contacts).where(eq(contacts.id, createData.assignedToId)).limit(1);
           if (contact) {
             createData.assignedToColor = contact.scheduleColor || null;
-            createData.assignedToName = contact.company || `${contact.firstName || ''} ${contact.lastName || ''}`.trim() || null;
+            createData.assignedToName = contact.company || contact.name || `${contact.firstName || ''} ${contact.lastName || ''}`.trim() || null;
           }
         } catch (e) {
           // Non-critical - continue without color/name
@@ -15082,13 +15082,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const [contact] = await db.select().from(contacts).where(eq(contacts.id, updateData.assignedToId)).limit(1);
             if (contact) {
               updateData.assignedToColor = contact.scheduleColor || null;
-              updateData.assignedToName = contact.company || `${contact.firstName || ''} ${contact.lastName || ''}`.trim() || null;
+              updateData.assignedToName = contact.company || contact.name || `${contact.firstName || ''} ${contact.lastName || ''}`.trim() || null;
             }
           } catch (e) {
             // Non-critical - continue without color/name
           }
         } else if (!updateData.assignedToId) {
           updateData.assignedToColor = null;
+          updateData.assignedToName = null;
         }
       }
       

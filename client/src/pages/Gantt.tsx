@@ -2581,12 +2581,35 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                                 value={item.assignedToId || ""}
                                 onValueChange={async (newValue) => {
                                   setAssigneePopoverItemId(null);
+                                  const cachedContacts = queryClient.getQueryData<any[]>(["/api/contacts"]) || [];
+                                  const cachedUser = queryClient.getQueryData<any>(["/api/auth/user"]);
+                                  let optimisticName: string | null = null;
+                                  let optimisticColor: string | null = null;
+                                  if (newValue && newValue.startsWith("company:")) {
+                                    optimisticName = (cachedUser as any)?.companyNickname || "The Business";
+                                  } else if (newValue) {
+                                    const contact = cachedContacts.find((c: any) => c.id === newValue);
+                                    if (contact) {
+                                      optimisticName = contact.company || contact.name || `${contact.firstName || ''} ${contact.lastName || ''}`.trim() || null;
+                                      optimisticColor = contact.scheduleColor || null;
+                                    }
+                                  }
+                                  queryClient.setQueryData<any[]>(
+                                    [`/api/projects/${projectId}/schedule-items`],
+                                    (old) => old?.map((si: any) => si.id === item.id ? {
+                                      ...si,
+                                      assignedToId: (newValue && !newValue.startsWith("company:")) ? newValue : null,
+                                      assignedToName: optimisticName,
+                                      assignedToColor: optimisticColor,
+                                    } : si)
+                                  );
                                   try {
                                     await apiRequest(`/api/schedule-items/${item.id}`, "PATCH", {
                                       assignedToId: newValue || null,
                                     });
                                     queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
                                   } catch (error) {
+                                    queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/schedule-items`] });
                                     toast({ title: "Failed to update assignee", variant: "destructive" });
                                   }
                                 }}
