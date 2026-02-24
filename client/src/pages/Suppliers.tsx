@@ -173,6 +173,10 @@ export default function Suppliers() {
     queryKey: ["/api/supplier-labels"],
   });
 
+  const { data: xeroAccounts = [] } = useQuery<Array<{ code: string; name: string; type: string; accountId: string }>>({
+    queryKey: ["/api/xero/accounts"],
+  });
+
   const { data: selectedSupplierContacts = [] } = useQuery<SupplierContact[]>({
     queryKey: ["/api/suppliers", selectedSupplier?.id, "contacts"],
     enabled: !!selectedSupplier?.id,
@@ -841,13 +845,34 @@ export default function Suppliers() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Xero Default Account</FormLabel>
-                      <FormControl>
-                        <Input 
-                          placeholder="Xero account code" 
-                          {...field} 
-                          data-testid="input-supplier-xero-account"
-                        />
-                      </FormControl>
+                      {xeroAccounts.length > 0 ? (
+                        <Select
+                          onValueChange={(value) => field.onChange(value === "__none__" ? "" : value)}
+                          value={field.value || "__none__"}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="input-supplier-xero-account">
+                              <SelectValue placeholder="Select Xero account..." />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="__none__">None</SelectItem>
+                            {xeroAccounts.map((acc) => (
+                              <SelectItem key={acc.code} value={acc.code}>
+                                {acc.code} - {acc.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <FormControl>
+                          <Input 
+                            placeholder="Xero account code" 
+                            {...field} 
+                            data-testid="input-supplier-xero-account"
+                          />
+                        </FormControl>
+                      )}
                       <FormMessage />
                     </FormItem>
                   )}

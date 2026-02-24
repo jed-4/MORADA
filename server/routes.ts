@@ -2197,6 +2197,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/projects/business", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+
+      const allProjects = await storage.getProjects();
+      let businessProject = allProjects.find(p => p.companyId === companyId && p.isBusiness);
+      
+      if (!businessProject) {
+        const company = await storage.getCompany(companyId);
+        const companyName = (company as any)?.nickname || (company as any)?.name || "The Business";
+        businessProject = await storage.createProject({
+          name: companyName,
+          description: "Business overhead and indirect costs",
+          companyId,
+          ownerId: String(user.id),
+          isBusiness: true,
+          status: "active",
+          projectStatus: "construction",
+          projectSubStatus: "const_active",
+          currentSystemPhase: "construction",
+          color: "#6b7280",
+          icon: "building-2",
+        } as any);
+      }
+      
+      res.json(businessProject);
+    } catch (error) {
+      console.error("Error getting business project:", error);
+      res.status(500).json({ error: "Failed to get business project" });
+    }
+  });
+
   app.get("/api/projects/:id", async (req, res) => {
     try {
       console.log(`[GET /api/projects/:id] Fetching project with ID: ${req.params.id}`);
@@ -19577,6 +19613,34 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
     } catch (error: any) {
       console.error("Error disconnecting Xero:", error);
       res.status(500).json({ error: "Failed to disconnect Xero" });
+    }
+  });
+
+  app.get("/api/xero/accounts", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) {
+        return res.status(401).json({ error: "Unauthorized - no company context" });
+      }
+
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) {
+        return res.json([]);
+      }
+
+      const accounts = await xeroService.getAccounts(connection.id);
+      const mapped = accounts.map((a: any) => ({
+        code: a.Code,
+        name: a.Name,
+        type: a.Type,
+        accountId: a.AccountID,
+      }));
+      mapped.sort((a: any, b: any) => (a.code || "").localeCompare(b.code || ""));
+      res.json(mapped);
+    } catch (error: any) {
+      console.error("Error fetching Xero accounts:", error);
+      res.json([]);
     }
   });
 

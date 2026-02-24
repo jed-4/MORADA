@@ -154,6 +154,10 @@ export default function BillDetail() {
     queryKey: ["/api/projects"],
   });
 
+  const { data: businessProject } = useQuery<Project>({
+    queryKey: ["/api/projects/business"],
+  });
+
   const { data: suppliers = [] } = useQuery<any[]>({
     queryKey: ["/api/contacts", { contactType: "supplier" }],
     queryFn: async () => {
@@ -170,6 +174,10 @@ export default function BillDetail() {
   const { data: xeroContacts = [] } = useQuery<Array<{ contactId: string; name: string; emailAddress?: string }>>({
     queryKey: ["/api/xero/contacts"],
     enabled: unmappedContactDialogOpen,
+  });
+
+  const { data: xeroAccounts = [] } = useQuery<Array<{ code: string; name: string; type: string; accountId: string }>>({
+    queryKey: ["/api/xero/accounts"],
   });
 
   const { data: approvals = [] } = useQuery<BillApproval[]>({
@@ -353,6 +361,24 @@ export default function BillDetail() {
     form.setValue("dueDate", format(dueDate, "yyyy-MM-dd"));
   }, [watchedSupplierId, watchedBillDate, suppliers, companySettings, isEditMode, form]);
 
+  useEffect(() => {
+    if (!watchedSupplierId || isEditMode) return;
+    const supplier = suppliers.find(s => s.id === watchedSupplierId);
+    const defaultAccount = supplier?.xeroDefaultAccountCode || supplier?.xeroDefaultAccount || "";
+    if (defaultAccount) {
+      setLineItems(prev => prev.map(item => 
+        !item.account ? { ...item, account: defaultAccount } : item
+      ));
+    }
+  }, [watchedSupplierId, suppliers, isEditMode]);
+
+  const getSupplierDefaultAccount = () => {
+    const supplierId = form.getValues("supplierId");
+    if (!supplierId) return "";
+    const supplier = suppliers.find(s => s.id === supplierId);
+    return supplier?.xeroDefaultAccountCode || supplier?.xeroDefaultAccount || "";
+  };
+
   const addLineItem = () => {
     setLineItems([
       ...lineItems,
@@ -363,7 +389,7 @@ export default function BillDetail() {
         unitPrice: 0,
         unit: "",
         tax: "GST on expenses",
-        account: "",
+        account: getSupplierDefaultAccount(),
         total: 0,
         order: lineItems.length,
         appliesToAllowances: false,
@@ -506,12 +532,11 @@ export default function BillDetail() {
         attachmentUrls,
       };
 
-      const billRes = await apiRequest("/api/bills", "POST", billData);
-      const newBill = await billRes.json() as Bill;
+      const newBill = await apiRequest("/api/bills", "POST", billData) as Bill;
 
       for (let i = 0; i < lineItems.length; i++) {
         const item = lineItems[i];
-        const lineItemRes = await apiRequest(`/api/bills/${newBill.id}/line-items`, "POST", {
+        const createdLineItem = await apiRequest(`/api/bills/${newBill.id}/line-items`, "POST", {
           billId: newBill.id,
           lineType: item.lineType,
           description: item.description,
@@ -523,7 +548,6 @@ export default function BillDetail() {
           total: Math.round(item.total * 100),
           order: i,
         });
-        const createdLineItem = await lineItemRes.json();
 
         if (item.appliesToAllowances && item.allowanceItemId) {
           await apiRequest("/api/bill-line-item-allowances", "POST", {
@@ -613,8 +637,7 @@ export default function BillDetail() {
         attachmentUrls,
       };
 
-      const billRes = await apiRequest(`/api/bills/${id}`, "PATCH", billData);
-      const updatedBill = await billRes.json() as Bill;
+      const updatedBill = await apiRequest(`/api/bills/${id}`, "PATCH", billData) as Bill;
 
       const existingIds = existingLineItems.map((item) => item.id);
       const currentIds = lineItems.map((item) => item.id).filter(Boolean);
@@ -643,8 +666,7 @@ export default function BillDetail() {
         if (item.id) {
           await apiRequest(`/api/bills/${id}/line-items/${item.id}`, "PATCH", itemData);
         } else {
-          const lineItemRes = await apiRequest(`/api/bills/${id}/line-items`, "POST", itemData);
-          const createdLineItem = await lineItemRes.json();
+          const createdLineItem = await apiRequest(`/api/bills/${id}/line-items`, "POST", itemData);
           lineItemId = createdLineItem.id;
         }
 
@@ -988,6 +1010,7 @@ export default function BillDetail() {
 
     if (ocrResults.lineItems && ocrResults.lineItems.length > 0) {
       const firstCostCode = costCodes[0]?.id;
+      const defaultAccount = getSupplierDefaultAccount();
       const newLineItems = ocrResults.lineItems.map((item: any, index: number) => ({
         lineType: "custom" as const,
         description: item.description || "",
@@ -996,7 +1019,7 @@ export default function BillDetail() {
         unitPrice: item.unitPrice ? item.unitPrice / 100 : 0,
         unit: "",
         tax: "GST on expenses" as const,
-        account: "",
+        account: defaultAccount,
         total: item.totalAmount ? item.totalAmount / 100 : 0,
         order: index,
       }));
@@ -1198,7 +1221,15 @@ export default function BillDetail() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {projects.map((project) => (
+                            {businessProject && (
+                              <>
+                                <SelectItem key={businessProject.id} value={businessProject.id}>
+                                  {businessProject.name} (Business)
+                                </SelectItem>
+                                <div className="border-b border-border my-1" />
+                              </>
+                            )}
+                            {projects.filter(p => !(p as any).isBusiness).map((project) => (
                               <SelectItem key={project.id} value={project.id}>
                                 {project.name}
                               </SelectItem>
@@ -1867,15 +1898,34 @@ export default function BillDetail() {
                           </Select>
                         </td>
                         <td className="px-1 py-0.5" style={{ width: getColWidth("account") }}>
-                          <input
-                            value={item.account}
-                            onChange={(e) =>
-                              updateLineItem(index, "account", e.target.value)
-                            }
-                            placeholder="Account"
-                            className="w-full h-7 px-1.5 text-[11px] bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm"
-                            data-testid={`input-account-${index}`}
-                          />
+                          {xeroAccounts.length > 0 ? (
+                            <Select
+                              value={item.account || "__none__"}
+                              onValueChange={(val) => updateLineItem(index, "account", val === "__none__" ? "" : val)}
+                            >
+                              <SelectTrigger className="text-[11px] border-0 shadow-none bg-transparent" data-testid={`select-account-${index}`}>
+                                <SelectValue placeholder="Select account..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__none__">None</SelectItem>
+                                {xeroAccounts.map((acc) => (
+                                  <SelectItem key={acc.code} value={acc.code}>
+                                    {acc.code} - {acc.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <input
+                              value={item.account}
+                              onChange={(e) =>
+                                updateLineItem(index, "account", e.target.value)
+                              }
+                              placeholder="Account"
+                              className="w-full h-7 px-1.5 text-[11px] bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm"
+                              data-testid={`input-account-${index}`}
+                            />
+                          )}
                         </td>
                         <td className="px-1 py-0.5" style={{ width: getColWidth("unitCost") }}>
                           <input

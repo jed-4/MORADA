@@ -202,6 +202,10 @@ export default function Trades() {
     queryKey: ["/api/cost-codes"],
   });
 
+  const { data: xeroAccounts = [] } = useQuery<Array<{ code: string; name: string; type: string; accountId: string }>>({
+    queryKey: ["/api/xero/accounts"],
+  });
+
   const { data: selectedTradeContacts = [] } = useQuery<SupplierContact[]>({
     queryKey: ["/api/suppliers", selectedTrade?.id, "contacts"],
     enabled: !!selectedTrade?.id,
@@ -925,13 +929,34 @@ export default function Trades() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Xero Default Account</FormLabel>
-                      <FormControl>
-                        <Input 
-                          placeholder="Xero account code" 
-                          {...field} 
-                          data-testid="input-trade-xero-account"
-                        />
-                      </FormControl>
+                      {xeroAccounts.length > 0 ? (
+                        <Select
+                          onValueChange={(val) => field.onChange(val === "__none__" ? "" : val)}
+                          value={field.value || "__none__"}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="input-trade-xero-account">
+                              <SelectValue placeholder="Select Xero account..." />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="__none__">None</SelectItem>
+                            {xeroAccounts.map((acc) => (
+                              <SelectItem key={acc.code} value={acc.code}>
+                                {acc.code} - {acc.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <FormControl>
+                          <Input 
+                            placeholder="Xero account code" 
+                            {...field} 
+                            data-testid="input-trade-xero-account"
+                          />
+                        </FormControl>
+                      )}
                       <FormMessage />
                     </FormItem>
                   )}
