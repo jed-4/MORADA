@@ -1630,24 +1630,6 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                 </Select>
               </div>
 
-              {/* Private Task Toggle */}
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                  <Lock className="h-3 w-3" />
-                  Private Task
-                </label>
-                <div className="flex items-center gap-2">
-                  <Switch
-                    checked={form.watch("isPrivate")}
-                    onCheckedChange={(checked) => form.setValue("isPrivate", checked, { shouldDirty: true })}
-                    data-testid="switch-private-task"
-                  />
-                  <span className="text-xs text-muted-foreground">
-                    {form.watch("isPrivate") ? "Only assigned users can see this task" : "Visible to all team members"}
-                  </span>
-                </div>
-              </div>
-
               {/* Labels */}
               <div className="space-y-2">
                 <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
@@ -1798,6 +1780,24 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
                   </Button>
                 </CollapsibleTrigger>
                 <CollapsibleContent className="space-y-4 pt-3">
+                  {/* Private Task Toggle */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                      <Lock className="h-3 w-3" />
+                      Private Task
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={form.watch("isPrivate")}
+                        onCheckedChange={(checked) => form.setValue("isPrivate", checked, { shouldDirty: true })}
+                        data-testid="switch-private-task"
+                      />
+                      <span className="text-xs text-muted-foreground">
+                        {form.watch("isPrivate") ? "Only assigned users can see this task" : "Visible to all team members"}
+                      </span>
+                    </div>
+                  </div>
+
                   {/* Linked Checklist */}
                   <div className="space-y-2">
                     <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
