@@ -360,7 +360,8 @@ export default function UserProfileView() {
 
 
   const isCurrentUser = currentUser?.id === userId;
-  const adminRoleName = (currentUser?.roleName || "").toLowerCase();
+  const currentUserRole = (roles as any[]).find((r: any) => r.id === currentUser?.roleId);
+  const adminRoleName = (currentUserRole?.name || currentUser?.roleName || "").toLowerCase();
   const isAdmin = adminRoleName.includes("admin") || adminRoleName.includes("general manage") || adminRoleName.includes("owner") || adminRoleName.includes("director");
 
   return (
