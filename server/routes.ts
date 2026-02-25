@@ -19455,6 +19455,26 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         }
       }
 
+      // Resolve milestone item dates
+      const allMilestoneItemIds = new Set<string>();
+      for (const bsp of bspRows) {
+        if (bsp.milestoneStartItemId) allMilestoneItemIds.add(bsp.milestoneStartItemId);
+        if (bsp.milestoneEndItemId) allMilestoneItemIds.add(bsp.milestoneEndItemId);
+      }
+      const milestoneItemDateMap = new Map<string, { startDate: Date | null; endDate: Date | null }>();
+      if (allMilestoneItemIds.size > 0) {
+        const milestoneIds = Array.from(allMilestoneItemIds);
+        const milestoneItems = await db.select({
+          id: scheduleItems.id,
+          startDate: scheduleItems.startDate,
+          endDate: scheduleItems.endDate,
+        }).from(scheduleItems)
+          .where(sql`${scheduleItems.id} IN (${sql.join(milestoneIds.map(id => sql`${id}`), sql`, `)})`);
+        for (const item of milestoneItems) {
+          milestoneItemDateMap.set(item.id, { startDate: item.startDate, endDate: item.endDate });
+        }
+      }
+
       const result = companyProjects.map((project: any) => {
         const bsp = bspMap.get(project.id);
         const schedule = scheduleMap.get(project.id);
@@ -19469,6 +19489,9 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         } else if (!hasScheduleItems || scheduleStatus === "offline") {
           category = "unscheduled";
         }
+
+        const milestoneStartItem = bsp?.milestoneStartItemId ? milestoneItemDateMap.get(bsp.milestoneStartItemId) : null;
+        const milestoneEndItem = bsp?.milestoneEndItemId ? milestoneItemDateMap.get(bsp.milestoneEndItemId) : null;
 
         return {
           id: project.id,
@@ -19487,6 +19510,12 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
           customWeeks: bsp?.customWeeks || null,
           isVisible: bsp?.isVisible ?? true,
           sortOrder: bsp?.sortOrder ?? 0,
+          contractStartDate: bsp?.contractStartDate || null,
+          contractEndDate: bsp?.contractEndDate || null,
+          milestoneStartItemId: bsp?.milestoneStartItemId || null,
+          milestoneEndItemId: bsp?.milestoneEndItemId || null,
+          milestoneStartDate: milestoneStartItem?.startDate || null,
+          milestoneEndDate: milestoneEndItem?.endDate || null,
         };
       });
 
@@ -19512,7 +19541,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
       if (!companyId) return res.status(400).json({ error: "No company" });
 
       const { projectId } = req.params;
-      const { dateMode, customStartDate, customWeeks, isVisible, sortOrder } = req.body;
+      const { dateMode, customStartDate, customWeeks, isVisible, sortOrder, contractStartDate, contractEndDate, milestoneStartItemId, milestoneEndItemId } = req.body;
 
       const existing = await db.select().from(businessScheduleProjects)
         .where(and(
@@ -19527,6 +19556,10 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
         if (customWeeks !== undefined) updates.customWeeks = customWeeks;
         if (isVisible !== undefined) updates.isVisible = isVisible;
         if (sortOrder !== undefined) updates.sortOrder = sortOrder;
+        if (contractStartDate !== undefined) updates.contractStartDate = contractStartDate ? new Date(contractStartDate) : null;
+        if (contractEndDate !== undefined) updates.contractEndDate = contractEndDate ? new Date(contractEndDate) : null;
+        if (milestoneStartItemId !== undefined) updates.milestoneStartItemId = milestoneStartItemId || null;
+        if (milestoneEndItemId !== undefined) updates.milestoneEndItemId = milestoneEndItemId || null;
 
         const [updated] = await db.update(businessScheduleProjects)
           .set(updates)
@@ -19542,12 +19575,55 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
           customWeeks: customWeeks || null,
           isVisible: isVisible ?? true,
           sortOrder: sortOrder ?? 0,
+          contractStartDate: contractStartDate ? new Date(contractStartDate) : null,
+          contractEndDate: contractEndDate ? new Date(contractEndDate) : null,
+          milestoneStartItemId: milestoneStartItemId || null,
+          milestoneEndItemId: milestoneEndItemId || null,
         }).returning();
         return res.json(created);
       }
     } catch (error: any) {
       console.error("Error updating business schedule project:", error);
       res.status(500).json({ error: "Failed to update" });
+    }
+  });
+
+  app.get("/api/business-schedule/projects/:projectId/schedule-items", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user.companyId;
+      if (!companyId) return res.status(400).json({ error: "No company" });
+
+      const { projectId } = req.params;
+
+      // Verify the project belongs to this company
+      const allProjects = await storage.getProjects();
+      const project = allProjects.find((p: any) => p.id === projectId && p.companyId === companyId);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      // Find the schedule for this project
+      const [schedule] = await db.select().from(schedules).where(eq(schedules.projectId, projectId));
+      if (!schedule) return res.json([]);
+
+      // Fetch all schedule items ordered by startDate
+      const items = await db.select({
+        id: scheduleItems.id,
+        name: scheduleItems.name,
+        startDate: scheduleItems.startDate,
+        endDate: scheduleItems.endDate,
+        assignedToName: scheduleItems.assignedToName,
+        assignedToColor: scheduleItems.assignedToColor,
+        parentItemId: scheduleItems.parentItemId,
+        sortOrder: scheduleItems.sortOrder,
+        type: scheduleItems.type,
+      }).from(scheduleItems)
+        .where(eq(scheduleItems.scheduleId, schedule.id))
+        .orderBy(scheduleItems.startDate, scheduleItems.sortOrder);
+
+      res.json(items);
+    } catch (error: any) {
+      console.error("Error fetching schedule items:", error);
+      res.status(500).json({ error: "Failed to fetch schedule items" });
     }
   });
 

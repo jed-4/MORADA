@@ -10,7 +10,8 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { ZoomIn, ZoomOut, Filter, ChevronLeft, ChevronRight, Calendar, ExternalLink, Settings, MoreHorizontal, GanttChart, Users } from "lucide-react";
+import { ZoomIn, ZoomOut, Filter, ChevronLeft, ChevronRight, Calendar, ExternalLink, Settings, MoreHorizontal, GanttChart, Users, Layers } from "lucide-react";
+import MasterScheduleGantt from "@/components/schedule/MasterScheduleGantt";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { format, differenceInDays, addDays, startOfWeek, startOfMonth, eachWeekOfInterval, eachMonthOfInterval, eachDayOfInterval, getISOWeek, endOfWeek, addWeeks } from "date-fns";
 import { useLocation } from "wouter";
@@ -37,6 +38,12 @@ interface BusinessProject {
   customWeeks: number | null;
   isVisible: boolean;
   sortOrder: number;
+  contractStartDate: string | null;
+  contractEndDate: string | null;
+  milestoneStartItemId: string | null;
+  milestoneEndItemId: string | null;
+  milestoneStartDate: string | null;
+  milestoneEndDate: string | null;
 }
 
 function getProjectDates(project: BusinessProject): { start: Date | null; end: Date | null } {
@@ -77,7 +84,7 @@ function getProjectDates(project: BusinessProject): { start: Date | null; end: D
 export default function BusinessSchedule() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
-  const [viewMode, setViewMode] = useState<"schedule" | "workload">("schedule");
+  const [viewMode, setViewMode] = useState<"schedule" | "workload" | "schedules">("schedule");
   const [zoomLevel, setZoomLevel] = useState<"day" | "week" | "month">("week");
   const pixelsPerDay = ZOOM_LEVELS[zoomLevel] / 7;
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -191,7 +198,63 @@ export default function BusinessSchedule() {
   if (viewMode === "workload") {
     return (
       <div className="flex flex-col h-full bg-white dark:bg-zinc-950" data-testid="business-schedule-page">
-        <CompanyWorkload onSwitchView={() => setViewMode("schedule")} />
+        <div className="h-10 flex items-center px-3 border-b border-border flex-shrink-0">
+          <div className="flex items-center border rounded-md overflow-hidden">
+            <button
+              className={`h-7 px-2.5 text-xs flex items-center gap-1.5 hover-elevate`}
+              onClick={() => setViewMode('schedule')}
+            >
+              <GanttChart className="w-3 h-3" />
+              Projects
+            </button>
+            <button
+              className={`h-7 px-2.5 text-xs flex items-center gap-1.5 bg-primary text-primary-foreground`}
+            >
+              <Users className="w-3 h-3" />
+              Workload
+            </button>
+            <button
+              className={`h-7 px-2.5 text-xs flex items-center gap-1.5 hover-elevate`}
+              onClick={() => setViewMode('schedules')}
+            >
+              <Layers className="w-3 h-3" />
+              Schedules
+            </button>
+          </div>
+        </div>
+        <CompanyWorkload />
+      </div>
+    );
+  }
+
+  if (viewMode === "schedules") {
+    return (
+      <div className="flex flex-col h-full bg-white dark:bg-zinc-950" data-testid="business-schedule-page">
+        <div className="h-10 flex items-center px-3 border-b border-border flex-shrink-0">
+          <div className="flex items-center border rounded-md overflow-hidden">
+            <button
+              className={`h-7 px-2.5 text-xs flex items-center gap-1.5 hover-elevate`}
+              onClick={() => setViewMode('schedule')}
+            >
+              <GanttChart className="w-3 h-3" />
+              Projects
+            </button>
+            <button
+              className={`h-7 px-2.5 text-xs flex items-center gap-1.5 hover-elevate`}
+              onClick={() => setViewMode('workload')}
+            >
+              <Users className="w-3 h-3" />
+              Workload
+            </button>
+            <button
+              className={`h-7 px-2.5 text-xs flex items-center gap-1.5 bg-primary text-primary-foreground`}
+            >
+              <Layers className="w-3 h-3" />
+              Schedules
+            </button>
+          </div>
+        </div>
+        <MasterScheduleGantt />
       </div>
     );
   }
@@ -203,18 +266,24 @@ export default function BusinessSchedule() {
         <div className="flex items-center gap-2">
           <div className="flex items-center border rounded-md overflow-hidden mr-2">
             <button
-              className={`h-7 px-2.5 text-xs flex items-center gap-1.5 ${viewMode === 'schedule' ? 'bg-primary text-primary-foreground' : 'hover-elevate'}`}
-              onClick={() => setViewMode('schedule')}
+              className={`h-7 px-2.5 text-xs flex items-center gap-1.5 bg-primary text-primary-foreground`}
             >
               <GanttChart className="w-3 h-3" />
               Projects
             </button>
             <button
-              className={`h-7 px-2.5 text-xs flex items-center gap-1.5 ${viewMode === 'workload' ? 'bg-primary text-primary-foreground' : 'hover-elevate'}`}
+              className={`h-7 px-2.5 text-xs flex items-center gap-1.5 hover-elevate`}
               onClick={() => setViewMode('workload')}
             >
               <Users className="w-3 h-3" />
               Workload
+            </button>
+            <button
+              className={`h-7 px-2.5 text-xs flex items-center gap-1.5 hover-elevate`}
+              onClick={() => setViewMode('schedules')}
+            >
+              <Layers className="w-3 h-3" />
+              Schedules
             </button>
           </div>
         </div>

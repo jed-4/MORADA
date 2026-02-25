@@ -111,6 +111,34 @@ export default function ProjectSettings() {
     },
   });
 
+  // Business schedule project settings (for milestone/contract dates)
+  const { data: bspProjects = [] } = useQuery<any[]>({
+    queryKey: ["/api/business-schedule/projects"],
+    enabled: !!currentProject?.id,
+  });
+  const bspProject = (bspProjects as any[]).find((p: any) => p.id === currentProject?.id);
+
+  const { data: projectScheduleItems = [] } = useQuery<any[]>({
+    queryKey: ["/api/business-schedule/projects", currentProject?.id, "schedule-items"],
+    queryFn: async () => {
+      if (!currentProject?.id) return [];
+      const res = await fetch(`/api/business-schedule/projects/${currentProject.id}/schedule-items`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!currentProject?.id,
+  });
+
+  const updateBspMutation = useMutation({
+    mutationFn: async (data: Record<string, any>) => {
+      if (!currentProject?.id) throw new Error("No project");
+      return apiRequest(`/api/business-schedule/projects/${currentProject.id}`, "PATCH", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/business-schedule/projects"] });
+    },
+  });
+
   const { data: teamMembers = [], isLoading: teamLoading } = useQuery<any[]>({
     queryKey: ['/api/projects', currentProject?.id, 'team'],
     queryFn: async () => {
@@ -689,6 +717,147 @@ export default function ProjectSettings() {
                   : "Not set"}
               </div>
             )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Schedule Milestones */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Calendar className="h-5 w-5" />
+            Schedule Milestones
+          </CardTitle>
+          <CardDescription>
+            Contract dates and schedule item milestones shown as vertical lines on the Gantt
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {/* Contract Dates */}
+          <div>
+            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Contract Dates</div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-sm">Contract Start</Label>
+                <div className="flex gap-1.5">
+                  <Input
+                    type="date"
+                    className="h-9 text-sm"
+                    value={bspProject?.contractStartDate ? new Date(bspProject.contractStartDate).toISOString().split("T")[0] : ""}
+                    onChange={(e) => updateBspMutation.mutate({ contractStartDate: e.target.value || null })}
+                  />
+                  {bspProject?.contractStartDate && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 shrink-0"
+                      onClick={() => updateBspMutation.mutate({ contractStartDate: null })}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm">Contract End</Label>
+                <div className="flex gap-1.5">
+                  <Input
+                    type="date"
+                    className="h-9 text-sm"
+                    value={bspProject?.contractEndDate ? new Date(bspProject.contractEndDate).toISOString().split("T")[0] : ""}
+                    onChange={(e) => updateBspMutation.mutate({ contractEndDate: e.target.value || null })}
+                  />
+                  {bspProject?.contractEndDate && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 shrink-0"
+                      onClick={() => updateBspMutation.mutate({ contractEndDate: null })}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Schedule Item Milestones */}
+          <div>
+            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Schedule Item Milestones</div>
+            <p className="text-xs text-muted-foreground mb-3">
+              Select schedule items to mark the build start and end. Useful when pre-construction or planning items exist before the actual build begins.
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-sm">Build Start Item</Label>
+                <div className="flex gap-1.5">
+                  <Select
+                    value={bspProject?.milestoneStartItemId || "_none"}
+                    onValueChange={(v) => updateBspMutation.mutate({ milestoneStartItemId: v === "_none" ? null : v })}
+                  >
+                    <SelectTrigger className="h-9 text-sm">
+                      <SelectValue placeholder="Select item..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_none">None</SelectItem>
+                      {(projectScheduleItems as any[]).filter((item: any) => item.startDate).map((item: any) => (
+                        <SelectItem key={item.id} value={item.id}>
+                          <span className="truncate">{item.name}</span>
+                          <span className="ml-1 text-muted-foreground text-[10px]">
+                            {new Date(item.startDate).toLocaleDateString()}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {bspProject?.milestoneStartItemId && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 shrink-0"
+                      onClick={() => updateBspMutation.mutate({ milestoneStartItemId: null })}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm">Build End Item</Label>
+                <div className="flex gap-1.5">
+                  <Select
+                    value={bspProject?.milestoneEndItemId || "_none"}
+                    onValueChange={(v) => updateBspMutation.mutate({ milestoneEndItemId: v === "_none" ? null : v })}
+                  >
+                    <SelectTrigger className="h-9 text-sm">
+                      <SelectValue placeholder="Select item..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_none">None</SelectItem>
+                      {(projectScheduleItems as any[]).filter((item: any) => item.endDate).map((item: any) => (
+                        <SelectItem key={item.id} value={item.id}>
+                          <span className="truncate">{item.name}</span>
+                          <span className="ml-1 text-muted-foreground text-[10px]">
+                            {new Date(item.endDate).toLocaleDateString()}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {bspProject?.milestoneEndItemId && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 shrink-0"
+                      onClick={() => updateBspMutation.mutate({ milestoneEndItemId: null })}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>

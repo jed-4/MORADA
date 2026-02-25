@@ -5475,6 +5475,10 @@ export const businessScheduleProjects = pgTable("business_schedule_projects", {
   customWeeks: integer("custom_weeks"),
   isVisible: boolean("is_visible").notNull().default(true),
   sortOrder: integer("sort_order").notNull().default(0),
+  contractStartDate: timestamp("contract_start_date"),
+  contractEndDate: timestamp("contract_end_date"),
+  milestoneStartItemId: varchar("milestone_start_item_id"),
+  milestoneEndItemId: varchar("milestone_end_item_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   uniqueProjectCompany: uniqueIndex("bsp_project_company_unique").on(table.projectId, table.companyId),

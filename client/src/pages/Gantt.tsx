@@ -2196,6 +2196,30 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
   // Today line
   const todayPosition = getPosition(new Date());
 
+  // Milestone / contract lines from business schedule settings
+  const { data: bspProjects = [] } = useQuery<any[]>({
+    queryKey: ["/api/business-schedule/projects"],
+  });
+  const bspProject = (bspProjects as any[]).find((p: any) => p.id === projectId);
+  const milestoneLines = useMemo(() => {
+    if (!bspProject) return [];
+    const pos = (date: Date) => differenceInDays(date, timelineStart) * pixelsPerDay;
+    const lines: { pos: number; label: string; solid: boolean; color: string }[] = [];
+    if (bspProject.contractStartDate) {
+      lines.push({ pos: pos(new Date(bspProject.contractStartDate)), label: "Contract Start", solid: false, color: "#ef4444" });
+    }
+    if (bspProject.contractEndDate) {
+      lines.push({ pos: pos(new Date(bspProject.contractEndDate)), label: "Contract End", solid: false, color: "#ef4444" });
+    }
+    if (bspProject.milestoneStartDate) {
+      lines.push({ pos: pos(new Date(bspProject.milestoneStartDate)), label: "Build Start", solid: true, color: bspProject.color || "#3b82f6" });
+    }
+    if (bspProject.milestoneEndDate) {
+      lines.push({ pos: pos(new Date(bspProject.milestoneEndDate)), label: "Build End", solid: true, color: bspProject.color || "#3b82f6" });
+    }
+    return lines;
+  }, [bspProject, timelineStart, pixelsPerDay]);
+
   if (isLoading) {
     return <div className="p-6 text-muted-foreground">Loading timeline...</div>;
   }
@@ -2898,7 +2922,28 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                   height: `${orderedItems.length * ROW_HEIGHT}px`,
                 }}
               />
-              
+
+              {/* Contract / milestone date lines */}
+              {milestoneLines.map((line, i) => (
+                <div
+                  key={`milestone-${i}`}
+                  className="absolute top-0 pointer-events-none z-20"
+                  style={{
+                    left: `${line.pos}px`,
+                    width: 2,
+                    height: `${orderedItems.length * ROW_HEIGHT}px`,
+                    borderLeft: `2px ${line.solid ? "solid" : "dashed"} ${line.color}`,
+                  }}
+                >
+                  <span
+                    className="absolute top-1 left-1 text-[9px] font-semibold whitespace-nowrap rounded px-1 py-0.5"
+                    style={{ color: line.color, backgroundColor: "hsl(var(--background) / 0.85)" }}
+                  >
+                    {line.label}
+                  </span>
+                </div>
+              ))}
+
               {/* Ghost preview bar during drag/resize */}
               {dragging && (dragging.type === 'move' || dragging.type === 'resize-left' || dragging.type === 'resize-right') && (() => {
                 const dragItem = allItems.find(item => item.id === dragging.id);
@@ -3416,6 +3461,27 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                 className="absolute top-0 w-0.5 bg-[#bba7db] pointer-events-none z-20"
                 style={{ left: `${todayPosition}px`, height: `${orderedItems.length * ROW_HEIGHT}px` }}
               />
+
+              {/* Contract / milestone date lines */}
+              {milestoneLines.map((line, i) => (
+                <div
+                  key={`milestone2-${i}`}
+                  className="absolute top-0 pointer-events-none z-20"
+                  style={{
+                    left: `${line.pos}px`,
+                    width: 2,
+                    height: `${orderedItems.length * ROW_HEIGHT}px`,
+                    borderLeft: `2px ${line.solid ? "solid" : "dashed"} ${line.color}`,
+                  }}
+                >
+                  <span
+                    className="absolute top-1 left-1 text-[9px] font-semibold whitespace-nowrap rounded px-1 py-0.5"
+                    style={{ color: line.color, backgroundColor: "hsl(var(--background) / 0.85)" }}
+                  >
+                    {line.label}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
         </div>
