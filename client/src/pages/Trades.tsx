@@ -55,8 +55,9 @@ import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertSupplierSchema, type Supplier, type InsertSupplier, type CostCode, type SupplierContact, type SupplierInsurance } from "@shared/schema";
-import { Plus, MoreHorizontal, Pencil, Trash2, HardHat, Search, X, Building2, Users, Shield, Calendar, ChevronRight } from "lucide-react";
+import { Plus, MoreHorizontal, Pencil, Trash2, HardHat, Search, X, Building2, Users, Shield, Calendar, ChevronRight, Link2 } from "lucide-react";
 import { z } from "zod";
+import BulkXeroContactMappingDialog from "@/components/BulkXeroContactMappingDialog";
 import { format } from "date-fns";
 
 const TRADE_CATEGORIES = [
@@ -146,6 +147,7 @@ export default function Trades() {
   const [editingContact, setEditingContact] = useState<SupplierContact | null>(null);
   const [isInsuranceDialogOpen, setIsInsuranceDialogOpen] = useState(false);
   const [editingInsurance, setEditingInsurance] = useState<SupplierInsurance | null>(null);
+  const [isBulkXeroMappingOpen, setIsBulkXeroMappingOpen] = useState(false);
   const { toast } = useToast();
   usePageTitle({ pageName: "Trades" });
 
@@ -205,6 +207,11 @@ export default function Trades() {
   const { data: xeroAccounts = [] } = useQuery<Array<{ code: string; name: string; type: string; accountId: string }>>({
     queryKey: ["/api/xero/accounts"],
   });
+
+  const { data: xeroStatus } = useQuery<{ connected: boolean }>({
+    queryKey: ["/api/xero/status"],
+  });
+  const isXeroConnected = xeroStatus?.connected === true;
 
   const { data: selectedTradeContacts = [] } = useQuery<SupplierContact[]>({
     queryKey: ["/api/suppliers", selectedTrade?.id, "contacts"],
@@ -570,6 +577,18 @@ export default function Trades() {
         </div>
 
         <div className="flex items-center gap-1.5">
+          {isXeroConnected && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-6 px-2 text-xs"
+              onClick={() => setIsBulkXeroMappingOpen(true)}
+              data-testid="button-bulk-xero-map"
+            >
+              <Link2 className="w-3 h-3 mr-0.5" />
+              Map to Xero
+            </Button>
+          )}
           <Button
             size="sm"
             className="h-6 px-2 text-xs bg-[#bba7db] hover:bg-[#bba7db]/90 text-white border-[#bba7db]/20"
@@ -1564,6 +1583,12 @@ export default function Trades() {
           </Form>
         </DialogContent>
       </Dialog>
+
+      <BulkXeroContactMappingDialog
+        open={isBulkXeroMappingOpen}
+        onOpenChange={setIsBulkXeroMappingOpen}
+        contactType="trade"
+      />
     </div>
   );
 }
