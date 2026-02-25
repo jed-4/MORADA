@@ -1929,6 +1929,10 @@ export default function Schedule() {
                         setEditingItem(item);
                         setShowItemDialog(true);
                       }}
+                      onAddSubItem={(parentItem) => {
+                        setEditingItem({ parentItemId: parentItem.id } as any);
+                        setShowItemDialog(true);
+                      }}
                       onDuplicateItem={(item) => duplicateItemMutation.mutate(item.id)}
                       onDeleteItem={(itemId) => {
                         if (confirm("Delete this schedule item? This cannot be undone.")) {

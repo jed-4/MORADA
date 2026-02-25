@@ -37,6 +37,7 @@ export interface CasvaScheduleListProps {
   onReorderItem?: (itemId: string, afterItemId: string | null, newParentId: string | null) => void;
   onDuplicateItem?: (item: ScheduleItem) => void;
   onDeleteItem?: (itemId: string) => void;
+  onAddSubItem?: (item: ScheduleItem) => void;
   allCollapsed?: boolean;
   locked?: boolean;
 }
@@ -45,6 +46,7 @@ interface FlatRow {
   id: string;
   parentId: string | null;
   isParent: boolean;
+  depth: 0 | 1 | 2;
 }
 
 export function CasvaScheduleList({ 
@@ -62,6 +64,7 @@ export function CasvaScheduleList({
   onReorderItem,
   onDuplicateItem,
   onDeleteItem,
+  onAddSubItem,
   allCollapsed,
   locked = false
 }: CasvaScheduleListProps) {
@@ -141,10 +144,14 @@ export function CasvaScheduleList({
     for (const parent of parentItemsList) {
       const children = subtasksByParent[parent.id] || [];
       const hasChildren = children.length > 0;
-      rows.push({ id: parent.id, parentId: null, isParent: hasChildren });
+      rows.push({ id: parent.id, parentId: null, isParent: hasChildren, depth: 0 });
       if (!collapsedItems.has(parent.id)) {
         for (const child of children) {
-          rows.push({ id: child.id, parentId: parent.id, isParent: false });
+          const grandchildren = subtasksByParent[child.id] || [];
+          rows.push({ id: child.id, parentId: parent.id, isParent: grandchildren.length > 0, depth: 1 });
+          for (const grandchild of grandchildren) {
+            rows.push({ id: grandchild.id, parentId: child.id, isParent: false, depth: 2 });
+          }
         }
       }
     }
@@ -654,7 +661,8 @@ export function CasvaScheduleList({
                     ))}
                   </TableRow>
 
-                  {!isCollapsed && subtasks.map((subtask, subtaskIdx) => {
+                  {!isCollapsed && subtasks.map((subtask) => {
+                    const grandchildren = subtasksByParent[subtask.id] || [];
                     return (
                       <Fragment key={subtask.id}>
                         <TableRow 
@@ -694,6 +702,8 @@ export function CasvaScheduleList({
                             isDraggable={!!(onReorderItem || onNestItem)}
                             onDragHandleMouseDown={(e) => handleMouseDown(e, subtask.id)}
                             isSubtask={true}
+                            indentLevel={1}
+                            onAddSubItem={onAddSubItem ? () => onAddSubItem(subtask) : undefined}
                             locked={locked}
                           />
                           
@@ -711,6 +721,64 @@ export function CasvaScheduleList({
                             />
                           ))}
                         </TableRow>
+
+                        {grandchildren.map((grandchild) => (
+                          <TableRow
+                            key={grandchild.id}
+                            ref={(el) => { if (el) rowRefsMap.current.set(grandchild.id, el); }}
+                            className={`group h-8 border-b cursor-pointer relative overflow-visible transition-colors hover-elevate bg-muted/50 ${
+                              selectedItems.has(grandchild.id) ? 'bg-accent/30' : ''
+                            } ${draggingItemId === grandchild.id ? 'opacity-30' : ''}`}
+                            data-testid={`schedule-subsubtask-row-${grandchild.id}`}
+                            draggable={false}
+                            onDragStart={(e) => e.preventDefault()}
+                            onClick={(e) => handleRowClick(e, grandchild.id)}
+                            onTouchStart={(e) => handleTouchStart(e, grandchild)}
+                            onTouchMove={handleTouchMove}
+                            onTouchEnd={(e) => handleTouchEnd(e, grandchild)}
+                          >
+                            {onSelectionChange && (
+                              <td className="w-8 h-8 py-0 pl-2">
+                                <Checkbox
+                                  checked={selectedItems.has(grandchild.id)}
+                                  onCheckedChange={() => toggleSelection(grandchild.id)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="h-3.5 w-3.5"
+                                  data-testid={`checkbox-${grandchild.id}`}
+                                />
+                              </td>
+                            )}
+                            <CasvaScheduleRow
+                              item={grandchild}
+                              noteCount={noteCounts[grandchild.id] || 0}
+                              onEdit={() => onEditItem(grandchild)}
+                              onStatusChange={onStatusChange ? (status) => onStatusChange(grandchild.id, status) : undefined}
+                              onDuplicate={onDuplicateItem ? () => onDuplicateItem(grandchild) : undefined}
+                              onDelete={onDeleteItem ? () => onDeleteItem(grandchild.id) : undefined}
+                              onCompletionToggle={onCompletionToggle ? () => onCompletionToggle(grandchild.id, grandchild.progressPercent || 0) : undefined}
+                              statusOptions={statusOptions}
+                              visibleColumns={visibleColumns}
+                              isDraggable={!!(onReorderItem || onNestItem)}
+                              onDragHandleMouseDown={(e) => handleMouseDown(e, grandchild.id)}
+                              isSubtask={true}
+                              indentLevel={2}
+                              locked={locked}
+                            />
+                            {ripples.filter(r => r.id.startsWith(grandchild.id)).map((ripple) => (
+                              <span
+                                key={ripple.id}
+                                className="absolute rounded-full bg-primary opacity-30 animate-ripple pointer-events-none"
+                                style={{
+                                  left: ripple.x,
+                                  top: ripple.y,
+                                  width: 0,
+                                  height: 0,
+                                  transform: 'translate(-50%, -50%)',
+                                }}
+                              />
+                            ))}
+                          </TableRow>
+                        ))}
                       </Fragment>
                     );
                   })}

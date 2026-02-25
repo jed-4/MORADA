@@ -3,7 +3,7 @@ import { ColorChip } from "@/components/ui/color-chip";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Pencil, GripVertical, ChevronRight, ChevronDown, MoreVertical, Trash2, Copy, Check } from "lucide-react";
+import { Pencil, GripVertical, ChevronRight, ChevronDown, MoreVertical, Trash2, Copy, Check, ListPlus } from "lucide-react";
 import { format, differenceInDays } from "date-fns";
 import { cn } from "@/lib/utils";
 import { TableCell } from "@/components/ui/table";
@@ -51,6 +51,8 @@ export interface CasvaScheduleRowProps {
   isSubtask?: boolean;
   hasSubtasks?: boolean;
   locked?: boolean;
+  indentLevel?: number;
+  onAddSubItem?: () => void;
 }
 
 export function CasvaScheduleRow({ 
@@ -72,7 +74,9 @@ export function CasvaScheduleRow({
   locked = false,
   onToggleCollapse,
   isSubtask = false,
-  hasSubtasks = false
+  hasSubtasks = false,
+  indentLevel = 0,
+  onAddSubItem
 }: CasvaScheduleRowProps) {
   const hasValidDates = item.startDate && item.endDate;
   const startDate = hasValidDates ? new Date(item.startDate) : null;
@@ -121,7 +125,7 @@ export function CasvaScheduleRow({
             
             <span 
               className="font-medium text-xs truncate" 
-              style={{ paddingLeft: isSubtask ? '10px' : '0' }}
+              style={{ paddingLeft: indentLevel > 0 ? `${indentLevel * 16}px` : '0' }}
               data-testid="schedule-item-title"
             >
               {item.name}
@@ -266,6 +270,12 @@ export function CasvaScheduleRow({
               <Pencil className="h-3.5 w-3.5 mr-2" />
               Edit
             </DropdownMenuItem>
+            {onAddSubItem && (
+              <DropdownMenuItem onClick={onAddSubItem}>
+                <ListPlus className="h-3.5 w-3.5 mr-2" />
+                Add sub-item
+              </DropdownMenuItem>
+            )}
             {onDuplicate && (
               <DropdownMenuItem onClick={onDuplicate}>
                 <Copy className="h-3.5 w-3.5 mr-2" />
