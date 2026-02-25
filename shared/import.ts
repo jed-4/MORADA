@@ -709,9 +709,14 @@ export function parseBuildernRow(row: any): { isGroup: boolean; groupName?: stri
     };
   }
   
-  // Skip ASSEMBLY rows - their costs are already in their child items
+  // ASSEMBLY rows act as subgroup containers in Buildern — treat them as subgroups
+  // so their child items can find their group during import
   if (costType === "ASSEMBLY") {
-    return { isGroup: false };
+    return {
+      isGroup: true,
+      groupName: name,
+      parentGroupName: parentName || undefined,
+    };
   }
   
   // Item row: has a Parent Name
