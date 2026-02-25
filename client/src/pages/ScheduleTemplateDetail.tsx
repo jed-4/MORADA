@@ -107,6 +107,7 @@ function SortableItem({
   onDuplicate,
   onBarChange,
   onToggleCollapse,
+  onAddChild,
   totalDuration,
   dayWidth,
   isParent,
@@ -121,6 +122,7 @@ function SortableItem({
   onDuplicate: (item: TemplateItem) => void;
   onBarChange: (id: string, newStartDay: number, newDuration: number) => void;
   onToggleCollapse?: (id: string) => void;
+  onAddChild?: (item: TemplateItem) => void;
   totalDuration: number;
   dayWidth: number;
   isParent?: boolean;
@@ -244,6 +246,15 @@ function SortableItem({
         <span className={`text-sm truncate flex-1 ${isParent ? 'font-medium' : 'text-muted-foreground'}`} title={item.name}>
           {item.name}
         </span>
+        {!isChild && onAddChild && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onAddChild(item); }}
+            className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-accent rounded flex-shrink-0"
+            title="Add child item"
+          >
+            <Plus className="w-3 h-3 text-muted-foreground" />
+          </button>
+        )}
       </div>
       
       <div className="w-16 px-2 text-center text-xs text-muted-foreground border-r border-border shrink-0">
@@ -328,6 +339,12 @@ function SortableItem({
               <Copy className="h-3 w-3 mr-2" />
               Duplicate
             </DropdownMenuItem>
+            {!isChild && onAddChild && (
+              <DropdownMenuItem onClick={() => onAddChild(item)}>
+                <Plus className="h-3 w-3 mr-2" />
+                Add child item
+              </DropdownMenuItem>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem 
               className="text-destructive" 
@@ -361,6 +378,7 @@ export default function ScheduleTemplateDetail() {
   const [items, setItems] = useState<TemplateItem[]>([]);
   const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set());
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+  const [dialogMode, setDialogMode] = useState<"item" | "group">("item");
   const [templateFormData, setTemplateFormData] = useState({
     name: "",
     description: "",
@@ -590,6 +608,7 @@ export default function ScheduleTemplateDetail() {
 
   const handleAddItem = () => {
     setEditingItem(null);
+    setDialogMode("item");
     setFormData({
       name: "",
       description: "",
@@ -602,8 +621,39 @@ export default function ScheduleTemplateDetail() {
     setShowItemDialog(true);
   };
 
+  const handleAddGroup = () => {
+    setEditingItem(null);
+    setFormData({
+      name: "",
+      description: "",
+      duration: 5,
+      type: "task",
+      assigneeName: "",
+      relativeStartDay: 0,
+      parentItemId: null,
+    });
+    setDialogMode("group");
+    setShowItemDialog(true);
+  };
+
+  const handleAddChild = (parentItem: TemplateItem) => {
+    setEditingItem(null);
+    setFormData({
+      name: "",
+      description: "",
+      duration: 1,
+      type: "task",
+      assigneeName: "",
+      relativeStartDay: parentItem.relativeStartDay || 0,
+      parentItemId: parentItem.id,
+    });
+    setDialogMode("item");
+    setShowItemDialog(true);
+  };
+
   const handleEditItem = (item: TemplateItem) => {
     setEditingItem(item);
+    setDialogMode("item");
     setFormData({
       name: item.name,
       description: item.description || "",
@@ -831,6 +881,15 @@ export default function ScheduleTemplateDetail() {
           
           <button
             className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2"
+            onClick={handleAddGroup}
+            data-testid="button-add-group"
+          >
+            <Plus className="w-3 h-3 inline mr-0.5" />
+            Add Group
+          </button>
+
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2"
             onClick={handleAddItem}
             data-testid="button-add-item"
           >
@@ -901,7 +960,7 @@ export default function ScheduleTemplateDetail() {
 
                     return (
                       <div key={parentItem.id}>
-                        <div className="border-b last:border-b-0 px-4 py-2 grid grid-cols-[1fr_100px_100px_120px_80px] gap-2 items-center text-sm hover:bg-muted/30">
+                        <div className="group/listrow border-b last:border-b-0 px-4 py-2 grid grid-cols-[1fr_100px_100px_120px_80px] gap-2 items-center text-sm hover:bg-muted/30">
                           <div className="flex items-center gap-2">
                             {hasChildren && (
                               <button
@@ -912,7 +971,14 @@ export default function ScheduleTemplateDetail() {
                               </button>
                             )}
                             {!hasChildren && <div className="w-5" />}
-                            <span className="font-medium truncate">{parentItem.name}</span>
+                            <span className="font-medium truncate flex-1">{parentItem.name}</span>
+                            <button
+                              onClick={() => handleAddChild(parentItem)}
+                              className="opacity-0 group-hover/listrow:opacity-100 transition-opacity p-0.5 hover:bg-muted rounded shrink-0"
+                              title="Add child item"
+                            >
+                              <Plus className="h-3 w-3 text-muted-foreground" />
+                            </button>
                           </div>
                           <div className="text-center">
                             <Badge variant="outline" className="text-xs capitalize">
@@ -931,9 +997,9 @@ export default function ScheduleTemplateDetail() {
                           </div>
                         </div>
                         {!isCollapsed && childItems.map((childItem) => (
-                          <div key={childItem.id} className="border-b last:border-b-0 px-4 py-2 grid grid-cols-[1fr_100px_100px_120px_80px] gap-2 items-center text-sm hover:bg-muted/30 bg-muted/10">
-                            <div className="flex items-center gap-2 pl-7">
-                              <span className="truncate">{childItem.name}</span>
+                          <div key={childItem.id} className="border-b last:border-b-0 px-4 py-2 grid grid-cols-[1fr_100px_100px_120px_80px] gap-2 items-center text-sm hover:bg-muted/30 bg-muted/20">
+                            <div className="flex items-center gap-2 pl-8 border-l-2 border-border/60 ml-4">
+                              <span className="truncate text-muted-foreground">{childItem.name}</span>
                             </div>
                             <div className="text-center">
                               <Badge variant="outline" className="text-xs capitalize">
@@ -1042,6 +1108,7 @@ export default function ScheduleTemplateDetail() {
                         onDuplicate={handleDuplicateItem}
                         onBarChange={handleBarChange}
                         onToggleCollapse={toggleCollapse}
+                        onAddChild={handleAddChild}
                         totalDuration={totalDuration}
                         dayWidth={dayWidth}
                         isParent={true}
@@ -1058,6 +1125,7 @@ export default function ScheduleTemplateDetail() {
                           onDelete={(id) => setShowDeleteConfirm(id)}
                           onDuplicate={handleDuplicateItem}
                           onBarChange={handleBarChange}
+                          onAddChild={handleAddChild}
                           totalDuration={totalDuration}
                           dayWidth={dayWidth}
                           isParent={false}
@@ -1078,9 +1146,19 @@ export default function ScheduleTemplateDetail() {
       <Dialog open={showItemDialog} onOpenChange={setShowItemDialog}>
         <DialogContent data-testid="dialog-item">
           <DialogHeader>
-            <DialogTitle>{editingItem ? "Edit Item" : "Add Item"}</DialogTitle>
+            <DialogTitle>
+              {editingItem
+                ? "Edit Item"
+                : dialogMode === "group"
+                ? "Add Group / Phase"
+                : "Add Item"}
+            </DialogTitle>
             <DialogDescription>
-              {editingItem ? "Update the item details." : "Add a new item to the schedule template."}
+              {editingItem
+                ? "Update the item details."
+                : dialogMode === "group"
+                ? "Create a top-level group or phase to organise child items under."
+                : "Add a new item to the schedule template."}
             </DialogDescription>
           </DialogHeader>
           
@@ -1096,7 +1174,7 @@ export default function ScheduleTemplateDetail() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className={`grid gap-4 ${dialogMode === "group" ? "grid-cols-1" : "grid-cols-2"}`}>
               <div className="space-y-2">
                 <Label htmlFor="type">Type</Label>
                 <Select
@@ -1116,27 +1194,29 @@ export default function ScheduleTemplateDetail() {
                 </Select>
               </div>
               
-              <div className="space-y-2">
-                <Label htmlFor="parentItem">Parent Item</Label>
-                <Select
-                  value={formData.parentItemId || "none"}
-                  onValueChange={(value) => setFormData({ ...formData, parentItemId: value === "none" ? null : value })}
-                >
-                  <SelectTrigger data-testid="select-parent-item">
-                    <SelectValue placeholder="No parent (top level)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No parent (top level)</SelectItem>
-                    {parentItems
-                      .filter(p => p.id !== editingItem?.id)
-                      .map((parent) => (
-                        <SelectItem key={parent.id} value={parent.id}>
-                          {parent.name}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {dialogMode !== "group" && (
+                <div className="space-y-2">
+                  <Label htmlFor="parentItem">Parent Group</Label>
+                  <Select
+                    value={formData.parentItemId || "none"}
+                    onValueChange={(value) => setFormData({ ...formData, parentItemId: value === "none" ? null : value })}
+                  >
+                    <SelectTrigger data-testid="select-parent-item">
+                      <SelectValue placeholder="No parent (top level)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No parent (top level)</SelectItem>
+                      {parentItems
+                        .filter(p => p.id !== editingItem?.id)
+                        .map((parent) => (
+                          <SelectItem key={parent.id} value={parent.id}>
+                            {parent.name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">
