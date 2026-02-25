@@ -59,6 +59,8 @@ import {
   DollarSign,
   X,
   Building2,
+  Plus,
+  ChevronDown,
 } from "lucide-react";
 
 const userEditSchema = z.object({
@@ -261,6 +263,7 @@ export default function UserProfileView() {
   });
 
   const [projectSearchQuery, setProjectSearchQuery] = useState("");
+  const [showProjectSearch, setShowProjectSearch] = useState(false);
 
   const grantProjectAccessMutation = useMutation({
     mutationFn: async (projectId: string) => {
@@ -395,171 +398,188 @@ export default function UserProfileView() {
       </div>
 
       <div className="grid gap-6">
-        {/* Overview Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Overview</CardTitle>
-            <CardDescription>Basic information about this user</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="flex items-start gap-4">
-              <Avatar className="h-16 w-16">
-                <AvatarFallback className="text-lg">
-                  {getUserInitials(user)}
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex-1 space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="flex items-center gap-2">
-                    <User className="h-4 w-4 text-muted-foreground" />
-                    <div>
-                      <p className="text-sm text-muted-foreground">Name</p>
-                      <p className="font-medium" data-testid="text-user-name">
-                        {getUserDisplayName(user)}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Mail className="h-4 w-4 text-muted-foreground" />
-                    <div>
-                      <p className="text-sm text-muted-foreground">Email</p>
-                      <p className="font-medium" data-testid="text-user-email">
-                        {user.email}
-                      </p>
-                    </div>
-                  </div>
-                  {user.phone && (
+        {/* Top two-column row: Overview left, Project Access right */}
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6 items-start">
+          {/* Overview Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Overview</CardTitle>
+              <CardDescription>Basic information about this user</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex items-start gap-4">
+                <Avatar className="h-16 w-16">
+                  <AvatarFallback className="text-lg">
+                    {getUserInitials(user)}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1 space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="flex items-center gap-2">
-                      <Phone className="h-4 w-4 text-muted-foreground" />
+                      <User className="h-4 w-4 text-muted-foreground" />
                       <div>
-                        <p className="text-sm text-muted-foreground">Phone</p>
-                        <p className="font-medium" data-testid="text-user-phone">
-                          {user.phone}
+                        <p className="text-sm text-muted-foreground">Name</p>
+                        <p className="font-medium" data-testid="text-user-name">
+                          {getUserDisplayName(user)}
                         </p>
                       </div>
                     </div>
-                  )}
-                  <div className="flex items-center gap-2">
-                    <Shield className="h-4 w-4 text-muted-foreground" />
-                    <div>
-                      <p className="text-sm text-muted-foreground">Role</p>
-                      <Badge variant="outline" data-testid="badge-user-role">
-                        {user.role?.name || "No Role"}
-                      </Badge>
+                    <div className="flex items-center gap-2">
+                      <Mail className="h-4 w-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-sm text-muted-foreground">Email</p>
+                        <p className="font-medium" data-testid="text-user-email">
+                          {user.email}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Briefcase className="h-4 w-4 text-muted-foreground" />
-                    <div>
-                      <p className="text-sm text-muted-foreground">Category</p>
-                      <Badge variant="secondary" data-testid="badge-user-category">
-                        {user.userCategory || "team"}
-                      </Badge>
+                    {user.phone && (
+                      <div className="flex items-center gap-2">
+                        <Phone className="h-4 w-4 text-muted-foreground" />
+                        <div>
+                          <p className="text-sm text-muted-foreground">Phone</p>
+                          <p className="font-medium" data-testid="text-user-phone">
+                            {user.phone}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <Shield className="h-4 w-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-sm text-muted-foreground">Role</p>
+                        <Badge variant="outline" data-testid="badge-user-role">
+                          {user.role?.name || "No Role"}
+                        </Badge>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Briefcase className="h-4 w-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-sm text-muted-foreground">Category</p>
+                        <Badge variant="secondary" data-testid="badge-user-category">
+                          {user.userCategory || "team"}
+                        </Badge>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
 
-        {/* Project Access Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Building2 className="h-5 w-5" />
-              Project Access
-            </CardTitle>
-            <CardDescription>
-              Projects this user has access to ({projectAccess.length})
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Assigned project pills */}
-            {projectAccess.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No projects assigned yet</p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {projectAccess.map((access: any) => {
-                  const project = (projects as any[]).find((p: any) => p.id === access.projectId);
-                  const label = project
-                    ? `${project.jobNumber ? project.jobNumber + " - " : ""}${project.name}`
-                    : "Unknown Project";
-                  return (
-                    <Badge
-                      key={access.id}
-                      variant="secondary"
-                      className="flex items-center gap-1.5 pr-1 text-sm font-normal"
-                      data-testid={`project-pill-${access.projectId}`}
-                    >
-                      <span>{label}</span>
-                      {isAdmin && !isCurrentUser && (
-                        <button
-                          onClick={() => handleToggleProject(access.projectId)}
-                          disabled={isProjectMutating}
-                          className="ml-0.5 rounded-sm opacity-60 hover:opacity-100 disabled:pointer-events-none"
-                          aria-label={`Remove ${label}`}
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      )}
-                    </Badge>
-                  );
-                })}
+          {/* Project Access Card — right column */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Building2 className="h-4 w-4" />
+                    Project Access
+                  </CardTitle>
+                  <CardDescription className="text-xs mt-0.5">
+                    {projectAccess.length} project{projectAccess.length !== 1 ? "s" : ""}
+                  </CardDescription>
+                </div>
+                {isAdmin && !isCurrentUser && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setShowProjectSearch((v) => !v);
+                      setProjectSearchQuery("");
+                    }}
+                  >
+                    <Plus className="h-3.5 w-3.5 mr-1" />
+                    Add
+                    <ChevronDown className={`h-3 w-3 ml-1 transition-transform ${showProjectSearch ? "rotate-180" : ""}`} />
+                  </Button>
+                )}
               </div>
-            )}
 
-            {/* Add projects combobox — admin only */}
-            {isAdmin && !isCurrentUser && (
-              <div className="border rounded-md">
-                <Command shouldFilter={false}>
-                  <CommandInput
-                    placeholder="Search projects to add..."
-                    value={projectSearchQuery}
-                    onValueChange={setProjectSearchQuery}
-                  />
-                  <CommandList className="max-h-56">
-                    <CommandEmpty>No matching projects found</CommandEmpty>
-                    <CommandGroup>
-                      {activeProjects
-                        .filter((p: any) => {
-                          if (accessibleProjectIds.includes(p.id)) return false;
-                          if (!projectSearchQuery) return true;
-                          const q = projectSearchQuery.toLowerCase();
-                          return (
-                            p.name?.toLowerCase().includes(q) ||
-                            p.jobNumber?.toLowerCase().includes(q)
-                          );
-                        })
-                        .map((project: any) => (
-                          <CommandItem
-                            key={project.id}
-                            value={project.id}
-                            onSelect={() => {
-                              grantProjectAccessMutation.mutate(project.id);
-                              setProjectSearchQuery("");
-                            }}
-                            disabled={isProjectMutating}
-                            className="cursor-pointer"
-                          >
-                            <span className="font-medium">
-                              {project.jobNumber ? `${project.jobNumber} - ` : ""}
-                              {project.name}
-                            </span>
-                            {project.location && (
-                              <span className="ml-2 text-xs text-muted-foreground">
-                                {project.location}
+              {/* Collapsible search dropdown */}
+              {isAdmin && !isCurrentUser && showProjectSearch && (
+                <div className="border rounded-md mt-3">
+                  <Command shouldFilter={false}>
+                    <CommandInput
+                      placeholder="Search projects..."
+                      value={projectSearchQuery}
+                      onValueChange={setProjectSearchQuery}
+                      autoFocus
+                    />
+                    <CommandList className="max-h-52">
+                      <CommandEmpty>No matching projects found</CommandEmpty>
+                      <CommandGroup>
+                        {activeProjects
+                          .filter((p: any) => {
+                            if (accessibleProjectIds.includes(p.id)) return false;
+                            if (!projectSearchQuery) return true;
+                            const q = projectSearchQuery.toLowerCase();
+                            return (
+                              p.name?.toLowerCase().includes(q) ||
+                              p.jobNumber?.toLowerCase().includes(q)
+                            );
+                          })
+                          .map((project: any) => (
+                            <CommandItem
+                              key={project.id}
+                              value={project.id}
+                              onSelect={() => {
+                                grantProjectAccessMutation.mutate(project.id);
+                                setProjectSearchQuery("");
+                                setShowProjectSearch(false);
+                              }}
+                              disabled={isProjectMutating}
+                              className="cursor-pointer"
+                            >
+                              <span className="font-medium text-sm">
+                                {project.jobNumber ? `${project.jobNumber} - ` : ""}
+                                {project.name}
                               </span>
-                            )}
-                          </CommandItem>
-                        ))}
-                    </CommandGroup>
-                  </CommandList>
-                </Command>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                            </CommandItem>
+                          ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </div>
+              )}
+            </CardHeader>
+            <CardContent className="pt-0">
+              {projectAccess.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No projects assigned yet</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {projectAccess.map((access: any) => {
+                    const project = (projects as any[]).find((p: any) => p.id === access.projectId);
+                    const label = project
+                      ? `${project.jobNumber ? project.jobNumber + " - " : ""}${project.name}`
+                      : "Unknown Project";
+                    return (
+                      <Badge
+                        key={access.id}
+                        variant="secondary"
+                        className="flex items-center gap-1 pr-1 text-xs font-normal"
+                        data-testid={`project-pill-${access.projectId}`}
+                      >
+                        <span>{label}</span>
+                        {isAdmin && !isCurrentUser && (
+                          <button
+                            onClick={() => handleToggleProject(access.projectId)}
+                            disabled={isProjectMutating}
+                            className="ml-0.5 rounded-sm opacity-60 hover:opacity-100 disabled:pointer-events-none"
+                            aria-label={`Remove ${label}`}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        )}
+                      </Badge>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
 
         {/* Subcontractor Settings - Only for admins */}
         {isAdmin && !isCurrentUser && (
