@@ -15059,7 +15059,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { startDate, endDate } = req.query;
       const conditions = [
         eq(projectsTable.companyId, user.companyId),
-        eq(schedules.scheduleCategory, "construction"),
       ];
       
       if (startDate) {
@@ -15084,6 +15083,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         projectId: projectsTable.id,
         projectName: projectsTable.name,
         projectColor: projectsTable.color,
+        scheduleCategory: schedules.scheduleCategory,
       })
         .from(scheduleItems)
         .innerJoin(schedules, eq(scheduleItems.scheduleId, schedules.id))

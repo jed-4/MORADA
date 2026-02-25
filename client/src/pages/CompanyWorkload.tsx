@@ -35,6 +35,7 @@ interface WorkloadItem {
   projectId: string;
   projectName: string;
   projectColor: string | null;
+  scheduleCategory: string | null;
 }
 
 interface ContactRow {
@@ -119,6 +120,7 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
   const [hiddenAssignees, setHiddenAssignees] = useState<Set<string>>(new Set());
   const [hiddenProjects, setHiddenProjects] = useState<Set<string>>(new Set());
   const [hideUnassigned, setHideUnassigned] = useState(false);
+  const [hidePreconstructionSchedule, setHidePreconstructionSchedule] = useState(false);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   const toggleRowExpanded = useCallback((id: string) => {
@@ -224,7 +226,7 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
     });
   }, []);
 
-  const activeFilterCount = hiddenAssignees.size + hiddenProjects.size + (hideUnassigned ? 1 : 0);
+  const activeFilterCount = hiddenAssignees.size + hiddenProjects.size + (hideUnassigned ? 1 : 0) + (hidePreconstructionSchedule ? 1 : 0);
 
   const { contactRows, unassignedRow } = useMemo(() => {
     const contactMap = new Map<string, ContactRow>();
@@ -234,6 +236,7 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
       if (item.status === "completed" || item.status === "cancelled") continue;
       if (item.type === "parent") continue;
       if (hiddenProjects.has(item.projectId)) continue;
+      if (hidePreconstructionSchedule && item.scheduleCategory === "preconstruction") continue;
 
       if (!item.assignedToId && !item.assignedToName) {
         unassigned.push(item);
@@ -262,7 +265,7 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
       contactRows: sorted,
       unassignedRow: unassigned.length > 0 ? { id: "__unassigned__", name: "Unassigned", color: "#9ca3af", items: unassigned } : null,
     };
-  }, [items, hiddenAssignees, hiddenProjects]);
+  }, [items, hiddenAssignees, hiddenProjects, hidePreconstructionSchedule]);
 
   const allRows = useMemo(() => {
     const rows = [...contactRows];
@@ -413,18 +416,14 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
               </button>
             </div>
           )}
-          <Badge variant="secondary" className="text-[10px]">
-            {contactRows.length} trade{contactRows.length !== 1 ? "s" : ""}
-          </Badge>
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant="outline" size="sm" className="text-xs h-7 px-2 gap-1">
+              <Button variant="outline" size="icon" className="h-7 w-7 relative">
                 <Filter className="w-3 h-3" />
-                Filter
                 {activeFilterCount > 0 && (
-                  <Badge variant="default" className="text-[9px] px-1 py-0 min-w-[16px] h-4">
+                  <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-[9px] rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5 leading-none">
                     {activeFilterCount}
-                  </Badge>
+                  </span>
                 )}
               </Button>
             </PopoverTrigger>
@@ -473,6 +472,28 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
                     )}
                   </div>
                 )}
+                <div className="p-3 pt-2 border-t border-border">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Schedule Type</span>
+                    {hidePreconstructionSchedule && (
+                      <button
+                        className="text-[10px] text-primary hover:underline"
+                        onClick={() => setHidePreconstructionSchedule(false)}
+                      >
+                        Show all
+                      </button>
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    <label className="flex items-center gap-2 py-1 px-1 rounded cursor-pointer hover-elevate">
+                      <Checkbox
+                        checked={!hidePreconstructionSchedule}
+                        onCheckedChange={() => setHidePreconstructionSchedule((prev) => !prev)}
+                      />
+                      <span className="text-xs truncate">Pre-construction</span>
+                    </label>
+                  </div>
+                </div>
                 {allProjects.length > 0 && (
                   <div className="p-3 pt-1 border-t border-border">
                     <div className="flex items-center justify-between mb-2">
