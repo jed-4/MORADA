@@ -264,6 +264,27 @@ export default function BillDetail() {
     }
   }, [bill, isEditMode, form]);
 
+  // Re-apply projectId once the projects list has loaded — guards against the race where
+  // form.reset fires before project options arrive and the select renders blank
+  useEffect(() => {
+    if (bill && isEditMode && projects.length > 0) {
+      const current = form.getValues("projectId");
+      if (!current && bill.projectId) {
+        form.setValue("projectId", bill.projectId, { shouldValidate: false });
+      }
+    }
+  }, [projects, bill, isEditMode, form]);
+
+  // Re-apply supplierId once the suppliers list has loaded
+  useEffect(() => {
+    if (bill && isEditMode && suppliers.length > 0) {
+      const current = form.getValues("supplierId");
+      if (!current && bill.supplierId) {
+        form.setValue("supplierId", bill.supplierId, { shouldValidate: false });
+      }
+    }
+  }, [suppliers, bill, isEditMode, form]);
+
   useEffect(() => {
     if (existingLineItems.length > 0 && isEditMode) {
       setLineItems(

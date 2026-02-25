@@ -8893,7 +8893,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/bills/:id", async (req, res) => {
+  app.get("/api/bills/:id", requireAuth, async (req, res) => {
     try {
       const bill = await storage.getBillById(req.params.id);
       if (!bill) {

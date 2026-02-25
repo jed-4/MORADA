@@ -810,10 +810,55 @@ export default function Bills() {
                       </TableCell>
                       <TableCell className="text-center" data-testid={`text-attachments-${bill.id}`}>
                         {attachmentCount > 0 && (
-                          <div className="flex items-center justify-center gap-0.5">
-                            <FileText className="h-3 w-3" />
-                            <span className="text-xs">{attachmentCount}</span>
-                          </div>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <button
+                                className="flex items-center justify-center gap-0.5 mx-auto hover-elevate rounded px-1 py-0.5"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <FileText className="h-3 w-3" />
+                                <span className="text-xs">{attachmentCount}</span>
+                              </button>
+                            </PopoverTrigger>
+                            <PopoverContent
+                              side="left"
+                              align="center"
+                              className="w-72 p-2"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <p className="text-xs font-medium text-muted-foreground mb-2">
+                                Attachments ({attachmentCount})
+                              </p>
+                              <div className="flex flex-col gap-1">
+                                {(bill.attachmentUrls as string[]).map((url, idx) => {
+                                  const filename = url.split("/").pop()?.split("?")[0] || `Attachment ${idx + 1}`;
+                                  const isImage = /\.(jpe?g|png|gif|webp|svg)(\?|$)/i.test(url);
+                                  return (
+                                    <a
+                                      key={idx}
+                                      href={url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="flex items-center gap-2 rounded-md p-1.5 hover-elevate"
+                                    >
+                                      {isImage ? (
+                                        <img
+                                          src={url}
+                                          alt={filename}
+                                          className="h-8 w-8 rounded object-cover shrink-0 border border-border"
+                                        />
+                                      ) : (
+                                        <div className="h-8 w-8 rounded border border-border bg-muted flex items-center justify-center shrink-0">
+                                          <FileText className="h-4 w-4 text-muted-foreground" />
+                                        </div>
+                                      )}
+                                      <span className="text-xs truncate text-foreground">{decodeURIComponent(filename)}</span>
+                                    </a>
+                                  );
+                                })}
+                              </div>
+                            </PopoverContent>
+                          </Popover>
                         )}
                       </TableCell>
                     </TableRow>

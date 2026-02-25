@@ -12,7 +12,23 @@ import {
   ChevronLeft,
   Filter,
   Calendar,
+  GripVertical,
 } from "lucide-react";
+import {
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  closestCenter,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import {
   format,
   differenceInDays,
@@ -26,7 +42,7 @@ import {
 const LEFT_PANEL_WIDTH = 240;
 const PROJECT_ROW_HEIGHT = 36;
 const ITEM_ROW_HEIGHT = 28;
-const PIXELS_PER_DAY = 28;
+const MIN_PIXELS_PER_DAY = 20;
 
 interface MasterProject {
   id: string;
@@ -57,57 +73,55 @@ interface ScheduleItem {
   endDate: string | null;
   assignedToName: string | null;
   assignedToColor: string | null;
-  parentItemId: string | null;
-  sortOrder: number;
-  type: string;
 }
 
 function getProjectDates(project: MasterProject): { start: Date | null; end: Date | null } {
-  const mode = project.dateMode || "auto";
-  if (mode === "project") {
-    if (project.projectStartDate && project.projectEndDate) {
-      return { start: new Date(project.projectStartDate), end: new Date(project.projectEndDate) };
-    }
-    return { start: null, end: null };
+  if (project.dateMode === "item_dates") {
+    return {
+      start: project.itemStartDate ? new Date(project.itemStartDate) : null,
+      end: project.itemEndDate ? new Date(project.itemEndDate) : null,
+    };
   }
-  if (mode === "items") {
-    if (project.itemStartDate && project.itemEndDate) {
-      return { start: new Date(project.itemStartDate), end: new Date(project.itemEndDate) };
-    }
-    return { start: null, end: null };
+  if (project.dateMode === "custom_dates" && project.customStartDate && project.customWeeks) {
+    const start = new Date(project.customStartDate);
+    return { start, end: addWeeks(start, project.customWeeks) };
   }
-  if (mode === "custom") {
-    if (project.customStartDate && project.customWeeks) {
-      const start = new Date(project.customStartDate);
-      return { start, end: addWeeks(start, project.customWeeks) };
-    }
-    return { start: null, end: null };
+  if (project.dateMode === "contract_dates") {
+    return {
+      start: project.contractStartDate ? new Date(project.contractStartDate) : null,
+      end: project.contractEndDate ? new Date(project.contractEndDate) : null,
+    };
   }
-  if (project.projectStartDate && project.projectEndDate) {
-    return { start: new Date(project.projectStartDate), end: new Date(project.projectEndDate) };
+  if (project.dateMode === "milestone_dates") {
+    return {
+      start: project.milestoneStartDate ? new Date(project.milestoneStartDate) : null,
+      end: project.milestoneEndDate ? new Date(project.milestoneEndDate) : null,
+    };
   }
-  if (project.itemStartDate && project.itemEndDate) {
-    return { start: new Date(project.itemStartDate), end: new Date(project.itemEndDate) };
-  }
-  return { start: null, end: null };
+  return {
+    start: project.projectStartDate ? new Date(project.projectStartDate) : null,
+    end: project.projectEndDate ? new Date(project.projectEndDate) : null,
+  };
 }
 
 function hexToRgba(hex: string, alpha: number): string {
-  const h = hex.replace("#", "");
-  const r = parseInt(h.substring(0, 2), 16);
-  const g = parseInt(h.substring(2, 4), 16);
-  const b = parseInt(h.substring(4, 6), 16);
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (!result) return `rgba(100,100,100,${alpha})`;
+  const r = parseInt(result[1], 16);
+  const g = parseInt(result[2], 16);
+  const b = parseInt(result[3], 16);
   if (isNaN(r) || isNaN(g) || isNaN(b)) return `rgba(100,100,100,${alpha})`;
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
-function ProjectItems({ projectId, project, windowStart, windowEnd, totalWidth, getPos }: {
+function ProjectItems({ projectId, project, windowStart, windowEnd, totalWidth, getPos, pixelsPerDay }: {
   projectId: string;
   project: MasterProject;
   windowStart: Date;
   windowEnd: Date;
   totalWidth: number;
   getPos: (d: Date) => number;
+  pixelsPerDay: number;
 }) {
   const { data: items = [] } = useQuery<ScheduleItem[]>({
     queryKey: ["/api/business-schedule/projects", projectId, "schedule-items"],
@@ -136,7 +150,7 @@ function ProjectItems({ projectId, project, windowStart, windowEnd, totalWidth, 
 
         if (hasStart && hasEnd) {
           const rawLeft = getPos(new Date(item.startDate!));
-          const rawRight = getPos(new Date(item.endDate!)) + PIXELS_PER_DAY;
+          const rawRight = getPos(new Date(item.endDate!)) + pixelsPerDay;
           showLeftArrow = rawLeft < 0;
           showRightArrow = rawRight > totalWidth;
           barLeft = Math.max(rawLeft, 0);
@@ -215,17 +229,76 @@ function ProjectItemsLeft({ projectId, project }: { projectId: string; project: 
   );
 }
 
+function SortableProjectRow({
+  project,
+  isExpanded,
+  onToggle,
+}: {
+  project: MasterProject;
+  isExpanded: boolean;
+  onToggle: (id: string) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: project.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 50 : undefined,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      <div
+        style={{ height: PROJECT_ROW_HEIGHT }}
+        className="flex items-center px-2 border-b border-border/20 gap-1.5"
+      >
+        <button
+          {...attributes}
+          {...listeners}
+          className="text-muted-foreground/40 hover:text-muted-foreground shrink-0 cursor-grab active:cursor-grabbing touch-none"
+          style={{ lineHeight: 0 }}
+          tabIndex={-1}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <GripVertical className="w-3 h-3" />
+        </button>
+        <button
+          className="flex items-center gap-1.5 flex-1 min-w-0 text-left"
+          onClick={() => onToggle(project.id)}
+        >
+          <span className="text-muted-foreground/60 shrink-0">
+            {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+          </span>
+          <div
+            className="w-2.5 h-2.5 rounded-sm shrink-0"
+            style={{ backgroundColor: project.color || "#3b82f6" }}
+          />
+          <span className="text-xs font-medium truncate">{project.name}</span>
+        </button>
+      </div>
+      {isExpanded && (
+        <ProjectItemsLeft projectId={project.id} project={project} />
+      )}
+    </div>
+  );
+}
+
 export default function MasterScheduleGantt() {
   const [windowWeeks, setWindowWeeks] = useState<2 | 4 | 6>(4);
   const [windowStart, setWindowStart] = useState<Date>(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [showFilter, setShowFilter] = useState(false);
+  const [containerWidth, setContainerWidth] = useState(800);
   const timelineRef = useRef<HTMLDivElement>(null);
   const leftRef = useRef<HTMLDivElement>(null);
+  const rightPanelRef = useRef<HTMLDivElement>(null);
+  const hasAutoFit = useRef(false);
 
   const windowEnd = addWeeks(windowStart, windowWeeks);
   const totalDays = windowWeeks * 7;
-  const totalWidth = totalDays * PIXELS_PER_DAY;
+  const pixelsPerDay = Math.max(Math.floor(containerWidth / totalDays), MIN_PIXELS_PER_DAY);
+  const totalWidth = totalDays * pixelsPerDay;
 
   const { data: projects = [] } = useQuery<MasterProject[]>({
     queryKey: ["/api/business-schedule/projects"],
@@ -241,12 +314,39 @@ export default function MasterScheduleGantt() {
   });
 
   const visibleProjects = useMemo(() => projects.filter((p) => p.isVisible), [projects]);
-
   const hiddenCount = projects.length - visibleProjects.length;
 
+  // ResizeObserver: track right panel width to keep pixelsPerDay responsive
+  useEffect(() => {
+    const el = rightPanelRef.current;
+    if (!el) return;
+    const obs = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setContainerWidth(entry.contentRect.width);
+      }
+    });
+    obs.observe(el);
+    setContainerWidth(el.clientWidth);
+    return () => obs.disconnect();
+  }, []);
+
+  // Auto-fit the window to the earliest project start date on first data load
+  useEffect(() => {
+    if (hasAutoFit.current || visibleProjects.length === 0) return;
+    const earliest = visibleProjects.reduce<Date | null>((min, p) => {
+      const dates = getProjectDates(p);
+      if (!dates.start) return min;
+      return min === null || dates.start < min ? dates.start : min;
+    }, null);
+    if (earliest) {
+      setWindowStart(startOfWeek(earliest, { weekStartsOn: 1 }));
+      hasAutoFit.current = true;
+    }
+  }, [visibleProjects]);
+
   const getPos = useCallback((date: Date) => {
-    return differenceInDays(date, windowStart) * PIXELS_PER_DAY;
-  }, [windowStart]);
+    return differenceInDays(date, windowStart) * pixelsPerDay;
+  }, [windowStart, pixelsPerDay]);
 
   const todayPos = getPos(new Date());
 
@@ -285,12 +385,45 @@ export default function MasterScheduleGantt() {
     }
   }, []);
 
+  // Drag-to-reorder sensors (require 8px movement to start drag, avoids accidental drags)
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+  );
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = visibleProjects.findIndex((p) => p.id === active.id);
+    const newIndex = visibleProjects.findIndex((p) => p.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = arrayMove(visibleProjects, oldIndex, newIndex);
+
+    // Optimistically update the cache so both panels reorder immediately
+    queryClient.setQueryData<MasterProject[]>(["/api/business-schedule/projects"], (old = []) => {
+      const visible = new Map(reordered.map((p, i) => [p.id, i]));
+      return old
+        .map((p) => ({
+          ...p,
+          sortOrder: visible.has(p.id) ? visible.get(p.id)! : p.sortOrder + reordered.length,
+        }))
+        .sort((a, b) => a.sortOrder - b.sortOrder);
+    });
+
+    // Persist new sortOrders for affected projects
+    reordered.forEach((project, index) => {
+      if (project.sortOrder !== index) {
+        updateProjectMutation.mutate({ projectId: project.id, sortOrder: index });
+      }
+    });
+  }, [visibleProjects, updateProjectMutation]);
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Toolbar */}
       <div className="h-10 flex items-center justify-between px-3 border-b border-border flex-shrink-0 gap-2">
         <div className="flex items-center gap-2">
-          {/* Window navigation */}
           <div className="flex items-center gap-1">
             <Button variant="ghost" size="icon" onClick={goPrev} className="h-7 w-7">
               <ChevronLeft className="w-3.5 h-3.5" />
@@ -309,7 +442,6 @@ export default function MasterScheduleGantt() {
         </div>
 
         <div className="flex items-center gap-1">
-          {/* Window size */}
           <div className="flex items-center border rounded-md overflow-hidden">
             {([2, 4, 6] as const).map((w) => (
               <button
@@ -322,7 +454,6 @@ export default function MasterScheduleGantt() {
             ))}
           </div>
 
-          {/* Filter */}
           <Popover open={showFilter} onOpenChange={setShowFilter}>
             <PopoverTrigger asChild>
               <Button variant="ghost" size="icon" className="h-7 w-7 relative">
@@ -360,40 +491,28 @@ export default function MasterScheduleGantt() {
           style={{ width: LEFT_PANEL_WIDTH, minWidth: LEFT_PANEL_WIDTH }}
           className="flex flex-col border-r border-border overflow-hidden flex-shrink-0"
         >
-          {/* Header spacer matching timeline header */}
           <div className="flex-shrink-0 border-b border-border" style={{ height: 52 }}>
             <div className="h-full flex items-end pb-1 px-3">
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Project / Item</span>
             </div>
           </div>
-          {/* Rows */}
           <div ref={leftRef} className="overflow-y-hidden flex-1">
-            {visibleProjects.map((project) => {
-              const isExpanded = expandedProjects.has(project.id);
-              return (
-                <div key={project.id}>
-                  {/* Project header row */}
-                  <div
-                    style={{ height: PROJECT_ROW_HEIGHT }}
-                    className="flex items-center px-2 border-b border-border/20 gap-1.5 cursor-pointer hover-elevate"
-                    onClick={() => toggleExpanded(project.id)}
-                  >
-                    <span className="text-muted-foreground/60 shrink-0">
-                      {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-                    </span>
-                    <div
-                      className="w-2.5 h-2.5 rounded-sm shrink-0"
-                      style={{ backgroundColor: project.color || "#3b82f6" }}
-                    />
-                    <span className="text-xs font-medium truncate">{project.name}</span>
-                  </div>
-                  {/* Item rows */}
-                  {isExpanded && (
-                    <ProjectItemsLeft projectId={project.id} project={project} />
-                  )}
-                </div>
-              );
-            })}
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext items={visibleProjects.map((p) => p.id)} strategy={verticalListSortingStrategy}>
+                {visibleProjects.map((project) => (
+                  <SortableProjectRow
+                    key={project.id}
+                    project={project}
+                    isExpanded={expandedProjects.has(project.id)}
+                    onToggle={toggleExpanded}
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
             {visibleProjects.length === 0 && (
               <div className="flex items-center justify-center h-32 text-xs text-muted-foreground">
                 No visible projects
@@ -403,17 +522,16 @@ export default function MasterScheduleGantt() {
         </div>
 
         {/* Right timeline panel */}
-        <div className="flex flex-col flex-1 overflow-hidden">
+        <div ref={rightPanelRef} className="flex flex-col flex-1 overflow-hidden">
           {/* Timeline header */}
           <div className="flex-shrink-0 border-b border-border overflow-hidden" style={{ height: 52 }}>
             <div style={{ width: totalWidth }}>
-              {/* Month/week label row */}
               <div className="flex" style={{ height: 26 }}>
                 {weeks.map((weekStart, i) => (
                   <div
                     key={i}
                     className="border-l border-border/30 flex items-center px-1.5"
-                    style={{ width: 7 * PIXELS_PER_DAY, minWidth: 7 * PIXELS_PER_DAY }}
+                    style={{ width: 7 * pixelsPerDay, minWidth: 7 * pixelsPerDay }}
                   >
                     <span className="text-[10px] text-muted-foreground font-medium">
                       {format(weekStart, "d MMM")}
@@ -421,7 +539,6 @@ export default function MasterScheduleGantt() {
                   </div>
                 ))}
               </div>
-              {/* Day labels row */}
               <div className="flex" style={{ height: 26 }}>
                 {days.map((day, i) => {
                   const isWeekend = day.getDay() === 0 || day.getDay() === 6;
@@ -429,7 +546,7 @@ export default function MasterScheduleGantt() {
                     <div
                       key={i}
                       className={`border-l border-border/20 flex items-center justify-center ${isWeekend ? "bg-muted/30" : ""}`}
-                      style={{ width: PIXELS_PER_DAY, minWidth: PIXELS_PER_DAY }}
+                      style={{ width: pixelsPerDay, minWidth: pixelsPerDay }}
                     >
                       <span className="text-[9px] text-muted-foreground/70">{format(day, "EEE")[0]}</span>
                     </div>
@@ -454,7 +571,7 @@ export default function MasterScheduleGantt() {
                   <div
                     key={`weekend-${i}`}
                     className="absolute top-0 bottom-0 bg-muted/25 pointer-events-none"
-                    style={{ left: i * PIXELS_PER_DAY, width: PIXELS_PER_DAY }}
+                    style={{ left: i * pixelsPerDay, width: pixelsPerDay }}
                   />
                 );
               })}
@@ -476,7 +593,7 @@ export default function MasterScheduleGantt() {
                 />
               )}
 
-              {/* Project rows */}
+              {/* Project rows — must match left panel order exactly */}
               {visibleProjects.map((project) => {
                 const isExpanded = expandedProjects.has(project.id);
                 const dates = getProjectDates(project);
@@ -491,7 +608,7 @@ export default function MasterScheduleGantt() {
                 if (dates.start && dates.end) {
                   hasProjectDates = true;
                   const rawLeft = getPos(dates.start);
-                  const rawRight = getPos(dates.end) + PIXELS_PER_DAY;
+                  const rawRight = getPos(dates.end) + pixelsPerDay;
                   showLeftArrow = rawLeft < 0;
                   showRightArrow = rawRight > totalWidth;
                   projectBarLeft = Math.max(rawLeft, 0);
@@ -499,7 +616,6 @@ export default function MasterScheduleGantt() {
                   projectBarWidth = Math.max(clippedRight - projectBarLeft, 8);
                 }
 
-                // Milestone / contract lines for this project
                 const milestoneLines: { pos: number; label: string; solid: boolean }[] = [];
                 if (project.contractStartDate) {
                   const p = getPos(new Date(project.contractStartDate));
@@ -520,29 +636,25 @@ export default function MasterScheduleGantt() {
 
                 return (
                   <div key={project.id} className="relative">
-                    {/* Milestone vertical lines for this project group */}
-                    {milestoneLines.map((line, li) => {
-                      const rowCount = 1 + (isExpanded ? 0 : 0); // approximate; we use CSS height
-                      return (
-                        <div
-                          key={`line-${li}`}
-                          className="absolute top-0 pointer-events-none z-10"
-                          style={{
-                            left: line.pos,
-                            width: 2,
-                            bottom: 0,
-                            borderLeft: `2px ${line.solid ? "solid" : "dashed"} ${color}`,
-                          }}
+                    {milestoneLines.map((line, li) => (
+                      <div
+                        key={`line-${li}`}
+                        className="absolute top-0 pointer-events-none z-10"
+                        style={{
+                          left: line.pos,
+                          width: 2,
+                          bottom: 0,
+                          borderLeft: `2px ${line.solid ? "solid" : "dashed"} ${color}`,
+                        }}
+                      >
+                        <span
+                          className="absolute top-0.5 left-1 text-[8px] font-semibold whitespace-nowrap"
+                          style={{ color }}
                         >
-                          <span
-                            className="absolute top-0.5 left-1 text-[8px] font-semibold whitespace-nowrap"
-                            style={{ color }}
-                          >
-                            {line.label}
-                          </span>
-                        </div>
-                      );
-                    })}
+                          {line.label}
+                        </span>
+                      </div>
+                    ))}
 
                     {/* Project header bar row */}
                     <div
@@ -585,6 +697,7 @@ export default function MasterScheduleGantt() {
                         windowEnd={windowEnd}
                         totalWidth={totalWidth}
                         getPos={getPos}
+                        pixelsPerDay={pixelsPerDay}
                       />
                     )}
                   </div>
@@ -597,4 +710,3 @@ export default function MasterScheduleGantt() {
     </div>
   );
 }
-
