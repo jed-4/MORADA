@@ -351,7 +351,8 @@ export default function QuickReviewPanel({
 
   const handleSkip = useCallback(() => {
     skipMutation.mutate();
-  }, [skipMutation]);
+    moveToNextManual();
+  }, [skipMutation, moveToNextManual]);
 
   const contactType = form.watch("contactType");
   const isSupplier = contactType === "supplier";
@@ -637,7 +638,7 @@ export default function QuickReviewPanel({
                                 onValueChange={field.onChange}
                                 placeholder="Select cost code..."
                                 allowNone={true}
-                                className="h-7 text-[11px]"
+                                triggerClassName="h-7 text-[11px]"
                                 data-testid="select-cost-code"
                               />
                             </FormControl>
