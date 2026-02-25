@@ -124,7 +124,7 @@ export default function Business() {
       </div>
 
       {/* Content Area */}
-      <div className="flex-1 overflow-auto">
+      <div className={`flex-1 min-h-0 ${activeTab === 'schedule' ? 'overflow-hidden' : 'overflow-auto'}`}>
         {renderContent()}
       </div>
     </div>

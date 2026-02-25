@@ -15277,7 +15277,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Handle business assignee (company:xxx format)
       const updateData = { ...validationResult.data } as any;
-      if (updateData.assignedToId && updateData.assignedToId.startsWith('company:')) {
+      const wasCompanyAssigned = !!(updateData.assignedToId && updateData.assignedToId.startsWith('company:'));
+      if (wasCompanyAssigned) {
         const companyId = updateData.assignedToId.replace('company:', '');
         const company = await storage.getCompany(companyId);
         if (company) {
@@ -15288,7 +15289,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Copy contact's scheduleColor and name to assignedTo fields when assignedToId changes
-      if (updateData.assignedToId !== undefined) {
+      // Skip this block if the company case was already handled above (to avoid overwriting assignedToName)
+      if (!wasCompanyAssigned && updateData.assignedToId !== undefined) {
         if (updateData.assignedToId && !updateData.assignedToId.startsWith('company:')) {
           try {
             const [contact] = await db.select().from(contacts).where(eq(contacts.id, updateData.assignedToId)).limit(1);
