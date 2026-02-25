@@ -136,7 +136,7 @@ function ProjectItems({ projectId, project, windowStart, windowEnd, totalWidth, 
 
         if (hasStart && hasEnd) {
           const rawLeft = getPos(new Date(item.startDate!));
-          const rawRight = getPos(new Date(item.endDate!));
+          const rawRight = getPos(new Date(item.endDate!)) + PIXELS_PER_DAY;
           showLeftArrow = rawLeft < 0;
           showRightArrow = rawRight > totalWidth;
           barLeft = Math.max(rawLeft, 0);
@@ -491,7 +491,7 @@ export default function MasterScheduleGantt() {
                 if (dates.start && dates.end) {
                   hasProjectDates = true;
                   const rawLeft = getPos(dates.start);
-                  const rawRight = getPos(dates.end);
+                  const rawRight = getPos(dates.end) + PIXELS_PER_DAY;
                   showLeftArrow = rawLeft < 0;
                   showRightArrow = rawRight > totalWidth;
                   projectBarLeft = Math.max(rawLeft, 0);
