@@ -2690,7 +2690,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                               {!item.parentItemId && (
                                 <DropdownMenuItem onClick={() => handleAddChildItem(item)} data-testid="menu-add-child">
                                   <Plus className="mr-2 h-4 w-4" />
-                                  Add Child Item
+                                  Add sub-item
                                 </DropdownMenuItem>
                               )}
                               <DropdownMenuItem 
@@ -3722,7 +3722,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                   data-testid="context-menu-add-child"
                 >
                   <Plus className="w-4 h-4 mr-2" />
-                  Add Child Item
+                  Add sub-item
                 </button>
               )}
               
