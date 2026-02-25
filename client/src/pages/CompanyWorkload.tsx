@@ -249,9 +249,13 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
 
       let row = contactMap.get(rowKey);
       if (!row) {
+        const fallbackName = item.assignedToName ||
+          ((item as any).assignedToFirstName
+            ? `${(item as any).assignedToFirstName} ${(item as any).assignedToLastName || ""}`.trim()
+            : "Unknown");
         row = {
           id: rowKey,
-          name: item.assignedToName || "Unknown",
+          name: fallbackName,
           color: item.assignedToColor || "#6b7280",
           items: [],
         };

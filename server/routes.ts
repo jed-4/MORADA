@@ -15078,6 +15078,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         assignedToId: scheduleItems.assignedToId,
         assignedToName: scheduleItems.assignedToName,
         assignedToColor: scheduleItems.assignedToColor,
+        assignedToFirstName: usersTable.firstName,
+        assignedToLastName: usersTable.lastName,
         progressPercent: scheduleItems.progressPercent,
         type: scheduleItems.type,
         projectId: projectsTable.id,
@@ -15088,6 +15090,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .from(scheduleItems)
         .innerJoin(schedules, eq(scheduleItems.scheduleId, schedules.id))
         .innerJoin(projectsTable, eq(schedules.projectId, projectsTable.id))
+        .leftJoin(usersTable, eq(scheduleItems.assignedToId, usersTable.id))
         .where(and(...conditions))
         .orderBy(scheduleItems.startDate);
       

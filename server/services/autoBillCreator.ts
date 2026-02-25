@@ -2,6 +2,8 @@ import { processInvoiceWithAI } from "./aiBillReader";
 import { getEmailParserService, type ParsedEmail } from "./emailParser";
 import { storage } from "../storage";
 import type { InsertBill, InsertBillLineItem } from "@shared/schema";
+import { objectStorageClient } from "../replit_integrations/object_storage/objectStorage";
+import { randomUUID } from "crypto";
 
 export interface AutoBillResult {
   success: boolean;
@@ -152,6 +154,34 @@ export class AutoBillCreatorService {
     };
 
     const createdBill = await storage.createBill(billData);
+
+    // Upload the original invoice document to object storage so it's accessible
+    // as a bill attachment for future reference (regardless of the OCR section).
+    try {
+      const privateDir = process.env.PRIVATE_OBJECT_DIR || "";
+      if (privateDir) {
+        const dirParts = privateDir.replace(/^\//, "").split("/");
+        const bucketName = dirParts[0];
+        const dirPrefix = dirParts.slice(1).join("/");
+        const objectId = randomUUID();
+        const objectName = dirPrefix ? `${dirPrefix}/uploads/${objectId}` : `uploads/${objectId}`;
+        const fileBuffer = Buffer.isBuffer(fileContent)
+          ? fileContent
+          : Buffer.from(fileContent, "base64");
+        const ext = fileName.split(".").pop()?.toLowerCase() || "";
+        const contentType =
+          ext === "pdf" ? "application/pdf" :
+          ext === "png" ? "image/png" :
+          ["jpg", "jpeg"].includes(ext) ? "image/jpeg" : "application/octet-stream";
+        await objectStorageClient.bucket(bucketName).file(objectName).save(fileBuffer, {
+          metadata: { contentType },
+        });
+        const attachmentUrl = `/objects/uploads/${objectId}`;
+        await storage.updateBill(createdBill.id, { attachmentUrls: [attachmentUrl] });
+      }
+    } catch (uploadErr: any) {
+      console.error("autoBillCreator: failed to upload invoice attachment:", uploadErr.message);
+    }
 
     if (invoiceData.lineItems && invoiceData.lineItems.length > 0) {
       const costCodes = await storage.getCostCodes(projectId);

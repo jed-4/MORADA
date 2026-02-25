@@ -76,32 +76,44 @@ interface ScheduleItem {
 }
 
 function getProjectDates(project: MasterProject): { start: Date | null; end: Date | null } {
-  if (project.dateMode === "item_dates") {
+  const mode = project.dateMode || "auto";
+
+  if (mode === "project") {
+    return {
+      start: project.projectStartDate ? new Date(project.projectStartDate) : null,
+      end: project.projectEndDate ? new Date(project.projectEndDate) : null,
+    };
+  }
+  if (mode === "items") {
     return {
       start: project.itemStartDate ? new Date(project.itemStartDate) : null,
       end: project.itemEndDate ? new Date(project.itemEndDate) : null,
     };
   }
-  if (project.dateMode === "custom_dates" && project.customStartDate && project.customWeeks) {
+  if (mode === "custom" && project.customStartDate && project.customWeeks) {
     const start = new Date(project.customStartDate);
     return { start, end: addWeeks(start, project.customWeeks) };
   }
-  if (project.dateMode === "contract_dates") {
+  if (mode === "contract") {
     return {
       start: project.contractStartDate ? new Date(project.contractStartDate) : null,
       end: project.contractEndDate ? new Date(project.contractEndDate) : null,
     };
   }
-  if (project.dateMode === "milestone_dates") {
+  if (mode === "milestone") {
     return {
       start: project.milestoneStartDate ? new Date(project.milestoneStartDate) : null,
       end: project.milestoneEndDate ? new Date(project.milestoneEndDate) : null,
     };
   }
-  return {
-    start: project.projectStartDate ? new Date(project.projectStartDate) : null,
-    end: project.projectEndDate ? new Date(project.projectEndDate) : null,
-  };
+  // "auto" — prefer project-level dates, then fall back to schedule item bounds
+  if (project.projectStartDate && project.projectEndDate) {
+    return { start: new Date(project.projectStartDate), end: new Date(project.projectEndDate) };
+  }
+  if (project.itemStartDate && project.itemEndDate) {
+    return { start: new Date(project.itemStartDate), end: new Date(project.itemEndDate) };
+  }
+  return { start: null, end: null };
 }
 
 function hexToRgba(hex: string, alpha: number): string {
@@ -250,8 +262,8 @@ function SortableProjectRow({
   return (
     <div ref={setNodeRef} style={style}>
       <div
-        style={{ height: PROJECT_ROW_HEIGHT }}
-        className="flex items-center px-2 border-b border-border/20 gap-1.5"
+        style={{ height: PROJECT_ROW_HEIGHT, borderLeft: `3px solid ${project.color || "#3b82f6"}` }}
+        className="flex items-center pl-1.5 pr-2 border-b border-border/20 gap-1.5"
       >
         <button
           {...attributes}
@@ -271,7 +283,7 @@ function SortableProjectRow({
             {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
           </span>
           <div
-            className="w-2.5 h-2.5 rounded-sm shrink-0"
+            className="w-3 h-3 rounded-sm shrink-0"
             style={{ backgroundColor: project.color || "#3b82f6" }}
           />
           <span className="text-xs font-medium truncate">{project.name}</span>
@@ -664,14 +676,14 @@ export default function MasterScheduleGantt() {
                     >
                       {hasProjectDates ? (
                         <div
-                          className="absolute rounded-sm"
+                          className="absolute rounded-sm overflow-hidden"
                           style={{
                             left: projectBarLeft,
                             width: projectBarWidth,
                             top: 6,
                             bottom: 6,
-                            backgroundColor: hexToRgba(color, 0.18),
-                            border: `1.5px solid ${color}`,
+                            backgroundColor: hexToRgba(color, 0.28),
+                            border: `2px solid ${color}`,
                           }}
                         >
                           {showLeftArrow && (
@@ -679,6 +691,14 @@ export default function MasterScheduleGantt() {
                           )}
                           {showRightArrow && (
                             <span className="absolute right-0.5 top-1/2 -translate-y-1/2 text-[8px] font-bold" style={{ color }}>▶</span>
+                          )}
+                          {projectBarWidth > 80 && !showLeftArrow && (
+                            <span
+                              className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[9px] font-semibold truncate pointer-events-none"
+                              style={{ color, maxWidth: projectBarWidth - 20 }}
+                            >
+                              {project.name}
+                            </span>
                           )}
                         </div>
                       ) : (
