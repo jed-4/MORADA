@@ -2943,15 +2943,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/projects/:projectId/team/:userId", requireAuth, requireTeamMember, async (req, res) => {
     try {
       const { accessLevel = "view" } = req.body;
-      const grantedBy = req.user?.id || "";
-      
-      const access = await storage.grantProjectAccess(
-        req.params.userId,
-        req.params.projectId,
-        accessLevel,
-        grantedBy
-      );
-      
+      const granter = req.user as any;
+      const grantedBy = granter?.id || "";
+      const { projectId, userId } = req.params;
+
+      const access = await storage.grantProjectAccess(userId, projectId, accessLevel, grantedBy);
+
+      // Notify the added user
+      try {
+        const [project, granterUser] = await Promise.all([
+          storage.getProject(projectId),
+          storage.getUser(grantedBy),
+        ]);
+        if (project && granterUser) {
+          const granterName = granterUser.firstName
+            ? `${granterUser.firstName} ${granterUser.lastName || ""}`.trim()
+            : granterUser.email;
+          const notification = await storage.createNotification({
+            userId,
+            companyId: granterUser.companyId,
+            type: "project_assigned",
+            title: "Added to Project",
+            message: `${granterName} added you to ${project.name}`,
+            link: `/projects/${projectId}`,
+            entityType: "project",
+            entityId: projectId,
+            isRead: false,
+            createdByUserId: grantedBy,
+          });
+          emitNotification(userId, notification);
+        }
+      } catch (notifError) {
+        console.error("Failed to send project assignment notification:", notifError);
+      }
+
       res.status(201).json(access);
     } catch (error) {
       res.status(500).json({ error: "Failed to grant project access" });
@@ -6893,32 +6918,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const access = await storage.grantProjectAccess(userId, projectId, accessLevel, grantedById);
       
-      // Auto-add user to project channel if it exists
+      // Auto-add user to project channel + send notification
       try {
-        const granter = await storage.getUser(grantedById);
+        const [granter, project] = await Promise.all([
+          storage.getUser(grantedById),
+          storage.getProject(projectId),
+        ]);
         if (granter?.companyId) {
           const channels = await storage.getChannels(granter.companyId);
           const projectChannel = channels.find(c => c.projectId === projectId);
-          
+
           if (projectChannel) {
-            // Check if user is already a member
             const members = await storage.getChannelMembers(projectChannel.id);
             const isMember = members.some(m => m.userId === userId);
-            
             if (!isMember) {
-              await storage.addChannelMember({
-                channelId: projectChannel.id,
-                userId: userId
-              });
+              await storage.addChannelMember({ channelId: projectChannel.id, userId });
               console.log(`Auto-added user ${userId} to project channel ${projectChannel.name}`);
             }
           }
+
+          // Notify the added user
+          if (project) {
+            const granterName = granter.firstName
+              ? `${granter.firstName} ${granter.lastName || ""}`.trim()
+              : granter.email;
+            const notification = await storage.createNotification({
+              userId,
+              companyId: granter.companyId,
+              type: "project_assigned",
+              title: "Added to Project",
+              message: `${granterName} added you to ${project.name}`,
+              link: `/projects/${projectId}`,
+              entityType: "project",
+              entityId: projectId,
+              isRead: false,
+              createdByUserId: grantedById,
+            });
+            emitNotification(userId, notification);
+          }
         }
       } catch (channelError) {
-        // Log error but don't fail the access grant
-        console.error("Error adding user to project channel:", channelError);
+        console.error("Error adding user to project channel or sending notification:", channelError);
       }
-      
+
       res.status(201).json(access);
     } catch (error: any) {
       console.error("[POST /api/project-access/grant] Error:", error);
