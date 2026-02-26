@@ -265,7 +265,7 @@ function SortableItem({
           <button
             onClick={(e) => { e.stopPropagation(); onAddChild(item); }}
             className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-accent rounded flex-shrink-0"
-            title="Add child item"
+            title={depth === 0 ? "Add Item" : "Add Sub-item"}
           >
             <Plus className="w-3 h-3 text-muted-foreground" />
           </button>
@@ -349,7 +349,7 @@ function SortableItem({
             {depth < 2 && onAddChild && (
               <DropdownMenuItem onClick={() => onAddChild(item)}>
                 <Plus className="h-3 w-3 mr-2" />
-                Add child item
+                {depth === 0 ? "Add Item" : "Add Sub-item"}
               </DropdownMenuItem>
             )}
             <DropdownMenuSeparator />
