@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
@@ -22,10 +23,11 @@ import {
   FolderPlus,
   Check,
   X,
+  Tag,
 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { useSortable } from '@dnd-kit/sortable';
-import type { EstimateGroup, EstimateItem } from "@shared/schema";
+import type { EstimateGroup, EstimateItem, CostCode, CostCategory } from "@shared/schema";
 
 type ColumnConfig = { id: string; label: string; visible: boolean; widthPx: number };
 
@@ -64,6 +66,9 @@ interface EstimateGroupCardProps {
   activeDragId?: string | null;
   hideAddLines?: boolean;
   groupIndex?: number;
+  onApplyCostCode?: (groupId: string) => void;
+  costCodes?: CostCode[];
+  costCategories?: CostCategory[];
 }
 
 export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
@@ -95,6 +100,9 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
   activeDragId,
   hideAddLines = false,
   groupIndex = 0,
+  onApplyCostCode,
+  costCodes = [],
+  costCategories = [],
 }) => {
   const [isAddingLine, setIsAddingLine] = useState(false);
   const [newItemName, setNewItemName] = useState('');
@@ -255,6 +263,22 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                   {group.description && (
                     <span className="text-xs text-muted-foreground truncate">- {group.description}</span>
                   )}
+                  {(group as any).defaultCostCategoryId && costCategories.length > 0 && (() => {
+                    const cat = costCategories.find(c => c.id === (group as any).defaultCostCategoryId);
+                    return cat ? (
+                      <Badge variant="secondary" className="text-xs px-1.5 py-0 h-5 flex-shrink-0">
+                        {cat.code}
+                      </Badge>
+                    ) : null;
+                  })()}
+                  {(group as any).defaultCostCode && costCodes.length > 0 && (() => {
+                    const code = costCodes.find(c => c.id === (group as any).defaultCostCode);
+                    return code ? (
+                      <Badge variant="outline" className="text-xs px-1.5 py-0 h-5 flex-shrink-0">
+                        {code.code}
+                      </Badge>
+                    ) : null;
+                  })()}
                   {groupTotals && groupTotals.clientAmountIncTax > 0 && (
                     <span className="text-xs font-semibold text-[#7c5bb0] ml-auto flex-shrink-0" data-testid={`group-total-badge-${group.id}`}>
                       {formatCurrency(groupTotals.clientAmountIncTax)}
@@ -356,6 +380,19 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                 <Plus className="w-4 h-4 mr-2" />
                 Create from...
               </DropdownMenuItem>
+              {((group as any).defaultCostCode || (group as any).defaultCostCategoryId) && onApplyCostCode && (
+                <>
+                  <Separator />
+                  <DropdownMenuItem
+                    onClick={() => onApplyCostCode(group.id)}
+                    data-testid={`button-apply-cost-code-${group.id}`}
+                    disabled={isLocked}
+                  >
+                    <Tag className="w-4 h-4 mr-2" />
+                    Apply to all items
+                  </DropdownMenuItem>
+                </>
+              )}
               <Separator />
               <DropdownMenuItem
                 onClick={() => onDeleteGroup(group.id)}

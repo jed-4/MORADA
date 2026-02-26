@@ -139,6 +139,9 @@ export default function BillDetail() {
   const [unmappedSupplierName, setUnmappedSupplierName] = useState("");
   const [selectedXeroContactId, setSelectedXeroContactId] = useState("");
   const [pendingXeroBillId, setPendingXeroBillId] = useState<number | null>(null);
+  const [selectedLineIndices, setSelectedLineIndices] = useState<Set<number>>(new Set());
+  const [bulkCostCodeOpen, setBulkCostCodeOpen] = useState(false);
+  const [bulkCostCodeValue, setBulkCostCodeValue] = useState<string>("");
 
   const { data: bill, isLoading: billLoading } = useQuery<Bill>({
     queryKey: ["/api/bills", id],
@@ -1815,10 +1818,43 @@ export default function BillDetail() {
                 </div>
               </div>
 
+              {selectedLineIndices.size > 0 && (
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/30 border-b text-[11px]">
+                  <span className="text-muted-foreground">{selectedLineIndices.size} selected</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-6 text-[11px] px-2"
+                    onClick={() => setBulkCostCodeOpen(true)}
+                    data-testid="button-bulk-change-cost-code"
+                  >
+                    Change Cost Code
+                  </Button>
+                  <button
+                    type="button"
+                    className="text-muted-foreground hover:text-foreground ml-auto text-[11px]"
+                    onClick={() => setSelectedLineIndices(new Set())}
+                  >
+                    Clear selection
+                  </button>
+                </div>
+              )}
+
               <div className="overflow-x-auto">
                 <table className="w-full text-[11px]" style={{ tableLayout: "fixed" }}>
                   <thead>
                     <tr className="border-b bg-muted/20">
+                      <th className="w-[28px] px-1 py-1.5 text-center">
+                        <Checkbox
+                          checked={lineItems.length > 0 && selectedLineIndices.size === lineItems.length}
+                          onCheckedChange={(checked) => {
+                            if (checked) setSelectedLineIndices(new Set(lineItems.map((_, i) => i)));
+                            else setSelectedLineIndices(new Set());
+                          }}
+                          data-testid="checkbox-select-all-lines"
+                        />
+                      </th>
                       {[
                         { key: "description", label: "Description", align: "left" },
                         { key: "costCode", label: "Cost Code", align: "left" },
@@ -1850,7 +1886,20 @@ export default function BillDetail() {
                   </thead>
                   <tbody>
                     {lineItems.map((item, index) => (
-                      <tr key={index} className="border-b last:border-b-0 hover:bg-muted/10" data-testid={`row-line-item-${index}`}>
+                      <tr key={index} className={`border-b last:border-b-0 hover:bg-muted/10 ${selectedLineIndices.has(index) ? 'bg-muted/20' : ''}`} data-testid={`row-line-item-${index}`}>
+                        <td className="px-1 py-0.5 text-center w-[28px]">
+                          <Checkbox
+                            checked={selectedLineIndices.has(index)}
+                            onCheckedChange={(checked) => {
+                              setSelectedLineIndices(prev => {
+                                const next = new Set(prev);
+                                if (checked) next.add(index); else next.delete(index);
+                                return next;
+                              });
+                            }}
+                            data-testid={`checkbox-line-${index}`}
+                          />
+                        </td>
                         <td className="px-1 py-0.5" style={{ width: getColWidth("description") }}>
                           <input
                             value={item.description}
@@ -2369,6 +2418,47 @@ export default function BillDetail() {
               }}
             >
               Link & Send to Xero
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={bulkCostCodeOpen} onOpenChange={(open) => { setBulkCostCodeOpen(open); if (!open) setBulkCostCodeValue(""); }}>
+        <DialogContent className="max-w-sm" data-testid="dialog-bulk-cost-code">
+          <DialogHeader>
+            <DialogTitle>Change Cost Code</DialogTitle>
+            <DialogDescription>
+              Apply a cost code to the {selectedLineIndices.size} selected item{selectedLineIndices.size !== 1 ? 's' : ''}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <CostCodeSelect
+              value={bulkCostCodeValue}
+              onValueChange={(v) => setBulkCostCodeValue(v || "")}
+              placeholder="Select cost code..."
+              data-testid="select-bulk-cost-code"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setBulkCostCodeOpen(false); setBulkCostCodeValue(""); }}>Cancel</Button>
+            <Button
+              disabled={!bulkCostCodeValue}
+              onClick={() => {
+                const indices = Array.from(selectedLineIndices);
+                setLineItems(prev => prev.map((item, i) =>
+                  indices.includes(i) ? { ...item, costCodeId: bulkCostCodeValue } : item
+                ));
+                toast({
+                  title: "Cost code updated",
+                  description: `Cost code updated on ${indices.length} item${indices.length !== 1 ? 's' : ''}. Save the bill to persist.`,
+                });
+                setBulkCostCodeOpen(false);
+                setBulkCostCodeValue("");
+                setSelectedLineIndices(new Set());
+              }}
+              data-testid="button-apply-bulk-cost-code"
+            >
+              Apply
             </Button>
           </DialogFooter>
         </DialogContent>

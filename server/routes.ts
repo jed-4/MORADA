@@ -4045,6 +4045,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Bulk-apply group cost code and/or category to all items in the group
+  app.post("/api/estimate-groups/:id/apply-cost-code", requireAuth, async (req, res) => {
+    try {
+      const group = await storage.getEstimateGroup(req.params.id);
+      if (!group) {
+        return res.status(404).json({ error: "Estimate group not found" });
+      }
+      if (!group.defaultCostCode && !group.defaultCostCategoryId) {
+        return res.status(400).json({ error: "Group has no default cost code or category set" });
+      }
+      const updated = await storage.applyGroupCostCodeToItems(req.params.id, group.defaultCostCode || null, (group as any).defaultCostCategoryId || null);
+      res.json({ updated });
+    } catch (error) {
+      console.error("Error applying group cost code:", error);
+      res.status(500).json({ error: "Failed to apply group cost code" });
+    }
+  });
+
   // Copy estimate group to another estimate
   app.post("/api/estimate-groups/:id/copy", async (req, res) => {
     try {

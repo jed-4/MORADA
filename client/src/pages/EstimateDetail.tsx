@@ -58,7 +58,7 @@ import {
   Layers,
   Flag
 } from "lucide-react";
-import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema, type FieldCategoryWithOptions, type FieldOption, type CompanySettings, type CostCode } from "@shared/schema";
+import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema, type FieldCategoryWithOptions, type FieldOption, type CompanySettings, type CostCode, type CostCategory } from "@shared/schema";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -143,6 +143,7 @@ type ColumnConfig = { id: string; label: string; visible: boolean; widthPx: numb
 // Compact widths to fit more data on screen
 const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'costCode', label: 'Cost Code', visible: true, widthPx: 90 },
+  { id: 'costCategoryId', label: 'Category', visible: false, widthPx: 100 },
   { id: 'item', label: 'Item', visible: true, widthPx: 140 },
   { id: 'description', label: 'Description', visible: true, widthPx: 160 },
   { id: 'status', label: 'Status', visible: true, widthPx: 85 },
@@ -602,6 +603,11 @@ export default function EstimateDetail() {
     queryKey: ["/api/cost-codes"],
   });
 
+  // Fetch cost categories
+  const { data: costCategories = [] } = useQuery<CostCategory[]>({
+    queryKey: ["/api/cost-categories"],
+  });
+
   // Get tax rate from company settings (default to 10% if not set)
   const taxRate = companySettings?.taxRate ? parseFloat(companySettings.taxRate.toString()) : 10;
 
@@ -1033,6 +1039,46 @@ export default function EstimateDetail() {
       
       // Refetch on error to restore server state
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
+    },
+  });
+
+  const applyGroupCostCodeMutation = useMutation({
+    mutationFn: async (groupId: string) => {
+      return apiRequest(`/api/estimate-groups/${groupId}/apply-cost-code`, "POST", {});
+    },
+    onSuccess: (data: any, groupId) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
+      toast({
+        title: "Applied to all items",
+        description: `Updated ${data?.updated ?? 0} item${(data?.updated ?? 0) !== 1 ? 's' : ''} with cost code/category.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to apply",
+        description: error?.message || "Could not apply cost code/category to items.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateFullGroupMutation = useMutation({
+    mutationFn: async ({ groupId, data }: { groupId: string; data: any }) => {
+      return apiRequest(`/api/estimate-groups/${groupId}`, "PATCH", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
+      setIsAddGroupOpen(false);
+      setEditingGroupId(null);
+      groupForm.reset();
+      toast({ title: "Group updated successfully." });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to update group",
+        description: error?.message || "Could not update group.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -1984,6 +2030,9 @@ export default function EstimateDetail() {
       case 'costCode':
         setEditingValue(item.costCode || '');
         break;
+      case 'costCategoryId':
+        setEditingValue((item as any).costCategoryId || '');
+        break;
       case 'shownAs':
         setEditingValue(item.shownAs || '');
         break;
@@ -2112,7 +2161,7 @@ export default function EstimateDetail() {
   };
 
   // Define editable fields in order for Tab navigation
-  const editableFields = ['name', 'quantity', 'unitType', 'unitCostExTax', 'markupPercent', 'costCode', 'description'];
+  const editableFields = ['name', 'quantity', 'unitType', 'unitCostExTax', 'markupPercent', 'costCode', 'costCategoryId', 'description'];
   
   const handleCellKeyDown = (e: React.KeyboardEvent, item: EstimateItem, field: string) => {
     if (e.key === "Enter") {
@@ -2200,6 +2249,7 @@ export default function EstimateDetail() {
       status: "pending",
       groupId: undefined,
       costCode: undefined,
+      costCategoryId: undefined,
       allowance: "None",
       attachmentUrl: "",
       requestForQuote: false,
@@ -2236,6 +2286,7 @@ export default function EstimateDetail() {
       status: "pending",
       groupId: undefined,
       costCode: undefined,
+      costCategoryId: undefined,
       allowance: "None",
       attachmentUrl: "",
       requestForQuote: false,
@@ -2476,20 +2527,40 @@ export default function EstimateDetail() {
   const handleSubmitGroup = (data: z.infer<typeof addGroupFormSchema>) => {
     if (!estimate) return;
     
-    const groupData: InsertEstimateGroup = {
-      ...data,
-      estimateId: estimate.id,
-      parentGroupId: parentGroupForNewSubgroup,
-    };
-    
-    addGroupMutation.mutate(groupData);
+    if (editingGroupId) {
+      updateFullGroupMutation.mutate({ groupId: editingGroupId, data });
+    } else {
+      const groupData: InsertEstimateGroup = {
+        ...data,
+        estimateId: estimate.id,
+        parentGroupId: parentGroupForNewSubgroup,
+      };
+      addGroupMutation.mutate(groupData);
+    }
   };
 
   const handleCloseAddGroup = () => {
     setIsAddGroupOpen(false);
     setParentGroupForNewSubgroup(null);
+    setEditingGroupId(null);
     groupForm.reset();
   };
+
+  useEffect(() => {
+    if (isAddGroupOpen && editingGroupId) {
+      const group = groups.find(g => g.id === editingGroupId);
+      if (group) {
+        groupForm.reset({
+          name: group.name,
+          description: group.description || '',
+          order: group.order || 0,
+          isCollapsed: group.isCollapsed || false,
+          defaultCostCode: group.defaultCostCode || undefined,
+          defaultCostCategoryId: (group as any).defaultCostCategoryId || undefined,
+        } as any);
+      }
+    }
+  }, [isAddGroupOpen, editingGroupId, groups, groupForm]);
 
   // Column visibility toggle handler
   const toggleColumn = (columnId: string) => {
@@ -2697,6 +2768,7 @@ export default function EstimateDetail() {
   // Auto-select group when adding item from group menu
   useEffect(() => {
     if (isAddItemOpen && preselectedGroupId) {
+      const preselectedGroup = groups.find(g => g.id === preselectedGroupId);
       form.reset({
         name: "",
         description: "",
@@ -2708,7 +2780,8 @@ export default function EstimateDetail() {
         markupPercent: 0,
         status: "pending",
         groupId: preselectedGroupId,
-        costCode: undefined,
+        costCode: preselectedGroup?.defaultCostCode || undefined,
+        costCategoryId: (preselectedGroup as any)?.defaultCostCategoryId || undefined,
         allowance: "None",
         attachmentUrl: "",
         requestForQuote: false,
@@ -2717,7 +2790,7 @@ export default function EstimateDetail() {
         trackLabourHours: false,
       });
     }
-  }, [isAddItemOpen, preselectedGroupId, form]);
+  }, [isAddItemOpen, preselectedGroupId, form, groups]);
 
   // Populate edit form when editing item changes
   React.useEffect(() => {
@@ -2734,6 +2807,7 @@ export default function EstimateDetail() {
           markupPercent: item.markupPercent || undefined,
           groupId: item.groupId || undefined,
           costCode: item.costCode || '',
+          costCategoryId: (item as any).costCategoryId || undefined,
           status: item.status || 'pending',
           trackLabourHours: item.trackLabourHours || false,
           notes: item.notes || '',
@@ -2941,6 +3015,9 @@ export default function EstimateDetail() {
     const groupItems = items.filter(item => item.groupId === groupId);
     const maxOrder = groupItems.reduce((max, item) => Math.max(max, item.order || 0), -1);
     
+    // Inherit defaults from the group
+    const group = groups.find(g => g.id === groupId);
+    
     const newItem: InsertEstimateItem = {
       estimateId: effectiveEstimateId,
       name: name,
@@ -2960,6 +3037,8 @@ export default function EstimateDetail() {
       isSelection: false,
       trackLabourHours: false,
       order: maxOrder + 1,
+      costCode: group?.defaultCostCode || undefined,
+      ...(group && (group as any).defaultCostCategoryId ? { costCategoryId: (group as any).defaultCostCategoryId } : {}),
     };
     
     addItemMutation.mutate(newItem);
@@ -3539,6 +3618,49 @@ export default function EstimateDetail() {
             {displayCode}
           </div>
         );
+      
+      case 'costCategoryId': {
+        if (isEditing) {
+          return (
+            <div className={cellBase} role="gridcell">
+              <Select
+                value={editingValue || 'none'}
+                onValueChange={(value) => {
+                  const newValue = value === 'none' ? undefined : value;
+                  setEditingValue(newValue || '');
+                  updateItemMutation.mutate({
+                    itemId: item.id,
+                    data: { costCategoryId: newValue } as any,
+                  });
+                  setEditingCell(null);
+                }}
+              >
+                <SelectTrigger className="h-7 text-xs" data-testid={`select-edit-costCategoryId-${item.id}`}>
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {costCategories.map(cat => (
+                    <SelectItem key={cat.id} value={cat.id}>{cat.code} - {cat.title}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          );
+        }
+        const matchedCat = costCategories.find(cat => cat.id === (item as any).costCategoryId);
+        const displayCat = matchedCat ? `${matchedCat.code} - ${matchedCat.title}` : ((item as any).costCategoryId ? (item as any).costCategoryId : '-');
+        return (
+          <div
+            className={`${cellBase} truncate text-xs ${!isLocked ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+            role="gridcell"
+            onClick={(e) => { e.stopPropagation(); if (!isLocked) handleCellEdit(item, 'costCategoryId'); }}
+            data-testid={`cell-costCategoryId-${item.id}`}
+          >
+            {displayCat}
+          </div>
+        );
+      }
       
       case 'item':
         const subItems = getSubItems(item.id);
@@ -5097,6 +5219,9 @@ export default function EstimateDetail() {
                                 activeDragId={activeId}
                                 hideAddLines={hideAddLines}
                                 groupIndex={groupIndex}
+                                onApplyCostCode={(groupId) => applyGroupCostCodeMutation.mutate(groupId)}
+                                costCodes={costCodes}
+                                costCategories={costCategories}
                               />
                             ))}
                           </div>
@@ -5281,7 +5406,15 @@ export default function EstimateDetail() {
                       <FormControl>
                         <CostCodeSelect
                           value={field.value || ''}
-                          onValueChange={(value) => field.onChange(value || undefined)}
+                          onValueChange={(value) => {
+                            field.onChange(value || undefined);
+                            if (value) {
+                              const code = costCodes.find(c => c.id === value);
+                              if (code?.categoryId && !form.getValues('costCategoryId')) {
+                                form.setValue('costCategoryId' as any, code.categoryId);
+                              }
+                            }
+                          }}
                           placeholder="None"
                           data-testid="select-item-costcode"
                         />
@@ -5291,6 +5424,33 @@ export default function EstimateDetail() {
                   )}
                 />
               </div>
+
+              <FormField
+                control={form.control}
+                name={"costCategoryId" as any}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Category (Optional)</FormLabel>
+                    <Select
+                      value={field.value || 'none'}
+                      onValueChange={(v) => field.onChange(v === 'none' ? undefined : v)}
+                    >
+                      <FormControl>
+                        <SelectTrigger data-testid="select-item-category">
+                          <SelectValue placeholder="None" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        {costCategories.map(cat => (
+                          <SelectItem key={cat.id} value={cat.id}>{cat.code} - {cat.title}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
               <div className="grid grid-cols-2 gap-4">
                 <FormField
@@ -5860,7 +6020,15 @@ export default function EstimateDetail() {
                           <FormControl>
                             <CostCodeSelect
                               value={field.value || ''}
-                              onValueChange={(value) => field.onChange(value || undefined)}
+                              onValueChange={(value) => {
+                                field.onChange(value || undefined);
+                                if (value) {
+                                  const code = costCodes.find(c => c.id === value);
+                                  if (code?.categoryId && !editForm.getValues('costCategoryId' as any)) {
+                                    editForm.setValue('costCategoryId' as any, code.categoryId);
+                                  }
+                                }
+                              }}
                               placeholder="None"
                               data-testid="select-edit-item-costcode"
                             />
@@ -5870,6 +6038,33 @@ export default function EstimateDetail() {
                       )}
                     />
                   </div>
+
+                  <FormField
+                    control={editForm.control}
+                    name={"costCategoryId" as any}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Category (Optional)</FormLabel>
+                        <Select
+                          value={field.value || 'none'}
+                          onValueChange={(v) => field.onChange(v === 'none' ? undefined : v)}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="select-edit-item-category">
+                              <SelectValue placeholder="None" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="none">None</SelectItem>
+                            {costCategories.map(cat => (
+                              <SelectItem key={cat.id} value={cat.id}>{cat.code} - {cat.title}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
                   <div className="grid grid-cols-2 gap-4">
                     <FormField
@@ -6351,10 +6546,10 @@ export default function EstimateDetail() {
       })()}
 
       {/* Add Group Dialog */}
-      <Dialog open={isAddGroupOpen} onOpenChange={setIsAddGroupOpen}>
+      <Dialog open={isAddGroupOpen} onOpenChange={(open) => { if (!open) handleCloseAddGroup(); }}>
         <DialogContent className="max-w-md rounded-xl">
           <DialogHeader>
-            <DialogTitle>{parentGroupForNewSubgroup ? 'Add Subgroup' : 'Add Estimate Group'}</DialogTitle>
+            <DialogTitle>{editingGroupId ? 'Edit Group' : parentGroupForNewSubgroup ? 'Add Subgroup' : 'Add Estimate Group'}</DialogTitle>
           </DialogHeader>
           <Form {...groupForm}>
             <form onSubmit={groupForm.handleSubmit(handleSubmitGroup)} className="space-y-4">
@@ -6416,6 +6611,33 @@ export default function EstimateDetail() {
 
               <FormField
                 control={groupForm.control}
+                name={"defaultCostCategoryId" as any}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Default Category (Optional)</FormLabel>
+                    <Select
+                      value={field.value || 'none'}
+                      onValueChange={(v) => field.onChange(v === 'none' ? undefined : v)}
+                    >
+                      <FormControl>
+                        <SelectTrigger data-testid="select-group-default-category">
+                          <SelectValue placeholder="None" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        {costCategories.map(cat => (
+                          <SelectItem key={cat.id} value={cat.id}>{cat.code} - {cat.title}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={groupForm.control}
                 name="order"
                 render={({ field }) => (
                   <FormItem>
@@ -6440,8 +6662,10 @@ export default function EstimateDetail() {
                 <Button type="button" variant="outline" onClick={handleCloseAddGroup} data-testid="button-cancel-add-group">
                   Cancel
                 </Button>
-                <Button type="submit" disabled={addGroupMutation.isPending} data-testid="button-submit-add-group">
-                  {addGroupMutation.isPending ? "Adding..." : "Add Group"}
+                <Button type="submit" disabled={addGroupMutation.isPending || updateFullGroupMutation.isPending} data-testid="button-submit-add-group">
+                  {editingGroupId
+                    ? (updateFullGroupMutation.isPending ? "Saving..." : "Save Changes")
+                    : (addGroupMutation.isPending ? "Adding..." : "Add Group")}
                 </Button>
               </div>
             </form>

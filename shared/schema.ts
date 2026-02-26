@@ -851,6 +851,7 @@ export const estimateItems = pgTable("estimate_items", {
   groupId: varchar("group_id").references(() => estimateGroups.id), // Reference to estimate groups
   parentItemId: varchar("parent_item_id").references((): any => estimateItems.id, { onDelete: "cascade" }), // For sub-items (3-level nesting)
   costCode: text("cost_code"), // Reference to cost codes (will be created in settings)
+  costCategoryId: varchar("cost_category_id").references(() => costCategories.id, { onDelete: "set null" }), // Optional direct category link
   allowance: text("allowance").notNull().default("None"), // "None" | "Prime Cost" | "Provisional Sum"
   allowanceStatus: text("allowance_status").notNull().default("pending"), // "pending" | "in_progress" | "finalized"
   pcMarkupPercent: integer("pc_markup_percent"), // Markup % for PC items (separate from estimate markup)
@@ -900,6 +901,7 @@ export const estimateGroups = pgTable("estimate_groups", {
   name: text("name").notNull(),
   description: text("description"),
   defaultCostCode: varchar("default_cost_code").references(() => costCodes.id, { onDelete: "set null" }),
+  defaultCostCategoryId: varchar("default_cost_category_id").references(() => costCategories.id, { onDelete: "set null" }),
   order: integer("order").notNull().default(0),
   isCollapsed: boolean("is_collapsed").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),

@@ -14,7 +14,7 @@ import {
   TableHeader, 
   TableRow 
 } from "@/components/ui/table";
-import { RefreshCw, TrendingUp, TrendingDown, DollarSign, Target, AlertCircle, Clock, EyeOff, Eye } from "lucide-react";
+import { RefreshCw, TrendingUp, TrendingDown, DollarSign, Target, AlertCircle, Clock, EyeOff, Eye, ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -41,6 +41,7 @@ export default function BudgetPage() {
       return saved ? JSON.parse(saved) : false;
     } catch { return false; }
   });
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
 
   // Fetch project to get current phase
   const { data: project } = useQuery<Project>({
@@ -409,35 +410,81 @@ export default function BudgetPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {lineItems.map((item) => (
-                          <TableRow key={item.id} data-testid={`row-budget-item-${item.id}`}>
-                            <TableCell className="text-xs">
-                              <div>
-                                <div className="font-medium">{item.costCodeTitle || "Uncategorized"}</div>
-                                {item.categoryTitle && (
-                                  <div className="text-[10px] text-muted-foreground">{item.categoryTitle}</div>
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-xs text-right" data-testid={`text-budgeted-${item.id}`}>
-                              {formatCurrency(item.budgetedAmount)}
-                            </TableCell>
-                            <TableCell className="text-xs text-right" data-testid={`text-actual-${item.id}`}>
-                              {formatCurrency(item.actualAmount)}
-                            </TableCell>
-                            <TableCell className="text-xs text-right" data-testid={`text-forecast-${item.id}`}>
-                              {formatCurrency(item.forecastAmount)}
-                            </TableCell>
-                            <TableCell className={`text-xs text-right ${getVarianceColor(item.variance)}`} data-testid={`text-variance-${item.id}`}>
-                              {formatCurrency(item.variance)}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <Badge variant={getVarianceBadgeVariant(item.variance)} className="h-4 px-1.5 text-[10px]">
-                                {item.variance > 0 ? "Under" : item.variance < 0 ? "Over" : "On Track"}
-                              </Badge>
-                            </TableCell>
-                          </TableRow>
-                        ))}
+                        {(() => {
+                          const catMap = new Map<string, BudgetLineItem[]>();
+                          lineItems.forEach(item => {
+                            const key = item.categoryTitle || "Uncategorized";
+                            if (!catMap.has(key)) catMap.set(key, []);
+                            catMap.get(key)!.push(item);
+                          });
+                          const sorted = Array.from(catMap.entries()).sort((a, b) => {
+                            if (a[0] === "Uncategorized") return 1;
+                            if (b[0] === "Uncategorized") return -1;
+                            return a[0].localeCompare(b[0]);
+                          });
+                          return sorted.map(([categoryTitle, catItems]) => {
+                            const isCollapsed = collapsedCategories.has(categoryTitle);
+                            const catBudgeted = catItems.reduce((s, i) => s + i.budgetedAmount, 0);
+                            const catActual = catItems.reduce((s, i) => s + i.actualAmount, 0);
+                            const catForecast = catItems.reduce((s, i) => s + i.forecastAmount, 0);
+                            const catVariance = catItems.reduce((s, i) => s + i.variance, 0);
+                            return (
+                              <>
+                                <TableRow
+                                  key={`cat-${categoryTitle}`}
+                                  className="bg-muted/40 hover:bg-muted/50 cursor-pointer select-none"
+                                  onClick={() => setCollapsedCategories(prev => {
+                                    const next = new Set(prev);
+                                    if (next.has(categoryTitle)) next.delete(categoryTitle); else next.add(categoryTitle);
+                                    return next;
+                                  })}
+                                  data-testid={`row-category-${categoryTitle}`}
+                                >
+                                  <TableCell className="text-xs font-semibold">
+                                    <div className="flex items-center gap-1.5">
+                                      {isCollapsed ? <ChevronRight className="h-3 w-3 flex-shrink-0 text-muted-foreground" /> : <ChevronDown className="h-3 w-3 flex-shrink-0 text-muted-foreground" />}
+                                      <span>{categoryTitle}</span>
+                                      <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">{catItems.length}</Badge>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="text-xs text-right font-semibold">{formatCurrency(catBudgeted)}</TableCell>
+                                  <TableCell className="text-xs text-right font-semibold">{formatCurrency(catActual)}</TableCell>
+                                  <TableCell className="text-xs text-right font-semibold">{formatCurrency(catForecast)}</TableCell>
+                                  <TableCell className={`text-xs text-right font-semibold ${getVarianceColor(catVariance)}`}>{formatCurrency(catVariance)}</TableCell>
+                                  <TableCell className="text-right">
+                                    <Badge variant={getVarianceBadgeVariant(catVariance)} className="h-4 px-1.5 text-[10px]">
+                                      {catVariance > 0 ? "Under" : catVariance < 0 ? "Over" : "On Track"}
+                                    </Badge>
+                                  </TableCell>
+                                </TableRow>
+                                {!isCollapsed && catItems.map(item => (
+                                  <TableRow key={item.id} data-testid={`row-budget-item-${item.id}`}>
+                                    <TableCell className="text-xs pl-7">
+                                      <div className="font-medium">{item.costCodeTitle || "—"}</div>
+                                    </TableCell>
+                                    <TableCell className="text-xs text-right" data-testid={`text-budgeted-${item.id}`}>
+                                      {formatCurrency(item.budgetedAmount)}
+                                    </TableCell>
+                                    <TableCell className="text-xs text-right" data-testid={`text-actual-${item.id}`}>
+                                      {formatCurrency(item.actualAmount)}
+                                    </TableCell>
+                                    <TableCell className="text-xs text-right" data-testid={`text-forecast-${item.id}`}>
+                                      {formatCurrency(item.forecastAmount)}
+                                    </TableCell>
+                                    <TableCell className={`text-xs text-right ${getVarianceColor(item.variance)}`} data-testid={`text-variance-${item.id}`}>
+                                      {formatCurrency(item.variance)}
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                      <Badge variant={getVarianceBadgeVariant(item.variance)} className="h-4 px-1.5 text-[10px]">
+                                        {item.variance > 0 ? "Under" : item.variance < 0 ? "Over" : "On Track"}
+                                      </Badge>
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </>
+                            );
+                          });
+                        })()}
                       </TableBody>
                     </Table>
                   </div>

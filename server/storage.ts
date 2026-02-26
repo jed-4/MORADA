@@ -298,6 +298,7 @@ export interface IStorage {
   deleteEstimateGroup(id: string): Promise<boolean>;
   duplicateEstimateGroup(id: string): Promise<EstimateGroup>;
   copyGroupToEstimate(groupId: string, targetEstimateId: string): Promise<EstimateGroup>;
+  applyGroupCostCodeToItems(groupId: string, costCode: string | null, costCategoryId: string | null): Promise<number>;
   
   // Estimate Notes CRUD
   getEstimateNotes(estimateId: string): Promise<EstimateNote[]>;
@@ -4032,6 +4033,20 @@ export class MemStorage implements IStorage {
     }
 
     return newGroup;
+  }
+
+  async applyGroupCostCodeToItems(groupId: string, costCode: string | null, costCategoryId: string | null): Promise<number> {
+    let count = 0;
+    for (const [id, item] of this.estimateItems.entries()) {
+      if (item.groupId === groupId) {
+        const updated: any = { ...item, updatedAt: new Date() };
+        if (costCode !== null) updated.costCode = costCode;
+        if (costCategoryId !== null) updated.costCategoryId = costCategoryId;
+        this.estimateItems.set(id, updated);
+        count++;
+      }
+    }
+    return count;
   }
 
   async duplicateEstimateItem(id: string): Promise<EstimateItem> {
@@ -8958,6 +8973,22 @@ export class DbStorage implements IStorage {
     }
   }
 
+  async applyGroupCostCodeToItems(groupId: string, costCode: string | null, costCategoryId: string | null): Promise<number> {
+    try {
+      const updateData: Record<string, any> = {};
+      if (costCode !== null) updateData.costCode = costCode;
+      if (costCategoryId !== null) updateData.costCategoryId = costCategoryId;
+      const result = await db
+        .update(schema.estimateItems)
+        .set(updateData)
+        .where(eq(schema.estimateItems.groupId, groupId));
+      return (result as any).rowCount ?? 0;
+    } catch (error) {
+      console.error("Database error in applyGroupCostCodeToItems:", error);
+      throw error;
+    }
+  }
+
   // Estimate Notes CRUD
   async getEstimateNotes(estimateId: string): Promise<EstimateNote[]> {
     try {
@@ -13856,95 +13887,95 @@ export class DbStorage implements IStorage {
 
   async recalculateBudgetLineItems(budgetId: string): Promise<BudgetLineItem[]> {
     try {
-      // Get the budget
       const budgetResult = await db.select()
         .from(schema.budgets)
         .where(eq(schema.budgets.id, budgetId))
         .limit(1);
-      
-      if (!budgetResult[0]) {
-        throw new Error("Budget not found");
-      }
+      if (!budgetResult[0]) throw new Error("Budget not found");
 
       const budget = budgetResult[0];
       const projectId = budget.projectId;
 
-      // Get all cost codes
-      const costCodes = await db.select()
-        .from(schema.costCodes)
-        .where(eq(schema.costCodes.isActive, true));
+      // Load cost codes and categories for lookups
+      const costCodes = await db.select().from(schema.costCodes).where(eq(schema.costCodes.isActive, true));
+      const costCategories = await db.select().from(schema.costCategories);
+
+      const costCodeMap = new Map<string, CostCode>(costCodes.map(cc => [cc.id, cc]));
+      const categoryMap = new Map<string, string>(costCategories.map(cat => [cat.id, `${cat.code} - ${cat.title}`]));
 
       // Get estimates for this project
-      const estimates = await db.select()
-        .from(schema.estimates)
-        .where(eq(schema.estimates.projectId, projectId));
-
+      const estimates = await db.select().from(schema.estimates).where(eq(schema.estimates.projectId, projectId));
       const estimateItems = estimates.length > 0 ? await db.select()
         .from(schema.estimateItems)
         .where(eq(schema.estimateItems.estimateId, estimates[0].id)) : [];
 
-      // Get bills for this project
-      const bills = await db.select()
-        .from(schema.bills)
-        .where(eq(schema.bills.projectId, projectId));
-
+      // Get bills (exclude vendor credits from "actual" or subtract them)
+      const bills = await db.select().from(schema.bills).where(eq(schema.bills.projectId, projectId));
       const billIds = bills.map(b => b.id);
       const billLineItems = billIds.length > 0 ? await db.select()
         .from(schema.billLineItems)
-        .where(schema.billLineItems.billId) : [];
+        .where(inArray(schema.billLineItems.billId, billIds)) : [];
 
-      // Group by cost code
-      const costCodeMap = new Map<string, {
-        budgeted: number;
-        actual: number;
-        costCodeTitle: string;
-        categoryTitle: string;
-      }>();
+      // Key: costCodeId | "cat:{categoryId}" | "uncategorized"
+      type BucketData = { budgeted: number; actual: number; costCodeId: string | null; costCodeTitle: string; categoryTitle: string };
+      const buckets = new Map<string, BucketData>();
 
-      // Calculate budgeted amounts from estimates
+      const getBucket = (key: string, costCodeId: string | null, costCodeTitle: string, categoryTitle: string): BucketData => {
+        if (!buckets.has(key)) {
+          buckets.set(key, { budgeted: 0, actual: 0, costCodeId, costCodeTitle, categoryTitle });
+        }
+        return buckets.get(key)!;
+      };
+
+      // Budget from estimate items
       for (const item of estimateItems) {
-        const costCodeKey = item.costCode || "uncategorized";
-        const existing = costCodeMap.get(costCodeKey) || { 
-          budgeted: 0, 
-          actual: 0,
-          costCodeTitle: item.costCode || "Uncategorized",
-          categoryTitle: "General"
-        };
-        existing.budgeted += item.priceIncTax || 0;
-        costCodeMap.set(costCodeKey, existing);
+        const amount = item.priceIncTax || 0;
+        if (item.costCode) {
+          const cc = costCodeMap.get(item.costCode);
+          const catTitle = cc?.categoryId ? (categoryMap.get(cc.categoryId) || "") : "";
+          const bucket = getBucket(item.costCode, cc?.id || null, cc ? `${cc.code} - ${cc.title}` : item.costCode, catTitle);
+          bucket.budgeted += amount;
+        } else if ((item as any).costCategoryId) {
+          const catId = (item as any).costCategoryId as string;
+          const catTitle = categoryMap.get(catId) || "Unknown Category";
+          const bucket = getBucket(`cat:${catId}`, null, catTitle, catTitle);
+          bucket.budgeted += amount;
+        } else {
+          const bucket = getBucket("uncategorized", null, "Uncategorized", "");
+          bucket.budgeted += amount;
+        }
       }
 
-      // Calculate actual amounts from bills
+      // Actuals from bill line items
       for (const billItem of billLineItems) {
-        const costCode = costCodes.find(cc => cc.id === billItem.costCodeId);
-        const costCodeKey = costCode?.code || "uncategorized";
-        const existing = costCodeMap.get(costCodeKey) || { 
-          budgeted: 0, 
-          actual: 0,
-          costCodeTitle: costCode?.title || "Uncategorized",
-          categoryTitle: "General"
-        };
-        existing.actual += billItem.total || 0;
-        costCodeMap.set(costCodeKey, existing);
+        const bill = bills.find(b => b.id === billItem.billId);
+        const multiplier = bill?.billType === "credit" ? -1 : 1;
+        const amount = (billItem.total || 0) * multiplier;
+        if (billItem.costCodeId) {
+          const cc = costCodeMap.get(billItem.costCodeId);
+          const catTitle = cc?.categoryId ? (categoryMap.get(cc.categoryId) || "") : "";
+          const bucket = getBucket(billItem.costCodeId, billItem.costCodeId, cc ? `${cc.code} - ${cc.title}` : billItem.costCodeId, catTitle);
+          bucket.actual += amount;
+        } else {
+          const bucket = getBucket("uncategorized", null, "Uncategorized", "");
+          bucket.actual += amount;
+        }
       }
 
-      // Delete existing line items
-      await db.delete(schema.budgetLineItems)
-        .where(eq(schema.budgetLineItems.budgetId, budgetId));
+      // Delete and recreate budget line items
+      await db.delete(schema.budgetLineItems).where(eq(schema.budgetLineItems.budgetId, budgetId));
 
-      // Create new line items
       const lineItems: BudgetLineItem[] = [];
       let sortOrder = 0;
 
-      for (const [costCodeKey, data] of costCodeMap.entries()) {
-        const costCode = costCodes.find(cc => cc.code === costCodeKey);
+      for (const [, data] of buckets.entries()) {
         const forecast = data.actual + Math.max(0, data.budgeted - data.actual);
         const variance = data.budgeted - forecast;
         const variancePercent = data.budgeted > 0 ? Math.round((variance / data.budgeted) * 100) : 0;
 
         const lineItem = await this.createBudgetLineItem({
           budgetId,
-          costCodeId: costCode?.id || null,
+          costCodeId: data.costCodeId,
           costCodeTitle: data.costCodeTitle,
           categoryTitle: data.categoryTitle,
           budgetedAmount: data.budgeted,
@@ -13956,7 +13987,6 @@ export class DbStorage implements IStorage {
           profitAmount: variance,
           sortOrder: sortOrder++
         });
-
         lineItems.push(lineItem);
       }
 
