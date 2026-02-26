@@ -16,11 +16,13 @@ export default {
     },
     android: {
       adaptiveIcon: {
-        backgroundColor: "#1e40af",
+        foregroundImage: "./assets/adaptive-icon.png",
+        backgroundColor: "#1e3a5f",
       },
       package: "com.buildpro.mobile",
     },
     extra: {
+      apiUrl: process.env.EXPO_PUBLIC_API_URL || "",
       googleClientId: process.env.GOOGLE_OAUTH_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || "",
       eas: {
         projectId: "",
