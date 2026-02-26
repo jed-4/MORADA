@@ -470,11 +470,7 @@ export default function Header() {
                                     setIsProjectDropdownOpen(false);
                                     setSearchQuery("");
                                     setCurrentProject(project);
-                                    if (project.isBusiness) {
-                                      navigate('/business');
-                                    } else {
-                                      navigate(`/projects/${project.id}`);
-                                    }
+                                    navigate(`/projects/${project.id}`);
                                   }}
                                   className={`flex-1 flex items-center gap-2 px-2 py-1.5 rounded-md text-left hover-elevate transition-colors ${
                                     currentProject?.id === project.id 
@@ -493,11 +489,6 @@ export default function Header() {
                                   }`}>
                                     {project.name}
                                   </span>
-                                  {project.isBusiness && (
-                                    <Badge variant="secondary" className="text-[9px] px-1 py-0 h-3.5">
-                                      Biz
-                                    </Badge>
-                                  )}
                                 </button>
                                 <button
                                   onClick={(e) => toggleFavoriteProject(project.id, e)}
@@ -533,11 +524,7 @@ export default function Header() {
                                 setIsProjectDropdownOpen(false);
                                 setSearchQuery("");
                                 setCurrentProject(project);
-                                if (project.isBusiness) {
-                                  navigate('/business');
-                                } else {
-                                  navigate(`/projects/${project.id}`);
-                                }
+                                navigate(`/projects/${project.id}`);
                               }}
                               className={`flex-1 flex items-center gap-2 px-2 py-1.5 rounded-md text-left hover-elevate transition-colors ${
                                 currentProject?.id === project.id 
@@ -556,11 +543,6 @@ export default function Header() {
                               }`}>
                                 {project.name}
                               </span>
-                              {project.isBusiness && (
-                                <Badge variant="secondary" className="text-[9px] px-1 py-0 h-3.5">
-                                  Biz
-                                </Badge>
-                              )}
                             </button>
                             <button
                               onClick={(e) => toggleFavoriteProject(project.id, e)}
