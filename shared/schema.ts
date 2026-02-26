@@ -1934,7 +1934,7 @@ export type VariationItem = typeof variationItems.$inferSelect;
 // Client Invoices
 export const clientInvoices = pgTable("client_invoices", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  invoiceNumber: text("invoice_number").notNull().unique(),
+  invoiceNumber: text("invoice_number").unique(),
   name: text("name").notNull(),
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   clientId: varchar("client_id").references(() => users.id),
@@ -1956,6 +1956,9 @@ export const clientInvoices = pgTable("client_invoices", {
   notes: text("notes"),
   sendToXero: boolean("send_to_xero").notNull().default(false),
   xeroInvoiceId: text("xero_invoice_id"),
+  lockedContractPrice: integer("locked_contract_price"), // Snapshot of estimate total when estimate is approved/locked
+  columnConfig: jsonb("column_config").default([]), // Array of { id, visible, order } for configurable invoice columns
+  showAmountsIncTax: boolean("show_amounts_inc_tax").notNull().default(true), // Inc/exc GST toggle preference
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -1965,6 +1968,7 @@ export const insertClientInvoiceSchema = createInsertSchema(clientInvoices).omit
   createdAt: true,
   updatedAt: true,
 }).extend({
+  invoiceNumber: z.string().optional().nullable(),
   name: z.string().min(1, "Name is required"),
   invoicingMethod: z.enum(["progress_payments", "cost_plus"]).default("progress_payments"),
   status: z.enum(["draft", "sent", "partial", "paid", "overdue"]).default("draft"),
@@ -1978,6 +1982,9 @@ export const insertClientInvoiceSchema = createInsertSchema(clientInvoices).omit
   paidAmount: z.number().default(0),
   balanceAmount: z.number().default(0),
   sendToXero: z.boolean().default(false),
+  lockedContractPrice: z.number().optional().nullable(),
+  columnConfig: z.array(z.any()).optional().nullable(),
+  showAmountsIncTax: z.boolean().default(true),
 });
 
 export type InsertClientInvoice = z.infer<typeof insertClientInvoiceSchema>;
@@ -1987,6 +1994,7 @@ export type ClientInvoice = typeof clientInvoices.$inferSelect;
 export const clientInvoiceItems = pgTable("client_invoice_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   invoiceId: varchar("invoice_id").notNull().references(() => clientInvoices.id, { onDelete: "cascade" }),
+  name: text("name"), // Short label for the line item
   description: text("description").notNull(),
   quantity: integer("quantity").notNull().default(1),
   unitPrice: integer("unit_price").notNull().default(0),
@@ -2002,6 +2010,7 @@ export const insertClientInvoiceItemSchema = createInsertSchema(clientInvoiceIte
   createdAt: true,
   updatedAt: true,
 }).extend({
+  name: z.string().optional().nullable(),
   quantity: z.number().default(1),
   unitPrice: z.number().default(0),
   totalPrice: z.number().default(0),
@@ -2061,28 +2070,34 @@ export const invoiceVariations = pgTable("invoice_variations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   invoiceId: varchar("invoice_id").notNull().references(() => clientInvoices.id, { onDelete: "cascade" }),
   variationId: varchar("variation_id").notNull().references(() => variations.id, { onDelete: "cascade" }),
+  claimPercent: integer("claim_percent").notNull().default(100), // % of variation being claimed on this invoice
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
 export const insertInvoiceVariationSchema = createInsertSchema(invoiceVariations).omit({
   id: true,
   createdAt: true,
+}).extend({
+  claimPercent: z.number().int().min(0).max(100).default(100),
 });
 
 export type InsertInvoiceVariation = z.infer<typeof insertInvoiceVariationSchema>;
 export type InvoiceVariation = typeof invoiceVariations.$inferSelect;
 
-// Junction table: Invoice to Allowances (for future use - Progress Payments mode)
+// Junction table: Invoice to Allowances (estimate items with PC/PS allowance types)
 export const invoiceAllowances = pgTable("invoice_allowances", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   invoiceId: varchar("invoice_id").notNull().references(() => clientInvoices.id, { onDelete: "cascade" }),
-  allowanceId: varchar("allowance_id").notNull(),
+  estimateItemId: varchar("estimate_item_id").notNull().references(() => estimateItems.id, { onDelete: "cascade" }),
+  claimPercent: integer("claim_percent").notNull().default(100), // % of allowance being claimed on this invoice
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
 export const insertInvoiceAllowanceSchema = createInsertSchema(invoiceAllowances).omit({
   id: true,
   createdAt: true,
+}).extend({
+  claimPercent: z.number().int().min(0).max(100).default(100),
 });
 
 export type InsertInvoiceAllowance = z.infer<typeof insertInvoiceAllowanceSchema>;

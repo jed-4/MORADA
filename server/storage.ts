@@ -49,6 +49,7 @@ import {
   type ClientInvoicePayment, type InsertClientInvoicePayment,
   type InvoiceEstimate, type InsertInvoiceEstimate,
   type InvoiceVariation, type InsertInvoiceVariation,
+  type InvoiceAllowance, type InsertInvoiceAllowance,
   type InvoiceBill, type InsertInvoiceBill,
   type SiteDiaryTemplate, type InsertSiteDiaryTemplate,
   type SiteDiaryEntry, type InsertSiteDiaryEntry,
@@ -637,7 +638,14 @@ export interface IStorage {
   // Invoice-Variation Junction Table
   getInvoiceVariations(invoiceId: string): Promise<InvoiceVariation[]>;
   createInvoiceVariation(data: InsertInvoiceVariation): Promise<InvoiceVariation>;
+  updateInvoiceVariation(id: string, data: Partial<InsertInvoiceVariation>): Promise<InvoiceVariation | undefined>;
   deleteInvoiceVariation(id: string): Promise<boolean>;
+
+  // Invoice-Allowance Junction Table
+  getInvoiceAllowances(invoiceId: string): Promise<InvoiceAllowance[]>;
+  createInvoiceAllowance(data: InsertInvoiceAllowance): Promise<InvoiceAllowance>;
+  updateInvoiceAllowance(id: string, data: Partial<InsertInvoiceAllowance>): Promise<InvoiceAllowance | undefined>;
+  deleteInvoiceAllowance(id: string): Promise<boolean>;
 
   // Invoice-Bill Junction Table
   getInvoiceBills(invoiceId: string): Promise<InvoiceBill[]>;
@@ -12663,6 +12671,19 @@ export class DbStorage implements IStorage {
     }
   }
 
+  async updateInvoiceVariation(id: string, data: Partial<InsertInvoiceVariation>): Promise<InvoiceVariation | undefined> {
+    try {
+      const result = await db.update(schema.invoiceVariations)
+        .set(data)
+        .where(eq(schema.invoiceVariations.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateInvoiceVariation:", error);
+      throw error;
+    }
+  }
+
   async deleteInvoiceVariation(id: string): Promise<boolean> {
     try {
       await db.delete(schema.invoiceVariations)
@@ -12670,6 +12691,54 @@ export class DbStorage implements IStorage {
       return true;
     } catch (error) {
       console.error("Database error in deleteInvoiceVariation:", error);
+      return false;
+    }
+  }
+
+  // Invoice-Allowance Junction Table
+  async getInvoiceAllowances(invoiceId: string): Promise<InvoiceAllowance[]> {
+    try {
+      return await db.select()
+        .from(schema.invoiceAllowances)
+        .where(eq(schema.invoiceAllowances.invoiceId, invoiceId));
+    } catch (error) {
+      console.error("Database error in getInvoiceAllowances:", error);
+      throw error;
+    }
+  }
+
+  async createInvoiceAllowance(data: InsertInvoiceAllowance): Promise<InvoiceAllowance> {
+    try {
+      const result = await db.insert(schema.invoiceAllowances)
+        .values(data)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createInvoiceAllowance:", error);
+      throw error;
+    }
+  }
+
+  async updateInvoiceAllowance(id: string, data: Partial<InsertInvoiceAllowance>): Promise<InvoiceAllowance | undefined> {
+    try {
+      const result = await db.update(schema.invoiceAllowances)
+        .set(data)
+        .where(eq(schema.invoiceAllowances.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in updateInvoiceAllowance:", error);
+      throw error;
+    }
+  }
+
+  async deleteInvoiceAllowance(id: string): Promise<boolean> {
+    try {
+      await db.delete(schema.invoiceAllowances)
+        .where(eq(schema.invoiceAllowances.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteInvoiceAllowance:", error);
       return false;
     }
   }

@@ -1,13 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { format } from "date-fns";
-import { 
-  ArrowLeft, 
-  Plus, 
+import {
+  ArrowLeft,
+  Plus,
   Trash2,
   FileText,
   Calendar as CalendarIcon,
@@ -15,12 +15,26 @@ import {
   Eye,
   Send,
   DollarSign,
-  Paperclip
+  Paperclip,
+  ChevronDown,
+  ChevronUp,
+  Lock,
+  Settings2,
+  Pencil,
+  RefreshCw,
+  GripVertical,
+  Check,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import {
   Form,
@@ -64,16 +78,69 @@ import { useAuth } from "@/hooks/use-auth";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { logActivity } from "@/lib/activityLogger";
-import type { 
-  ClientInvoice, 
+import type {
+  ClientInvoice,
   ClientInvoiceItem,
   ClientInvoicePayment,
   Project,
   Estimate,
   EstimateItem,
   Variation,
-  Bill
+  Bill,
 } from "@shared/schema";
+
+// ─── Column config ──────────────────────────────────────────────────────────
+
+type ColumnId =
+  | "name"
+  | "description"
+  | "contractTotal"
+  | "remaining"
+  | "claimPercent"
+  | "claimAmount"
+  | "amountExTax"
+  | "amountTax"
+  | "amountIncTax";
+
+interface ColumnDef {
+  id: ColumnId;
+  label: string;
+  required: boolean;
+  defaultVisible: boolean;
+}
+
+const ALL_COLUMNS: ColumnDef[] = [
+  { id: "name", label: "Name", required: true, defaultVisible: true },
+  { id: "description", label: "Description", required: false, defaultVisible: false },
+  { id: "contractTotal", label: "Contract Total", required: false, defaultVisible: true },
+  { id: "remaining", label: "Remaining", required: false, defaultVisible: true },
+  { id: "claimPercent", label: "Claim %", required: true, defaultVisible: true },
+  { id: "claimAmount", label: "Claim $", required: true, defaultVisible: true },
+  { id: "amountExTax", label: "Ex Tax", required: false, defaultVisible: false },
+  { id: "amountTax", label: "Tax", required: false, defaultVisible: false },
+  { id: "amountIncTax", label: "Inc Tax", required: false, defaultVisible: true },
+];
+
+interface ColumnConfig {
+  id: ColumnId;
+  visible: boolean;
+  order: number;
+}
+
+function defaultColumnConfig(): ColumnConfig[] {
+  return ALL_COLUMNS.map((col, i) => ({
+    id: col.id,
+    visible: col.defaultVisible,
+    order: i,
+  }));
+}
+
+function mergeColumnConfig(saved: any[]): ColumnConfig[] {
+  if (!saved || !Array.isArray(saved) || saved.length === 0) return defaultColumnConfig();
+  return saved as ColumnConfig[];
+}
+
+// ─── Form schema ─────────────────────────────────────────────────────────────
 
 const invoiceFormSchema = z.object({
   invoiceNumber: z.string().optional(),
@@ -90,7 +157,9 @@ const invoiceFormSchema = z.object({
 const paymentFormSchema = z.object({
   amount: z.number().min(0.01, "Amount is required"),
   paymentDate: z.date(),
-  paymentMethod: z.enum(["Bank Transfer", "Credit Card", "Cash", "Cheque", "Other"]).optional(),
+  paymentMethod: z
+    .enum(["Bank Transfer", "Credit Card", "Cash", "Cheque", "Other"])
+    .optional(),
   reference: z.string().optional(),
   notes: z.string().optional(),
 });
@@ -98,8 +167,11 @@ const paymentFormSchema = z.object({
 type InvoiceFormData = z.infer<typeof invoiceFormSchema>;
 type PaymentFormData = z.infer<typeof paymentFormSchema>;
 
+// ─── Custom line type ─────────────────────────────────────────────────────────
+
 type CustomLine = {
   id?: string;
+  name: string;
   description: string;
   quantity: number;
   unitPrice: number;
@@ -108,19 +180,26 @@ type CustomLine = {
   sortOrder: number;
 };
 
+// ─── Variation claim state ─────────────────────────────────────────────────────
+
+type ClaimState = Record<string, number>; // variationId/allowanceId -> claimPercent (0-100)
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
 export default function ClientInvoiceDetail() {
-  const { id, invoiceId, projectId: projectIdFromParams } = useParams<{ 
-    id?: string; 
-    invoiceId?: string; 
-    projectId?: string 
+  const { id, invoiceId, projectId: projectIdFromParams } = useParams<{
+    id?: string;
+    invoiceId?: string;
+    projectId?: string;
   }>();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { user } = useAuth();
-  
+
   const effectiveInvoiceId = invoiceId || id;
   const isEditMode = !!(effectiveInvoiceId && effectiveInvoiceId !== "new");
 
+  // ── core state ──────────────────────────────────────────────────────────────
   const [customLines, setCustomLines] = useState<CustomLine[]>([]);
   const [selectedEstimateId, setSelectedEstimateId] = useState<string>("");
   const [progressPercent, setProgressPercent] = useState<number | undefined>(undefined);
@@ -131,6 +210,23 @@ export default function ClientInvoiceDetail() {
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [xeroPushing, setXeroPushing] = useState(false);
 
+  // ── new UI state ─────────────────────────────────────────────────────────────
+  const [introCollapsed, setIntroCollapsed] = useState(true);
+  const [closingCollapsed, setClosingCollapsed] = useState(true);
+  const [invoiceNumberOverride, setInvoiceNumberOverride] = useState(false);
+  const [variationsModalOpen, setVariationsModalOpen] = useState(false);
+  const [allowancesModalOpen, setAllowancesModalOpen] = useState(false);
+  const [selectedAllowanceIds, setSelectedAllowanceIds] = useState<string[]>([]);
+  const [variationClaims, setVariationClaims] = useState<ClaimState>({});
+  const [allowanceClaims, setAllowanceClaims] = useState<ClaimState>({});
+  const [columnConfig, setColumnConfig] = useState<ColumnConfig[]>(defaultColumnConfig());
+  const [showAmountsIncTax, setShowAmountsIncTax] = useState(true);
+  const [lockedContractPrice, setLockedContractPrice] = useState<number | null>(null);
+  const [columnPickerOpen, setColumnPickerOpen] = useState(false);
+  const [dragOverId, setDragOverId] = useState<ColumnId | null>(null);
+  const dragItem = useRef<ColumnId | null>(null);
+
+  // ── queries ──────────────────────────────────────────────────────────────────
   const { data: xeroStatus } = useQuery<{ connected: boolean }>({
     queryKey: ["/api/xero/status"],
   });
@@ -160,6 +256,11 @@ export default function ClientInvoiceDetail() {
     enabled: isEditMode,
   });
 
+  const { data: linkedAllowances = [] } = useQuery<any[]>({
+    queryKey: [`/api/client-invoices/${effectiveInvoiceId}/allowances`],
+    enabled: isEditMode,
+  });
+
   const { data: linkedBills = [] } = useQuery<any[]>({
     queryKey: [`/api/client-invoices/${effectiveInvoiceId}/bills`],
     enabled: isEditMode,
@@ -170,7 +271,7 @@ export default function ClientInvoiceDetail() {
   });
 
   const selectedProjectId = invoice?.projectId || projectIdFromParams || "";
-  
+
   const { data: currentProject } = useQuery<Project>({
     queryKey: [`/api/projects/${selectedProjectId}`],
     enabled: !!selectedProjectId,
@@ -196,6 +297,22 @@ export default function ClientInvoiceDetail() {
     enabled: !!selectedEstimateId,
   });
 
+  // Fetch auto-generated invoice number
+  const { data: nextNumberData } = useQuery<{ invoiceNumber: string }>({
+    queryKey: [`/api/client-invoices/next-number`, selectedProjectId],
+    queryFn: async () => {
+      if (!selectedProjectId) return { invoiceNumber: "" };
+      const res = await fetch(
+        `/api/client-invoices/next-number?projectId=${selectedProjectId}`,
+        { credentials: "include" }
+      );
+      if (!res.ok) return { invoiceNumber: "" };
+      return res.json();
+    },
+    enabled: !!selectedProjectId && !isEditMode,
+  });
+
+  // ── form ──────────────────────────────────────────────────────────────────────
   const form = useForm<InvoiceFormData>({
     resolver: zodResolver(invoiceFormSchema),
     defaultValues: {
@@ -222,10 +339,12 @@ export default function ClientInvoiceDetail() {
     },
   });
 
+  // ── effects ───────────────────────────────────────────────────────────────────
+
   useEffect(() => {
     if (invoice && isEditMode) {
       form.reset({
-        invoiceNumber: invoice.invoiceNumber,
+        invoiceNumber: invoice.invoiceNumber || "",
         projectId: invoice.projectId,
         name: invoice.name,
         invoiceDate: invoice.invoiceDate ? new Date(invoice.invoiceDate) : new Date(),
@@ -235,6 +354,19 @@ export default function ClientInvoiceDetail() {
         termsAndConditions: invoice.termsAndConditions || "",
         markupPercent: invoice.markupPercent || undefined,
       });
+      // Restore column config
+      if ((invoice as any).columnConfig) {
+        setColumnConfig(mergeColumnConfig((invoice as any).columnConfig));
+      }
+      if ((invoice as any).showAmountsIncTax !== undefined) {
+        setShowAmountsIncTax((invoice as any).showAmountsIncTax);
+      }
+      if ((invoice as any).lockedContractPrice) {
+        setLockedContractPrice((invoice as any).lockedContractPrice);
+      }
+      // Open intro/closing if they have content
+      if (invoice.introductionText) setIntroCollapsed(false);
+      if (invoice.closingText) setClosingCollapsed(false);
     }
   }, [invoice, isEditMode, form]);
 
@@ -243,6 +375,7 @@ export default function ClientInvoiceDetail() {
       setCustomLines(
         existingCustomLines.map((item) => ({
           id: item.id,
+          name: (item as any).name || "",
           description: item.description,
           quantity: item.quantity,
           unitPrice: item.unitPrice / 100,
@@ -259,10 +392,17 @@ export default function ClientInvoiceDetail() {
       const projectIdToUse = projectIdFromParams || projects[0]?.id;
       if (projectIdToUse) {
         form.setValue("projectId", projectIdToUse);
-        form.setValue("name", `Invoice ${format(new Date(), 'MMM yyyy')}`);
+        form.setValue("name", `Invoice ${format(new Date(), "MMM yyyy")}`);
       }
     }
   }, [projects, isEditMode, form, projectIdFromParams]);
+
+  // Auto-fill invoice number on new invoice
+  useEffect(() => {
+    if (!isEditMode && nextNumberData?.invoiceNumber && !invoiceNumberOverride) {
+      form.setValue("invoiceNumber", nextNumberData.invoiceNumber);
+    }
+  }, [nextNumberData, isEditMode, invoiceNumberOverride, form]);
 
   useEffect(() => {
     if (linkedEstimates.length > 0 && isEditMode) {
@@ -274,13 +414,29 @@ export default function ClientInvoiceDetail() {
 
   useEffect(() => {
     if (linkedVariations.length > 0 && isEditMode) {
-      setSelectedVariationIds(linkedVariations.map(v => v.variationId));
+      setSelectedVariationIds(linkedVariations.map((v: any) => v.variationId));
+      const claims: ClaimState = {};
+      linkedVariations.forEach((v: any) => {
+        claims[v.variationId] = v.claimPercent ?? 100;
+      });
+      setVariationClaims(claims);
     }
   }, [linkedVariations, isEditMode]);
 
   useEffect(() => {
+    if (linkedAllowances.length > 0 && isEditMode) {
+      setSelectedAllowanceIds(linkedAllowances.map((a: any) => a.estimateItemId));
+      const claims: ClaimState = {};
+      linkedAllowances.forEach((a: any) => {
+        claims[a.estimateItemId] = a.claimPercent ?? 100;
+      });
+      setAllowanceClaims(claims);
+    }
+  }, [linkedAllowances, isEditMode]);
+
+  useEffect(() => {
     if (linkedBills.length > 0 && isEditMode) {
-      setSelectedBillIds(linkedBills.map(b => b.billId));
+      setSelectedBillIds(linkedBills.map((b: any) => b.billId));
     }
   }, [linkedBills, isEditMode]);
 
@@ -297,74 +453,82 @@ export default function ClientInvoiceDetail() {
     }
   }, [customProgressPercent, isCustomProgress]);
 
-  const addCustomLine = () => {
-    setCustomLines([
-      ...customLines,
-      {
-        description: "",
-        quantity: 1,
-        unitPrice: 0,
-        totalPrice: 0,
-        taxable: true,
-        sortOrder: customLines.length,
-      },
-    ]);
-  };
-
-  const updateCustomLine = (index: number, field: keyof CustomLine, value: any) => {
-    const updated = [...customLines];
-    updated[index] = { ...updated[index], [field]: value };
-    
-    if (field === "quantity" || field === "unitPrice") {
-      const qty = field === "quantity" ? value : updated[index].quantity;
-      const price = field === "unitPrice" ? value : updated[index].unitPrice;
-      updated[index].totalPrice = qty * price;
+  // Lock contract price when linked estimate is approved/locked
+  useEffect(() => {
+    if (selectedEstimateId && estimates.length > 0) {
+      const est = estimates.find((e) => e.id === selectedEstimateId);
+      if (est && (est.status === "approved" || est.isLocked)) {
+        if (!lockedContractPrice) {
+          // Calculate and lock
+          const total = estimateItems.reduce(
+            (sum, item) => sum + item.priceIncTax * item.quantity,
+            0
+          );
+          if (total > 0) setLockedContractPrice(Math.round(total * 100));
+        }
+      }
     }
-    
-    setCustomLines(updated);
+  }, [selectedEstimateId, estimates, estimateItems, lockedContractPrice]);
+
+  // ── helpers ───────────────────────────────────────────────────────────────────
+
+  const getSelectedEstimate = () => estimates.find((e) => e.id === selectedEstimateId);
+
+  const getAllowanceItems = () =>
+    estimateItems.filter((item) => item.allowance && item.allowance !== "None");
+
+  const getSelectedVariations = () =>
+    variations.filter((v) => selectedVariationIds.includes(v.id));
+
+  const getSelectedAllowanceItems = () =>
+    getAllowanceItems().filter((item) => selectedAllowanceIds.includes(item.id));
+
+  const getSelectedBills = () => bills.filter((b) => selectedBillIds.includes(b.id));
+
+  const isEstimateLocked = () => {
+    const est = getSelectedEstimate();
+    return !!(est && (est.status === "approved" || est.isLocked));
   };
 
-  const deleteCustomLine = (index: number) => {
-    setCustomLines(customLines.filter((_, i) => i !== index));
-  };
-
-  const getSelectedEstimate = () => {
-    return estimates.find(e => e.id === selectedEstimateId);
-  };
-
-  const getSelectedVariations = () => {
-    return variations.filter(v => selectedVariationIds.includes(v.id));
-  };
-
-  const getSelectedBills = () => {
-    return bills.filter(b => selectedBillIds.includes(b.id));
-  };
+  // ── calculations ───────────────────────────────────────────────────────────────
 
   const calculateContractPrice = () => {
-    const estimate = getSelectedEstimate();
-    if (!estimate) return 0;
-    
-    // Calculate total from estimate items (prices are per-unit in cents, multiply by quantity for line totals)
-    const estimateTotal = estimateItems.reduce((sum, item) => sum + (item.priceIncTax * item.quantity), 0);
-    
+    if (lockedContractPrice) return lockedContractPrice;
+    if (!selectedEstimateId) return 0;
+    const total = estimateItems.reduce(
+      (sum, item) => sum + item.priceIncTax * item.quantity,
+      0
+    );
     if (progressPercent !== undefined) {
-      return Math.round(estimateTotal * (progressPercent / 100));
+      return Math.round(total * (progressPercent / 100) * 100);
     }
-    
-    return estimateTotal;
+    return Math.round(total * 100);
   };
 
-  const calculateVariationsTotal = () => {
-    return getSelectedVariations().reduce((sum, v) => sum + v.totalAmount, 0);
+  const contractClaimAmount = () => {
+    const contractTotal = calculateContractPrice();
+    const pct = progressPercent !== undefined ? progressPercent : 100;
+    return Math.round((contractTotal * pct) / 100);
   };
 
-  const calculateBillsTotal = () => {
-    return getSelectedBills().reduce((sum, b) => sum + b.total, 0);
-  };
+  const calculateVariationsTotal = () =>
+    getSelectedVariations().reduce((sum, v) => {
+      const pct = variationClaims[v.id] ?? 100;
+      return sum + Math.round((v.totalAmount * pct) / 100);
+    }, 0);
 
-  const calculateCustomLinesSubtotal = () => {
-    return customLines.reduce((sum, item) => sum + item.totalPrice, 0);
-  };
+  const calculateAllowancesTotal = () =>
+    getSelectedAllowanceItems().reduce((sum, item) => {
+      const pct = allowanceClaims[item.id] ?? 100;
+      const total = Math.round(item.priceIncTax * item.quantity * 100);
+      return sum + Math.round((total * pct) / 100);
+    }, 0);
+
+  const calculateBillsTotal = () =>
+    getSelectedBills().reduce((sum, b) => sum + b.total, 0);
+
+  const calculateCustomLinesSubtotal = () =>
+    customLines.reduce((sum, item) => sum + item.totalPrice, 0);
 
   const calculateMarkup = () => {
     if (currentProject?.invoicingMethod === "cost_plus") {
@@ -377,76 +541,123 @@ export default function ClientInvoiceDetail() {
 
   const calculateSubtotal = () => {
     if (currentProject?.invoicingMethod === "progress_payments") {
-      const contractPrice = calculateContractPrice() / 100;
-      const variations = calculateVariationsTotal() / 100;
-      const customLines = calculateCustomLinesSubtotal();
-      return contractPrice + variations + customLines;
+      const contract = calculateContractPrice() / 100;
+      const vars = calculateVariationsTotal() / 100;
+      const allowances = calculateAllowancesTotal() / 100;
+      const custom = calculateCustomLinesSubtotal();
+      return contract + vars + allowances + custom;
     } else {
-      const bills = calculateBillsTotal() / 100;
-      const customLines = calculateCustomLinesSubtotal();
-      return bills + customLines;
+      return calculateBillsTotal() / 100 + calculateCustomLinesSubtotal();
     }
   };
 
   const calculateGST = () => {
-    const taxableCustom = customLines
-      .filter((item) => item.taxable)
-      .reduce((sum, item) => sum + item.totalPrice, 0);
-    
-    const taxableFromItems = currentProject?.invoicingMethod === "progress_payments"
-      ? (calculateVariationsTotal() / 100)
-      : (calculateBillsTotal() / 100);
-    
-    return (taxableCustom + taxableFromItems) * 0.1;
+    const subtotal = calculateSubtotal();
+    const markupVal = calculateMarkup();
+    return (subtotal + markupVal) * 0.1;
   };
 
-  const calculateTotal = () => {
-    const subtotal = calculateSubtotal();
-    const markup = calculateMarkup();
-    const gst = calculateGST();
-    return subtotal + markup + gst;
-  };
+  const calculateTotal = () => calculateSubtotal() + calculateMarkup() + calculateGST();
+
+  const amountExTax = () => calculateSubtotal() + calculateMarkup();
+  const amountTax = () => calculateGST();
+  const amountIncTax = () => calculateTotal();
 
   const formatCurrency = (amount: number) => {
-    // Check if it's a whole number
     const isWholeNumber = amount % 1 === 0;
-    
     return new Intl.NumberFormat("en-AU", {
       style: "currency",
       currency: "AUD",
       minimumFractionDigits: isWholeNumber ? 0 : 2,
-      maximumFractionDigits: 2
+      maximumFractionDigits: 2,
     }).format(amount);
   };
+
+  // ── column visibility ──────────────────────────────────────────────────────────
+
+  const visibleColumns = columnConfig
+    .slice()
+    .sort((a, b) => a.order - b.order)
+    .filter((c) => {
+      const def = ALL_COLUMNS.find((d) => d.id === c.id);
+      return def?.required || c.visible;
+    });
+
+  const isColVisible = (id: ColumnId) => visibleColumns.some((c) => c.id === id);
+
+  const toggleColumn = (id: ColumnId) => {
+    const def = ALL_COLUMNS.find((d) => d.id === id);
+    if (def?.required) return;
+    setColumnConfig((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, visible: !c.visible } : c))
+    );
+  };
+
+  // Drag-to-reorder columns
+  const onDragStart = (id: ColumnId) => {
+    dragItem.current = id;
+  };
+  const onDragOver = (id: ColumnId, e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOverId(id);
+  };
+  const onDrop = (targetId: ColumnId) => {
+    if (!dragItem.current || dragItem.current === targetId) {
+      setDragOverId(null);
+      return;
+    }
+    setColumnConfig((prev) => {
+      const updated = [...prev];
+      const fromIdx = updated.findIndex((c) => c.id === dragItem.current);
+      const toIdx = updated.findIndex((c) => c.id === targetId);
+      if (fromIdx === -1 || toIdx === -1) return prev;
+      const [moved] = updated.splice(fromIdx, 1);
+      updated.splice(toIdx, 0, moved);
+      return updated.map((c, i) => ({ ...c, order: i }));
+    });
+    setDragOverId(null);
+    dragItem.current = null;
+  };
+
+  // ── mutations ─────────────────────────────────────────────────────────────────
+
+  const buildInvoicePayload = (data: InvoiceFormData) => ({
+    projectId: data.projectId,
+    invoiceNumber: data.invoiceNumber || undefined,
+    name: data.name,
+    invoiceDate: data.invoiceDate,
+    dueDate: data.dueDate,
+    invoicingMethod: currentProject?.invoicingMethod || "progress_payments",
+    markupPercent: data.markupPercent,
+    introductionText: data.introductionText,
+    closingText: data.closingText,
+    termsAndConditions: data.termsAndConditions,
+    subtotal: Math.round(calculateSubtotal() * 100),
+    markupAmount: Math.round(calculateMarkup() * 100),
+    gstAmount: Math.round(calculateGST() * 100),
+    totalAmount: Math.round(calculateTotal() * 100),
+    lockedContractPrice: lockedContractPrice,
+    columnConfig: columnConfig,
+    showAmountsIncTax: showAmountsIncTax,
+  });
 
   const createMutation = useMutation({
     mutationFn: async (data: InvoiceFormData) => {
       const invoiceData = {
-        projectId: data.projectId,
-        invoiceDate: data.invoiceDate,
-        dueDate: data.dueDate,
-        invoicingMethod: currentProject?.invoicingMethod || "progress_payments",
-        markupPercent: data.markupPercent,
-        introductionText: data.introductionText,
-        closingText: data.closingText,
-        termsAndConditions: data.termsAndConditions,
-        subtotal: Math.round(calculateSubtotal() * 100),
-        markupAmount: Math.round(calculateMarkup() * 100),
-        gstAmount: Math.round(calculateGST() * 100),
-        totalAmount: Math.round(calculateTotal() * 100),
+        ...buildInvoicePayload(data),
         paidAmount: 0,
         balanceAmount: Math.round(calculateTotal() * 100),
         status: "draft",
       };
 
       const invoiceRes = await apiRequest("/api/client-invoices", "POST", invoiceData);
-      const newInvoice = await invoiceRes.json() as ClientInvoice;
+      const newInvoice = (await invoiceRes.json()) as ClientInvoice;
 
-      // Create custom line items
       for (let i = 0; i < customLines.length; i++) {
         const item = customLines[i];
         await apiRequest(`/api/client-invoices/${newInvoice.id}/items`, "POST", {
           invoiceId: newInvoice.id,
+          name: item.name,
           description: item.description,
           quantity: item.quantity,
           unitPrice: Math.round(item.unitPrice * 100),
@@ -456,7 +667,6 @@ export default function ClientInvoiceDetail() {
         });
       }
 
-      // Link estimate if progress payments
       if (selectedEstimateId && currentProject?.invoicingMethod === "progress_payments") {
         await apiRequest(`/api/client-invoices/${newInvoice.id}/estimates`, "POST", {
           invoiceId: newInvoice.id,
@@ -465,15 +675,22 @@ export default function ClientInvoiceDetail() {
         });
       }
 
-      // Link variations
       for (const variationId of selectedVariationIds) {
         await apiRequest(`/api/client-invoices/${newInvoice.id}/variations`, "POST", {
           invoiceId: newInvoice.id,
           variationId,
+          claimPercent: variationClaims[variationId] ?? 100,
         });
       }
 
-      // Link bills if cost plus
+      for (const estimateItemId of selectedAllowanceIds) {
+        await apiRequest(`/api/client-invoices/${newInvoice.id}/allowances`, "POST", {
+          invoiceId: newInvoice.id,
+          estimateItemId,
+          claimPercent: allowanceClaims[estimateItemId] ?? 100,
+        });
+      }
+
       if (currentProject?.invoicingMethod === "cost_plus") {
         for (const billId of selectedBillIds) {
           await apiRequest(`/api/client-invoices/${newInvoice.id}/bills`, "POST", {
@@ -485,73 +702,55 @@ export default function ClientInvoiceDetail() {
 
       return newInvoice;
     },
-    onSuccess: (invoice) => {
+    onSuccess: (inv) => {
       queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
-      
-      // Log activity
       if (user?.id) {
         logActivity({
-          projectId: invoice.projectId,
+          projectId: inv.projectId,
           userId: user.id,
           activityType: "invoice",
           action: "created",
-          description: `User created invoice '${invoice.invoiceNumber}'`,
-          entityId: invoice.id,
-          entityName: invoice.invoiceNumber || `INV-${invoice.id.slice(0, 8)}`,
+          description: `User created invoice '${inv.invoiceNumber}'`,
+          entityId: inv.id,
+          entityName: inv.invoiceNumber || `INV-${inv.id.slice(0, 8)}`,
           metadata: {},
         });
       }
-      
-      toast({
-        title: "Success",
-        description: "Invoice created successfully",
-      });
+      toast({ title: "Success", description: "Invoice created successfully" });
       handleCancel();
     },
     onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to create invoice",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: error.message || "Failed to create invoice", variant: "destructive" });
     },
   });
 
   const updateMutation = useMutation({
     mutationFn: async (data: InvoiceFormData) => {
       const invoiceData = {
-        projectId: data.projectId,
-        invoiceDate: data.invoiceDate,
-        dueDate: data.dueDate,
-        invoicingMethod: currentProject?.invoicingMethod || "progress_payments",
-        markupPercent: data.markupPercent,
-        introductionText: data.introductionText,
-        closingText: data.closingText,
-        termsAndConditions: data.termsAndConditions,
-        subtotal: Math.round(calculateSubtotal() * 100),
-        markupAmount: Math.round(calculateMarkup() * 100),
-        gstAmount: Math.round(calculateGST() * 100),
-        totalAmount: Math.round(calculateTotal() * 100),
+        ...buildInvoicePayload(data),
         paidAmount: invoice?.paidAmount || 0,
-        balanceAmount: Math.round(calculateTotal() * 100) - (invoice?.paidAmount || 0),
+        balanceAmount:
+          Math.round(calculateTotal() * 100) - (invoice?.paidAmount || 0),
       };
 
-      const invoiceRes = await apiRequest(`/api/client-invoices/${effectiveInvoiceId}`, "PATCH", invoiceData);
-      const updatedInvoice = await invoiceRes.json() as ClientInvoice;
+      const invoiceRes = await apiRequest(
+        `/api/client-invoices/${effectiveInvoiceId}`,
+        "PATCH",
+        invoiceData
+      );
+      const updatedInvoice = (await invoiceRes.json()) as ClientInvoice;
 
-      // Handle custom line items
+      // Sync custom lines
       const existingIds = existingCustomLines.map((item) => item.id);
       const currentIds = customLines.map((item) => item.id).filter(Boolean);
-      
-      const toDelete = existingIds.filter((id) => !currentIds.includes(id));
-      for (const itemId of toDelete) {
+      for (const itemId of existingIds.filter((id) => !currentIds.includes(id))) {
         await apiRequest(`/api/client-invoice-items/${itemId}`, "DELETE");
       }
-
       for (let i = 0; i < customLines.length; i++) {
         const item = customLines[i];
         const itemData = {
           invoiceId: effectiveInvoiceId,
+          name: item.name,
           description: item.description,
           quantity: item.quantity,
           unitPrice: Math.round(item.unitPrice * 100),
@@ -559,46 +758,41 @@ export default function ClientInvoiceDetail() {
           taxable: item.taxable,
           sortOrder: i,
         };
-
         if (item.id) {
           await apiRequest(`/api/client-invoice-items/${item.id}`, "PATCH", itemData);
         } else {
-          await apiRequest(`/api/client-invoices/${effectiveInvoiceId}/items`, "POST", itemData);
+          await apiRequest(
+            `/api/client-invoices/${effectiveInvoiceId}/items`,
+            "POST",
+            itemData
+          );
         }
       }
 
       return updatedInvoice;
     },
-    onSuccess: (invoice) => {
+    onSuccess: (inv) => {
       queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
-      queryClient.invalidateQueries({ queryKey: [`/api/client-invoices/${effectiveInvoiceId}`] });
-      
-      // Log activity
+      queryClient.invalidateQueries({
+        queryKey: [`/api/client-invoices/${effectiveInvoiceId}`],
+      });
       if (user?.id) {
         logActivity({
-          projectId: invoice.projectId,
+          projectId: inv.projectId,
           userId: user.id,
           activityType: "invoice",
           action: "updated",
-          description: `User updated invoice '${invoice.invoiceNumber}'`,
-          entityId: invoice.id,
-          entityName: invoice.invoiceNumber || `INV-${invoice.id.slice(0, 8)}`,
+          description: `User updated invoice '${inv.invoiceNumber}'`,
+          entityId: inv.id,
+          entityName: inv.invoiceNumber || `INV-${inv.id.slice(0, 8)}`,
           metadata: {},
         });
       }
-      
-      toast({
-        title: "Success",
-        description: "Invoice updated successfully",
-      });
+      toast({ title: "Success", description: "Invoice updated successfully" });
       handleCancel();
     },
     onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to update invoice",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: error.message || "Failed to update invoice", variant: "destructive" });
     },
   });
 
@@ -613,68 +807,43 @@ export default function ClientInvoiceDetail() {
         notes: data.notes,
       };
 
-      const paymentRes = await apiRequest(`/api/client-invoices/${effectiveInvoiceId}/payments`, "POST", paymentData);
-      const newPayment = await paymentRes.json() as ClientInvoicePayment;
+      const paymentRes = await apiRequest(
+        `/api/client-invoices/${effectiveInvoiceId}/payments`,
+        "POST",
+        paymentData
+      );
+      const newPayment = (await paymentRes.json()) as ClientInvoicePayment;
 
-      const currentPaidAmount = invoice?.paidAmount || 0;
-      const newPaidAmount = currentPaidAmount + Math.round(data.amount * 100);
-      const totalAmount = invoice?.totalAmount || 0;
-      const newBalanceAmount = totalAmount - newPaidAmount;
-
+      const currentPaid = invoice?.paidAmount || 0;
+      const newPaid = currentPaid + Math.round(data.amount * 100);
+      const total = invoice?.totalAmount || 0;
+      const newBalance = total - newPaid;
       let newStatus = invoice?.status || "draft";
-      if (newBalanceAmount <= 0) {
-        newStatus = "paid";
-      } else if (newPaidAmount > 0) {
-        newStatus = "partial";
-      }
+      if (newBalance <= 0) newStatus = "paid";
+      else if (newPaid > 0) newStatus = "partial";
 
       await apiRequest(`/api/client-invoices/${effectiveInvoiceId}`, "PATCH", {
-        paidAmount: newPaidAmount,
-        balanceAmount: newBalanceAmount,
+        paidAmount: newPaid,
+        balanceAmount: newBalance,
         status: newStatus,
       });
 
       return newPayment;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/client-invoices/${effectiveInvoiceId}`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/client-invoices/${effectiveInvoiceId}/payments`] });
-      queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
-      
-      // Log activity when invoice is fully paid
-      if (invoice) {
-        const currentPaidAmount = invoice.paidAmount || 0;
-        const newPaidAmount = currentPaidAmount + Math.round(paymentForm.getValues().amount * 100);
-        const totalAmount = invoice.totalAmount || 0;
-        const newBalanceAmount = totalAmount - newPaidAmount;
-        
-        if (newBalanceAmount <= 0 && user?.id) {
-          logActivity({
-            projectId: invoice.projectId,
-            userId: user.id,
-            activityType: "invoice",
-            action: "paid",
-            description: `User marked invoice '${invoice.invoiceNumber}' as paid`,
-            entityId: invoice.id,
-            entityName: invoice.invoiceNumber || `INV-${invoice.id.slice(0, 8)}`,
-            metadata: {},
-          });
-        }
-      }
-      
-      toast({
-        title: "Success",
-        description: "Payment recorded successfully",
+      queryClient.invalidateQueries({
+        queryKey: [`/api/client-invoices/${effectiveInvoiceId}`],
       });
+      queryClient.invalidateQueries({
+        queryKey: [`/api/client-invoices/${effectiveInvoiceId}/payments`],
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
+      toast({ title: "Success", description: "Payment recorded successfully" });
       setPaymentDialogOpen(false);
       paymentForm.reset();
     },
     onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to record payment",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: error.message || "Failed to record payment", variant: "destructive" });
     },
   });
 
@@ -685,10 +854,10 @@ export default function ClientInvoiceDetail() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/client-invoices/${effectiveInvoiceId}`] });
+      queryClient.invalidateQueries({
+        queryKey: [`/api/client-invoices/${effectiveInvoiceId}`],
+      });
       queryClient.invalidateQueries({ queryKey: ["/api/client-invoices"] });
-      
-      // Log activity
       if (invoice && user?.id) {
         logActivity({
           projectId: invoice.projectId,
@@ -701,36 +870,52 @@ export default function ClientInvoiceDetail() {
           metadata: {},
         });
       }
-      
-      toast({
-        title: "Success",
-        description: "Invoice sent successfully",
-      });
+      toast({ title: "Success", description: "Invoice sent successfully" });
       handleCancel();
     },
     onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to send invoice",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: error.message || "Failed to send invoice", variant: "destructive" });
     },
   });
 
-  const onSubmit = (data: InvoiceFormData) => {
-    if (isEditMode) {
-      updateMutation.mutate(data);
-    } else {
-      createMutation.mutate(data);
+  // ── handlers ──────────────────────────────────────────────────────────────────
+
+  const addCustomLine = () => {
+    setCustomLines([
+      ...customLines,
+      {
+        name: "",
+        description: "",
+        quantity: 1,
+        unitPrice: 0,
+        totalPrice: 0,
+        taxable: true,
+        sortOrder: customLines.length,
+      },
+    ]);
+  };
+
+  const updateCustomLine = (index: number, field: keyof CustomLine, value: any) => {
+    const updated = [...customLines];
+    updated[index] = { ...updated[index], [field]: value };
+    if (field === "quantity" || field === "unitPrice") {
+      const qty = field === "quantity" ? value : updated[index].quantity;
+      const price = field === "unitPrice" ? value : updated[index].unitPrice;
+      updated[index].totalPrice = qty * price;
     }
+    setCustomLines(updated);
   };
 
-  const onPaymentSubmit = (data: PaymentFormData) => {
-    recordPaymentMutation.mutate(data);
+  const deleteCustomLine = (index: number) => {
+    setCustomLines(customLines.filter((_, i) => i !== index));
   };
 
-  const handleSendInvoice = () => {
-    sendInvoiceMutation.mutate();
+  const handleCancel = () => {
+    if (projectIdFromParams) {
+      setLocation(`/projects/${projectIdFromParams}/client-invoices`);
+    } else {
+      setLocation("/client-invoices");
+    }
   };
 
   const handlePushToXero = async () => {
@@ -746,13 +931,14 @@ export default function ClientInvoiceDetail() {
           title: "Sent to Xero",
           description: `Invoice pushed to Xero successfully (${data.xeroInvoiceNumber || data.xeroInvoiceId})`,
         });
-        queryClient.invalidateQueries({ queryKey: [`/api/client-invoices/${effectiveInvoiceId}`] });
+        queryClient.invalidateQueries({
+          queryKey: [`/api/client-invoices/${effectiveInvoiceId}`],
+        });
       }
     } catch (error: any) {
-      const errData = error?.response ? await error.response.json().catch(() => ({})) : {};
       toast({
         title: "Failed to send to Xero",
-        description: errData.message || error.message || "Could not push invoice to Xero",
+        description: error.message || "Could not push invoice to Xero",
         variant: "destructive",
       });
     } finally {
@@ -760,18 +946,20 @@ export default function ClientInvoiceDetail() {
     }
   };
 
-  const handleCancel = () => {
-    if (projectIdFromParams) {
-      setLocation(`/projects/${projectIdFromParams}/client-invoices`);
-    } else {
-      setLocation("/client-invoices");
-    }
+  const onSubmit = (data: InvoiceFormData) => {
+    if (isEditMode) updateMutation.mutate(data);
+    else createMutation.mutate(data);
   };
+
+  // ── loading ───────────────────────────────────────────────────────────────────
 
   if (invoiceLoading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" data-testid="loader-invoice" />
+        <Loader2
+          className="w-8 h-8 animate-spin text-muted-foreground"
+          data-testid="loader-invoice"
+        />
       </div>
     );
   }
@@ -779,12 +967,71 @@ export default function ClientInvoiceDetail() {
   const total = calculateTotal();
   const paid = invoice?.paidAmount ? invoice.paidAmount / 100 : 0;
   const due = total - paid;
+  const contractTotal = calculateContractPrice() / 100;
+  const GST_RATE = 0.1;
+
+  // ── render helpers ────────────────────────────────────────────────────────────
+
+  const renderLineTableHeader = (includeContractCols: boolean) => (
+    <TableRow>
+      {isColVisible("name") && <TableHead className="w-40">Name</TableHead>}
+      {isColVisible("description") && <TableHead>Description</TableHead>}
+      {includeContractCols && isColVisible("contractTotal") && (
+        <TableHead className="text-right w-28">Contract Total</TableHead>
+      )}
+      {includeContractCols && isColVisible("remaining") && (
+        <TableHead className="text-right w-28">Remaining</TableHead>
+      )}
+      {isColVisible("claimPercent") && (
+        <TableHead className="text-right w-20">Claim %</TableHead>
+      )}
+      {isColVisible("claimAmount") && (
+        <TableHead className="text-right w-28">Claim $</TableHead>
+      )}
+      {isColVisible("amountExTax") && (
+        <TableHead className="text-right w-28">Ex Tax</TableHead>
+      )}
+      {isColVisible("amountTax") && (
+        <TableHead className="text-right w-24">Tax</TableHead>
+      )}
+      {isColVisible("amountIncTax") && (
+        <TableHead className="text-right w-28">Inc Tax</TableHead>
+      )}
+    </TableRow>
+  );
+
+  const renderLineTableFooter = (claimAmountCents: number) => {
+    const claimAmt = claimAmountCents / 100;
+    const exTax = claimAmt / (1 + GST_RATE);
+    const tax = claimAmt - exTax;
+    return (
+      <TableRow className="border-t bg-muted/30 font-medium text-sm">
+        <TableCell colSpan={visibleColumns.filter((c) => !["amountExTax","amountTax","amountIncTax","claimAmount"].includes(c.id)).length + 1} className="text-right text-muted-foreground">
+          Subtotal
+        </TableCell>
+        {isColVisible("claimAmount") && (
+          <TableCell className="text-right">{formatCurrency(claimAmt)}</TableCell>
+        )}
+        {isColVisible("amountExTax") && (
+          <TableCell className="text-right">{formatCurrency(exTax)}</TableCell>
+        )}
+        {isColVisible("amountTax") && (
+          <TableCell className="text-right">{formatCurrency(tax)}</TableCell>
+        )}
+        {isColVisible("amountIncTax") && (
+          <TableCell className="text-right">{formatCurrency(claimAmt)}</TableCell>
+        )}
+      </TableRow>
+    );
+  };
+
+  // ── render ────────────────────────────────────────────────────────────────────
 
   return (
     <div className="flex flex-col h-full" data-testid="page-client-invoice-detail">
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col h-full">
-          {/* Row 1 - Title & Actions (36px) */}
+          {/* Row 1 - Title & Actions */}
           <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
             <div className="flex items-center gap-2">
               <button
@@ -815,13 +1062,17 @@ export default function ClientInvoiceDetail() {
                 className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
                 data-testid="button-save-invoice"
               >
-                <FileText className="w-3 h-3" />
+                {(createMutation.isPending || updateMutation.isPending) ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <FileText className="w-3 h-3" />
+                )}
                 <span>{isEditMode ? "Update" : "Create"} Invoice</span>
               </button>
             </div>
           </div>
 
-          {/* Row 2 - Summary Info (36px) */}
+          {/* Row 2 - Summary */}
           <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
             <div className="flex items-center gap-4 text-xs">
               <div className="flex items-center gap-1.5" data-testid="header-summary-total">
@@ -844,7 +1095,7 @@ export default function ClientInvoiceDetail() {
               {isEditMode && invoice?.status === "draft" && (
                 <button
                   type="button"
-                  onClick={handleSendInvoice}
+                  onClick={() => sendInvoiceMutation.mutate()}
                   disabled={sendInvoiceMutation.isPending}
                   className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
                   data-testid="button-send-invoice"
@@ -861,7 +1112,11 @@ export default function ClientInvoiceDetail() {
                   className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 text-blue-600 dark:text-blue-400 border-blue-300 dark:border-blue-600"
                   data-testid="button-send-to-xero"
                 >
-                  {xeroPushing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                  {xeroPushing ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Send className="w-3 h-3" />
+                  )}
                   <span>Send to Xero</span>
                 </button>
               )}
@@ -876,11 +1131,11 @@ export default function ClientInvoiceDetail() {
           {/* Main Content */}
           <div className="flex-1 overflow-auto">
             <div className="flex gap-6 p-6">
-              {/* Left Column - Form Fields */}
-              <div className="flex-1 space-y-6">
-                {/* Row 1: Invoice Name + Invoice Number */}
+              {/* Left Column */}
+              <div className="flex-1 space-y-6 min-w-0">
+
+                {/* Invoice Name + Number */}
                 <div className="grid grid-cols-3 gap-4">
-                  {/* Invoice Name */}
                   <FormField
                     control={form.control}
                     name="name"
@@ -895,15 +1150,60 @@ export default function ClientInvoiceDetail() {
                     )}
                   />
 
-                  {/* Invoice Number */}
+                  {/* Invoice Number (auto-generated, override optional) */}
                   <FormField
                     control={form.control}
                     name="invoiceNumber"
                     render={({ field }) => (
-                      <FormItem className="col-span-1">
-                        <FormLabel>Invoice Number</FormLabel>
+                      <FormItem>
+                        <FormLabel className="flex items-center gap-1.5">
+                          Invoice Number
+                          {!isEditMode && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button
+                                  type="button"
+                                  onClick={() => setInvoiceNumberOverride((v) => !v)}
+                                  className="text-muted-foreground hover:text-foreground"
+                                >
+                                  <Pencil className="w-3 h-3" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {invoiceNumberOverride ? "Use auto-generated" : "Override number"}
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
+                          {!isEditMode && !invoiceNumberOverride && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    queryClient.invalidateQueries({
+                                      queryKey: ["/api/client-invoices/next-number", selectedProjectId],
+                                    });
+                                  }}
+                                  className="text-muted-foreground hover:text-foreground"
+                                >
+                                  <RefreshCw className="w-3 h-3" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent>Re-generate number</TooltipContent>
+                            </Tooltip>
+                          )}
+                        </FormLabel>
                         <FormControl>
-                          <Input {...field} data-testid="input-invoice-number" />
+                          <Input
+                            {...field}
+                            readOnly={isEditMode || !invoiceNumberOverride}
+                            className={cn(
+                              !invoiceNumberOverride && !isEditMode
+                                ? "bg-muted text-muted-foreground cursor-default"
+                                : ""
+                            )}
+                            data-testid="input-invoice-number"
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -911,9 +1211,8 @@ export default function ClientInvoiceDetail() {
                   />
                 </div>
 
-                {/* Row 2: Invoice Date + Due Date */}
+                {/* Invoice Date + Due Date */}
                 <div className="grid grid-cols-3 gap-4">
-                  {/* Invoice Date */}
                   <FormField
                     control={form.control}
                     name="invoiceDate"
@@ -950,7 +1249,6 @@ export default function ClientInvoiceDetail() {
                     )}
                   />
 
-                  {/* Due Date */}
                   <FormField
                     control={form.control}
                     name="dueDate"
@@ -986,47 +1284,164 @@ export default function ClientInvoiceDetail() {
                       </FormItem>
                     )}
                   />
-
-                  {/* Empty third column for spacing */}
-                  <div></div>
+                  <div />
                 </div>
 
-                {/* Introduction Text */}
+                {/* Introduction Text (collapsible) */}
                 <FormField
                   control={form.control}
                   name="introductionText"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Introduction Text</FormLabel>
-                      <FormControl>
-                        <RichTextEditor
-                          content={field.value || ""}
-                          onChange={(html) => field.onChange(html)}
-                          placeholder="Enter introduction text..."
-                          data-testid="editor-introduction"
-                        />
-                      </FormControl>
+                      <div
+                        className="flex items-center justify-between cursor-pointer py-1"
+                        onClick={() => setIntroCollapsed((v) => !v)}
+                      >
+                        <FormLabel className="cursor-pointer text-sm font-medium">
+                          Introduction
+                        </FormLabel>
+                        {introCollapsed ? (
+                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </div>
+                      {!introCollapsed && (
+                        <FormControl>
+                          <RichTextEditor
+                            content={field.value || ""}
+                            onChange={(html) => field.onChange(html)}
+                            placeholder="Enter introduction text..."
+                            data-testid="editor-introduction"
+                          />
+                        </FormControl>
+                      )}
                       <FormMessage />
                     </FormItem>
                   )}
                 />
 
-                {/* Dynamic Sections based on Invoicing Method */}
+                {/* ── Progress Payments sections ── */}
                 {currentProject?.invoicingMethod === "progress_payments" && (
                   <>
                     {/* Contract Price Section */}
                     <Card data-testid="section-contract-price">
-                      <CardHeader>
-                        <CardTitle className="text-base">Contract Price</CardTitle>
+                      <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-3">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          Contract Price
+                          {isEstimateLocked() && (
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <Badge variant="secondary" className="flex items-center gap-1 text-xs">
+                                  <Lock className="w-2.5 h-2.5" />
+                                  Locked
+                                </Badge>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                Contract price is locked because the estimate is approved
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
+                        </CardTitle>
+                        <div className="flex items-center gap-2">
+                          {/* Inc/Exc toggle */}
+                          <div className="flex items-center gap-1.5 text-xs">
+                            <span
+                              className={cn(
+                                "text-xs",
+                                !showAmountsIncTax
+                                  ? "text-foreground font-medium"
+                                  : "text-muted-foreground"
+                              )}
+                            >
+                              Ex GST
+                            </span>
+                            <Switch
+                              checked={showAmountsIncTax}
+                              onCheckedChange={setShowAmountsIncTax}
+                              className="scale-75"
+                            />
+                            <span
+                              className={cn(
+                                "text-xs",
+                                showAmountsIncTax
+                                  ? "text-foreground font-medium"
+                                  : "text-muted-foreground"
+                              )}
+                            >
+                              Inc GST
+                            </span>
+                          </div>
+
+                          {/* Column picker */}
+                          <Popover open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
+                            <PopoverTrigger asChild>
+                              <button
+                                type="button"
+                                className="h-7 w-7 flex items-center justify-center rounded-md hover-elevate active-elevate-2"
+                                data-testid="button-column-picker"
+                              >
+                                <Settings2 className="h-3.5 w-3.5 text-muted-foreground" />
+                              </button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-56 p-3" align="end">
+                              <p className="text-xs font-medium mb-2 text-muted-foreground">
+                                Columns — drag to reorder
+                              </p>
+                              <div className="space-y-1">
+                                {columnConfig
+                                  .slice()
+                                  .sort((a, b) => a.order - b.order)
+                                  .map((col) => {
+                                    const def = ALL_COLUMNS.find((d) => d.id === col.id)!;
+                                    return (
+                                      <div
+                                        key={col.id}
+                                        draggable
+                                        onDragStart={() => onDragStart(col.id)}
+                                        onDragOver={(e) => onDragOver(col.id, e)}
+                                        onDrop={() => onDrop(col.id)}
+                                        className={cn(
+                                          "flex items-center gap-2 p-1.5 rounded-md text-sm select-none",
+                                          dragOverId === col.id
+                                            ? "bg-accent"
+                                            : "hover-elevate"
+                                        )}
+                                      >
+                                        <GripVertical className="h-3 w-3 text-muted-foreground cursor-grab" />
+                                        <Checkbox
+                                          checked={def.required ? true : col.visible}
+                                          disabled={def.required}
+                                          onCheckedChange={() => toggleColumn(col.id)}
+                                        />
+                                        <span
+                                          className={cn(
+                                            "flex-1",
+                                            def.required && "text-muted-foreground"
+                                          )}
+                                        >
+                                          {def.label}
+                                        </span>
+                                        {def.required && (
+                                          <Lock className="h-3 w-3 text-muted-foreground" />
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        </div>
                       </CardHeader>
+
                       <CardContent className="space-y-4">
-                        {/* Estimate and Progress Selector Row */}
+                        {/* Estimate + progress selector */}
                         <div className="grid grid-cols-2 gap-4">
                           <Select
                             value={selectedEstimateId}
                             onValueChange={(value) => {
                               setSelectedEstimateId(value);
-                              setProgressPercent(undefined);
+                              setLockedContractPrice(null);
                               setIsCustomProgress(false);
                               setCustomProgressPercent("");
                             }}
@@ -1036,12 +1451,15 @@ export default function ClientInvoiceDetail() {
                             </SelectTrigger>
                             <SelectContent>
                               {estimates.map((estimate) => (
-                                <SelectItem 
-                                  key={estimate.id} 
+                                <SelectItem
+                                  key={estimate.id}
                                   value={estimate.id}
                                   data-testid={`select-estimate-${estimate.id}`}
                                 >
                                   {estimate.name}
+                                  {(estimate.status === "approved" || estimate.isLocked) && (
+                                    <Lock className="inline ml-1 h-3 w-3 text-muted-foreground" />
+                                  )}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -1054,16 +1472,15 @@ export default function ClientInvoiceDetail() {
                                 if (value === "custom") {
                                   setIsCustomProgress(true);
                                   setProgressPercent(undefined);
-                                  setCustomProgressPercent("");
                                 } else {
-                                  setCustomProgressPercent("");
                                   setIsCustomProgress(false);
+                                  setCustomProgressPercent("");
                                   setProgressPercent(parseInt(value));
                                 }
                               }}
                             >
                               <SelectTrigger data-testid="select-progress-percent">
-                                <SelectValue placeholder="Select progress %" />
+                                <SelectValue placeholder="Claim %" />
                               </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="10">10%</SelectItem>
@@ -1077,7 +1494,6 @@ export default function ClientInvoiceDetail() {
                           )}
                         </div>
 
-                        {/* Custom Progress Input */}
                         {selectedEstimateId && isCustomProgress && (
                           <Input
                             type="number"
@@ -1090,175 +1506,384 @@ export default function ClientInvoiceDetail() {
                           />
                         )}
 
-                        {/* Summary Cards */}
-                        <div className="grid grid-cols-3 gap-3">
-                          <Card>
-                            <CardContent className="p-3">
-                              <div className="text-xs text-muted-foreground mb-1">Total</div>
-                              <div className="text-sm font-semibold" data-testid="text-contract-price">
-                                {formatCurrency(calculateContractPrice() / 100)}
-                              </div>
-                            </CardContent>
-                          </Card>
-                          <Card>
-                            <CardContent className="p-3">
-                              <div className="text-xs text-muted-foreground mb-1">Paid</div>
-                              <div className="text-sm font-semibold" data-testid="text-contract-paid">
-                                {formatCurrency(0)}
-                              </div>
-                            </CardContent>
-                          </Card>
-                          <Card>
-                            <CardContent className="p-3">
-                              <div className="text-xs text-muted-foreground mb-1">Remaining</div>
-                              <div className="text-sm font-semibold" data-testid="text-contract-remaining">
-                                {formatCurrency(calculateContractPrice() / 100)}
-                              </div>
-                            </CardContent>
-                          </Card>
-                        </div>
+                        {/* Contract price line item table */}
+                        {selectedEstimateId && (
+                          <>
+                            <Table>
+                              <TableHeader>
+                                {renderLineTableHeader(true)}
+                              </TableHeader>
+                              <TableBody>
+                                <TableRow>
+                                  {isColVisible("name") && (
+                                    <TableCell className="font-medium text-sm">
+                                      Contract Price
+                                    </TableCell>
+                                  )}
+                                  {isColVisible("description") && (
+                                    <TableCell className="text-muted-foreground text-sm">
+                                      {getSelectedEstimate()?.name}
+                                    </TableCell>
+                                  )}
+                                  {isColVisible("contractTotal") && (
+                                    <TableCell className="text-right text-sm">
+                                      {formatCurrency(contractTotal)}
+                                    </TableCell>
+                                  )}
+                                  {isColVisible("remaining") && (
+                                    <TableCell className="text-right text-sm">
+                                      {formatCurrency(contractTotal)}
+                                    </TableCell>
+                                  )}
+                                  {isColVisible("claimPercent") && (
+                                    <TableCell className="text-right text-sm">
+                                      {progressPercent !== undefined ? `${progressPercent}%` : "100%"}
+                                    </TableCell>
+                                  )}
+                                  {isColVisible("claimAmount") && (
+                                    <TableCell className="text-right text-sm font-medium">
+                                      {formatCurrency(calculateContractPrice() / 100)}
+                                    </TableCell>
+                                  )}
+                                  {isColVisible("amountExTax") && (
+                                    <TableCell className="text-right text-sm">
+                                      {formatCurrency(
+                                        calculateContractPrice() / 100 / (1 + GST_RATE)
+                                      )}
+                                    </TableCell>
+                                  )}
+                                  {isColVisible("amountTax") && (
+                                    <TableCell className="text-right text-sm">
+                                      {formatCurrency(
+                                        (calculateContractPrice() / 100) -
+                                          calculateContractPrice() / 100 / (1 + GST_RATE)
+                                      )}
+                                    </TableCell>
+                                  )}
+                                  {isColVisible("amountIncTax") && (
+                                    <TableCell className="text-right text-sm font-medium">
+                                      {formatCurrency(calculateContractPrice() / 100)}
+                                    </TableCell>
+                                  )}
+                                </TableRow>
+                              </TableBody>
+                            </Table>
+
+                            {/* Section footer */}
+                            <div className="flex items-center justify-end gap-6 pt-2 border-t text-sm">
+                              <span className="text-muted-foreground">
+                                {showAmountsIncTax ? "Amount ex Tax:" : ""}
+                              </span>
+                              {!showAmountsIncTax && (
+                                <span className="font-medium">
+                                  {formatCurrency(
+                                    calculateContractPrice() / 100 / (1 + GST_RATE)
+                                  )}
+                                </span>
+                              )}
+                              <span className="text-muted-foreground">
+                                {showAmountsIncTax
+                                  ? `Amount inc Tax:`
+                                  : `GST:`}
+                              </span>
+                              <span className="font-semibold">
+                                {showAmountsIncTax
+                                  ? formatCurrency(calculateContractPrice() / 100)
+                                  : formatCurrency(
+                                      (calculateContractPrice() / 100) -
+                                        calculateContractPrice() / 100 / (1 + GST_RATE)
+                                    )}
+                              </span>
+                            </div>
+                          </>
+                        )}
+
+                        {!selectedEstimateId && (
+                          <p className="text-sm text-muted-foreground text-center py-4">
+                            Select an estimate above to set the contract price
+                          </p>
+                        )}
                       </CardContent>
                     </Card>
 
                     {/* Variations Section */}
                     <Card data-testid="section-variations">
-                      <CardHeader>
+                      <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-3">
                         <CardTitle className="text-base">Variations</CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        {/* Variations Selector */}
-                        <Select
-                          value={selectedVariationIds[0] || ""}
-                          onValueChange={(value) => {
-                            if (value && !selectedVariationIds.includes(value)) {
-                              setSelectedVariationIds([...selectedVariationIds, value]);
-                            }
-                          }}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setVariationsModalOpen(true)}
+                          data-testid="button-select-variations"
                         >
-                          <SelectTrigger data-testid="select-variations">
-                            <SelectValue placeholder="Select variations" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {variations.map((variation) => (
-                              <SelectItem 
-                                key={variation.id} 
-                                value={variation.id}
-                                data-testid={`select-variation-${variation.id}`}
-                              >
-                                {variation.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                          <Plus className="h-4 w-4 mr-1" />
+                          Select Variations
+                        </Button>
+                      </CardHeader>
 
-                        {/* Selected Variations */}
-                        {selectedVariationIds.length > 0 && (
-                          <div className="space-y-2">
-                            {getSelectedVariations().map((v) => (
-                              <div key={v.id} className="flex items-center justify-between text-sm p-2 bg-muted rounded">
-                                <span>{v.name}</span>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => setSelectedVariationIds(selectedVariationIds.filter(id => id !== v.id))}
-                                  data-testid={`button-remove-variation-${v.id}`}
-                                >
-                                  <Trash2 className="h-3 w-3" />
-                                </Button>
-                              </div>
-                            ))}
-                          </div>
+                      <CardContent>
+                        {selectedVariationIds.length === 0 ? (
+                          <p className="text-sm text-muted-foreground text-center py-4">
+                            No variations added. Click "Select Variations" to add approved variations.
+                          </p>
+                        ) : (
+                          <>
+                            <Table>
+                              <TableHeader>
+                                {renderLineTableHeader(false)}
+                              </TableHeader>
+                              <TableBody>
+                                {getSelectedVariations().map((variation) => {
+                                  const claimPct = variationClaims[variation.id] ?? 100;
+                                  const claimAmt =
+                                    (variation.totalAmount * claimPct) / 100 / 100;
+                                  const exTax = claimAmt / (1 + GST_RATE);
+                                  const tax = claimAmt - exTax;
+                                  return (
+                                    <TableRow key={variation.id}>
+                                      {isColVisible("name") && (
+                                        <TableCell className="text-sm font-medium">
+                                          <div className="flex items-center gap-2">
+                                            {variation.variationNumber}
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setSelectedVariationIds((prev) =>
+                                                  prev.filter((id) => id !== variation.id)
+                                                );
+                                              }}
+                                              className="text-muted-foreground hover:text-destructive ml-auto"
+                                            >
+                                              <X className="h-3 w-3" />
+                                            </button>
+                                          </div>
+                                        </TableCell>
+                                      )}
+                                      {isColVisible("description") && (
+                                        <TableCell className="text-sm text-muted-foreground">
+                                          {variation.name}
+                                        </TableCell>
+                                      )}
+                                      {isColVisible("contractTotal") && (
+                                        <TableCell className="text-right text-sm">
+                                          {formatCurrency(variation.totalAmount / 100)}
+                                        </TableCell>
+                                      )}
+                                      {isColVisible("remaining") && (
+                                        <TableCell className="text-right text-sm">
+                                          {formatCurrency(variation.totalAmount / 100)}
+                                        </TableCell>
+                                      )}
+                                      {isColVisible("claimPercent") && (
+                                        <TableCell className="text-right">
+                                          <Input
+                                            type="number"
+                                            min="0"
+                                            max="100"
+                                            value={claimPct}
+                                            onChange={(e) =>
+                                              setVariationClaims((prev) => ({
+                                                ...prev,
+                                                [variation.id]: parseInt(e.target.value) || 0,
+                                              }))
+                                            }
+                                            className="h-7 w-16 text-right text-sm"
+                                          />
+                                        </TableCell>
+                                      )}
+                                      {isColVisible("claimAmount") && (
+                                        <TableCell className="text-right text-sm font-medium">
+                                          {formatCurrency(claimAmt)}
+                                        </TableCell>
+                                      )}
+                                      {isColVisible("amountExTax") && (
+                                        <TableCell className="text-right text-sm">
+                                          {formatCurrency(exTax)}
+                                        </TableCell>
+                                      )}
+                                      {isColVisible("amountTax") && (
+                                        <TableCell className="text-right text-sm">
+                                          {formatCurrency(tax)}
+                                        </TableCell>
+                                      )}
+                                      {isColVisible("amountIncTax") && (
+                                        <TableCell className="text-right text-sm font-medium">
+                                          {formatCurrency(claimAmt)}
+                                        </TableCell>
+                                      )}
+                                    </TableRow>
+                                  );
+                                })}
+                              </TableBody>
+                            </Table>
+                            <div className="flex items-center justify-end gap-6 pt-2 border-t text-sm">
+                              <span className="text-muted-foreground">
+                                {showAmountsIncTax ? "Amount inc Tax:" : "Amount ex Tax:"}
+                              </span>
+                              <span className="font-semibold">
+                                {showAmountsIncTax
+                                  ? formatCurrency(calculateVariationsTotal() / 100)
+                                  : formatCurrency(
+                                      calculateVariationsTotal() / 100 / (1 + GST_RATE)
+                                    )}
+                              </span>
+                            </div>
+                          </>
                         )}
-
-                        {/* Summary Cards */}
-                        <div className="grid grid-cols-3 gap-3">
-                          <Card>
-                            <CardContent className="p-3">
-                              <div className="text-xs text-muted-foreground mb-1">Total</div>
-                              <div className="text-sm font-semibold" data-testid="text-variations-total">
-                                {formatCurrency(calculateVariationsTotal() / 100)}
-                              </div>
-                            </CardContent>
-                          </Card>
-                          <Card>
-                            <CardContent className="p-3">
-                              <div className="text-xs text-muted-foreground mb-1">Paid</div>
-                              <div className="text-sm font-semibold" data-testid="text-variations-paid">
-                                {formatCurrency(0)}
-                              </div>
-                            </CardContent>
-                          </Card>
-                          <Card>
-                            <CardContent className="p-3">
-                              <div className="text-xs text-muted-foreground mb-1">Remaining</div>
-                              <div className="text-sm font-semibold" data-testid="text-variations-remaining">
-                                {formatCurrency(calculateVariationsTotal() / 100)}
-                              </div>
-                            </CardContent>
-                          </Card>
-                        </div>
                       </CardContent>
                     </Card>
 
-                    {/* Allowances Section (Stub) */}
+                    {/* Allowances Section */}
                     <Card data-testid="section-allowances">
-                      <CardHeader>
+                      <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-3">
                         <CardTitle className="text-base">Allowances</CardTitle>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setAllowancesModalOpen(true)}
+                          disabled={!selectedEstimateId}
+                          data-testid="button-select-allowances"
+                        >
+                          <Plus className="h-4 w-4 mr-1" />
+                          Select Allowances
+                        </Button>
                       </CardHeader>
-                      <CardContent className="space-y-4">
-                        {/* Allowances Selector */}
-                        <Select disabled>
-                          <SelectTrigger data-testid="select-allowances">
-                            <SelectValue placeholder="Coming soon" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="placeholder">No allowances</SelectItem>
-                          </SelectContent>
-                        </Select>
 
-                        {/* Summary Cards */}
-                        <div className="grid grid-cols-3 gap-3">
-                          <Card>
-                            <CardContent className="p-3">
-                              <div className="text-xs text-muted-foreground mb-1">Total</div>
-                              <div className="text-sm font-semibold" data-testid="text-allowances-diff">
-                                {formatCurrency(0)}
-                              </div>
-                            </CardContent>
-                          </Card>
-                          <Card>
-                            <CardContent className="p-3">
-                              <div className="text-xs text-muted-foreground mb-1">Paid</div>
-                              <div className="text-sm font-semibold" data-testid="text-allowances-paid">
-                                {formatCurrency(0)}
-                              </div>
-                            </CardContent>
-                          </Card>
-                          <Card>
-                            <CardContent className="p-3">
-                              <div className="text-xs text-muted-foreground mb-1">Remaining</div>
-                              <div className="text-sm font-semibold" data-testid="text-allowances-remaining">
-                                {formatCurrency(0)}
-                              </div>
-                            </CardContent>
-                          </Card>
-                        </div>
+                      <CardContent>
+                        {!selectedEstimateId ? (
+                          <p className="text-sm text-muted-foreground text-center py-4">
+                            Select an estimate above to access allowances.
+                          </p>
+                        ) : selectedAllowanceIds.length === 0 ? (
+                          <p className="text-sm text-muted-foreground text-center py-4">
+                            No allowances added. Click "Select Allowances" to add finalized allowances.
+                          </p>
+                        ) : (
+                          <>
+                            <Table>
+                              <TableHeader>
+                                {renderLineTableHeader(false)}
+                              </TableHeader>
+                              <TableBody>
+                                {getSelectedAllowanceItems().map((item) => {
+                                  const claimPct = allowanceClaims[item.id] ?? 100;
+                                  const totalCents = Math.round(
+                                    item.priceIncTax * item.quantity * 100
+                                  );
+                                  const claimAmt = (totalCents * claimPct) / 100 / 100;
+                                  const exTax = claimAmt / (1 + GST_RATE);
+                                  const tax = claimAmt - exTax;
+                                  return (
+                                    <TableRow key={item.id}>
+                                      {isColVisible("name") && (
+                                        <TableCell className="text-sm font-medium">
+                                          <div className="flex items-center gap-2">
+                                            {item.name}
+                                            <Badge variant="outline" className="text-[10px]">
+                                              {item.allowance}
+                                            </Badge>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                setSelectedAllowanceIds((prev) =>
+                                                  prev.filter((id) => id !== item.id)
+                                                )
+                                              }
+                                              className="text-muted-foreground hover:text-destructive ml-auto"
+                                            >
+                                              <X className="h-3 w-3" />
+                                            </button>
+                                          </div>
+                                        </TableCell>
+                                      )}
+                                      {isColVisible("description") && (
+                                        <TableCell className="text-sm text-muted-foreground">
+                                          {item.description}
+                                        </TableCell>
+                                      )}
+                                      {isColVisible("contractTotal") && (
+                                        <TableCell className="text-right text-sm">
+                                          {formatCurrency(totalCents / 100)}
+                                        </TableCell>
+                                      )}
+                                      {isColVisible("remaining") && (
+                                        <TableCell className="text-right text-sm">
+                                          {formatCurrency(totalCents / 100)}
+                                        </TableCell>
+                                      )}
+                                      {isColVisible("claimPercent") && (
+                                        <TableCell className="text-right">
+                                          <Input
+                                            type="number"
+                                            min="0"
+                                            max="100"
+                                            value={claimPct}
+                                            onChange={(e) =>
+                                              setAllowanceClaims((prev) => ({
+                                                ...prev,
+                                                [item.id]: parseInt(e.target.value) || 0,
+                                              }))
+                                            }
+                                            className="h-7 w-16 text-right text-sm"
+                                          />
+                                        </TableCell>
+                                      )}
+                                      {isColVisible("claimAmount") && (
+                                        <TableCell className="text-right text-sm font-medium">
+                                          {formatCurrency(claimAmt)}
+                                        </TableCell>
+                                      )}
+                                      {isColVisible("amountExTax") && (
+                                        <TableCell className="text-right text-sm">
+                                          {formatCurrency(exTax)}
+                                        </TableCell>
+                                      )}
+                                      {isColVisible("amountTax") && (
+                                        <TableCell className="text-right text-sm">
+                                          {formatCurrency(tax)}
+                                        </TableCell>
+                                      )}
+                                      {isColVisible("amountIncTax") && (
+                                        <TableCell className="text-right text-sm font-medium">
+                                          {formatCurrency(claimAmt)}
+                                        </TableCell>
+                                      )}
+                                    </TableRow>
+                                  );
+                                })}
+                              </TableBody>
+                            </Table>
+                            <div className="flex items-center justify-end gap-6 pt-2 border-t text-sm">
+                              <span className="text-muted-foreground">
+                                {showAmountsIncTax ? "Amount inc Tax:" : "Amount ex Tax:"}
+                              </span>
+                              <span className="font-semibold">
+                                {showAmountsIncTax
+                                  ? formatCurrency(calculateAllowancesTotal() / 100)
+                                  : formatCurrency(
+                                      calculateAllowancesTotal() / 100 / (1 + GST_RATE)
+                                    )}
+                              </span>
+                            </div>
+                          </>
+                        )}
                       </CardContent>
                     </Card>
                   </>
                 )}
 
+                {/* ── Cost Plus sections ── */}
                 {currentProject?.invoicingMethod === "cost_plus" && (
                   <>
-                    {/* Bills Section */}
                     <Card data-testid="section-bills">
                       <CardHeader>
                         <CardTitle className="text-base">Bills</CardTitle>
                       </CardHeader>
                       <CardContent className="space-y-4">
                         <div>
-                          <FormLabel>Select Bills</FormLabel>
+                          <Label>Select Bills</Label>
                           <Select
                             value={selectedBillIds[0] || ""}
                             onValueChange={(value) => {
@@ -1272,11 +1897,7 @@ export default function ClientInvoiceDetail() {
                             </SelectTrigger>
                             <SelectContent>
                               {bills.map((bill) => (
-                                <SelectItem 
-                                  key={bill.id} 
-                                  value={bill.id}
-                                  data-testid={`select-bill-${bill.id}`}
-                                >
+                                <SelectItem key={bill.id} value={bill.id}>
                                   {bill.billNumber}
                                 </SelectItem>
                               ))}
@@ -1286,14 +1907,20 @@ export default function ClientInvoiceDetail() {
                         {selectedBillIds.length > 0 && (
                           <div className="space-y-2">
                             {getSelectedBills().map((b) => (
-                              <div key={b.id} className="flex items-center justify-between text-sm p-2 bg-muted rounded">
+                              <div
+                                key={b.id}
+                                className="flex items-center justify-between text-sm p-2 bg-muted rounded-md"
+                              >
                                 <span>{b.billNumber}</span>
                                 <Button
                                   type="button"
                                   variant="ghost"
-                                  size="sm"
-                                  onClick={() => setSelectedBillIds(selectedBillIds.filter(id => id !== b.id))}
-                                  data-testid={`button-remove-bill-${b.id}`}
+                                  size="icon"
+                                  onClick={() =>
+                                    setSelectedBillIds(
+                                      selectedBillIds.filter((id) => id !== b.id)
+                                    )
+                                  }
                                 >
                                   <Trash2 className="h-3 w-3" />
                                 </Button>
@@ -1301,48 +1928,15 @@ export default function ClientInvoiceDetail() {
                             ))}
                           </div>
                         )}
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Bills:</span>
-                          <span className="font-medium" data-testid="text-bills-total">
-                            {formatCurrency(calculateBillsTotal() / 100)}
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Paid:</span>
-                          <span className="font-medium" data-testid="text-bills-paid">
-                            {formatCurrency(0)}
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Remaining:</span>
-                          <span className="font-medium" data-testid="text-bills-remaining">
+                        <div className="flex justify-between text-sm pt-2 border-t">
+                          <span className="text-muted-foreground">Bills Total:</span>
+                          <span className="font-medium">
                             {formatCurrency(calculateBillsTotal() / 100)}
                           </span>
                         </div>
                       </CardContent>
                     </Card>
 
-                    {/* Timesheets Section (Stub) */}
-                    <Card data-testid="section-timesheets">
-                      <CardHeader>
-                        <CardTitle className="text-base">Timesheets</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div>
-                          <FormLabel>Select Timesheets</FormLabel>
-                          <Select disabled>
-                            <SelectTrigger className="mt-2" data-testid="select-timesheets">
-                              <SelectValue placeholder="Coming soon" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="placeholder">No timesheets</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    {/* Markup Field */}
                     <FormField
                       control={form.control}
                       name="markupPercent"
@@ -1350,11 +1944,15 @@ export default function ClientInvoiceDetail() {
                         <FormItem>
                           <FormLabel>Markup (%)</FormLabel>
                           <FormControl>
-                            <Input 
+                            <Input
                               type="number"
                               {...field}
                               value={field.value || ""}
-                              onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
+                              onChange={(e) =>
+                                field.onChange(
+                                  e.target.value ? parseFloat(e.target.value) : undefined
+                                )
+                              }
                               data-testid="input-markup-percent"
                             />
                           </FormControl>
@@ -1367,7 +1965,7 @@ export default function ClientInvoiceDetail() {
 
                 {/* Custom Lines */}
                 <Card data-testid="section-custom-lines">
-                  <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0">
+                  <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-3">
                     <CardTitle className="text-base">Custom Lines</CardTitle>
                     <Button
                       type="button"
@@ -1376,155 +1974,224 @@ export default function ClientInvoiceDetail() {
                       onClick={addCustomLine}
                       data-testid="button-add-custom-line"
                     >
-                      <Plus className="h-4 w-4 mr-2" />
+                      <Plus className="h-4 w-4 mr-1" />
                       Add Line
                     </Button>
                   </CardHeader>
                   <CardContent>
-                    {customLines.length > 0 ? (
+                    {customLines.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-4">
+                        No custom lines. Click "Add Line" to add a custom line item.
+                      </p>
+                    ) : (
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Description</TableHead>
-                            <TableHead>Qty</TableHead>
-                            <TableHead>Price</TableHead>
-                            <TableHead>Total</TableHead>
-                            <TableHead></TableHead>
+                            {isColVisible("name") && <TableHead className="w-36">Name</TableHead>}
+                            {isColVisible("description") && <TableHead>Description</TableHead>}
+                            <TableHead className="text-right w-16">Qty</TableHead>
+                            <TableHead className="text-right w-24">Price</TableHead>
+                            {isColVisible("claimAmount") && (
+                              <TableHead className="text-right w-28">Claim $</TableHead>
+                            )}
+                            {isColVisible("amountExTax") && (
+                              <TableHead className="text-right w-24">Ex Tax</TableHead>
+                            )}
+                            {isColVisible("amountTax") && (
+                              <TableHead className="text-right w-20">Tax</TableHead>
+                            )}
+                            {isColVisible("amountIncTax") && (
+                              <TableHead className="text-right w-28">Inc Tax</TableHead>
+                            )}
+                            <TableHead className="w-8" />
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {customLines.map((line, index) => (
-                            <TableRow key={index} data-testid={`custom-line-${index}`}>
-                              <TableCell>
-                                <Input
-                                  value={line.description}
-                                  onChange={(e) => updateCustomLine(index, "description", e.target.value)}
-                                  data-testid={`input-custom-description-${index}`}
-                                />
-                              </TableCell>
-                              <TableCell className="w-24">
-                                <Input
-                                  type="number"
-                                  value={line.quantity}
-                                  onChange={(e) => updateCustomLine(index, "quantity", parseFloat(e.target.value) || 0)}
-                                  data-testid={`input-custom-quantity-${index}`}
-                                />
-                              </TableCell>
-                              <TableCell className="w-32">
-                                <Input
-                                  type="number"
-                                  step="0.01"
-                                  value={line.unitPrice}
-                                  onChange={(e) => updateCustomLine(index, "unitPrice", parseFloat(e.target.value) || 0)}
-                                  data-testid={`input-custom-price-${index}`}
-                                />
-                              </TableCell>
-                              <TableCell className="w-32">
-                                <span data-testid={`text-custom-total-${index}`}>
-                                  {formatCurrency(line.totalPrice)}
-                                </span>
-                              </TableCell>
-                              <TableCell className="w-12">
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => deleteCustomLine(index)}
-                                  data-testid={`button-delete-custom-${index}`}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </TableCell>
-                            </TableRow>
-                          ))}
+                          {customLines.map((line, index) => {
+                            const exTax = line.totalPrice / (1 + GST_RATE);
+                            const tax = line.totalPrice - exTax;
+                            return (
+                              <TableRow key={index} data-testid={`custom-line-${index}`}>
+                                {isColVisible("name") && (
+                                  <TableCell>
+                                    <Input
+                                      value={line.name}
+                                      onChange={(e) =>
+                                        updateCustomLine(index, "name", e.target.value)
+                                      }
+                                      placeholder="Name"
+                                      className="h-7 text-sm"
+                                    />
+                                  </TableCell>
+                                )}
+                                {isColVisible("description") && (
+                                  <TableCell>
+                                    <Input
+                                      value={line.description}
+                                      onChange={(e) =>
+                                        updateCustomLine(index, "description", e.target.value)
+                                      }
+                                      placeholder="Description"
+                                      className="h-7 text-sm"
+                                    />
+                                  </TableCell>
+                                )}
+                                <TableCell>
+                                  <Input
+                                    type="number"
+                                    value={line.quantity}
+                                    onChange={(e) =>
+                                      updateCustomLine(
+                                        index,
+                                        "quantity",
+                                        parseFloat(e.target.value) || 0
+                                      )
+                                    }
+                                    className="h-7 w-14 text-right text-sm"
+                                  />
+                                </TableCell>
+                                <TableCell>
+                                  <Input
+                                    type="number"
+                                    value={line.unitPrice}
+                                    onChange={(e) =>
+                                      updateCustomLine(
+                                        index,
+                                        "unitPrice",
+                                        parseFloat(e.target.value) || 0
+                                      )
+                                    }
+                                    className="h-7 w-20 text-right text-sm"
+                                  />
+                                </TableCell>
+                                {isColVisible("claimAmount") && (
+                                  <TableCell className="text-right text-sm font-medium">
+                                    {formatCurrency(line.totalPrice)}
+                                  </TableCell>
+                                )}
+                                {isColVisible("amountExTax") && (
+                                  <TableCell className="text-right text-sm">
+                                    {line.taxable ? formatCurrency(exTax) : formatCurrency(line.totalPrice)}
+                                  </TableCell>
+                                )}
+                                {isColVisible("amountTax") && (
+                                  <TableCell className="text-right text-sm">
+                                    {line.taxable ? formatCurrency(tax) : formatCurrency(0)}
+                                  </TableCell>
+                                )}
+                                {isColVisible("amountIncTax") && (
+                                  <TableCell className="text-right text-sm font-medium">
+                                    {formatCurrency(line.totalPrice)}
+                                  </TableCell>
+                                )}
+                                <TableCell>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => deleteCustomLine(index)}
+                                    data-testid={`button-delete-custom-line-${index}`}
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
                         </TableBody>
                       </Table>
-                    ) : (
-                      <div className="text-sm text-muted-foreground text-center py-4" data-testid="text-no-custom-lines">
-                        No custom lines added
-                      </div>
                     )}
                   </CardContent>
                 </Card>
 
-                {/* Payments History Section */}
+                {/* Payments History */}
                 {isEditMode && (
                   <Card data-testid="section-payments-history">
-                    <CardHeader>
-                      <div className="flex items-center justify-between">
-                        <CardTitle className="text-base">
-                          Payments History ({payments.length})
-                        </CardTitle>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setPaymentDialogOpen(true)}
-                          data-testid="button-record-payment"
-                        >
-                          <Plus className="h-4 w-4 mr-2" />
-                          Record Payment
-                        </Button>
-                      </div>
+                    <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0">
+                      <CardTitle className="text-base">
+                        Payments ({payments.length})
+                      </CardTitle>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPaymentDialogOpen(true)}
+                        data-testid="button-record-payment"
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        Record Payment
+                      </Button>
                     </CardHeader>
                     <CardContent>
                       {payments.length > 0 ? (
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead data-testid="header-payment-date">Date</TableHead>
-                              <TableHead data-testid="header-payment-amount">Amount</TableHead>
-                              <TableHead data-testid="header-payment-method">Payment Method</TableHead>
-                              <TableHead data-testid="header-payment-reference">Reference</TableHead>
-                              <TableHead data-testid="header-payment-recorded-by">Recorded By</TableHead>
+                              <TableHead>Date</TableHead>
+                              <TableHead className="text-right">Amount</TableHead>
+                              <TableHead>Method</TableHead>
+                              <TableHead>Reference</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
                             {payments.map((payment) => (
-                              <TableRow key={payment.id} data-testid={`row-payment-${payment.id}`}>
-                                <TableCell data-testid={`text-payment-date-${payment.id}`}>
-                                  {payment.paymentDate ? format(new Date(payment.paymentDate), "PPP") : "-"}
+                              <TableRow key={payment.id}>
+                                <TableCell className="text-sm">
+                                  {payment.paymentDate
+                                    ? format(new Date(payment.paymentDate), "d MMM yyyy")
+                                    : "-"}
                                 </TableCell>
-                                <TableCell data-testid={`text-payment-amount-${payment.id}`}>
+                                <TableCell className="text-right text-sm font-medium">
                                   {formatCurrency(payment.amount / 100)}
                                 </TableCell>
-                                <TableCell data-testid={`text-payment-method-${payment.id}`}>
+                                <TableCell className="text-sm text-muted-foreground">
                                   {payment.paymentMethod || "-"}
                                 </TableCell>
-                                <TableCell data-testid={`text-payment-reference-${payment.id}`}>
+                                <TableCell className="text-sm text-muted-foreground">
                                   {payment.reference || "-"}
-                                </TableCell>
-                                <TableCell data-testid={`text-payment-recorded-by-${payment.id}`}>
-                                  {payment.recordedBy || "-"}
                                 </TableCell>
                               </TableRow>
                             ))}
                           </TableBody>
                         </Table>
                       ) : (
-                        <div className="text-sm text-muted-foreground text-center py-4" data-testid="text-no-payments">
+                        <p className="text-sm text-muted-foreground text-center py-4">
                           No payments recorded
-                        </div>
+                        </p>
                       )}
                     </CardContent>
                   </Card>
                 )}
 
-                {/* Closing Text */}
+                {/* Closing Text (collapsible) */}
                 <FormField
                   control={form.control}
                   name="closingText"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Closing Text</FormLabel>
-                      <FormControl>
-                        <RichTextEditor
-                          content={field.value || ""}
-                          onChange={(html) => field.onChange(html)}
-                          placeholder="Enter closing text..."
-                          data-testid="editor-closing"
-                        />
-                      </FormControl>
+                      <div
+                        className="flex items-center justify-between cursor-pointer py-1"
+                        onClick={() => setClosingCollapsed((v) => !v)}
+                      >
+                        <FormLabel className="cursor-pointer text-sm font-medium">
+                          Closing Text
+                        </FormLabel>
+                        {closingCollapsed ? (
+                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </div>
+                      {!closingCollapsed && (
+                        <FormControl>
+                          <RichTextEditor
+                            content={field.value || ""}
+                            onChange={(html) => field.onChange(html)}
+                            placeholder="Enter closing text..."
+                            data-testid="editor-closing"
+                          />
+                        </FormControl>
+                      )}
                       <FormMessage />
                     </FormItem>
                   )}
@@ -1555,7 +2222,7 @@ export default function ClientInvoiceDetail() {
                   )}
                 />
 
-                {/* Attachments Section (Stub) */}
+                {/* Attachments stub */}
                 <Card data-testid="section-attachments">
                   <CardHeader>
                     <CardTitle className="text-base flex items-center gap-2">
@@ -1564,65 +2231,114 @@ export default function ClientInvoiceDetail() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="text-sm text-muted-foreground text-center py-4" data-testid="text-no-attachments">
+                    <p className="text-sm text-muted-foreground text-center py-4">
                       No attachments
-                    </div>
+                    </p>
                   </CardContent>
                 </Card>
               </div>
 
-              {/* Right Column - Summary Panel */}
-              <div className="w-80 flex-none">
+              {/* Right Column — Summary */}
+              <div className="w-72 flex-none">
                 <Card className="sticky top-6" data-testid="summary-panel">
                   <CardHeader>
                     <CardTitle className="text-base">Summary</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
+                    {currentProject?.invoicingMethod === "progress_payments" && selectedEstimateId && (
+                      <>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Contract:</span>
+                          <span className="font-medium">
+                            {formatCurrency(calculateContractPrice() / 100)}
+                          </span>
+                        </div>
+                        {selectedVariationIds.length > 0 && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Variations:</span>
+                            <span className="font-medium">
+                              {formatCurrency(calculateVariationsTotal() / 100)}
+                            </span>
+                          </div>
+                        )}
+                        {selectedAllowanceIds.length > 0 && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Allowances:</span>
+                            <span className="font-medium">
+                              {formatCurrency(calculateAllowancesTotal() / 100)}
+                            </span>
+                          </div>
+                        )}
+                      </>
+                    )}
                     {currentProject?.invoicingMethod === "cost_plus" && (
+                      <>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Bills:</span>
+                          <span className="font-medium">
+                            {formatCurrency(calculateBillsTotal() / 100)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Markup:</span>
+                          <span className="font-medium">{formatCurrency(calculateMarkup())}</span>
+                        </div>
+                      </>
+                    )}
+                    {customLines.length > 0 && (
                       <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Markup:</span>
-                        <span className="font-medium" data-testid="text-summary-markup">
-                          {formatCurrency(calculateMarkup())}
+                        <span className="text-muted-foreground">Custom lines:</span>
+                        <span className="font-medium">
+                          {formatCurrency(calculateCustomLinesSubtotal())}
                         </span>
                       </div>
                     )}
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Total ex. tax:</span>
-                      <span className="font-medium" data-testid="text-summary-subtotal">
-                        {formatCurrency(calculateSubtotal())}
-                      </span>
+                    <div className="border-t pt-3 space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Amount ex Tax:</span>
+                        <span className="font-medium">{formatCurrency(amountExTax())}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">GST (10%):</span>
+                        <span className="font-medium">{formatCurrency(amountTax())}</span>
+                      </div>
+                      <div className="flex justify-between text-base font-semibold pt-1 border-t">
+                        <span>Total inc Tax:</span>
+                        <span data-testid="text-summary-total">{formatCurrency(total)}</span>
+                      </div>
                     </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Tax (GST):</span>
-                      <span className="font-medium" data-testid="text-summary-tax">
-                        {formatCurrency(calculateGST())}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-base font-semibold pt-3 border-t">
-                      <span>Total inc. tax:</span>
-                      <span data-testid="text-summary-total">
-                        {formatCurrency(total)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-base font-semibold">
-                      <span>Due:</span>
-                      <span data-testid="text-summary-due">
-                        {formatCurrency(due)}
-                      </span>
-                    </div>
+                    {isEditMode && paid > 0 && (
+                      <div className="border-t pt-3 space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Paid:</span>
+                          <span className="font-medium text-green-600">
+                            {formatCurrency(paid)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-base font-semibold">
+                          <span>Balance Due:</span>
+                          <span
+                            className={cn(due > 0 ? "text-[#bba7db]" : "text-green-600")}
+                            data-testid="text-summary-due"
+                          >
+                            {formatCurrency(due)}
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </div>
             </div>
           </div>
 
-          {/* Footer with Additional Actions - only shown for sent/partial invoices */}
+          {/* Footer for sent/partial */}
           {isEditMode && (invoice?.status === "sent" || invoice?.status === "partial") && (
             <div className="h-9 bg-background flex items-center justify-end px-2 border-t border-border flex-shrink-0">
               <button
                 type="button"
                 onClick={() => setPaymentDialogOpen(true)}
-                className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
+                className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 flex items-center gap-1"
                 data-testid="button-record-payment-footer"
               >
                 <DollarSign className="w-3 h-3" />
@@ -1633,7 +2349,188 @@ export default function ClientInvoiceDetail() {
         </form>
       </Form>
 
-      {/* Record Payment Dialog */}
+      {/* ── Variations Modal ── */}
+      <Dialog open={variationsModalOpen} onOpenChange={setVariationsModalOpen}>
+        <DialogContent className="max-w-2xl" data-testid="dialog-variations">
+          <DialogHeader>
+            <DialogTitle>Select Variations</DialogTitle>
+            <DialogDescription>
+              Only approved variations can be added to an invoice.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {variations.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">
+                No variations found for this project.
+              </p>
+            ) : (
+              variations.map((v) => {
+                const isApproved = v.status === "approved";
+                const isSelected = selectedVariationIds.includes(v.id);
+                return (
+                  <div
+                    key={v.id}
+                    className={cn(
+                      "flex items-center gap-3 p-3 rounded-md border",
+                      isApproved
+                        ? "hover-elevate cursor-pointer"
+                        : "opacity-40 cursor-not-allowed"
+                    )}
+                    onClick={() => {
+                      if (!isApproved) return;
+                      setSelectedVariationIds((prev) =>
+                        isSelected
+                          ? prev.filter((id) => id !== v.id)
+                          : [...prev, v.id]
+                      );
+                    }}
+                    data-testid={`variation-option-${v.id}`}
+                  >
+                    <div
+                      className={cn(
+                        "w-4 h-4 rounded border flex items-center justify-center flex-shrink-0",
+                        isSelected && isApproved
+                          ? "bg-primary border-primary"
+                          : "border-input"
+                      )}
+                    >
+                      {isSelected && isApproved && (
+                        <Check className="h-3 w-3 text-primary-foreground" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium font-mono">
+                          {v.variationNumber}
+                        </span>
+                        <span className="text-sm truncate">{v.name}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 flex-shrink-0">
+                      <Badge
+                        variant={
+                          v.status === "approved"
+                            ? "default"
+                            : v.status === "rejected"
+                            ? "destructive"
+                            : "secondary"
+                        }
+                        className="text-xs"
+                      >
+                        {v.status}
+                      </Badge>
+                      <span className="text-sm font-medium w-24 text-right">
+                        {formatCurrency(v.totalAmount / 100)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setVariationsModalOpen(false)}
+            >
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Allowances Modal ── */}
+      <Dialog open={allowancesModalOpen} onOpenChange={setAllowancesModalOpen}>
+        <DialogContent className="max-w-2xl" data-testid="dialog-allowances">
+          <DialogHeader>
+            <DialogTitle>Select Allowances</DialogTitle>
+            <DialogDescription>
+              Only finalized allowances (PC/PS items) can be added to an invoice.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {getAllowanceItems().length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">
+                No allowance items (PC/PS) found in the selected estimate.
+              </p>
+            ) : (
+              getAllowanceItems().map((item) => {
+                const isFinalized = item.allowanceStatus === "finalized";
+                const isSelected = selectedAllowanceIds.includes(item.id);
+                const totalAmt = item.priceIncTax * item.quantity;
+                return (
+                  <div
+                    key={item.id}
+                    className={cn(
+                      "flex items-center gap-3 p-3 rounded-md border",
+                      isFinalized
+                        ? "hover-elevate cursor-pointer"
+                        : "opacity-40 cursor-not-allowed"
+                    )}
+                    onClick={() => {
+                      if (!isFinalized) return;
+                      setSelectedAllowanceIds((prev) =>
+                        isSelected
+                          ? prev.filter((id) => id !== item.id)
+                          : [...prev, item.id]
+                      );
+                    }}
+                    data-testid={`allowance-option-${item.id}`}
+                  >
+                    <div
+                      className={cn(
+                        "w-4 h-4 rounded border flex items-center justify-center flex-shrink-0",
+                        isSelected && isFinalized
+                          ? "bg-primary border-primary"
+                          : "border-input"
+                      )}
+                    >
+                      {isSelected && isFinalized && (
+                        <Check className="h-3 w-3 text-primary-foreground" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium truncate">{item.name}</span>
+                        <Badge variant="outline" className="text-xs flex-shrink-0">
+                          {item.allowance}
+                        </Badge>
+                      </div>
+                      {item.description && (
+                        <p className="text-xs text-muted-foreground truncate mt-0.5">
+                          {item.description}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 flex-shrink-0">
+                      <Badge
+                        variant={isFinalized ? "default" : "secondary"}
+                        className="text-xs"
+                      >
+                        {item.allowanceStatus}
+                      </Badge>
+                      <span className="text-sm font-medium w-24 text-right">
+                        {formatCurrency(totalAmt)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAllowancesModalOpen(false)}>
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Record Payment Dialog ── */}
       <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
         <DialogContent data-testid="dialog-record-payment">
           <DialogHeader>
@@ -1642,10 +2539,14 @@ export default function ClientInvoiceDetail() {
               Record a payment for this invoice. The invoice status will be automatically updated.
             </DialogDescription>
           </DialogHeader>
-          
+
           <Form {...paymentForm}>
-            <form onSubmit={paymentForm.handleSubmit(onPaymentSubmit)} className="space-y-4">
-              {/* Amount */}
+            <form
+              onSubmit={paymentForm.handleSubmit((data) =>
+                recordPaymentMutation.mutate(data)
+              )}
+              className="space-y-4"
+            >
               <FormField
                 control={paymentForm.control}
                 name="amount"
@@ -1666,7 +2567,6 @@ export default function ClientInvoiceDetail() {
                 )}
               />
 
-              {/* Payment Date */}
               <FormField
                 control={paymentForm.control}
                 name="paymentDate"
@@ -1703,7 +2603,6 @@ export default function ClientInvoiceDetail() {
                 )}
               />
 
-              {/* Payment Method */}
               <FormField
                 control={paymentForm.control}
                 name="paymentMethod"
@@ -1713,15 +2612,15 @@ export default function ClientInvoiceDetail() {
                     <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
                         <SelectTrigger data-testid="select-payment-method">
-                          <SelectValue placeholder="Select payment method" />
+                          <SelectValue placeholder="Select method" />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="Bank Transfer" data-testid="option-bank-transfer">Bank Transfer</SelectItem>
-                        <SelectItem value="Credit Card" data-testid="option-credit-card">Credit Card</SelectItem>
-                        <SelectItem value="Cash" data-testid="option-cash">Cash</SelectItem>
-                        <SelectItem value="Cheque" data-testid="option-cheque">Cheque</SelectItem>
-                        <SelectItem value="Other" data-testid="option-other">Other</SelectItem>
+                        <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
+                        <SelectItem value="Credit Card">Credit Card</SelectItem>
+                        <SelectItem value="Cash">Cash</SelectItem>
+                        <SelectItem value="Cheque">Cheque</SelectItem>
+                        <SelectItem value="Other">Other</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -1729,7 +2628,6 @@ export default function ClientInvoiceDetail() {
                 )}
               />
 
-              {/* Reference */}
               <FormField
                 control={paymentForm.control}
                 name="reference"
@@ -1744,7 +2642,6 @@ export default function ClientInvoiceDetail() {
                 )}
               />
 
-              {/* Notes */}
               <FormField
                 control={paymentForm.control}
                 name="notes"
@@ -1752,11 +2649,7 @@ export default function ClientInvoiceDetail() {
                   <FormItem>
                     <FormLabel>Notes</FormLabel>
                     <FormControl>
-                      <Textarea 
-                        {...field} 
-                        rows={3} 
-                        data-testid="textarea-payment-notes"
-                      />
+                      <Textarea {...field} rows={3} data-testid="textarea-payment-notes" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -1768,15 +2661,10 @@ export default function ClientInvoiceDetail() {
                   type="button"
                   variant="outline"
                   onClick={() => setPaymentDialogOpen(false)}
-                  data-testid="button-cancel-payment"
                 >
                   Cancel
                 </Button>
-                <Button
-                  type="submit"
-                  disabled={recordPaymentMutation.isPending}
-                  data-testid="button-submit-payment"
-                >
+                <Button type="submit" disabled={recordPaymentMutation.isPending}>
                   {recordPaymentMutation.isPending && (
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   )}

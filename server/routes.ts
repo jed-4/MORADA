@@ -61,6 +61,7 @@ import {
   insertProposalItemSchema,
   insertProposalAcceptanceSchema,
   insertInvoiceVariationSchema,
+  insertInvoiceAllowanceSchema,
   insertInvoiceBillSchema,
   insertSiteDiaryTemplateSchema,
   insertSiteDiaryEntrySchema,
@@ -10609,6 +10610,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Auto-generate next invoice number for a project — must be before /:id route
+  app.get("/api/client-invoices/next-number", async (req, res) => {
+    try {
+      const { projectId } = req.query;
+      if (!projectId) {
+        return res.status(400).json({ error: "projectId is required" });
+      }
+      const project = await storage.getProject(projectId as string);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      const prefix = (project as any).clientInvoicePrefix || "INV-";
+      const startNumber = (project as any).clientInvoiceStartNumber || 1000;
+      const existingInvoices = await storage.getClientInvoices(projectId as string);
+      const nextNumber = startNumber + existingInvoices.length;
+      const invoiceNumber = `${prefix}${nextNumber}`;
+      res.json({ invoiceNumber });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to generate invoice number" });
+    }
+  });
+
   app.get("/api/client-invoices/:id", async (req, res) => {
     try {
       const invoice = await storage.getClientInvoice(req.params.id);
@@ -10846,6 +10869,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/invoice-variations/:id", async (req, res) => {
+    try {
+      const validationResult = insertInvoiceVariationSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(validationResult.error).toString() });
+      }
+      const updated = await storage.updateInvoiceVariation(req.params.id, validationResult.data);
+      if (!updated) {
+        return res.status(404).json({ error: "Invoice variation not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update invoice variation" });
+    }
+  });
+
   app.delete("/api/invoice-variations/:id", async (req, res) => {
     try {
       const deleted = await storage.deleteInvoiceVariation(req.params.id);
@@ -10855,6 +10894,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete invoice variation" });
+    }
+  });
+
+  // Invoice-Allowance Junction Routes
+  app.get("/api/client-invoices/:id/allowances", async (req, res) => {
+    try {
+      const allowances = await storage.getInvoiceAllowances(req.params.id);
+      res.json(allowances);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch invoice allowances" });
+    }
+  });
+
+  app.post("/api/client-invoices/:id/allowances", async (req, res) => {
+    try {
+      const validationResult = insertInvoiceAllowanceSchema.safeParse({
+        ...req.body,
+        invoiceId: req.params.id
+      });
+      if (!validationResult.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(validationResult.error).toString() });
+      }
+      const allowance = await storage.createInvoiceAllowance(validationResult.data);
+      res.status(201).json(allowance);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create invoice allowance" });
+    }
+  });
+
+  app.patch("/api/invoice-allowances/:id", async (req, res) => {
+    try {
+      const validationResult = insertInvoiceAllowanceSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ error: "Validation failed", details: fromZodError(validationResult.error).toString() });
+      }
+      const updated = await storage.updateInvoiceAllowance(req.params.id, validationResult.data);
+      if (!updated) {
+        return res.status(404).json({ error: "Invoice allowance not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update invoice allowance" });
+    }
+  });
+
+  app.delete("/api/invoice-allowances/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteInvoiceAllowance(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Invoice allowance not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete invoice allowance" });
     }
   });
 
