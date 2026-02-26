@@ -20327,6 +20327,39 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
     }
   });
 
+  // ─── Demo Data Routes ──────────────────────────────────────────────────────
+
+  app.get("/api/demo/status", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { isDemoSeeded } = await import("./seed-lenny");
+      const seeded = await isDemoSeeded(companyId);
+      res.json({ seeded });
+    } catch (error: any) {
+      console.error("Error checking demo status:", error);
+      res.status(500).json({ error: error.message || "Failed to check demo status" });
+    }
+  });
+
+  app.post("/api/demo/seed", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      const userId = user?.id;
+      if (!companyId || !userId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { seedLennyDemo } = await import("./seed-lenny");
+      const result = await seedLennyDemo(companyId, userId);
+      res.json(result);
+    } catch (error: any) {
+      console.error("Error seeding demo data:", error);
+      res.status(500).json({ error: error.message || "Failed to seed demo data" });
+    }
+  });
+
   const httpServer = createServer(app);
 
   // Setup Socket.io for real-time messaging and task updates with session authentication

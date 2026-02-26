@@ -25,7 +25,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { insertSystemConfigurationSchema, type SystemConfiguration } from "@shared/schema";
-import { Settings, Globe, FileText, Building2, ArrowLeft, Hash, CheckCircle2 } from "lucide-react";
+import { Settings, Globe, FileText, Building2, ArrowLeft, Hash, CheckCircle2, Database, Loader2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { z } from "zod";
 import { useLocation } from "wouter";
@@ -51,6 +51,34 @@ export default function SystemConfigurationPage() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [activeTab, setActiveTab] = useState("regional");
+
+  const { data: demoStatus, refetch: refetchDemoStatus } = useQuery<{ seeded: boolean }>({
+    queryKey: ["/api/demo/status"],
+  });
+
+  const seedDemoMutation = useMutation({
+    mutationFn: async () => apiRequest("/api/demo/seed", "POST"),
+    onSuccess: (data: any) => {
+      if (data?.skipped) {
+        toast({ title: "Already seeded", description: "Demo data is already loaded." });
+      } else {
+        toast({
+          title: "Demo data loaded",
+          description: `3 projects, ${data?.counts?.contacts ?? 13} contacts, ${data?.counts?.invoices ?? 3} invoices added. Check your Projects list!`,
+        });
+        queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
+      }
+      refetchDemoStatus();
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to load demo data. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
 
   // Fetch system configuration
   const { data: config, isLoading, error } = useQuery<SystemConfiguration>({
@@ -1198,6 +1226,43 @@ export default function SystemConfigurationPage() {
               </Card>
             </TabsContent>
           </Tabs>
+
+          {/* Demo Data Card */}
+          <Card>
+            <CardHeader className="flex flex-row items-center gap-3 space-y-0 pb-3">
+              <Database className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <CardTitle className="text-base">Demo Data</CardTitle>
+                <CardDescription className="text-sm">
+                  Populates your account with sample Australian construction projects, contacts, invoices and bills for demonstration purposes.
+                </CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {demoStatus?.seeded ? (
+                <div className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400">
+                  <CheckCircle2 className="h-4 w-4" />
+                  <span>Demo data is loaded — check your Projects and Contacts lists.</span>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  onClick={() => seedDemoMutation.mutate()}
+                  disabled={seedDemoMutation.isPending}
+                  data-testid="button-seed-demo"
+                >
+                  {seedDemoMutation.isPending ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Loading demo data...
+                    </>
+                  ) : (
+                    "Seed Demo Data"
+                  )}
+                </Button>
+              )}
+            </CardContent>
+          </Card>
 
           <div className="flex justify-end gap-2">
             <Button

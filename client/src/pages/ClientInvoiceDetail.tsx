@@ -1130,9 +1130,7 @@ export default function ClientInvoiceDetail() {
 
           {/* Main Content */}
           <div className="flex-1 overflow-auto">
-            <div className="flex gap-6 p-6">
-              {/* Left Column */}
-              <div className="flex-1 space-y-6 min-w-0">
+            <div className="max-w-5xl mx-auto px-6 py-6 space-y-6">
 
                 {/* Invoice Name + Number */}
                 <div className="grid grid-cols-3 gap-4">
@@ -1344,35 +1342,6 @@ export default function ClientInvoiceDetail() {
                           )}
                         </CardTitle>
                         <div className="flex items-center gap-2">
-                          {/* Inc/Exc toggle */}
-                          <div className="flex items-center gap-1.5 text-xs">
-                            <span
-                              className={cn(
-                                "text-xs",
-                                !showAmountsIncTax
-                                  ? "text-foreground font-medium"
-                                  : "text-muted-foreground"
-                              )}
-                            >
-                              Ex GST
-                            </span>
-                            <Switch
-                              checked={showAmountsIncTax}
-                              onCheckedChange={setShowAmountsIncTax}
-                              className="scale-75"
-                            />
-                            <span
-                              className={cn(
-                                "text-xs",
-                                showAmountsIncTax
-                                  ? "text-foreground font-medium"
-                                  : "text-muted-foreground"
-                              )}
-                            >
-                              Inc GST
-                            </span>
-                          </div>
-
                           {/* Column picker */}
                           <Popover open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
                             <PopoverTrigger asChild>
@@ -2236,99 +2205,139 @@ export default function ClientInvoiceDetail() {
                     </p>
                   </CardContent>
                 </Card>
-              </div>
 
-              {/* Right Column — Summary */}
-              <div className="w-72 flex-none">
-                <Card className="sticky top-6" data-testid="summary-panel">
-                  <CardHeader>
-                    <CardTitle className="text-base">Summary</CardTitle>
+                {/* Invoice Summary Card */}
+                <Card data-testid="summary-panel">
+                  <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-3">
+                    <CardTitle className="text-base">Invoice Summary</CardTitle>
+                    <div className="flex items-center gap-1.5 text-xs">
+                      <span
+                        className={cn(
+                          "text-xs",
+                          !showAmountsIncTax
+                            ? "text-foreground font-medium"
+                            : "text-muted-foreground"
+                        )}
+                      >
+                        Ex GST
+                      </span>
+                      <Switch
+                        checked={showAmountsIncTax}
+                        onCheckedChange={setShowAmountsIncTax}
+                        className="scale-75"
+                      />
+                      <span
+                        className={cn(
+                          "text-xs",
+                          showAmountsIncTax
+                            ? "text-foreground font-medium"
+                            : "text-muted-foreground"
+                        )}
+                      >
+                        Inc GST
+                      </span>
+                    </div>
                   </CardHeader>
-                  <CardContent className="space-y-3">
-                    {currentProject?.invoicingMethod === "progress_payments" && selectedEstimateId && (
-                      <>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Contract:</span>
-                          <span className="font-medium">
-                            {formatCurrency(calculateContractPrice() / 100)}
-                          </span>
-                        </div>
+                  <CardContent>
+                    <div className="grid grid-cols-5 gap-6">
+                      {/* Left: Breakdown */}
+                      <div className="col-span-3 space-y-1.5">
+                        {currentProject?.invoicingMethod === "progress_payments" && selectedEstimateId && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Contract Price</span>
+                            <span className="font-medium tabular-nums">
+                              {formatCurrency(calculateContractPrice() / 100)}
+                            </span>
+                          </div>
+                        )}
                         {selectedVariationIds.length > 0 && (
                           <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">Variations:</span>
-                            <span className="font-medium">
+                            <span className="text-muted-foreground">Variations</span>
+                            <span className="font-medium tabular-nums">
                               {formatCurrency(calculateVariationsTotal() / 100)}
                             </span>
                           </div>
                         )}
                         {selectedAllowanceIds.length > 0 && (
                           <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">Allowances:</span>
-                            <span className="font-medium">
+                            <span className="text-muted-foreground">Allowances</span>
+                            <span className="font-medium tabular-nums">
                               {formatCurrency(calculateAllowancesTotal() / 100)}
                             </span>
                           </div>
                         )}
-                      </>
-                    )}
-                    {currentProject?.invoicingMethod === "cost_plus" && (
-                      <>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Bills:</span>
-                          <span className="font-medium">
-                            {formatCurrency(calculateBillsTotal() / 100)}
-                          </span>
+                        {currentProject?.invoicingMethod === "cost_plus" && (
+                          <>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-muted-foreground">Bills</span>
+                              <span className="font-medium tabular-nums">
+                                {formatCurrency(calculateBillsTotal() / 100)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-muted-foreground">Markup</span>
+                              <span className="font-medium tabular-nums">{formatCurrency(calculateMarkup())}</span>
+                            </div>
+                          </>
+                        )}
+                        {customLines.length > 0 && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Custom Lines</span>
+                            <span className="font-medium tabular-nums">
+                              {formatCurrency(calculateCustomLinesSubtotal())}
+                            </span>
+                          </div>
+                        )}
+                        <div className="border-t pt-2 mt-2 space-y-1.5">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Amount ex GST</span>
+                            <span className="font-medium tabular-nums">{formatCurrency(amountExTax())}</span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">GST (10%)</span>
+                            <span className="font-medium tabular-nums">{formatCurrency(amountTax())}</span>
+                          </div>
                         </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Markup:</span>
-                          <span className="font-medium">{formatCurrency(calculateMarkup())}</span>
-                        </div>
-                      </>
-                    )}
-                    {customLines.length > 0 && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Custom lines:</span>
-                        <span className="font-medium">
-                          {formatCurrency(calculateCustomLinesSubtotal())}
-                        </span>
                       </div>
-                    )}
-                    <div className="border-t pt-3 space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Amount ex Tax:</span>
-                        <span className="font-medium">{formatCurrency(amountExTax())}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">GST (10%):</span>
-                        <span className="font-medium">{formatCurrency(amountTax())}</span>
-                      </div>
-                      <div className="flex justify-between text-base font-semibold pt-1 border-t">
-                        <span>Total inc Tax:</span>
-                        <span data-testid="text-summary-total">{formatCurrency(total)}</span>
+
+                      {/* Divider */}
+                      <div className="col-span-2 border-l pl-6 flex flex-col justify-center">
+                        <p className="text-xs text-muted-foreground mb-1">Total inc GST</p>
+                        <p
+                          className="text-3xl font-bold tracking-tight"
+                          data-testid="text-summary-total"
+                        >
+                          {formatCurrency(total)}
+                        </p>
+                        {isEditMode && (
+                          <div className="mt-4 space-y-1.5">
+                            {paid > 0 && (
+                              <div className="flex justify-between text-sm">
+                                <span className="text-muted-foreground">Paid</span>
+                                <span className="font-medium text-emerald-600 dark:text-emerald-400 tabular-nums">
+                                  {formatCurrency(paid)}
+                                </span>
+                              </div>
+                            )}
+                            <div className="flex justify-between text-sm font-semibold">
+                              <span>Balance Due</span>
+                              <span
+                                className={cn(
+                                  "tabular-nums",
+                                  due > 0 ? "text-[#bba7db]" : "text-emerald-600 dark:text-emerald-400"
+                                )}
+                                data-testid="text-summary-due"
+                              >
+                                {formatCurrency(due)}
+                              </span>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
-                    {isEditMode && paid > 0 && (
-                      <div className="border-t pt-3 space-y-2">
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Paid:</span>
-                          <span className="font-medium text-green-600">
-                            {formatCurrency(paid)}
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-base font-semibold">
-                          <span>Balance Due:</span>
-                          <span
-                            className={cn(due > 0 ? "text-[#bba7db]" : "text-green-600")}
-                            data-testid="text-summary-due"
-                          >
-                            {formatCurrency(due)}
-                          </span>
-                        </div>
-                      </div>
-                    )}
                   </CardContent>
                 </Card>
-              </div>
+
             </div>
           </div>
 
