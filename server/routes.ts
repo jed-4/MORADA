@@ -11448,6 +11448,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Process email and create bills
       const results = await autoBillCreator.processEmailInvoices(parsedEmail, {
         defaultUserId: defaultUser.id,
+        companyId: defaultUser.companyId || undefined,
         autoMatch: true, // Auto-match suppliers and projects
       });
 

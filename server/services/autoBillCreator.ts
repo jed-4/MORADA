@@ -18,6 +18,7 @@ export interface AutoBillResult {
 export interface AutoBillOptions {
   defaultProjectId?: string;
   defaultUserId: string;
+  companyId?: string;
   autoMatch: boolean;
 }
 
@@ -164,11 +165,12 @@ export class AutoBillCreatorService {
         const bucketName = dirParts[0];
         const dirPrefix = dirParts.slice(1).join("/");
         const objectId = randomUUID();
-        const objectName = dirPrefix ? `${dirPrefix}/uploads/${objectId}` : `uploads/${objectId}`;
+        const ext = fileName.split(".").pop()?.toLowerCase() || "";
+        const objectNameSuffix = ext ? `${objectId}.${ext}` : objectId;
+        const objectName = dirPrefix ? `${dirPrefix}/uploads/${objectNameSuffix}` : `uploads/${objectNameSuffix}`;
         const fileBuffer = Buffer.isBuffer(fileContent)
           ? fileContent
           : Buffer.from(fileContent, "base64");
-        const ext = fileName.split(".").pop()?.toLowerCase() || "";
         const contentType =
           ext === "pdf" ? "application/pdf" :
           ext === "png" ? "image/png" :
@@ -176,7 +178,10 @@ export class AutoBillCreatorService {
         await objectStorageClient.bucket(bucketName).file(objectName).save(fileBuffer, {
           metadata: { contentType },
         });
-        const attachmentUrl = `/objects/uploads/${objectId}`;
+        const companyId = options.companyId;
+        const attachmentUrl = companyId
+          ? `/objects/company/${companyId}/uploads/${objectNameSuffix}`
+          : `/objects/uploads/${objectNameSuffix}`;
         await storage.updateBill(createdBill.id, { attachmentUrls: [attachmentUrl] });
       }
     } catch (uploadErr: any) {

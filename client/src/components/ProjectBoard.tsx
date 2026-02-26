@@ -698,7 +698,7 @@ export function ProjectBoard({
       // When moving by phase, update both projectStatus and currentSystemPhase for consistency
       // When moving by sub-status, also explicitly send currentSystemPhase to ensure it updates
       const updateData = preferences.groupBy === "phase" 
-        ? { projectStatus: newStatus, currentSystemPhase: newStatus }
+        ? { projectStatus: newStatus, currentSystemPhase: newSystemPhase || newStatus }
         : { projectSubStatus: newSubStatus, ...(newSystemPhase ? { currentSystemPhase: newSystemPhase } : {}) };
       
       await apiRequest(`/api/projects/${projectId}`, "PATCH", updateData);
@@ -720,7 +720,7 @@ export function ProjectBoard({
               return {
                 ...project,
                 // When moving by phase, update both projectStatus and currentSystemPhase
-                ...(newStatus ? { projectStatus: newStatus, currentSystemPhase: newStatus } : {}),
+                ...(newStatus ? { projectStatus: newStatus, currentSystemPhase: newSystemPhase || newStatus } : {}),
                 // When moving by sub-status, also update currentSystemPhase to match the target column's phase
                 ...(newSubStatus ? { 
                   projectSubStatus: newSubStatus,
@@ -947,7 +947,7 @@ export function ProjectBoard({
           // When moving between phases, show the phase transition dialog
           const fromPhase = (draggedProject.currentSystemPhase as SystemPhase) || 
             (draggedProject.projectStatus as SystemPhase);
-          const toPhase = columnId as SystemPhase;
+          const toPhase = (getColumnPhase(columnId) || columnId) as SystemPhase;
           
           if (fromPhase && toPhase && fromPhase !== toPhase) {
             // Find the first sub-status in the target phase to use as default
@@ -965,7 +965,8 @@ export function ProjectBoard({
             // Same phase, just update status directly
             moveProjectMutation.mutate({ 
               projectId: activeProjectId, 
-              newStatus: columnId 
+              newStatus: columnId,
+              newSystemPhase: getColumnPhase(columnId) || columnId,
             });
           }
         }
@@ -1005,7 +1006,7 @@ export function ProjectBoard({
           // When moving between phases, show the phase transition dialog
           const fromPhase = (draggedProject.currentSystemPhase as SystemPhase) || 
             (draggedProject.projectStatus as SystemPhase);
-          const toPhase = overProject.projectStatus as SystemPhase;
+          const toPhase = (getColumnPhase(overProject.projectStatus) || overProject.projectStatus) as SystemPhase;
           
           if (fromPhase && toPhase && fromPhase !== toPhase) {
             // Find the first sub-status in the target phase to use as default
@@ -1023,7 +1024,8 @@ export function ProjectBoard({
             // Same phase, just update status directly
             moveProjectMutation.mutate({ 
               projectId: activeProjectId, 
-              newStatus: overProject.projectStatus 
+              newStatus: overProject.projectStatus,
+              newSystemPhase: getColumnPhase(overProject.projectStatus) || overProject.projectStatus,
             });
           }
         }

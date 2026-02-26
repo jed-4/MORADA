@@ -889,7 +889,12 @@ export default function BillDetail() {
       setOcrPreviewOpen(true);
       if (uploadedFile) {
         try {
-          await uploadFile(uploadedFile);
+          const uploadResult = await uploadFile(uploadedFile);
+          if (uploadResult?.objectPath && isEditMode && id) {
+            await apiRequest(`/api/bills/${id}`, "PATCH", {
+              attachmentUrls: [...attachmentUrls, uploadResult.objectPath],
+            });
+          }
         } catch (e) {
           console.error("Failed to auto-save attachment:", e);
         }

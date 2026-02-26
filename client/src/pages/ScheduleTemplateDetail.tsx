@@ -71,7 +71,6 @@ import {
   Columns3,
   ChevronsDownUp,
   ChevronsUpDown,
-  BarChart2,
 } from "lucide-react";
 import { format, addDays, differenceInDays } from "date-fns";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
@@ -365,125 +364,13 @@ function SortableItem({
   );
 }
 
-function WorkloadView({
-  items,
-  refDate,
-  onEditItem,
-}: {
-  items: TemplateItem[];
-  refDate: Date;
-  onEditItem: (item: TemplateItem) => void;
-}) {
-  const workloadWeeks = useMemo(() => {
-    if (!items.length) return [];
-    const minDay = Math.min(...items.map(i => i.relativeStartDay || 0));
-    const maxDay = Math.max(...items.map(i => (i.relativeStartDay || 0) + (i.duration || 1)));
-    const totalDays = Math.max(maxDay - minDay, 7);
-    const numWeeks = Math.ceil(totalDays / 7);
-
-    return Array.from({ length: numWeeks }, (_, w) => {
-      const weekStart = minDay + w * 7;
-      const weekEnd = weekStart + 7;
-      const weekLabel = `Week ${w + 1}`;
-      const weekDate = addDays(refDate, weekStart);
-      const activeItems = items.filter(item => {
-        const start = item.relativeStartDay || 0;
-        const end = start + (item.duration || 1);
-        return start < weekEnd && end > weekStart;
-      });
-      return { weekLabel, weekDate, weekStart, weekEnd, activeItems };
-    });
-  }, [items, refDate]);
-
-  const maxItemsInWeek = useMemo(
-    () => Math.max(1, ...workloadWeeks.map(w => w.activeItems.length)),
-    [workloadWeeks]
-  );
-
-  if (!workloadWeeks.length) {
-    return (
-      <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-        No items to display
-      </div>
-    );
-  }
-
-  return (
-    <div className="p-4 overflow-auto h-full">
-      <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(220px, 1fr))` }}>
-        {workloadWeeks.map((week) => (
-          <div key={week.weekLabel} className="border rounded-md overflow-hidden">
-            <div className="flex items-center justify-between px-3 py-2 bg-muted/40 border-b">
-              <span className="text-xs font-semibold">{week.weekLabel}</span>
-              <span className="text-[10px] text-muted-foreground">
-                {format(week.weekDate, 'dd MMM')}
-              </span>
-            </div>
-            <div className="px-3 py-1.5">
-              <div className="flex items-end gap-0.5 h-6 mb-2">
-                {Array.from({ length: 7 }, (_, d) => {
-                  const day = week.weekStart + d;
-                  const count = items.filter(i => {
-                    const s = i.relativeStartDay || 0;
-                    const e = s + (i.duration || 1);
-                    return s <= day && e > day;
-                  }).length;
-                  const pct = maxItemsInWeek > 0 ? count / maxItemsInWeek : 0;
-                  return (
-                    <div
-                      key={d}
-                      className="flex-1 rounded-sm bg-primary/20 relative overflow-hidden"
-                      style={{ height: '24px' }}
-                      title={`Day ${day + 1}: ${count} item${count !== 1 ? 's' : ''}`}
-                    >
-                      <div
-                        className="absolute bottom-0 left-0 right-0 bg-primary/60 rounded-sm transition-all"
-                        style={{ height: `${Math.max(pct * 100, count > 0 ? 15 : 0)}%` }}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-              {week.activeItems.length === 0 ? (
-                <p className="text-[10px] text-muted-foreground text-center py-1">No items</p>
-              ) : (
-                <div className="space-y-1">
-                  {week.activeItems.slice(0, 5).map(item => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => onEditItem(item)}
-                      className="w-full flex items-center gap-1.5 text-left hover-elevate rounded px-1 py-0.5"
-                    >
-                      <span
-                        className="w-2 h-2 rounded-full shrink-0"
-                        style={{ backgroundColor: item.color || TYPE_COLORS[item.type] || TYPE_COLORS.task }}
-                      />
-                      <span className="text-[11px] truncate flex-1">{item.name}</span>
-                      <span className="text-[10px] text-muted-foreground shrink-0">{item.duration}d</span>
-                    </button>
-                  ))}
-                  {week.activeItems.length > 5 && (
-                    <p className="text-[10px] text-muted-foreground pl-3.5">
-                      +{week.activeItems.length - 5} more
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 export default function ScheduleTemplateDetail() {
   const { templateId } = useParams<{ templateId: string }>();
   const [, navigate] = useLocation();
   const { toast } = useToast();
 
-  const [activeView, setActiveView] = useState<"gantt" | "list" | "calendar" | "workload">("gantt");
+  const [activeView, setActiveView] = useState<"gantt" | "list" | "calendar">("gantt");
   const [zoomLevel, setZoomLevel] = useState<"day" | "week" | "month">("day");
   const [calendarView, setCalendarView] = useState<"month" | "week" | "day" | "agenda">("month");
   const [calendarDate, setCalendarDate] = useState(new Date());
@@ -1004,14 +891,6 @@ export default function ScheduleTemplateDetail() {
               <ListIcon className="w-3 h-3 inline mr-0.5" />
               List
             </button>
-            <button
-              onClick={() => setActiveView('workload')}
-              className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'workload' ? 'bg-primary text-primary-foreground border-primary/20' : 'hover-elevate'} active-elevate-2`}
-              data-testid="button-view-workload"
-            >
-              <BarChart2 className="w-3 h-3 inline mr-0.5" />
-              Workload
-            </button>
           </div>
 
           <div className="w-px h-4 bg-border" />
@@ -1114,18 +993,16 @@ export default function ScheduleTemplateDetail() {
             </div>
           )}
 
-          {/* Reference date for list/calendar */}
-          {activeView !== 'gantt' && (
-            <div className="flex items-center gap-1">
-              <span className="text-xs text-muted-foreground">Start:</span>
-              <Input
-                type="date"
-                value={referenceDate}
-                onChange={(e) => setReferenceDate(e.target.value)}
-                className="h-6 text-xs border rounded-md w-32 px-1"
-              />
-            </div>
-          )}
+          {/* Reference date for converting relative days to calendar dates */}
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-muted-foreground">Start:</span>
+            <Input
+              type="date"
+              value={referenceDate}
+              onChange={(e) => setReferenceDate(e.target.value)}
+              className="h-6 text-xs border rounded-md w-32 px-1"
+            />
+          </div>
 
           {/* Columns icon for list */}
           {activeView === 'list' && (
@@ -1254,9 +1131,6 @@ export default function ScheduleTemplateDetail() {
               />
             </div>
           </div>
-        ) : activeView === "workload" ? (
-          /* Workload View */
-          <WorkloadView items={items} refDate={refDate} onEditItem={handleEditItem} />
         ) : (
           /* Gantt View */
           <div className="relative">
