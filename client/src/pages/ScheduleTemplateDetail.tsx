@@ -1,14 +1,15 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { type ScheduleTemplate, type Project } from "@shared/schema";
+import { type ScheduleTemplate, type Project, type ScheduleItem } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -30,6 +31,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   DropdownMenuSeparator,
+  DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
@@ -42,10 +44,15 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   ArrowLeft,
   Plus,
   GanttChart,
-  List,
+  List as ListIcon,
   MoreVertical,
   Edit3,
   Trash2,
@@ -59,12 +66,23 @@ import {
   Upload,
   Download,
   Settings,
-  Calendar,
+  Calendar as CalendarIcon,
+  Search,
+  Columns3,
+  ChevronsDownUp,
+  ChevronsUpDown,
 } from "lucide-react";
-import { format, addDays } from "date-fns";
+import { format, addDays, differenceInDays } from "date-fns";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { Calendar as BigCalendar, momentLocalizer, Views } from "react-big-calendar";
+import moment from "moment";
+import "react-big-calendar/lib/css/react-big-calendar.css";
+import "./schedule-calendar.css";
+import { CasvaScheduleList } from "@/components/schedule/CasvaScheduleList";
+
+const localizer = momentLocalizer(moment);
 
 interface TemplateItem {
   id: string;
@@ -74,8 +92,6 @@ interface TemplateItem {
   type: "task" | "milestone" | "inspection" | "delivery" | "meeting";
   assigneeName?: string;
   category?: string;
-  predecessorNames?: string[];
-  predecessorRelation?: "FS" | "SS" | "FF" | "SF";
   labels?: string[];
   sortOrder: number;
   relativeStartDay?: number;
@@ -99,9 +115,8 @@ const TYPE_COLORS: Record<string, string> = {
   meeting: "#d4c7f0",
 };
 
-function SortableItem({ 
-  item, 
-  index,
+function SortableItem({
+  item,
   onEdit,
   onDelete,
   onDuplicate,
@@ -113,10 +128,11 @@ function SortableItem({
   isParent,
   isCollapsed,
   hasChildren,
-  isChild,
-}: { 
+  depth,
+  effectiveStartDay,
+  effectiveDuration,
+}: {
   item: TemplateItem;
-  index: number;
   onEdit: (item: TemplateItem) => void;
   onDelete: (id: string) => void;
   onDuplicate: (item: TemplateItem) => void;
@@ -128,7 +144,9 @@ function SortableItem({
   isParent?: boolean;
   isCollapsed?: boolean;
   hasChildren?: boolean;
-  isChild?: boolean;
+  depth: 0 | 1 | 2;
+  effectiveStartDay?: number;
+  effectiveDuration?: number;
 }) {
   const {
     attributes,
@@ -137,7 +155,7 @@ function SortableItem({
     transform,
     transition,
   } = useSortable({ id: item.id });
-  
+
   const [isDragging, setIsDragging] = useState(false);
   const [dragType, setDragType] = useState<'move' | 'resize-left' | 'resize-right' | null>(null);
   const [dragStartX, setDragStartX] = useState(0);
@@ -164,10 +182,8 @@ function SortableItem({
 
   const handlePointerMove = (e: React.PointerEvent) => {
     if (!isDragging || !dragType) return;
-    
     const deltaX = e.clientX - dragStartX;
     const daysDelta = Math.round(deltaX / dayWidth);
-
     if (dragType === 'move') {
       const newStartDay = Math.max(0, Math.min(totalDuration - originalDuration, originalStartDay + daysDelta));
       setCurrentStartDay(newStartDay);
@@ -187,23 +203,25 @@ function SortableItem({
   const handlePointerUp = (e: React.PointerEvent) => {
     if (!isDragging) return;
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-    
     if (currentStartDay !== (item.relativeStartDay || 0) || currentDuration !== item.duration) {
       onBarChange(item.id, currentStartDay, currentDuration);
     }
-    
     setIsDragging(false);
     setDragType(null);
   };
-  
+
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
   };
 
-  const startDay = currentStartDay;
-  const barLeft = startDay * dayWidth;
-  const barWidth = Math.max(currentDuration * dayWidth, 20);
+  const displayStartDay = effectiveStartDay ?? currentStartDay;
+  const displayDuration = effectiveDuration ?? currentDuration;
+  const barLeft = displayStartDay * dayWidth;
+  const barWidth = Math.max(displayDuration * dayWidth, 20);
+  const barColor = item.color || TYPE_COLORS[item.type] || TYPE_COLORS.task;
+
+  const indentClass = depth === 1 ? 'pl-6' : depth === 2 ? 'pl-12' : '';
 
   return (
     <div
@@ -211,42 +229,39 @@ function SortableItem({
       style={style}
       className="flex items-center border-b border-border hover:bg-accent/30 group h-10"
     >
-      <div 
+      <div
         className="w-8 flex items-center justify-center cursor-grab active:cursor-grabbing shrink-0"
-        {...attributes} 
+        {...attributes}
         {...listeners}
       >
         <div className="w-1 h-4 bg-muted-foreground/30 rounded" />
       </div>
-      
-      <div className={`w-64 px-2 py-2 flex items-center gap-2 border-r border-border shrink-0 ${isChild ? 'pl-8' : ''}`}>
+
+      <div className={`w-64 px-2 py-2 flex items-center gap-2 border-r border-border shrink-0 ${indentClass}`}>
         {isParent && hasChildren && onToggleCollapse && (
           <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleCollapse(item.id);
-            }}
+            onClick={(e) => { e.stopPropagation(); onToggleCollapse(item.id); }}
             className="p-0.5 hover:bg-accent rounded flex-shrink-0"
           >
-            {isCollapsed ? (
-              <ChevronRight className="w-4 h-4" />
-            ) : (
-              <ChevronDown className="w-4 h-4" />
-            )}
+            {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           </button>
         )}
         {isParent && !hasChildren && <div className="w-5 flex-shrink-0" />}
-        <Badge 
-          variant="outline" 
+        {depth === 2 && <div className="w-5 flex-shrink-0" />}
+        <Badge
+          variant="outline"
           className="text-white border-0 h-4 px-1.5 text-[10px] shrink-0"
-          style={{ backgroundColor: item.color || TYPE_COLORS[item.type] }}
+          style={{ backgroundColor: barColor }}
         >
           {item.type}
         </Badge>
-        <span className={`text-sm truncate flex-1 ${isParent ? 'font-medium' : 'text-muted-foreground'}`} title={item.name}>
+        <span
+          className={`text-sm truncate flex-1 ${depth === 0 ? 'font-medium' : 'text-muted-foreground'}`}
+          title={item.name}
+        >
           {item.name}
         </span>
-        {!isChild && onAddChild && (
+        {depth < 2 && onAddChild && (
           <button
             onClick={(e) => { e.stopPropagation(); onAddChild(item); }}
             className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-accent rounded flex-shrink-0"
@@ -256,20 +271,19 @@ function SortableItem({
           </button>
         )}
       </div>
-      
+
       <div className="w-16 px-2 text-center text-xs text-muted-foreground border-r border-border shrink-0">
-        {currentDuration} {currentDuration === 1 ? 'day' : 'days'}
+        {displayDuration} {displayDuration === 1 ? 'day' : 'days'}
       </div>
-      
+
       <div className="w-20 px-2 text-center text-xs text-muted-foreground border-r border-border shrink-0">
-        Day {startDay}
+        Day {displayStartDay}
       </div>
-      
-      <div 
+
+      <div
         className="flex-1 relative h-10 overflow-hidden"
         style={{ minWidth: `${totalDuration * dayWidth}px` }}
       >
-        {/* Weekend backgrounds */}
         {Array.from({ length: totalDuration }).map((_, i) => {
           const dayOfWeek = i % 7;
           if (dayOfWeek === 5 || dayOfWeek === 6) {
@@ -283,50 +297,43 @@ function SortableItem({
           }
           return null;
         })}
-        {/* Day 0 indicator */}
-        <div 
-          className="absolute top-0 bottom-0 w-0.5 bg-[#bba7db] pointer-events-none z-20"
-          style={{ left: '0px' }}
-        />
-        {/* Bar - matching Gantt.tsx styling with drag handles */}
-        <div 
+        <div className="absolute top-0 bottom-0 w-0.5 bg-[#bba7db] pointer-events-none z-20" style={{ left: '0px' }} />
+        <div
           className={`absolute top-1 h-6 mx-1 rounded-sm flex items-center z-10 group/bar ${isDragging ? 'cursor-grabbing shadow-lg scale-105' : 'cursor-move hover:scale-105 hover:shadow-md'} transition-all`}
-          style={{ 
+          style={{
             left: `${barLeft}px`,
             width: `${barWidth}px`,
-            backgroundColor: TYPE_COLORS[item.type],
+            backgroundColor: barColor,
+            opacity: depth === 0 && hasChildren ? 0.6 : 1,
           }}
-          onPointerDown={(e) => handlePointerDown(e, 'move')}
+          onPointerDown={(e) => !hasChildren && handlePointerDown(e, 'move')}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
-          onDoubleClick={() => onEdit(item)}
         >
-          {/* Left resize handle */}
-          <div
-            className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/30 opacity-0 group-hover/bar:opacity-100 transition-opacity rounded-l-sm"
-            onPointerDown={(e) => handlePointerDown(e, 'resize-left')}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-          />
-          
-          {barWidth > 60 && (
-            <span className="text-xs font-medium text-white truncate pointer-events-none px-2 flex-1">{item.name}</span>
+          {!hasChildren && (
+            <div
+              className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize opacity-0 group-hover/bar:opacity-100"
+              onPointerDown={(e) => { e.stopPropagation(); handlePointerDown(e, 'resize-left'); }}
+            />
           )}
-          
-          {/* Right resize handle */}
-          <div
-            className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/30 opacity-0 group-hover/bar:opacity-100 transition-opacity rounded-r-sm"
-            onPointerDown={(e) => handlePointerDown(e, 'resize-right')}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-          />
+          {barWidth > 60 && (
+            <span className="text-white text-[10px] px-2 truncate pointer-events-none">
+              {item.name}
+            </span>
+          )}
+          {!hasChildren && (
+            <div
+              className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize opacity-0 group-hover/bar:opacity-100"
+              onPointerDown={(e) => { e.stopPropagation(); handlePointerDown(e, 'resize-right'); }}
+            />
+          )}
         </div>
       </div>
-      
-      <div className="w-10 flex items-center justify-center shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+
+      <div className="w-16 flex items-center justify-center gap-0.5 shrink-0 border-l border-border">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-6 w-6">
+            <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100">
               <MoreVertical className="h-3 w-3" />
             </Button>
           </DropdownMenuTrigger>
@@ -339,17 +346,14 @@ function SortableItem({
               <Copy className="h-3 w-3 mr-2" />
               Duplicate
             </DropdownMenuItem>
-            {!isChild && onAddChild && (
+            {depth < 2 && onAddChild && (
               <DropdownMenuItem onClick={() => onAddChild(item)}>
                 <Plus className="h-3 w-3 mr-2" />
                 Add child item
               </DropdownMenuItem>
             )}
             <DropdownMenuSeparator />
-            <DropdownMenuItem 
-              className="text-destructive" 
-              onClick={() => onDelete(item.id)}
-            >
+            <DropdownMenuItem className="text-destructive" onClick={() => onDelete(item.id)}>
               <Trash2 className="h-3 w-3 mr-2" />
               Delete
             </DropdownMenuItem>
@@ -364,9 +368,11 @@ export default function ScheduleTemplateDetail() {
   const { templateId } = useParams<{ templateId: string }>();
   const [, navigate] = useLocation();
   const { toast } = useToast();
-  
-  const [activeView, setActiveView] = useState<"gantt" | "list">("gantt");
+
+  const [activeView, setActiveView] = useState<"gantt" | "list" | "calendar">("gantt");
   const [zoomLevel, setZoomLevel] = useState<"day" | "week" | "month">("day");
+  const [calendarView, setCalendarView] = useState<"month" | "week" | "day" | "agenda">("month");
+  const [calendarDate, setCalendarDate] = useState(new Date());
   const [showItemDialog, setShowItemDialog] = useState(false);
   const [editingItem, setEditingItem] = useState<TemplateItem | null>(null);
   const [showApplyDialog, setShowApplyDialog] = useState(false);
@@ -374,11 +380,21 @@ export default function ScheduleTemplateDetail() {
   const [applyStartDate, setApplyStartDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
-  
   const [items, setItems] = useState<TemplateItem[]>([]);
   const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set());
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [dialogMode, setDialogMode] = useState<"item" | "group">("item");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [allCollapsed, setAllCollapsed] = useState(false);
+  const [filters, setFilters] = useState({ status: "all", assignee: "all", type: "all" });
+  const [visibleColumns, setVisibleColumns] = useState(() => {
+    const saved = localStorage.getItem('template-schedule-visible-columns');
+    return saved ? JSON.parse(saved) : {
+      item: true, assignee: true, type: true, dueDate: true, status: false, completion: false,
+    };
+  });
+  const [referenceDate, setReferenceDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
+
   const [templateFormData, setTemplateFormData] = useState({
     name: "",
     description: "",
@@ -394,10 +410,16 @@ export default function ScheduleTemplateDetail() {
     parentItemId: null as string | null,
   });
 
+  useEffect(() => {
+    localStorage.setItem('template-schedule-visible-columns', JSON.stringify(visibleColumns));
+  }, [visibleColumns]);
+
+  const toggleColumn = (key: string) => {
+    setVisibleColumns((prev: Record<string, boolean>) => ({ ...prev, [key]: !prev[key] }));
+  };
+
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 8 },
-    })
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   );
 
   const dayWidth = useMemo(() => {
@@ -409,57 +431,68 @@ export default function ScheduleTemplateDetail() {
     }
   }, [zoomLevel]);
 
-  const { parentItems, childItemsByParent } = useMemo(() => {
-    const parents: TemplateItem[] = [];
+  const { topLevelItems, childItemsByParent, subItemsByParent, itemDepthMap } = useMemo(() => {
+    const top: TemplateItem[] = [];
     const children: Record<string, TemplateItem[]> = {};
+    const subs: Record<string, TemplateItem[]> = {};
+    const depthMap: Record<string, 0 | 1 | 2> = {};
+
+    const topSet = new Set(items.filter(i => !i.parentItemId).map(i => i.id));
+    const childSet = new Set(items.filter(i => i.parentItemId && topSet.has(i.parentItemId)).map(i => i.id));
 
     items.forEach(item => {
-      if (item.parentItemId) {
-        if (!children[item.parentItemId]) {
-          children[item.parentItemId] = [];
-        }
+      if (!item.parentItemId) {
+        top.push(item);
+        depthMap[item.id] = 0;
+      } else if (topSet.has(item.parentItemId)) {
+        if (!children[item.parentItemId]) children[item.parentItemId] = [];
         children[item.parentItemId].push(item);
+        depthMap[item.id] = 1;
       } else {
-        parents.push(item);
+        if (!subs[item.parentItemId]) subs[item.parentItemId] = [];
+        subs[item.parentItemId].push(item);
+        depthMap[item.id] = 2;
       }
     });
 
-    parents.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-    Object.keys(children).forEach(parentId => {
-      children[parentId].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-    });
+    top.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+    Object.keys(children).forEach(k => children[k].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)));
+    Object.keys(subs).forEach(k => subs[k].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)));
 
-    return { parentItems: parents, childItemsByParent: children };
+    return { topLevelItems: top, childItemsByParent: children, subItemsByParent: subs, itemDepthMap: depthMap };
   }, [items]);
+
+  const getAllDescendantDays = useCallback((itemId: string): number[] => {
+    const directChildren = childItemsByParent[itemId] || [];
+    const subItems = subItemsByParent[itemId] || [];
+    const result: number[] = [];
+    [...directChildren, ...subItems].forEach(child => {
+      result.push(child.relativeStartDay || 0, (child.relativeStartDay || 0) + child.duration);
+      result.push(...getAllDescendantDays(child.id));
+    });
+    return result;
+  }, [childItemsByParent, subItemsByParent]);
+
+  const getEffectiveDates = useCallback((item: TemplateItem) => {
+    const descendantDays = getAllDescendantDays(item.id);
+    if (descendantDays.length === 0) {
+      return {
+        startDay: item.relativeStartDay || 0,
+        endDay: (item.relativeStartDay || 0) + item.duration,
+      };
+    }
+    return {
+      startDay: Math.min(...descendantDays),
+      endDay: Math.max(...descendantDays),
+    };
+  }, [getAllDescendantDays]);
 
   const toggleCollapse = (id: string) => {
     setCollapsedItems(prev => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
-  };
-
-  const getEffectiveDates = (parentItem: TemplateItem) => {
-    const children = childItemsByParent[parentItem.id] || [];
-    if (children.length === 0) {
-      return {
-        startDay: parentItem.relativeStartDay || 0,
-        endDay: (parentItem.relativeStartDay || 0) + parentItem.duration,
-      };
-    }
-    const allDays = children.flatMap(child => [
-      child.relativeStartDay || 0,
-      (child.relativeStartDay || 0) + child.duration
-    ]);
-    return {
-      startDay: Math.min(...allDays),
-      endDay: Math.max(...allDays),
-    };
   };
 
   const { data: template, isLoading } = useQuery<ScheduleTemplate>({
@@ -497,17 +530,10 @@ export default function ScheduleTemplateDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/schedule-templates", templateId] });
       setHasUnsavedChanges(false);
-      toast({
-        title: "Template saved",
-        description: "Your changes have been saved.",
-      });
+      toast({ title: "Template saved", description: "Your changes have been saved." });
     },
     onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to save template.",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Failed to save template.", variant: "destructive" });
     },
   });
 
@@ -519,27 +545,16 @@ export default function ScheduleTemplateDetail() {
       queryClient.invalidateQueries({ queryKey: ["/api/schedule-templates", templateId] });
       queryClient.invalidateQueries({ queryKey: ["/api/schedule-templates"] });
       setShowSettingsDialog(false);
-      toast({
-        title: "Template updated",
-        description: "Template settings have been saved.",
-      });
+      toast({ title: "Template updated", description: "Template settings have been saved." });
     },
     onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to update template settings.",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Failed to update template settings.", variant: "destructive" });
     },
   });
 
   const handleSaveTemplateSettings = () => {
     if (!templateFormData.name.trim()) {
-      toast({
-        title: "Validation error",
-        description: "Template name is required.",
-        variant: "destructive",
-      });
+      toast({ title: "Validation error", description: "Template name is required.", variant: "destructive" });
       return;
     }
     updateTemplateMetaMutation.mutate({
@@ -551,38 +566,21 @@ export default function ScheduleTemplateDetail() {
 
   const applyTemplateMutation = useMutation({
     mutationFn: async ({ projectId, startDate }: { projectId: string; startDate: string }) => {
-      const scheduleResponse = await fetch(`/api/projects/${projectId}/schedule`, {
-        credentials: "include",
-      });
+      const scheduleResponse = await fetch(`/api/projects/${projectId}/schedule`, { credentials: "include" });
       const schedule = await scheduleResponse.json();
-      
       if (!schedule?.id) {
         const createResponse = await apiRequest("/api/schedules", "POST", { projectId });
-        return await apiRequest(`/api/schedule-templates/${templateId}/apply`, "POST", {
-          scheduleId: createResponse.id,
-          startDate,
-        });
+        return await apiRequest(`/api/schedule-templates/${templateId}/apply`, "POST", { scheduleId: createResponse.id, startDate });
       }
-      
-      return await apiRequest(`/api/schedule-templates/${templateId}/apply`, "POST", {
-        scheduleId: schedule.id,
-        startDate,
-      });
+      return await apiRequest(`/api/schedule-templates/${templateId}/apply`, "POST", { scheduleId: schedule.id, startDate });
     },
     onSuccess: (_, variables) => {
       setShowApplyDialog(false);
-      toast({
-        title: "Template applied",
-        description: "The template has been applied to the project schedule.",
-      });
+      toast({ title: "Template applied", description: "The template has been applied to the project schedule." });
       navigate(`/projects/${variables.projectId}/schedule`);
     },
     onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to apply template to project.",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Failed to apply template to project.", variant: "destructive" });
     },
   });
 
@@ -594,59 +592,49 @@ export default function ScheduleTemplateDetail() {
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
-    if (over && active.id !== over.id) {
-      const oldIndex = items.findIndex(item => item.id === active.id);
-      const newIndex = items.findIndex(item => item.id === over.id);
-      const newItems = arrayMove(items, oldIndex, newIndex).map((item, index) => ({
-        ...item,
-        sortOrder: index,
-      }));
+    if (!over || active.id === over.id) return;
+
+    const draggedId = active.id as string;
+    const targetId = over.id as string;
+    const draggedDepth = itemDepthMap[draggedId] ?? 0;
+
+    if (draggedDepth === 0) {
+      const draggedItem = topLevelItems.find(i => i.id === draggedId);
+      const targetItem = topLevelItems.find(i => i.id === targetId);
+      if (!draggedItem || !targetItem) return;
+
+      const draggedGroupIds = new Set([draggedId, ...(childItemsByParent[draggedId] || []).map(c => c.id), ...(childItemsByParent[draggedId] || []).flatMap(c => (subItemsByParent[c.id] || []).map(s => s.id))]);
+      const otherItems = items.filter(i => !draggedGroupIds.has(i.id));
+      const targetIndex = otherItems.findIndex(i => i.id === targetId);
+      const draggedBlock = [draggedItem, ...(childItemsByParent[draggedId] || []), ...(childItemsByParent[draggedId] || []).flatMap(c => subItemsByParent[c.id] || [])];
+      const newItems = [...otherItems.slice(0, targetIndex), ...draggedBlock, ...otherItems.slice(targetIndex)];
+      setItems(newItems.map((item, idx) => ({ ...item, sortOrder: idx })));
+    } else {
+      const oldIndex = items.findIndex(i => i.id === draggedId);
+      const newIndex = items.findIndex(i => i.id === targetId);
+      const newItems = arrayMove(items, oldIndex, newIndex).map((item, idx) => ({ ...item, sortOrder: idx }));
       setItems(newItems);
-      setHasUnsavedChanges(true);
     }
+    setHasUnsavedChanges(true);
   };
 
   const handleAddItem = () => {
     setEditingItem(null);
     setDialogMode("item");
-    setFormData({
-      name: "",
-      description: "",
-      duration: 1,
-      type: "task",
-      assigneeName: "",
-      relativeStartDay: 0,
-      parentItemId: null,
-    });
+    setFormData({ name: "", description: "", duration: 1, type: "task", assigneeName: "", relativeStartDay: 0, parentItemId: null });
     setShowItemDialog(true);
   };
 
   const handleAddGroup = () => {
     setEditingItem(null);
-    setFormData({
-      name: "",
-      description: "",
-      duration: 5,
-      type: "task",
-      assigneeName: "",
-      relativeStartDay: 0,
-      parentItemId: null,
-    });
+    setFormData({ name: "", description: "", duration: 5, type: "task", assigneeName: "", relativeStartDay: 0, parentItemId: null });
     setDialogMode("group");
     setShowItemDialog(true);
   };
 
   const handleAddChild = (parentItem: TemplateItem) => {
     setEditingItem(null);
-    setFormData({
-      name: "",
-      description: "",
-      duration: 1,
-      type: "task",
-      assigneeName: "",
-      relativeStartDay: parentItem.relativeStartDay || 0,
-      parentItemId: parentItem.id,
-    });
+    setFormData({ name: "", description: "", duration: 1, type: "task", assigneeName: "", relativeStartDay: parentItem.relativeStartDay || 0, parentItemId: parentItem.id });
     setDialogMode("item");
     setShowItemDialog(true);
   };
@@ -654,35 +642,17 @@ export default function ScheduleTemplateDetail() {
   const handleEditItem = (item: TemplateItem) => {
     setEditingItem(item);
     setDialogMode("item");
-    setFormData({
-      name: item.name,
-      description: item.description || "",
-      duration: item.duration,
-      type: item.type,
-      assigneeName: item.assigneeName || "",
-      relativeStartDay: item.relativeStartDay || 0,
-      parentItemId: item.parentItemId || null,
-    });
+    setFormData({ name: item.name, description: item.description || "", duration: item.duration, type: item.type, assigneeName: item.assigneeName || "", relativeStartDay: item.relativeStartDay || 0, parentItemId: item.parentItemId || null });
     setShowItemDialog(true);
   };
 
   const handleSaveItem = () => {
     if (!formData.name.trim()) {
-      toast({
-        title: "Validation error",
-        description: "Item name is required.",
-        variant: "destructive",
-      });
+      toast({ title: "Validation error", description: "Item name is required.", variant: "destructive" });
       return;
     }
-
     if (editingItem) {
-      const updatedItems = items.map(item =>
-        item.id === editingItem.id
-          ? { ...item, ...formData }
-          : item
-      );
-      setItems(updatedItems);
+      setItems(items.map(item => item.id === editingItem.id ? { ...item, ...formData } : item));
     } else {
       const newItem: TemplateItem = {
         id: `item-${Date.now()}`,
@@ -691,34 +661,23 @@ export default function ScheduleTemplateDetail() {
       };
       setItems([...items, newItem]);
     }
-    
     setHasUnsavedChanges(true);
     setShowItemDialog(false);
   };
 
   const handleDeleteItem = (id: string) => {
-    setItems(items.filter(item => item.id !== id));
+    setItems(items.filter(item => item.id !== id && item.parentItemId !== id));
     setHasUnsavedChanges(true);
     setShowDeleteConfirm(null);
   };
 
   const handleBarChange = (id: string, newStartDay: number, newDuration: number) => {
-    const updatedItems = items.map(item =>
-      item.id === id
-        ? { ...item, relativeStartDay: newStartDay, duration: newDuration }
-        : item
-    );
-    setItems(updatedItems);
+    setItems(items.map(item => item.id === id ? { ...item, relativeStartDay: newStartDay, duration: newDuration } : item));
     setHasUnsavedChanges(true);
   };
 
   const handleDuplicateItem = (item: TemplateItem) => {
-    const newItem: TemplateItem = {
-      ...item,
-      id: `item-${Date.now()}`,
-      name: `${item.name} (Copy)`,
-      sortOrder: items.length,
-    };
+    const newItem: TemplateItem = { ...item, id: `item-${Date.now()}`, name: `${item.name} (Copy)`, sortOrder: items.length };
     setItems([...items, newItem]);
     setHasUnsavedChanges(true);
   };
@@ -729,25 +688,16 @@ export default function ScheduleTemplateDetail() {
 
   const handleExportTemplate = () => {
     if (!template) return;
-    
     const exportData = {
       name: template.name,
       description: template.description,
       category: template.category,
       templateData: items.map(item => ({
-        name: item.name,
-        description: item.description,
-        duration: item.duration,
-        type: item.type,
-        assigneeName: item.assigneeName,
-        category: item.category,
-        relativeStartDay: item.relativeStartDay,
-        parentItemId: item.parentItemId,
-        sortOrder: item.sortOrder,
-        color: item.color,
+        name: item.name, description: item.description, duration: item.duration, type: item.type,
+        assigneeName: item.assigneeName, category: item.category, relativeStartDay: item.relativeStartDay,
+        parentItemId: item.parentItemId, sortOrder: item.sortOrder, color: item.color,
       })),
     };
-
     const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -757,11 +707,73 @@ export default function ScheduleTemplateDetail() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    toast({ title: "Template exported", description: "The template has been downloaded as a JSON file." });
+  };
 
-    toast({
-      title: "Template exported",
-      description: "The template has been downloaded as a JSON file.",
+  const refDate = useMemo(() => new Date(referenceDate + "T00:00:00"), [referenceDate]);
+
+  const listItems = useMemo((): ScheduleItem[] => {
+    const filtered = searchQuery
+      ? items.filter(i => i.name.toLowerCase().includes(searchQuery.toLowerCase()))
+      : items;
+    const typeFiltered = filters.type !== "all" ? filtered.filter(i => i.type === filters.type) : filtered;
+
+    return typeFiltered.map(item => {
+      const startDay = item.relativeStartDay || 0;
+      const startDate = addDays(refDate, startDay);
+      const endDate = addDays(refDate, startDay + item.duration - 1);
+      return {
+        id: item.id,
+        name: item.name,
+        description: item.description || null,
+        notes: null,
+        type: item.type,
+        status: "not_started",
+        priority: "medium",
+        startDate: startDate,
+        endDate: endDate,
+        duration: item.duration,
+        progressPercent: 0,
+        sortOrder: item.sortOrder,
+        parentItemId: item.parentItemId || null,
+        scheduleId: "",
+        assignedToId: null,
+        projectId: null,
+        useWorkingDaysOverride: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as unknown as ScheduleItem;
     });
+  }, [items, refDate, searchQuery, filters.type]);
+
+  const calendarEvents = useMemo(() => {
+    return items.map(item => {
+      const startDay = item.relativeStartDay || 0;
+      const start = addDays(refDate, startDay);
+      const end = addDays(refDate, startDay + item.duration);
+      return {
+        id: item.id,
+        title: item.name,
+        start,
+        end,
+        resource: item,
+        allDay: true,
+      };
+    });
+  }, [items, refDate]);
+
+  const eventStyleGetter = (event: any) => {
+    const item = event.resource as TemplateItem;
+    const color = item.color || TYPE_COLORS[item.type] || TYPE_COLORS.task;
+    return {
+      style: {
+        backgroundColor: color,
+        borderRadius: '4px',
+        border: 'none',
+        color: 'white',
+        fontSize: '11px',
+      },
+    };
   };
 
   if (isLoading) {
@@ -786,9 +798,8 @@ export default function ScheduleTemplateDetail() {
 
   return (
     <div className="h-full flex flex-col bg-background">
-      {/* Row 1 - Template Controls (matches project Schedule Row 1) */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
-        {/* Left: Back + Template Name */}
+      {/* Row 1 - Template Controls */}
+      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0 border-b border-border">
         <div className="flex items-center gap-3">
           <button
             onClick={() => navigate("/templates")}
@@ -801,9 +812,7 @@ export default function ScheduleTemplateDetail() {
             {template.name}
           </h2>
           {template.category && (
-            <Badge variant="outline" className="text-xs">
-              {template.category}
-            </Badge>
+            <Badge variant="outline" className="text-xs">{template.category}</Badge>
           )}
           {hasUnsavedChanges && (
             <Badge variant="secondary" className="text-xs bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
@@ -812,7 +821,6 @@ export default function ScheduleTemplateDetail() {
           )}
         </div>
 
-        {/* Right: Action Buttons */}
         <div className="flex items-center gap-1.5">
           <button
             className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
@@ -822,7 +830,6 @@ export default function ScheduleTemplateDetail() {
             <Download className="w-3 h-3 inline mr-0.5" />
             Export
           </button>
-          
           <button
             className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
             onClick={() => setShowApplyDialog(true)}
@@ -831,9 +838,8 @@ export default function ScheduleTemplateDetail() {
             <Upload className="w-3 h-3 inline mr-0.5" />
             Apply to Project
           </button>
-          
           <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 disabled:opacity-50"
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-primary-foreground border-primary/20 active-elevate-2 disabled:opacity-50"
             onClick={handleSaveTemplate}
             disabled={!hasUnsavedChanges || updateTemplateMutation.isPending}
             data-testid="button-save-template"
@@ -845,7 +851,6 @@ export default function ScheduleTemplateDetail() {
             )}
             Save
           </button>
-          
           <button
             className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
             onClick={() => setShowSettingsDialog(true)}
@@ -856,253 +861,317 @@ export default function ScheduleTemplateDetail() {
         </div>
       </div>
 
-      {/* Row 2 - Views & Controls (matches project Schedule Row 2) */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
-        {/* Left: View Buttons */}
-        <div className="flex items-center gap-0.5">
+      {/* Row 2 - Views & Controls (identical to project Schedule) */}
+      <div className="h-9 bg-background flex items-center justify-between px-2 gap-2 border-b border-border flex-shrink-0">
+        <div className="flex items-center gap-1.5 flex-1">
+          {/* View Toggle */}
+          <div className="flex items-center gap-0.5">
+            <button
+              onClick={() => setActiveView('gantt')}
+              className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'gantt' ? 'bg-primary text-primary-foreground border-primary/20' : 'hover-elevate'} active-elevate-2`}
+              data-testid="button-view-gantt"
+            >
+              <GanttChart className="w-3 h-3 inline mr-0.5" />
+              Gantt
+            </button>
+            <button
+              onClick={() => setActiveView('calendar')}
+              className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'calendar' ? 'bg-primary text-primary-foreground border-primary/20' : 'hover-elevate'} active-elevate-2`}
+              data-testid="button-view-calendar"
+            >
+              <CalendarIcon className="w-3 h-3 inline mr-0.5" />
+              Calendar
+            </button>
+            <button
+              onClick={() => setActiveView('list')}
+              className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'list' ? 'bg-primary text-primary-foreground border-primary/20' : 'hover-elevate'} active-elevate-2`}
+              data-testid="button-view-list"
+            >
+              <ListIcon className="w-3 h-3 inline mr-0.5" />
+              List
+            </button>
+          </div>
+
+          <div className="w-px h-4 bg-border" />
+
+          {/* Add buttons */}
           <button
-            onClick={() => setActiveView("gantt")}
-            className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'gantt' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2`}
-            data-testid="button-view-gantt"
-          >
-            <GanttChart className="w-3 h-3 inline mr-0.5" />
-            Gantt
-          </button>
-          <button
-            onClick={() => setActiveView("list")}
-            className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'list' ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' : 'hover-elevate'} active-elevate-2`}
-            data-testid="button-view-list"
-          >
-            <List className="w-3 h-3 inline mr-0.5" />
-            List
-          </button>
-          
-          <div className="ml-2 h-4 w-px bg-border" />
-          
-          <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2"
+            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
             onClick={handleAddGroup}
             data-testid="button-add-group"
           >
             <Plus className="w-3 h-3 inline mr-0.5" />
             Add Group
           </button>
-
           <button
-            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2"
+            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2"
             onClick={handleAddItem}
             data-testid="button-add-item"
           >
             <Plus className="w-3 h-3 inline mr-0.5" />
             Add Item
           </button>
+
+          {/* Search + collapse for list/calendar views */}
+          {activeView !== 'gantt' && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              onClick={() => setAllCollapsed(prev => !prev)}
+              title={allCollapsed ? "Expand all" : "Collapse all"}
+            >
+              {allCollapsed ? <ChevronsUpDown className="h-3.5 w-3.5" /> : <ChevronsDownUp className="h-3.5 w-3.5" />}
+            </Button>
+          )}
+          {activeView !== 'gantt' && (
+            <div className="relative w-40">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+              <Input
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-7 pr-2 py-0 h-6 text-xs border rounded-md"
+                data-testid="input-search-items"
+              />
+            </div>
+          )}
+
+          {/* Type filter pill */}
+          <Select value={filters.type} onValueChange={(value) => setFilters({ ...filters, type: value })}>
+            <SelectTrigger className={`h-6 w-auto px-3 py-0 text-xs rounded-full border ${filters.type !== 'all' ? 'bg-primary/10 border-primary/30' : 'border-border'} [&>svg]:hidden`}>
+              <span>{filters.type !== 'all' ? filters.type.charAt(0).toUpperCase() + filters.type.slice(1) : 'Type'}</span>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Types</SelectItem>
+              <SelectItem value="task">Task</SelectItem>
+              <SelectItem value="milestone">Milestone</SelectItem>
+              <SelectItem value="inspection">Inspection</SelectItem>
+              <SelectItem value="delivery">Delivery</SelectItem>
+              <SelectItem value="meeting">Meeting</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
-        
-        {/* Right: Item count & Zoom controls */}
+
+        {/* Right controls */}
         <div className="flex items-center gap-1.5">
+          {activeView === 'calendar' && (
+            <div className="flex items-center gap-0.5">
+              <button
+                onClick={() => {
+                  const d = new Date(calendarDate);
+                  calendarView === 'month' ? d.setMonth(d.getMonth() - 1) : d.setDate(d.getDate() - (calendarView === 'week' ? 7 : 1));
+                  setCalendarDate(d);
+                }}
+                className="h-6 w-6 flex items-center justify-center text-xs border rounded-md hover-elevate active-elevate-2"
+              >
+                <ChevronRight className="w-3 h-3 rotate-180" />
+              </button>
+              <button onClick={() => setCalendarDate(new Date())} className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2">
+                Today
+              </button>
+              <button
+                onClick={() => {
+                  const d = new Date(calendarDate);
+                  calendarView === 'month' ? d.setMonth(d.getMonth() + 1) : d.setDate(d.getDate() + (calendarView === 'week' ? 7 : 1));
+                  setCalendarDate(d);
+                }}
+                className="h-6 w-6 flex items-center justify-center text-xs border rounded-md hover-elevate active-elevate-2"
+              >
+                <ChevronRight className="w-3 h-3" />
+              </button>
+              {(['month', 'week', 'day', 'agenda'] as const).map(v => (
+                <button
+                  key={v}
+                  onClick={() => setCalendarView(v)}
+                  className={`h-6 w-auto px-2 text-xs border rounded-md ${calendarView === v ? 'bg-primary text-primary-foreground border-primary/20' : 'hover-elevate'} active-elevate-2`}
+                >
+                  {v.charAt(0).toUpperCase() + v.slice(1)}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Reference date for list/calendar */}
+          {activeView !== 'gantt' && (
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-muted-foreground">Start:</span>
+              <Input
+                type="date"
+                value={referenceDate}
+                onChange={(e) => setReferenceDate(e.target.value)}
+                className="h-6 text-xs border rounded-md w-32 px-1"
+              />
+            </div>
+          )}
+
+          {/* Columns icon for list */}
+          {activeView === 'list' && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="h-6 w-6 flex items-center justify-center text-xs border rounded-md hover-elevate active-elevate-2" data-testid="button-column-config">
+                  <Columns3 className="w-3.5 h-3.5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44 p-1 border-2">
+                <DropdownMenuLabel className="text-xs text-muted-foreground font-medium px-2 py-1">Visible Columns</DropdownMenuLabel>
+                <DropdownMenuSeparator className="my-1" />
+                {[
+                  { key: 'item', label: 'Item' },
+                  { key: 'assignee', label: 'Assignee' },
+                  { key: 'type', label: 'Type' },
+                  { key: 'dueDate', label: 'Due Date & Duration' },
+                ].map(({ key, label }) => (
+                  <DropdownMenuItem key={key} onClick={() => toggleColumn(key)} className="flex items-center gap-2 px-2 py-1.5 text-xs">
+                    <Checkbox checked={visibleColumns[key]} className="pointer-events-none h-3.5 w-3.5" />
+                    <span>{label}</span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+
+          {/* Zoom for Gantt */}
+          {activeView === 'gantt' && (
+            <div className="flex items-center gap-0.5">
+              <button
+                className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center disabled:opacity-50"
+                onClick={() => setZoomLevel(prev => prev === "day" ? "week" : prev === "week" ? "month" : "month")}
+                disabled={zoomLevel === "month"}
+                data-testid="button-zoom-out"
+              >
+                <ZoomOut className="w-3 h-3" />
+              </button>
+              <span className="text-xs px-1 min-w-12 text-center capitalize">{zoomLevel}</span>
+              <button
+                className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center disabled:opacity-50"
+                onClick={() => setZoomLevel(prev => prev === "month" ? "week" : prev === "week" ? "day" : "day")}
+                disabled={zoomLevel === "day"}
+                data-testid="button-zoom-in"
+              >
+                <ZoomIn className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+
           <Badge variant="secondary" className="text-xs no-default-hover-elevate">
             {items.length} {items.length === 1 ? 'item' : 'items'}
           </Badge>
-          
-          <div className="flex items-center gap-0.5">
-            <button
-              className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center disabled:opacity-50"
-              onClick={() => setZoomLevel(prev => prev === "day" ? "week" : prev === "week" ? "month" : "month")}
-              disabled={zoomLevel === "month"}
-              data-testid="button-zoom-out"
-            >
-              <ZoomOut className="w-3 h-3" />
-            </button>
-            <span className="text-xs px-1 min-w-12 text-center capitalize">{zoomLevel}</span>
-            <button
-              className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center disabled:opacity-50"
-              onClick={() => setZoomLevel(prev => prev === "month" ? "week" : prev === "week" ? "day" : "day")}
-              disabled={zoomLevel === "day"}
-              data-testid="button-zoom-in"
-            >
-              <ZoomIn className="w-3 h-3" />
-            </button>
-          </div>
         </div>
       </div>
 
+      {/* Main content */}
       <div className="flex-1 overflow-auto">
         {items.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-4 text-muted-foreground">
-            <Calendar className="h-12 w-12 opacity-50" />
+            <CalendarIcon className="h-12 w-12 opacity-50" />
             <p className="text-sm">No items in this template yet</p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleAddItem}
-              data-testid="button-add-first-item"
-            >
+            <Button variant="outline" size="sm" onClick={handleAddItem} data-testid="button-add-first-item">
               <Plus className="h-4 w-4 mr-2" />
               Add First Item
             </Button>
           </div>
         ) : activeView === "list" ? (
-          <div className="p-4">
-            <div className="border rounded-md overflow-hidden">
-              <div className="bg-muted/50 border-b px-4 py-2 grid grid-cols-[1fr_100px_100px_120px_80px] gap-2 text-xs font-medium">
-                <div>Name</div>
-                <div className="text-center">Type</div>
-                <div className="text-center">Duration</div>
-                <div className="text-center">Start Day</div>
-                <div className="text-right">Actions</div>
-              </div>
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                <SortableContext items={items.map(i => i.id)} strategy={verticalListSortingStrategy}>
-                  {parentItems.map((parentItem) => {
-                    const isCollapsed = collapsedItems.has(parentItem.id);
-                    const childItems = childItemsByParent[parentItem.id] || [];
-                    const hasChildren = childItems.length > 0;
-
-                    return (
-                      <div key={parentItem.id}>
-                        <div className="group/listrow border-b last:border-b-0 px-4 py-2 grid grid-cols-[1fr_100px_100px_120px_80px] gap-2 items-center text-sm hover:bg-muted/30">
-                          <div className="flex items-center gap-2">
-                            {hasChildren && (
-                              <button
-                                onClick={() => toggleCollapse(parentItem.id)}
-                                className="h-5 w-5 flex items-center justify-center hover:bg-muted rounded"
-                              >
-                                {isCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                              </button>
-                            )}
-                            {!hasChildren && <div className="w-5" />}
-                            <span className="font-medium truncate flex-1">{parentItem.name}</span>
-                            <button
-                              onClick={() => handleAddChild(parentItem)}
-                              className="opacity-0 group-hover/listrow:opacity-100 transition-opacity p-0.5 hover:bg-muted rounded shrink-0"
-                              title="Add child item"
-                            >
-                              <Plus className="h-3 w-3 text-muted-foreground" />
-                            </button>
-                          </div>
-                          <div className="text-center">
-                            <Badge variant="outline" className="text-xs capitalize">
-                              {parentItem.type}
-                            </Badge>
-                          </div>
-                          <div className="text-center text-muted-foreground">{parentItem.duration}d</div>
-                          <div className="text-center text-muted-foreground">Day {parentItem.relativeStartDay || 0}</div>
-                          <div className="flex items-center justify-end gap-1">
-                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleEditItem(parentItem)}>
-                              <Edit3 className="h-3 w-3" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => setShowDeleteConfirm(parentItem.id)}>
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        </div>
-                        {!isCollapsed && childItems.map((childItem) => (
-                          <div key={childItem.id} className="border-b last:border-b-0 px-4 py-2 grid grid-cols-[1fr_100px_100px_120px_80px] gap-2 items-center text-sm hover:bg-muted/30 bg-muted/20">
-                            <div className="flex items-center gap-2 pl-8 border-l-2 border-border/60 ml-4">
-                              <span className="truncate text-muted-foreground">{childItem.name}</span>
-                            </div>
-                            <div className="text-center">
-                              <Badge variant="outline" className="text-xs capitalize">
-                                {childItem.type}
-                              </Badge>
-                            </div>
-                            <div className="text-center text-muted-foreground">{childItem.duration}d</div>
-                            <div className="text-center text-muted-foreground">Day {childItem.relativeStartDay || 0}</div>
-                            <div className="flex items-center justify-end gap-1">
-                              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleEditItem(childItem)}>
-                                <Edit3 className="h-3 w-3" />
-                              </Button>
-                              <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => setShowDeleteConfirm(childItem.id)}>
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })}
-                </SortableContext>
-              </DndContext>
+          <div className="h-full">
+            <CasvaScheduleList
+              items={listItems}
+              onEditItem={(item) => {
+                const templateItem = items.find(i => i.id === item.id);
+                if (templateItem) handleEditItem(templateItem);
+              }}
+              onDuplicateItem={(item) => {
+                const templateItem = items.find(i => i.id === item.id);
+                if (templateItem) handleDuplicateItem(templateItem);
+              }}
+              onDeleteItem={(itemId) => setShowDeleteConfirm(itemId)}
+              onAddSubItem={(parentItem) => {
+                const templateItem = items.find(i => i.id === parentItem.id);
+                if (templateItem) handleAddChild(templateItem);
+              }}
+              onReorderItem={(itemId, afterItemId, newParentId) => {
+                const reorderedItem = items.find(i => i.id === itemId);
+                if (!reorderedItem) return;
+                const filtered = items.filter(i => i.id !== itemId);
+                const insertIdx = afterItemId ? filtered.findIndex(i => i.id === afterItemId) + 1 : 0;
+                const updated = [...filtered.slice(0, insertIdx), { ...reorderedItem, parentItemId: newParentId }, ...filtered.slice(insertIdx)];
+                setItems(updated.map((item, idx) => ({ ...item, sortOrder: idx })));
+                setHasUnsavedChanges(true);
+              }}
+              visibleColumns={visibleColumns}
+              allCollapsed={allCollapsed}
+              locked={false}
+              maxHeight="calc(100vh - 130px)"
+            />
+          </div>
+        ) : activeView === "calendar" ? (
+          <div className="h-full flex flex-col">
+            <div className="flex items-center justify-center py-1.5">
+              <span className="text-sm font-medium">
+                {calendarDate.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' })}
+              </span>
+            </div>
+            <div className="flex-1 p-1" style={{ minHeight: '600px' }}>
+              <BigCalendar
+                localizer={localizer}
+                events={calendarEvents}
+                startAccessor="start"
+                endAccessor="end"
+                style={{ height: '100%' }}
+                eventPropGetter={eventStyleGetter}
+                onSelectEvent={(event) => {
+                  const templateItem = items.find(i => i.id === (event.resource as TemplateItem).id);
+                  if (templateItem) handleEditItem(templateItem);
+                }}
+                views={[Views.MONTH, Views.WEEK, Views.DAY, Views.AGENDA]}
+                view={calendarView}
+                onView={(v) => setCalendarView(v as "month" | "week" | "day" | "agenda")}
+                date={calendarDate}
+                onNavigate={(date) => setCalendarDate(date)}
+                popup
+                toolbar={false}
+              />
             </div>
           </div>
         ) : (
-          <div className="min-w-max">
-            {/* Double-row header like project Gantt */}
-            <div className="sticky top-0 z-10 bg-card">
-              {/* Top row - Week labels */}
-              <div className="flex items-center border-b border-border h-[30px]">
-                <div className="w-8 shrink-0" />
-                <div className="w-64 border-r border-border shrink-0" />
-                <div className="w-16 border-r border-border shrink-0" />
-                <div className="w-20 border-r border-border shrink-0" />
-                <div 
-                  className="flex-1 flex"
-                  style={{ minWidth: `${totalDuration * dayWidth}px` }}
-                >
-                  {Array.from({ length: Math.ceil(totalDuration / 7) }).map((_, weekIdx) => {
-                    const weekWidth = Math.min(7, totalDuration - weekIdx * 7) * dayWidth;
-                    return (
-                      <div 
-                        key={weekIdx}
-                        className="text-xs font-semibold text-muted-foreground flex items-center justify-center border-r border-border"
-                        style={{ width: `${weekWidth}px` }}
-                      >
-                        Week {weekIdx + 1}
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="w-10 shrink-0" />
+          /* Gantt View */
+          <div className="relative">
+            {/* Header row */}
+            <div className="flex items-center border-b border-border bg-muted/30 sticky top-0 z-30 h-8">
+              <div className="w-8 shrink-0" />
+              <div className="w-64 px-2 text-xs font-medium border-r border-border shrink-0 flex items-center h-full">Name</div>
+              <div className="w-16 px-2 text-center text-xs font-medium border-r border-border shrink-0 flex items-center justify-center h-full">Duration</div>
+              <div className="w-20 px-2 text-center text-xs font-medium border-r border-border shrink-0 flex items-center justify-center h-full">Start Day</div>
+              <div className="flex-1 relative h-8 overflow-hidden" style={{ minWidth: `${totalDuration * dayWidth}px` }}>
+                {Array.from({ length: Math.ceil(totalDuration / (zoomLevel === 'day' ? 1 : zoomLevel === 'week' ? 7 : 30)) }).map((_, i) => {
+                  const day = i * (zoomLevel === 'day' ? 1 : zoomLevel === 'week' ? 7 : 30);
+                  return (
+                    <div
+                      key={i}
+                      className="absolute top-0 bottom-0 border-r border-border/50 flex items-center"
+                      style={{ left: `${day * dayWidth}px`, width: `${(zoomLevel === 'day' ? 1 : zoomLevel === 'week' ? 7 : 30) * dayWidth}px` }}
+                    >
+                      <span className="text-[10px] text-muted-foreground px-1">
+                        {zoomLevel === 'day' ? `D${day}` : zoomLevel === 'week' ? `W${i + 1}` : `M${i + 1}`}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
-              
-              {/* Bottom row - Day labels + column headers */}
-              <div className="flex items-center border-b border-border h-[30px]">
-                <div className="w-8 shrink-0" />
-                <div className="w-64 px-2 text-xs font-medium border-r border-border shrink-0 flex items-center">
-                  Task Name
-                </div>
-                <div className="w-16 px-2 text-xs font-medium text-center border-r border-border shrink-0 flex items-center justify-center">
-                  Duration
-                </div>
-                <div className="w-20 px-2 text-xs font-medium text-center border-r border-border shrink-0 flex items-center justify-center">
-                  Start Day
-                </div>
-                <div 
-                  className="flex-1 flex"
-                  style={{ minWidth: `${totalDuration * dayWidth}px` }}
-                >
-                  {Array.from({ length: totalDuration }).map((_, dayIdx) => {
-                    const dayOfWeek = dayIdx % 7;
-                    const dayNames = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
-                    const isWeekend = dayOfWeek === 5 || dayOfWeek === 6;
-                    const isDay0 = dayIdx === 0;
-                    return (
-                      <div 
-                        key={dayIdx}
-                        className={`text-xs flex items-center justify-center border-r border-border whitespace-nowrap overflow-hidden px-0.5 ${isWeekend ? 'bg-[#f3f4f6] dark:bg-muted/50' : ''} ${isDay0 ? 'text-[#bba7db] font-semibold' : 'text-foreground'}`}
-                        style={{ width: `${dayWidth}px` }}
-                      >
-                        {dayNames[dayOfWeek]} {dayIdx}
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="w-10 shrink-0" />
-              </div>
+              <div className="w-16 shrink-0" />
             </div>
 
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <SortableContext items={items.map(i => i.id)} strategy={verticalListSortingStrategy}>
-                {parentItems.map((parentItem, parentIdx) => {
+                {topLevelItems.map((parentItem) => {
                   const isCollapsed = collapsedItems.has(parentItem.id);
                   const childItems = childItemsByParent[parentItem.id] || [];
                   const hasChildren = childItems.length > 0;
+                  const effective = hasChildren ? getEffectiveDates(parentItem) : undefined;
 
                   return (
                     <div key={parentItem.id}>
                       <SortableItem
                         item={parentItem}
-                        index={parentIdx}
                         onEdit={handleEditItem}
                         onDelete={(id) => setShowDeleteConfirm(id)}
                         onDuplicate={handleDuplicateItem}
@@ -1114,26 +1183,55 @@ export default function ScheduleTemplateDetail() {
                         isParent={true}
                         isCollapsed={isCollapsed}
                         hasChildren={hasChildren}
-                        isChild={false}
+                        depth={0}
+                        effectiveStartDay={effective?.startDay}
+                        effectiveDuration={effective ? effective.endDay - effective.startDay : undefined}
                       />
-                      {!isCollapsed && childItems.map((childItem, childIdx) => (
-                        <SortableItem
-                          key={childItem.id}
-                          item={childItem}
-                          index={parentIdx * 1000 + childIdx + 1}
-                          onEdit={handleEditItem}
-                          onDelete={(id) => setShowDeleteConfirm(id)}
-                          onDuplicate={handleDuplicateItem}
-                          onBarChange={handleBarChange}
-                          onAddChild={handleAddChild}
-                          totalDuration={totalDuration}
-                          dayWidth={dayWidth}
-                          isParent={false}
-                          isCollapsed={false}
-                          hasChildren={false}
-                          isChild={true}
-                        />
-                      ))}
+                      {!isCollapsed && childItems.map((childItem) => {
+                        const isChildCollapsed = collapsedItems.has(childItem.id);
+                        const subItems = subItemsByParent[childItem.id] || [];
+                        const childHasChildren = subItems.length > 0;
+                        const childEffective = childHasChildren ? getEffectiveDates(childItem) : undefined;
+
+                        return (
+                          <div key={childItem.id}>
+                            <SortableItem
+                              item={childItem}
+                              onEdit={handleEditItem}
+                              onDelete={(id) => setShowDeleteConfirm(id)}
+                              onDuplicate={handleDuplicateItem}
+                              onBarChange={handleBarChange}
+                              onToggleCollapse={toggleCollapse}
+                              onAddChild={handleAddChild}
+                              totalDuration={totalDuration}
+                              dayWidth={dayWidth}
+                              isParent={childHasChildren}
+                              isCollapsed={isChildCollapsed}
+                              hasChildren={childHasChildren}
+                              depth={1}
+                              effectiveStartDay={childEffective?.startDay}
+                              effectiveDuration={childEffective ? childEffective.endDay - childEffective.startDay : undefined}
+                            />
+                            {!isChildCollapsed && subItems.map((subItem) => (
+                              <SortableItem
+                                key={subItem.id}
+                                item={subItem}
+                                onEdit={handleEditItem}
+                                onDelete={(id) => setShowDeleteConfirm(id)}
+                                onDuplicate={handleDuplicateItem}
+                                onBarChange={handleBarChange}
+                                onAddChild={handleAddChild}
+                                totalDuration={totalDuration}
+                                dayWidth={dayWidth}
+                                isParent={false}
+                                isCollapsed={false}
+                                hasChildren={false}
+                                depth={2}
+                              />
+                            ))}
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                 })}
@@ -1143,60 +1241,48 @@ export default function ScheduleTemplateDetail() {
         )}
       </div>
 
-      <Dialog open={showItemDialog} onOpenChange={setShowItemDialog}>
-        <DialogContent data-testid="dialog-item">
+      {/* Add/Edit Item Dialog */}
+      <Dialog open={showItemDialog} onOpenChange={(open) => { setShowItemDialog(open); if (!open) setEditingItem(null); }}>
+        <DialogContent className="max-w-lg" data-testid="dialog-item">
           <DialogHeader>
             <DialogTitle>
-              {editingItem
-                ? "Edit Item"
-                : dialogMode === "group"
-                ? "Add Group / Phase"
-                : "Add Item"}
+              {editingItem ? "Edit Item" : dialogMode === "group" ? "Add Group / Phase" : "Add Schedule Item"}
             </DialogTitle>
             <DialogDescription>
-              {editingItem
-                ? "Update the item details."
-                : dialogMode === "group"
-                ? "Create a top-level group or phase to organise child items under."
-                : "Add a new item to the schedule template."}
+              {editingItem ? "Update the item details." : dialogMode === "group" ? "Create a top-level group or phase to organise items under." : "Add a new item to the schedule template."}
             </DialogDescription>
           </DialogHeader>
-          
-          <div className="space-y-4 py-4">
+
+          <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label htmlFor="name">Name *</Label>
+              <Label htmlFor="name">Name <span className="text-destructive">*</span></Label>
               <Input
                 id="name"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="e.g., Pour footings"
+                placeholder={dialogMode === "group" ? "e.g., Framing Phase" : "e.g., Pour footings"}
                 data-testid="input-item-name"
               />
             </div>
 
             <div className={`grid gap-4 ${dialogMode === "group" ? "grid-cols-1" : "grid-cols-2"}`}>
               <div className="space-y-2">
-                <Label htmlFor="type">Type</Label>
-                <Select
-                  value={formData.type}
-                  onValueChange={(value) => setFormData({ ...formData, type: value as TemplateItem["type"] })}
-                >
+                <Label>Type</Label>
+                <Select value={formData.type} onValueChange={(value) => setFormData({ ...formData, type: value as TemplateItem["type"] })}>
                   <SelectTrigger data-testid="select-item-type">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     {ITEM_TYPES.map((type) => (
-                      <SelectItem key={type.value} value={type.value}>
-                        {type.label}
-                      </SelectItem>
+                      <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              
+
               {dialogMode !== "group" && (
                 <div className="space-y-2">
-                  <Label htmlFor="parentItem">Parent Group</Label>
+                  <Label>Parent Group / Item</Label>
                   <Select
                     value={formData.parentItemId || "none"}
                     onValueChange={(value) => setFormData({ ...formData, parentItemId: value === "none" ? null : value })}
@@ -1206,13 +1292,18 @@ export default function ScheduleTemplateDetail() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">No parent (top level)</SelectItem>
-                      {parentItems
-                        .filter(p => p.id !== editingItem?.id)
-                        .map((parent) => (
-                          <SelectItem key={parent.id} value={parent.id}>
-                            {parent.name}
+                      {topLevelItems.filter(p => p.id !== editingItem?.id).map((parent) => (
+                        <SelectItem key={parent.id} value={parent.id}>
+                          {parent.name}
+                        </SelectItem>
+                      ))}
+                      {topLevelItems.filter(p => p.id !== editingItem?.id).flatMap(parent =>
+                        (childItemsByParent[parent.id] || []).filter(c => c.id !== editingItem?.id).map(child => (
+                          <SelectItem key={child.id} value={child.id}>
+                            &nbsp;&nbsp;↳ {child.name}
                           </SelectItem>
-                        ))}
+                        ))
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
@@ -1221,9 +1312,8 @@ export default function ScheduleTemplateDetail() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="duration">Duration (days)</Label>
+                <Label>Duration (days)</Label>
                 <Input
-                  id="duration"
                   type="number"
                   min={1}
                   value={formData.duration}
@@ -1231,16 +1321,13 @@ export default function ScheduleTemplateDetail() {
                   data-testid="input-item-duration"
                 />
               </div>
-              
               <div className="space-y-2">
-                <Label htmlFor="relativeStartDay">Start Day</Label>
+                <Label>Start Day</Label>
                 <Input
-                  id="relativeStartDay"
                   type="number"
                   min={0}
                   value={formData.relativeStartDay ?? ""}
-                  onChange={(e) => setFormData({ ...formData, relativeStartDay: e.target.value === "" ? "" as any : parseInt(e.target.value) })}
-                  onBlur={(e) => setFormData({ ...formData, relativeStartDay: parseInt(e.target.value) || 0 })}
+                  onChange={(e) => setFormData({ ...formData, relativeStartDay: e.target.value === "" ? 0 : parseInt(e.target.value) || 0 })}
                   placeholder="0"
                   data-testid="input-item-start-day"
                 />
@@ -1248,9 +1335,8 @@ export default function ScheduleTemplateDetail() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
+              <Label>Description</Label>
               <Textarea
-                id="description"
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 placeholder="Optional description..."
@@ -1260,162 +1346,120 @@ export default function ScheduleTemplateDetail() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="assigneeName">Default Assignee</Label>
+              <Label>Default Assignee</Label>
               <Input
-                id="assigneeName"
                 value={formData.assigneeName}
                 onChange={(e) => setFormData({ ...formData, assigneeName: e.target.value })}
                 placeholder="e.g., Concreter"
                 data-testid="input-item-assignee"
               />
-              <p className="text-xs text-muted-foreground">
-                Role or trade name (will be matched when applying template)
-              </p>
+              <p className="text-xs text-muted-foreground">Role or trade name (matched when applying template)</p>
             </div>
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowItemDialog(false)}>
-              Cancel
-            </Button>
+            <Button variant="outline" onClick={() => setShowItemDialog(false)}>Cancel</Button>
             <Button onClick={handleSaveItem} data-testid="button-save-item">
-              {editingItem ? "Update" : "Add"} Item
+              {editingItem ? "Update" : "Add"} {dialogMode === "group" ? "Group" : "Item"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
+      {/* Apply Dialog */}
       <Dialog open={showApplyDialog} onOpenChange={setShowApplyDialog}>
         <DialogContent data-testid="dialog-apply-template">
           <DialogHeader>
             <DialogTitle>Apply Template to Project</DialogTitle>
-            <DialogDescription>
-              Select a project and start date to apply this schedule template.
-            </DialogDescription>
+            <DialogDescription>Select a project and start date to apply this schedule template.</DialogDescription>
           </DialogHeader>
-          
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>Project *</Label>
+              <Label>Project <span className="text-destructive">*</span></Label>
               <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
                 <SelectTrigger data-testid="select-project">
                   <SelectValue placeholder="Select a project" />
                 </SelectTrigger>
                 <SelectContent>
                   {projects.filter(p => !p.isArchived).map((project) => (
-                    <SelectItem key={project.id} value={project.id}>
-                      {project.name}
-                    </SelectItem>
+                    <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-
             <div className="space-y-2">
-              <Label htmlFor="startDate">Start Date</Label>
-              <Input
-                id="startDate"
-                type="date"
-                value={applyStartDate}
-                onChange={(e) => setApplyStartDate(e.target.value)}
-                data-testid="input-start-date"
-              />
-              <p className="text-xs text-muted-foreground">
-                All template items will be scheduled relative to this date.
-              </p>
+              <Label>Start Date</Label>
+              <Input type="date" value={applyStartDate} onChange={(e) => setApplyStartDate(e.target.value)} data-testid="input-start-date" />
+              <p className="text-xs text-muted-foreground">All template items will be scheduled relative to this date.</p>
             </div>
           </div>
-
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowApplyDialog(false)}>
-              Cancel
-            </Button>
-            <Button 
+            <Button variant="outline" onClick={() => setShowApplyDialog(false)}>Cancel</Button>
+            <Button
               onClick={() => applyTemplateMutation.mutate({ projectId: selectedProjectId, startDate: applyStartDate })}
               disabled={!selectedProjectId || applyTemplateMutation.isPending}
               data-testid="button-confirm-apply"
             >
-              {applyTemplateMutation.isPending ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Applying...
-                </>
-              ) : (
-                "Apply Template"
-              )}
+              {applyTemplateMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Applying...</> : "Apply Template"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
+      {/* Delete Confirm */}
       <AlertDialog open={!!showDeleteConfirm} onOpenChange={() => setShowDeleteConfirm(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Item</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete this item? This action cannot be undone.
-            </AlertDialogDescription>
+            <AlertDialogDescription>Are you sure you want to delete this item? Child items will also be deleted. This cannot be undone.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => showDeleteConfirm && handleDeleteItem(showDeleteConfirm)}>
-              Delete
-            </AlertDialogAction>
+            <AlertDialogAction onClick={() => showDeleteConfirm && handleDeleteItem(showDeleteConfirm)}>Delete</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Settings Dialog */}
       <Dialog open={showSettingsDialog} onOpenChange={setShowSettingsDialog}>
         <DialogContent data-testid="dialog-template-settings">
           <DialogHeader>
             <DialogTitle>Template Settings</DialogTitle>
-            <DialogDescription>
-              Update the template name and description.
-            </DialogDescription>
+            <DialogDescription>Update the template name and description.</DialogDescription>
           </DialogHeader>
-          
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="templateName">Name *</Label>
+              <Label>Name <span className="text-destructive">*</span></Label>
               <Input
-                id="templateName"
                 value={templateFormData.name}
                 onChange={(e) => setTemplateFormData({ ...templateFormData, name: e.target.value })}
                 placeholder="Template name"
                 data-testid="input-template-name"
               />
             </div>
-
             <div className="space-y-2">
-              <Label htmlFor="templateDescription">Description</Label>
+              <Label>Description</Label>
               <Textarea
-                id="templateDescription"
                 value={templateFormData.description}
                 onChange={(e) => setTemplateFormData({ ...templateFormData, description: e.target.value })}
-                placeholder="Brief description of the template..."
+                placeholder="Brief description..."
                 rows={3}
                 data-testid="textarea-template-description"
               />
             </div>
+            <div className="space-y-2">
+              <Label>Category</Label>
+              <Input
+                value={templateFormData.category}
+                onChange={(e) => setTemplateFormData({ ...templateFormData, category: e.target.value })}
+                placeholder="e.g., Residential, Commercial"
+              />
+            </div>
           </div>
-
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowSettingsDialog(false)}>
-              Cancel
-            </Button>
-            <Button 
-              onClick={handleSaveTemplateSettings}
-              disabled={updateTemplateMetaMutation.isPending}
-              data-testid="button-save-template-settings"
-            >
-              {updateTemplateMetaMutation.isPending ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                "Save Settings"
-              )}
+            <Button variant="outline" onClick={() => setShowSettingsDialog(false)}>Cancel</Button>
+            <Button onClick={handleSaveTemplateSettings} disabled={updateTemplateMetaMutation.isPending} data-testid="button-save-template-settings">
+              {updateTemplateMetaMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</> : "Save Settings"}
             </Button>
           </DialogFooter>
         </DialogContent>
