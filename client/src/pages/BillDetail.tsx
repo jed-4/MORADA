@@ -262,7 +262,7 @@ export default function BillDetail() {
       });
       setAttachmentUrls(Array.isArray(bill.attachmentUrls) ? (bill.attachmentUrls as string[]) : []);
     }
-  }, [bill, isEditMode, form]);
+  }, [bill, isEditMode]);
 
   // Force-reapply projectId once the projects list loads — the Radix Select only picks up its
   // selected state at render time, so if options arrive after form.reset the select shows blank.
@@ -311,13 +311,13 @@ export default function BillDetail() {
         form.setValue("projectId", projectIdToUse);
       }
     }
-  }, [projects, isEditMode, form, projectId]);
+  }, [projects.length, isEditMode, projectId]);
 
   useEffect(() => {
     if (!isEditMode && nextBillNumberData?.billNumber) {
       form.setValue("billNumber", nextBillNumberData.billNumber);
     }
-  }, [nextBillNumberData, isEditMode, form]);
+  }, [nextBillNumberData, isEditMode]);
 
   useEffect(() => {
     if (!colMenuOpen) return;
@@ -374,7 +374,7 @@ export default function BillDetail() {
     }
     
     form.setValue("dueDate", format(dueDate, "yyyy-MM-dd"));
-  }, [watchedSupplierId, watchedBillDate, suppliers, companySettings, isEditMode, form]);
+  }, [watchedSupplierId, watchedBillDate, suppliers, companySettings, isEditMode]);
 
   useEffect(() => {
     if (!watchedSupplierId || isEditMode) return;
