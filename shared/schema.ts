@@ -989,6 +989,9 @@ export const companySettings = pgTable("company_settings", {
   proposalHeaderText: text("proposal_header_text"), // Default header text for proposals
   proposalFooterText: text("proposal_footer_text"), // Default footer text for proposals
   
+  // Client invoice terms & conditions (company-wide default)
+  termsAndConditions: text("terms_and_conditions"),
+  
   // Insurance expiry reminder settings
   insuranceReminderRoleId: varchar("insurance_reminder_role_id").references(() => userRoles.id), // Which role receives insurance expiry reminders (defaults to General Manager)
   

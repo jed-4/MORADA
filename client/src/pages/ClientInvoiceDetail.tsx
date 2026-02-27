@@ -150,7 +150,6 @@ const invoiceFormSchema = z.object({
   dueDate: z.date().optional(),
   introductionText: z.string().optional(),
   closingText: z.string().optional(),
-  termsAndConditions: z.string().optional(),
   markupPercent: z.number().optional(),
 });
 
@@ -213,6 +212,7 @@ export default function ClientInvoiceDetail() {
   // ── new UI state ─────────────────────────────────────────────────────────────
   const [introCollapsed, setIntroCollapsed] = useState(true);
   const [closingCollapsed, setClosingCollapsed] = useState(true);
+  const [termsCollapsed, setTermsCollapsed] = useState(true);
   const [invoiceNumberOverride, setInvoiceNumberOverride] = useState(false);
   const [variationsModalOpen, setVariationsModalOpen] = useState(false);
   const [allowancesModalOpen, setAllowancesModalOpen] = useState(false);
@@ -229,6 +229,10 @@ export default function ClientInvoiceDetail() {
   // ── queries ──────────────────────────────────────────────────────────────────
   const { data: xeroStatus } = useQuery<{ connected: boolean }>({
     queryKey: ["/api/xero/status"],
+  });
+
+  const { data: companySettings } = useQuery<{ termsAndConditions?: string; companyName?: string; address?: string }>({
+    queryKey: ["/api/company-settings"],
   });
 
   const { data: invoice, isLoading: invoiceLoading } = useQuery<ClientInvoice>({
@@ -323,7 +327,6 @@ export default function ClientInvoiceDetail() {
       dueDate: undefined,
       introductionText: "",
       closingText: "",
-      termsAndConditions: "",
       markupPercent: undefined,
     },
   });
@@ -351,7 +354,6 @@ export default function ClientInvoiceDetail() {
         dueDate: invoice.dueDate ? new Date(invoice.dueDate) : undefined,
         introductionText: invoice.introductionText || "",
         closingText: invoice.closingText || "",
-        termsAndConditions: invoice.termsAndConditions || "",
         markupPercent: invoice.markupPercent || undefined,
       });
       // Restore column config
@@ -631,7 +633,6 @@ export default function ClientInvoiceDetail() {
     markupPercent: data.markupPercent,
     introductionText: data.introductionText,
     closingText: data.closingText,
-    termsAndConditions: data.termsAndConditions,
     subtotal: Math.round(calculateSubtotal() * 100),
     markupAmount: Math.round(calculateMarkup() * 100),
     gstAmount: Math.round(calculateGST() * 100),
@@ -1132,6 +1133,68 @@ export default function ClientInvoiceDetail() {
           <div className="flex-1 overflow-auto">
             <div className="max-w-5xl mx-auto px-6 py-6 space-y-6">
 
+                {/* Document Header Card */}
+                <Card className="bg-muted/20">
+                  <CardContent className="p-5">
+                    <div className="grid grid-cols-5 gap-4">
+                      <div className="col-span-3 pr-5 border-r border-border">
+                        <p className="font-semibold text-base">
+                          {companySettings?.companyName || user?.companyName || "Your Company"}
+                        </p>
+                        {companySettings?.address && (
+                          <p className="text-xs text-muted-foreground mt-0.5 whitespace-pre-line">
+                            {companySettings.address}
+                          </p>
+                        )}
+                      </div>
+                      <div className="col-span-2 pl-2 flex flex-col items-end justify-between">
+                        <p className="text-xl font-bold tracking-widest text-muted-foreground/40 uppercase">
+                          Tax Invoice
+                        </p>
+                        <div className="text-right space-y-0.5 mt-2">
+                          {form.watch("invoiceNumber") && (
+                            <p className="text-xs text-muted-foreground">
+                              <span className="font-medium text-foreground">{form.watch("invoiceNumber")}</span>
+                            </p>
+                          )}
+                          {form.watch("invoiceDate") && (
+                            <p className="text-xs text-muted-foreground">
+                              Issued: <span className="text-foreground">{format(form.watch("invoiceDate"), "d MMM yyyy")}</span>
+                            </p>
+                          )}
+                          {form.watch("dueDate") && (
+                            <p className="text-xs text-muted-foreground">
+                              Due: <span className="text-foreground">{format(form.watch("dueDate")!, "d MMM yyyy")}</span>
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Bill To / Project strip */}
+                {selectedProjectId && currentProject && (
+                  <div className="grid grid-cols-2 gap-6 px-1">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium mb-1">Bill To</p>
+                      <p className="text-sm font-medium">{currentProject.clientName || currentProject.name}</p>
+                      {currentProject.location && (
+                        <p className="text-xs text-muted-foreground mt-0.5">{currentProject.location}</p>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium mb-1">Project</p>
+                      <p className="text-sm font-medium">{currentProject.name}</p>
+                      {(currentProject.constructionNumber || currentProject.preConstructionNumber || currentProject.leadNumber) && (
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          #{currentProject.constructionNumber || currentProject.preConstructionNumber || currentProject.leadNumber}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Invoice Name + Number */}
                 <div className="grid grid-cols-3 gap-4">
                   <FormField
@@ -1326,6 +1389,7 @@ export default function ClientInvoiceDetail() {
                     <Card data-testid="section-contract-price">
                       <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-3">
                         <CardTitle className="text-base flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full flex-shrink-0 bg-blue-400/70" />
                           Contract Price
                           {isEstimateLocked() && (
                             <Tooltip>
@@ -1578,7 +1642,10 @@ export default function ClientInvoiceDetail() {
                     {/* Variations Section */}
                     <Card data-testid="section-variations">
                       <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-3">
-                        <CardTitle className="text-base">Variations</CardTitle>
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full flex-shrink-0 bg-amber-400/70" />
+                          Variations
+                        </CardTitle>
                         <Button
                           type="button"
                           variant="outline"
@@ -1706,7 +1773,10 @@ export default function ClientInvoiceDetail() {
                     {/* Allowances Section */}
                     <Card data-testid="section-allowances">
                       <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-3">
-                        <CardTitle className="text-base">Allowances</CardTitle>
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full flex-shrink-0 bg-emerald-400/70" />
+                          Allowances
+                        </CardTitle>
                         <Button
                           type="button"
                           variant="outline"
@@ -1935,7 +2005,10 @@ export default function ClientInvoiceDetail() {
                 {/* Custom Lines */}
                 <Card data-testid="section-custom-lines">
                   <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-3">
-                    <CardTitle className="text-base">Custom Lines</CardTitle>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full flex-shrink-0 bg-violet-400/70" />
+                      Custom Lines
+                    </CardTitle>
                     <Button
                       type="button"
                       variant="outline"
@@ -2077,7 +2150,8 @@ export default function ClientInvoiceDetail() {
                 {isEditMode && (
                   <Card data-testid="section-payments-history">
                     <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0">
-                      <CardTitle className="text-base">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full flex-shrink-0 bg-green-500/70" />
                         Payments ({payments.length})
                       </CardTitle>
                       <Button
@@ -2132,69 +2206,81 @@ export default function ClientInvoiceDetail() {
                   </Card>
                 )}
 
-                {/* Closing Text (collapsible) */}
-                <FormField
-                  control={form.control}
-                  name="closingText"
-                  render={({ field }) => (
-                    <FormItem>
-                      <div
-                        className="flex items-center justify-between cursor-pointer py-1"
-                        onClick={() => setClosingCollapsed((v) => !v)}
-                      >
-                        <FormLabel className="cursor-pointer text-sm font-medium">
-                          Closing Text
-                        </FormLabel>
-                        {closingCollapsed ? (
-                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                        ) : (
-                          <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                {/* Closing Text (collapsible card) */}
+                <Card>
+                  <CardHeader
+                    className="flex flex-row items-center justify-between gap-4 space-y-0 pb-3 cursor-pointer"
+                    onClick={() => setClosingCollapsed((v) => !v)}
+                  >
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full flex-shrink-0 bg-slate-400/60" />
+                      Closing Text
+                    </CardTitle>
+                    {closingCollapsed ? (
+                      <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    ) : (
+                      <ChevronUp className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    )}
+                  </CardHeader>
+                  {!closingCollapsed && (
+                    <CardContent>
+                      <FormField
+                        control={form.control}
+                        name="closingText"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormControl>
+                              <RichTextEditor
+                                content={field.value || ""}
+                                onChange={(html) => field.onChange(html)}
+                                placeholder="Enter closing text..."
+                                data-testid="editor-closing"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
                         )}
-                      </div>
-                      {!closingCollapsed && (
-                        <FormControl>
-                          <RichTextEditor
-                            content={field.value || ""}
-                            onChange={(html) => field.onChange(html)}
-                            placeholder="Enter closing text..."
-                            data-testid="editor-closing"
-                          />
-                        </FormControl>
-                      )}
-                      <FormMessage />
-                    </FormItem>
+                      />
+                    </CardContent>
                   )}
-                />
+                </Card>
 
-                {/* Terms & Conditions */}
-                <FormField
-                  control={form.control}
-                  name="termsAndConditions"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Terms & Conditions</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl>
-                          <SelectTrigger data-testid="select-terms-conditions">
-                            <SelectValue placeholder="Select terms and conditions" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="standard">Standard Terms</SelectItem>
-                          <SelectItem value="residential">Residential Building Terms</SelectItem>
-                          <SelectItem value="commercial">Commercial Building Terms</SelectItem>
-                          <SelectItem value="custom">Custom</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
+                {/* Terms & Conditions — read from company settings */}
+                <Card>
+                  <CardHeader
+                    className="flex flex-row items-center justify-between gap-4 space-y-0 pb-3 cursor-pointer"
+                    onClick={() => setTermsCollapsed((v) => !v)}
+                  >
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full flex-shrink-0 bg-slate-400/60" />
+                      Terms & Conditions
+                    </CardTitle>
+                    {termsCollapsed ? (
+                      <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    ) : (
+                      <ChevronUp className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    )}
+                  </CardHeader>
+                  {!termsCollapsed && (
+                    <CardContent>
+                      {companySettings?.termsAndConditions ? (
+                        <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                          {companySettings.termsAndConditions}
+                        </p>
+                      ) : (
+                        <p className="text-sm text-muted-foreground italic">
+                          No terms set — go to Company Settings &rsaquo; Templates &rsaquo; Terms &amp; Conditions to add your standard terms.
+                        </p>
+                      )}
+                    </CardContent>
                   )}
-                />
+                </Card>
 
                 {/* Attachments stub */}
                 <Card data-testid="section-attachments">
                   <CardHeader>
                     <CardTitle className="text-base flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full flex-shrink-0 bg-slate-400/60" />
                       <Paperclip className="h-4 w-4" />
                       Attachments
                     </CardTitle>
@@ -2209,7 +2295,10 @@ export default function ClientInvoiceDetail() {
                 {/* Invoice Summary Card */}
                 <Card data-testid="summary-panel">
                   <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-3">
-                    <CardTitle className="text-base">Invoice Summary</CardTitle>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full flex-shrink-0 bg-primary/50" />
+                      Invoice Summary
+                    </CardTitle>
                     <div className="flex items-center gap-1.5 text-xs">
                       <span
                         className={cn(
@@ -2324,7 +2413,11 @@ export default function ClientInvoiceDetail() {
                               <span
                                 className={cn(
                                   "tabular-nums",
-                                  due > 0 ? "text-[#bba7db]" : "text-emerald-600 dark:text-emerald-400"
+                                  due <= 0
+                                    ? "text-emerald-600 dark:text-emerald-400"
+                                    : paid > 0
+                                    ? "text-amber-600 dark:text-amber-400"
+                                    : "text-red-500 dark:text-red-400"
                                 )}
                                 data-testid="text-summary-due"
                               >

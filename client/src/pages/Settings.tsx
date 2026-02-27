@@ -2353,9 +2353,32 @@ function DefaultValuesSection() {
   );
 }
 
+const DEFAULT_CLIENT_INVOICE_TERMS = "This payment claim is in accordance with your building contract and considers any adjustments to the contract price by variations (as applicable) that have been agreed, signed and accepted.\n\n1. Invoices must be paid within the days stated within the building contract. Failure to pay by the due date may result in a notice of intention to suspend work and, if not resolved, may also result in termination of the contract.\n2. If any financial delays arise, the client must notify the builder immediately.\n3. This invoice is calculated from the contract amount.\n4. If you have any disputes about this invoice, notify the builder immediately.";
+
 // Terms & Conditions Section (Buildern-style)
 function TermsConditionsSection() {
   const { toast } = useToast();
+
+  const { data: companySettings } = useQuery<{ termsAndConditions?: string }>({
+    queryKey: ["/api/company-settings"],
+  });
+
+  const saveTermsMutation = useMutation({
+    mutationFn: async (content: string) => {
+      const res = await apiRequest("/api/company-settings", "PATCH", { termsAndConditions: content });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
+      toast({ title: "Terms & Conditions saved" });
+    },
+    onError: () => {
+      toast({ title: "Failed to save", variant: "destructive" });
+    },
+  });
+
+  const clientInvoiceContent = companySettings?.termsAndConditions ?? DEFAULT_CLIENT_INVOICE_TERMS;
+
   const [templates, setTemplates] = useState<Array<{
     id: string;
     name: string;
@@ -2363,13 +2386,7 @@ function TermsConditionsSection() {
     defaultFor: string[];
   }>>([
     {
-      id: "1",
-      name: "Client Invoices",
-      content: "This payment claim is in accordance with your building contract and considers any adjustments to the contract price by variations (as applicable) that have been agreed, signed and accepted.\n\n1. Invoices must be paid within the days stated within the building contract. Failure to pay by the due date may result in a notice of intention to suspend work and, if not resolved, may also result in termination of the contract.\n2. If any financial delays arise, the client must notify the builder immediately.\n3. This invoice is calculated from the contract amount.\n4. If you have any disputes about this invoice, notify the builder immediately.",
-      defaultFor: ["client_invoices"]
-    },
-    {
-      id: "2", 
+      id: "2",
       name: "Purchase Orders",
       content: "Standard purchase order terms and conditions apply. All goods must be delivered to the specified site address. Payment terms are net 30 days from invoice date.",
       defaultFor: ["purchase_orders"]
@@ -2382,6 +2399,7 @@ function TermsConditionsSection() {
     }
   ]);
   const [editingTemplate, setEditingTemplate] = useState<typeof templates[0] | null>(null);
+  const [editingClientInvoice, setEditingClientInvoice] = useState(false);
   const [isAddingTemplate, setIsAddingTemplate] = useState(false);
 
   const documentTypes = [
@@ -2427,6 +2445,36 @@ function TermsConditionsSection() {
 
       {/* Template List */}
       <div className="space-y-3">
+        {/* Client Invoices — DB-backed */}
+        <Card className="border-2 hover-elevate">
+          <CardContent className="p-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <h4 className="font-semibold text-sm">Client Invoices</h4>
+                  <Badge variant="secondary" className="text-xs">Saved to company settings</Badge>
+                </div>
+                <p className="text-sm text-muted-foreground line-clamp-2 mt-1">
+                  {clientInvoiceContent.substring(0, 150)}...
+                </p>
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  <Badge variant="secondary" className="text-xs">Client Invoices</Badge>
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setEditingClientInvoice(true)}
+                  data-testid="button-edit-template-client-invoices"
+                >
+                  <Edit className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         {templates.map((template) => (
           <Card key={template.id} className="border-2 hover-elevate">
             <CardContent className="p-4">
@@ -2471,6 +2519,19 @@ function TermsConditionsSection() {
         ))}
       </div>
 
+      {/* Client Invoices T&C editor modal */}
+      {editingClientInvoice && (
+        <ClientInvoiceTermsEditor
+          initialContent={clientInvoiceContent}
+          onSave={(content) => {
+            saveTermsMutation.mutate(content);
+            setEditingClientInvoice(false);
+          }}
+          onCancel={() => setEditingClientInvoice(false)}
+          isSaving={saveTermsMutation.isPending}
+        />
+      )}
+
       {/* Edit/Add Template Modal */}
       {(editingTemplate || isAddingTemplate) && (
         <TermsTemplateEditor
@@ -2480,6 +2541,54 @@ function TermsConditionsSection() {
           onCancel={() => { setEditingTemplate(null); setIsAddingTemplate(false); }}
         />
       )}
+    </div>
+  );
+}
+
+// Client Invoices T&C Editor (DB-backed)
+function ClientInvoiceTermsEditor({
+  initialContent,
+  onSave,
+  onCancel,
+  isSaving,
+}: {
+  initialContent: string;
+  onSave: (content: string) => void;
+  onCancel: () => void;
+  isSaving: boolean;
+}) {
+  const [content, setContent] = useState(initialContent);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" data-testid="modal-client-invoice-terms-editor">
+      <Card className="w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+        <CardHeader className="pb-4 flex-shrink-0">
+          <CardTitle className="text-lg">Edit Client Invoice Terms & Conditions</CardTitle>
+          <p className="text-sm text-muted-foreground mt-1">This text appears on all client invoices. Changes are saved to your company settings.</p>
+        </CardHeader>
+        <CardContent className="flex-1 overflow-y-auto space-y-4">
+          <textarea
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            className="w-full min-h-[300px] p-3 border rounded-md text-sm resize-y focus:outline-none focus:ring-2 focus:ring-[#bba7db] bg-background"
+            placeholder="Enter your terms and conditions for client invoices..."
+            data-testid="textarea-client-invoice-terms"
+          />
+        </CardContent>
+        <div className="p-4 border-t flex justify-end gap-2 flex-shrink-0">
+          <Button variant="outline" onClick={onCancel} data-testid="button-cancel-client-invoice-terms">
+            Cancel
+          </Button>
+          <Button
+            onClick={() => onSave(content)}
+            disabled={isSaving}
+            className="bg-[#bba7db] hover:bg-[#bba7db]/90"
+            data-testid="button-save-client-invoice-terms"
+          >
+            {isSaving ? "Saving..." : "Save Terms"}
+          </Button>
+        </div>
+      </Card>
     </div>
   );
 }

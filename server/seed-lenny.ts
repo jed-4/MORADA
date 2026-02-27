@@ -74,22 +74,22 @@ export async function seedLennyDemo(companyId: string, userId: string) {
     avatarColor: "#9333ea",
   }).returning();
 
-  const [bindiPowell] = await db.insert(contacts).values({
+  const [mickDundee] = await db.insert(contacts).values({
     companyId,
-    name: "Bindi & Chandler Powell",
-    firstName: "Bindi",
-    lastName: "Powell",
-    spouseName: "Chandler Powell",
-    phone: "07 5536 8800",
-    mobile: "0412 345 678",
+    name: "Mick & Linda Dundee",
+    firstName: "Mick",
+    lastName: "Dundee",
+    spouseName: "Linda Kozlowski",
+    phone: "08 8976 0001",
+    mobile: "0411 222 333",
     contactType: "client",
-    addressStreet: "42 Surf Parade",
-    addressCity: "Coolangatta",
-    addressState: "QLD",
-    addressPostcode: "4225",
+    addressStreet: "1 Walkabout Creek Hotel",
+    addressCity: "McKinlay",
+    addressState: "NT",
+    addressPostcode: "0851",
     addressCountry: "Australia",
-    notes: "Young couple building their forever home. Very eco-conscious. Love the wildlife.",
-    avatarColor: "#0ea5e9",
+    notes: "That's not a renovation. THIS is a renovation. Loves a good yarn. Site meetings at the pub.",
+    avatarColor: "#b45309",
   }).returning();
 
   const [paulHogan] = await db.insert(contacts).values({
@@ -132,13 +132,18 @@ export async function seedLennyDemo(companyId: string, userId: string) {
     avatarColor: "#7c3aed",
   }).returning();
 
-  const [deltaGoodrem] = await db.insert(contacts).values({
+  const [mrSquiggle] = await db.insert(contacts).values({
     companyId,
-    name: "Delta Goodrem Glazing Pty Ltd",
+    name: "Mr Squiggle Glass & Aluminium",
     contactType: "supplier",
     abn: "55 666 777 888",
     phone: "02 9555 0005",
-    notes: "Breathtaking glass work. Not a practise run — they get it right first time.",
+    addressStreet: "1 Blackboard St",
+    addressCity: "Sydney",
+    addressState: "NSW",
+    addressPostcode: "2000",
+    addressCountry: "Australia",
+    notes: "Upside down! Upside down! Great custom glazing, but reads drawings upside down. Double-check every order.",
     avatarColor: "#0891b2",
   }).returning();
 
@@ -152,44 +157,74 @@ export async function seedLennyDemo(companyId: string, userId: string) {
     avatarColor: "#2563eb",
   }).returning();
 
-  const [cathyFreeman] = await db.insert(contacts).values({
+  const [alfStewart] = await db.insert(contacts).values({
     companyId,
-    name: "Cathy Freeman Concreting",
-    contactType: "trade",
-    abn: "77 888 999 000",
-    phone: "07 5555 0007",
-    notes: "Fastest concrete finishes in the country. Gold standard workmanship.",
-    avatarColor: "#16a34a",
+    name: "Alf Stewart Plumbing & Drainage",
+    contactType: "supplier",
+    abn: "77 888 999 111",
+    phone: "02 9555 0007",
+    addressStreet: "88 Summer Bay Rd",
+    addressCity: "Palm Beach",
+    addressState: "NSW",
+    addressPostcode: "2108",
+    addressCountry: "Australia",
+    notes: "Flamin' hell, the drains are blocked! Reliable as Summer Bay sunsets. Won't stop talking about the old days.",
+    avatarColor: "#ea580c",
   }).returning();
 
-  const [timMinchin] = await db.insert(contacts).values({
+  const [chopperRead] = await db.insert(contacts).values({
     companyId,
-    name: "Tim Minchin Tiling & Waterproofing",
+    name: "Chopper Read's Concrete & Intimidation",
     contactType: "trade",
     abn: "88 999 000 111",
-    phone: "08 9555 0008",
-    notes: "Eccentric but brilliant. Arrives barefoot. Never late. Tiles are impeccable.",
+    phone: "03 9555 0008",
+    addressStreet: "45 Collingwood Rd",
+    addressCity: "Collingwood",
+    addressState: "VIC",
+    addressPostcode: "3066",
+    addressCountry: "Australia",
+    notes: "Don't argue with the mix design. Excellent finish, impeccable slabs. Has ears, somehow.",
     avatarColor: "#dc2626",
+  }).returning();
+
+  const [russellCoight] = await db.insert(contacts).values({
+    companyId,
+    name: "Russell Coight's Handyman Services",
+    contactType: "trade",
+    abn: "99 000 111 222",
+    phone: "08 9555 0009",
+    addressStreet: "2 Outback Way",
+    addressCity: "Darwin",
+    addressState: "NT",
+    addressPostcode: "0800",
+    addressCountry: "Australia",
+    notes: "She'll be right. Everything eventually gets done. Mostly. Don't lend him power tools.",
+    avatarColor: "#16a34a",
   }).returning();
 
   const [chrisHemsworth] = await db.insert(contacts).values({
     companyId,
     name: "Chris Hemsworth Electrical Services",
     contactType: "trade",
-    abn: "99 000 111 222",
-    phone: "07 5555 0009",
+    abn: "10 111 222 333",
+    phone: "07 5555 0010",
     notes: "Thor-oughly reliable. Byron Bay based. Renewables specialist.",
     avatarColor: "#1d4ed8",
   }).returning();
 
-  const [ozzieMan] = await db.insert(contacts).values({
+  const [captainFeathersword] = await db.insert(contacts).values({
     companyId,
-    name: "Ozzie Man Earthmoving Pty Ltd",
+    name: "Captain Feathersword Excavations Pty Ltd",
     contactType: "trade",
-    abn: "10 111 222 333",
-    phone: "08 9555 0010",
-    notes: "Bloody legend earthmovers. Reviews everything. Excavators are immaculate.",
-    avatarColor: "#92400e",
+    abn: "12 345 678 901",
+    phone: "07 5555 0011",
+    addressStreet: "1 Pirate Cove",
+    addressCity: "Gold Coast",
+    addressState: "QLD",
+    addressPostcode: "4217",
+    addressCountry: "Australia",
+    notes: "Ahoy! Digs a great trench. Always cheerful on site. Watch out for the feathersword during inductions.",
+    avatarColor: "#7c3aed",
   }).returning();
 
   // ─── 2. PROJECT 1: IRWIN WILDLIFE COMPOUND RENO ───────────────────────────
@@ -230,21 +265,21 @@ export async function seedLennyDemo(companyId: string, userId: string) {
   const [grp1c] = await db.insert(estimateGroups).values({ estimateId: est1.id, name: "Fit-Out", order: 2 }).returning();
   const [grp1d] = await db.insert(estimateGroups).values({ estimateId: est1.id, name: "External Works", order: 3 }).returning();
 
-  // Estimate items — Demolition
+  // Demolition items
   await db.insert(estimateItems).values([
     { estimateId: est1.id, groupId: grp1a.id, name: "Demolition & strip-out", type: "Subcontractor", quantity: 1, unitCostExTax: 12500, taxAmount: 1250, priceIncTax: 13750, order: 0 },
     { estimateId: est1.id, groupId: grp1a.id, name: "Asbestos removal & disposal", type: "Subcontractor", quantity: 1, unitCostExTax: 8800, taxAmount: 880, priceIncTax: 9680, order: 1 },
     { estimateId: est1.id, groupId: grp1a.id, name: "Site prep & earthworks", type: "Subcontractor", quantity: 1, unitCostExTax: 22000, taxAmount: 2200, priceIncTax: 24200, order: 2 },
   ]);
 
-  // Framing
+  // Framing items
   await db.insert(estimateItems).values([
     { estimateId: est1.id, groupId: grp1b.id, name: "Concrete slab", type: "Subcontractor", quantity: 1, unitCostExTax: 38500, taxAmount: 3850, priceIncTax: 42350, order: 0 },
     { estimateId: est1.id, groupId: grp1b.id, name: "Timber frame supply & erect", type: "Subcontractor", quantity: 1, unitCostExTax: 52000, taxAmount: 5200, priceIncTax: 57200, order: 1 },
     { estimateId: est1.id, groupId: grp1b.id, name: "Roof structure & sheeting", type: "Subcontractor", quantity: 1, unitCostExTax: 34000, taxAmount: 3400, priceIncTax: 37400, order: 2 },
   ]);
 
-  // Fit-Out
+  // Fit-Out items
   const [floorTilesItem] = await db.insert(estimateItems).values({
     estimateId: est1.id, groupId: grp1c.id, name: "Floor Tiles PC", type: "Material",
     allowance: "Prime Cost", allowanceStatus: "finalized",
@@ -264,7 +299,7 @@ export async function seedLennyDemo(companyId: string, userId: string) {
     { estimateId: est1.id, groupId: grp1c.id, name: "Painting & decorating", type: "Subcontractor", quantity: 1, unitCostExTax: 18500, taxAmount: 1850, priceIncTax: 20350, order: 5 },
   ]);
 
-  // External
+  // External items
   await db.insert(estimateItems).values([
     { estimateId: est1.id, groupId: grp1d.id, name: "External decking", type: "Subcontractor", quantity: 1, unitCostExTax: 22000, taxAmount: 2200, priceIncTax: 24200, order: 0 },
     { estimateId: est1.id, groupId: grp1d.id, name: "Fencing & gates", type: "Subcontractor", quantity: 1, unitCostExTax: 14500, taxAmount: 1450, priceIncTax: 15950, order: 1 },
@@ -277,9 +312,9 @@ export async function seedLennyDemo(companyId: string, userId: string) {
     projectId: proj1.id,
     name: "Additional Decking Extension",
     status: "approved",
-    subtotal: 772700,      // cents
+    subtotal: 772700,
     gstAmount: 77270,
-    totalAmount: 850000,  // $8,500
+    totalAmount: 850000,
     paidAmount: 0,
     balanceAmount: 850000,
     approvedDate: new Date("2025-05-15"),
@@ -289,7 +324,7 @@ export async function seedLennyDemo(companyId: string, userId: string) {
     variationId: var1.id,
     description: "Extend rear deck by 18m² using spotted gum hardwood",
     quantity: 18,
-    unitPrice: 42928,  // cents per m²
+    unitPrice: 42928,
     totalPrice: 772700,
     sortOrder: 0,
   });
@@ -301,7 +336,7 @@ export async function seedLennyDemo(companyId: string, userId: string) {
     status: "pending",
     subtotal: 381800,
     gstAmount: 38200,
-    totalAmount: 420000,  // $4,200
+    totalAmount: 420000,
     paidAmount: 0,
     balanceAmount: 420000,
   }).returning();
@@ -322,7 +357,7 @@ export async function seedLennyDemo(companyId: string, userId: string) {
     status: "approved",
     subtotal: 254500,
     gstAmount: 25500,
-    totalAmount: 280000,  // $2,800
+    totalAmount: 280000,
     paidAmount: 0,
     balanceAmount: 280000,
     approvedDate: new Date("2025-06-01"),
@@ -337,9 +372,8 @@ export async function seedLennyDemo(companyId: string, userId: string) {
     sortOrder: 0,
   });
 
-  // Estimate total ex-tax: ~$385,300
-  // 25% = $96,325 ex | $9,632.50 GST | $105,957.50 incl (round to $96,250 for simplicity)
-  const inv1ContractExTax = Math.round(385300 * 0.25 * 100); // cents
+  // Invoices
+  const inv1ContractExTax = Math.round(385300 * 0.25 * 100);
   const inv1Gst = Math.round(inv1ContractExTax * 0.1);
   const inv1Total = inv1ContractExTax + inv1Gst;
 
@@ -374,8 +408,7 @@ export async function seedLennyDemo(companyId: string, userId: string) {
     reference: "Irwin-PP1",
   });
 
-  // INV-1002: 25% contract + VAR-001
-  const inv2ExTax = inv1ContractExTax + 772700; // contract 25% + var1 ex-tax
+  const inv2ExTax = inv1ContractExTax + 772700;
   const inv2Gst = Math.round(inv2ExTax * 0.1);
   const inv2Total = inv2ExTax + inv2Gst;
   const inv2Paid = Math.round(inv2Total / 2);
@@ -417,14 +450,14 @@ export async function seedLennyDemo(companyId: string, userId: string) {
     reference: "Irwin-PP2-partial",
   });
 
-  // Bills for Project 1
+  // Bills for Project 1 (using new characters)
   const billDate = (d: string) => new Date(d);
   const billsData = [
-    { supplier: cathyFreeman.id, desc: "Concrete slab pour — Stage 1", total: 1980000, num: "BILL-4501-001", date: "2025-03-15" },
-    { supplier: cathyFreeman.id, desc: "Footings & pad preparation", total: 880000, num: "BILL-4501-002", date: "2025-03-28" },
+    { supplier: chopperRead.id, desc: "Concrete slab pour — Stage 1", total: 1980000, num: "BILL-4501-001", date: "2025-03-15" },
+    { supplier: chopperRead.id, desc: "Footings & pad preparation", total: 880000, num: "BILL-4501-002", date: "2025-03-28" },
     { supplier: hughJackman.id, desc: "Timber frame supply and erection", total: 4620000, num: "BILL-4501-003", date: "2025-04-20" },
-    { supplier: paulHogan.id, desc: "Plumbing rough-in — wet areas", total: 850000, num: "BILL-4501-004", date: "2025-05-10" },
-    { supplier: timMinchin.id, desc: "Waterproofing — wet areas", total: 1100000, num: "BILL-4501-005", date: "2025-06-05" },
+    { supplier: alfStewart.id, desc: "Plumbing rough-in — wet areas", total: 850000, num: "BILL-4501-004", date: "2025-05-10" },
+    { supplier: russellCoight.id, desc: "Waterproofing & tiling — wet areas", total: 1100000, num: "BILL-4501-005", date: "2025-06-05" },
     { supplier: chrisHemsworth.id, desc: "Electrical rough-in", total: 1400000, num: "BILL-4501-006", date: "2025-06-18" },
     { supplier: blueysBuilding.id, desc: "Timber, fixings & sundry materials", total: 600000, num: "BILL-4501-007", date: "2025-07-02" },
   ];
@@ -500,7 +533,7 @@ export async function seedLennyDemo(companyId: string, userId: string) {
     { title: "Confirm appliance delivery date", status: "in-progress", content: "Coordinate delivery of kitchen appliances with supplier. PC budget $18,000. Confirm with Steve & Terri." },
     { title: "Submit VAR-002 to client for approval", status: "todo", content: "Prepare and send plumbing relocation variation for Steve & Terri's approval. VAR-002 value $4,200." },
     { title: "Book frame stage inspection", status: "todo", content: "Schedule building inspector for frame stage sign-off. Contact Beerwah Council." },
-    { title: "Final waterproofing check before tiling", status: "todo", content: "Ensure Tim Minchin Tiling completes waterproofing inspection before floor tiles are installed." },
+    { title: "Final waterproofing check before tiling", status: "todo", content: "Ensure Russell Coight completes waterproofing inspection before floor tiles go down. She'll be right — but check anyway." },
   ];
 
   for (const t of tasks1) {
@@ -519,7 +552,7 @@ export async function seedLennyDemo(companyId: string, userId: string) {
     });
   }
 
-  // Site diary template (simple one)
+  // Site diary template
   const [diaryTemplate] = await db.insert(siteDiaryTemplates).values({
     companyId,
     name: "Daily Site Diary",
@@ -557,8 +590,8 @@ export async function seedLennyDemo(companyId: string, userId: string) {
       entryDateTime: new Date("2025-03-28 06:00"),
       fieldValues: {
         workers: "12",
-        work_done: "Cathy Freeman Concreting completed the full slab pour. Excellent finish. Curing compound applied. Site secured.",
-        issues: "None. Gold standard work as always.",
+        work_done: "Chopper Read's Concrete & Intimidation completed the full slab pour. Excellent finish. Curing compound applied. Site secured.",
+        issues: "None. Don't argue with the mix design.",
       },
       weather: { condition: "Overcast", temp: 23, humidity: 70, wind: "Calm" },
       createdBy: userId,
@@ -584,7 +617,7 @@ export async function seedLennyDemo(companyId: string, userId: string) {
     companyId,
     ownerId: userId,
     proposedStartDate: "2026-01-15",
-    clientBudget: 26000000, // $260k
+    clientBudget: 26000000,
   }).returning();
 
   const [est2] = await db.insert(estimates).values({
@@ -612,10 +645,10 @@ export async function seedLennyDemo(companyId: string, userId: string) {
     { estimateId: est2.id, groupId: grp2c.id, name: "Glazing — custom feature panels", type: "Subcontractor", quantity: 1, unitCostExTax: 18000, taxAmount: 1800, priceIncTax: 19800, order: 2 },
   ]);
 
-  // Bills for Project 2
+  // Bills for Project 2 (updated characters)
   const bills2 = [
-    { supplier: ozzieMan.id, desc: "Site investigation and soil report", total: 198000, num: "BILL-4502-001", date: "2025-10-15" },
-    { supplier: deltaGoodrem.id, desc: "Architect & design fee — concept phase", total: 935000, num: "BILL-4502-002", date: "2025-11-01" },
+    { supplier: captainFeathersword.id, desc: "Site investigation and soil report", total: 198000, num: "BILL-4502-001", date: "2025-10-15" },
+    { supplier: mrSquiggle.id, desc: "Architect & design fee — concept phase", total: 935000, num: "BILL-4502-002", date: "2025-11-01" },
     { supplier: blueysBuilding.id, desc: "Council DA application fee", total: 242000, num: "BILL-4502-003", date: "2025-11-20" },
   ];
 
@@ -649,7 +682,7 @@ export async function seedLennyDemo(companyId: string, userId: string) {
   }
 
   // Draft invoice for project 2
-  const [inv3ExTax] = [1090909]; // ~$12k ex gst
+  const inv3ExTax = 1090909;
   const inv3Gst = Math.round(inv3ExTax * 0.1);
 
   await db.insert(clientInvoices).values({
@@ -691,30 +724,30 @@ export async function seedLennyDemo(companyId: string, userId: string) {
     });
   }
 
-  // ─── 4. PROJECT 3: BINDI & CHAN'S BEACH HOUSE ─────────────────────────────
+  // ─── 4. PROJECT 3: DUNDEE'S WALKABOUT CREEK PUB RENO ──────────────────────
 
   const [proj3] = await db.insert(projects).values({
-    name: "Bindi & Chan's Coolangatta Beach House",
-    description: "New two-storey beach house build for the Powell family at Coolangatta. Ocean views, sustainable design, wildlife-friendly garden.",
+    name: "Dundee's Walkabout Creek Pub Reno",
+    description: "Full renovation of the iconic Walkabout Creek Hotel for Mick & Linda Dundee. New bar fit-out, accommodation upgrade, and heritage façade restoration.",
     leadNumber: "L-003",
-    color: "#0ea5e9",
+    color: "#b45309",
     icon: "Home",
-    location: "42 Surf Parade, Coolangatta QLD 4225",
+    location: "1 Walkabout Creek Hotel, McKinlay NT 0851",
     projectStatus: "lead",
     projectSubStatus: "lead_new",
     currentSystemPhase: "lead",
     status: "active",
     invoicingMethod: "progress_payments",
-    clientId: bindiPowell.id,
+    clientId: mickDundee.id,
     companyId,
     ownerId: userId,
-    clientBudget: 85000000, // $850k
+    clientBudget: 85000000,
   }).returning();
 
   // Tasks for project 3
   const tasks3 = [
-    { title: "Send proposal to client", status: "todo", content: "Finalise proposal document and send to Bindi & Chandler. Include preliminary design sketches and budget range." },
-    { title: "Follow up call — confirm scope", status: "todo", content: "Call Bindi to confirm scope details: 4 bed, 3 bath, double garage, pool, wildlife garden. Discuss sustainability features." },
+    { title: "Send proposal to client", status: "todo", content: "Finalise proposal document and send to Mick & Linda. He said 'she'll be right' — but get a signed scope of works." },
+    { title: "Follow up call — confirm scope", status: "todo", content: "Call Mick to confirm scope: bar fit-out, 8 accommodation rooms, heritage façade restoration. Confirm NT heritage overlay requirements." },
   ];
 
   for (const t of tasks3) {
