@@ -1,0 +1,9 @@
+node_modules
+client
+server
+shared
+attached_assets
+dist
+build
+.git
+*.log
