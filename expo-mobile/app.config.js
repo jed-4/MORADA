@@ -25,7 +25,7 @@ export default {
       apiUrl: process.env.EXPO_PUBLIC_API_URL || "https://buildpro4.replit.app",
       googleClientId: process.env.GOOGLE_OAUTH_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || "",
       eas: {
-        projectId: "",
+        projectId: "d07cc13c-7e47-4be7-bea4-57c7186e65fe",
       },
     },
     plugins: [
