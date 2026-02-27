@@ -10,7 +10,7 @@
         "simulator": false
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://f6c0d5f3-bcae-4964-ad47-5aab092fe0d5-00-3jcmfeohwi5r5.kirk.replit.dev"
+        "EXPO_PUBLIC_API_URL": "https://buildpro4.replit.app"
       }
     },
     "preview": {
@@ -19,7 +19,7 @@
         "buildConfiguration": "Release"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://workspace-jed39.replit.app"
+        "EXPO_PUBLIC_API_URL": "https://buildpro4.replit.app"
       }
     },
     "production": {
@@ -30,15 +30,21 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://workspace-jed39.replit.app"
+        "EXPO_PUBLIC_API_URL": "https://buildpro4.replit.app"
       }
     }
   },
   "submit": {
+    "preview": {
+      "ios": {
+        "appleId": "jed4_@hotmail.com",
+        "ascAppId": "6759781255"
+      }
+    },
     "production": {
       "ios": {
-        "appleId": "",
-        "ascAppId": ""
+        "appleId": "jed4_@hotmail.com",
+        "ascAppId": "6759781255"
       }
     }
   }

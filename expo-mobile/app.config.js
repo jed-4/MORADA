@@ -1,6 +1,6 @@
 export default {
   expo: {
-    name: "BuildPro",
+    name: "Build-Pro",
     slug: "buildpro-mobile",
     version: "1.0.0",
     scheme: "buildpro",
@@ -22,7 +22,7 @@ export default {
       package: "com.buildpro.mobile",
     },
     extra: {
-      apiUrl: process.env.EXPO_PUBLIC_API_URL || "",
+      apiUrl: process.env.EXPO_PUBLIC_API_URL || "https://buildpro4.replit.app",
       googleClientId: process.env.GOOGLE_OAUTH_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || "",
       eas: {
         projectId: "",
