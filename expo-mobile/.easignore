@@ -1,9 +1,9 @@
-node_modules
+**/node_modules
 .git
 *.log
-*.md
-android
-ios
-dist
-build
-.expo
+android/
+ios/
+dist/
+build/
+.expo/
+/tmp

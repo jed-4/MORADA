@@ -180,7 +180,7 @@ export default function TasksScreen({ navigation }: Props) {
       const filtered = (tasksData || []).filter(t => {
         if (t.type !== 'task') return false;
         const ids = t.assigneeIds || [];
-        const isAssigned = ids.includes(user?.id || '') || t.assigneeId === user?.id;
+        const isAssigned = ids.includes(user?.id || '');
         const isOwner = t.ownerId === user?.id;
         return isAssigned || isOwner;
       });

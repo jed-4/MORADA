@@ -162,16 +162,13 @@ export default function MoreScreen({ navigation }: Props) {
     }
     setSaving(true);
     try {
-      await apiRequest('/api/notes', {
-        method: 'POST',
-        body: JSON.stringify({
-          title: noteTitle.trim(),
-          content: noteContent.trim() || noteTitle.trim(),
-          type: 'note',
-          scope: 'personal',
-          category: 'General',
-          priority: 'low',
-        }),
+      await apiRequest('/api/notes', 'POST', {
+        title: noteTitle.trim(),
+        content: noteContent.trim() || noteTitle.trim(),
+        type: 'note',
+        scope: 'personal',
+        category: 'General',
+        priority: 'low',
       });
       setShowNoteModal(false);
       setNoteTitle('');
@@ -191,17 +188,14 @@ export default function MoreScreen({ navigation }: Props) {
     }
     setSaving(true);
     try {
-      await apiRequest('/api/notes', {
-        method: 'POST',
-        body: JSON.stringify({
-          title: taskTitle.trim(),
-          content: taskDescription.trim() || taskTitle.trim(),
-          type: 'task',
-          status: 'todo',
-          scope: 'personal',
-          category: 'General',
-          priority: 'medium',
-        }),
+      await apiRequest('/api/notes', 'POST', {
+        title: taskTitle.trim(),
+        content: taskDescription.trim() || taskTitle.trim(),
+        type: 'task',
+        status: 'todo',
+        scope: 'personal',
+        category: 'General',
+        priority: 'medium',
       });
       setShowTaskModal(false);
       setTaskTitle('');
