@@ -1962,6 +1962,7 @@ export const clientInvoices = pgTable("client_invoices", {
   lockedContractPrice: integer("locked_contract_price"), // Snapshot of estimate total when estimate is approved/locked
   columnConfig: jsonb("column_config").default([]), // Array of { id, visible, order } for configurable invoice columns
   showAmountsIncTax: boolean("show_amounts_inc_tax").notNull().default(true), // Inc/exc GST toggle preference
+  lineItemClaims: jsonb("line_item_claims").default({}), // Record<estimateItemId, claimPercent> for per-line-item claiming
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -1988,6 +1989,7 @@ export const insertClientInvoiceSchema = createInsertSchema(clientInvoices).omit
   lockedContractPrice: z.number().optional().nullable(),
   columnConfig: z.array(z.any()).optional().nullable(),
   showAmountsIncTax: z.boolean().default(true),
+  lineItemClaims: z.record(z.string(), z.number()).optional().nullable(),
 });
 
 export type InsertClientInvoice = z.infer<typeof insertClientInvoiceSchema>;

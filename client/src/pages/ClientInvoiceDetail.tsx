@@ -111,7 +111,7 @@ interface ColumnDef {
 
 const ALL_COLUMNS: ColumnDef[] = [
   { id: "name", label: "Name", required: true, defaultVisible: true },
-  { id: "description", label: "Description", required: false, defaultVisible: false },
+  { id: "description", label: "Description", required: false, defaultVisible: true },
   { id: "contractTotal", label: "Contract Total", required: false, defaultVisible: true },
   { id: "remaining", label: "Remaining", required: false, defaultVisible: true },
   { id: "claimPercent", label: "Claim %", required: true, defaultVisible: true },
@@ -219,6 +219,7 @@ export default function ClientInvoiceDetail() {
   const [selectedAllowanceIds, setSelectedAllowanceIds] = useState<string[]>([]);
   const [variationClaims, setVariationClaims] = useState<ClaimState>({});
   const [allowanceClaims, setAllowanceClaims] = useState<ClaimState>({});
+  const [lineItemClaims, setLineItemClaims] = useState<ClaimState>({});
   const [columnConfig, setColumnConfig] = useState<ColumnConfig[]>(defaultColumnConfig());
   const [showAmountsIncTax, setShowAmountsIncTax] = useState(true);
   const [lockedContractPrice, setLockedContractPrice] = useState<number | null>(null);
@@ -366,6 +367,9 @@ export default function ClientInvoiceDetail() {
       if ((invoice as any).lockedContractPrice) {
         setLockedContractPrice((invoice as any).lockedContractPrice);
       }
+      if ((invoice as any).lineItemClaims && typeof (invoice as any).lineItemClaims === "object") {
+        setLineItemClaims((invoice as any).lineItemClaims as ClaimState);
+      }
       // Open intro/closing if they have content
       if (invoice.introductionText) setIntroCollapsed(false);
       if (invoice.closingText) setClosingCollapsed(false);
@@ -455,6 +459,22 @@ export default function ClientInvoiceDetail() {
     }
   }, [customProgressPercent, isCustomProgress]);
 
+  // Initialize per-line-item claim % when estimate items load (for new invoices or estimate switch)
+  // Only runs when selectedEstimateId or the list of item IDs changes — not on every lineItemClaims update
+  const estimateItemIds = estimateItems.map((i) => i.id).sort().join(",");
+  useEffect(() => {
+    if (!selectedEstimateId || estimateItems.length === 0) return;
+    const nonAllowanceItems = estimateItems.filter((item) => !item.allowance || item.allowance === "None");
+    setLineItemClaims((prev) => {
+      const next: ClaimState = {};
+      nonAllowanceItems.forEach((item) => {
+        next[item.id] = prev[item.id] !== undefined ? prev[item.id] : (progressPercent ?? 100);
+      });
+      return next;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedEstimateId, estimateItemIds]);
+
   // Lock contract price when linked estimate is approved/locked
   useEffect(() => {
     if (selectedEstimateId && estimates.length > 0) {
@@ -494,23 +514,18 @@ export default function ClientInvoiceDetail() {
 
   // ── calculations ───────────────────────────────────────────────────────────────
 
-  const calculateContractPrice = () => {
-    if (lockedContractPrice) return lockedContractPrice;
-    if (!selectedEstimateId) return 0;
-    const total = estimateItems.reduce(
-      (sum, item) => sum + item.priceIncTax * item.quantity,
-      0
-    );
-    if (progressPercent !== undefined) {
-      return Math.round(total * (progressPercent / 100) * 100);
-    }
-    return Math.round(total * 100);
-  };
+  const getNonAllowanceItems = () =>
+    estimateItems.filter((item) => !item.allowance || item.allowance === "None");
 
-  const contractClaimAmount = () => {
-    const contractTotal = calculateContractPrice();
-    const pct = progressPercent !== undefined ? progressPercent : 100;
-    return Math.round((contractTotal * pct) / 100);
+  const calculateContractPrice = () => {
+    if (!selectedEstimateId) return 0;
+    const items = getNonAllowanceItems();
+    if (items.length === 0) return 0;
+    return items.reduce((sum, item) => {
+      const pct = lineItemClaims[item.id] !== undefined ? lineItemClaims[item.id] : (progressPercent ?? 100);
+      const itemTotal = Math.round(item.priceIncTax * item.quantity * 100);
+      return sum + Math.round((itemTotal * pct) / 100);
+    }, 0);
   };
 
   const calculateVariationsTotal = () =>
@@ -640,6 +655,7 @@ export default function ClientInvoiceDetail() {
     lockedContractPrice: lockedContractPrice,
     columnConfig: columnConfig,
     showAmountsIncTax: showAmountsIncTax,
+    lineItemClaims: lineItemClaims,
   });
 
   const createMutation = useMutation({
@@ -1088,7 +1104,14 @@ export default function ClientInvoiceDetail() {
               <div className="w-px h-4 bg-border" />
               <div className="flex items-center gap-1.5" data-testid="header-summary-due">
                 <span className="text-muted-foreground">Due:</span>
-                <span className="font-semibold text-[#bba7db]">{formatCurrency(due)}</span>
+                <span className={cn(
+                  "font-semibold",
+                  due <= 0
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : paid > 0
+                    ? "text-amber-600 dark:text-amber-400"
+                    : "text-red-500 dark:text-red-400"
+                )}>{formatCurrency(due)}</span>
               </div>
             </div>
 
@@ -1348,39 +1371,44 @@ export default function ClientInvoiceDetail() {
                   <div />
                 </div>
 
-                {/* Introduction Text (collapsible) */}
-                <FormField
-                  control={form.control}
-                  name="introductionText"
-                  render={({ field }) => (
-                    <FormItem>
-                      <div
-                        className="flex items-center justify-between cursor-pointer py-1"
-                        onClick={() => setIntroCollapsed((v) => !v)}
-                      >
-                        <FormLabel className="cursor-pointer text-sm font-medium">
-                          Introduction
-                        </FormLabel>
-                        {introCollapsed ? (
-                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                        ) : (
-                          <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                {/* Introduction Text (collapsible card) */}
+                <Card>
+                  <CardHeader
+                    className="flex flex-row items-center justify-between gap-4 space-y-0 pb-3 cursor-pointer"
+                    onClick={() => setIntroCollapsed((v) => !v)}
+                  >
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full flex-shrink-0 bg-slate-400/60" />
+                      Introduction
+                    </CardTitle>
+                    {introCollapsed ? (
+                      <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    ) : (
+                      <ChevronUp className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    )}
+                  </CardHeader>
+                  {!introCollapsed && (
+                    <CardContent>
+                      <FormField
+                        control={form.control}
+                        name="introductionText"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormControl>
+                              <RichTextEditor
+                                content={field.value || ""}
+                                onChange={(html) => field.onChange(html)}
+                                placeholder="Enter introduction text..."
+                                data-testid="editor-introduction"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
                         )}
-                      </div>
-                      {!introCollapsed && (
-                        <FormControl>
-                          <RichTextEditor
-                            content={field.value || ""}
-                            onChange={(html) => field.onChange(html)}
-                            placeholder="Enter introduction text..."
-                            data-testid="editor-introduction"
-                          />
-                        </FormControl>
-                      )}
-                      <FormMessage />
-                    </FormItem>
+                      />
+                    </CardContent>
                   )}
-                />
+                </Card>
 
                 {/* ── Progress Payments sections ── */}
                 {currentProject?.invoicingMethod === "progress_payments" && (
@@ -1508,19 +1536,26 @@ export default function ClientInvoiceDetail() {
                                 } else {
                                   setIsCustomProgress(false);
                                   setCustomProgressPercent("");
-                                  setProgressPercent(parseInt(value));
+                                  const pct = parseInt(value);
+                                  setProgressPercent(pct);
+                                  // Bulk-set all line item claims to this %
+                                  setLineItemClaims((prev) => {
+                                    const next: ClaimState = {};
+                                    Object.keys(prev).forEach((id) => { next[id] = pct; });
+                                    return next;
+                                  });
                                 }
                               }}
                             >
                               <SelectTrigger data-testid="select-progress-percent">
-                                <SelectValue placeholder="Claim %" />
+                                <SelectValue placeholder="Set all %" />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="10">10%</SelectItem>
-                                <SelectItem value="25">25%</SelectItem>
-                                <SelectItem value="50">50%</SelectItem>
-                                <SelectItem value="75">75%</SelectItem>
-                                <SelectItem value="100">100%</SelectItem>
+                                <SelectItem value="10">Set all 10%</SelectItem>
+                                <SelectItem value="25">Set all 25%</SelectItem>
+                                <SelectItem value="50">Set all 50%</SelectItem>
+                                <SelectItem value="75">Set all 75%</SelectItem>
+                                <SelectItem value="100">Set all 100%</SelectItem>
                                 <SelectItem value="custom">Custom</SelectItem>
                               </SelectContent>
                             </Select>
@@ -1528,77 +1563,108 @@ export default function ClientInvoiceDetail() {
                         </div>
 
                         {selectedEstimateId && isCustomProgress && (
-                          <Input
-                            type="number"
-                            placeholder="Enter custom %"
-                            value={customProgressPercent}
-                            onChange={(e) => setCustomProgressPercent(e.target.value)}
-                            min="0"
-                            max="100"
-                            data-testid="input-custom-progress"
-                          />
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              placeholder="Enter custom %"
+                              value={customProgressPercent}
+                              onChange={(e) => {
+                                setCustomProgressPercent(e.target.value);
+                                const val = parseInt(e.target.value);
+                                if (!isNaN(val) && val >= 0 && val <= 100) {
+                                  setLineItemClaims((prev) => {
+                                    const next: ClaimState = {};
+                                    Object.keys(prev).forEach((id) => { next[id] = val; });
+                                    return next;
+                                  });
+                                }
+                              }}
+                              min="0"
+                              max="100"
+                              data-testid="input-custom-progress"
+                              className="w-32"
+                            />
+                            <span className="text-sm text-muted-foreground">Set all rows</span>
+                          </div>
                         )}
 
-                        {/* Contract price line item table */}
-                        {selectedEstimateId && (
+                        {/* Contract price line item table — one row per estimate item */}
+                        {selectedEstimateId && getNonAllowanceItems().length > 0 && (
                           <>
                             <Table>
                               <TableHeader>
                                 {renderLineTableHeader(true)}
                               </TableHeader>
                               <TableBody>
-                                <TableRow>
-                                  {isColVisible("name") && (
-                                    <TableCell className="font-medium text-sm">
-                                      Contract Price
-                                    </TableCell>
-                                  )}
-                                  {isColVisible("description") && (
-                                    <TableCell className="text-muted-foreground text-sm">
-                                      {getSelectedEstimate()?.name}
-                                    </TableCell>
-                                  )}
-                                  {isColVisible("contractTotal") && (
-                                    <TableCell className="text-right text-sm">
-                                      {formatCurrency(contractTotal)}
-                                    </TableCell>
-                                  )}
-                                  {isColVisible("remaining") && (
-                                    <TableCell className="text-right text-sm">
-                                      {formatCurrency(contractTotal)}
-                                    </TableCell>
-                                  )}
-                                  {isColVisible("claimPercent") && (
-                                    <TableCell className="text-right text-sm">
-                                      {progressPercent !== undefined ? `${progressPercent}%` : "100%"}
-                                    </TableCell>
-                                  )}
-                                  {isColVisible("claimAmount") && (
-                                    <TableCell className="text-right text-sm font-medium">
-                                      {formatCurrency(calculateContractPrice() / 100)}
-                                    </TableCell>
-                                  )}
-                                  {isColVisible("amountExTax") && (
-                                    <TableCell className="text-right text-sm">
-                                      {formatCurrency(
-                                        calculateContractPrice() / 100 / (1 + GST_RATE)
+                                {getNonAllowanceItems().map((item) => {
+                                  const itemTotalCents = Math.round(item.priceIncTax * item.quantity * 100);
+                                  const itemTotalDollars = itemTotalCents / 100;
+                                  const pct = lineItemClaims[item.id] !== undefined ? lineItemClaims[item.id] : (progressPercent ?? 100);
+                                  const claimAmt = Math.round((itemTotalCents * pct) / 100) / 100;
+                                  const exTax = claimAmt / (1 + GST_RATE);
+                                  const tax = claimAmt - exTax;
+                                  return (
+                                    <TableRow key={item.id}>
+                                      {isColVisible("name") && (
+                                        <TableCell className="font-medium text-sm">
+                                          {item.name}
+                                        </TableCell>
                                       )}
-                                    </TableCell>
-                                  )}
-                                  {isColVisible("amountTax") && (
-                                    <TableCell className="text-right text-sm">
-                                      {formatCurrency(
-                                        (calculateContractPrice() / 100) -
-                                          calculateContractPrice() / 100 / (1 + GST_RATE)
+                                      {isColVisible("description") && (
+                                        <TableCell className="text-muted-foreground text-sm">
+                                          {item.description || ""}
+                                        </TableCell>
                                       )}
-                                    </TableCell>
-                                  )}
-                                  {isColVisible("amountIncTax") && (
-                                    <TableCell className="text-right text-sm font-medium">
-                                      {formatCurrency(calculateContractPrice() / 100)}
-                                    </TableCell>
-                                  )}
-                                </TableRow>
+                                      {isColVisible("contractTotal") && (
+                                        <TableCell className="text-right text-sm">
+                                          {formatCurrency(itemTotalDollars)}
+                                        </TableCell>
+                                      )}
+                                      {isColVisible("remaining") && (
+                                        <TableCell className="text-right text-sm text-muted-foreground">
+                                          {formatCurrency(itemTotalDollars)}
+                                        </TableCell>
+                                      )}
+                                      {isColVisible("claimPercent") && (
+                                        <TableCell className="text-right">
+                                          <Input
+                                            type="number"
+                                            min="0"
+                                            max="100"
+                                            value={pct}
+                                            onChange={(e) =>
+                                              setLineItemClaims((prev) => ({
+                                                ...prev,
+                                                [item.id]: parseInt(e.target.value) || 0,
+                                              }))
+                                            }
+                                            className="h-7 w-16 text-right text-sm"
+                                          />
+                                        </TableCell>
+                                      )}
+                                      {isColVisible("claimAmount") && (
+                                        <TableCell className="text-right text-sm font-medium">
+                                          {formatCurrency(claimAmt)}
+                                        </TableCell>
+                                      )}
+                                      {isColVisible("amountExTax") && (
+                                        <TableCell className="text-right text-sm">
+                                          {formatCurrency(exTax)}
+                                        </TableCell>
+                                      )}
+                                      {isColVisible("amountTax") && (
+                                        <TableCell className="text-right text-sm">
+                                          {formatCurrency(tax)}
+                                        </TableCell>
+                                      )}
+                                      {isColVisible("amountIncTax") && (
+                                        <TableCell className="text-right text-sm font-medium">
+                                          {formatCurrency(claimAmt)}
+                                        </TableCell>
+                                      )}
+                                    </TableRow>
+                                  );
+                                })}
                               </TableBody>
                             </Table>
 
@@ -1609,15 +1675,11 @@ export default function ClientInvoiceDetail() {
                               </span>
                               {!showAmountsIncTax && (
                                 <span className="font-medium">
-                                  {formatCurrency(
-                                    calculateContractPrice() / 100 / (1 + GST_RATE)
-                                  )}
+                                  {formatCurrency(calculateContractPrice() / 100 / (1 + GST_RATE))}
                                 </span>
                               )}
                               <span className="text-muted-foreground">
-                                {showAmountsIncTax
-                                  ? `Amount inc Tax:`
-                                  : `GST:`}
+                                {showAmountsIncTax ? "Amount inc Tax:" : "GST:"}
                               </span>
                               <span className="font-semibold">
                                 {showAmountsIncTax
@@ -1629,6 +1691,12 @@ export default function ClientInvoiceDetail() {
                               </span>
                             </div>
                           </>
+                        )}
+
+                        {selectedEstimateId && getNonAllowanceItems().length === 0 && (
+                          <p className="text-sm text-muted-foreground text-center py-4">
+                            No line items in selected estimate
+                          </p>
                         )}
 
                         {!selectedEstimateId && (
