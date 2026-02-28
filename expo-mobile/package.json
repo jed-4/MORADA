@@ -7,6 +7,9 @@
     "android": "npx expo start --android",
     "ios": "npx expo start --ios"
   },
+  "engines": {
+    "node": "20.x"
+  },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
     "@react-native-async-storage/async-storage": "2.2.0",
