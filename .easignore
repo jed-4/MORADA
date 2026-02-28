@@ -7,3 +7,6 @@ dist
 build
 .git
 *.log
+ios
+android
+.expo
