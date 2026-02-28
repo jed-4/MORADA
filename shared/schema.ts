@@ -1971,6 +1971,7 @@ export const insertClientInvoiceSchema = createInsertSchema(clientInvoices).omit
   id: true,
   createdAt: true,
   updatedAt: true,
+  termsAndConditions: true,
 }).extend({
   invoiceNumber: z.string().optional().nullable(),
   name: z.string().min(1, "Name is required"),
