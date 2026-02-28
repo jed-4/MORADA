@@ -13,6 +13,14 @@
         "EXPO_PUBLIC_API_URL": "https://buildpro4.replit.app"
       }
     },
+    "simulator": {
+      "ios": {
+        "simulator": true
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://buildpro4.replit.app"
+      }
+    },
     "preview": {
       "distribution": "store",
       "ios": {
