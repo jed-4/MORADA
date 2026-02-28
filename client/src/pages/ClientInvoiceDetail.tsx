@@ -2467,7 +2467,7 @@ export default function ClientInvoiceDetail() {
                           {formatCurrency(total)}
                         </p>
                         {isEditMode && (
-                          <div className="mt-4 space-y-1.5">
+                          <div className="mt-3 pt-3 border-t space-y-1.5">
                             {paid > 0 && (
                               <div className="flex justify-between text-sm">
                                 <span className="text-muted-foreground">Paid</span>
@@ -2476,7 +2476,10 @@ export default function ClientInvoiceDetail() {
                                 </span>
                               </div>
                             )}
-                            <div className="flex justify-between text-sm font-semibold">
+                            <div className={cn(
+                              "flex justify-between text-sm font-semibold",
+                              paid > 0 && "border-t pt-1.5"
+                            )}>
                               <span>Balance Due</span>
                               <span
                                 className={cn(

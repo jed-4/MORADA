@@ -784,14 +784,16 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
       });
     }
 
+    const validItemIds = new Set(filteredItems.map(i => i.id));
+
     filteredItems.forEach(item => {
-      if (item.parentItemId) {
+      if (item.parentItemId && validItemIds.has(item.parentItemId)) {
         if (!children[item.parentItemId]) {
           children[item.parentItemId] = [];
         }
         children[item.parentItemId].push(item);
       } else {
-        parents.push(item);
+        parents.push({ ...item, parentItemId: item.parentItemId && !validItemIds.has(item.parentItemId) ? null : item.parentItemId });
       }
     });
 
@@ -3040,7 +3042,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                       )}
                       
                       <div
-                        className={`absolute inset-0 rounded-sm flex items-center ${hasChildren ? 'cursor-default' : 'cursor-move'} transition-shadow z-10 group/bar overflow-hidden
+                        className={`absolute inset-0 rounded-sm flex items-center cursor-move transition-shadow z-10 group/bar overflow-hidden
                           ${dragging?.id === item.id ? 'shadow-lg ring-2 ring-[#bba7db]' : 'hover:shadow-md'}
                           ${(dragging?.type === 'dependency' || pendingPredecessor !== null) && hoveredBar === item.id && item.id !== (dragging?.id ?? pendingPredecessor) ? 'ring-2 ring-[#9b7fc7] shadow-lg' : ''}
                           ${pendingPredecessor === item.id ? 'ring-2 ring-blue-500 shadow-md' : ''}
@@ -3069,7 +3071,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                           e.stopPropagation();
                           setContextMenu({ x: e.clientX, y: e.clientY, item });
                         }}
-                        onMouseDown={(e) => { if (!hasChildren) handleBarMouseDown(e, item, 'move'); }}
+                        onMouseDown={(e) => { handleBarMouseDown(e, item, 'move'); }}
                         onMouseEnter={() => { setHoveredBar(item.id); if (!hoveredAnchor) setHoveredAnchor('start'); }}
                         onMouseLeave={() => { setHoveredBar(null); setHoveredAnchor(null); }}
                         data-testid={`bar-${item.id}`}
