@@ -2270,12 +2270,25 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     if (bspProject.contractEndDate) {
       lines.push({ pos: pos(parseLocalMidnight(bspProject.contractEndDate)), label: "Contract End", solid: false, color: "#ef4444" });
     }
-    if (bspProject.milestoneStartDate) {
-      lines.push({ pos: pos(parseLocalMidnight(bspProject.milestoneStartDate)), label: "Build Start", solid: true, color: bspProject.color || "#3b82f6" });
+
+    // Build Start: hierarchy — project settings → selected item → first schedule item
+    const buildStartRaw =
+      bspProject.projectStartDate ? bspProject.projectStartDate :
+      bspProject.milestoneStartDate ? bspProject.milestoneStartDate :
+      bspProject.itemStartDate ? bspProject.itemStartDate : null;
+
+    // Build End: hierarchy — project settings → selected item → last schedule item
+    const buildEndRaw =
+      bspProject.projectEndDate ? bspProject.projectEndDate :
+      bspProject.milestoneEndDate ? bspProject.milestoneEndDate :
+      bspProject.itemEndDate ? bspProject.itemEndDate : null;
+
+    if (buildStartRaw) {
+      lines.push({ pos: pos(parseLocalMidnight(buildStartRaw)), label: "Build Start", solid: true, color: bspProject.color || "#3b82f6" });
     }
-    if (bspProject.milestoneEndDate) {
+    if (buildEndRaw) {
       // Build End marker: position on day AFTER end so line sits at the right edge of the bar
-      const endDay = parseLocalMidnight(bspProject.milestoneEndDate);
+      const endDay = parseLocalMidnight(buildEndRaw);
       const endPlusOne = addDays(endDay, 1);
       lines.push({ pos: pos(endPlusOne), label: "Build End", solid: true, color: bspProject.color || "#3b82f6" });
     }

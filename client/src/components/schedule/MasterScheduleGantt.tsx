@@ -78,18 +78,6 @@ interface ScheduleItem {
 function getProjectDates(project: MasterProject): { start: Date | null; end: Date | null } {
   const mode = project.dateMode || "auto";
 
-  if (mode === "project") {
-    return {
-      start: project.projectStartDate ? new Date(project.projectStartDate) : null,
-      end: project.projectEndDate ? new Date(project.projectEndDate) : null,
-    };
-  }
-  if (mode === "items") {
-    return {
-      start: project.itemStartDate ? new Date(project.itemStartDate) : null,
-      end: project.itemEndDate ? new Date(project.itemEndDate) : null,
-    };
-  }
   if (mode === "custom" && project.customStartDate && project.customWeeks) {
     const start = new Date(project.customStartDate);
     return { start, end: addWeeks(start, project.customWeeks) };
@@ -100,20 +88,38 @@ function getProjectDates(project: MasterProject): { start: Date | null; end: Dat
       end: project.contractEndDate ? new Date(project.contractEndDate) : null,
     };
   }
+  if (mode === "project") {
+    return {
+      start: project.projectStartDate ? new Date(project.projectStartDate) : null,
+      end: project.projectEndDate ? new Date(project.projectEndDate) : null,
+    };
+  }
   if (mode === "milestone") {
     return {
       start: project.milestoneStartDate ? new Date(project.milestoneStartDate) : null,
       end: project.milestoneEndDate ? new Date(project.milestoneEndDate) : null,
     };
   }
-  // "auto" — prefer project-level dates, then fall back to schedule item bounds
-  if (project.projectStartDate && project.projectEndDate) {
-    return { start: new Date(project.projectStartDate), end: new Date(project.projectEndDate) };
+  if (mode === "items") {
+    return {
+      start: project.itemStartDate ? new Date(project.itemStartDate) : null,
+      end: project.itemEndDate ? new Date(project.itemEndDate) : null,
+    };
   }
-  if (project.itemStartDate && project.itemEndDate) {
-    return { start: new Date(project.itemStartDate), end: new Date(project.itemEndDate) };
-  }
-  return { start: null, end: null };
+
+  // "auto" — hierarchy: project settings → selected milestone items → schedule item bounds
+  // Applied independently per side so partial selections still work
+  const effectiveStart =
+    project.projectStartDate ? new Date(project.projectStartDate) :
+    project.milestoneStartDate ? new Date(project.milestoneStartDate) :
+    project.itemStartDate ? new Date(project.itemStartDate) : null;
+
+  const effectiveEnd =
+    project.projectEndDate ? new Date(project.projectEndDate) :
+    project.milestoneEndDate ? new Date(project.milestoneEndDate) :
+    project.itemEndDate ? new Date(project.itemEndDate) : null;
+
+  return { start: effectiveStart, end: effectiveEnd };
 }
 
 function hexToRgba(hex: string, alpha: number): string {

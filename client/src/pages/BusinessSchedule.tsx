@@ -49,32 +49,6 @@ interface BusinessProject {
 function getProjectDates(project: BusinessProject): { start: Date | null; end: Date | null } {
   const mode = project.dateMode || "auto";
 
-  if (mode === "milestone") {
-    if (project.milestoneStartDate && project.milestoneEndDate) {
-      return { start: new Date(project.milestoneStartDate), end: new Date(project.milestoneEndDate) };
-    }
-    if (project.milestoneStartDate) {
-      const start = new Date(project.milestoneStartDate);
-      const fallbackEnd = project.itemEndDate ? new Date(project.itemEndDate) : project.projectEndDate ? new Date(project.projectEndDate) : null;
-      return { start, end: fallbackEnd };
-    }
-    return { start: null, end: null };
-  }
-
-  if (mode === "project") {
-    if (project.projectStartDate && project.projectEndDate) {
-      return { start: new Date(project.projectStartDate), end: new Date(project.projectEndDate) };
-    }
-    return { start: null, end: null };
-  }
-
-  if (mode === "items") {
-    if (project.itemStartDate && project.itemEndDate) {
-      return { start: new Date(project.itemStartDate), end: new Date(project.itemEndDate) };
-    }
-    return { start: null, end: null };
-  }
-
   if (mode === "custom") {
     if (project.customStartDate && project.customWeeks) {
       const start = new Date(project.customStartDate);
@@ -84,16 +58,47 @@ function getProjectDates(project: BusinessProject): { start: Date | null; end: D
     return { start: null, end: null };
   }
 
-  if (project.milestoneStartDate && project.milestoneEndDate) {
-    return { start: new Date(project.milestoneStartDate), end: new Date(project.milestoneEndDate) };
+  if (mode === "contract") {
+    return {
+      start: project.contractStartDate ? new Date(project.contractStartDate) : null,
+      end: project.contractEndDate ? new Date(project.contractEndDate) : null,
+    };
   }
-  if (project.projectStartDate && project.projectEndDate) {
-    return { start: new Date(project.projectStartDate), end: new Date(project.projectEndDate) };
+
+  if (mode === "project") {
+    return {
+      start: project.projectStartDate ? new Date(project.projectStartDate) : null,
+      end: project.projectEndDate ? new Date(project.projectEndDate) : null,
+    };
   }
-  if (project.itemStartDate && project.itemEndDate) {
-    return { start: new Date(project.itemStartDate), end: new Date(project.itemEndDate) };
+
+  if (mode === "milestone") {
+    return {
+      start: project.milestoneStartDate ? new Date(project.milestoneStartDate) : null,
+      end: project.milestoneEndDate ? new Date(project.milestoneEndDate) : null,
+    };
   }
-  return { start: null, end: null };
+
+  if (mode === "items") {
+    return {
+      start: project.itemStartDate ? new Date(project.itemStartDate) : null,
+      end: project.itemEndDate ? new Date(project.itemEndDate) : null,
+    };
+  }
+
+  // "auto" — hierarchy: project settings → selected milestone items → schedule item bounds
+  // Applied independently per side so partial selections still work
+  const effectiveStart =
+    project.projectStartDate ? new Date(project.projectStartDate) :
+    project.milestoneStartDate ? new Date(project.milestoneStartDate) :
+    project.itemStartDate ? new Date(project.itemStartDate) : null;
+
+  const effectiveEnd =
+    project.projectEndDate ? new Date(project.projectEndDate) :
+    project.milestoneEndDate ? new Date(project.milestoneEndDate) :
+    project.itemEndDate ? new Date(project.itemEndDate) : null;
+
+  return { start: effectiveStart, end: effectiveEnd };
 }
 
 export default function BusinessSchedule() {
