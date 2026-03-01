@@ -361,28 +361,33 @@ function useGanttRowDrag(
           }
 
           // Move item (+ any children) together as a contiguous block
-          setSessionItemOrder(currentOrder => {
-            const order = currentOrder.length > 0 ? [...currentOrder] : [...sortableItemIds];
-            // All IDs to relocate (parent first, then children in their existing relative order)
-            const childrenInOrder = draggedChildren.filter(id => order.includes(id))
-              .sort((a, b) => order.indexOf(a) - order.indexOf(b));
-            const idsToMove = [itemId, ...childrenInOrder];
+          // Use sortableItemIds (always fresh via useCallback deps) as the base order
+          const newOrder = [...sortableItemIds];
+          const childrenInOrder = draggedChildren.filter(id => newOrder.includes(id))
+            .sort((a, b) => newOrder.indexOf(a) - newOrder.indexOf(b));
+          const idsToMove = [itemId, ...childrenInOrder];
 
-            // Remove all from current positions
-            idsToMove.forEach(id => {
-              const idx = order.indexOf(id);
-              if (idx !== -1) order.splice(idx, 1);
-            });
+          idsToMove.forEach(id => {
+            const idx = newOrder.indexOf(id);
+            if (idx !== -1) newOrder.splice(idx, 1);
+          });
 
-            // Find insert position for the block
-            let targetIndex = order.indexOf(effectiveTargetId);
-            if (targetIndex === -1) {
-              order.push(...idsToMove);
-              return order;
-            }
+          let targetIndex = newOrder.indexOf(effectiveTargetId);
+          if (targetIndex === -1) {
+            newOrder.push(...idsToMove);
+          } else {
             const insertAt = effectivePosition === 'below' ? targetIndex + 1 : targetIndex;
-            order.splice(insertAt, 0, ...idsToMove);
-            return order;
+            newOrder.splice(insertAt, 0, ...idsToMove);
+          }
+
+          setSessionItemOrder(newOrder);
+
+          // Persist new sortOrder to DB for every item whose position changed
+          const oldIndexMap = new Map(sortableItemIds.map((id, idx) => [id, idx]));
+          newOrder.forEach((id, newIdx) => {
+            if (oldIndexMap.get(id) !== newIdx) {
+              apiRequest(`/api/schedule-items/${id}`, "PATCH", { sortOrder: newIdx }).catch(() => {});
+            }
           });
         }
       }
