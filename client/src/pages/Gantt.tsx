@@ -57,6 +57,7 @@ import { useScheduleItemStatusOptions } from "@/hooks/useScheduleItemStatusOptio
 import { ScheduleColorPicker } from "@/components/schedule/ScheduleColorPicker";
 import { ActivityNotesPopover } from "@/components/ActivityNotesPopover";
 import { ContactSelect } from "@/components/ContactSelect";
+import { AssigneeSelect } from "@/components/AssigneeSelect";
 import type { ScheduleItem } from "@shared/schema";
 import { useWeekStartDay } from "@/hooks/useWeekStartDay";
 
@@ -2264,16 +2265,19 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     const pos = (date: Date) => differenceInDays(date, timelineStart) * pixelsPerDay;
     const lines: { pos: number; label: string; solid: boolean; color: string }[] = [];
     if (bspProject.contractStartDate) {
-      lines.push({ pos: pos(new Date(bspProject.contractStartDate)), label: "Contract Start", solid: false, color: "#ef4444" });
+      lines.push({ pos: pos(parseLocalMidnight(bspProject.contractStartDate)), label: "Contract Start", solid: false, color: "#ef4444" });
     }
     if (bspProject.contractEndDate) {
-      lines.push({ pos: pos(new Date(bspProject.contractEndDate)), label: "Contract End", solid: false, color: "#ef4444" });
+      lines.push({ pos: pos(parseLocalMidnight(bspProject.contractEndDate)), label: "Contract End", solid: false, color: "#ef4444" });
     }
     if (bspProject.milestoneStartDate) {
-      lines.push({ pos: pos(new Date(bspProject.milestoneStartDate)), label: "Build Start", solid: true, color: bspProject.color || "#3b82f6" });
+      lines.push({ pos: pos(parseLocalMidnight(bspProject.milestoneStartDate)), label: "Build Start", solid: true, color: bspProject.color || "#3b82f6" });
     }
     if (bspProject.milestoneEndDate) {
-      lines.push({ pos: pos(new Date(bspProject.milestoneEndDate)), label: "Build End", solid: true, color: bspProject.color || "#3b82f6" });
+      // Build End marker: position on day AFTER end so line sits at the right edge of the bar
+      const endDay = parseLocalMidnight(bspProject.milestoneEndDate);
+      const endPlusOne = addDays(endDay, 1);
+      lines.push({ pos: pos(endPlusOne), label: "Build End", solid: true, color: bspProject.color || "#3b82f6" });
     }
     return lines;
   }, [bspProject, timelineStart, pixelsPerDay]);
@@ -2699,8 +2703,8 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                                 </TooltipContent>
                               )}
                             </Tooltip>
-                            <PopoverContent className="w-[240px] p-2" align="start" onClick={(e) => e.stopPropagation()}>
-                              <ContactSelect
+                            <PopoverContent className="w-[280px] p-0" align="start" onClick={(e) => e.stopPropagation()}>
+                              <AssigneeSelect
                                 value={item.assignedToId || ""}
                                 onValueChange={async (newValue) => {
                                   setAssigneePopoverItemId(null);
@@ -2714,7 +2718,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                                   } else if (newValue && newValue.startsWith("user:")) {
                                     const userId = newValue.replace("user:", "");
                                     const appUser = cachedAssignableUsers.find((u: any) => u.id === userId);
-                                    optimisticName = appUser?.name || appUser?.email || "Team member";
+                                    optimisticName = appUser?.displayName || appUser?.name || appUser?.email || "Team member";
                                   } else if (newValue) {
                                     const contact = cachedContacts.find((c: any) => c.id === newValue);
                                     if (contact) {
@@ -2742,8 +2746,6 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                                     toast({ title: "Failed to update assignee", variant: "destructive" });
                                   }
                                 }}
-                                allowBusiness
-                                allowUsers
                                 allowClear
                                 placeholder="Select assignee..."
                               />
