@@ -1224,22 +1224,30 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
   };
 
   // Calculate effective dates for parent items (span across all children)
+  // Parse a date value (ISO string or Date object) as local midnight to avoid UTC timezone off-by-one.
+  // Works for both "2024-12-31" (date-only) and "2024-12-31T00:00:00.000Z" (full timestamp from DB).
+  const parseLocalMidnight = (d: string | Date | null | undefined): Date => {
+    if (!d) return new Date();
+    const s = typeof d === 'string' ? d : (d as Date).toISOString();
+    return new Date(s.substring(0, 10) + 'T00:00:00');
+  };
+
   const getEffectiveDates = (parentItem: ScheduleItem) => {
     const children = childItemsByParent[parentItem.id] || [];
     
     if (children.length === 0) {
       // No children, use parent's own dates
       return {
-        startDate: new Date(parentItem.startDate),
-        endDate: new Date(parentItem.endDate),
+        startDate: parseLocalMidnight(parentItem.startDate as any),
+        endDate: parseLocalMidnight(parentItem.endDate as any),
       };
     }
     
     // Get earliest start and latest end from children
     // Parse as local midnight to avoid UTC timezone shifts causing off-by-one
     const childDates = children.flatMap(child => [
-      new Date(child.startDate + 'T00:00:00'),
-      new Date(child.endDate + 'T00:00:00')
+      parseLocalMidnight(child.startDate as any),
+      parseLocalMidnight(child.endDate as any)
     ]);
     
     const minStart = new Date(Math.min(...childDates.map(d => d.getTime())));
@@ -1391,8 +1399,8 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
       effectiveStart = effective.startDate;
       effectiveEnd = effective.endDate;
     } else {
-      effectiveStart = new Date(item.startDate);
-      effectiveEnd = new Date(item.endDate);
+      effectiveStart = parseLocalMidnight(item.startDate as any);
+      effectiveEnd = parseLocalMidnight(item.endDate as any);
     }
     
     setDragging({
@@ -3037,7 +3045,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                 const hasChildren = isParent && childItems.length > 0;
                 const isChild = !!item.parentItemId;
 
-                const dates = hasChildren ? getEffectiveDates(item) : { startDate: new Date(item.startDate), endDate: new Date(item.endDate) };
+                const dates = hasChildren ? getEffectiveDates(item) : { startDate: parseLocalMidnight(item.startDate as any), endDate: parseLocalMidnight(item.endDate as any) };
                 const barStart = getPosition(dates.startDate);
                 const barDuration = differenceInDays(dates.endDate, dates.startDate) + 1;
                 const barWidth = barDuration * pixelsPerDay;
@@ -3269,7 +3277,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                     : null;
                   let targetStart = targetEffective 
                     ? getPosition(targetEffective.startDate)
-                    : getPosition(new Date(item.startDate));
+                    : getPosition(parseLocalMidnight(item.startDate as any));
                   
                   const dragDelta = dragging?.type === 'move' ? (dragging.currentDeltaX || 0) : 0;
                   if (dragging?.type === 'move' && (item.id === dragging.id || draggingCascadeIds.has(item.id))) {
@@ -3293,7 +3301,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                       : null;
                     let predStart = predEffective
                       ? getPosition(predEffective.startDate)
-                      : getPosition(new Date(predItem.startDate));
+                      : getPosition(parseLocalMidnight(predItem.startDate as any));
                     
                     if (dragging?.type === 'move' && (predItem.id === dragging.id || draggingCascadeIds.has(predItem.id))) {
                       predStart += dragDelta;
@@ -3302,13 +3310,13 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                     // Calculate end position: position of start date + bar width
                     const predDuration = predEffective
                       ? differenceInDays(predEffective.endDate, predEffective.startDate) + 1
-                      : differenceInDays(new Date(predItem.endDate), new Date(predItem.startDate)) + 1;
+                      : differenceInDays(parseLocalMidnight(predItem.endDate as any), parseLocalMidnight(predItem.startDate as any)) + 1;
                     const predEnd = predStart + predDuration * pixelsPerDay;
                     
                     // Get target end position for FF and SF dependencies
                     const targetDuration = targetEffective
                       ? differenceInDays(targetEffective.endDate, targetEffective.startDate) + 1
-                      : differenceInDays(new Date(item.endDate), new Date(item.startDate)) + 1;
+                      : differenceInDays(parseLocalMidnight(item.endDate as any), parseLocalMidnight(item.startDate as any)) + 1;
                     const targetEnd = targetStart + targetDuration * pixelsPerDay;
                     
                     // Determine start/end positions based on dependency type
