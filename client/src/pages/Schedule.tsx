@@ -87,6 +87,7 @@ import {
   Bookmark,
   Globe,
   HardHat,
+  Check,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CasvaScheduleList } from "@/components/schedule/CasvaScheduleList";
@@ -128,6 +129,8 @@ export default function Schedule() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [newItemDependencies, setNewItemDependencies] = useState<any[]>([]);
+  const [showCreateLinked, setShowCreateLinked] = useState(false);
+  const [createLinkedForm, setCreateLinkedForm] = useState({ name: '', startDate: '', duration: '1' });
   const [allCollapsed, setAllCollapsed] = useState(false);
   const [descriptionExpanded, setDescriptionExpanded] = useState(true);
   const [notesExpanded, setNotesExpanded] = useState(true);
@@ -676,6 +679,22 @@ export default function Schedule() {
   };
 
   // Bulk delete mutation
+  const bulkStatusMutation = useMutation({
+    mutationFn: async ({ itemIds, status }: { itemIds: string[]; status: string }) => {
+      await Promise.all(
+        itemIds.map(id => apiRequest(`/api/schedule-items/${id}`, "PATCH", { status }))
+      );
+    },
+    onSuccess: (_data, variables) => {
+      invalidateScheduleItems();
+      setSelectedItems(new Set());
+      toast({ title: `${variables.itemIds.length} items updated` });
+    },
+    onError: () => {
+      toast({ title: "Failed to update items", variant: "destructive" });
+    },
+  });
+
   const bulkDeleteMutation = useMutation({
     mutationFn: async (itemIds: string[]) => {
       const response = await fetch("/api/schedule-items/bulk-delete", {
@@ -1827,10 +1846,29 @@ export default function Schedule() {
                 ) : (
                   <>
                     {selectedItems.size > 0 && (
-                      <div className="flex items-center gap-2 p-2 mb-2 bg-muted/50 rounded-lg border">
-                        <span className="text-xs text-muted-foreground">
+                      <div className="flex items-center flex-wrap gap-2 p-2 mb-2 bg-muted/50 rounded-lg border">
+                        <span className="text-xs text-muted-foreground shrink-0">
                           {selectedItems.size} selected
                         </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => bulkStatusMutation.mutate({ itemIds: Array.from(selectedItems), status: 'completed' })}
+                          disabled={bulkStatusMutation.isPending}
+                          data-testid="button-bulk-complete"
+                        >
+                          <Check className="w-3 h-3 mr-1" />
+                          Mark complete
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => bulkStatusMutation.mutate({ itemIds: Array.from(selectedItems), status: 'in_progress' })}
+                          disabled={bulkStatusMutation.isPending}
+                          data-testid="button-bulk-in-progress"
+                        >
+                          Mark in progress
+                        </Button>
                         <Button
                           variant="destructive"
                           size="sm"
@@ -2082,8 +2120,12 @@ export default function Schedule() {
                     setDurationInput(e.target.value);
                   }}
                   onBlur={() => {
-                    const days = parseInt(durationInput, 10);
-                    if (!isNaN(days) && days > 0) {
+                    const raw = parseInt(durationInput, 10);
+                    const days = isNaN(raw) || raw < 1 ? 1 : raw;
+                    if (raw < 1 || isNaN(raw)) {
+                      setDurationInput('1');
+                    }
+                    if (days > 0) {
                       if (formData.startDate) {
                         const start = new Date(formData.startDate);
                         const end = addWorkingDays(start, days - 1);
@@ -2092,10 +2134,6 @@ export default function Schedule() {
                         const end = new Date(formData.endDate);
                         const start = addWorkingDays(end, -(days - 1));
                         setFormData({ ...formData, startDate: start.toISOString().split('T')[0] });
-                      }
-                    } else if (durationInput === '' || isNaN(parseInt(durationInput, 10))) {
-                      if (formData.startDate && formData.endDate) {
-                        setDurationInput(countWorkingDays(new Date(formData.startDate), new Date(formData.endDate)).toString());
                       }
                     }
                   }}
@@ -2391,7 +2429,103 @@ export default function Schedule() {
                       )}
                     </DropdownMenuContent>
                   </DropdownMenu>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setShowCreateLinked(v => !v);
+                      setCreateLinkedForm({ name: '', startDate: formData.endDate || '', duration: '1' });
+                    }}
+                    data-testid="button-create-linked-task"
+                  >
+                    <Plus className="h-4 w-4 mr-1" />
+                    Create &amp; link task
+                  </Button>
                 </div>
+
+                {showCreateLinked && (
+                  <div className="p-3 rounded-md border bg-muted/30 space-y-2">
+                    <div className="text-xs font-medium text-muted-foreground">New linked predecessor task</div>
+                    <Input
+                      placeholder="Task name"
+                      value={createLinkedForm.name}
+                      onChange={e => setCreateLinkedForm(f => ({ ...f, name: e.target.value }))}
+                      data-testid="input-linked-task-name"
+                    />
+                    <div className="flex gap-2">
+                      <Input
+                        type="date"
+                        value={createLinkedForm.startDate}
+                        onChange={e => setCreateLinkedForm(f => ({ ...f, startDate: e.target.value }))}
+                        className="flex-1"
+                        data-testid="input-linked-task-start"
+                      />
+                      <Input
+                        type="number"
+                        min="1"
+                        placeholder="Duration (days)"
+                        value={createLinkedForm.duration}
+                        onChange={e => setCreateLinkedForm(f => ({ ...f, duration: e.target.value }))}
+                        className="w-28"
+                        data-testid="input-linked-task-duration"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={!createLinkedForm.name.trim()}
+                        onClick={async () => {
+                          if (!createLinkedForm.name.trim() || !projectId) return;
+                          try {
+                            const duration = Math.max(1, parseInt(createLinkedForm.duration) || 1);
+                            let endDate = createLinkedForm.startDate;
+                            if (createLinkedForm.startDate) {
+                              const start = new Date(createLinkedForm.startDate + 'T00:00:00');
+                              endDate = addWorkingDays(start, duration - 1).toISOString().split('T')[0];
+                            }
+                            const newTask = await apiRequest(`/api/projects/${projectId}/schedule-items`, "POST", {
+                              name: createLinkedForm.name.trim(),
+                              startDate: createLinkedForm.startDate || null,
+                              endDate: endDate || null,
+                              duration,
+                              type: 'task',
+                              status: 'not_started',
+                            });
+                            if (isEditingExisting && editingId) {
+                              const updatedItem = await apiRequest(`/api/schedule-items/${editingId}/dependencies`, "POST", {
+                                predecessorId: newTask.id,
+                                type: "FS",
+                              });
+                              setEditingItem(updatedItem);
+                            } else {
+                              setActiveDeps([...activeDeps, { id: newTask.id, type: 'FS', lag: 0, _name: newTask.name }]);
+                            }
+                            invalidateScheduleItems();
+                            setShowCreateLinked(false);
+                            setCreateLinkedForm({ name: '', startDate: '', duration: '1' });
+                            toast({ title: "Task created and linked" });
+                          } catch (err: any) {
+                            toast({ title: "Failed to create task", description: err.message, variant: "destructive" });
+                          }
+                        }}
+                        data-testid="button-confirm-linked-task"
+                      >
+                        Create &amp; link
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowCreateLinked(false)}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   {activeDeps.length > 0 ? (
                     activeDeps.map((dep: any) => {

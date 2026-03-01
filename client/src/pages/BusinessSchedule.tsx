@@ -90,6 +90,7 @@ export default function BusinessSchedule() {
   const timelineRef = useRef<HTMLDivElement>(null);
   const leftPanelRef = useRef<HTMLDivElement>(null);
   const [showFilter, setShowFilter] = useState(false);
+  const [scheduleTypeFilter, setScheduleTypeFilter] = useState<'all' | 'construction' | 'precon'>('all');
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; projectId: string } | null>(null);
   const [settingsProject, setSettingsProject] = useState<BusinessProject | null>(null);
 
@@ -107,8 +108,17 @@ export default function BusinessSchedule() {
   });
 
   const visibleProjects = useMemo(() => {
-    return projects.filter(p => p.isVisible);
-  }, [projects]);
+    return projects.filter(p => {
+      if (!p.isVisible) return false;
+      if (scheduleTypeFilter === 'construction') {
+        return p.currentSystemPhase === 'construction' || p.currentSystemPhase === 'post_construction';
+      }
+      if (scheduleTypeFilter === 'precon') {
+        return p.currentSystemPhase === 'lead' || p.currentSystemPhase === 'pre_construction';
+      }
+      return true;
+    });
+  }, [projects, scheduleTypeFilter]);
 
   const { timelineStart, timelineEnd, totalDays } = useMemo(() => {
     const now = new Date();
@@ -286,15 +296,31 @@ export default function BusinessSchedule() {
               Schedules
             </button>
           </div>
-        </div>
-        <div className="flex items-center gap-1">
+
+          {/* Con / Precon toggle */}
+          <div className="flex items-center border rounded-md overflow-hidden">
+            <button
+              className={`h-7 px-2.5 text-xs ${scheduleTypeFilter === 'all' ? 'bg-primary text-primary-foreground' : 'hover-elevate'}`}
+              onClick={() => setScheduleTypeFilter('all')}
+            >All</button>
+            <button
+              className={`h-7 px-2.5 text-xs ${scheduleTypeFilter === 'construction' ? 'bg-primary text-primary-foreground' : 'hover-elevate'}`}
+              onClick={() => setScheduleTypeFilter('construction')}
+            >Construction</button>
+            <button
+              className={`h-7 px-2.5 text-xs ${scheduleTypeFilter === 'precon' ? 'bg-primary text-primary-foreground' : 'hover-elevate'}`}
+              onClick={() => setScheduleTypeFilter('precon')}
+            >Pre-con</button>
+          </div>
+
+          {/* Project visibility filter — moved to left */}
           <Popover open={showFilter} onOpenChange={setShowFilter}>
             <PopoverTrigger asChild>
               <Button variant="ghost" size="icon" data-testid="button-filter-projects">
                 <Filter className="w-4 h-4" />
               </Button>
             </PopoverTrigger>
-            <PopoverContent align="end" className="w-72 max-h-80 overflow-y-auto">
+            <PopoverContent align="start" className="w-72 max-h-80 overflow-y-auto">
               <div className="text-xs font-medium mb-2">Show Projects</div>
               {projects.map(p => (
                 <label key={p.id} className="flex items-center gap-2 py-1 cursor-pointer">
@@ -313,7 +339,8 @@ export default function BusinessSchedule() {
               ))}
             </PopoverContent>
           </Popover>
-
+        </div>
+        <div className="flex items-center gap-1">
           <div className="flex items-center border rounded-md overflow-hidden">
             <button
               className={`h-7 px-2 text-xs ${zoomLevel === 'day' ? 'bg-primary text-primary-foreground' : 'hover-elevate'}`}

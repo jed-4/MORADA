@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown, User, Search, Filter, Columns, MoreVertical, FileText, Edit, Eye, Copy, Check, Palette, Trash2, Settings, Download, Wifi, WifiOff, GanttChart, List as ListIcon, GripVertical, Link, Unlink, X, RotateCcw, ChevronsDownUp, ChevronsUpDown } from "lucide-react";
+import { Plus, Minus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown, User, Search, Filter, Columns, MoreVertical, FileText, Edit, Eye, Copy, Check, Palette, Trash2, Settings, Download, Wifi, WifiOff, GanttChart, List as ListIcon, GripVertical, Link, Unlink, X, RotateCcw, ChevronsDownUp, ChevronsUpDown } from "lucide-react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -237,7 +237,8 @@ function useGanttRowDrag(
         const nestIndent = 24;
         const targetIsChild = !!targetItem?.parentItemId;
         const draggedIsParentWithChildren = draggedItem && !draggedItem.parentItemId && allItems.some(i => i.parentItemId === draggedItem.id);
-        const canAdoptIntoGroup = targetIsChild && !draggedIsParentWithChildren;
+        // Only show indented drop indicator when reordering within same group (siblings)
+        const canAdoptIntoGroup = targetIsChild && !draggedIsParentWithChildren && targetItem?.parentItemId === draggedItem?.parentItemId;
 
         if (targetEl) {
           const rect = targetEl.getBoundingClientRect();
@@ -312,28 +313,35 @@ function useGanttRowDrag(
           const targetParentId = targetItem?.parentItemId;
           const draggedParentId = activeItem?.parentItemId;
           const draggedIsParentWithChildren = activeItem && !activeItem.parentItemId && allItems.some(i => i.parentItemId === activeItem.id);
+          // Children of the dragged item (if it's a parent)
+          const draggedChildren = draggedIsParentWithChildren
+            ? allItems.filter(i => i.parentItemId === activeItem!.id).map(i => i.id)
+            : [];
 
-          if (targetIsChild && targetParentId !== draggedParentId && !draggedIsParentWithChildren) {
-            const newParentItem = allItems.find(i => i.id === targetParentId);
-            const ck = itemsCacheKey || `/api/projects/${projectId}/schedule-items`;
-            queryClient.setQueryData(
-              [ck],
-              (old: any) => {
-                if (!Array.isArray(old)) return old;
-                return old.map((i: any) => i.id === itemId ? { ...i, parentItemId: targetParentId } : i);
-              }
+          // Determine effective drop target (redirect drops into foreign groups to group boundary)
+          let effectiveTargetId = targetId;
+          let effectivePosition = position;
+
+          if (targetIsChild && targetParentId !== draggedParentId) {
+            // Item dragged near a group it doesn't belong to — redirect to group boundary
+            const groupParent = allItems.find(i => i.id === targetParentId);
+            // Get siblings in current session order
+            const groupSiblingIds = sortableItemIds.filter(id =>
+              allItems.find(i => i.id === id && i.parentItemId === targetParentId)
             );
-            apiRequest(`/api/schedule-items/${itemId}`, "PATCH", {
-              parentItemId: targetParentId,
-            }).then(() => {
-              invalidateScheduleItems();
-              
-            }).catch(() => {
-              invalidateScheduleItems();
-              toast({ title: "Failed to add to group", variant: "destructive" });
-            });
+            if (position === 'above') {
+              // Snap above the parent row
+              effectiveTargetId = groupParent?.id || targetId;
+              effectivePosition = 'above';
+            } else {
+              // Snap below the last sibling in the group
+              effectiveTargetId = groupSiblingIds.length > 0
+                ? groupSiblingIds[groupSiblingIds.length - 1]
+                : groupParent?.id || targetId;
+              effectivePosition = 'below';
+            }
           } else if (activeItem?.parentItemId && !targetIsChild && targetItem?.id !== activeItem.parentItemId) {
-            const parentItem = allItems.find(i => i.id === activeItem.parentItemId);
+            // Child dragged to top level (outside its group) — un-parent it
             const ck2 = itemsCacheKey || `/api/projects/${projectId}/schedule-items`;
             queryClient.setQueryData(
               [ck2],
@@ -346,22 +354,34 @@ function useGanttRowDrag(
               parentItemId: null,
             }).then(() => {
               invalidateScheduleItems();
-              
             }).catch(() => {
               invalidateScheduleItems();
               toast({ title: "Failed to remove from group", variant: "destructive" });
             });
           }
 
+          // Move item (+ any children) together as a contiguous block
           setSessionItemOrder(currentOrder => {
             const order = currentOrder.length > 0 ? [...currentOrder] : [...sortableItemIds];
-            const oldIndex = order.indexOf(itemId);
-            let targetIndex = order.indexOf(targetId);
-            if (oldIndex === -1 || targetIndex === -1) return order;
-            const removed = order.splice(oldIndex, 1)[0];
-            targetIndex = order.indexOf(targetId);
-            const insertAt = position === 'below' ? targetIndex + 1 : targetIndex;
-            order.splice(insertAt, 0, removed);
+            // All IDs to relocate (parent first, then children in their existing relative order)
+            const childrenInOrder = draggedChildren.filter(id => order.includes(id))
+              .sort((a, b) => order.indexOf(a) - order.indexOf(b));
+            const idsToMove = [itemId, ...childrenInOrder];
+
+            // Remove all from current positions
+            idsToMove.forEach(id => {
+              const idx = order.indexOf(id);
+              if (idx !== -1) order.splice(idx, 1);
+            });
+
+            // Find insert position for the block
+            let targetIndex = order.indexOf(effectiveTargetId);
+            if (targetIndex === -1) {
+              order.push(...idsToMove);
+              return order;
+            }
+            const insertAt = effectivePosition === 'below' ? targetIndex + 1 : targetIndex;
+            order.splice(insertAt, 0, ...idsToMove);
             return order;
           });
         }
@@ -797,18 +817,24 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
       }
     });
 
-    // Sort parent items by startDate (resets to date order on page refresh)
+    // Sort parent items by sortOrder first, then startDate as fallback
     parents.sort((a, b) => {
-      // Items without startDate go to the end
+      const aSortOrder = a.sortOrder ?? Infinity;
+      const bSortOrder = b.sortOrder ?? Infinity;
+      if (aSortOrder !== bSortOrder) return aSortOrder - bSortOrder;
+      // Fall back to startDate
       if (!a.startDate && !b.startDate) return 0;
       if (!a.startDate) return 1;
       if (!b.startDate) return -1;
       return new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
     });
 
-    // Sort child items within each parent by startDate
+    // Sort child items within each parent by sortOrder first, then startDate
     Object.keys(children).forEach(parentId => {
       children[parentId].sort((a, b) => {
+        const aSortOrder = a.sortOrder ?? Infinity;
+        const bSortOrder = b.sortOrder ?? Infinity;
+        if (aSortOrder !== bSortOrder) return aSortOrder - bSortOrder;
         if (!a.startDate && !b.startDate) return 0;
         if (!a.startDate) return 1;
         if (!b.startDate) return -1;
@@ -1210,9 +1236,10 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     }
     
     // Get earliest start and latest end from children
+    // Parse as local midnight to avoid UTC timezone shifts causing off-by-one
     const childDates = children.flatMap(child => [
-      new Date(child.startDate),
-      new Date(child.endDate)
+      new Date(child.startDate + 'T00:00:00'),
+      new Date(child.endDate + 'T00:00:00')
     ]);
     
     const minStart = new Date(Math.min(...childDates.map(d => d.getTime())));
@@ -2228,6 +2255,12 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
 
   return (
     <div className="flex flex-col h-full bg-background">
+      {schedule?.status === 'offline' && (
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-800 text-sm">
+          <WifiOff className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+          <span className="text-amber-700 dark:text-amber-300">Schedule is offline — view only</span>
+        </div>
+      )}
       {pendingPredecessor !== null && (
         <div className="flex items-center justify-between px-3 py-1.5 bg-blue-50 dark:bg-blue-950 border-b border-blue-200 dark:border-blue-800 text-sm">
           <span className="text-blue-700 dark:text-blue-300">Click a bar to link it as a predecessor (it must finish before this item starts). Press Escape to cancel.</span>
@@ -2429,6 +2462,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                 >
                     {/* Task name column */}
                     <div style={{ width: columnWidths.taskName }} className={`flex items-center min-w-0 flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all`}>
+                      {schedule?.status !== 'offline' && (
                       <div 
                         className="cursor-grab active:cursor-grabbing p-0.5 hover:bg-accent rounded flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
                         style={rowDragItemId && rowDragItemId !== item.id ? { pointerEvents: 'none' } : undefined}
@@ -2437,6 +2471,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                       >
                         <GripVertical className="w-3.5 h-3.5 text-muted-foreground" />
                       </div>
+                      )}
                       {!isParent && <div className="w-6 flex-shrink-0" />}
                       {isParent && childItems.length > 0 && (
                         <button
@@ -2642,10 +2677,15 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                                   setAssigneePopoverItemId(null);
                                   const cachedContacts = queryClient.getQueryData<any[]>(["/api/contacts"]) || [];
                                   const cachedUser = queryClient.getQueryData<any>(["/api/auth/user"]);
+                                  const cachedAssignableUsers = queryClient.getQueryData<any[]>(["/api/users/assignable"]) || [];
                                   let optimisticName: string | null = null;
                                   let optimisticColor: string | null = null;
                                   if (newValue && newValue.startsWith("company:")) {
                                     optimisticName = (cachedUser as any)?.companyNickname || "The Business";
+                                  } else if (newValue && newValue.startsWith("user:")) {
+                                    const userId = newValue.replace("user:", "");
+                                    const appUser = cachedAssignableUsers.find((u: any) => u.id === userId);
+                                    optimisticName = appUser?.name || appUser?.email || "Team member";
                                   } else if (newValue) {
                                     const contact = cachedContacts.find((c: any) => c.id === newValue);
                                     if (contact) {
@@ -2653,11 +2693,12 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                                       optimisticColor = contact.scheduleColor || null;
                                     }
                                   }
+                                  const resolvedId = (newValue && (newValue.startsWith("company:") || newValue.startsWith("user:"))) ? null : (newValue || null);
                                   queryClient.setQueryData<any[]>(
                                     [itemsCacheKey],
                                     (old) => old?.map((si: any) => si.id === item.id ? {
                                       ...si,
-                                      assignedToId: (newValue && !newValue.startsWith("company:")) ? newValue : null,
+                                      assignedToId: resolvedId,
                                       assignedToName: optimisticName,
                                       assignedToColor: optimisticColor,
                                     } : si)
@@ -2673,6 +2714,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                                   }
                                 }}
                                 allowBusiness
+                                allowUsers
                                 allowClear
                                 placeholder="Select assignee..."
                               />
@@ -2697,7 +2739,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" data-testid={`menu-${item.id}`}>
-                          {schedule?.status !== 'locked' && (
+                          {schedule?.status !== 'locked' && schedule?.status !== 'offline' && (
                             <DropdownMenuItem onClick={() => handleEditItem(item)} data-testid="menu-edit">
                               <Edit className="mr-2 h-4 w-4" />
                               Edit
@@ -2707,7 +2749,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                             <Eye className="mr-2 h-4 w-4" />
                             View
                           </DropdownMenuItem>
-                          {schedule?.status !== 'locked' && (
+                          {schedule?.status !== 'locked' && schedule?.status !== 'offline' && (
                             <>
                               <DropdownMenuItem onClick={() => handleDuplicateItem(item)} data-testid="menu-duplicate">
                                 <Copy className="mr-2 h-4 w-4" />
@@ -2733,13 +2775,12 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                                 <Link className="mr-2 h-4 w-4" />
                                 Link Dependency
                               </DropdownMenuItem>
-                              {schedule?.status !== 'locked' && !hasChildren && (
+                              {schedule?.status !== 'locked' && schedule?.status !== 'offline' && !hasChildren && (
                               <DropdownMenuItem onClick={() => handleToggleComplete(item)} data-testid="menu-complete">
                                 <Check className="mr-2 h-4 w-4" />
                                 {item.status === "completed" ? "Mark Incomplete" : "Mark Complete"}
                               </DropdownMenuItem>
                               )}
-                              {!hasChildren && (
                               <DropdownMenuItem
                                 asChild
                                 onSelect={(e) => e.preventDefault()}
@@ -2768,7 +2809,6 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                                   />
                                 </div>
                               </DropdownMenuItem>
-                              )}
                               <DropdownMenuSeparator />
                               <DropdownMenuItem onClick={() => handleDeleteItem(item)} className="text-destructive" data-testid="menu-delete">
                                 <Trash2 className="mr-2 h-4 w-4" />
@@ -3025,7 +3065,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                         transition: dragging?.id === item.id || (dragging?.type === 'move' && draggingCascadeIds.has(item.id)) ? 'none' : 'opacity 0.2s',
                       }}
                     >
-                      {schedule?.status !== 'locked' && (
+                      {schedule?.status !== 'locked' && schedule?.status !== 'offline' && (
                       <div
                         className={`absolute top-1/2 -translate-y-1/2 -left-4 w-4 h-4 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30 ${hoveredBar === item.id && hoveredAnchor === 'start' ? 'scale-150' : ''}`}
                         onMouseDown={(e) => {
@@ -3159,7 +3199,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                         )}
                       </div>
                       
-                      {schedule?.status !== 'locked' && (
+                      {schedule?.status !== 'locked' && schedule?.status !== 'offline' && (
                       <div
                         className={`absolute top-1/2 -translate-y-1/2 -right-4 w-4 h-4 flex items-center justify-center opacity-0 group-hover/row:opacity-100 cursor-crosshair transition-opacity z-30 ${hoveredBar === item.id && hoveredAnchor === 'end' ? 'scale-150' : ''}`}
                         onMouseDown={(e) => {
@@ -3332,7 +3372,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                               predecessorId: dep.id,
                               predecessorName: predItem.name,
                               type: dep.type || 'FS',
-                              lag: dep.lag || 0,
+                              lag: Math.max(0, dep.lag || 0),
                             });
                           }}
                           data-testid={`dependency-line-${depKey}`}
@@ -3655,18 +3695,37 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
               <div>
                 <Label className="text-sm font-medium">Lag Days</Label>
                 <div className="flex items-center gap-2 mt-1">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-9 w-9 flex-shrink-0"
+                    onClick={() => setSelectedDependency({ ...selectedDependency, lag: Math.max(0, (selectedDependency.lag ?? 0) - 1) })}
+                    data-testid="button-lag-decrease"
+                  >
+                    <Minus className="w-3 h-3" />
+                  </Button>
                   <Input
                     type="number"
-                    value={selectedDependency.lag ?? ""}
-                    onChange={(e) => setSelectedDependency({ ...selectedDependency, lag: e.target.value === "" ? "" as any : parseInt(e.target.value) })}
-                    onBlur={(e) => setSelectedDependency({ ...selectedDependency, lag: parseInt(e.target.value) || 0 })}
-                    className="w-24"
+                    min="0"
+                    value={selectedDependency.lag ?? 0}
+                    onChange={(e) => setSelectedDependency({ ...selectedDependency, lag: Math.max(0, parseInt(e.target.value) || 0) })}
+                    onBlur={(e) => setSelectedDependency({ ...selectedDependency, lag: Math.max(0, parseInt(e.target.value) || 0) })}
+                    className="w-20 text-center"
                     data-testid="input-dependency-lag"
                   />
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-9 w-9 flex-shrink-0"
+                    onClick={() => setSelectedDependency({ ...selectedDependency, lag: (selectedDependency.lag ?? 0) + 1 })}
+                    data-testid="button-lag-increase"
+                  >
+                    <Plus className="w-3 h-3" />
+                  </Button>
                   <span className="text-sm text-muted-foreground">days</span>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Positive = delay after predecessor, Negative = overlap with predecessor
+                  Working days of gap after predecessor finishes (min 0)
                 </p>
               </div>
 
@@ -3735,7 +3794,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
             onClick={() => setContextMenu(null)}
           />
           
-          {schedule?.status !== 'locked' && (
+          {schedule?.status !== 'locked' && schedule?.status !== 'offline' && (
             <button
               className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left"
               onClick={() => {
@@ -3766,7 +3825,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
             View Details
           </button>
           
-          {schedule?.status !== 'locked' && (
+          {schedule?.status !== 'locked' && schedule?.status !== 'offline' && (
             <>
               <button
                 className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left"

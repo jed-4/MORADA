@@ -1,7 +1,6 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { SearchableSelect, SearchableSelectOption } from "@/components/ui/searchable-select";
-import { Building2 } from "lucide-react";
 import type { Contact, User } from "@shared/schema";
 
 interface ContactSelectProps {
@@ -12,6 +11,7 @@ interface ContactSelectProps {
   allowClear?: boolean;
   allowNone?: boolean;
   allowBusiness?: boolean;
+  allowUsers?: boolean;
   contactType?: "client" | "subcontractor" | "supplier" | "consultant" | "other";
   className?: string;
   "data-testid"?: string;
@@ -25,17 +25,25 @@ export function ContactSelect({
   allowClear = false,
   allowNone = true,
   allowBusiness = false,
+  allowUsers = false,
   contactType,
   className,
   "data-testid": testId,
 }: ContactSelectProps) {
-  const { data: allContacts = [], isLoading } = useQuery<Contact[]>({
+  const { data: allContacts = [], isLoading: contactsLoading } = useQuery<Contact[]>({
     queryKey: ["/api/contacts"],
   });
 
   const { data: user } = useQuery<User & { companyNickname?: string }>({
     queryKey: ["/api/auth/user"],
   });
+
+  const { data: assignableUsers = [], isLoading: usersLoading } = useQuery<any[]>({
+    queryKey: ["/api/users/assignable"],
+    enabled: allowUsers,
+  });
+
+  const isLoading = contactsLoading || (allowUsers && usersLoading);
 
   const contacts = useMemo(() => {
     if (!contactType) return allContacts;
@@ -44,14 +52,26 @@ export function ContactSelect({
 
   const options: SearchableSelectOption[] = useMemo(() => {
     const opts: SearchableSelectOption[] = [];
-    
+
     if (allowNone) {
       opts.push({
         value: "none",
         label: "None",
       });
     }
-    
+
+    if (allowUsers && assignableUsers.length > 0) {
+      assignableUsers.forEach((u: any) => {
+        const displayName = u.name || u.email || "Team member";
+        opts.push({
+          value: `user:${u.id}`,
+          label: displayName,
+          description: u.email || undefined,
+          group: "Company",
+        });
+      });
+    }
+
     if (allowBusiness && user?.companyId) {
       const businessName = (user as any)?.companyNickname || "The Business";
       opts.push({
@@ -61,7 +81,7 @@ export function ContactSelect({
         group: "Business",
       });
     }
-    
+
     contacts.forEach((contact) => {
       const companyName = (contact.company || '').trim();
       const contactName = (contact.name || '').trim();
@@ -71,7 +91,7 @@ export function ContactSelect({
       } else {
         displayName = companyName || contactName || 'Unnamed Contact';
       }
-        
+
       opts.push({
         value: contact.id,
         label: displayName,
@@ -79,9 +99,9 @@ export function ContactSelect({
         group: contact.contactType || undefined,
       });
     });
-    
+
     return opts;
-  }, [contacts, allowNone, allowBusiness, user]);
+  }, [contacts, allowNone, allowBusiness, allowUsers, assignableUsers, user]);
 
   const handleValueChange = (newValue: string) => {
     if (newValue === "none") {
@@ -91,8 +111,8 @@ export function ContactSelect({
     }
   };
 
-  const placeholderText = contactType 
-    ? `Select ${contactType}...` 
+  const placeholderText = contactType
+    ? `Select ${contactType}...`
     : placeholder;
 
   return (
