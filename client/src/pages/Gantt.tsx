@@ -1003,9 +1003,10 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
         const successor = scheduleItems.find(i => i.id === itemId);
         const predecessor = scheduleItems.find(i => i.id === predecessorId);
         if (successor && predecessor?.endDate) {
-          const predEnd = new Date(predecessor.endDate);
+          const plm = (d: any) => new Date((typeof d === 'string' ? d : (d as Date).toISOString()).substring(0, 10) + 'T00:00:00');
+          const predEnd = plm(predecessor.endDate);
           const newStart = addWorkingDays(predEnd, lag + 1);
-          const workDuration = countWorkingDays(new Date(successor.startDate), new Date(successor.endDate));
+          const workDuration = countWorkingDays(plm(successor.startDate), plm(successor.endDate));
           const newEnd = addWorkingDays(newStart, Math.max(0, workDuration - 1));
           await apiRequest(`/api/schedule-items/${itemId}`, "PATCH", {
             startDate: newStart.toISOString().split('T')[0],
@@ -1628,8 +1629,10 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
           }
           
           const snapDepItem = (depItem: ScheduleItem) => {
-            const depWorkingDuration = countWD(new Date(depItem.startDate), new Date(depItem.endDate));
-            let depNewStart = addDays(new Date(depItem.startDate), totalOffset);
+            const depStart = parseLocalMidnight(depItem.startDate as any);
+            const depEnd = parseLocalMidnight(depItem.endDate as any);
+            const depWorkingDuration = countWD(depStart, depEnd);
+            let depNewStart = addDays(depStart, totalOffset);
             depNewStart = snap(depNewStart, snapDir);
             const depNewEnd = addWD(depNewStart, depWorkingDuration);
             return { depNewStart, depNewEnd };
@@ -1639,8 +1642,10 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
           // positions (not raw calendar-day offset) so crossing weekends doesn't
           // alter the gap between the parent start and each child's start.
           const snapChildItem = (childItem: ScheduleItem) => {
-            const relativeWD = countWD(drag.originalStart, new Date(childItem.startDate));
-            const childWorkingDuration = countWD(new Date(childItem.startDate), new Date(childItem.endDate));
+            const childStart = parseLocalMidnight(childItem.startDate as any);
+            const childEnd = parseLocalMidnight(childItem.endDate as any);
+            const relativeWD = countWD(drag.originalStart, childStart);
+            const childWorkingDuration = countWD(childStart, childEnd);
             const depNewStart = addWD(newStart, relativeWD);
             const depNewEnd = addWD(depNewStart, childWorkingDuration);
             return { depNewStart, depNewEnd };
@@ -2042,7 +2047,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
   const scrollToItem = (item: ScheduleItem) => {
     if (!timelineRef.current) return;
     
-    const startDate = new Date(item.startDate);
+    const startDate = parseLocalMidnight(item.startDate as any);
     const barPosition = getPosition(startDate);
     const viewportWidth = timelineRef.current.clientWidth;
     
@@ -3016,7 +3021,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                 if (!dragItem) return null;
                 
                 const isParentWithChildren = !dragItem.parentItemId && (childItemsByParent[dragItem.id]?.length > 0);
-                const effectiveDates = isParentWithChildren ? getEffectiveDates(dragItem) : { startDate: new Date(dragItem.startDate), endDate: new Date(dragItem.endDate) };
+                const effectiveDates = isParentWithChildren ? getEffectiveDates(dragItem) : { startDate: parseLocalMidnight(dragItem.startDate as any), endDate: parseLocalMidnight(dragItem.endDate as any) };
                 const originalStart = getPosition(effectiveDates.startDate);
                 const originalDuration = differenceInDays(effectiveDates.endDate, effectiveDates.startDate) + 1;
                 const originalWidth = originalDuration * pixelsPerDay;
