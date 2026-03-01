@@ -88,6 +88,7 @@ import {
   Globe,
   HardHat,
   Check,
+  Flag,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CasvaScheduleList } from "@/components/schedule/CasvaScheduleList";
@@ -664,6 +665,24 @@ export default function Schedule() {
       return await apiRequest(`/api/schedule-item-steps/${id}`, "PATCH", { sortOrder });
     },
     onSuccess: () => refetchSteps(),
+  });
+
+  const { data: bspProjects = [] } = useQuery<any[]>({
+    queryKey: ["/api/business-schedule/projects"],
+  });
+
+  const bspProject = useMemo(
+    () => (bspProjects as any[]).find((p: any) => p.id === projectId) ?? null,
+    [bspProjects, projectId]
+  );
+
+  const setBspMilestoneMutation = useMutation({
+    mutationFn: async ({ field, itemId }: { field: 'milestoneStartItemId' | 'milestoneEndItemId'; itemId: string | null }) => {
+      return apiRequest(`/api/business-schedule/projects/${projectId}`, "PATCH", { [field]: itemId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/business-schedule/projects"] });
+    },
   });
 
   const handleMoveStep = (index: number, direction: 'up' | 'down') => {
@@ -2349,6 +2368,44 @@ export default function Schedule() {
                 }}
               />
             </div>
+
+            {/* Business Schedule Build Markers */}
+            {bspProject && editingItem && editingItem.id && (
+              <div className="space-y-2 pt-3 border-t">
+                <Label className="text-sm font-medium">Business Schedule Markers</Label>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const isCurrent = bspProject.milestoneStartItemId === String(editingItem.id);
+                      setBspMilestoneMutation.mutate({ field: 'milestoneStartItemId', itemId: isCurrent ? null : String(editingItem.id) });
+                    }}
+                    className={bspProject.milestoneStartItemId === String(editingItem.id) ? "border-emerald-500 text-emerald-600 dark:text-emerald-400" : ""}
+                  >
+                    <Flag className="w-3.5 h-3.5 mr-1.5 text-emerald-500" />
+                    {bspProject.milestoneStartItemId === String(editingItem.id) ? "Clear Build Start" : "Set as Build Start"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const isCurrent = bspProject.milestoneEndItemId === String(editingItem.id);
+                      setBspMilestoneMutation.mutate({ field: 'milestoneEndItemId', itemId: isCurrent ? null : String(editingItem.id) });
+                    }}
+                    className={bspProject.milestoneEndItemId === String(editingItem.id) ? "border-rose-500 text-rose-600 dark:text-rose-400" : ""}
+                  >
+                    <Flag className="w-3.5 h-3.5 mr-1.5 text-rose-500" />
+                    {bspProject.milestoneEndItemId === String(editingItem.id) ? "Clear Build End" : "Set as Build End"}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Mark this item as the Build Start or End date shown on the Business Schedule.
+                </p>
+              </div>
+            )}
 
             {/* Dependencies Section */}
             {(() => {

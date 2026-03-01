@@ -84,6 +84,9 @@ function getProjectDates(project: BusinessProject): { start: Date | null; end: D
     return { start: null, end: null };
   }
 
+  if (project.milestoneStartDate && project.milestoneEndDate) {
+    return { start: new Date(project.milestoneStartDate), end: new Date(project.milestoneEndDate) };
+  }
   if (project.projectStartDate && project.projectEndDate) {
     return { start: new Date(project.projectStartDate), end: new Date(project.projectEndDate) };
   }
