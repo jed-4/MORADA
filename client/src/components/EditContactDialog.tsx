@@ -27,9 +27,18 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { insertContactSchema, type InsertContact, type Contact, type PaymentTermsOption } from "@shared/schema";
+import { insertContactSchema, type InsertContact, type Contact } from "@shared/schema";
 import { ContactInsuranceSection } from "@/components/contacts/ContactInsuranceSection";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
+
+const PAYMENT_TERMS_OPTIONS = [
+  { value: "on_receipt",        label: "On Receipt" },
+  { value: "net_7",             label: "Net 7" },
+  { value: "net_14",            label: "Net 14" },
+  { value: "net_30",            label: "Net 30" },
+  { value: "eom",               label: "End of Month" },
+  { value: "end_of_next_month", label: "End of Next Month" },
+];
 
 type EditContactDialogProps = {
   open: boolean;
@@ -47,10 +56,6 @@ export default function EditContactDialog({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
-
-  const { data: paymentTermsOptions = [] } = useQuery<PaymentTermsOption[]>({
-    queryKey: ["/api/payment-terms-options"],
-  });
 
   const { data: xeroStatus } = useQuery<{ connected: boolean }>({
     queryKey: ["/api/xero/status"],
@@ -876,9 +881,9 @@ export default function EditContactDialog({
                         </FormControl>
                         <SelectContent>
                           <SelectItem value="__none__">None</SelectItem>
-                          {paymentTermsOptions.map((option) => (
-                            <SelectItem key={option.id} value={option.name || option.id}>
-                              {option.name}
+                          {PAYMENT_TERMS_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
                             </SelectItem>
                           ))}
                         </SelectContent>
