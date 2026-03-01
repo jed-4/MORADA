@@ -121,6 +121,7 @@ function useGanttRowDrag(
   projectId: string | undefined,
   toast: any,
   itemsCacheKey?: string,
+  scrollContainerRef?: React.RefObject<HTMLDivElement>,
 ) {
   const [rowDragItemId, setRowDragItemId] = useState<string | null>(null);
   const [rowDragIndicator, setRowDragIndicator] = useState<{ top: number; left: number; width: number; indent?: number } | null>(null);
@@ -135,6 +136,8 @@ function useGanttRowDrag(
   const nestTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeListenersRef = useRef<{ move: (e: MouseEvent) => void; up: () => void } | null>(null);
   const [nestHighlightId, setNestHighlightId] = useState<string | null>(null);
+  const rowDragScrollRafRef = useRef<number | null>(null);
+  const rowDragMouseYRef = useRef<number>(0);
 
   const registerRowRef = useCallback((id: string, el: HTMLDivElement | null) => {
     if (el) {
@@ -179,14 +182,47 @@ function useGanttRowDrag(
     dropPositionRef.current = 'below';
     nestTargetRef.current = null;
 
+    const startRowDragAutoScroll = () => {
+      if (rowDragScrollRafRef.current !== null) return;
+      const tick = () => {
+        const container = scrollContainerRef?.current;
+        if (!container || !dragStartedRef.current) {
+          rowDragScrollRafRef.current = null;
+          return;
+        }
+        const rect = container.getBoundingClientRect();
+        const mouseY = rowDragMouseYRef.current;
+        const edgeZone = 80;
+        const maxSpeed = 12;
+        if (mouseY < rect.top + edgeZone) {
+          const ratio = 1 - (mouseY - rect.top) / edgeZone;
+          container.scrollTop -= Math.ceil(maxSpeed * Math.max(0, Math.min(1, ratio)));
+        } else if (mouseY > rect.bottom - edgeZone) {
+          const ratio = 1 - (rect.bottom - mouseY) / edgeZone;
+          container.scrollTop += Math.ceil(maxSpeed * Math.max(0, Math.min(1, ratio)));
+        }
+        rowDragScrollRafRef.current = requestAnimationFrame(tick);
+      };
+      rowDragScrollRafRef.current = requestAnimationFrame(tick);
+    };
+
+    const stopRowDragAutoScroll = () => {
+      if (rowDragScrollRafRef.current !== null) {
+        cancelAnimationFrame(rowDragScrollRafRef.current);
+        rowDragScrollRafRef.current = null;
+      }
+    };
+
     const onMouseMove = (moveEvent: MouseEvent) => {
       moveEvent.preventDefault();
+      rowDragMouseYRef.current = moveEvent.clientY;
       const dy = Math.abs(moveEvent.clientY - startYRef.current);
       const dx = Math.abs(moveEvent.clientX - startXRef.current);
       if (!dragStartedRef.current && dy < 4 && dx < 4) return;
 
       if (!dragStartedRef.current) {
         dragStartedRef.current = true;
+        startRowDragAutoScroll();
         setRowDragItemId(itemId);
 
         const rowEl = rowRefsMap.current.get(itemId);
@@ -287,6 +323,7 @@ function useGanttRowDrag(
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
       activeListenersRef.current = null;
+      stopRowDragAutoScroll();
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
 
@@ -416,6 +453,10 @@ function useGanttRowDrag(
         document.removeEventListener('mousemove', activeListenersRef.current.move);
         document.removeEventListener('mouseup', activeListenersRef.current.up);
         activeListenersRef.current = null;
+      }
+      if (rowDragScrollRafRef.current !== null) {
+        cancelAnimationFrame(rowDragScrollRafRef.current);
+        rowDragScrollRafRef.current = null;
       }
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
@@ -908,7 +949,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     nestHighlightId,
     registerRowRef,
     handleDragHandleMouseDown,
-  } = useGanttRowDrag(sortableItemIds, setSessionItemOrder, canNestItem, allItems, projectId, toast, itemsCacheKey);
+  } = useGanttRowDrag(sortableItemIds, setSessionItemOrder, canNestItem, allItems, projectId, toast, itemsCacheKey, leftPanelRef);
 
   // Build ordered parent items list for rendering (respects session order)
   const orderedParentItems = useMemo(() => {

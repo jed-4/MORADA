@@ -187,7 +187,7 @@ export function CasvaScheduleRow({
               <DropdownMenu>
                 <DropdownMenuTrigger asChild onClick={(e) => { e.stopPropagation(); if (locked) e.preventDefault(); }}>
                   <button className={`${locked ? 'cursor-not-allowed opacity-70' : 'cursor-pointer hover-elevate'} rounded`} data-testid={`status-dropdown-${item.id}`}>
-                    <ColorChip type="status" value={item.status} />
+                    <ColorChip type="status" value={item.status} fieldCategoryKey="schedule_item.status" />
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="min-w-[140px]">
@@ -203,14 +203,14 @@ export function CasvaScheduleRow({
                       className={opt.value === item.status ? "bg-accent" : ""}
                       data-testid={`status-option-${opt.value}`}
                     >
-                      <ColorChip type="status" value={opt.value} />
+                      <ColorChip type="status" value={opt.value} fieldCategoryKey="schedule_item.status" />
                       <span className="ml-2 text-xs">{opt.label}</span>
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : item.status ? (
-              <ColorChip type="status" value={item.status} />
+              <ColorChip type="status" value={item.status} fieldCategoryKey="schedule_item.status" />
             ) : null}
           </div>
         </TableCell>

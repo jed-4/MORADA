@@ -6,17 +6,21 @@ export interface ColorChipProps {
   type: "status" | "priority" | "role";
   value: string;
   className?: string;
+  fieldCategoryKey?: string;
 }
 
 const statusColors: Record<string, string> = {
   todo: "casva-chip-status-todo",
+  not_started: "casva-chip-status-todo",
   "in progress": "casva-chip-status-in-progress",
   "in-progress": "casva-chip-status-in-progress",
+  in_progress: "casva-chip-status-in-progress",
   done: "casva-chip-status-done",
   completed: "casva-chip-status-done",
   blocked: "casva-chip-status-blocked",
   cancelled: "casva-chip-status-blocked",
   "on-hold": "casva-chip-status-blocked",
+  on_hold: "casva-chip-status-blocked",
 };
 
 const priorityColors: Record<string, string> = {
@@ -33,7 +37,7 @@ const roleColors: Record<string, string> = {
   viewer: "bg-gray-100 text-gray-600",
 };
 
-export function ColorChip({ type, value, className }: ColorChipProps) {
+export function ColorChip({ type, value, className, fieldCategoryKey }: ColorChipProps) {
   const normalizedValue = value?.toLowerCase() || "";
   
   const { data: fieldCategories = [] } = useQuery<FieldCategoryWithOptions[]>({
@@ -44,8 +48,9 @@ export function ColorChip({ type, value, className }: ColorChipProps) {
   let colorClass = "";
   
   if (type === "status") {
-    const taskStatusCategory = fieldCategories.find(cat => cat.key === "task.status");
-    const statusOption = taskStatusCategory?.options?.find(opt => opt.key === value);
+    const categoryKey = fieldCategoryKey ?? "task.status";
+    const statusCategory = fieldCategories.find(cat => cat.key === categoryKey);
+    const statusOption = statusCategory?.options?.find(opt => opt.key === value);
     displayLabel = statusOption?.name || value;
     colorClass = statusColors[normalizedValue] || "casva-chip-status-todo";
   } else if (type === "priority") {

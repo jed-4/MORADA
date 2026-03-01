@@ -1089,7 +1089,7 @@ export default function Schedule() {
       return [
         item.name,
         item.type,
-        item.status,
+        statusOptions.find((o: any) => o.value === item.status)?.label || item.status,
         item.priority || "",
         item.startDate ? new Date(item.startDate).toLocaleDateString('en-AU') : "",
         item.endDate ? new Date(item.endDate).toLocaleDateString('en-AU') : "",

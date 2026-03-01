@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { ZoomIn, ZoomOut, Filter, ChevronLeft, ChevronRight, Calendar, ExternalLink, Settings, MoreHorizontal, GanttChart, Users, Layers } from "lucide-react";
+import { Filter, ChevronLeft, ChevronRight, ExternalLink, Settings, MoreHorizontal, GanttChart, Users, Layers, CalendarDays } from "lucide-react";
 import MasterScheduleGantt from "@/components/schedule/MasterScheduleGantt";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { format, differenceInDays, addDays, startOfWeek, startOfMonth, eachWeekOfInterval, eachMonthOfInterval, eachDayOfInterval, getISOWeek, endOfWeek, addWeeks } from "date-fns";
@@ -104,7 +104,9 @@ function getProjectDates(project: BusinessProject): { start: Date | null; end: D
 export default function BusinessSchedule() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
-  const [viewMode, setViewMode] = useState<"schedule" | "workload" | "schedules">("schedule");
+  const [viewMode, setViewMode] = useState<"schedule" | "workload" | "schedules" | "week">("schedule");
+  const [weekViewDate, setWeekViewDate] = useState(new Date());
+  const [weekSwimlaneGroup, setWeekSwimlaneGroup] = useState<"project" | "assignee">("project");
   const [zoomLevel, setZoomLevel] = useState<"day" | "week" | "month">("week");
   const pixelsPerDay = ZOOM_LEVELS[zoomLevel] / 7;
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -225,32 +227,44 @@ export default function BusinessSchedule() {
 
   const panelWidth = 220;
 
+  const ViewModeTabs = ({ active }: { active: "schedule" | "workload" | "schedules" | "week" }) => (
+    <div className="flex items-center border rounded-md overflow-hidden">
+      <button
+        className={`h-7 px-2.5 text-xs flex items-center gap-1.5 ${active === 'schedule' ? 'bg-primary text-primary-foreground' : 'hover-elevate'}`}
+        onClick={() => active !== 'schedule' && setViewMode('schedule')}
+      >
+        <GanttChart className="w-3 h-3" />
+        Projects
+      </button>
+      <button
+        className={`h-7 px-2.5 text-xs flex items-center gap-1.5 ${active === 'week' ? 'bg-primary text-primary-foreground' : 'hover-elevate'}`}
+        onClick={() => active !== 'week' && setViewMode('week')}
+      >
+        <CalendarDays className="w-3 h-3" />
+        Week
+      </button>
+      <button
+        className={`h-7 px-2.5 text-xs flex items-center gap-1.5 ${active === 'workload' ? 'bg-primary text-primary-foreground' : 'hover-elevate'}`}
+        onClick={() => active !== 'workload' && setViewMode('workload')}
+      >
+        <Users className="w-3 h-3" />
+        Workload
+      </button>
+      <button
+        className={`h-7 px-2.5 text-xs flex items-center gap-1.5 ${active === 'schedules' ? 'bg-primary text-primary-foreground' : 'hover-elevate'}`}
+        onClick={() => active !== 'schedules' && setViewMode('schedules')}
+      >
+        <Layers className="w-3 h-3" />
+        Schedules
+      </button>
+    </div>
+  );
+
   if (viewMode === "workload") {
     return (
       <div className="flex flex-col h-full bg-white dark:bg-zinc-950" data-testid="business-schedule-page">
         <div className="h-10 flex items-center px-3 border-b border-border flex-shrink-0">
-          <div className="flex items-center border rounded-md overflow-hidden">
-            <button
-              className={`h-7 px-2.5 text-xs flex items-center gap-1.5 hover-elevate`}
-              onClick={() => setViewMode('schedule')}
-            >
-              <GanttChart className="w-3 h-3" />
-              Projects
-            </button>
-            <button
-              className={`h-7 px-2.5 text-xs flex items-center gap-1.5 bg-primary text-primary-foreground`}
-            >
-              <Users className="w-3 h-3" />
-              Workload
-            </button>
-            <button
-              className={`h-7 px-2.5 text-xs flex items-center gap-1.5 hover-elevate`}
-              onClick={() => setViewMode('schedules')}
-            >
-              <Layers className="w-3 h-3" />
-              Schedules
-            </button>
-          </div>
+          <ViewModeTabs active="workload" />
         </div>
         <CompanyWorkload />
       </div>
@@ -261,30 +275,177 @@ export default function BusinessSchedule() {
     return (
       <div className="flex flex-col h-full bg-white dark:bg-zinc-950" data-testid="business-schedule-page">
         <div className="h-10 flex items-center px-3 border-b border-border flex-shrink-0">
-          <div className="flex items-center border rounded-md overflow-hidden">
-            <button
-              className={`h-7 px-2.5 text-xs flex items-center gap-1.5 hover-elevate`}
-              onClick={() => setViewMode('schedule')}
-            >
-              <GanttChart className="w-3 h-3" />
-              Projects
-            </button>
-            <button
-              className={`h-7 px-2.5 text-xs flex items-center gap-1.5 hover-elevate`}
-              onClick={() => setViewMode('workload')}
-            >
-              <Users className="w-3 h-3" />
-              Workload
-            </button>
-            <button
-              className={`h-7 px-2.5 text-xs flex items-center gap-1.5 bg-primary text-primary-foreground`}
-            >
-              <Layers className="w-3 h-3" />
-              Schedules
-            </button>
-          </div>
+          <ViewModeTabs active="schedules" />
         </div>
         <MasterScheduleGantt />
+      </div>
+    );
+  }
+
+  if (viewMode === "week") {
+    const weekStart = startOfWeek(weekViewDate, { weekStartsOn: 1 });
+    const weekEnd = addDays(weekStart, 6);
+    const weekDays = eachDayOfInterval({ start: weekStart, end: weekEnd });
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayStr = format(today, 'yyyy-MM-dd');
+
+    const activeProjectsThisWeek = visibleProjects.filter(p => {
+      const dates = getProjectDates(p);
+      if (!dates.start || !dates.end) return false;
+      const s = new Date(dates.start); s.setHours(0, 0, 0, 0);
+      const e = new Date(dates.end); e.setHours(23, 59, 59, 999);
+      return s <= weekEnd && e >= weekStart;
+    });
+
+    return (
+      <div className="flex flex-col h-full bg-white dark:bg-zinc-950" data-testid="business-schedule-page">
+        {/* Toolbar */}
+        <div className="h-10 flex items-center justify-between px-3 border-b border-border flex-shrink-0 gap-2">
+          <div className="flex items-center gap-2">
+            <ViewModeTabs active="week" />
+            <div className="flex items-center border rounded-md overflow-hidden">
+              <button
+                className={`h-7 px-2.5 text-xs ${weekSwimlaneGroup === 'project' ? 'bg-primary text-primary-foreground' : 'hover-elevate'}`}
+                onClick={() => setWeekSwimlaneGroup('project')}
+              >By Project</button>
+              <button
+                className={`h-7 px-2.5 text-xs ${weekSwimlaneGroup === 'assignee' ? 'bg-primary text-primary-foreground' : 'hover-elevate'}`}
+                onClick={() => setWeekSwimlaneGroup('assignee')}
+              >By Assignee</button>
+            </div>
+          </div>
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon" onClick={() => setWeekViewDate(addDays(weekViewDate, -7))}>
+              <ChevronLeft className="w-4 h-4" />
+            </Button>
+            <button
+              className="h-7 px-2 text-xs hover-elevate rounded"
+              onClick={() => setWeekViewDate(new Date())}
+            >
+              Today
+            </button>
+            <span className="text-xs font-medium px-1 min-w-[160px] text-center">
+              {format(weekStart, 'MMM d')} – {format(weekEnd, 'MMM d, yyyy')}
+            </span>
+            <Button variant="ghost" size="icon" onClick={() => setWeekViewDate(addDays(weekViewDate, 7))}>
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+
+        {/* What's On strip */}
+        <div className="h-8 flex items-center px-3 gap-3 border-b border-border/50 bg-muted/30 flex-shrink-0 overflow-hidden">
+          <span className="text-[10px] font-semibold text-muted-foreground shrink-0">
+            {activeProjectsThisWeek.length} project{activeProjectsThisWeek.length !== 1 ? 's' : ''} active this week
+          </span>
+          {activeProjectsThisWeek.slice(0, 6).map(p => (
+            <div key={p.id} className="flex items-center gap-1 shrink-0">
+              <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: p.color || '#6b7280' }} />
+              <span className="text-[10px] text-muted-foreground truncate max-w-[90px]">{p.name}</span>
+            </div>
+          ))}
+          {activeProjectsThisWeek.length > 6 && (
+            <span className="text-[10px] text-muted-foreground shrink-0">+{activeProjectsThisWeek.length - 6} more</span>
+          )}
+        </div>
+
+        {weekSwimlaneGroup === 'assignee' ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <Users className="w-8 h-8 text-muted-foreground/40 mx-auto mb-2" />
+              <p className="text-sm text-muted-foreground">By Assignee view coming soon</p>
+              <p className="text-xs text-muted-foreground/60 mt-1">Switch to By Project to see this week's schedule</p>
+            </div>
+          </div>
+        ) : (
+          /* Swimlane grid */
+          <div className="flex flex-1 overflow-auto">
+            {/* Project name column — sticky left */}
+            <div className="w-52 flex-shrink-0 border-r border-border" style={{ position: 'sticky', left: 0, zIndex: 10, background: 'var(--background)' }}>
+              {/* Day header spacer */}
+              <div className="h-9 border-b border-border bg-muted/20" />
+              {visibleProjects.map(p => (
+                <div
+                  key={p.id}
+                  style={{ height: ROW_HEIGHT }}
+                  className="flex items-center px-2 gap-2 border-b border-border/30 group/row cursor-pointer hover-elevate"
+                  onClick={() => navigate(`/projects/${p.id}/schedule`)}
+                >
+                  <div className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: p.color || '#6b7280' }} />
+                  <span className="text-xs font-medium truncate flex-1">{p.name}</span>
+                  <ExternalLink className="w-3 h-3 text-muted-foreground/0 group-hover/row:text-muted-foreground/60 shrink-0 transition-colors" />
+                </div>
+              ))}
+              {visibleProjects.length === 0 && (
+                <div className="p-4 text-xs text-muted-foreground text-center">
+                  No projects visible.
+                </div>
+              )}
+            </div>
+
+            {/* Day columns */}
+            <div className="flex flex-1 min-w-0">
+              {weekDays.map((day, colIdx) => {
+                const dayStr = format(day, 'yyyy-MM-dd');
+                const isToday = dayStr === todayStr;
+                const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+                return (
+                  <div key={colIdx} className="flex-1 min-w-[80px] border-r border-border/30 flex flex-col">
+                    {/* Day header */}
+                    <div className={cn(
+                      "h-9 flex flex-col items-center justify-center border-b border-border text-[10px] font-medium shrink-0",
+                      isToday ? "bg-[#bba7db]/20 text-[#7c5cbf]" : isWeekend ? "bg-muted/30 text-muted-foreground/50" : "bg-muted/10 text-muted-foreground"
+                    )}>
+                      <span>{format(day, 'EEE')}</span>
+                      <span className={cn("text-[11px] font-semibold", isToday ? "text-[#7c5cbf]" : "")}>{format(day, 'd')}</span>
+                    </div>
+
+                    {/* Project cells */}
+                    {visibleProjects.map(project => {
+                      const dates = getProjectDates(project);
+                      let isActive = false;
+                      if (dates.start && dates.end) {
+                        const s = new Date(dates.start); s.setHours(0, 0, 0, 0);
+                        const e = new Date(dates.end); e.setHours(23, 59, 59, 999);
+                        const d = new Date(day); d.setHours(12, 0, 0, 0);
+                        isActive = d >= s && d <= e;
+                      }
+                      return (
+                        <div
+                          key={project.id}
+                          style={{ height: ROW_HEIGHT }}
+                          className={cn(
+                            "border-b border-border/20 flex items-center px-1",
+                            isWeekend ? "bg-muted/20" : "",
+                            isToday ? "bg-[#bba7db]/5" : ""
+                          )}
+                        >
+                          {isActive && (
+                            <div
+                              className="w-full h-5 rounded-sm"
+                              style={{
+                                backgroundColor: project.category === 'scheduled'
+                                  ? (project.color || '#3b82f6')
+                                  : 'transparent',
+                                border: project.category === 'unscheduled'
+                                  ? '2px dashed #d97706'
+                                  : project.category === 'prospective'
+                                    ? '2px dotted #9ca3af'
+                                    : 'none',
+                                opacity: project.category === 'scheduled' ? 0.75 : 0.6,
+                              }}
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -294,28 +455,7 @@ export default function BusinessSchedule() {
       {/* Toolbar */}
       <div className="h-10 flex items-center justify-between px-3 border-b border-border flex-shrink-0 gap-2">
         <div className="flex items-center gap-2">
-          <div className="flex items-center border rounded-md overflow-hidden mr-2">
-            <button
-              className={`h-7 px-2.5 text-xs flex items-center gap-1.5 bg-primary text-primary-foreground`}
-            >
-              <GanttChart className="w-3 h-3" />
-              Projects
-            </button>
-            <button
-              className={`h-7 px-2.5 text-xs flex items-center gap-1.5 hover-elevate`}
-              onClick={() => setViewMode('workload')}
-            >
-              <Users className="w-3 h-3" />
-              Workload
-            </button>
-            <button
-              className={`h-7 px-2.5 text-xs flex items-center gap-1.5 hover-elevate`}
-              onClick={() => setViewMode('schedules')}
-            >
-              <Layers className="w-3 h-3" />
-              Schedules
-            </button>
-          </div>
+          <ViewModeTabs active="schedule" />
 
           {/* Con / Precon toggle */}
           <div className="flex items-center border rounded-md overflow-hidden">
