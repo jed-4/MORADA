@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, Minus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown, User, Search, Filter, Columns, MoreVertical, FileText, Edit, Eye, Copy, Check, Palette, Trash2, Settings, Download, Wifi, WifiOff, GanttChart, List as ListIcon, GripVertical, Link, Unlink, X, RotateCcw, ChevronsDownUp, ChevronsUpDown } from "lucide-react";
+import { Plus, Minus, ZoomIn, ZoomOut, Calendar, ChevronRight, ChevronDown, User, Search, Filter, Columns, MoreVertical, FileText, Edit, Eye, Copy, Check, Palette, Trash2, Settings, Download, Wifi, WifiOff, GanttChart, List as ListIcon, GripVertical, Link, Unlink, X, RotateCcw, ChevronsDownUp, ChevronsUpDown, Flag } from "lucide-react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -1047,6 +1047,16 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
         description: error?.message || "Could not delete the task",
         variant: "destructive",
       });
+    },
+  });
+
+  const setBspMilestoneMutation = useMutation({
+    mutationFn: async ({ field, itemId }: { field: 'milestoneStartItemId' | 'milestoneEndItemId'; itemId: string | null }) => {
+      if (!projectId) throw new Error("No project");
+      return apiRequest(`/api/business-schedule/projects/${projectId}`, "PATCH", { [field]: itemId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/business-schedule/projects"] });
     },
   });
 
@@ -3885,6 +3895,34 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                 Link Dependency
               </button>
               
+              {bspProject && (
+                <>
+                  <div className="-mx-1 my-1 h-0.5 bg-border" />
+                  <button
+                    className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left"
+                    onClick={() => {
+                      const isCurrent = bspProject.milestoneStartItemId === String(contextMenu.item.id);
+                      setBspMilestoneMutation.mutate({ field: 'milestoneStartItemId', itemId: isCurrent ? null : String(contextMenu.item.id) });
+                      setContextMenu(null);
+                    }}
+                  >
+                    <Flag className="w-4 h-4 mr-2 text-emerald-500" />
+                    {bspProject.milestoneStartItemId === String(contextMenu.item.id) ? 'Clear Build Start' : 'Set as Build Start'}
+                  </button>
+                  <button
+                    className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground w-full text-left"
+                    onClick={() => {
+                      const isCurrent = bspProject.milestoneEndItemId === String(contextMenu.item.id);
+                      setBspMilestoneMutation.mutate({ field: 'milestoneEndItemId', itemId: isCurrent ? null : String(contextMenu.item.id) });
+                      setContextMenu(null);
+                    }}
+                  >
+                    <Flag className="w-4 h-4 mr-2 text-rose-500" />
+                    {bspProject.milestoneEndItemId === String(contextMenu.item.id) ? 'Clear Build End' : 'Set as Build End'}
+                  </button>
+                </>
+              )}
+
               <div className="-mx-1 my-1 h-0.5 bg-border" />
               
               <button

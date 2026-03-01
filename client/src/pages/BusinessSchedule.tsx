@@ -49,6 +49,18 @@ interface BusinessProject {
 function getProjectDates(project: BusinessProject): { start: Date | null; end: Date | null } {
   const mode = project.dateMode || "auto";
 
+  if (mode === "milestone") {
+    if (project.milestoneStartDate && project.milestoneEndDate) {
+      return { start: new Date(project.milestoneStartDate), end: new Date(project.milestoneEndDate) };
+    }
+    if (project.milestoneStartDate) {
+      const start = new Date(project.milestoneStartDate);
+      const fallbackEnd = project.itemEndDate ? new Date(project.itemEndDate) : project.projectEndDate ? new Date(project.projectEndDate) : null;
+      return { start, end: fallbackEnd };
+    }
+    return { start: null, end: null };
+  }
+
   if (mode === "project") {
     if (project.projectStartDate && project.projectEndDate) {
       return { start: new Date(project.projectStartDate), end: new Date(project.projectEndDate) };
@@ -673,6 +685,7 @@ export default function BusinessSchedule() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="auto">Auto (Project Dates, then Schedule Items)</SelectItem>
+                    <SelectItem value="milestone">Build Start / End Markers</SelectItem>
                     <SelectItem value="project">Project Start & End Dates</SelectItem>
                     <SelectItem value="items">First & Last Schedule Item</SelectItem>
                     <SelectItem value="custom">Custom Start + Weeks</SelectItem>
@@ -713,13 +726,19 @@ export default function BusinessSchedule() {
               )}
 
               <div className="text-[10px] text-muted-foreground space-y-1 mt-2">
+                {settingsProject.milestoneStartDate && (
+                  <div className="text-emerald-600 dark:text-emerald-400">Build Start: {format(new Date(settingsProject.milestoneStartDate), 'MMM d, yyyy')}{settingsProject.milestoneEndDate ? ` — Build End: ${format(new Date(settingsProject.milestoneEndDate), 'MMM d, yyyy')}` : ''}</div>
+                )}
                 {settingsProject.projectStartDate && (
                   <div>Project dates: {format(new Date(settingsProject.projectStartDate), 'MMM d, yyyy')} - {settingsProject.projectEndDate ? format(new Date(settingsProject.projectEndDate), 'MMM d, yyyy') : 'not set'}</div>
                 )}
                 {settingsProject.itemStartDate && (
                   <div>Schedule items: {format(new Date(settingsProject.itemStartDate), 'MMM d, yyyy')} - {format(new Date(settingsProject.itemEndDate!), 'MMM d, yyyy')}</div>
                 )}
-                {!settingsProject.projectStartDate && !settingsProject.itemStartDate && settingsProject.dateMode !== "custom" && (
+                {settingsProject.dateMode === "milestone" && !settingsProject.milestoneStartDate && (
+                  <div className="text-amber-600">No Build Start marker set. Right-click a task in the schedule to set one.</div>
+                )}
+                {!settingsProject.projectStartDate && !settingsProject.itemStartDate && settingsProject.dateMode !== "custom" && settingsProject.dateMode !== "milestone" && (
                   <div className="text-amber-600">No dates available. Use custom mode to set dates manually.</div>
                 )}
               </div>
