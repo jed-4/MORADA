@@ -1,4 +1,4 @@
-import { useState, useMemo, type ReactNode } from "react";
+import { useState, useMemo, useRef, useCallback, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useParams } from "wouter";
 import { Input } from "@/components/ui/input";
@@ -27,6 +27,9 @@ import {
   Columns3,
   ChevronUp,
   ChevronDown,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from "lucide-react";
 import { type ClientInvoice, type Project, type Variation } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
@@ -85,21 +88,112 @@ interface ColumnConfig {
   required?: boolean;
   align?: "left" | "right" | "center";
   inactive?: boolean;
-  widthClass: string;
+  defaultWidth: number;
+  minWidth: number;
 }
 
 const DEFAULT_COLUMNS: ColumnConfig[] = [
-  { key: "invoice_number", label: "Invoice #",     visible: true,  required: true,  widthClass: "w-24 flex-shrink-0" },
-  { key: "name",           label: "Name",           visible: true,  required: true,  widthClass: "flex-1 min-w-0" },
-  { key: "status",         label: "Status",         visible: true,                   widthClass: "w-20 flex-shrink-0" },
-  { key: "invoice_date",   label: "Invoice Date",   visible: true,                   widthClass: "w-20 flex-shrink-0" },
-  { key: "due_date",       label: "Due Date",       visible: true,                   widthClass: "w-20 flex-shrink-0" },
-  { key: "total",          label: "Total",          visible: true,  align: "right",  widthClass: "w-28 flex-shrink-0" },
-  { key: "paid",           label: "Paid",           visible: true,  align: "right",  widthClass: "w-28 flex-shrink-0" },
-  { key: "due",            label: "Due",            visible: true,  align: "right",  widthClass: "w-24 flex-shrink-0" },
-  { key: "xero",           label: "Xero",           visible: true,  align: "center", widthClass: "w-10 flex-shrink-0" },
-  { key: "seen",           label: "Seen",           visible: true,  align: "center", widthClass: "w-10 flex-shrink-0", inactive: true },
+  { key: "invoice_number", label: "Invoice #",   visible: true,  required: true,  defaultWidth: 88,  minWidth: 60 },
+  { key: "name",           label: "Name",         visible: true,  required: true,  defaultWidth: 220, minWidth: 120 },
+  { key: "status",         label: "Status",       visible: true,                   defaultWidth: 80,  minWidth: 60 },
+  { key: "invoice_date",   label: "Invoice Date", visible: true,                   defaultWidth: 84,  minWidth: 60 },
+  { key: "due_date",       label: "Due Date",     visible: true,                   defaultWidth: 84,  minWidth: 60 },
+  { key: "total",          label: "Total",        visible: true,  align: "right",  defaultWidth: 104, minWidth: 80 },
+  { key: "paid",           label: "Paid",         visible: true,  align: "right",  defaultWidth: 104, minWidth: 80 },
+  { key: "due",            label: "Due",          visible: true,  align: "right",  defaultWidth: 96,  minWidth: 80 },
+  { key: "xero",           label: "Xero",         visible: true,  align: "center", defaultWidth: 40,  minWidth: 32 },
+  { key: "seen",           label: "Seen",         visible: true,  align: "center", defaultWidth: 40,  minWidth: 32, inactive: true },
 ];
+
+const SORTABLE_COLUMNS = new Set<ColumnKey>([
+  "invoice_number", "name", "status", "invoice_date", "due_date", "total", "paid", "due",
+]);
+
+type SortDir = "asc" | "desc" | null;
+
+const ACTIONS_WIDTH = 56; // w-14
+const PROJECT_COL_WIDTH = 160;
+const ROW_PADDING = 24; // px-3 both sides
+const GAP = 8; // gap-2
+
+// ── Header cell with sort + resize ────────────────────────────────────────
+
+function HeaderCell({
+  col,
+  width,
+  sortCol,
+  sortDir,
+  onSort,
+  onResize,
+}: {
+  col: ColumnConfig;
+  width: number;
+  sortCol: ColumnKey | null;
+  sortDir: SortDir;
+  onSort: (key: ColumnKey) => void;
+  onResize: (key: ColumnKey, w: number) => void;
+}) {
+  const isSortable = SORTABLE_COLUMNS.has(col.key);
+  const isActive = sortCol === col.key;
+  const dir = isActive ? sortDir : null;
+  const [isResizing, setIsResizing] = useState(false);
+  const startXRef = useRef(0);
+  const startWRef = useRef(width);
+
+  const handleResizeMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsResizing(true);
+    startXRef.current = e.clientX;
+    startWRef.current = width;
+
+    const onMove = (mv: MouseEvent) => {
+      const delta = mv.clientX - startXRef.current;
+      const newW = Math.max(col.minWidth, startWRef.current + delta);
+      onResize(col.key, newW);
+    };
+    const onUp = () => {
+      setIsResizing(false);
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
+
+  return (
+    <div
+      className={cn(
+        "relative flex items-center gap-0.5 select-none text-[10px] font-medium text-muted-foreground uppercase tracking-wide flex-shrink-0 group/hdr",
+        col.align === "right"  && "justify-end",
+        col.align === "center" && "justify-center",
+        isSortable && "cursor-pointer hover:text-foreground",
+      )}
+      style={{ width: `${width}px` }}
+      onClick={() => isSortable && onSort(col.key)}
+    >
+      <span className="truncate">{col.label}</span>
+      {isSortable && (
+        <>
+          {dir === "asc"  && <ArrowUp   className="h-2.5 w-2.5 flex-shrink-0" />}
+          {dir === "desc" && <ArrowDown  className="h-2.5 w-2.5 flex-shrink-0" />}
+          {!dir           && <ArrowUpDown className="h-2.5 w-2.5 flex-shrink-0 opacity-0 group-hover/hdr:opacity-40" />}
+        </>
+      )}
+      {/* Resize handle */}
+      <div
+        className="absolute right-0 top-0 bottom-0 w-3 cursor-col-resize flex items-center justify-center"
+        onMouseDown={handleResizeMouseDown}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className={cn(
+          "w-0.5 h-4 rounded-full transition-colors",
+          isResizing ? "bg-primary" : "bg-transparent group-hover/hdr:bg-border"
+        )} />
+      </div>
+    </div>
+  );
+}
 
 // ── Main component ─────────────────────────────────────────────────────────
 
@@ -114,6 +208,36 @@ export default function ClientInvoices() {
   const [statusPopoverOpen, setStatusPopoverOpen] = useState(false);
   const [colPopoverOpen, setColPopoverOpen]       = useState(false);
   const [columns, setColumns] = useState<ColumnConfig[]>(DEFAULT_COLUMNS);
+
+  // Column widths (pixel values, keyed by ColumnKey)
+  const [colWidths, setColWidths] = useState<Record<ColumnKey, number>>(() =>
+    Object.fromEntries(DEFAULT_COLUMNS.map((c) => [c.key, c.defaultWidth])) as Record<ColumnKey, number>
+  );
+
+  // Sort state
+  const [sortCol, setSortCol] = useState<ColumnKey | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>(null);
+
+  const handleSort = useCallback((key: ColumnKey) => {
+    setSortCol((prevCol) => {
+      if (prevCol !== key) {
+        setSortDir("asc");
+        return key;
+      }
+      // Same column — cycle asc → desc → clear
+      setSortDir((prevDir) => {
+        if (prevDir === "asc") return "desc";
+        // desc → clear: also reset sortCol
+        setSortCol(null);
+        return null;
+      });
+      return prevCol;
+    });
+  }, []);
+
+  const handleResize = useCallback((key: ColumnKey, w: number) => {
+    setColWidths((prev) => ({ ...prev, [key]: w }));
+  }, []);
 
   // ── Queries ───────────────────────────────────────────────────────────────
 
@@ -175,15 +299,51 @@ export default function ClientInvoices() {
   const isDueDateOverdue = (dueDate: Date | string | null | undefined, status: string) =>
     !(!dueDate || status === "paid") && isPast(new Date(dueDate));
 
-  const filteredInvoices = useMemo(() => invoices.filter((inv) => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      (inv.invoiceNumber || "").toLowerCase().includes(q) ||
-      ((inv as any).name || "").toLowerCase().includes(q) ||
-      (getProject(inv.projectId)?.name || "").toLowerCase().includes(q)
-    );
-  }), [invoices, searchQuery, projects]);
+  const filteredInvoices = useMemo(() => {
+    let list = invoices.filter((inv) => {
+      if (!searchQuery) return true;
+      const q = searchQuery.toLowerCase();
+      return (
+        (inv.invoiceNumber || "").toLowerCase().includes(q) ||
+        ((inv as any).name || "").toLowerCase().includes(q) ||
+        (getProject(inv.projectId)?.name || "").toLowerCase().includes(q)
+      );
+    });
+
+    if (sortCol && sortDir) {
+      list = [...list].sort((a, b) => {
+        let cmp = 0;
+        switch (sortCol) {
+          case "invoice_number":
+            cmp = (a.invoiceNumber || "").localeCompare(b.invoiceNumber || "");
+            break;
+          case "name":
+            cmp = ((a as any).name || "").localeCompare((b as any).name || "");
+            break;
+          case "status":
+            cmp = (a.status || "").localeCompare(b.status || "");
+            break;
+          case "invoice_date":
+            cmp = new Date(a.invoiceDate ?? 0).getTime() - new Date(b.invoiceDate ?? 0).getTime();
+            break;
+          case "due_date":
+            cmp = new Date(a.dueDate ?? 0).getTime() - new Date(b.dueDate ?? 0).getTime();
+            break;
+          case "total":
+            cmp = a.totalAmount - b.totalAmount;
+            break;
+          case "paid":
+            cmp = a.paidAmount - b.paidAmount;
+            break;
+          case "due":
+            cmp = a.balanceAmount - b.balanceAmount;
+            break;
+        }
+        return sortDir === "asc" ? cmp : -cmp;
+      });
+    }
+    return list;
+  }, [invoices, searchQuery, projects, sortCol, sortDir]);
 
   const statusCounts = useMemo(() =>
     STATUS_OPTIONS.reduce((acc, s) => ({
@@ -244,6 +404,14 @@ export default function ClientInvoices() {
     setColumns((prev) => prev.map((c) => c.key === key ? { ...c, visible: !c.visible } : c));
   };
 
+  // Total inner width for the min-width wrapper (enables horizontal scroll)
+  const totalInnerWidth = useMemo(() => {
+    const colsWidth = visibleColumns.reduce((s, c) => s + colWidths[c.key], 0);
+    const gapsWidth = Math.max(0, visibleColumns.length - 1) * GAP;
+    const projectCol = projectIdFromUrl ? 0 : PROJECT_COL_WIDTH + GAP;
+    return ROW_PADDING + colsWidth + gapsWidth + projectCol + GAP + ACTIONS_WIDTH;
+  }, [visibleColumns, colWidths, projectIdFromUrl]);
+
   // ── Navigation ────────────────────────────────────────────────────────────
 
   const handleRowClick = (id: string) =>
@@ -281,7 +449,7 @@ export default function ClientInvoices() {
 
   // ── Cell content renderer ─────────────────────────────────────────────────
 
-  const renderCell = (col: ColumnConfig, invoice: ClientInvoice) => {
+  const renderCell = (col: ColumnConfig, invoice: ClientInvoice): ReactNode => {
     const overdue = isDueDateOverdue(invoice.dueDate, invoice.status);
     const alignClass = col.align === "right" ? "justify-end" : col.align === "center" ? "justify-center" : "";
 
@@ -353,7 +521,11 @@ export default function ClientInvoices() {
     }
 
     return (
-      <div key={col.key} className={cn("flex items-start", col.widthClass, alignClass)}>
+      <div
+        key={col.key}
+        className={cn("flex items-start flex-shrink-0", alignClass)}
+        style={{ width: `${colWidths[col.key]}px` }}
+      >
         {content}
       </div>
     );
@@ -433,21 +605,18 @@ export default function ClientInvoices() {
 
           {/* Right zone — stat blocks */}
           <div className={cn("flex-1 flex items-center py-3 gap-3", hasProjectContext ? "justify-end" : "justify-center")}>
-            {/* PAID */}
             <div className="bg-muted/40 rounded-lg px-5 py-2.5 flex flex-col items-center min-w-[100px]">
               <span className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-medium mb-1">Paid</span>
               <span className="text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{financials.paidPct}%</span>
               <span className="text-xs tabular-nums text-muted-foreground mt-0.5">{formatCurrency(financials.paidTotal)}</span>
             </div>
 
-            {/* INVOICED */}
             <div className="bg-muted/40 rounded-lg px-5 py-2.5 flex flex-col items-center min-w-[100px]">
               <span className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-medium mb-1">Invoiced</span>
               <span className="text-2xl font-bold tabular-nums">{financials.invoicedPct}%</span>
               <span className="text-xs tabular-nums text-muted-foreground mt-0.5">{formatCurrency(financials.invoicedTotal)}</span>
             </div>
 
-            {/* REMAINING */}
             <div className="bg-muted/40 rounded-lg px-5 py-2.5 flex flex-col items-center min-w-[100px]">
               <span className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-medium mb-1">Remaining</span>
               <span className={cn(
@@ -459,7 +628,6 @@ export default function ClientInvoices() {
               <span className="text-xs tabular-nums text-muted-foreground mt-0.5">{formatCurrency(financials.balanceTotal)}</span>
             </div>
 
-            {/* INVOICES count */}
             <div className="bg-muted/40 rounded-lg px-5 py-2.5 flex flex-col items-center min-w-[80px]">
               <span className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-medium mb-1">Invoices</span>
               <span className="text-2xl font-bold tabular-nums">{financials.count}</span>
@@ -603,84 +771,97 @@ export default function ClientInvoices() {
             )}
           </div>
         ) : (
-          <div className="border border-border rounded-md bg-background overflow-hidden">
+          <div className="border border-border rounded-md bg-background overflow-x-auto">
+            {/* Inner wrapper enforces min-width so columns don't collapse */}
+            <div style={{ minWidth: `${totalInnerWidth}px` }}>
 
-            {/* Header row */}
-            <div className="h-7 px-3 flex items-center gap-3 border-b border-border bg-muted/30 sticky top-0 z-10">
-              {visibleColumns.map((col) => (
+              {/* Header row */}
+              <div className="h-7 px-3 flex items-center gap-2 border-b border-border bg-muted/30 sticky top-0 z-10">
+                {visibleColumns.map((col) => (
+                  <HeaderCell
+                    key={col.key}
+                    col={col}
+                    width={colWidths[col.key]}
+                    sortCol={sortCol}
+                    sortDir={sortDir}
+                    onSort={handleSort}
+                    onResize={handleResize}
+                  />
+                ))}
+                {!projectIdFromUrl && (
+                  <div
+                    className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide flex-shrink-0"
+                    style={{ width: `${PROJECT_COL_WIDTH}px` }}
+                  >Project</div>
+                )}
+                <div className="flex-shrink-0" style={{ width: `${ACTIONS_WIDTH}px` }} />
+              </div>
+
+              {/* Data rows */}
+              {filteredInvoices.map((invoice) => (
                 <div
-                  key={col.key}
-                  className={cn(
-                    "text-[10px] font-medium text-muted-foreground uppercase tracking-wide",
-                    col.widthClass,
-                    col.align === "right"  && "text-right",
-                    col.align === "center" && "text-center",
-                  )}
+                  key={invoice.id}
+                  className="min-h-[40px] px-3 flex items-center gap-2 border-b border-border/50 last:border-b-0 cursor-pointer hover-elevate group transition-all duration-100"
+                  onClick={() => handleRowClick(invoice.id)}
+                  data-testid={`row-invoice-${invoice.id}`}
                 >
-                  {col.label}
+                  {visibleColumns.map((col) => renderCell(col, invoice))}
+
+                  {/* Project column (global view only) */}
+                  {!projectIdFromUrl && (() => {
+                    const proj = getProject(invoice.projectId);
+                    return (
+                      <div
+                        key="project"
+                        className="flex-shrink-0"
+                        style={{ width: `${PROJECT_COL_WIDTH}px` }}
+                        data-testid={`cell-project-${invoice.id}`}
+                      >
+                        {proj ? (
+                          <div className="flex items-center gap-1.5">
+                            <ProjectIcon icon={proj.icon || "Briefcase"} color={proj.color || "#3b82f6"} className="w-3 h-3 flex-shrink-0" />
+                            <span className="text-xs text-muted-foreground truncate">{proj.name}</span>
+                          </div>
+                        ) : <span className="text-xs text-muted-foreground">—</span>}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Actions */}
+                  <div
+                    className="flex-shrink-0 flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                    style={{ width: `${ACTIONS_WIDTH}px` }}
+                    data-testid={`cell-actions-${invoice.id}`}
+                  >
+                    <button
+                      className="h-6 w-6 rounded hover-elevate flex items-center justify-center"
+                      onClick={(e) => { e.stopPropagation(); handleRowClick(invoice.id); }}
+                      data-testid={`button-view-${invoice.id}`}
+                    >
+                      <Eye className="h-3 w-3" />
+                    </button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                        <button
+                          className="h-6 w-6 rounded hover-elevate flex items-center justify-center"
+                          data-testid={`button-menu-${invoice.id}`}
+                        >
+                          <MoreVertical className="h-3 w-3" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" data-testid={`menu-${invoice.id}`}>
+                        <DropdownMenuItem
+                          onClick={(e) => { e.stopPropagation(); handleRowClick(invoice.id); }}
+                          data-testid={`menu-edit-${invoice.id}`}
+                        >Edit</DropdownMenuItem>
+                        <DropdownMenuItem data-testid={`menu-duplicate-${invoice.id}`}>Duplicate</DropdownMenuItem>
+                        <DropdownMenuItem className="text-destructive focus:text-destructive" data-testid={`menu-delete-${invoice.id}`}>Delete</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
               ))}
-              {!projectIdFromUrl && (
-                <div className="flex-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Project</div>
-              )}
-              <div className="w-14 flex-shrink-0" />
             </div>
-
-            {/* Data rows */}
-            {filteredInvoices.map((invoice) => (
-              <div
-                key={invoice.id}
-                className="min-h-[40px] px-3 flex items-center gap-3 border-b border-border/50 last:border-b-0 cursor-pointer hover-elevate group transition-all duration-100"
-                onClick={() => handleRowClick(invoice.id)}
-                data-testid={`row-invoice-${invoice.id}`}
-              >
-                {visibleColumns.map((col) => renderCell(col, invoice))}
-
-                {/* Project column (global view only) */}
-                {!projectIdFromUrl && (() => {
-                  const proj = getProject(invoice.projectId);
-                  return (
-                    <div key="project" className="flex-1 min-w-0" data-testid={`cell-project-${invoice.id}`}>
-                      {proj ? (
-                        <div className="flex items-center gap-1.5">
-                          <ProjectIcon icon={proj.icon || "Briefcase"} color={proj.color || "#3b82f6"} className="w-3 h-3 flex-shrink-0" />
-                          <span className="text-xs text-muted-foreground truncate">{proj.name}</span>
-                        </div>
-                      ) : <span className="text-xs text-muted-foreground">—</span>}
-                    </div>
-                  );
-                })()}
-
-                {/* Actions */}
-                <div className="w-14 flex-shrink-0 flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity" data-testid={`cell-actions-${invoice.id}`}>
-                  <button
-                    className="h-6 w-6 rounded hover-elevate flex items-center justify-center"
-                    onClick={(e) => { e.stopPropagation(); handleRowClick(invoice.id); }}
-                    data-testid={`button-view-${invoice.id}`}
-                  >
-                    <Eye className="h-3 w-3" />
-                  </button>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                      <button
-                        className="h-6 w-6 rounded hover-elevate flex items-center justify-center"
-                        data-testid={`button-menu-${invoice.id}`}
-                      >
-                        <MoreVertical className="h-3 w-3" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" data-testid={`menu-${invoice.id}`}>
-                      <DropdownMenuItem
-                        onClick={(e) => { e.stopPropagation(); handleRowClick(invoice.id); }}
-                        data-testid={`menu-edit-${invoice.id}`}
-                      >Edit</DropdownMenuItem>
-                      <DropdownMenuItem data-testid={`menu-duplicate-${invoice.id}`}>Duplicate</DropdownMenuItem>
-                      <DropdownMenuItem className="text-destructive focus:text-destructive" data-testid={`menu-delete-${invoice.id}`}>Delete</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </div>
-            ))}
           </div>
         )}
       </div>
