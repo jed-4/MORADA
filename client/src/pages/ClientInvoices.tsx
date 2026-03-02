@@ -27,15 +27,12 @@ import {
   Search,
   Eye,
   MoreVertical,
-  CheckCircle2,
-  Clock,
   AlertCircle,
   FileText,
-  Send,
   Loader2,
-  CreditCard,
+  Lock,
 } from "lucide-react";
-import { type ClientInvoice, type Project } from "@shared/schema";
+import { type ClientInvoice, type Project, type Variation } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { format, isPast } from "date-fns";
@@ -108,6 +105,32 @@ export default function ClientInvoices() {
     queryKey: ["/api/projects"],
   });
 
+  const { data: projectVariations = [] } = useQuery<Variation[]>({
+    queryKey: ["/api/variations", { projectId: projectIdFromUrl, status: "approved" }],
+    enabled: !!projectIdFromUrl,
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/variations?projectId=${projectIdFromUrl}&status=approved`,
+        { credentials: "include" }
+      );
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const { data: projectAllowances = [] } = useQuery<any[]>({
+    queryKey: ["/api/projects", projectIdFromUrl, "allowances"],
+    enabled: !!projectIdFromUrl,
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/projects/${projectIdFromUrl}/allowances`,
+        { credentials: "include" }
+      );
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
   const currentProject = useMemo(
     () => (projectIdFromUrl ? projects.find((p) => p.id === projectIdFromUrl) : null),
     [projects, projectIdFromUrl]
@@ -115,8 +138,8 @@ export default function ClientInvoices() {
 
   const getProject = (projectId: string) => projects.find((p) => p.id === projectId);
 
-  const formatCurrency = (amount: number) => {
-    const dollars = amount / 100;
+  const formatCurrency = (cents: number) => {
+    const dollars = cents / 100;
     return new Intl.NumberFormat("en-AU", {
       style: "currency",
       currency: "AUD",
@@ -152,17 +175,39 @@ export default function ClientInvoices() {
     [invoices]
   );
 
-  const summary = useMemo(() => {
-    const filtered = filteredInvoices;
-    const contractTotal = filtered.reduce((s, i) => s + ((i as any).lockedContractPrice || 0), 0);
+  const financials = useMemo(() => {
+    const invoicedTotal = filteredInvoices.reduce((s, i) => s + i.totalAmount, 0);
+    const paidTotal = filteredInvoices.reduce((s, i) => s + i.paidAmount, 0);
+    const balanceTotal = filteredInvoices.reduce((s, i) => s + i.balanceAmount, 0);
+
+    const contractPriceCents = (currentProject as any)?.contractPrice ?? 0;
+    const approvedVariationsTotal = projectVariations.reduce((s, v) => s + (v.totalAmount ?? 0), 0);
+    const allowancesTotal = projectAllowances.reduce(
+      (s, a) => s + Math.round((a.item?.priceIncTax ?? 0) * (a.item?.quantity ?? 0) * 100),
+      0
+    );
+    const projectTotal = contractPriceCents + approvedVariationsTotal;
+
+    const base = projectTotal > 0 ? projectTotal : invoicedTotal;
+
+    const paidPct = base > 0 ? Math.round((paidTotal / base) * 100) : 0;
+    const invoicedPct = base > 0 ? Math.round((invoicedTotal / base) * 100) : 0;
+    const remainingPct = base > 0 ? Math.round((balanceTotal / base) * 100) : 0;
+
     return {
-      count: filtered.length,
-      total: filtered.reduce((s, i) => s + i.totalAmount, 0),
-      paid: filtered.reduce((s, i) => s + i.paidAmount, 0),
-      balance: filtered.reduce((s, i) => s + i.balanceAmount, 0),
-      contractTotal,
+      count: filteredInvoices.length,
+      invoicedTotal,
+      paidTotal,
+      balanceTotal,
+      contractPriceCents,
+      approvedVariationsTotal,
+      allowancesTotal,
+      projectTotal,
+      paidPct,
+      invoicedPct,
+      remainingPct,
     };
-  }, [filteredInvoices]);
+  }, [filteredInvoices, currentProject, projectVariations, projectAllowances]);
 
   const handleRowClick = (id: string) =>
     projectIdFromUrl
@@ -184,10 +229,8 @@ export default function ClientInvoices() {
     return format(new Date(date), "d MMM yyyy");
   };
 
-  const invoiced = summary.total;
-  const paid = summary.paid;
-  const remaining = summary.balance;
-  const paidPct = invoiced > 0 ? Math.round((paid / invoiced) * 100) : 0;
+  const hasProjectContext = !!(projectIdFromUrl && currentProject);
+  const showFinancialPanel = !invoicesLoading;
 
   return (
     <div className="flex flex-col h-full" data-testid="page-client-invoices">
@@ -208,106 +251,181 @@ export default function ClientInvoices() {
         </button>
       </div>
 
-      {/* Row 2 — Buildenr-style summary bar */}
-      <div className="h-9 bg-background flex items-center justify-between px-3 border-b border-border flex-shrink-0 gap-4">
-        {/* Left — Search + Status filter */}
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          <div className="relative w-44">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-            <Input
-              placeholder="Search invoices…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-7 pr-2 h-6 text-xs"
-              data-testid="input-search"
-            />
-          </div>
-          <Popover open={statusPopoverOpen} onOpenChange={setStatusPopoverOpen}>
-            <PopoverTrigger asChild>
-              <button
-                className={cn(
-                  "h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1",
-                  selectedStatus !== "all" && "border-[#bba7db] text-[#bba7db] bg-[#bba7db]/5"
-                )}
-                data-testid="filter-status-popover"
-              >
-                <span>
-                  {selectedStatus === "all"
-                    ? "Status"
-                    : STATUS_OPTIONS.find((s) => s.value === selectedStatus)?.label}
-                </span>
-                {selectedStatus !== "all" && (
-                  <span
-                    className="ml-0.5 text-[10px] text-[#bba7db] cursor-pointer"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedStatus("all");
-                    }}
-                  >
-                    ×
+      {/* Row 2 — Financial summary panel */}
+      {showFinancialPanel && (
+        <div className="bg-background border-b border-border flex items-stretch px-4 flex-shrink-0">
+          {/* Left zone — Project value breakdown (project view only) */}
+          {hasProjectContext && (
+            <div className="pr-6 border-r border-border flex flex-col justify-center py-3 min-w-[220px] mr-6">
+              <p className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-medium">
+                Total Project Value
+              </p>
+              <p className="text-2xl font-bold tabular-nums mt-0.5">
+                {formatCurrency(financials.projectTotal)}
+              </p>
+              <div className="mt-2.5 space-y-1">
+                <div className="flex items-center justify-between text-xs gap-4">
+                  <span className="text-muted-foreground flex items-center gap-1">
+                    <Lock className="w-2.5 h-2.5 flex-shrink-0" />
+                    Contract Price
                   </span>
-                )}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-44 p-1.5" align="start">
-              {STATUS_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => {
-                    setSelectedStatus(opt.value);
-                    setStatusPopoverOpen(false);
-                  }}
-                  className={cn(
-                    "w-full text-left px-2 py-1.5 text-sm rounded-md flex items-center justify-between hover-elevate",
-                    selectedStatus === opt.value && "bg-[#bba7db]/10 text-[#bba7db] font-medium"
-                  )}
-                  data-testid={`filter-status-${opt.value}`}
-                >
-                  <span>{opt.label}</span>
-                  <span className="text-xs text-muted-foreground tabular-nums">
-                    {statusCounts[opt.value] ?? 0}
+                  <span className="tabular-nums font-medium">
+                    {financials.contractPriceCents > 0
+                      ? formatCurrency(financials.contractPriceCents)
+                      : <span className="text-muted-foreground/60 italic text-[11px]">not set</span>}
                   </span>
-                </button>
-              ))}
-            </PopoverContent>
-          </Popover>
-        </div>
+                </div>
+                <div className="flex items-center justify-between text-xs gap-4">
+                  <span className="text-muted-foreground">Approved Variations</span>
+                  <span className="tabular-nums text-muted-foreground">
+                    {financials.approvedVariationsTotal > 0
+                      ? `+${formatCurrency(financials.approvedVariationsTotal)}`
+                      : <span className="text-muted-foreground/50">—</span>}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-xs gap-4">
+                  <span className="text-muted-foreground">Allowances Budget</span>
+                  <span className="tabular-nums text-muted-foreground">
+                    {financials.allowancesTotal > 0
+                      ? formatCurrency(financials.allowancesTotal)
+                      : <span className="text-muted-foreground/50">—</span>}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
 
-        {/* Right — summary stats */}
-        {!invoicesLoading && invoices.length > 0 && (
-          <div className="flex items-center gap-4 text-[11px]">
-            {/* Invoices count */}
-            <div className="flex flex-col items-end">
-              <span className="text-muted-foreground">Invoices</span>
-              <span className="font-semibold tabular-nums">{summary.count}</span>
-            </div>
-            <div className="w-px h-5 bg-border" />
-            {/* Paid % + amount */}
-            <div className="flex flex-col items-end">
-              <span className="text-emerald-500 font-semibold tabular-nums">{paidPct}%</span>
-              <span className="text-muted-foreground tabular-nums">{formatCurrency(paid)}</span>
-            </div>
-            <div className="w-px h-5 bg-border" />
-            {/* Invoiced */}
-            <div className="flex flex-col items-end">
-              <span className="text-muted-foreground">Invoiced</span>
-              <span className="font-semibold tabular-nums">{formatCurrency(invoiced)}</span>
-            </div>
-            <div className="w-px h-5 bg-border" />
-            {/* Remaining */}
-            <div className="flex flex-col items-end">
-              <span className="text-muted-foreground">Remaining</span>
-              <span
-                className={cn(
-                  "font-semibold tabular-nums",
-                  remaining <= 0 ? "text-emerald-600" : "text-foreground"
-                )}
-              >
-                {formatCurrency(remaining)}
+          {/* Right zone — Paid / Invoiced / Remaining stats */}
+          <div className={cn(
+            "flex-1 flex items-center py-3 gap-0",
+            hasProjectContext ? "justify-end" : "justify-center"
+          )}>
+            {/* Paid */}
+            <div className="flex flex-col items-center px-6">
+              <span className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-medium mb-1">
+                Paid
+              </span>
+              <span className="text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                {financials.paidPct}%
+              </span>
+              <span className="text-xs tabular-nums text-muted-foreground mt-0.5">
+                {formatCurrency(financials.paidTotal)}
               </span>
             </div>
+
+            <div className="w-px self-stretch bg-border my-3" />
+
+            {/* Invoiced */}
+            <div className="flex flex-col items-center px-6">
+              <span className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-medium mb-1">
+                Invoiced
+              </span>
+              <span className="text-2xl font-bold tabular-nums">
+                {financials.invoicedPct}%
+              </span>
+              <span className="text-xs tabular-nums text-muted-foreground mt-0.5">
+                {formatCurrency(financials.invoicedTotal)}
+              </span>
+            </div>
+
+            <div className="w-px self-stretch bg-border my-3" />
+
+            {/* Remaining */}
+            <div className="flex flex-col items-center px-6">
+              <span className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-medium mb-1">
+                Remaining
+              </span>
+              <span className={cn(
+                "text-2xl font-bold tabular-nums",
+                financials.balanceTotal <= 0
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : financials.paidPct > 0
+                  ? "text-amber-500 dark:text-amber-400"
+                  : "text-foreground"
+              )}>
+                {financials.remainingPct}%
+              </span>
+              <span className="text-xs tabular-nums text-muted-foreground mt-0.5">
+                {formatCurrency(financials.balanceTotal)}
+              </span>
+            </div>
+
+            {/* Invoice count chip */}
+            <div className="w-px self-stretch bg-border my-3 ml-2" />
+            <div className="flex flex-col items-center px-5">
+              <span className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-medium mb-1">
+                Invoices
+              </span>
+              <span className="text-2xl font-bold tabular-nums">
+                {financials.count}
+              </span>
+              <span className="text-xs text-muted-foreground/60 mt-0.5">total</span>
+            </div>
           </div>
-        )}
+        </div>
+      )}
+
+      {/* Row 3 — Search + Filter */}
+      <div className="h-9 bg-background flex items-center px-3 border-b border-border flex-shrink-0 gap-2">
+        <div className="relative w-44">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+          <Input
+            placeholder="Search invoices…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-7 pr-2 h-6 text-xs"
+            data-testid="input-search"
+          />
+        </div>
+        <Popover open={statusPopoverOpen} onOpenChange={setStatusPopoverOpen}>
+          <PopoverTrigger asChild>
+            <button
+              className={cn(
+                "h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1",
+                selectedStatus !== "all" && "border-[#bba7db] text-[#bba7db] bg-[#bba7db]/5"
+              )}
+              data-testid="filter-status-popover"
+            >
+              <span>
+                {selectedStatus === "all"
+                  ? "Status"
+                  : STATUS_OPTIONS.find((s) => s.value === selectedStatus)?.label}
+              </span>
+              {selectedStatus !== "all" && (
+                <span
+                  className="ml-0.5 text-[10px] text-[#bba7db] cursor-pointer"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedStatus("all");
+                  }}
+                >
+                  ×
+                </span>
+              )}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-44 p-1.5" align="start">
+            {STATUS_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => {
+                  setSelectedStatus(opt.value);
+                  setStatusPopoverOpen(false);
+                }}
+                className={cn(
+                  "w-full text-left px-2 py-1.5 text-sm rounded-md flex items-center justify-between hover-elevate",
+                  selectedStatus === opt.value && "bg-[#bba7db]/10 text-[#bba7db] font-medium"
+                )}
+                data-testid={`filter-status-${opt.value}`}
+              >
+                <span>{opt.label}</span>
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {statusCounts[opt.value] ?? 0}
+                </span>
+              </button>
+            ))}
+          </PopoverContent>
+        </Popover>
       </div>
 
       {/* Content */}
