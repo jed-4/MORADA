@@ -22,7 +22,6 @@ import {
   AlertCircle,
   FileText,
   Loader2,
-  Lock,
   RefreshCw,
   Columns3,
   ChevronUp,
@@ -556,82 +555,92 @@ export default function ClientInvoices() {
 
       {/* Row 2 — Financial summary panel */}
       {!invoicesLoading && (
-        <div className="bg-background border-b border-border flex items-stretch px-4 flex-shrink-0">
+        <div className="bg-[#bba7db]/10 border-b border-[#bba7db]/20 flex items-center px-5 py-3 gap-8 flex-shrink-0 flex-wrap">
 
-          {/* Left zone — project value breakdown */}
+          {/* Left — total project value: big number first, label below */}
           {hasProjectContext && (
-            <div className="pr-6 border-r border-border flex flex-col justify-center py-3 min-w-[220px] mr-6">
-              <p className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-medium">
-                Total Project Value
-              </p>
-              <p className="text-2xl font-bold tabular-nums mt-0.5">
-                {formatCurrency(financials.projectTotal)}
-              </p>
-              <div className="mt-2.5 space-y-1">
-                <div className="flex items-center justify-between text-xs gap-4">
-                  <span className="text-muted-foreground flex items-center gap-1">
-                    <Lock className="w-2.5 h-2.5 flex-shrink-0" />
-                    Contract Price
-                  </span>
+            <>
+              <div className="flex flex-col">
+                <span className="text-2xl font-bold tabular-nums leading-tight">
+                  {formatCurrency(financials.projectTotal)}
+                </span>
+                <span className="text-[11px] text-muted-foreground mt-0.5">Total</span>
+              </div>
+
+              {/* Middle — breakdown lines with dot separators */}
+              <div className="flex flex-col gap-0.5 text-xs">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-muted-foreground">Contract Price</span>
+                  <span className="text-muted-foreground/40">·</span>
                   <span className="tabular-nums font-medium">
                     {financials.contractPriceCents > 0
                       ? formatCurrency(financials.contractPriceCents)
-                      : <span className="text-muted-foreground/60 italic text-[11px]">not set</span>}
+                      : <span className="text-muted-foreground/60 italic">not set</span>}
                   </span>
                 </div>
-                <div className="flex items-center justify-between text-xs gap-4">
-                  <span className="text-muted-foreground">Approved Variations</span>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-muted-foreground">Variations</span>
+                  <span className="text-muted-foreground/40">·</span>
                   <span className="tabular-nums">
                     {financials.approvedVariationsTotal > 0
                       ? <span className="text-emerald-600 dark:text-emerald-400">+{formatCurrency(financials.approvedVariationsTotal)}</span>
                       : <span className="text-muted-foreground/50">—</span>}
                   </span>
                 </div>
-                <div className="flex items-center justify-between text-xs gap-4">
-                  <span className="text-muted-foreground">Allowances Variation</span>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-muted-foreground">Allowances</span>
+                  <span className="text-muted-foreground/40">·</span>
                   <span className="tabular-nums">
                     {financials.allowancesTotal === 0
                       ? <span className="text-muted-foreground/50">—</span>
-                      : financials.allowancesVariation > 0
-                      ? <span className="text-amber-600 dark:text-amber-400">+{formatCurrency(financials.allowancesVariation)}</span>
-                      : financials.allowancesVariation < 0
-                      ? <span className="text-emerald-600 dark:text-emerald-400">{formatCurrency(financials.allowancesVariation)}</span>
+                      : financials.allowancesVariation !== 0
+                      ? <span className={financials.allowancesVariation > 0 ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"}>
+                          {financials.allowancesVariation > 0 ? "+" : ""}{formatCurrency(financials.allowancesVariation)}
+                        </span>
                       : <span className="text-muted-foreground">{formatCurrency(financials.allowancesTotal)}</span>}
                   </span>
                 </div>
               </div>
-            </div>
+
+              <div className="w-px self-stretch bg-[#bba7db]/30 mx-1" />
+            </>
           )}
 
-          {/* Right zone — stat blocks */}
-          <div className={cn("flex-1 flex items-center py-3 gap-3", hasProjectContext ? "justify-end" : "justify-center")}>
-            <div className="bg-muted/40 rounded-lg px-5 py-2.5 flex flex-col items-center min-w-[100px]">
-              <span className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-medium mb-1">Paid</span>
-              <span className="text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{financials.paidPct}%</span>
-              <span className="text-xs tabular-nums text-muted-foreground mt-0.5">{formatCurrency(financials.paidTotal)}</span>
-            </div>
-
-            <div className="bg-muted/40 rounded-lg px-5 py-2.5 flex flex-col items-center min-w-[100px]">
-              <span className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-medium mb-1">Invoiced</span>
-              <span className="text-2xl font-bold tabular-nums">{financials.invoicedPct}%</span>
-              <span className="text-xs tabular-nums text-muted-foreground mt-0.5">{formatCurrency(financials.invoicedTotal)}</span>
-            </div>
-
-            <div className="bg-muted/40 rounded-lg px-5 py-2.5 flex flex-col items-center min-w-[100px]">
-              <span className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-medium mb-1">Remaining</span>
-              <span className={cn(
-                "text-2xl font-bold tabular-nums",
-                financials.balanceTotal <= 0 ? "text-emerald-600 dark:text-emerald-400"
-                : financials.paidPct > 0 ? "text-amber-500 dark:text-amber-400"
-                : "text-foreground"
-              )}>{financials.remainingPct}%</span>
-              <span className="text-xs tabular-nums text-muted-foreground mt-0.5">{formatCurrency(financials.balanceTotal)}</span>
-            </div>
-
-            <div className="bg-muted/40 rounded-lg px-5 py-2.5 flex flex-col items-center min-w-[80px]">
-              <span className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-medium mb-1">Invoices</span>
-              <span className="text-2xl font-bold tabular-nums">{financials.count}</span>
-              <span className="text-xs text-muted-foreground/60 mt-0.5">total</span>
+          {/* Right — invoices stats: group label + compact columns */}
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] uppercase tracking-widest font-medium text-muted-foreground/70">Invoices</span>
+            <div className="flex items-end gap-6">
+              <div className="flex flex-col">
+                <span className="text-[10px] text-muted-foreground">Paid</span>
+                <span className="text-base font-bold tabular-nums text-emerald-600 dark:text-emerald-400 leading-tight">
+                  {formatCurrency(financials.paidTotal)}
+                </span>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[10px] text-muted-foreground">Invoiced</span>
+                <span className="text-base font-bold tabular-nums leading-tight">
+                  {formatCurrency(financials.invoicedTotal)}
+                </span>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[10px] text-muted-foreground">Remaining</span>
+                <span className={cn(
+                  "text-base font-bold tabular-nums leading-tight",
+                  financials.balanceTotal <= 0
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : financials.paidTotal > 0
+                    ? "text-amber-600 dark:text-amber-400"
+                    : "text-foreground"
+                )}>
+                  {formatCurrency(financials.balanceTotal)}
+                </span>
+              </div>
+              {!hasProjectContext && (
+                <div className="flex flex-col">
+                  <span className="text-[10px] text-muted-foreground">Count</span>
+                  <span className="text-base font-bold tabular-nums leading-tight">{financials.count}</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
