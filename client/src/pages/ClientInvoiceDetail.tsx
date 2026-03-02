@@ -150,6 +150,7 @@ const invoiceFormSchema = z.object({
   dueDate: z.date().optional(),
   introductionText: z.string().optional(),
   closingText: z.string().optional(),
+  termsAndConditions: z.string().optional(),
   markupPercent: z.number().optional(),
 });
 
@@ -244,7 +245,7 @@ export default function ClientInvoiceDetail() {
     queryKey: ["/api/xero/status"],
   });
 
-  const { data: companySettings } = useQuery<{ termsAndConditions?: string; companyName?: string; address?: string }>({
+  const { data: companySettings } = useQuery<{ termsAndConditions?: string; termsTemplates?: Array<{ id: string; name: string; content: string }>; companyName?: string; address?: string }>({
     queryKey: ["/api/company-settings"],
   });
 
@@ -353,6 +354,7 @@ export default function ClientInvoiceDetail() {
       dueDate: undefined,
       introductionText: "",
       closingText: "",
+      termsAndConditions: "",
       markupPercent: undefined,
     },
   });
@@ -380,6 +382,7 @@ export default function ClientInvoiceDetail() {
         dueDate: invoice.dueDate ? new Date(invoice.dueDate) : undefined,
         introductionText: invoice.introductionText || "",
         closingText: invoice.closingText || "",
+        termsAndConditions: (invoice as any).termsAndConditions || "",
         markupPercent: invoice.markupPercent || undefined,
       });
       // Restore column config
@@ -645,6 +648,7 @@ export default function ClientInvoiceDetail() {
     markupPercent: data.markupPercent,
     introductionText: data.introductionText,
     closingText: data.closingText,
+    termsAndConditions: data.termsAndConditions || null,
     subtotal: Math.round(calculateSubtotal() * 100),
     markupAmount: Math.round(calculateMarkup() * 100),
     gstAmount: Math.round(calculateGST() * 100),
@@ -2259,12 +2263,12 @@ export default function ClientInvoiceDetail() {
                             </span>
                           </div>
                         )}
-                        <div className="border-t pt-2 mt-2 space-y-1.5">
+                        <div className="border-t border-border/30 pt-2 mt-2 space-y-1.5">
                           <div className="flex justify-between text-sm">
                             <span className="text-muted-foreground">Amount ex GST</span>
                             <span className="font-medium tabular-nums">{formatCurrency(amountExTax())}</span>
                           </div>
-                          <div className="flex justify-between text-sm">
+                          <div className="border-t border-border/30 pt-1.5 flex justify-between text-sm">
                             <span className="text-muted-foreground">GST (10%)</span>
                             <span className="font-medium tabular-nums">{formatCurrency(amountTax())}</span>
                           </div>
@@ -2383,15 +2387,64 @@ export default function ClientInvoiceDetail() {
                     )}
                   </div>
                   {!termsCollapsed && (
-                    <div className="px-4 py-3">
-                      {companySettings?.termsAndConditions ? (
-                        <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                          {companySettings.termsAndConditions}
-                        </p>
-                      ) : (
-                        <p className="text-sm text-muted-foreground italic">
-                          No terms set — go to Company Settings &rsaquo; Templates &rsaquo; Terms &amp; Conditions to add your standard terms.
-                        </p>
+                    <div className="px-4 py-3 space-y-2">
+                      {/* Template selector */}
+                      {companySettings?.termsTemplates && companySettings.termsTemplates.length > 0 && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground flex-shrink-0">Load template:</span>
+                          <Select
+                            value=""
+                            onValueChange={(id) => {
+                              const tpl = companySettings.termsTemplates!.find(t => t.id === id);
+                              if (tpl) form.setValue("termsAndConditions", tpl.content);
+                            }}
+                          >
+                            <SelectTrigger className="h-7 text-xs flex-1">
+                              <SelectValue placeholder="Choose a template..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {companySettings.termsTemplates.map(tpl => (
+                                <SelectItem key={tpl.id} value={tpl.id}>{tpl.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                      {/* Editable T&C textarea */}
+                      <FormField
+                        control={form.control}
+                        name="termsAndConditions"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormControl>
+                              <Textarea
+                                {...field}
+                                rows={8}
+                                placeholder={
+                                  companySettings?.termsTemplates && companySettings.termsTemplates.length > 0
+                                    ? "Select a template above, or type your terms and conditions..."
+                                    : companySettings?.termsAndConditions
+                                    ? "Load from company defaults or type custom terms..."
+                                    : "Type the terms and conditions for this invoice..."
+                                }
+                                className="text-sm resize-y"
+                                data-testid="textarea-terms-and-conditions"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      {/* Load from company defaults */}
+                      {companySettings?.termsAndConditions && !form.watch("termsAndConditions") && (
+                        <button
+                          type="button"
+                          onClick={() => form.setValue("termsAndConditions", companySettings.termsAndConditions!)}
+                          className="text-xs text-[#bba7db] hover:underline"
+                          data-testid="button-load-company-terms"
+                        >
+                          Load company default terms
+                        </button>
                       )}
                     </div>
                   )}

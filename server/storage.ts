@@ -637,6 +637,7 @@ export interface IStorage {
 
   // Invoice-Variation Junction Table
   getInvoiceVariations(invoiceId: string): Promise<InvoiceVariation[]>;
+  getInvoiceVariationsByProject(projectId: string): Promise<Array<{ variationId: string; invoiceId: string; invoiceNumber: string | null }>>;
   createInvoiceVariation(data: InsertInvoiceVariation): Promise<InvoiceVariation>;
   updateInvoiceVariation(id: string, data: Partial<InsertInvoiceVariation>): Promise<InvoiceVariation | undefined>;
   deleteInvoiceVariation(id: string): Promise<boolean>;
@@ -12663,6 +12664,24 @@ export class DbStorage implements IStorage {
         .where(eq(schema.invoiceVariations.invoiceId, invoiceId));
     } catch (error) {
       console.error("Database error in getInvoiceVariations:", error);
+      throw error;
+    }
+  }
+
+  async getInvoiceVariationsByProject(projectId: string): Promise<Array<{ variationId: string; invoiceId: string; invoiceNumber: string | null }>> {
+    try {
+      const rows = await db
+        .select({
+          variationId: schema.invoiceVariations.variationId,
+          invoiceId: schema.invoiceVariations.invoiceId,
+          invoiceNumber: schema.clientInvoices.invoiceNumber,
+        })
+        .from(schema.invoiceVariations)
+        .innerJoin(schema.clientInvoices, eq(schema.invoiceVariations.invoiceId, schema.clientInvoices.id))
+        .where(eq(schema.clientInvoices.projectId, projectId));
+      return rows;
+    } catch (error) {
+      console.error("Database error in getInvoiceVariationsByProject:", error);
       throw error;
     }
   }

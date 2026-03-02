@@ -992,6 +992,7 @@ export const companySettings = pgTable("company_settings", {
   
   // Client invoice terms & conditions (company-wide default)
   termsAndConditions: text("terms_and_conditions"),
+  termsTemplates: jsonb("terms_templates").default([]), // Array of { id, name, content } T&C templates
   
   // Insurance expiry reminder settings
   insuranceReminderRoleId: varchar("insurance_reminder_role_id").references(() => userRoles.id), // Which role receives insurance expiry reminders (defaults to General Manager)
@@ -1882,6 +1883,7 @@ export const variations = pgTable("variations", {
   balanceAmount: integer("balance_amount").notNull().default(0), // Balance amount in cents
   status: text("status").notNull().default("draft"), // "draft" | "action" | "pending" | "approved" | "rejected"
   relatedTo: text("related_to"), // Reference to related item
+  isSeen: boolean("is_seen").notNull().default(false), // Whether the client has seen/acknowledged this variation
   approvedBy: varchar("approved_by").references(() => users.id),
   approvedDate: timestamp("approved_date"),
   rejectionReason: text("rejection_reason"),
@@ -1973,7 +1975,6 @@ export const insertClientInvoiceSchema = createInsertSchema(clientInvoices).omit
   id: true,
   createdAt: true,
   updatedAt: true,
-  termsAndConditions: true,
 }).extend({
   invoiceNumber: z.string().optional().nullable(),
   name: z.string().min(1, "Name is required"),

@@ -10922,6 +10922,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/invoice-variations/by-project", async (req, res) => {
+    try {
+      const { projectId } = req.query as { projectId?: string };
+      if (!projectId) return res.status(400).json({ error: "projectId required" });
+      const rows = await storage.getInvoiceVariationsByProject(projectId);
+      res.json(rows);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch invoice variations by project" });
+    }
+  });
+
   app.patch("/api/invoice-variations/:id", async (req, res) => {
     try {
       const validationResult = insertInvoiceVariationSchema.partial().safeParse(req.body);

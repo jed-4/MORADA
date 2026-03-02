@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useMemo, useRef } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useParams } from "wouter";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { Badge } from "@/components/ui/badge";
@@ -31,11 +31,14 @@ import {
   Settings2,
   GripVertical,
   Lock,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { type Variation, type Project } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 const STATUS_OPTIONS = [
   { key: "all", label: "All" },
@@ -47,22 +50,30 @@ const STATUS_OPTIONS = [
 ];
 
 const ALL_COLUMNS = [
-  { id: "number", label: "Number", required: true },
-  { id: "name", label: "Name", required: true },
-  { id: "project", label: "Project", required: false },
-  { id: "status", label: "Status", required: false },
-  { id: "total", label: "Total", required: false },
-  { id: "deadline", label: "Approval Deadline", required: false },
+  { id: "number", label: "Number", required: true, defaultWidth: 80 },
+  { id: "name", label: "Name", required: true, defaultWidth: 200 },
+  { id: "project", label: "Project", required: false, defaultWidth: 150 },
+  { id: "status", label: "Status", required: false, defaultWidth: 110 },
+  { id: "total", label: "Total", required: false, defaultWidth: 90 },
+  { id: "paid", label: "Paid", required: false, defaultWidth: 90 },
+  { id: "balance", label: "Balance Due", required: false, defaultWidth: 100 },
+  { id: "seen", label: "Seen", required: false, defaultWidth: 60 },
+  { id: "deadline", label: "Approval Deadline", required: false, defaultWidth: 120 },
+  { id: "relatedItems", label: "Related", required: false, defaultWidth: 150 },
 ];
 
-const STORAGE_KEY = "variations-column-config";
+const STORAGE_KEY = "variations-column-config-v2";
 
 function loadColumnConfig() {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) return JSON.parse(saved);
   } catch {}
-  return ALL_COLUMNS.map((col, i) => ({ id: col.id, visible: true, order: i }));
+  return ALL_COLUMNS.map((col, i) => ({
+    id: col.id,
+    visible: !["paid", "balance", "seen", "deadline", "relatedItems"].includes(col.id),
+    order: i,
+  }));
 }
 
 function saveColumnConfig(config: { id: string; visible: boolean; order: number }[]) {
@@ -85,6 +96,15 @@ export default function Variations() {
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
 
+  const headerScrollRef = useRef<HTMLDivElement>(null);
+  const bodyScrollRef = useRef<HTMLDivElement>(null);
+
+  const syncHeaderScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    if (headerScrollRef.current) {
+      headerScrollRef.current.scrollLeft = e.currentTarget.scrollLeft;
+    }
+  };
+
   const queryParams: Record<string, string> = {};
   if (projectIdFromUrl) queryParams.projectId = projectIdFromUrl;
   if (selectedStatus !== "all") queryParams.status = selectedStatus;
@@ -103,6 +123,35 @@ export default function Variations() {
 
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
+  });
+
+  const { data: invoiceLinks = [] } = useQuery<Array<{ variationId: string; invoiceId: string; invoiceNumber: string | null }>>({
+    queryKey: ["/api/invoice-variations/by-project", projectIdFromUrl],
+    queryFn: async () => {
+      if (!projectIdFromUrl) return [];
+      const res = await fetch(`/api/invoice-variations/by-project?projectId=${projectIdFromUrl}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!projectIdFromUrl,
+  });
+
+  const invoiceLinkMap = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    for (const link of invoiceLinks) {
+      if (!map[link.variationId]) map[link.variationId] = [];
+      if (link.invoiceNumber) map[link.variationId].push(link.invoiceNumber);
+    }
+    return map;
+  }, [invoiceLinks]);
+
+  const toggleSeenMutation = useMutation({
+    mutationFn: async ({ id, isSeen }: { id: string; isSeen: boolean }) => {
+      return apiRequest(`/api/variations/${id}`, "PATCH", { isSeen });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/variations"] });
+    },
   });
 
   const getProject = (projectId: string) => projects.find((p) => p.id === projectId);
@@ -185,6 +234,7 @@ export default function Variations() {
 
   const isColVisible = (id: string) => {
     if (id === "project" && projectIdFromUrl) return false;
+    if (id === "relatedItems" && !projectIdFromUrl) return false;
     const col = columnConfig.find((c) => c.id === id);
     const def = ALL_COLUMNS.find((d) => d.id === id);
     if (!col || !def) return false;
@@ -223,12 +273,95 @@ export default function Variations() {
     setDragOverId(null);
   };
 
-  const orderedColumns = [...columnConfig].sort((a, b) => a.order - b.order);
+  const orderedColumns = [...columnConfig].sort((a, b) => a.order - b.order).filter(c => isColVisible(c.id));
 
-  const colSpan = orderedColumns.filter((c) => {
-    if (c.id === "project" && projectIdFromUrl) return false;
-    return true;
-  }).length;
+  const renderCell = (col: { id: string }, variation: Variation & { isSeen?: boolean }) => {
+    switch (col.id) {
+      case "number":
+        return (
+          <TableCell key="number" style={{ minWidth: 80, width: 80 }} className="text-xs font-medium px-2 py-1" data-testid={`cell-number-${variation.id}`}>
+            {variation.variationNumber}
+          </TableCell>
+        );
+      case "name":
+        return (
+          <TableCell key="name" style={{ minWidth: 200, width: 200 }} className="text-xs px-2 py-1" data-testid={`cell-name-${variation.id}`}>
+            <span className="line-clamp-1">{variation.name}</span>
+          </TableCell>
+        );
+      case "project":
+        return (
+          <TableCell key="project" style={{ minWidth: 150, width: 150 }} className="text-xs px-2 py-1" data-testid={`cell-project-${variation.id}`}>
+            <div className="flex items-center gap-1.5">
+              <ProjectIcon
+                icon={getProject(variation.projectId)?.icon || "Briefcase"}
+                color={getProject(variation.projectId)?.color || "#3b82f6"}
+                className="w-3 h-3 flex-shrink-0"
+              />
+              <span className="truncate">{getProjectName(variation.projectId)}</span>
+            </div>
+          </TableCell>
+        );
+      case "status":
+        return (
+          <TableCell key="status" style={{ minWidth: 110, width: 110 }} className="px-2 py-1" data-testid={`cell-status-${variation.id}`}>
+            {getStatusBadge(variation.status, "sm")}
+          </TableCell>
+        );
+      case "total":
+        return (
+          <TableCell key="total" style={{ minWidth: 90, width: 90 }} className="text-xs font-medium text-right px-2 py-1" data-testid={`cell-total-${variation.id}`}>
+            {formatCurrency(variation.totalAmount)}
+          </TableCell>
+        );
+      case "paid":
+        return (
+          <TableCell key="paid" style={{ minWidth: 90, width: 90 }} className="text-xs text-right px-2 py-1 text-muted-foreground" data-testid={`cell-paid-${variation.id}`}>
+            {variation.paidAmount > 0 ? formatCurrency(variation.paidAmount) : "-"}
+          </TableCell>
+        );
+      case "balance":
+        return (
+          <TableCell key="balance" style={{ minWidth: 100, width: 100 }} className={cn("text-xs font-medium text-right px-2 py-1", variation.balanceAmount > 0 ? "text-destructive" : "text-emerald-600 dark:text-emerald-400")} data-testid={`cell-balance-${variation.id}`}>
+            {formatCurrency(variation.balanceAmount)}
+          </TableCell>
+        );
+      case "seen":
+        return (
+          <TableCell key="seen" style={{ minWidth: 60, width: 60 }} className="px-2 py-1 text-center" data-testid={`cell-seen-${variation.id}`}>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleSeenMutation.mutate({ id: variation.id, isSeen: !(variation as any).isSeen });
+              }}
+              className={cn("p-0.5 rounded hover-elevate", (variation as any).isSeen ? "text-foreground" : "text-muted-foreground/40")}
+              data-testid={`button-seen-${variation.id}`}
+            >
+              {(variation as any).isSeen
+                ? <Eye className="w-3.5 h-3.5" />
+                : <EyeOff className="w-3.5 h-3.5" />}
+            </button>
+          </TableCell>
+        );
+      case "deadline":
+        return (
+          <TableCell key="deadline" style={{ minWidth: 120, width: 120 }} className="text-xs text-muted-foreground px-2 py-1" data-testid={`cell-deadline-${variation.id}`}>
+            {formatDate(variation.approvalDeadline)}
+          </TableCell>
+        );
+      case "relatedItems": {
+        const links = invoiceLinkMap[variation.id] || [];
+        return (
+          <TableCell key="relatedItems" style={{ minWidth: 150, width: 150 }} className="text-xs text-muted-foreground px-2 py-1" data-testid={`cell-related-${variation.id}`}>
+            {links.length > 0 ? links.join(", ") : "-"}
+          </TableCell>
+        );
+      }
+      default:
+        return null;
+    }
+  };
 
   const KanbanView = () => (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 p-3" data-testid="kanban-view">
@@ -301,7 +434,7 @@ export default function Variations() {
       {/* ── Unified header card ── */}
       <div className="mx-3 mt-3 rounded-lg border border-border bg-card flex-shrink-0 overflow-hidden">
 
-        {/* Row 1 — Title & Actions */}
+        {/* Row 1 — Title & Add button */}
         <div className="h-8 flex items-center justify-between px-3 border-b border-border/50">
           <div className="flex items-center gap-2">
             <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber-400/70" />
@@ -309,29 +442,14 @@ export default function Variations() {
               {pageTitle}
             </h2>
           </div>
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => setCurrentView(currentView === "kanban" ? "table" : "kanban")}
-              className={cn(
-                "h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1",
-                currentView === "kanban"
-                  ? "bg-[#bba7db] text-white border-[#bba7db]/20"
-                  : "hover-elevate active-elevate-2"
-              )}
-              data-testid="button-kanban-view"
-            >
-              <Columns3 className="w-3 h-3" />
-              <span>Kanban</span>
-            </button>
-            <button
-              className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
-              onClick={handleAddVariation}
-              data-testid="button-add-variation"
-            >
-              <Plus className="w-3 h-3" />
-              <span>Add Variation</span>
-            </button>
-          </div>
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+            onClick={handleAddVariation}
+            data-testid="button-add-variation"
+          >
+            <Plus className="w-3 h-3" />
+            <span>Add Variation</span>
+          </button>
         </div>
 
         {/* Row 2 — Status tabs */}
@@ -366,8 +484,8 @@ export default function Variations() {
         </div>
 
         {/* Row 3 — Lilac summary strip */}
-        <div className="bg-[#bba7db]/10 flex items-center px-5 py-2 gap-6 flex-wrap">
-          <div className="flex items-center gap-6 text-[10px] text-muted-foreground ml-auto">
+        <div className="bg-[#bba7db]/10 flex items-center px-5 py-2">
+          <div className="flex items-center gap-4 text-[10px] text-muted-foreground ml-auto">
             <span data-testid="text-total-action">
               Action <span className="font-medium text-foreground ml-1">{formatCurrency(statusTotals.action)}</span>
             </span>
@@ -394,68 +512,54 @@ export default function Variations() {
         ) : (
           <div className="border border-border rounded-md bg-background overflow-hidden">
 
-            {/* Search / column picker row — sticky top */}
+            {/* Search / controls row — sticky top */}
             <div className="h-9 flex items-center px-3 border-b border-border/50 gap-2 bg-background sticky top-0 z-20">
-              {/* Status filter */}
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button
-                    className={cn(
-                      "h-6 w-auto px-2 py-0 text-xs border rounded-md flex items-center gap-1",
-                      selectedStatus !== "all"
-                        ? "bg-[#bba7db]/10 text-[#bba7db] border-[#bba7db]/30 font-medium"
-                        : "hover-elevate active-elevate-2"
-                    )}
-                    data-testid="filter-status-popover"
-                  >
-                    <span>Status</span>
-                    {selectedStatus !== "all" && (
-                      <Badge variant="destructive" className="ml-1 h-3 w-3 p-0 text-[10px] flex items-center justify-center">
-                        1
-                      </Badge>
-                    )}
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent className="w-48 p-2" align="start">
-                  <div className="space-y-1">
-                    {STATUS_OPTIONS.map((status) => (
-                      <button
-                        key={status.key}
-                        onClick={() => setSelectedStatus(status.key)}
-                        className={cn(
-                          "w-full text-left px-2 py-1.5 text-sm rounded transition-colors flex items-center justify-between hover-elevate",
-                          selectedStatus === status.key ? "bg-[#bba7db]/10 text-[#bba7db] font-medium" : ""
-                        )}
-                        data-testid={`filter-status-${status.key}`}
-                      >
-                        <span>{status.label}</span>
-                        {statusCounts[status.key as keyof typeof statusCounts] > 0 && (
-                          <span className="text-xs text-muted-foreground">
-                            {statusCounts[status.key as keyof typeof statusCounts]}
-                          </span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </PopoverContent>
-              </Popover>
+              {/* Kanban toggle — leftmost */}
+              <button
+                onClick={() => setCurrentView(currentView === "kanban" ? "table" : "kanban")}
+                className={cn(
+                  "h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 flex-shrink-0",
+                  currentView === "kanban"
+                    ? "bg-[#bba7db] text-white border-[#bba7db]/20"
+                    : "hover-elevate active-elevate-2"
+                )}
+                data-testid="button-kanban-view"
+              >
+                <Columns3 className="w-3 h-3" />
+                <span>Kanban</span>
+              </button>
 
-              {/* Column picker */}
+              <div className="w-px h-4 bg-border mx-0.5 flex-shrink-0" />
+
+              {/* Search — left, thin border */}
+              <div className="relative flex-shrink-0">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+                <Input
+                  placeholder="Search variations..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-7 pr-2 py-0 h-6 text-xs w-44 border border-border/50"
+                  data-testid="variations-search-input"
+                />
+              </div>
+
+              {/* Column picker — far right */}
               <Popover open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
                 <PopoverTrigger asChild>
                   <button
-                    className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2 border border-transparent"
+                    className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2 border border-transparent ml-auto flex-shrink-0"
                     data-testid="button-column-picker"
                   >
                     <Settings2 className="h-3.5 w-3.5 text-muted-foreground" />
                   </button>
                 </PopoverTrigger>
-                <PopoverContent className="w-52 p-3" align="start">
+                <PopoverContent className="w-52 p-3" align="end">
                   <p className="text-xs font-medium mb-2 text-muted-foreground">Columns — drag to reorder</p>
                   <div className="space-y-1">
-                    {orderedColumns.map((col) => {
+                    {[...columnConfig].sort((a, b) => a.order - b.order).map((col) => {
                       const def = ALL_COLUMNS.find((d) => d.id === col.id)!;
                       if (col.id === "project" && projectIdFromUrl) return null;
+                      if (col.id === "relatedItems" && !projectIdFromUrl) return null;
                       return (
                         <div
                           key={col.id}
@@ -468,7 +572,7 @@ export default function Variations() {
                             dragOverId === col.id ? "bg-accent" : "hover-elevate"
                           )}
                         >
-                          <GripVertical className="h-3 w-3 text-muted-foreground cursor-grab" />
+                          <GripVertical className="h-3 w-3 text-muted-foreground cursor-grab flex-shrink-0" />
                           <Checkbox
                             checked={def.required ? true : col.visible}
                             disabled={def.required}
@@ -478,42 +582,35 @@ export default function Variations() {
                           <span className={cn("flex-1 text-xs", def.required && "text-muted-foreground")}>
                             {def.label}
                           </span>
-                          {def.required && <Lock className="h-3 w-3 text-muted-foreground" />}
+                          {def.required && <Lock className="h-3 w-3 text-muted-foreground flex-shrink-0" />}
                         </div>
                       );
                     })}
                   </div>
                 </PopoverContent>
               </Popover>
-
-              {/* Search — right side */}
-              <div className="relative ml-auto">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-                <Input
-                  placeholder="Search variations..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-7 pr-2 py-0 h-6 text-xs w-48"
-                  data-testid="variations-search-input"
-                />
-              </div>
             </div>
 
-            {/* Column header — sticky below search row */}
-            <div className="overflow-x-hidden sticky top-9 z-10 border-b border-border bg-muted/50">
-              <Table>
+            {/* Column header — sticky below search row, synced scroll */}
+            <div
+              ref={headerScrollRef}
+              className="overflow-x-hidden sticky top-9 z-10 border-b border-border bg-muted/50"
+            >
+              <Table style={{ tableLayout: "fixed" }}>
                 <TableHeader>
                   <TableRow className="h-5 bg-muted/50 hover:bg-muted/50">
                     {orderedColumns.map((col) => {
-                      if (!isColVisible(col.id)) return null;
                       const def = ALL_COLUMNS.find((d) => d.id === col.id)!;
-                      const isRight = col.id === "total";
+                      const isRight = ["total", "paid", "balance"].includes(col.id);
+                      const isCenter = col.id === "seen";
                       return (
                         <TableHead
                           key={col.id}
+                          style={{ minWidth: def.defaultWidth, width: def.defaultWidth }}
                           className={cn(
                             "text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2",
-                            isRight && "text-right"
+                            isRight && "text-right",
+                            isCenter && "text-center"
                           )}
                           data-testid={`header-${col.id}`}
                         >
@@ -526,98 +623,55 @@ export default function Variations() {
               </Table>
             </div>
 
-            {/* Table body */}
-            <Table>
-              <TableBody>
-                {variationsLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={colSpan} className="text-center py-8">
-                      <span className="text-muted-foreground text-sm" data-testid="text-loading">Loading variations...</span>
-                    </TableCell>
-                  </TableRow>
-                ) : filteredVariations.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={colSpan} className="text-center py-8">
-                      <div className="flex flex-col items-center gap-3">
-                        <span className="text-muted-foreground text-sm" data-testid="text-no-variations">
-                          {variations.length === 0 ? "No variations found" : "No matching variations"}
-                        </span>
-                        {variations.length === 0 && (
-                          <button
-                            className="h-7 px-3 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
-                            onClick={handleAddVariation}
-                            data-testid="button-add-first-variation"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            Add First Variation
-                          </button>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  filteredVariations.map((variation) => (
-                    <TableRow
-                      key={variation.id}
-                      className="cursor-pointer hover-elevate h-9"
-                      onClick={() => handleRowClick(variation.id)}
-                      data-testid={`row-variation-${variation.id}`}
-                    >
-                      {orderedColumns.map((col) => {
-                        if (!isColVisible(col.id)) return null;
-                        switch (col.id) {
-                          case "number":
-                            return (
-                              <TableCell key="number" className="text-xs font-medium px-2 py-1" data-testid={`cell-number-${variation.id}`}>
-                                {variation.variationNumber}
-                              </TableCell>
-                            );
-                          case "name":
-                            return (
-                              <TableCell key="name" className="text-xs px-2 py-1" data-testid={`cell-name-${variation.id}`}>
-                                {variation.name}
-                              </TableCell>
-                            );
-                          case "project":
-                            return (
-                              <TableCell key="project" className="text-xs px-2 py-1" data-testid={`cell-project-${variation.id}`}>
-                                <div className="flex items-center gap-1.5">
-                                  <ProjectIcon
-                                    icon={getProject(variation.projectId)?.icon || "Briefcase"}
-                                    color={getProject(variation.projectId)?.color || "#3b82f6"}
-                                    className="w-3 h-3"
-                                  />
-                                  <span>{getProjectName(variation.projectId)}</span>
-                                </div>
-                              </TableCell>
-                            );
-                          case "status":
-                            return (
-                              <TableCell key="status" className="px-2 py-1" data-testid={`cell-status-${variation.id}`}>
-                                {getStatusBadge(variation.status, "sm")}
-                              </TableCell>
-                            );
-                          case "total":
-                            return (
-                              <TableCell key="total" className="text-xs font-medium text-right px-2 py-1" data-testid={`cell-total-${variation.id}`}>
-                                {formatCurrency(variation.totalAmount)}
-                              </TableCell>
-                            );
-                          case "deadline":
-                            return (
-                              <TableCell key="deadline" className="text-xs text-muted-foreground px-2 py-1" data-testid={`cell-deadline-${variation.id}`}>
-                                {formatDate(variation.approvalDeadline)}
-                              </TableCell>
-                            );
-                          default:
-                            return null;
-                        }
-                      })}
+            {/* Table body — horizontal scroll synced with header */}
+            <div
+              ref={bodyScrollRef}
+              onScroll={syncHeaderScroll}
+              className="overflow-x-auto"
+            >
+              <Table style={{ tableLayout: "fixed" }}>
+                <TableBody>
+                  {variationsLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={orderedColumns.length} className="text-center py-8">
+                        <span className="text-muted-foreground text-sm" data-testid="text-loading">Loading variations...</span>
+                      </TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
+                  ) : filteredVariations.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={orderedColumns.length} className="text-center py-8">
+                        <div className="flex flex-col items-center gap-3">
+                          <span className="text-muted-foreground text-sm" data-testid="text-no-variations">
+                            {variations.length === 0 ? "No variations found" : "No matching variations"}
+                          </span>
+                          {variations.length === 0 && (
+                            <button
+                              className="h-7 px-3 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
+                              onClick={handleAddVariation}
+                              data-testid="button-add-first-variation"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              Add First Variation
+                            </button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredVariations.map((variation) => (
+                      <TableRow
+                        key={variation.id}
+                        className="cursor-pointer hover-elevate h-9"
+                        onClick={() => handleRowClick(variation.id)}
+                        data-testid={`row-variation-${variation.id}`}
+                      >
+                        {orderedColumns.map((col) => renderCell(col, variation as any))}
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           </div>
         )}
       </div>
