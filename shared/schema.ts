@@ -1964,6 +1964,7 @@ export const clientInvoices = pgTable("client_invoices", {
   columnConfig: jsonb("column_config").default([]), // Array of { id, visible, order } for configurable invoice columns
   showAmountsIncTax: boolean("show_amounts_inc_tax").notNull().default(true), // Inc/exc GST toggle preference
   lineItemClaims: jsonb("line_item_claims").default({}), // Record<estimateItemId, claimPercent> for per-line-item claiming
+  contractClaimRows: jsonb("contract_claim_rows").default([]), // Array of { id, name, description, claimPercent } for progress payment claims
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -1992,6 +1993,12 @@ export const insertClientInvoiceSchema = createInsertSchema(clientInvoices).omit
   columnConfig: z.array(z.any()).optional().nullable(),
   showAmountsIncTax: z.boolean().default(true),
   lineItemClaims: z.record(z.string(), z.number()).optional().nullable(),
+  contractClaimRows: z.array(z.object({
+    id: z.string(),
+    name: z.string(),
+    description: z.string(),
+    claimPercent: z.number(),
+  })).optional().nullable(),
 });
 
 export type InsertClientInvoice = z.infer<typeof insertClientInvoiceSchema>;

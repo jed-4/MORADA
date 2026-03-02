@@ -304,6 +304,12 @@ export default function ClientInvoiceDetail() {
     enabled: !!selectedProjectId,
   });
 
+  const { data: projectInvoices = [] } = useQuery<ClientInvoice[]>({
+    queryKey: ["/api/client-invoices", selectedProjectId],
+    queryFn: () => fetch(`/api/client-invoices?projectId=${selectedProjectId}`).then(r => r.json()),
+    enabled: !!selectedProjectId,
+  });
+
   const { data: bills = [] } = useQuery<Bill[]>({
     queryKey: [`/api/bills?projectId=${selectedProjectId}`],
     enabled: !!selectedProjectId,
@@ -507,6 +513,15 @@ export default function ClientInvoiceDetail() {
 
   const calculateBillsTotal = () =>
     getSelectedBills().reduce((sum, b) => sum + b.total, 0);
+
+  const otherInvoicesUsedPercent = projectInvoices
+    .filter(inv => inv.id !== effectiveInvoiceId)
+    .reduce((sum, inv) => {
+      const rows = (inv as any).contractClaimRows as Array<{ claimPercent: number }> | null;
+      if (!rows || !Array.isArray(rows)) return sum;
+      return sum + rows.reduce((s, r) => s + (r.claimPercent || 0), 0);
+    }, 0);
+  const remainingClaimPercent = Math.max(0, 100 - otherInvoicesUsedPercent);
 
   const calculateCustomLinesSubtotal = () =>
     customLines.reduce((sum, item) => sum + item.totalPrice, 0);
@@ -966,24 +981,24 @@ export default function ClientInvoiceDetail() {
 
   const renderLineTableHeader = (_includeContractCols: boolean = false) => (
     <TableRow className="h-6 bg-muted/30">
-      {isColVisible("name") && <TableHead className="w-40 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal">Name</TableHead>}
-      {isColVisible("description") && <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal">Description</TableHead>}
+      {isColVisible("name") && <TableHead className="w-40 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Name</TableHead>}
+      {isColVisible("description") && <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Description</TableHead>}
       {isColVisible("claimPercent") && (
-        <TableHead className="text-right w-20 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal">Claim %</TableHead>
+        <TableHead className="text-right w-20 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Claim %</TableHead>
       )}
       {isColVisible("claimAmount") && (
-        <TableHead className="text-right w-28 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal">Claim $</TableHead>
+        <TableHead className="text-right w-28 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Claim $</TableHead>
       )}
       {isColVisible("amountExTax") && (
-        <TableHead className="text-right w-28 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal">Ex Tax</TableHead>
+        <TableHead className="text-right w-28 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Ex Tax</TableHead>
       )}
       {isColVisible("amountTax") && (
-        <TableHead className="text-right w-24 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal">Tax</TableHead>
+        <TableHead className="text-right w-24 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Tax</TableHead>
       )}
       {isColVisible("amountIncTax") && (
-        <TableHead className="text-right w-28 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal">Inc Tax</TableHead>
+        <TableHead className="text-right w-28 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Inc Tax</TableHead>
       )}
-      <TableHead className="w-8" />
+      <TableHead className="w-8 py-0" />
     </TableRow>
   );
 
@@ -1124,9 +1139,9 @@ export default function ClientInvoiceDetail() {
                           name="name"
                           render={({ field }) => (
                             <FormItem className="col-span-2">
-                              <FormLabel className="text-[11px] text-muted-foreground/70 uppercase tracking-wide font-medium">Invoice Name*</FormLabel>
+                              <FormLabel className="h-4 leading-none flex items-center text-[11px] text-muted-foreground/70 uppercase tracking-wide font-medium">Invoice Name*</FormLabel>
                               <FormControl>
-                                <Input {...field} data-testid="input-name" />
+                                <Input {...field} className="h-8 text-sm" data-testid="input-name" />
                               </FormControl>
                               <FormMessage />
                             </FormItem>
@@ -1138,7 +1153,7 @@ export default function ClientInvoiceDetail() {
                           name="invoiceNumber"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel className="flex items-center gap-1.5 text-[11px] text-muted-foreground/70 uppercase tracking-wide font-medium">
+                              <FormLabel className="h-4 leading-none flex items-center gap-1.5 text-[11px] text-muted-foreground/70 uppercase tracking-wide font-medium">
                                 Invoice Number
                                 {!isEditMode && (
                                   <Tooltip>
@@ -1180,6 +1195,7 @@ export default function ClientInvoiceDetail() {
                                   {...field}
                                   readOnly={isEditMode || !invoiceNumberOverride}
                                   className={cn(
+                                    "h-8 text-sm",
                                     !invoiceNumberOverride && !isEditMode
                                       ? "bg-muted text-muted-foreground cursor-default"
                                       : ""
@@ -1200,14 +1216,15 @@ export default function ClientInvoiceDetail() {
                           name="invoiceDate"
                           render={({ field }) => (
                             <FormItem className="flex flex-col">
-                              <FormLabel className="text-[11px] text-muted-foreground/70 uppercase tracking-wide font-medium">Invoice Date</FormLabel>
+                              <FormLabel className="h-4 leading-none flex items-center text-[11px] text-muted-foreground/70 uppercase tracking-wide font-medium">Invoice Date</FormLabel>
                               <Popover open={invoiceDateOpen} onOpenChange={setInvoiceDateOpen}>
                                 <PopoverTrigger asChild>
                                   <FormControl>
                                     <Button
                                       variant="outline"
+                                      size="sm"
                                       className={cn(
-                                        "justify-start text-left font-normal",
+                                        "justify-start text-left font-normal text-sm",
                                         !field.value && "text-muted-foreground"
                                       )}
                                       data-testid="button-invoice-date"
@@ -1244,14 +1261,15 @@ export default function ClientInvoiceDetail() {
                           name="dueDate"
                           render={({ field }) => (
                             <FormItem className="flex flex-col">
-                              <FormLabel className="text-[11px] text-muted-foreground/70 uppercase tracking-wide font-medium">Due Date</FormLabel>
+                              <FormLabel className="h-4 leading-none flex items-center text-[11px] text-muted-foreground/70 uppercase tracking-wide font-medium">Due Date</FormLabel>
                               <Popover open={dueDateOpen} onOpenChange={setDueDateOpen}>
                                 <PopoverTrigger asChild>
                                   <FormControl>
                                     <Button
                                       variant="outline"
+                                      size="sm"
                                       className={cn(
-                                        "justify-start text-left font-normal",
+                                        "justify-start text-left font-normal text-sm",
                                         !field.value && "text-muted-foreground"
                                       )}
                                       data-testid="button-due-date"
@@ -1377,6 +1395,11 @@ export default function ClientInvoiceDetail() {
                           )}
                         </div>
                         <div className="flex items-center gap-1.5">
+                          {calculateContractPrice() > 0 && (
+                            <span className="text-xs font-medium tabular-nums text-muted-foreground mr-1">
+                              {formatCurrency(calculateContractPrice() / 100)}
+                            </span>
+                          )}
                           {/* Column picker */}
                           <Popover open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
                             <PopoverTrigger asChild>
@@ -1589,17 +1612,24 @@ export default function ClientInvoiceDetail() {
                           </p>
                         )}
 
-                        {contractClaimRows.length < 5 && (
-                          <button
-                            type="button"
-                            onClick={addContractClaimRow}
-                            className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                            data-testid="button-add-claim-row"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            Add Claim Row
-                          </button>
-                        )}
+                        <div className="mt-1 flex items-center gap-3">
+                          {contractClaimRows.length < 5 && (
+                            <button
+                              type="button"
+                              onClick={addContractClaimRow}
+                              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                              data-testid="button-add-claim-row"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              Add Claim Row
+                            </button>
+                          )}
+                          {otherInvoicesUsedPercent > 0 && (
+                            <span className="text-xs text-muted-foreground/60">
+                              {remainingClaimPercent}% remaining across invoices
+                            </span>
+                          )}
+                        </div>
 
                         {contractClaimRows.length > 0 && (() => {
                           const claimAmt = calculateContractPrice() / 100;
@@ -1669,32 +1699,19 @@ export default function ClientInvoiceDetail() {
                                   const exTax = claimAmt / (1 + GST_RATE);
                                   const tax = claimAmt - exTax;
                                   return (
-                                    <TableRow key={variation.id}>
+                                    <TableRow key={variation.id} className="h-9">
                                       {isColVisible("name") && (
-                                        <TableCell className="text-sm font-medium">
-                                          <div className="flex items-center gap-2">
-                                            {variation.variationNumber}
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                setSelectedVariationIds((prev) =>
-                                                  prev.filter((id) => id !== variation.id)
-                                                );
-                                              }}
-                                              className="text-muted-foreground hover:text-destructive ml-auto"
-                                            >
-                                              <X className="h-3 w-3" />
-                                            </button>
-                                          </div>
+                                        <TableCell className="text-sm font-medium py-1">
+                                          {variation.variationNumber}
                                         </TableCell>
                                       )}
                                       {isColVisible("description") && (
-                                        <TableCell className="text-sm text-muted-foreground">
+                                        <TableCell className="text-sm text-muted-foreground py-1">
                                           {variation.name}
                                         </TableCell>
                                       )}
                                       {isColVisible("claimPercent") && (
-                                        <TableCell className="text-right">
+                                        <TableCell className="text-right py-1">
                                           <Input
                                             type="number"
                                             min="0"
@@ -1706,30 +1723,43 @@ export default function ClientInvoiceDetail() {
                                                 [variation.id]: parseInt(e.target.value) || 0,
                                               }))
                                             }
-                                            className="h-7 w-16 text-right text-sm"
+                                            className="h-7 w-16 text-right text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring ml-auto"
                                           />
                                         </TableCell>
                                       )}
                                       {isColVisible("claimAmount") && (
-                                        <TableCell className="text-right text-sm font-medium">
+                                        <TableCell className="text-right text-sm font-medium py-1">
                                           {formatCurrency(claimAmt)}
                                         </TableCell>
                                       )}
                                       {isColVisible("amountExTax") && (
-                                        <TableCell className="text-right text-sm">
+                                        <TableCell className="text-right text-sm py-1">
                                           {formatCurrency(exTax)}
                                         </TableCell>
                                       )}
                                       {isColVisible("amountTax") && (
-                                        <TableCell className="text-right text-sm">
+                                        <TableCell className="text-right text-sm py-1">
                                           {formatCurrency(tax)}
                                         </TableCell>
                                       )}
                                       {isColVisible("amountIncTax") && (
-                                        <TableCell className="text-right text-sm font-medium">
+                                        <TableCell className="text-right text-sm font-medium py-1">
                                           {formatCurrency(claimAmt)}
                                         </TableCell>
                                       )}
+                                      <TableCell className="py-1 w-8">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setSelectedVariationIds((prev) =>
+                                              prev.filter((id) => id !== variation.id)
+                                            );
+                                          }}
+                                          className="text-muted-foreground hover:text-destructive"
+                                        >
+                                          <X className="w-3.5 h-3.5" />
+                                        </button>
+                                      </TableCell>
                                     </TableRow>
                                   );
                                 })}
@@ -1807,35 +1837,24 @@ export default function ClientInvoiceDetail() {
                                   const exTax = claimAmt / (1 + GST_RATE);
                                   const tax = claimAmt - exTax;
                                   return (
-                                    <TableRow key={item.id}>
+                                    <TableRow key={item.id} className="h-9">
                                       {isColVisible("name") && (
-                                        <TableCell className="text-sm font-medium">
-                                          <div className="flex items-center gap-2">
+                                        <TableCell className="text-sm font-medium py-1">
+                                          <div className="flex items-center gap-1.5">
                                             {item.name}
                                             <Badge variant="outline" className="text-[10px]">
                                               {item.allowance}
                                             </Badge>
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                setSelectedAllowanceIds((prev) =>
-                                                  prev.filter((id) => id !== item.id)
-                                                )
-                                              }
-                                              className="text-muted-foreground hover:text-destructive ml-auto"
-                                            >
-                                              <X className="h-3 w-3" />
-                                            </button>
                                           </div>
                                         </TableCell>
                                       )}
                                       {isColVisible("description") && (
-                                        <TableCell className="text-sm text-muted-foreground">
+                                        <TableCell className="text-sm text-muted-foreground py-1">
                                           {item.description}
                                         </TableCell>
                                       )}
                                       {isColVisible("claimPercent") && (
-                                        <TableCell className="text-right">
+                                        <TableCell className="text-right py-1">
                                           <Input
                                             type="number"
                                             min="0"
@@ -1847,30 +1866,43 @@ export default function ClientInvoiceDetail() {
                                                 [item.id]: parseInt(e.target.value) || 0,
                                               }))
                                             }
-                                            className="h-7 w-16 text-right text-sm"
+                                            className="h-7 w-16 text-right text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring ml-auto"
                                           />
                                         </TableCell>
                                       )}
                                       {isColVisible("claimAmount") && (
-                                        <TableCell className="text-right text-sm font-medium">
+                                        <TableCell className="text-right text-sm font-medium py-1">
                                           {formatCurrency(claimAmt)}
                                         </TableCell>
                                       )}
                                       {isColVisible("amountExTax") && (
-                                        <TableCell className="text-right text-sm">
+                                        <TableCell className="text-right text-sm py-1">
                                           {formatCurrency(exTax)}
                                         </TableCell>
                                       )}
                                       {isColVisible("amountTax") && (
-                                        <TableCell className="text-right text-sm">
+                                        <TableCell className="text-right text-sm py-1">
                                           {formatCurrency(tax)}
                                         </TableCell>
                                       )}
                                       {isColVisible("amountIncTax") && (
-                                        <TableCell className="text-right text-sm font-medium">
+                                        <TableCell className="text-right text-sm font-medium py-1">
                                           {formatCurrency(claimAmt)}
                                         </TableCell>
                                       )}
+                                      <TableCell className="py-1 w-8">
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setSelectedAllowanceIds((prev) =>
+                                              prev.filter((id) => id !== item.id)
+                                            )
+                                          }
+                                          className="text-muted-foreground hover:text-destructive"
+                                        >
+                                          <X className="w-3.5 h-3.5" />
+                                        </button>
+                                      </TableCell>
                                     </TableRow>
                                   );
                                 })}
@@ -2024,24 +2056,24 @@ export default function ClientInvoiceDetail() {
                     ) : (
                       <Table>
                         <TableHeader>
-                          <TableRow>
-                            {isColVisible("name") && <TableHead className="w-36">Name</TableHead>}
-                            {isColVisible("description") && <TableHead>Description</TableHead>}
-                            <TableHead className="text-right w-16">Qty</TableHead>
-                            <TableHead className="text-right w-24">Price</TableHead>
+                          <TableRow className="h-6 bg-muted/30">
+                            {isColVisible("name") && <TableHead className="w-36 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Name</TableHead>}
+                            {isColVisible("description") && <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Description</TableHead>}
+                            <TableHead className="text-right w-16 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Qty</TableHead>
+                            <TableHead className="text-right w-24 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Price</TableHead>
                             {isColVisible("claimAmount") && (
-                              <TableHead className="text-right w-28">Claim $</TableHead>
+                              <TableHead className="text-right w-28 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Claim $</TableHead>
                             )}
                             {isColVisible("amountExTax") && (
-                              <TableHead className="text-right w-24">Ex Tax</TableHead>
+                              <TableHead className="text-right w-24 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Ex Tax</TableHead>
                             )}
                             {isColVisible("amountTax") && (
-                              <TableHead className="text-right w-20">Tax</TableHead>
+                              <TableHead className="text-right w-20 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Tax</TableHead>
                             )}
                             {isColVisible("amountIncTax") && (
-                              <TableHead className="text-right w-28">Inc Tax</TableHead>
+                              <TableHead className="text-right w-28 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Inc Tax</TableHead>
                             )}
-                            <TableHead className="w-8" />
+                            <TableHead className="w-8 py-0" />
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -2049,32 +2081,32 @@ export default function ClientInvoiceDetail() {
                             const exTax = line.totalPrice / (1 + GST_RATE);
                             const tax = line.totalPrice - exTax;
                             return (
-                              <TableRow key={index} data-testid={`custom-line-${index}`}>
+                              <TableRow key={index} className="h-9" data-testid={`custom-line-${index}`}>
                                 {isColVisible("name") && (
-                                  <TableCell>
+                                  <TableCell className="py-1">
                                     <Input
                                       value={line.name}
                                       onChange={(e) =>
                                         updateCustomLine(index, "name", e.target.value)
                                       }
                                       placeholder="Name"
-                                      className="h-7 text-sm"
+                                      className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm placeholder:text-muted-foreground/30"
                                     />
                                   </TableCell>
                                 )}
                                 {isColVisible("description") && (
-                                  <TableCell>
+                                  <TableCell className="py-1">
                                     <Input
                                       value={line.description}
                                       onChange={(e) =>
                                         updateCustomLine(index, "description", e.target.value)
                                       }
                                       placeholder="Description"
-                                      className="h-7 text-sm"
+                                      className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm placeholder:text-muted-foreground/30"
                                     />
                                   </TableCell>
                                 )}
-                                <TableCell>
+                                <TableCell className="py-1">
                                   <Input
                                     type="number"
                                     value={line.quantity}
@@ -2085,10 +2117,10 @@ export default function ClientInvoiceDetail() {
                                         parseFloat(e.target.value) || 0
                                       )
                                     }
-                                    className="h-7 w-14 text-right text-sm"
+                                    className="h-7 w-14 text-right text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm ml-auto"
                                   />
                                 </TableCell>
-                                <TableCell>
+                                <TableCell className="py-1">
                                   <Input
                                     type="number"
                                     value={line.unitPrice}
@@ -2099,39 +2131,38 @@ export default function ClientInvoiceDetail() {
                                         parseFloat(e.target.value) || 0
                                       )
                                     }
-                                    className="h-7 w-20 text-right text-sm"
+                                    className="h-7 w-20 text-right text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm ml-auto"
                                   />
                                 </TableCell>
                                 {isColVisible("claimAmount") && (
-                                  <TableCell className="text-right text-sm font-medium">
+                                  <TableCell className="text-right text-sm font-medium py-1">
                                     {formatCurrency(line.totalPrice)}
                                   </TableCell>
                                 )}
                                 {isColVisible("amountExTax") && (
-                                  <TableCell className="text-right text-sm">
+                                  <TableCell className="text-right text-sm py-1">
                                     {line.taxable ? formatCurrency(exTax) : formatCurrency(line.totalPrice)}
                                   </TableCell>
                                 )}
                                 {isColVisible("amountTax") && (
-                                  <TableCell className="text-right text-sm">
+                                  <TableCell className="text-right text-sm py-1">
                                     {line.taxable ? formatCurrency(tax) : formatCurrency(0)}
                                   </TableCell>
                                 )}
                                 {isColVisible("amountIncTax") && (
-                                  <TableCell className="text-right text-sm font-medium">
+                                  <TableCell className="text-right text-sm font-medium py-1">
                                     {formatCurrency(line.totalPrice)}
                                   </TableCell>
                                 )}
-                                <TableCell>
-                                  <Button
+                                <TableCell className="py-1 w-8">
+                                  <button
                                     type="button"
-                                    variant="ghost"
-                                    size="icon"
                                     onClick={() => deleteCustomLine(index)}
+                                    className="text-muted-foreground hover:text-destructive"
                                     data-testid={`button-delete-custom-line-${index}`}
                                   >
-                                    <Trash2 className="h-3 w-3" />
-                                  </Button>
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
                                 </TableCell>
                               </TableRow>
                             );

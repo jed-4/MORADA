@@ -10668,7 +10668,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const invoice = await storage.createClientInvoice(validationResult.data);
+      const data = validationResult.data;
+
+      // Enforce 100% cap for progress payment invoices
+      if (data.invoicingMethod === "progress_payments" && data.contractClaimRows && data.contractClaimRows.length > 0) {
+        const existingInvoices = await storage.getClientInvoices(data.projectId);
+        const usedPercent = existingInvoices.reduce((sum, inv) => {
+          const rows = (inv as any).contractClaimRows as Array<{ claimPercent: number }> | null;
+          if (!rows || !Array.isArray(rows)) return sum;
+          return sum + rows.reduce((s, r) => s + (r.claimPercent || 0), 0);
+        }, 0);
+        const newPercent = data.contractClaimRows.reduce((s, r) => s + (r.claimPercent || 0), 0);
+        if (usedPercent + newPercent > 100) {
+          const remaining = Math.max(0, 100 - usedPercent);
+          return res.status(400).json({ 
+            error: `Total claim % would exceed 100% for this project. Remaining available: ${remaining}%` 
+          });
+        }
+      }
+
+      const invoice = await storage.createClientInvoice(data);
       res.status(201).json(invoice);
     } catch (error) {
       res.status(500).json({ error: "Failed to create client invoice" });
@@ -10685,7 +10704,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const invoice = await storage.updateClientInvoice(req.params.id, validationResult.data);
+      const data = validationResult.data;
+
+      // Enforce 100% cap for progress payment invoices on update
+      if (data.invoicingMethod === "progress_payments" && data.contractClaimRows && data.contractClaimRows.length > 0 && data.projectId) {
+        const existingInvoices = await storage.getClientInvoices(data.projectId);
+        const otherInvoices = existingInvoices.filter(inv => inv.id !== req.params.id);
+        const usedPercent = otherInvoices.reduce((sum, inv) => {
+          const rows = (inv as any).contractClaimRows as Array<{ claimPercent: number }> | null;
+          if (!rows || !Array.isArray(rows)) return sum;
+          return sum + rows.reduce((s, r) => s + (r.claimPercent || 0), 0);
+        }, 0);
+        const newPercent = data.contractClaimRows.reduce((s, r) => s + (r.claimPercent || 0), 0);
+        if (usedPercent + newPercent > 100) {
+          const remaining = Math.max(0, 100 - usedPercent);
+          return res.status(400).json({ 
+            error: `Total claim % would exceed 100% for this project. Remaining available: ${remaining}%` 
+          });
+        }
+      }
+
+      const invoice = await storage.updateClientInvoice(req.params.id, data);
       if (!invoice) {
         return res.status(404).json({ error: "Client invoice not found" });
       }
