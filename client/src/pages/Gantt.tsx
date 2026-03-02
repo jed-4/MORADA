@@ -2003,9 +2003,20 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
   useEffect(() => {
     if (!ganttInitialScrollRef.current && allItems.length > 0 && timelineRef.current) {
       ganttInitialScrollRef.current = true;
-      requestAnimationFrame(() => scrollToToday());
+      const today = new Date();
+      const todayInRange = today >= dataStart && today <= dataEnd;
+      if (todayInRange) {
+        requestAnimationFrame(() => scrollToToday());
+      } else {
+        requestAnimationFrame(() => {
+          if (!timelineRef.current) return;
+          const dataStartPos = differenceInDays(dataStart, timelineStart) * pixelsPerDay;
+          const containerWidth = timelineRef.current.clientWidth;
+          timelineRef.current.scrollLeft = dataStartPos - containerWidth / 6;
+        });
+      }
     }
-  }, [allItems, scrollToToday]);
+  }, [allItems, scrollToToday, dataStart, dataEnd, timelineStart, pixelsPerDay]);
 
   useEffect(() => {
     if (contextMenu && contextMenuRef.current) {
