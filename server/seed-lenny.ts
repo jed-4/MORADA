@@ -9,6 +9,7 @@ import {
   variationItems,
   clientInvoices,
   invoiceEstimates,
+  invoiceVariations,
   invoiceAllowances,
   clientInvoicePayments,
   bills,
@@ -23,6 +24,20 @@ import {
   budgetLineItems,
   costCodes,
   users,
+  selections,
+  selectionOptions,
+  defects,
+  checklistInstances,
+  checklistInstanceGroups,
+  checklistInstanceItems,
+  rfqs,
+  rfqItems,
+  rfqQuotes,
+  rfis,
+  rfiComments,
+  scopeStages,
+  scopeItems,
+  minutes,
 } from "../shared/schema";
 import { eq, and, inArray } from "drizzle-orm";
 
@@ -517,6 +532,30 @@ export async function seedLennyDemo(companyId: string, userId: string) {
       { invoiceId: inv4.id, estimateId: est1.id },
     ]);
 
+    // Invoice Variations — approved variations claimed on their respective progress invoices
+    // var1 (Decking Extension, $8,500) claimed at lock-up; var3 (Lighting, $2,800) at practical completion
+    await tx.insert(invoiceVariations).values([
+      { invoiceId: inv3.id, variationId: var1.id, claimPercent: 100 },
+      { invoiceId: inv4.id, variationId: var3.id, claimPercent: 100 },
+    ]);
+
+    // Invoice Allowances — finalized PC items claimed on INV-1003 (lock-up stage)
+    // Query IDs because they were inserted via bulk array (no individual .returning())
+    const pcItemRows = await tx.select({ id: estimateItems.id, name: estimateItems.name })
+      .from(estimateItems)
+      .where(and(
+        eq(estimateItems.estimateId, est1.id),
+        inArray(estimateItems.name, ["Floor Tiles PC", "Kitchen Appliances PC"])
+      ));
+    const floorTilesItem = pcItemRows.find(r => r.name === "Floor Tiles PC");
+    const kitchenAppItem = pcItemRows.find(r => r.name === "Kitchen Appliances PC");
+    if (floorTilesItem && kitchenAppItem) {
+      await tx.insert(invoiceAllowances).values([
+        { invoiceId: inv3.id, estimateItemId: floorTilesItem.id, claimPercent: 100 },
+        { invoiceId: inv3.id, estimateItemId: kitchenAppItem.id, claimPercent: 100 },
+      ]);
+    }
+
     // Bills for Project 1
     const billDate = (d: string) => new Date(d);
     const billsData = [
@@ -752,6 +791,535 @@ export async function seedLennyDemo(companyId: string, userId: string) {
         weather: { condition: "Overcast", temp: 23, humidity: 70, wind: "Calm" },
         createdBy: userId,
         createdByName: "Lenny Builder",
+      },
+    ]);
+
+    // ─── SCOPE for Project 1 ──────────────────────────────────────────────────
+    // Scope flows from pre-construction planning through to practical completion.
+    // Each stage maps to the estimate groups and schedule milestones.
+    await tx.insert(scopeStages).values([
+      { companyId, projectId: proj1.id, name: "Pre-Construction",       displayOrder: 0 },
+      { companyId, projectId: proj1.id, name: "Demolition & Preparation", displayOrder: 1 },
+      { companyId, projectId: proj1.id, name: "Framing & Structure",     displayOrder: 2 },
+      { companyId, projectId: proj1.id, name: "Fit-Out",                 displayOrder: 3 },
+      { companyId, projectId: proj1.id, name: "External Works",          displayOrder: 4 },
+    ]);
+
+    await tx.insert(scopeItems).values([
+      // Pre-Construction
+      { companyId, projectId: proj1.id, stage: "Pre-Construction", title: "Engage structural engineer for slab & frame certification", itemType: "scope", contentType: "text", displayOrder: 0, needsRfi: true, isCompleted: true },
+      { companyId, projectId: proj1.id, stage: "Pre-Construction", title: "Issue RFQ for concrete slab pour", itemType: "scope", contentType: "text", displayOrder: 1, needsRfq: true, isCompleted: true },
+      { companyId, projectId: proj1.id, stage: "Pre-Construction", title: "Confirm PC & PS allowances with client — floor tiles and kitchen appliances", itemType: "scope", contentType: "text", description: "Allowances: Floor Tiles $13,200 inc GST | Kitchen Appliances $19,800 inc GST | Site Drainage PS $7,150 inc GST", displayOrder: 2, isCompleted: true },
+      // Demolition & Preparation
+      { companyId, projectId: proj1.id, stage: "Demolition & Preparation", title: "Strip-out and demolition of existing structure", itemType: "scope", contentType: "text", displayOrder: 0, isCompleted: true },
+      { companyId, projectId: proj1.id, stage: "Demolition & Preparation", title: "Asbestos identification, removal & disposal (licensed Class A contractor)", itemType: "scope", contentType: "text", description: "Must engage Class A licensed removalist. Obtain clearance certificate before frame commences.", displayOrder: 1, isCompleted: true },
+      { companyId, projectId: proj1.id, stage: "Demolition & Preparation", title: "Site prep and earthworks to engineer's finished floor levels", itemType: "scope", contentType: "text", displayOrder: 2, isCompleted: true },
+      // Framing & Structure
+      { companyId, projectId: proj1.id, stage: "Framing & Structure", title: "Concrete slab to structural engineer's specification (125mm slab confirmed — RFI-001)", itemType: "scope", contentType: "text", displayOrder: 0, isCompleted: true },
+      { companyId, projectId: proj1.id, stage: "Framing & Structure", title: "Timber frame supply and erection to AS 1684", itemType: "scope", contentType: "text", description: "Frame inspection by certifier required before lock-up. Certifier: Beerwah Council Building Inspection Services.", displayOrder: 1, isCompleted: true },
+      { companyId, projectId: proj1.id, stage: "Framing & Structure", title: "Roof structure, sarking, and metal deck sheeting", itemType: "scope", contentType: "text", displayOrder: 2, isCompleted: true },
+      // Fit-Out
+      { companyId, projectId: proj1.id, stage: "Fit-Out", title: "Plumbing rough-in and fit-off", itemType: "scope", contentType: "text", displayOrder: 0, isCompleted: true },
+      { companyId, projectId: proj1.id, stage: "Fit-Out", title: "Electrical rough-in and fit-off", itemType: "scope", contentType: "text", displayOrder: 1, isCompleted: true },
+      { companyId, projectId: proj1.id, stage: "Fit-Out", title: "Floor tiles — PC item $13,200 allowance (Travertine 600x600 confirmed)", itemType: "scope", contentType: "text", description: "Client confirmed: Concept Tile & Timber Travertine Effect 600x600. Selection approved June 2025. Within allowance.", displayOrder: 2, isCompleted: true },
+      { companyId, projectId: proj1.id, stage: "Fit-Out", title: "Joinery and cabinetry", itemType: "scope", contentType: "text", displayOrder: 3, isCompleted: true },
+      { companyId, projectId: proj1.id, stage: "Fit-Out", title: "Kitchen appliances — PC item $19,800 allowance (Smeg Opera Series confirmed)", itemType: "scope", contentType: "text", description: "Client confirmed: Smeg Opera Series package. On allowance — no variation required.", displayOrder: 4, isCompleted: false },
+      { companyId, projectId: proj1.id, stage: "Fit-Out", title: "Painting and decorating — all internal surfaces", itemType: "scope", contentType: "text", displayOrder: 5, isCompleted: false },
+      // External Works
+      { companyId, projectId: proj1.id, stage: "External Works", title: "External decking — spotted gum hardwood (incl. VAR-001 extension +18m²)", itemType: "scope", contentType: "text", description: "Total deck area approx 52m². VAR-001 approved $8,500.", displayOrder: 0, isCompleted: false },
+      { companyId, projectId: proj1.id, stage: "External Works", title: "Fencing & gates", itemType: "scope", contentType: "text", displayOrder: 1, isCompleted: false },
+      { companyId, projectId: proj1.id, stage: "External Works", title: "Landscaping and stormwater drainage to council requirements", itemType: "scope", contentType: "text", displayOrder: 2, isCompleted: false },
+      { companyId, projectId: proj1.id, stage: "External Works", title: "Wildlife habitat restoration & fauna-exclusion fencing", itemType: "scope", contentType: "text", description: "Retain and restore habitat corridor along eastern boundary. Fauna-proof fencing to council permit conditions. Engage licensed ecologist.", displayOrder: 3, isCompleted: false },
+    ]);
+
+    // ─── SELECTIONS for Project 1 ─────────────────────────────────────────────
+    // Selections track the client's choices for PC/PS items and finishes.
+    // These link directly to the allowance items in the estimate.
+    const [sel1] = await tx.insert(selections).values({
+      projectId: proj1.id,
+      name: "Floor Tile Selection",
+      category: "Tiles",
+      room: "Living, Hallway & Wet Areas",
+      description: "600x600mm rectified porcelain floor tiles for main living areas, hallway and all wet areas. PC allowance $13,200 inc GST.",
+      selectionType: "selection",
+      status: "approved",
+      deadline: new Date("2025-06-01"),
+      allowance: 1320000,
+      clientCanChange: false,
+      clientCanSeePrice: true,
+      createdBy: userId,
+    }).returning();
+
+    await tx.insert(selectionOptions).values([
+      {
+        selectionId: sel1.id,
+        name: "Travertine Effect 600x600 Porcelain — SELECTED",
+        brand: "Concept Tile & Timber",
+        description: "Rectified 600x600mm travertine-effect porcelain. Suitable for wet areas. Slip rating R10. Grouted with Charcoal Mapei 112.",
+        sku: "CTT-600TR-BG",
+        unitCost: 6500,
+        unitTax: 650,
+        gstInclusive: false,
+        quantity: 120,
+        unitType: "m2",
+        totalCost: 858000,
+        visibleToClient: true,
+        isSelectedByClient: true,
+        sortOrder: 0,
+      },
+      {
+        selectionId: sel1.id,
+        name: "Honed White Marble-Look 600x600",
+        brand: "Stone & Ceramic Co.",
+        description: "Honed white marble-effect rectified tile. Premium finish. Not selected by client.",
+        sku: "SC-600WM-HN",
+        unitCost: 8900,
+        unitTax: 890,
+        gstInclusive: false,
+        quantity: 120,
+        unitType: "m2",
+        totalCost: 1176000,
+        visibleToClient: true,
+        isSelectedByClient: false,
+        sortOrder: 1,
+      },
+    ]);
+
+    const [sel2] = await tx.insert(selections).values({
+      projectId: proj1.id,
+      name: "Kitchen Appliance Selection",
+      category: "Appliances",
+      room: "Kitchen",
+      description: "PC item for kitchen appliances — freestanding oven, cooktop, rangehood and dishwasher. Allowance $19,800 inc GST.",
+      selectionType: "selection",
+      status: "approved",
+      deadline: new Date("2025-06-15"),
+      allowance: 1980000,
+      clientCanChange: false,
+      clientCanSeePrice: true,
+      createdBy: userId,
+    }).returning();
+
+    await tx.insert(selectionOptions).values([
+      {
+        selectionId: sel2.id,
+        name: "Smeg Opera Series Package — SELECTED",
+        brand: "Smeg",
+        description: "TR4110RO freestanding oven, KT6CLX3 5-burner cooktop, KS50 rangehood, DWAI315X dishwasher. Confirmed by client June 2025.",
+        sku: "SMEG-PKG-OPERA",
+        unitCost: 1800000,
+        unitTax: 180000,
+        gstInclusive: false,
+        quantity: 1,
+        unitType: "ea",
+        totalCost: 1980000,
+        visibleToClient: true,
+        isSelectedByClient: true,
+        sortOrder: 0,
+      },
+      {
+        selectionId: sel2.id,
+        name: "Fisher & Paykel Series 9 Package",
+        brand: "Fisher & Paykel",
+        description: "Series 9 90cm oven, 5-burner induction cooktop, chimney hood and integrated dishwasher.",
+        sku: "FP-PKG-S9",
+        unitCost: 1650000,
+        unitTax: 165000,
+        gstInclusive: false,
+        quantity: 1,
+        unitType: "ea",
+        totalCost: 1815000,
+        visibleToClient: true,
+        isSelectedByClient: false,
+        sortOrder: 1,
+      },
+    ]);
+
+    const [sel3] = await tx.insert(selections).values({
+      projectId: proj1.id,
+      name: "External Cladding Selection",
+      category: "Cladding",
+      room: "External — North & East Elevations",
+      description: "Feature wall cladding for north and east elevations. Client to confirm before fix-out.",
+      selectionType: "selection",
+      status: "pending",
+      deadline: new Date("2025-08-01"),
+      clientCanChange: true,
+      clientCanSeePrice: false,
+      createdBy: userId,
+    }).returning();
+
+    await tx.insert(selectionOptions).values([
+      {
+        selectionId: sel3.id,
+        name: "Weathertex Selvedge Vertical 150",
+        brand: "Weathertex",
+        description: "Australian-made natural woodfibre cladding. Selvedge Vertical 150mm profile. Low maintenance.",
+        sku: "WTX-SV150",
+        unitCost: 4500,
+        unitTax: 450,
+        gstInclusive: false,
+        quantity: 85,
+        unitType: "m2",
+        totalCost: 425000,
+        visibleToClient: true,
+        isSelectedByClient: false,
+        sortOrder: 0,
+      },
+      {
+        selectionId: sel3.id,
+        name: "Scyon Stria Compressed Sheet",
+        brand: "James Hardie",
+        description: "Horizontal-groove compressed fibre cement sheet. Low embodied carbon, BAL-rated.",
+        sku: "SC-STRIA-HRZ",
+        unitCost: 5200,
+        unitTax: 520,
+        gstInclusive: false,
+        quantity: 85,
+        unitType: "m2",
+        totalCost: 492000,
+        visibleToClient: true,
+        isSelectedByClient: false,
+        sortOrder: 1,
+      },
+    ]);
+
+    // ─── DEFECTS for Project 1 ────────────────────────────────────────────────
+    // Logged at various stages — one resolved, one in progress, one open.
+    await tx.insert(defects).values([
+      {
+        projectId: proj1.id,
+        title: "Cracked render on north external wall",
+        description: "Hairline crack approx 600mm long on north wall render, running from window corner downward. Likely thermal movement.",
+        location: "North wall, above kitchen window",
+        type: "subcontractor",
+        priority: "medium",
+        status: "resolved",
+        trade: "Rendering",
+        assignedContactId: russellCoight.id,
+        assignedContactName: "Russell Coight",
+        dateIdentified: new Date("2025-08-11"),
+        dueDate: new Date("2025-08-25"),
+        dateResolved: new Date("2025-08-20"),
+        notes: "Russell Coight patched with matching render and re-textured. Passed inspection. Resolved.",
+        createdBy: userId,
+        createdByName: "Lenny Builder",
+      },
+      {
+        projectId: proj1.id,
+        title: "Stormwater outlet not to specification — clearance from boundary",
+        description: "Rear stormwater outlet installed at 400mm from boundary. Engineering spec requires minimum 600mm clearance per council drainage plan.",
+        location: "Rear yard, south-east corner",
+        type: "subcontractor",
+        priority: "high",
+        status: "in_progress",
+        trade: "Plumbing & Drainage",
+        assignedContactId: alfStewart.id,
+        assignedContactName: "Alf Stewart",
+        dateIdentified: new Date("2025-09-15"),
+        dueDate: new Date("2025-10-01"),
+        notes: "Alf Stewart to relocate outlet by 200mm. Awaiting council approval for revised drainage layout. Council response expected within 10 business days.",
+        createdBy: userId,
+        createdByName: "Lenny Builder",
+      },
+      {
+        projectId: proj1.id,
+        title: "Missing gutter end cap — east elevation north-east corner",
+        description: "Cast aluminium OG gutter on east elevation is missing the end cap at the north-east corner. Water discharging onto footpath during rain.",
+        location: "East elevation, north-east corner",
+        type: "builder",
+        priority: "low",
+        status: "open",
+        trade: "Roofing",
+        dateIdentified: new Date("2025-10-06"),
+        dueDate: new Date("2025-10-20"),
+        notes: "Roofer to supply and install matching end cap. Low risk — minor aesthetic and drainage defect.",
+        createdBy: userId,
+        createdByName: "Lenny Builder",
+      },
+    ]);
+
+    // ─── CHECKLISTS for Project 1 ─────────────────────────────────────────────
+    // Frame inspection (completed pre lock-up) and lock-up inspection (in progress)
+    const [cl1] = await tx.insert(checklistInstances).values({
+      projectId: proj1.id,
+      companyId,
+      name: "Frame Stage Inspection",
+      description: "Pre-lock-up frame inspection as required by building certifier. All items signed off before cladding installed.",
+      status: "completed",
+      priority: "high",
+      dueDate: new Date("2025-05-01"),
+      completedAt: new Date("2025-04-30"),
+      completedBy: userId,
+      completedByName: "Lenny Builder",
+      assigneeId: userId,
+      assigneeName: "Lenny Builder",
+      createdBy: userId,
+      createdByName: "Lenny Builder",
+    }).returning();
+
+    const [clg1a] = await tx.insert(checklistInstanceGroups).values({
+      instanceId: cl1.id,
+      name: "Structural Compliance",
+      order: 0,
+      status: "completed",
+      completedAt: new Date("2025-04-30"),
+      completedByName: "Lenny Builder",
+    }).returning();
+
+    await tx.insert(checklistInstanceItems).values([
+      { instanceId: cl1.id, groupId: clg1a.id, description: "Frame erected to structural engineer's plan (Rev C)", responseType: "checkbox", status: "completed", completedAt: new Date("2025-04-30"), completedByName: "Lenny Builder", order: 0 },
+      { instanceId: cl1.id, groupId: clg1a.id, description: "All connections bolted and metal-strapped per AS 1684", responseType: "checkbox", status: "completed", completedAt: new Date("2025-04-30"), completedByName: "Lenny Builder", order: 1 },
+      { instanceId: cl1.id, groupId: clg1a.id, description: "Top plates doubled and continuous over all openings", responseType: "checkbox", status: "completed", completedAt: new Date("2025-04-30"), completedByName: "Lenny Builder", order: 2 },
+      { instanceId: cl1.id, groupId: clg1a.id, description: "Window and door lintels correct size and minimum bearing length", responseType: "checkbox", status: "completed", completedAt: new Date("2025-04-30"), completedByName: "Lenny Builder", order: 3 },
+      { instanceId: cl1.id, groupId: clg1a.id, description: "Frame plumb, square and level within tolerance", responseType: "checkbox", status: "completed", completedAt: new Date("2025-04-30"), completedByName: "Lenny Builder", order: 4 },
+    ]);
+
+    const [clg1b] = await tx.insert(checklistInstanceGroups).values({
+      instanceId: cl1.id,
+      name: "Roof & Waterproofing Prep",
+      order: 1,
+      status: "completed",
+      completedAt: new Date("2025-04-30"),
+      completedByName: "Lenny Builder",
+    }).returning();
+
+    await tx.insert(checklistInstanceItems).values([
+      { instanceId: cl1.id, groupId: clg1b.id, description: "Sarking installed to roof before metal deck sheeting", responseType: "checkbox", status: "completed", completedAt: new Date("2025-04-30"), completedByName: "Lenny Builder", order: 0 },
+      { instanceId: cl1.id, groupId: clg1b.id, description: "Flashings installed to all penetrations and wall junctions", responseType: "checkbox", status: "completed", completedAt: new Date("2025-04-30"), completedByName: "Lenny Builder", order: 1 },
+      { instanceId: cl1.id, groupId: clg1b.id, description: "Eaves fire-stop installed (BAL-rated as per permit)", responseType: "checkbox", status: "completed", completedAt: new Date("2025-04-30"), completedByName: "Lenny Builder", order: 2 },
+    ]);
+
+    const [cl2] = await tx.insert(checklistInstances).values({
+      projectId: proj1.id,
+      companyId,
+      name: "Lock-Up Stage Inspection",
+      description: "Lock-up sign-off checklist before fit-off commences. External envelope and rough-in services must be complete.",
+      status: "in_progress",
+      priority: "high",
+      dueDate: new Date("2025-07-01"),
+      assigneeId: userId,
+      assigneeName: "Lenny Builder",
+      createdBy: userId,
+      createdByName: "Lenny Builder",
+    }).returning();
+
+    const [clg2a] = await tx.insert(checklistInstanceGroups).values({
+      instanceId: cl2.id,
+      name: "External Envelope",
+      order: 0,
+      status: "completed",
+      completedAt: new Date("2025-06-28"),
+      completedByName: "Lenny Builder",
+    }).returning();
+
+    await tx.insert(checklistInstanceItems).values([
+      { instanceId: cl2.id, groupId: clg2a.id, description: "All external cladding and windows installed and weather-sealed", responseType: "checkbox", status: "completed", completedAt: new Date("2025-06-28"), completedByName: "Lenny Builder", order: 0 },
+      { instanceId: cl2.id, groupId: clg2a.id, description: "Roof fully sheeted, flashings in place, gutters and downpipes installed", responseType: "checkbox", status: "completed", completedAt: new Date("2025-06-28"), completedByName: "Lenny Builder", order: 1 },
+      { instanceId: cl2.id, groupId: clg2a.id, description: "All external doors hung, weather-stripped, and lockable", responseType: "checkbox", status: "completed", completedAt: new Date("2025-06-28"), completedByName: "Lenny Builder", order: 2 },
+    ]);
+
+    const [clg2b] = await tx.insert(checklistInstanceGroups).values({
+      instanceId: cl2.id,
+      name: "Rough-In Services",
+      order: 1,
+      status: "in_progress",
+    }).returning();
+
+    await tx.insert(checklistInstanceItems).values([
+      { instanceId: cl2.id, groupId: clg2b.id, description: "Plumbing rough-in inspected and approved by certifier", responseType: "checkbox", status: "completed", completedAt: new Date("2025-06-10"), completedByName: "Lenny Builder", order: 0 },
+      { instanceId: cl2.id, groupId: clg2b.id, description: "Electrical rough-in inspected and approved by certifier", responseType: "checkbox", status: "completed", completedAt: new Date("2025-06-18"), completedByName: "Lenny Builder", order: 1 },
+      { instanceId: cl2.id, groupId: clg2b.id, description: "Waterproofing applied to all wet areas and passed inspection", responseType: "checkbox", status: "pending", order: 2 },
+      { instanceId: cl2.id, groupId: clg2b.id, description: "Ceiling and wall insulation installed prior to lock-up lining", responseType: "checkbox", status: "pending", order: 3 },
+    ]);
+
+    // ─── RFQs for Project 1 ───────────────────────────────────────────────────
+    // RFQ-001: Concrete slab (accepted — led to BILL-4501-001/002)
+    // RFQ-002: Floor tile supply (sent — awaiting quote from Russell Coight)
+    const [rfq1] = await tx.insert(rfqs).values({
+      rfqNumber: "4501-RFQ-001",
+      projectId: proj1.id,
+      companyId,
+      title: "Concrete Slab Pour — Stage 1 & Pad Footings",
+      description: "Supply of concrete and labour for ground floor slab pour and pad footings per structural engineer's Rev C drawings.",
+      scope: "Supply and pour 32MPa concrete for ground floor slab (125mm) and pad footings per structural engineer Rev C drawings. Includes pump hire, formwork strip-out and spoil removal. Site: Irwin Wildlife Compound, Beerwah QLD.",
+      dueDate: new Date("2025-02-28"),
+      status: "accepted",
+      sentAt: new Date("2025-02-15"),
+      supplierIds: [chopperRead.id],
+      supplierNames: ["Chopper Read's Concrete & Intimidation"],
+      createdBy: userId,
+      createdByName: "Lenny Builder",
+    }).returning();
+
+    await tx.insert(rfqItems).values([
+      { rfqId: rfq1.id, description: "Concrete supply — 32MPa with plasticiser, 48m³", quantity: "48", unit: "m3", unitPrice: 32000, displayOrder: 0 },
+      { rfqId: rfq1.id, description: "Concrete pump hire (full day)", quantity: "1", unit: "day", unitPrice: 180000, displayOrder: 1 },
+      { rfqId: rfq1.id, description: "Formwork strip-out and spoil removal", quantity: "1", unit: "allow", unitPrice: 85000, displayOrder: 2 },
+      { rfqId: rfq1.id, description: "Curing compound (Sika Antisol S)", quantity: "1", unit: "allow", unitPrice: 22000, displayOrder: 3 },
+    ]);
+
+    await tx.insert(rfqQuotes).values({
+      rfqId: rfq1.id,
+      supplierId: chopperRead.id,
+      supplierName: "Chopper Read's Concrete & Intimidation",
+      totalAmount: 2860000,
+      leadTime: "5 business days",
+      validUntil: new Date("2025-03-31"),
+      notes: "Price includes 32MPa with plasticiser. Pump hire included. Don't be late with the payment. Early start 5:30am required for pour day.",
+      status: "accepted",
+      acceptedAt: new Date("2025-02-28"),
+    });
+
+    const [rfq2] = await tx.insert(rfqs).values({
+      rfqNumber: "4501-RFQ-002",
+      projectId: proj1.id,
+      companyId,
+      title: "Floor Tile Supply — PC Item ($13,200 allowance)",
+      description: "Supply of 600x600mm rectified porcelain tiles for living areas, hallway and wet areas. Qty approx 120m².",
+      scope: "Supply only of 600x600mm rectified porcelain tiles to client's confirmed selection (Travertine Effect, Concept Tile & Timber CTT-600TR-BG), matching grout and flexible adhesive. Qty approx 120m² + 10% waste allowance = 132m². Delivery to site on agreed date.",
+      dueDate: new Date("2025-05-20"),
+      status: "sent",
+      sentAt: new Date("2025-05-05"),
+      supplierIds: [russellCoight.id],
+      supplierNames: ["Russell Coight Tiling & Waterproofing"],
+      createdBy: userId,
+      createdByName: "Lenny Builder",
+    }).returning();
+
+    await tx.insert(rfqItems).values([
+      { rfqId: rfq2.id, description: "CTT-600TR-BG Travertine Effect 600x600 Porcelain (incl. 10% waste)", quantity: "132", unit: "m2", unitPrice: 6500, displayOrder: 0 },
+      { rfqId: rfq2.id, description: "Mapei Charcoal 112 grout (15kg bags)", quantity: "12", unit: "bag", unitPrice: 3500, displayOrder: 1 },
+      { rfqId: rfq2.id, description: "Mapei Keraflex Maxi flexible tile adhesive (20kg)", quantity: "18", unit: "bag", unitPrice: 2800, displayOrder: 2 },
+      { rfqId: rfq2.id, description: "Delivery to site (Beerwah QLD)", quantity: "1", unit: "allow", unitPrice: 35000, displayOrder: 3 },
+    ]);
+
+    // ─── RFIs for Project 1 ───────────────────────────────────────────────────
+    // RFI-001: Slab thickness (answered & closed pre-construction)
+    // RFI-002: Kitchen appliance PC confirmation (open — awaiting client written confirmation)
+    const [rfi1] = await tx.insert(rfis).values({
+      rfiNumber: "4501-RFI-001",
+      projectId: proj1.id,
+      companyId,
+      subject: "Slab thickness confirmation — education centre extension",
+      question: "Revised structural drawings received 14/02/2025 reference both 100mm and 125mm slab thickness for the education centre extension (Sheets S1.2 and S1.4 conflict). Which takes precedence? Please confirm before formwork commences.",
+      directedToType: "engineer",
+      directedToName: "Paul Hogan — Crocodile Dundee Engineering",
+      directedToEmail: "paul.hogan@dundeeengineering.com.au",
+      priority: "high",
+      status: "closed",
+      dueDate: new Date("2025-02-20"),
+      response: "Confirmed — use 125mm slab thickness throughout for the education centre extension. Drawings will be updated and issued as Rev C by 21/02/2025. Use 100mm for the main dwelling slab only as shown on S1.1.",
+      respondedByName: "Paul Hogan (Structural Engineer)",
+      respondedAt: new Date("2025-02-19"),
+      closedAt: new Date("2025-02-19"),
+      sentAt: new Date("2025-02-14"),
+      createdById: userId,
+      createdByName: "Lenny Builder",
+    }).returning();
+
+    await tx.insert(rfiComments).values({
+      rfiId: rfi1.id,
+      content: "Thanks Paul — Rev C drawings received and confirmed. Proceeding with 125mm for education centre. Formwork commences Monday 3 March.",
+      createdById: userId,
+      createdByName: "Lenny Builder",
+    });
+
+    const [rfi2] = await tx.insert(rfis).values({
+      rfiNumber: "4501-RFI-002",
+      projectId: proj1.id,
+      companyId,
+      subject: "Kitchen appliance PC item — written confirmation of Smeg selection",
+      question: "Client Steve Irwin verbally confirmed the Smeg Opera Series kitchen package (Smeg-PKG-OPERA) at the June 2025 progress meeting. Please provide written confirmation that this selection is within the PC allowance of $19,800 inc GST and that no variation is required.",
+      directedToType: "client",
+      directedToName: "Steve Irwin",
+      directedToEmail: "steve@irwins.com.au",
+      priority: "normal",
+      status: "submitted",
+      dueDate: new Date("2025-07-05"),
+      sentAt: new Date("2025-06-25"),
+      createdById: userId,
+      createdByName: "Lenny Builder",
+    }).returning();
+
+    await tx.insert(rfiComments).values({
+      rfiId: rfi2.id,
+      content: "Steve — just following up on the Smeg selection confirmation. The Opera Series package lands exactly on the $19,800 allowance so there's nothing extra to pay. We just need your written sign-off so we can place the order. Happy to take an email reply as confirmation.",
+      createdById: userId,
+      createdByName: "Lenny Builder",
+    });
+
+    // ─── MINUTES for Project 1 ────────────────────────────────────────────────
+    await tx.insert(minutes).values([
+      {
+        projectId: proj1.id,
+        title: "Pre-Construction Meeting — Site Initiation",
+        meetingDate: new Date("2025-02-10"),
+        location: "Irwin Wildlife Compound, 1770 Steve Irwin Way, Beerwah QLD 4519",
+        attendees: [
+          { name: "Steve Irwin (Client)" },
+          { name: "Terri Irwin (Client)" },
+          { name: "Lenny Builder (Builder / Contract Administrator)" },
+          { name: "Paul Hogan (Structural Engineer — Crocodile Dundee Engineering)" },
+        ],
+        contentHtml: "<h3>1. Project Overview</h3><p>Lenny Builder confirmed project scope per the signed contract dated 14/01/2025. Contract sum: $497,384.73 inc GST.</p><h3>2. Construction Program</h3><p>Start: 3 March 2025. Practical completion target: 31 October 2025. Program was issued and acknowledged by all parties.</p><h3>3. PC & PS Allowances</h3><p>Client confirmed: Floor tile allowance $13,200 inc GST — selection required by 1 June. Kitchen appliance allowance $19,800 inc GST — selection required by 15 June. Site drainage PS $7,150 inc GST — pending design confirmation.</p><h3>4. Site Access & House Rules</h3><p>Keys handed over. Hours: Mon–Fri 7am–5pm, Sat 7am–12pm. Wildlife exclusion zone on east boundary confirmed — 10m setback. All workers to complete site induction before commencing.</p><h3>5. Action Items</h3><p>See list below.</p>",
+        contentText: "Pre-Construction Meeting. Contract $497,384.73. Program issued. PC items confirmed. Site access arrangements agreed.",
+        actionItems: [
+          { description: "Issue Rev C structural drawings (125mm slab confirmed)", assignee: "Paul Hogan", dueDate: "2025-02-21", completed: true },
+          { description: "Confirm tile and appliance selection timeline with client", assignee: "Lenny Builder", dueDate: "2025-03-01", completed: true },
+          { description: "Erect site fencing and wildlife exclusion barriers before works commence", assignee: "Lenny Builder", dueDate: "2025-03-03", completed: true },
+          { description: "Issue RFQ-001 for concrete slab", assignee: "Lenny Builder", dueDate: "2025-02-15", completed: true },
+        ],
+        ownerId: userId,
+        ownerName: "Lenny Builder",
+      },
+      {
+        projectId: proj1.id,
+        title: "Progress Meeting — Frame Complete & Lock-Up Review",
+        meetingDate: new Date("2025-06-25"),
+        location: "Zoom — Irwin Wildlife Compound Project",
+        attendees: [
+          { name: "Steve Irwin (Client)" },
+          { name: "Terri Irwin (Client)" },
+          { name: "Lenny Builder (Builder)" },
+        ],
+        contentHtml: "<h3>1. Progress Update</h3><p>Frame completed and signed off 30 April. Lock-up approx 85% complete. Windows installed, roof sheeted. External doors outstanding — ETA 30 June.</p><h3>2. Selections Confirmed</h3><p>Floor tiles: Travertine Effect 600x600 from Concept Tile & Timber — within allowance. Kitchen appliances: Smeg Opera Series — $19,800, exactly on allowance, no variation required. Appliance order to be placed by 28 June.</p><h3>3. Variations</h3><p>VAR-001 (decking extension 18m²) — approved and signed. VAR-002 (plumbing relocation) — under client review. Response required by 5 July. VAR-003 (additional lighting) — approved.</p><h3>4. Progress Claim 3</h3><p>INV-1003 will be issued 1 July covering lock-up stage ($174,084.66). Includes VAR-001 and PC allowances for tiles and appliances. Client acknowledged.</p>",
+        contentText: "June 2025 progress meeting. Lock-up 85% complete. PC items confirmed on allowance. Variations discussed. INV-1003 to issue 1 July.",
+        actionItems: [
+          { description: "Issue INV-1003 — lock-up progress claim", assignee: "Lenny Builder", dueDate: "2025-07-01", completed: true },
+          { description: "Place order for Smeg Opera Series appliance package", assignee: "Lenny Builder", dueDate: "2025-06-28", completed: true },
+          { description: "Client to confirm VAR-002 plumbing relocation in writing", assignee: "Steve Irwin", dueDate: "2025-07-05", completed: false },
+          { description: "Follow up RFI-002 — kitchen appliance written confirmation", assignee: "Lenny Builder", dueDate: "2025-07-01", completed: false },
+        ],
+        ownerId: userId,
+        ownerName: "Lenny Builder",
+      },
+    ]);
+
+    // ─── PROJECT NOTES for Project 1 ──────────────────────────────────────────
+    // General notes (type "note") pinned for easy reference — different from tasks.
+    await tx.insert(notes).values([
+      {
+        companyId,
+        title: "Wildlife exclusion zone — east boundary",
+        content: "10m exclusion zone on east boundary per council planning permit. No machinery, materials storage or site offices within this zone. All workers briefed at site induction. Ecologist contact: Dr Bindi Irwin (not actually Steve's daughter — different Bindi) 0400 111 222.",
+        type: "note",
+        projectId: proj1.id,
+        scope: "project",
+        author: "Lenny Builder",
+        ownerId: userId,
+        pinned: true,
+      },
+      {
+        companyId,
+        title: "Key contacts — structural engineer & certifier",
+        content: "Structural engineer: Paul Hogan — Crocodile Dundee Engineering — 0412 345 678 — paul.hogan@dundeeengineering.com.au. Building certifier: Beerwah Council Building Inspection Services — bookings via council portal. 48hr notice required for all stage inspections.",
+        type: "note",
+        projectId: proj1.id,
+        scope: "project",
+        author: "Lenny Builder",
+        ownerId: userId,
+        pinned: false,
       },
     ]);
 

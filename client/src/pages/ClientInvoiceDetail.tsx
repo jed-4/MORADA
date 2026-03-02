@@ -1338,10 +1338,10 @@ export default function ClientInvoiceDetail() {
                         className="flex items-center justify-between py-2 cursor-pointer"
                         onClick={() => setIntroCollapsed((v) => !v)}
                       >
-                        <p className="text-sm font-medium flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full flex-shrink-0 bg-slate-400/60" />
+                        <span className="text-sm font-medium flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full flex-shrink-0 bg-slate-400/60 block" />
                           Introduction
-                        </p>
+                        </span>
                         {introCollapsed ? (
                           <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                         ) : (
@@ -1896,8 +1896,11 @@ export default function ClientInvoiceDetail() {
                 {currentProject?.invoicingMethod === "cost_plus" && (
                   <>
                     <Card data-testid="section-bills">
-                      <CardHeader>
-                        <CardTitle className="text-base">Bills</CardTitle>
+                      <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-3">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full flex-shrink-0 bg-orange-400/70" />
+                          Bills
+                        </CardTitle>
                       </CardHeader>
                       <CardContent className="space-y-4">
                         <div>
