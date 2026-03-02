@@ -1,7 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useParams } from "wouter";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
   Popover,
@@ -69,7 +68,7 @@ function StatusChip({ status }: { status: string }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium border",
+        "inline-flex items-center justify-center w-16 py-0.5 rounded text-[11px] font-medium border",
         STATUS_CHIP[status] ?? "bg-muted text-muted-foreground border-transparent"
       )}
       data-testid={`badge-status-${status}`}
@@ -82,7 +81,7 @@ function StatusChip({ status }: { status: string }) {
 // ── Column configuration ───────────────────────────────────────────────────
 
 type ColumnKey =
-  | "invoice_number" | "name" | "project" | "status"
+  | "invoice_number" | "name" | "status"
   | "invoice_date"   | "due_date" | "total" | "paid"
   | "due"            | "xero"    | "seen";
 
@@ -91,7 +90,6 @@ interface ColumnConfig {
   label: string;
   visible: boolean;
   required?: boolean;
-  globalOnly?: boolean;
   align?: "left" | "right" | "center";
   inactive?: boolean;
 }
@@ -99,7 +97,6 @@ interface ColumnConfig {
 const DEFAULT_COLUMNS: ColumnConfig[] = [
   { key: "invoice_number", label: "Invoice #",     visible: true,  required: true  },
   { key: "name",           label: "Name",           visible: true,  required: true  },
-  { key: "project",        label: "Project",        visible: true,  globalOnly: true },
   { key: "status",         label: "Status",         visible: true  },
   { key: "invoice_date",   label: "Invoice Date",   visible: true  },
   { key: "due_date",       label: "Due Date",       visible: true  },
@@ -242,12 +239,8 @@ export default function ClientInvoices() {
   // ── Column management ─────────────────────────────────────────────────────
 
   const visibleColumns = useMemo(() =>
-    columns.filter((c) => {
-      if (!c.visible) return false;
-      if (c.globalOnly && projectIdFromUrl) return false;
-      return true;
-    }),
-  [columns, projectIdFromUrl]);
+    columns.filter((c) => c.visible),
+  [columns]);
 
   const moveColumn = (key: ColumnKey, dir: -1 | 1) => {
     setColumns((prev) => {
@@ -282,7 +275,6 @@ export default function ClientInvoices() {
 
   const renderCell = (col: ColumnConfig, invoice: ClientInvoice) => {
     const overdue = isDueDateOverdue(invoice.dueDate, invoice.status);
-    const proj    = getProject(invoice.projectId);
 
     switch (col.key) {
       case "invoice_number":
@@ -299,17 +291,6 @@ export default function ClientInvoices() {
             <span className="text-xs text-foreground">
               {(invoice as any).name || invoice.invoiceNumber || "-"}
             </span>
-          </TableCell>
-        );
-      case "project":
-        return (
-          <TableCell key={col.key} className="py-1" data-testid={`cell-project-${invoice.id}`}>
-            {proj ? (
-              <div className="flex items-center gap-1.5">
-                <ProjectIcon icon={proj.icon || "Briefcase"} color={proj.color || "#3b82f6"} className="w-3 h-3" />
-                <span className="text-xs text-muted-foreground">{proj.name}</span>
-              </div>
-            ) : <span className="text-xs text-muted-foreground">-</span>}
           </TableCell>
         );
       case "status":
@@ -562,9 +543,6 @@ export default function ClientInvoices() {
                       {col.inactive && (
                         <span className="ml-1 text-[10px] text-muted-foreground/50 italic">soon</span>
                       )}
-                      {col.globalOnly && projectIdFromUrl && (
-                        <span className="ml-1 text-[10px] text-muted-foreground/50 italic">global</span>
-                      )}
                     </span>
                     {/* Reorder buttons */}
                     <div className="flex flex-col gap-0 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -633,6 +611,9 @@ export default function ClientInvoices() {
                       {col.label}
                     </TableHead>
                   ))}
+                  {!projectIdFromUrl && (
+                    <TableHead className="text-xs font-medium text-muted-foreground">Project</TableHead>
+                  )}
                   <TableHead className="text-xs w-14" />
                 </TableRow>
               </TableHeader>
@@ -645,6 +626,19 @@ export default function ClientInvoices() {
                     data-testid={`row-invoice-${invoice.id}`}
                   >
                     {visibleColumns.map((col) => renderCell(col, invoice))}
+                    {!projectIdFromUrl && (() => {
+                      const proj = getProject(invoice.projectId);
+                      return (
+                        <TableCell key="project" className="py-1" data-testid={`cell-project-${invoice.id}`}>
+                          {proj ? (
+                            <div className="flex items-center gap-1.5">
+                              <ProjectIcon icon={proj.icon || "Briefcase"} color={proj.color || "#3b82f6"} className="w-3 h-3" />
+                              <span className="text-xs text-muted-foreground">{proj.name}</span>
+                            </div>
+                          ) : <span className="text-xs text-muted-foreground">-</span>}
+                        </TableCell>
+                      );
+                    })()}
 
                     {/* Actions — always last */}
                     <TableCell className="py-1 text-right" data-testid={`cell-actions-${invoice.id}`}>

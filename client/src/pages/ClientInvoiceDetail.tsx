@@ -2330,7 +2330,15 @@ export default function ClientInvoiceDetail() {
                               "flex justify-between text-sm font-semibold",
                               paid > 0 && "border-t pt-1.5"
                             )}>
-                              <span>Balance Due</span>
+                              <span className={cn(
+                                due <= 0
+                                  ? "text-emerald-600 dark:text-emerald-400"
+                                  : paid > 0
+                                  ? "text-amber-600 dark:text-amber-400"
+                                  : "text-red-500 dark:text-red-400"
+                              )}>
+                                {due <= 0 ? "Paid in Full" : "Balance Due"}
+                              </span>
                               <span
                                 className={cn(
                                   "tabular-nums",
@@ -2342,7 +2350,7 @@ export default function ClientInvoiceDetail() {
                                 )}
                                 data-testid="text-summary-due"
                               >
-                                {formatCurrency(due)}
+                                {due <= 0 ? formatCurrency(total) : formatCurrency(due)}
                               </span>
                             </div>
                           </div>
@@ -2357,7 +2365,7 @@ export default function ClientInvoiceDetail() {
                   <Card data-testid="section-payments-history">
                     <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0">
                       <CardTitle className="text-base flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full flex-shrink-0 bg-green-500/70" />
+                        <div className="w-2 h-2 rounded-full flex-shrink-0 bg-emerald-400/70" />
                         Payments ({payments.length})
                       </CardTitle>
                       <Button
