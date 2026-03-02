@@ -28,7 +28,6 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -1010,118 +1009,130 @@ export default function ClientInvoiceDetail() {
     <div className="flex flex-col h-full" data-testid="page-client-invoice-detail">
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col h-full">
-          {/* Row 1 - Title & Actions */}
-          <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleCancel}
-                className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2"
-                data-testid="button-back"
-              >
-                <ArrowLeft className="h-3.5 w-3.5 text-muted-foreground" />
-              </button>
-              <h2 className="text-sm font-semibold" data-testid="text-page-title">
-                {isEditMode ? "Edit Invoice" : "Create Invoice"}
-              </h2>
-            </div>
+          {/* Unified header card */}
+          <div className="mx-3 mt-3 rounded-lg border border-border bg-card flex-shrink-0 overflow-hidden">
 
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                data-testid="button-preview"
-              >
-                <Eye className="w-3 h-3" />
-                <span>Preview</span>
-              </button>
-              <button
-                type="submit"
-                disabled={createMutation.isPending || updateMutation.isPending}
-                className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
-                data-testid="button-save-invoice"
-              >
-                {(createMutation.isPending || updateMutation.isPending) ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                ) : (
-                  <FileText className="w-3 h-3" />
-                )}
-                <span>{isEditMode ? "Update" : "Create"} Invoice</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Row 2 - Summary */}
-          <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0">
-            <div className="flex items-center gap-4 text-xs">
-              <div className="flex items-center gap-1.5" data-testid="header-summary-total">
-                <span className="text-muted-foreground">Total:</span>
-                <span className="font-semibold">{formatCurrency(total)}</span>
-              </div>
-              <div className="w-px h-4 bg-border" />
-              <div className="flex items-center gap-1.5" data-testid="header-summary-paid">
-                <span className="text-muted-foreground">Paid:</span>
-                <span className="font-semibold text-green-600">{formatCurrency(paid)}</span>
-              </div>
-              <div className="w-px h-4 bg-border" />
-              <div className="flex items-center gap-1.5" data-testid="header-summary-due">
-                <span className="text-muted-foreground">Due:</span>
-                <span className={cn(
-                  "font-semibold",
-                  due <= 0
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : paid > 0
-                    ? "text-amber-600 dark:text-amber-400"
-                    : "text-red-500 dark:text-red-400"
-                )}>{formatCurrency(due)}</span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              {isEditMode && invoice?.status === "draft" && (
+            {/* Row 1 — Title & Actions */}
+            <div className="h-8 flex items-center justify-between px-3 border-b border-border/50">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => sendInvoiceMutation.mutate()}
-                  disabled={sendInvoiceMutation.isPending}
-                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                  data-testid="button-send-invoice"
+                  onClick={handleCancel}
+                  className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2"
+                  data-testid="button-back"
                 >
-                  <Send className="w-3 h-3" />
-                  <span>Send Invoice</span>
+                  <ArrowLeft className="h-3.5 w-3.5 text-muted-foreground" />
                 </button>
-              )}
-              {isEditMode && xeroStatus?.connected && !(invoice as any)?.xeroInvoiceId && (
+                <h2 className="text-sm font-semibold" data-testid="text-page-title">
+                  {isEditMode ? "Edit Invoice" : "Create Invoice"}
+                </h2>
+              </div>
+
+              <div className="flex items-center gap-1.5">
                 <button
                   type="button"
-                  onClick={handlePushToXero}
-                  disabled={xeroPushing}
-                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 text-blue-600 dark:text-blue-400 border-blue-300 dark:border-blue-600"
-                  data-testid="button-send-to-xero"
+                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                  data-testid="button-preview"
                 >
-                  {xeroPushing ? (
+                  <Eye className="w-3 h-3" />
+                  <span>Preview</span>
+                </button>
+                <button
+                  type="submit"
+                  disabled={createMutation.isPending || updateMutation.isPending}
+                  className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+                  data-testid="button-save-invoice"
+                >
+                  {(createMutation.isPending || updateMutation.isPending) ? (
                     <Loader2 className="w-3 h-3 animate-spin" />
                   ) : (
-                    <Send className="w-3 h-3" />
+                    <FileText className="w-3 h-3" />
                   )}
-                  <span>Send to Xero</span>
+                  <span>{isEditMode ? "Update" : "Create"} Invoice</span>
                 </button>
-              )}
-              {isEditMode && (invoice as any)?.xeroInvoiceId && (
-                <span className="text-[10px] text-green-600 dark:text-green-400 flex items-center gap-0.5 px-1">
-                  Synced to Xero
-                </span>
-              )}
+              </div>
             </div>
-          </div>
+
+            {/* Row 2 — Lilac summary strip */}
+            <div className="bg-[#bba7db]/10 flex items-center justify-between px-4 py-2 gap-6">
+              <div className="flex items-center gap-5 text-xs">
+                <div className="flex items-center gap-1.5" data-testid="header-summary-total">
+                  <span className="text-muted-foreground">Total</span>
+                  <span className="font-semibold">{formatCurrency(total)}</span>
+                </div>
+                <div className="w-px h-3.5 bg-[#bba7db]/40" />
+                <div className="flex items-center gap-1.5" data-testid="header-summary-paid">
+                  <span className="text-muted-foreground">Paid</span>
+                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">{formatCurrency(paid)}</span>
+                </div>
+                <div className="w-px h-3.5 bg-[#bba7db]/40" />
+                <div className="flex items-center gap-1.5" data-testid="header-summary-due">
+                  <span className="text-muted-foreground">Due</span>
+                  <span className={cn(
+                    "font-semibold",
+                    due <= 0
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : paid > 0
+                      ? "text-amber-600 dark:text-amber-400"
+                      : "text-red-500 dark:text-red-400"
+                  )}>{formatCurrency(due)}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                {isEditMode && invoice?.status === "draft" && (
+                  <button
+                    type="button"
+                    onClick={() => sendInvoiceMutation.mutate()}
+                    disabled={sendInvoiceMutation.isPending}
+                    className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                    data-testid="button-send-invoice"
+                  >
+                    <Send className="w-3 h-3" />
+                    <span>Send Invoice</span>
+                  </button>
+                )}
+                {isEditMode && xeroStatus?.connected && !(invoice as any)?.xeroInvoiceId && (
+                  <button
+                    type="button"
+                    onClick={handlePushToXero}
+                    disabled={xeroPushing}
+                    className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1 text-blue-600 dark:text-blue-400 border-blue-300 dark:border-blue-600"
+                    data-testid="button-send-to-xero"
+                  >
+                    {xeroPushing ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Send className="w-3 h-3" />
+                    )}
+                    <span>Send to Xero</span>
+                  </button>
+                )}
+                {isEditMode && (invoice as any)?.xeroInvoiceId && (
+                  <span className="text-[10px] text-green-600 dark:text-green-400 flex items-center gap-0.5 px-1">
+                    Synced to Xero
+                  </span>
+                )}
+              </div>
+            </div>
+
+          </div>{/* end unified header card */}
 
           {/* Main Content */}
           <div className="flex-1 overflow-auto">
-            <div className="max-w-6xl mx-auto px-6 py-6 space-y-4">
+            <div className="max-w-4xl mx-auto px-3 py-3 space-y-3">
 
-                {/* Unified Header Card */}
-                <Card>
-                  <CardContent className="p-5 space-y-4">
-                    {/* Row 1: Company / Tax Invoice label */}
+                {/* Card 1 — Invoice Info */}
+                <div className="rounded-lg border border-border bg-card overflow-hidden">
+
+                  {/* Section header */}
+                  <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50">
+                    <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Invoice Info</span>
+                  </div>
+
+                  {/* Company / Tax Invoice */}
+                  <div className="px-4 py-3">
                     <div className="flex items-start justify-between gap-4">
                       <div>
                         <p className="font-semibold text-base">
@@ -1156,31 +1167,38 @@ export default function ClientInvoiceDetail() {
                         </div>
                       </div>
                     </div>
+                  </div>{/* end company section */}
 
-                    {/* Row 2: Bill To / Project */}
-                    {selectedProjectId && currentProject && (
-                      <div className="grid grid-cols-2 gap-6 border-t pt-3">
-                        <div>
-                          <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium mb-1">Bill To</p>
-                          <p className="text-sm font-medium">{(currentProject as any).clientName || currentProject.name}</p>
-                          {currentProject.location && (
-                            <p className="text-xs text-muted-foreground mt-0.5">{currentProject.location}</p>
-                          )}
-                        </div>
-                        <div>
-                          <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium mb-1">Project</p>
-                          <p className="text-sm font-medium">{currentProject.name}</p>
-                          {(currentProject.constructionNumber || currentProject.preConstructionNumber || currentProject.leadNumber) && (
-                            <p className="text-xs text-muted-foreground mt-0.5">
-                              #{currentProject.constructionNumber || currentProject.preConstructionNumber || currentProject.leadNumber}
-                            </p>
-                          )}
+                  {/* Bill To / Project */}
+                  {selectedProjectId && currentProject && (
+                    <>
+                      <div className="border-t border-border/50" />
+                      <div className="px-4 py-3">
+                        <div className="grid grid-cols-2 gap-6">
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium mb-1">Bill To</p>
+                            <p className="text-sm font-medium">{(currentProject as any).clientName || currentProject.name}</p>
+                            {currentProject.location && (
+                              <p className="text-xs text-muted-foreground mt-0.5">{currentProject.location}</p>
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium mb-1">Project</p>
+                            <p className="text-sm font-medium">{currentProject.name}</p>
+                            {(currentProject.constructionNumber || currentProject.preConstructionNumber || currentProject.leadNumber) && (
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                #{currentProject.constructionNumber || currentProject.preConstructionNumber || currentProject.leadNumber}
+                              </p>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    )}
+                    </>
+                  )}
 
-                    {/* Invoice Name + Number + Dates */}
-                    <div className="border-t pt-3 space-y-3">
+                  {/* Invoice Name + Number + Dates */}
+                  <div className="border-t border-border/50" />
+                  <div className="px-4 py-3 space-y-3">
                       <div className="grid grid-cols-3 gap-4">
                         <FormField
                           control={form.control}
@@ -1332,60 +1350,66 @@ export default function ClientInvoiceDetail() {
                       </div>
                     </div>
 
-                    {/* Introduction Text (collapsible, inside header card) */}
-                    <div className="border-t">
-                      <div
-                        className="flex items-center justify-between py-2 cursor-pointer"
-                        onClick={() => setIntroCollapsed((v) => !v)}
-                      >
-                        <span className="text-sm font-medium flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full flex-shrink-0 bg-slate-400/60 block" />
-                          Introduction
-                        </span>
-                        {introCollapsed ? (
-                          <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                        ) : (
-                          <ChevronUp className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                        )}
+                  {/* Introduction Text — collapsible */}
+                  <div className="border-t border-border/50">
+                    <div
+                      className="h-8 flex items-center justify-between px-3 gap-2 cursor-pointer"
+                      onClick={() => setIntroCollapsed((v) => !v)}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
+                        <span className="text-xs font-medium">Introduction</span>
                       </div>
-                      {!introCollapsed && (
-                        <div className="pb-2">
-                          <FormField
-                            control={form.control}
-                            name="introductionText"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormControl>
-                                  <RichTextEditor
-                                    content={field.value || ""}
-                                    onChange={(html) => field.onChange(html)}
-                                    placeholder="Enter introduction text..."
-                                    data-testid="editor-introduction"
-                                  />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                        </div>
+                      {introCollapsed ? (
+                        <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                      ) : (
+                        <ChevronUp className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
                       )}
                     </div>
-                  </CardContent>
-                </Card>
+                    {!introCollapsed && (
+                      <div className="px-4 pb-3">
+                        <FormField
+                          control={form.control}
+                          name="introductionText"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormControl>
+                                <RichTextEditor
+                                  content={field.value || ""}
+                                  onChange={(html) => field.onChange(html)}
+                                  placeholder="Enter introduction text..."
+                                  data-testid="editor-introduction"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                </div>{/* end Card 1 — Invoice Info */}
 
 
-                {/* ── Progress Payments sections ── */}
+                {/* Card 2 — Financials */}
+                <div className="rounded-lg border border-border bg-card overflow-hidden">
+                  <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50">
+                    <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Financials</span>
+                  </div>
+
                 {currentProject?.invoicingMethod === "progress_payments" && (
                   <>
-                    {/* Contract Price Section */}
-                    <Card data-testid="section-contract-price">
-                      <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-3">
-                        <CardTitle className="text-base flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full flex-shrink-0 bg-blue-400/70" />
-                          Contract Price
+                    {/* Contract Price sub-section */}
+                    <div data-testid="section-contract-price">
+                      <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50">
+                        <div className="flex items-center gap-2">
+                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-blue-400/70" />
+                          <span className="text-xs font-medium">Contract Price</span>
                           {getEffectiveContractPrice() && (
                             <Tooltip>
-                              <TooltipTrigger>
+                              <TooltipTrigger asChild>
                                 <Badge variant="secondary" className="flex items-center gap-1 text-xs">
                                   <Lock className="w-2.5 h-2.5" />
                                   Locked
@@ -1396,8 +1420,8 @@ export default function ClientInvoiceDetail() {
                               </TooltipContent>
                             </Tooltip>
                           )}
-                        </CardTitle>
-                        <div className="flex items-center gap-2">
+                        </div>
+                        <div className="flex items-center gap-1.5">
                           {/* Column picker */}
                           <Popover open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
                             <PopoverTrigger asChild>
@@ -1457,9 +1481,9 @@ export default function ClientInvoiceDetail() {
                             </PopoverContent>
                           </Popover>
                         </div>
-                      </CardHeader>
+                      </div>{/* end contract price header */}
 
-                      <CardContent className="space-y-3 pt-0">
+                      <div className="px-4 py-3 space-y-3">
                         {/* Locked contract price display + unlock popover */}
                         {(() => {
                           const baseCents = getEffectiveContractPrice();
@@ -1640,29 +1664,28 @@ export default function ClientInvoiceDetail() {
                             Add Claim Row
                           </button>
                         )}
-                      </CardContent>
-                    </Card>
+                      </div>{/* end contract price content */}
+                    </div>{/* end contract price sub-section */}
 
-                    {/* Variations Section */}
-                    <Card data-testid="section-variations">
-                      <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-3">
-                        <CardTitle className="text-base flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full flex-shrink-0 bg-amber-400/70" />
-                          Variations
-                        </CardTitle>
-                        <Button
+                    {/* Variations sub-section */}
+                    <div className="border-t border-border/50" data-testid="section-variations">
+                      <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50">
+                        <div className="flex items-center gap-2">
+                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber-400/70" />
+                          <span className="text-xs font-medium">Variations</span>
+                        </div>
+                        <button
                           type="button"
-                          variant="outline"
-                          size="sm"
                           onClick={() => setVariationsModalOpen(true)}
+                          className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
                           data-testid="button-select-variations"
                         >
-                          <Plus className="h-4 w-4 mr-1" />
-                          Select Variations
-                        </Button>
-                      </CardHeader>
+                          <Plus className="w-3 h-3" />
+                          <span>Select Variations</span>
+                        </button>
+                      </div>
 
-                      <CardContent>
+                      <div className="px-4 py-3">
                         {selectedVariationIds.length === 0 ? (
                           <p className="text-sm text-muted-foreground text-center py-4">
                             No variations added. Click "Select Variations" to add approved variations.
@@ -1761,29 +1784,28 @@ export default function ClientInvoiceDetail() {
                             </div>
                           </>
                         )}
-                      </CardContent>
-                    </Card>
+                      </div>{/* end variations content */}
+                    </div>{/* end variations sub-section */}
 
-                    {/* Allowances Section */}
-                    <Card data-testid="section-allowances">
-                      <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-3">
-                        <CardTitle className="text-base flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full flex-shrink-0 bg-emerald-400/70" />
-                          Allowances
-                        </CardTitle>
-                        <Button
+                    {/* Allowances sub-section */}
+                    <div className="border-t border-border/50" data-testid="section-allowances">
+                      <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50">
+                        <div className="flex items-center gap-2">
+                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-emerald-400/70" />
+                          <span className="text-xs font-medium">Allowances</span>
+                        </div>
+                        <button
                           type="button"
-                          variant="outline"
-                          size="sm"
                           onClick={() => setAllowancesModalOpen(true)}
+                          className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
                           data-testid="button-select-allowances"
                         >
-                          <Plus className="h-4 w-4 mr-1" />
-                          Select Allowances
-                        </Button>
-                      </CardHeader>
+                          <Plus className="w-3 h-3" />
+                          <span>Select Allowances</span>
+                        </button>
+                      </div>
 
-                      <CardContent>
+                      <div className="px-4 py-3">
                         {selectedAllowanceIds.length === 0 ? (
                           <p className="text-sm text-muted-foreground text-center py-4">
                             No allowances added. Click "Select Allowances" to add finalized allowances.
@@ -1887,22 +1909,23 @@ export default function ClientInvoiceDetail() {
                             </div>
                           </>
                         )}
-                      </CardContent>
-                    </Card>
+                      </div>{/* end allowances content */}
+                    </div>{/* end allowances sub-section */}
                   </>
                 )}
 
                 {/* ── Cost Plus sections ── */}
                 {currentProject?.invoicingMethod === "cost_plus" && (
                   <>
-                    <Card data-testid="section-bills">
-                      <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-3">
-                        <CardTitle className="text-base flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full flex-shrink-0 bg-orange-400/70" />
-                          Bills
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
+                    {/* Bills sub-section */}
+                    <div className="border-t border-border/50" data-testid="section-bills">
+                      <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50">
+                        <div className="flex items-center gap-2">
+                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-orange-400/70" />
+                          <span className="text-xs font-medium">Bills</span>
+                        </div>
+                      </div>
+                      <div className="px-4 py-3 space-y-4">
                         <div>
                           <Label>Select Bills</Label>
                           <Select
@@ -1955,8 +1978,8 @@ export default function ClientInvoiceDetail() {
                             {formatCurrency(calculateBillsTotal() / 100)}
                           </span>
                         </div>
-                      </CardContent>
-                    </Card>
+                      </div>{/* end bills content */}
+                    </div>{/* end bills sub-section */}
 
                     <FormField
                       control={form.control}
@@ -1984,25 +2007,24 @@ export default function ClientInvoiceDetail() {
                   </>
                 )}
 
-                {/* Custom Lines */}
-                <Card data-testid="section-custom-lines">
-                  <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-3">
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full flex-shrink-0 bg-violet-400/70" />
-                      Custom Lines
-                    </CardTitle>
-                    <Button
+                {/* Custom Lines sub-section */}
+                <div className="border-t border-border/50" data-testid="section-custom-lines">
+                  <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50">
+                    <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[#bba7db]/70" />
+                      <span className="text-xs font-medium">Custom Lines</span>
+                    </div>
+                    <button
                       type="button"
-                      variant="outline"
-                      size="sm"
                       onClick={addCustomLine}
+                      className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
                       data-testid="button-add-custom-line"
                     >
-                      <Plus className="h-4 w-4 mr-1" />
-                      Add Line
-                    </Button>
-                  </CardHeader>
-                  <CardContent>
+                      <Plus className="w-3 h-3" />
+                      <span>Add Line</span>
+                    </button>
+                  </div>
+                  <div className="px-4 py-3">
                     {customLines.length === 0 ? (
                       <p className="text-sm text-muted-foreground text-center py-4">
                         No custom lines. Click "Add Line" to add a custom line item.
@@ -2125,27 +2147,30 @@ export default function ClientInvoiceDetail() {
                         </TableBody>
                       </Table>
                     )}
-                  </CardContent>
-                </Card>
+                  </div>{/* end custom lines content */}
+                </div>{/* end custom lines sub-section */}
+              </div>{/* end Card 2: Financials */}
 
-                {/* Closing Text (collapsible card) */}
-                <Card>
-                  <CardHeader
-                    className="flex flex-row items-center justify-between gap-4 space-y-0 pb-3 cursor-pointer"
+              {/* ── Card 3: Documentation ── */}
+              <div className="rounded-lg border border-border bg-card overflow-hidden">
+                {/* Closing Text sub-section */}
+                <div>
+                  <div
+                    className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 cursor-pointer"
                     onClick={() => setClosingCollapsed((v) => !v)}
                   >
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full flex-shrink-0 bg-slate-400/60" />
-                      Closing Text
-                    </CardTitle>
+                    <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
+                      <span className="text-xs font-medium">Closing Text</span>
+                    </div>
                     {closingCollapsed ? (
-                      <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
                     ) : (
-                      <ChevronUp className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      <ChevronUp className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
                     )}
-                  </CardHeader>
+                  </div>
                   {!closingCollapsed && (
-                    <CardContent>
+                    <div className="px-4 py-3">
                       <FormField
                         control={form.control}
                         name="closingText"
@@ -2163,28 +2188,28 @@ export default function ClientInvoiceDetail() {
                           </FormItem>
                         )}
                       />
-                    </CardContent>
+                    </div>
                   )}
-                </Card>
+                </div>
 
-                {/* Terms & Conditions — read from company settings */}
-                <Card>
-                  <CardHeader
-                    className="flex flex-row items-center justify-between gap-4 space-y-0 pb-3 cursor-pointer"
+                {/* Terms & Conditions sub-section */}
+                <div className="border-t border-border/50">
+                  <div
+                    className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 cursor-pointer"
                     onClick={() => setTermsCollapsed((v) => !v)}
                   >
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full flex-shrink-0 bg-slate-400/60" />
-                      Terms & Conditions
-                    </CardTitle>
+                    <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
+                      <span className="text-xs font-medium">Terms &amp; Conditions</span>
+                    </div>
                     {termsCollapsed ? (
-                      <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
                     ) : (
-                      <ChevronUp className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      <ChevronUp className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
                     )}
-                  </CardHeader>
+                  </div>
                   {!termsCollapsed && (
-                    <CardContent>
+                    <div className="px-4 py-3">
                       {companySettings?.termsAndConditions ? (
                         <p className="text-sm text-muted-foreground whitespace-pre-wrap">
                           {companySettings.termsAndConditions}
@@ -2194,34 +2219,36 @@ export default function ClientInvoiceDetail() {
                           No terms set — go to Company Settings &rsaquo; Templates &rsaquo; Terms &amp; Conditions to add your standard terms.
                         </p>
                       )}
-                    </CardContent>
+                    </div>
                   )}
-                </Card>
+                </div>
 
-                {/* Attachments stub */}
-                <Card data-testid="section-attachments">
-                  <CardHeader>
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full flex-shrink-0 bg-slate-400/60" />
-                      <Paperclip className="h-4 w-4" />
-                      Attachments
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
+                {/* Attachments sub-section */}
+                <div className="border-t border-border/50" data-testid="section-attachments">
+                  <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50">
+                    <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
+                      <Paperclip className="h-3 w-3 text-muted-foreground" />
+                      <span className="text-xs font-medium">Attachments</span>
+                    </div>
+                  </div>
+                  <div className="px-4 py-3">
                     <p className="text-sm text-muted-foreground text-center py-4">
                       No attachments
                     </p>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
+              </div>{/* end Card 3: Documentation */}
 
-                {/* Invoice Summary Card */}
-                <Card data-testid="summary-panel">
-                  <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-3">
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full flex-shrink-0 bg-primary/50" />
-                      Invoice Summary
-                    </CardTitle>
-                    <div className="flex items-center gap-1.5 text-xs">
+              {/* ── Card 4: Invoice Summary ── */}
+              <div className="rounded-lg border border-border bg-card overflow-hidden" data-testid="summary-panel">
+                {/* summary header — lilac strip with Ex/Inc GST toggle */}
+                <div className="bg-[#bba7db]/10 px-4 py-3 flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[#bba7db]/80" />
+                    <span className="text-xs font-medium">Invoice Summary</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs">
                       <span
                         className={cn(
                           "text-xs",
@@ -2248,8 +2275,8 @@ export default function ClientInvoiceDetail() {
                         Inc GST
                       </span>
                     </div>
-                  </CardHeader>
-                  <CardContent>
+                  </div>{/* end summary header strip */}
+                  <div className="px-4 py-3">
                     <div className="grid grid-cols-5 gap-6">
                       {/* Left: Breakdown */}
                       <div className="col-span-3 space-y-1.5">
@@ -2361,29 +2388,28 @@ export default function ClientInvoiceDetail() {
                         )}
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>{/* end summary content */}
+                </div>{/* end Card 4: Invoice Summary */}
 
-                {/* Payments History — always last */}
+                {/* ── Card 5: Payments ── */}
                 {isEditMode && (
-                  <Card data-testid="section-payments-history">
-                    <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0">
-                      <CardTitle className="text-base flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full flex-shrink-0 bg-emerald-400/70" />
-                        Payments ({payments.length})
-                      </CardTitle>
-                      <Button
+                  <div className="rounded-lg border border-border bg-card overflow-hidden" data-testid="section-payments-history">
+                    <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50">
+                      <div className="flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-emerald-400/70" />
+                        <span className="text-xs font-medium">Payments ({payments.length})</span>
+                      </div>
+                      <button
                         type="button"
-                        variant="outline"
-                        size="sm"
                         onClick={() => setPaymentDialogOpen(true)}
+                        className="h-6 px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
                         data-testid="button-record-payment"
                       >
-                        <Plus className="h-4 w-4 mr-1" />
-                        Record Payment
-                      </Button>
-                    </CardHeader>
-                    <CardContent>
+                        <Plus className="w-3 h-3" />
+                        <span>Record Payment</span>
+                      </button>
+                    </div>
+                    <div className="px-4 py-3">
                       {payments.length > 0 ? (
                         <Table>
                           <TableHeader>
@@ -2420,8 +2446,8 @@ export default function ClientInvoiceDetail() {
                           No payments recorded
                         </p>
                       )}
-                    </CardContent>
-                  </Card>
+                    </div>
+                  </div>
                 )}
 
             </div>

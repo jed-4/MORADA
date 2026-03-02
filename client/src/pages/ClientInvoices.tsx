@@ -645,11 +645,10 @@ export default function ClientInvoices() {
 
       {/* Content — table card with search bar as first row */}
       <div className="flex-1 overflow-auto px-3 pb-3 pt-1.5">
-        <div className="border border-border rounded-md bg-background overflow-x-auto">
-          <div style={{ minWidth: `${totalInnerWidth}px` }}>
+        <div className="border border-border rounded-md bg-background">
 
-            {/* Search / filter / columns row — top of card */}
-            <div className="h-9 flex items-center px-3 border-b border-border/50 gap-2 bg-background sticky top-0 z-20">
+          {/* Search / filter / columns row — full card width, never scrolls horizontally */}
+          <div className="h-9 flex items-center px-3 border-b border-border/50 gap-2 bg-background sticky top-0 z-20">
               <div className="relative w-44">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
                 <Input
@@ -740,7 +739,11 @@ export default function ClientInvoices() {
                   </PopoverContent>
                 </Popover>
               </div>
-            </div>
+          </div>
+
+          {/* Table area — scrolls horizontally when columns exceed card width */}
+          <div className="overflow-x-auto">
+            <div style={{ minWidth: `${totalInnerWidth}px` }}>
 
             {/* Body — loading / empty / rows */}
             {invoicesLoading ? (
@@ -828,9 +831,10 @@ export default function ClientInvoices() {
                 ))}
               </>
             )}
-          </div>
-        </div>
-      </div>
+            </div>{/* end minWidth */}
+          </div>{/* end overflow-x-auto */}
+        </div>{/* end card */}
+      </div>{/* end flex-1 scroll */}
     </div>
   );
 }
