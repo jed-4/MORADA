@@ -4,7 +4,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { format } from "date-fns";
+import { format, addDays } from "date-fns";
 import {
   ArrowLeft,
   Plus,
@@ -236,6 +236,8 @@ export default function ClientInvoiceDetail() {
   const [columnPickerOpen, setColumnPickerOpen] = useState(false);
   const [dragOverId, setDragOverId] = useState<ColumnId | null>(null);
   const dragItem = useRef<ColumnId | null>(null);
+  const [invoiceDateOpen, setInvoiceDateOpen] = useState(false);
+  const [dueDateOpen, setDueDateOpen] = useState(false);
 
   // ── queries ──────────────────────────────────────────────────────────────────
   const { data: xeroStatus } = useQuery<{ connected: boolean }>({
@@ -311,6 +313,13 @@ export default function ClientInvoiceDetail() {
     queryKey: [`/api/estimates/${selectedEstimateId}/items`],
     enabled: !!selectedEstimateId,
   });
+
+  const { data: paymentTermsRaw = [] } = useQuery<any[]>({
+    queryKey: ["/api/payment-terms-options"],
+  });
+  const paymentTermsOptions = paymentTermsRaw
+    .filter((o) => o.isInvoiceDefault)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
 
   // Fetch auto-generated invoice number
   const { data: nextNumberData } = useQuery<{ invoiceNumber: string }>({
@@ -1131,73 +1140,7 @@ export default function ClientInvoiceDetail() {
                     <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Invoice Info</span>
                   </div>
 
-                  {/* Company / Tax Invoice */}
-                  <div className="px-4 py-3">
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <p className="font-semibold text-base">
-                          {companySettings?.companyName || user?.companyName || "Your Company"}
-                        </p>
-                        {companySettings?.address && (
-                          <p className="text-xs text-muted-foreground mt-0.5 whitespace-pre-line">
-                            {companySettings.address}
-                          </p>
-                        )}
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        <p className="text-lg font-bold tracking-widest text-muted-foreground/40 uppercase">
-                          Tax Invoice
-                        </p>
-                        <div className="space-y-0.5 mt-1">
-                          {form.watch("invoiceNumber") && (
-                            <p className="text-xs text-muted-foreground">
-                              <span className="font-medium text-foreground">{form.watch("invoiceNumber")}</span>
-                            </p>
-                          )}
-                          {form.watch("invoiceDate") && (
-                            <p className="text-xs text-muted-foreground">
-                              Issued: <span className="text-foreground">{format(form.watch("invoiceDate"), "d MMM yyyy")}</span>
-                            </p>
-                          )}
-                          {form.watch("dueDate") && (
-                            <p className="text-xs text-muted-foreground">
-                              Due: <span className="text-foreground">{format(form.watch("dueDate")!, "d MMM yyyy")}</span>
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>{/* end company section */}
-
-                  {/* Bill To / Project */}
-                  {selectedProjectId && currentProject && (
-                    <>
-                      <div className="border-t border-border/50" />
-                      <div className="px-4 py-3">
-                        <div className="grid grid-cols-2 gap-6">
-                          <div>
-                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium mb-1">Bill To</p>
-                            <p className="text-sm font-medium">{(currentProject as any).clientName || currentProject.name}</p>
-                            {currentProject.location && (
-                              <p className="text-xs text-muted-foreground mt-0.5">{currentProject.location}</p>
-                            )}
-                          </div>
-                          <div>
-                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium mb-1">Project</p>
-                            <p className="text-sm font-medium">{currentProject.name}</p>
-                            {(currentProject.constructionNumber || currentProject.preConstructionNumber || currentProject.leadNumber) && (
-                              <p className="text-xs text-muted-foreground mt-0.5">
-                                #{currentProject.constructionNumber || currentProject.preConstructionNumber || currentProject.leadNumber}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </>
-                  )}
-
                   {/* Invoice Name + Number + Dates */}
-                  <div className="border-t border-border/50" />
                   <div className="px-4 py-3 space-y-3">
                       <div className="grid grid-cols-3 gap-4">
                         <FormField
@@ -1282,7 +1225,7 @@ export default function ClientInvoiceDetail() {
                           render={({ field }) => (
                             <FormItem className="flex flex-col">
                               <FormLabel>Invoice Date</FormLabel>
-                              <Popover>
+                              <Popover open={invoiceDateOpen} onOpenChange={setInvoiceDateOpen}>
                                 <PopoverTrigger asChild>
                                   <FormControl>
                                     <Button
@@ -1299,10 +1242,19 @@ export default function ClientInvoiceDetail() {
                                   </FormControl>
                                 </PopoverTrigger>
                                 <PopoverContent className="w-auto p-0">
+                                  <div className="p-2 border-b">
+                                    <button
+                                      type="button"
+                                      className="w-full h-7 px-2 text-xs rounded-md border border-border/60 bg-muted/40 hover-elevate text-left"
+                                      onClick={() => { field.onChange(new Date()); setInvoiceDateOpen(false); }}
+                                    >
+                                      Today — {format(new Date(), "d MMM yyyy")}
+                                    </button>
+                                  </div>
                                   <Calendar
                                     mode="single"
                                     selected={field.value}
-                                    onSelect={field.onChange}
+                                    onSelect={(d) => { field.onChange(d); setInvoiceDateOpen(false); }}
                                     initialFocus
                                   />
                                 </PopoverContent>
@@ -1317,7 +1269,7 @@ export default function ClientInvoiceDetail() {
                           render={({ field }) => (
                             <FormItem className="flex flex-col">
                               <FormLabel>Due Date</FormLabel>
-                              <Popover>
+                              <Popover open={dueDateOpen} onOpenChange={setDueDateOpen}>
                                 <PopoverTrigger asChild>
                                   <FormControl>
                                     <Button
@@ -1334,10 +1286,37 @@ export default function ClientInvoiceDetail() {
                                   </FormControl>
                                 </PopoverTrigger>
                                 <PopoverContent className="w-auto p-0">
+                                  {paymentTermsOptions.length > 0 && (
+                                    <div className="p-2 border-b flex flex-wrap gap-1">
+                                      {paymentTermsOptions.map((opt) => (
+                                        <button
+                                          key={opt.id}
+                                          type="button"
+                                          className="h-6 px-2 text-xs rounded-md border border-border/60 bg-muted/40 hover-elevate"
+                                          onClick={() => {
+                                            const base = form.getValues("invoiceDate") || new Date();
+                                            field.onChange(addDays(base, opt.dueValue));
+                                            setDueDateOpen(false);
+                                          }}
+                                        >
+                                          {opt.name}
+                                        </button>
+                                      ))}
+                                      {field.value && (
+                                        <button
+                                          type="button"
+                                          className="h-6 px-2 text-xs rounded-md text-muted-foreground hover-elevate"
+                                          onClick={() => { field.onChange(undefined); setDueDateOpen(false); }}
+                                        >
+                                          Clear
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
                                   <Calendar
                                     mode="single"
                                     selected={field.value}
-                                    onSelect={field.onChange}
+                                    onSelect={(d) => { field.onChange(d); setDueDateOpen(false); }}
                                     initialFocus
                                   />
                                 </PopoverContent>
@@ -1394,7 +1373,7 @@ export default function ClientInvoiceDetail() {
 
                 {/* Card 2 — Financials */}
                 <div className="rounded-lg border border-border bg-card overflow-hidden">
-                  <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50">
+                  <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
                     <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
                     <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Financials</span>
                   </div>
@@ -1403,7 +1382,7 @@ export default function ClientInvoiceDetail() {
                   <>
                     {/* Contract Price sub-section */}
                     <div data-testid="section-contract-price">
-                      <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50">
+                      <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
                         <div className="flex items-center gap-2">
                           <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-blue-400/70" />
                           <span className="text-xs font-medium">Contract Price</span>
@@ -1582,7 +1561,7 @@ export default function ClientInvoiceDetail() {
                                           <Input
                                             value={row.name}
                                             onChange={(e) => updateContractClaimRow(row.id, "name", e.target.value)}
-                                            className="h-7 text-sm"
+                                            className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm"
                                             placeholder="Claim name"
                                           />
                                         </TableCell>
@@ -1592,7 +1571,7 @@ export default function ClientInvoiceDetail() {
                                           <Input
                                             value={row.description}
                                             onChange={(e) => updateContractClaimRow(row.id, "description", e.target.value)}
-                                            className="h-7 text-sm"
+                                            className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm"
                                             placeholder="Description"
                                           />
                                         </TableCell>
@@ -1607,7 +1586,7 @@ export default function ClientInvoiceDetail() {
                                             onChange={(e) =>
                                               updateContractClaimRow(row.id, "claimPercent", parseFloat(e.target.value) || 0)
                                             }
-                                            className="h-7 w-16 text-right text-sm ml-auto"
+                                            className="h-7 w-16 text-right text-sm ml-auto border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm"
                                           />
                                         </TableCell>
                                       )}
@@ -1648,7 +1627,7 @@ export default function ClientInvoiceDetail() {
                             {renderLineTableFooter(calculateContractPrice())}
                           </>
                         ) : (
-                          <p className="text-sm text-muted-foreground text-center py-4">
+                          <p className="text-sm text-muted-foreground text-center py-2">
                             No claim rows yet. Click "Add Claim Row" to begin.
                           </p>
                         )}
@@ -1669,7 +1648,7 @@ export default function ClientInvoiceDetail() {
 
                     {/* Variations sub-section */}
                     <div className="border-t border-border/50" data-testid="section-variations">
-                      <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50">
+                      <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
                         <div className="flex items-center gap-2">
                           <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber-400/70" />
                           <span className="text-xs font-medium">Variations</span>
@@ -1687,7 +1666,7 @@ export default function ClientInvoiceDetail() {
 
                       <div className="px-4 py-3">
                         {selectedVariationIds.length === 0 ? (
-                          <p className="text-sm text-muted-foreground text-center py-4">
+                          <p className="text-sm text-muted-foreground text-center py-2">
                             No variations added. Click "Select Variations" to add approved variations.
                           </p>
                         ) : (
@@ -1789,7 +1768,7 @@ export default function ClientInvoiceDetail() {
 
                     {/* Allowances sub-section */}
                     <div className="border-t border-border/50" data-testid="section-allowances">
-                      <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50">
+                      <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
                         <div className="flex items-center gap-2">
                           <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-emerald-400/70" />
                           <span className="text-xs font-medium">Allowances</span>
@@ -1807,7 +1786,7 @@ export default function ClientInvoiceDetail() {
 
                       <div className="px-4 py-3">
                         {selectedAllowanceIds.length === 0 ? (
-                          <p className="text-sm text-muted-foreground text-center py-4">
+                          <p className="text-sm text-muted-foreground text-center py-2">
                             No allowances added. Click "Select Allowances" to add finalized allowances.
                           </p>
                         ) : (
@@ -1919,7 +1898,7 @@ export default function ClientInvoiceDetail() {
                   <>
                     {/* Bills sub-section */}
                     <div className="border-t border-border/50" data-testid="section-bills">
-                      <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50">
+                      <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
                         <div className="flex items-center gap-2">
                           <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-orange-400/70" />
                           <span className="text-xs font-medium">Bills</span>
@@ -2009,7 +1988,7 @@ export default function ClientInvoiceDetail() {
 
                 {/* Custom Lines sub-section */}
                 <div className="border-t border-border/50" data-testid="section-custom-lines">
-                  <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50">
+                  <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
                     <div className="flex items-center gap-2">
                       <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[#bba7db]/70" />
                       <span className="text-xs font-medium">Custom Lines</span>
@@ -2026,7 +2005,7 @@ export default function ClientInvoiceDetail() {
                   </div>
                   <div className="px-4 py-3">
                     {customLines.length === 0 ? (
-                      <p className="text-sm text-muted-foreground text-center py-4">
+                      <p className="text-sm text-muted-foreground text-center py-2">
                         No custom lines. Click "Add Line" to add a custom line item.
                       </p>
                     ) : (
@@ -2149,100 +2128,10 @@ export default function ClientInvoiceDetail() {
                     )}
                   </div>{/* end custom lines content */}
                 </div>{/* end custom lines sub-section */}
-              </div>{/* end Card 2: Financials */}
 
-              {/* ── Card 3: Documentation ── */}
-              <div className="rounded-lg border border-border bg-card overflow-hidden">
-                {/* Closing Text sub-section */}
-                <div>
-                  <div
-                    className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 cursor-pointer"
-                    onClick={() => setClosingCollapsed((v) => !v)}
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
-                      <span className="text-xs font-medium">Closing Text</span>
-                    </div>
-                    {closingCollapsed ? (
-                      <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                    ) : (
-                      <ChevronUp className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                    )}
-                  </div>
-                  {!closingCollapsed && (
-                    <div className="px-4 py-3">
-                      <FormField
-                        control={form.control}
-                        name="closingText"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormControl>
-                              <RichTextEditor
-                                content={field.value || ""}
-                                onChange={(html) => field.onChange(html)}
-                                placeholder="Enter closing text..."
-                                data-testid="editor-closing"
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                  )}
-                </div>
 
-                {/* Terms & Conditions sub-section */}
-                <div className="border-t border-border/50">
-                  <div
-                    className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 cursor-pointer"
-                    onClick={() => setTermsCollapsed((v) => !v)}
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
-                      <span className="text-xs font-medium">Terms &amp; Conditions</span>
-                    </div>
-                    {termsCollapsed ? (
-                      <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                    ) : (
-                      <ChevronUp className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                    )}
-                  </div>
-                  {!termsCollapsed && (
-                    <div className="px-4 py-3">
-                      {companySettings?.termsAndConditions ? (
-                        <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                          {companySettings.termsAndConditions}
-                        </p>
-                      ) : (
-                        <p className="text-sm text-muted-foreground italic">
-                          No terms set — go to Company Settings &rsaquo; Templates &rsaquo; Terms &amp; Conditions to add your standard terms.
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Attachments sub-section */}
-                <div className="border-t border-border/50" data-testid="section-attachments">
-                  <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50">
-                    <div className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
-                      <Paperclip className="h-3 w-3 text-muted-foreground" />
-                      <span className="text-xs font-medium">Attachments</span>
-                    </div>
-                  </div>
-                  <div className="px-4 py-3">
-                    <p className="text-sm text-muted-foreground text-center py-4">
-                      No attachments
-                    </p>
-                  </div>
-                </div>
-              </div>{/* end Card 3: Documentation */}
-
-              {/* ── Card 4: Invoice Summary ── */}
-              <div className="rounded-lg border border-border bg-card overflow-hidden" data-testid="summary-panel">
-                {/* summary header — lilac strip with Ex/Inc GST toggle */}
+              {/* ── Invoice Summary ── */}
+              <div data-testid="summary-panel">
                 <div className="bg-[#bba7db]/10 px-4 py-3 flex items-center justify-between gap-4">
                   <div className="flex items-center gap-2">
                     <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[#bba7db]/80" />
@@ -2389,7 +2278,97 @@ export default function ClientInvoiceDetail() {
                       </div>
                     </div>
                   </div>{/* end summary content */}
-                </div>{/* end Card 4: Invoice Summary */}
+              </div>{/* end summary-panel */}
+              </div>{/* end Card 2: Financials */}
+
+              {/* ── Card 3: Documentation ── */}
+              <div className="rounded-lg border border-border bg-card overflow-hidden">
+                {/* Closing Text sub-section */}
+                <div>
+                  <div
+                    className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 cursor-pointer bg-muted/40"
+                    onClick={() => setClosingCollapsed((v) => !v)}
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
+                      <span className="text-xs font-medium">Closing Text</span>
+                    </div>
+                    {closingCollapsed ? (
+                      <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                    ) : (
+                      <ChevronUp className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                    )}
+                  </div>
+                  {!closingCollapsed && (
+                    <div className="px-4 py-3">
+                      <FormField
+                        control={form.control}
+                        name="closingText"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormControl>
+                              <RichTextEditor
+                                content={field.value || ""}
+                                onChange={(html) => field.onChange(html)}
+                                placeholder="Enter closing text..."
+                                data-testid="editor-closing"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Terms & Conditions sub-section */}
+                <div className="border-t border-border/50">
+                  <div
+                    className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 cursor-pointer bg-muted/40"
+                    onClick={() => setTermsCollapsed((v) => !v)}
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
+                      <span className="text-xs font-medium">Terms &amp; Conditions</span>
+                    </div>
+                    {termsCollapsed ? (
+                      <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                    ) : (
+                      <ChevronUp className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                    )}
+                  </div>
+                  {!termsCollapsed && (
+                    <div className="px-4 py-3">
+                      {companySettings?.termsAndConditions ? (
+                        <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                          {companySettings.termsAndConditions}
+                        </p>
+                      ) : (
+                        <p className="text-sm text-muted-foreground italic">
+                          No terms set — go to Company Settings &rsaquo; Templates &rsaquo; Terms &amp; Conditions to add your standard terms.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Attachments sub-section */}
+                <div className="border-t border-border/50" data-testid="section-attachments">
+                  <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
+                    <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
+                      <Paperclip className="h-3 w-3 text-muted-foreground" />
+                      <span className="text-xs font-medium">Attachments</span>
+                    </div>
+                  </div>
+                  <div className="px-4 py-3">
+                    <p className="text-sm text-muted-foreground text-center py-2">
+                      No attachments
+                    </p>
+                  </div>
+                </div>
+              </div>{/* end Card 3: Documentation */}
 
                 {/* ── Card 5: Payments ── */}
                 {isEditMode && (
@@ -2442,7 +2421,7 @@ export default function ClientInvoiceDetail() {
                           </TableBody>
                         </Table>
                       ) : (
-                        <p className="text-sm text-muted-foreground text-center py-4">
+                        <p className="text-sm text-muted-foreground text-center py-2">
                           No payments recorded
                         </p>
                       )}

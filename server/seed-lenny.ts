@@ -38,6 +38,7 @@ import {
   scopeStages,
   scopeItems,
   minutes,
+  paymentTermsOptions,
 } from "../shared/schema";
 import { eq, and, inArray } from "drizzle-orm";
 
@@ -1489,6 +1490,15 @@ export async function seedLennyDemo(companyId: string, userId: string) {
         ownerId: userId,
       });
     }
+
+    // ─── PAYMENT TERMS OPTIONS ─────────────────────────────────────────────────
+    await tx.insert(paymentTermsOptions).values([
+      { companyId, name: "Due on Receipt", dueValue: 0,  dueType: "days", isInvoiceDefault: true, isBillDefault: false, isActive: true, sortOrder: 0 },
+      { companyId, name: "Net 7",          dueValue: 7,  dueType: "days", isInvoiceDefault: true, isBillDefault: true,  isActive: true, sortOrder: 1 },
+      { companyId, name: "Net 14",         dueValue: 14, dueType: "days", isInvoiceDefault: true, isBillDefault: true,  isActive: true, sortOrder: 2 },
+      { companyId, name: "Net 30",         dueValue: 30, dueType: "days", isInvoiceDefault: true, isBillDefault: true,  isActive: true, sortOrder: 3 },
+      { companyId, name: "Net 60",         dueValue: 60, dueType: "days", isInvoiceDefault: true, isBillDefault: false, isActive: true, sortOrder: 4 },
+    ]);
 
     return {
       success: true,

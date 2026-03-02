@@ -237,6 +237,14 @@ export default function ClientInvoices() {
     setColWidths((prev) => ({ ...prev, [key]: w }));
   }, []);
 
+  const headerScrollRef = useRef<HTMLDivElement>(null);
+  const bodyScrollRef   = useRef<HTMLDivElement>(null);
+  const syncHeaderScroll = useCallback(() => {
+    if (headerScrollRef.current && bodyScrollRef.current) {
+      headerScrollRef.current.scrollLeft = bodyScrollRef.current.scrollLeft;
+    }
+  }, []);
+
   // ── Queries ───────────────────────────────────────────────────────────────
 
   const queryParams: Record<string, string> = {};
@@ -741,8 +749,40 @@ export default function ClientInvoices() {
               </div>
           </div>
 
-          {/* Table area — scrolls horizontally when columns exceed card width */}
-          <div className="overflow-x-auto">
+          {/* Table area — column header extracted for correct sticky behaviour */}
+
+          {/* Column header row — sticky, overflow-hidden so it clips without scrollbar */}
+          {!invoicesLoading && filteredInvoices.length > 0 && (
+            <div
+              ref={headerScrollRef}
+              className="overflow-x-hidden sticky top-9 z-10 border-b border-border bg-muted/30"
+            >
+              <div style={{ minWidth: `${totalInnerWidth}px` }}>
+                <div className="h-7 px-3 flex items-center gap-2">
+                  {visibleColumns.map((col) => (
+                    <HeaderCell
+                      key={col.key}
+                      col={col}
+                      width={colWidths[col.key]}
+                      sortCol={sortCol}
+                      sortDir={sortDir}
+                      onSort={handleSort}
+                      onResize={handleResize}
+                    />
+                  ))}
+                  {!projectIdFromUrl && (
+                    <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide flex-shrink-0" style={{ width: `${PROJECT_COL_WIDTH}px` }}>
+                      Project
+                    </div>
+                  )}
+                  <div className="flex-shrink-0" style={{ width: `${ACTIONS_WIDTH}px` }} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Body — scrolls horizontally; scroll position synced to header */}
+          <div ref={bodyScrollRef} onScroll={syncHeaderScroll} className="overflow-x-auto">
             <div style={{ minWidth: `${totalInnerWidth}px` }}>
 
             {/* Body — loading / empty / rows */}
@@ -765,27 +805,6 @@ export default function ClientInvoices() {
               </div>
             ) : (
               <>
-                {/* Column header row */}
-                <div className="h-7 px-3 flex items-center gap-2 border-b border-border bg-muted/30 sticky top-9 z-10">
-                  {visibleColumns.map((col) => (
-                    <HeaderCell
-                      key={col.key}
-                      col={col}
-                      width={colWidths[col.key]}
-                      sortCol={sortCol}
-                      sortDir={sortDir}
-                      onSort={handleSort}
-                      onResize={handleResize}
-                    />
-                  ))}
-                  {!projectIdFromUrl && (
-                    <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide flex-shrink-0" style={{ width: `${PROJECT_COL_WIDTH}px` }}>
-                      Project
-                    </div>
-                  )}
-                  <div className="flex-shrink-0" style={{ width: `${ACTIONS_WIDTH}px` }} />
-                </div>
-
                 {/* Data rows */}
                 {filteredInvoices.map((invoice) => (
                   <div
@@ -832,7 +851,7 @@ export default function ClientInvoices() {
               </>
             )}
             </div>{/* end minWidth */}
-          </div>{/* end overflow-x-auto */}
+          </div>{/* end overflow-x-auto body */}
         </div>{/* end card */}
       </div>{/* end flex-1 scroll */}
     </div>
