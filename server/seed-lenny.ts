@@ -8,6 +8,7 @@ import {
   variations,
   variationItems,
   clientInvoices,
+  invoiceEstimates,
   invoiceAllowances,
   clientInvoicePayments,
   bills,
@@ -491,7 +492,7 @@ export async function seedLennyDemo(companyId: string, userId: string) {
     const inv4Total = 49738473 - inv1Total - inv2Total - inv3Total; // = 14921542
     const inv4Ex   = Math.round(inv4Total / 1.1);
     const inv4Gst  = inv4Total - inv4Ex;
-    await tx.insert(clientInvoices).values({
+    const [inv4] = await tx.insert(clientInvoices).values({
       invoiceNumber: "INV-1004",
       name: "Progress Claim 4 — Practical Completion",
       projectId: proj1.id,
@@ -506,7 +507,15 @@ export async function seedLennyDemo(companyId: string, userId: string) {
       paidAmount: 0,
       balanceAmount: inv4Total,
       showAmountsIncTax: true,
-    });
+    }).returning();
+
+    // Link all 4 Irwin invoices to the estimate (required for allowances selector)
+    await tx.insert(invoiceEstimates).values([
+      { invoiceId: inv1.id, estimateId: est1.id },
+      { invoiceId: inv2.id, estimateId: est1.id },
+      { invoiceId: inv3.id, estimateId: est1.id },
+      { invoiceId: inv4.id, estimateId: est1.id },
+    ]);
 
     // Bills for Project 1
     const billDate = (d: string) => new Date(d);

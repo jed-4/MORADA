@@ -422,11 +422,12 @@ export default function ClientInvoiceDetail() {
   }, [nextNumberData, isEditMode, invoiceNumberOverride, form]);
 
   useEffect(() => {
-    if (linkedEstimates.length > 0 && isEditMode) {
-      const estimate = linkedEstimates[0];
-      setSelectedEstimateId(estimate.estimateId);
+    if (linkedEstimates.length > 0) {
+      setSelectedEstimateId(linkedEstimates[0].estimateId);
+    } else if (estimates.length > 0) {
+      setSelectedEstimateId(estimates[0].id);
     }
-  }, [linkedEstimates, isEditMode]);
+  }, [linkedEstimates, estimates]);
 
   useEffect(() => {
     if (linkedVariations.length > 0 && isEditMode) {
