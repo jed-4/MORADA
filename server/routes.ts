@@ -2855,6 +2855,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else if (toPhase === "construction") {
         updateData.constructionNumber = generatedJobNumber;
         updateData.jobNumber = generatedJobNumber; // Also update main job number
+        // Stamp the contract price from the first approved/locked estimate if not already set
+        if (!(project as any).contractPrice) {
+          try {
+            const projectEstimates = await storage.getEstimates(req.params.id);
+            const approvedEst = projectEstimates.find((e: any) => e.status === "approved" || e.isLocked);
+            if (approvedEst) {
+              const estItems = await storage.getEstimateItems(approvedEst.id);
+              const totalCents = estItems.reduce((sum: number, item: any) => sum + Math.round(item.priceIncTax * item.quantity * 100), 0);
+              if (totalCents > 0) updateData.contractPrice = totalCents;
+            }
+          } catch {}
+        }
       }
       
       // Record phase transition
@@ -10622,11 +10634,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
-      const prefix = (project as any).clientInvoicePrefix || "INV-";
-      const startNumber = (project as any).clientInvoiceStartNumber || 1000;
       const existingInvoices = await storage.getClientInvoices(projectId as string);
-      const nextNumber = startNumber + existingInvoices.length;
-      const invoiceNumber = `${prefix}${nextNumber}`;
+      const seq = String(existingInvoices.length + 1).padStart(2, '0');
+      const jobNum = (project as any).constructionNumber || (project as any).preConstructionNumber || (project as any).leadNumber || (project as any).jobNumber;
+      const invoiceNumber = jobNum
+        ? `${jobNum}-CI-${seq}`
+        : `${(project as any).clientInvoicePrefix || "INV-"}${((project as any).clientInvoiceStartNumber || 1000) + existingInvoices.length}`;
       res.json({ invoiceNumber });
     } catch (error) {
       res.status(500).json({ error: "Failed to generate invoice number" });

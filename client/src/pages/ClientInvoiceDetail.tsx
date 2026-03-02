@@ -19,6 +19,7 @@ import {
   ChevronDown,
   ChevronUp,
   Lock,
+  Unlock,
   Settings2,
   Pencil,
   RefreshCw,
@@ -179,6 +180,15 @@ type CustomLine = {
   sortOrder: number;
 };
 
+// ─── Contract claim row ───────────────────────────────────────────────────────
+
+type ContractClaimRow = {
+  id: string;
+  name: string;
+  description: string;
+  claimPercent: number;
+};
+
 // ─── Variation claim state ─────────────────────────────────────────────────────
 
 type ClaimState = Record<string, number>; // variationId/allowanceId -> claimPercent (0-100)
@@ -201,9 +211,6 @@ export default function ClientInvoiceDetail() {
   // ── core state ──────────────────────────────────────────────────────────────
   const [customLines, setCustomLines] = useState<CustomLine[]>([]);
   const [selectedEstimateId, setSelectedEstimateId] = useState<string>("");
-  const [progressPercent, setProgressPercent] = useState<number | undefined>(undefined);
-  const [isCustomProgress, setIsCustomProgress] = useState(false);
-  const [customProgressPercent, setCustomProgressPercent] = useState<string>("");
   const [selectedVariationIds, setSelectedVariationIds] = useState<string[]>([]);
   const [selectedBillIds, setSelectedBillIds] = useState<string[]>([]);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
@@ -219,10 +226,14 @@ export default function ClientInvoiceDetail() {
   const [selectedAllowanceIds, setSelectedAllowanceIds] = useState<string[]>([]);
   const [variationClaims, setVariationClaims] = useState<ClaimState>({});
   const [allowanceClaims, setAllowanceClaims] = useState<ClaimState>({});
-  const [lineItemClaims, setLineItemClaims] = useState<ClaimState>({});
   const [columnConfig, setColumnConfig] = useState<ColumnConfig[]>(defaultColumnConfig());
   const [showAmountsIncTax, setShowAmountsIncTax] = useState(true);
   const [lockedContractPrice, setLockedContractPrice] = useState<number | null>(null);
+  const [contractClaimRows, setContractClaimRows] = useState<ContractClaimRow[]>([
+    { id: crypto.randomUUID(), name: "", description: "", claimPercent: 100 },
+  ]);
+  const [contractPriceOverrideOpen, setContractPriceOverrideOpen] = useState(false);
+  const [contractPriceOverrideValue, setContractPriceOverrideValue] = useState("");
   const [columnPickerOpen, setColumnPickerOpen] = useState(false);
   const [dragOverId, setDragOverId] = useState<ColumnId | null>(null);
   const dragItem = useRef<ColumnId | null>(null);
@@ -367,8 +378,8 @@ export default function ClientInvoiceDetail() {
       if ((invoice as any).lockedContractPrice) {
         setLockedContractPrice((invoice as any).lockedContractPrice);
       }
-      if ((invoice as any).lineItemClaims && typeof (invoice as any).lineItemClaims === "object") {
-        setLineItemClaims((invoice as any).lineItemClaims as ClaimState);
+      if ((invoice as any).contractClaimRows && Array.isArray((invoice as any).contractClaimRows)) {
+        setContractClaimRows((invoice as any).contractClaimRows as ContractClaimRow[]);
       }
       // Open intro/closing if they have content
       if (invoice.introductionText) setIntroCollapsed(false);
@@ -414,7 +425,6 @@ export default function ClientInvoiceDetail() {
     if (linkedEstimates.length > 0 && isEditMode) {
       const estimate = linkedEstimates[0];
       setSelectedEstimateId(estimate.estimateId);
-      setProgressPercent(estimate.progressPercent || undefined);
     }
   }, [linkedEstimates, isEditMode]);
 
@@ -446,55 +456,8 @@ export default function ClientInvoiceDetail() {
     }
   }, [linkedBills, isEditMode]);
 
-  useEffect(() => {
-    if (isCustomProgress) {
-      if (customProgressPercent === "") {
-        setProgressPercent(undefined);
-      } else {
-        const val = parseInt(customProgressPercent);
-        if (!isNaN(val) && val >= 0 && val <= 100) {
-          setProgressPercent(val);
-        }
-      }
-    }
-  }, [customProgressPercent, isCustomProgress]);
-
-  // Initialize per-line-item claim % when estimate items load (for new invoices or estimate switch)
-  // Only runs when selectedEstimateId or the list of item IDs changes — not on every lineItemClaims update
-  const estimateItemIds = estimateItems.map((i) => i.id).sort().join(",");
-  useEffect(() => {
-    if (!selectedEstimateId || estimateItems.length === 0) return;
-    const nonAllowanceItems = estimateItems.filter((item) => !item.allowance || item.allowance === "None");
-    setLineItemClaims((prev) => {
-      const next: ClaimState = {};
-      nonAllowanceItems.forEach((item) => {
-        next[item.id] = prev[item.id] !== undefined ? prev[item.id] : (progressPercent ?? 100);
-      });
-      return next;
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedEstimateId, estimateItemIds]);
-
-  // Lock contract price when linked estimate is approved/locked
-  useEffect(() => {
-    if (selectedEstimateId && estimates.length > 0) {
-      const est = estimates.find((e) => e.id === selectedEstimateId);
-      if (est && (est.status === "approved" || est.isLocked)) {
-        if (!lockedContractPrice) {
-          // Calculate and lock
-          const total = estimateItems.reduce(
-            (sum, item) => sum + item.priceIncTax * item.quantity,
-            0
-          );
-          if (total > 0) setLockedContractPrice(Math.round(total * 100));
-        }
-      }
-    }
-  }, [selectedEstimateId, estimates, estimateItems, lockedContractPrice]);
 
   // ── helpers ───────────────────────────────────────────────────────────────────
-
-  const getSelectedEstimate = () => estimates.find((e) => e.id === selectedEstimateId);
 
   const getAllowanceItems = () =>
     estimateItems.filter((item) => item.allowance && item.allowance !== "None");
@@ -507,24 +470,16 @@ export default function ClientInvoiceDetail() {
 
   const getSelectedBills = () => bills.filter((b) => selectedBillIds.includes(b.id));
 
-  const isEstimateLocked = () => {
-    const est = getSelectedEstimate();
-    return !!(est && (est.status === "approved" || est.isLocked));
-  };
-
   // ── calculations ───────────────────────────────────────────────────────────────
 
-  const getNonAllowanceItems = () =>
-    estimateItems.filter((item) => !item.allowance || item.allowance === "None");
+  const getEffectiveContractPrice = () =>
+    lockedContractPrice || ((currentProject as any)?.contractPrice ?? null);
 
   const calculateContractPrice = () => {
-    if (!selectedEstimateId) return 0;
-    const items = getNonAllowanceItems();
-    if (items.length === 0) return 0;
-    return items.reduce((sum, item) => {
-      const pct = lineItemClaims[item.id] !== undefined ? lineItemClaims[item.id] : (progressPercent ?? 100);
-      const itemTotal = Math.round(item.priceIncTax * item.quantity * 100);
-      return sum + Math.round((itemTotal * pct) / 100);
+    const baseCents = getEffectiveContractPrice();
+    if (!baseCents) return 0;
+    return contractClaimRows.reduce((sum, row) => {
+      return sum + Math.round((baseCents * row.claimPercent) / 100);
     }, 0);
   };
 
@@ -566,6 +521,24 @@ export default function ClientInvoiceDetail() {
     } else {
       return calculateBillsTotal() / 100 + calculateCustomLinesSubtotal();
     }
+  };
+
+  const addContractClaimRow = () => {
+    if (contractClaimRows.length >= 5) return;
+    setContractClaimRows((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), name: "", description: "", claimPercent: 0 },
+    ]);
+  };
+
+  const updateContractClaimRow = (id: string, field: keyof ContractClaimRow, value: any) => {
+    setContractClaimRows((prev) =>
+      prev.map((row) => (row.id === id ? { ...row, [field]: value } : row))
+    );
+  };
+
+  const removeContractClaimRow = (id: string) => {
+    setContractClaimRows((prev) => prev.filter((row) => row.id !== id));
   };
 
   const calculateGST = () => {
@@ -655,7 +628,7 @@ export default function ClientInvoiceDetail() {
     lockedContractPrice: lockedContractPrice,
     columnConfig: columnConfig,
     showAmountsIncTax: showAmountsIncTax,
-    lineItemClaims: lineItemClaims,
+    contractClaimRows: contractClaimRows,
   });
 
   const createMutation = useMutation({
@@ -684,13 +657,6 @@ export default function ClientInvoiceDetail() {
         });
       }
 
-      if (selectedEstimateId && currentProject?.invoicingMethod === "progress_payments") {
-        await apiRequest(`/api/client-invoices/${newInvoice.id}/estimates`, "POST", {
-          invoiceId: newInvoice.id,
-          estimateId: selectedEstimateId,
-          progressPercent: progressPercent,
-        });
-      }
 
       for (const variationId of selectedVariationIds) {
         await apiRequest(`/api/client-invoices/${newInvoice.id}/variations`, "POST", {
@@ -989,31 +955,26 @@ export default function ClientInvoiceDetail() {
 
   // ── render helpers ────────────────────────────────────────────────────────────
 
-  const renderLineTableHeader = (includeContractCols: boolean) => (
-    <TableRow>
-      {isColVisible("name") && <TableHead className="w-40">Name</TableHead>}
-      {isColVisible("description") && <TableHead>Description</TableHead>}
-      {includeContractCols && isColVisible("contractTotal") && (
-        <TableHead className="text-right w-28">Contract Total</TableHead>
-      )}
-      {includeContractCols && isColVisible("remaining") && (
-        <TableHead className="text-right w-28">Remaining</TableHead>
-      )}
+  const renderLineTableHeader = (_includeContractCols: boolean = false) => (
+    <TableRow className="h-8 bg-muted/30">
+      {isColVisible("name") && <TableHead className="w-40 text-xs font-medium text-muted-foreground">Name</TableHead>}
+      {isColVisible("description") && <TableHead className="text-xs font-medium text-muted-foreground">Description</TableHead>}
       {isColVisible("claimPercent") && (
-        <TableHead className="text-right w-20">Claim %</TableHead>
+        <TableHead className="text-right w-20 text-xs font-medium text-muted-foreground">Claim %</TableHead>
       )}
       {isColVisible("claimAmount") && (
-        <TableHead className="text-right w-28">Claim $</TableHead>
+        <TableHead className="text-right w-28 text-xs font-medium text-muted-foreground">Claim $</TableHead>
       )}
       {isColVisible("amountExTax") && (
-        <TableHead className="text-right w-28">Ex Tax</TableHead>
+        <TableHead className="text-right w-28 text-xs font-medium text-muted-foreground">Ex Tax</TableHead>
       )}
       {isColVisible("amountTax") && (
-        <TableHead className="text-right w-24">Tax</TableHead>
+        <TableHead className="text-right w-24 text-xs font-medium text-muted-foreground">Tax</TableHead>
       )}
       {isColVisible("amountIncTax") && (
-        <TableHead className="text-right w-28">Inc Tax</TableHead>
+        <TableHead className="text-right w-28 text-xs font-medium text-muted-foreground">Inc Tax</TableHead>
       )}
+      <TableHead className="w-8" />
     </TableRow>
   );
 
@@ -1154,13 +1115,14 @@ export default function ClientInvoiceDetail() {
 
           {/* Main Content */}
           <div className="flex-1 overflow-auto">
-            <div className="max-w-5xl mx-auto px-6 py-6 space-y-6">
+            <div className="max-w-6xl mx-auto px-6 py-6 space-y-4">
 
-                {/* Document Header Card */}
-                <Card className="bg-muted/20">
-                  <CardContent className="p-5">
-                    <div className="grid grid-cols-5 gap-4">
-                      <div className="col-span-3 pr-5 border-r border-border">
+                {/* Unified Header Card */}
+                <Card>
+                  <CardContent className="p-5 space-y-4">
+                    {/* Row 1: Company / Tax Invoice label */}
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
                         <p className="font-semibold text-base">
                           {companySettings?.companyName || user?.companyName || "Your Company"}
                         </p>
@@ -1170,11 +1132,11 @@ export default function ClientInvoiceDetail() {
                           </p>
                         )}
                       </div>
-                      <div className="col-span-2 pl-2 flex flex-col items-end justify-between">
-                        <p className="text-xl font-bold tracking-widest text-muted-foreground/40 uppercase">
+                      <div className="text-right flex-shrink-0">
+                        <p className="text-lg font-bold tracking-widest text-muted-foreground/40 uppercase">
                           Tax Invoice
                         </p>
-                        <div className="text-right space-y-0.5 mt-2">
+                        <div className="space-y-0.5 mt-1">
                           {form.watch("invoiceNumber") && (
                             <p className="text-xs text-muted-foreground">
                               <span className="font-medium text-foreground">{form.watch("invoiceNumber")}</span>
@@ -1193,222 +1155,223 @@ export default function ClientInvoiceDetail() {
                         </div>
                       </div>
                     </div>
+
+                    {/* Row 2: Bill To / Project */}
+                    {selectedProjectId && currentProject && (
+                      <div className="grid grid-cols-2 gap-6 border-t pt-3">
+                        <div>
+                          <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium mb-1">Bill To</p>
+                          <p className="text-sm font-medium">{(currentProject as any).clientName || currentProject.name}</p>
+                          {currentProject.location && (
+                            <p className="text-xs text-muted-foreground mt-0.5">{currentProject.location}</p>
+                          )}
+                        </div>
+                        <div>
+                          <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium mb-1">Project</p>
+                          <p className="text-sm font-medium">{currentProject.name}</p>
+                          {(currentProject.constructionNumber || currentProject.preConstructionNumber || currentProject.leadNumber) && (
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              #{currentProject.constructionNumber || currentProject.preConstructionNumber || currentProject.leadNumber}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Invoice Name + Number + Dates */}
+                    <div className="border-t pt-3 space-y-3">
+                      <div className="grid grid-cols-3 gap-4">
+                        <FormField
+                          control={form.control}
+                          name="name"
+                          render={({ field }) => (
+                            <FormItem className="col-span-2">
+                              <FormLabel>Invoice Name*</FormLabel>
+                              <FormControl>
+                                <Input {...field} data-testid="input-name" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        {/* Invoice Number (auto-generated, override optional) */}
+                        <FormField
+                          control={form.control}
+                          name="invoiceNumber"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="flex items-center gap-1.5">
+                                Invoice Number
+                                {!isEditMode && (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <button
+                                        type="button"
+                                        onClick={() => setInvoiceNumberOverride((v) => !v)}
+                                        className="text-muted-foreground hover:text-foreground"
+                                      >
+                                        <Pencil className="w-3 h-3" />
+                                      </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      {invoiceNumberOverride ? "Use auto-generated" : "Override number"}
+                                    </TooltipContent>
+                                  </Tooltip>
+                                )}
+                                {!isEditMode && !invoiceNumberOverride && (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          queryClient.invalidateQueries({
+                                            queryKey: ["/api/client-invoices/next-number", selectedProjectId],
+                                          });
+                                        }}
+                                        className="text-muted-foreground hover:text-foreground"
+                                      >
+                                        <RefreshCw className="w-3 h-3" />
+                                      </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>Re-generate number</TooltipContent>
+                                  </Tooltip>
+                                )}
+                              </FormLabel>
+                              <FormControl>
+                                <Input
+                                  {...field}
+                                  readOnly={isEditMode || !invoiceNumberOverride}
+                                  className={cn(
+                                    !invoiceNumberOverride && !isEditMode
+                                      ? "bg-muted text-muted-foreground cursor-default"
+                                      : ""
+                                  )}
+                                  data-testid="input-invoice-number"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+
+                      {/* Invoice Date + Due Date */}
+                      <div className="grid grid-cols-3 gap-4">
+                        <FormField
+                          control={form.control}
+                          name="invoiceDate"
+                          render={({ field }) => (
+                            <FormItem className="flex flex-col">
+                              <FormLabel>Invoice Date</FormLabel>
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <FormControl>
+                                    <Button
+                                      variant="outline"
+                                      className={cn(
+                                        "justify-start text-left font-normal",
+                                        !field.value && "text-muted-foreground"
+                                      )}
+                                      data-testid="button-invoice-date"
+                                    >
+                                      <CalendarIcon className="mr-2 h-4 w-4" />
+                                      {field.value ? format(field.value, "PPP") : "Pick a date"}
+                                    </Button>
+                                  </FormControl>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0">
+                                  <Calendar
+                                    mode="single"
+                                    selected={field.value}
+                                    onSelect={field.onChange}
+                                    initialFocus
+                                  />
+                                </PopoverContent>
+                              </Popover>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="dueDate"
+                          render={({ field }) => (
+                            <FormItem className="flex flex-col">
+                              <FormLabel>Due Date</FormLabel>
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <FormControl>
+                                    <Button
+                                      variant="outline"
+                                      className={cn(
+                                        "justify-start text-left font-normal",
+                                        !field.value && "text-muted-foreground"
+                                      )}
+                                      data-testid="button-due-date"
+                                    >
+                                      <CalendarIcon className="mr-2 h-4 w-4" />
+                                      {field.value ? format(field.value, "PPP") : "Pick a date"}
+                                    </Button>
+                                  </FormControl>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0">
+                                  <Calendar
+                                    mode="single"
+                                    selected={field.value}
+                                    onSelect={field.onChange}
+                                    initialFocus
+                                  />
+                                </PopoverContent>
+                              </Popover>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <div />
+                      </div>
+                    </div>
+
+                    {/* Introduction Text (collapsible, inside header card) */}
+                    <div className="border-t">
+                      <div
+                        className="flex items-center justify-between py-2 cursor-pointer"
+                        onClick={() => setIntroCollapsed((v) => !v)}
+                      >
+                        <p className="text-sm font-medium flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full flex-shrink-0 bg-slate-400/60" />
+                          Introduction
+                        </p>
+                        {introCollapsed ? (
+                          <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                        ) : (
+                          <ChevronUp className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                        )}
+                      </div>
+                      {!introCollapsed && (
+                        <div className="pb-2">
+                          <FormField
+                            control={form.control}
+                            name="introductionText"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormControl>
+                                  <RichTextEditor
+                                    content={field.value || ""}
+                                    onChange={(html) => field.onChange(html)}
+                                    placeholder="Enter introduction text..."
+                                    data-testid="editor-introduction"
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                      )}
+                    </div>
                   </CardContent>
                 </Card>
 
-                {/* Bill To / Project strip */}
-                {selectedProjectId && currentProject && (
-                  <div className="grid grid-cols-2 gap-6 px-1">
-                    <div>
-                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium mb-1">Bill To</p>
-                      <p className="text-sm font-medium">{currentProject.clientName || currentProject.name}</p>
-                      {currentProject.location && (
-                        <p className="text-xs text-muted-foreground mt-0.5">{currentProject.location}</p>
-                      )}
-                    </div>
-                    <div>
-                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium mb-1">Project</p>
-                      <p className="text-sm font-medium">{currentProject.name}</p>
-                      {(currentProject.constructionNumber || currentProject.preConstructionNumber || currentProject.leadNumber) && (
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          #{currentProject.constructionNumber || currentProject.preConstructionNumber || currentProject.leadNumber}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Invoice Name + Number */}
-                <div className="grid grid-cols-3 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="name"
-                    render={({ field }) => (
-                      <FormItem className="col-span-2">
-                        <FormLabel>Invoice Name*</FormLabel>
-                        <FormControl>
-                          <Input {...field} data-testid="input-name" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  {/* Invoice Number (auto-generated, override optional) */}
-                  <FormField
-                    control={form.control}
-                    name="invoiceNumber"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="flex items-center gap-1.5">
-                          Invoice Number
-                          {!isEditMode && (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <button
-                                  type="button"
-                                  onClick={() => setInvoiceNumberOverride((v) => !v)}
-                                  className="text-muted-foreground hover:text-foreground"
-                                >
-                                  <Pencil className="w-3 h-3" />
-                                </button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                {invoiceNumberOverride ? "Use auto-generated" : "Override number"}
-                              </TooltipContent>
-                            </Tooltip>
-                          )}
-                          {!isEditMode && !invoiceNumberOverride && (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    queryClient.invalidateQueries({
-                                      queryKey: ["/api/client-invoices/next-number", selectedProjectId],
-                                    });
-                                  }}
-                                  className="text-muted-foreground hover:text-foreground"
-                                >
-                                  <RefreshCw className="w-3 h-3" />
-                                </button>
-                              </TooltipTrigger>
-                              <TooltipContent>Re-generate number</TooltipContent>
-                            </Tooltip>
-                          )}
-                        </FormLabel>
-                        <FormControl>
-                          <Input
-                            {...field}
-                            readOnly={isEditMode || !invoiceNumberOverride}
-                            className={cn(
-                              !invoiceNumberOverride && !isEditMode
-                                ? "bg-muted text-muted-foreground cursor-default"
-                                : ""
-                            )}
-                            data-testid="input-invoice-number"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                {/* Invoice Date + Due Date */}
-                <div className="grid grid-cols-3 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="invoiceDate"
-                    render={({ field }) => (
-                      <FormItem className="flex flex-col">
-                        <FormLabel>Invoice Date</FormLabel>
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <FormControl>
-                              <Button
-                                variant="outline"
-                                className={cn(
-                                  "justify-start text-left font-normal",
-                                  !field.value && "text-muted-foreground"
-                                )}
-                                data-testid="button-invoice-date"
-                              >
-                                <CalendarIcon className="mr-2 h-4 w-4" />
-                                {field.value ? format(field.value, "PPP") : "Pick a date"}
-                              </Button>
-                            </FormControl>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-auto p-0">
-                            <Calendar
-                              mode="single"
-                              selected={field.value}
-                              onSelect={field.onChange}
-                              initialFocus
-                            />
-                          </PopoverContent>
-                        </Popover>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="dueDate"
-                    render={({ field }) => (
-                      <FormItem className="flex flex-col">
-                        <FormLabel>Due Date</FormLabel>
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <FormControl>
-                              <Button
-                                variant="outline"
-                                className={cn(
-                                  "justify-start text-left font-normal",
-                                  !field.value && "text-muted-foreground"
-                                )}
-                                data-testid="button-due-date"
-                              >
-                                <CalendarIcon className="mr-2 h-4 w-4" />
-                                {field.value ? format(field.value, "PPP") : "Pick a date"}
-                              </Button>
-                            </FormControl>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-auto p-0">
-                            <Calendar
-                              mode="single"
-                              selected={field.value}
-                              onSelect={field.onChange}
-                              initialFocus
-                            />
-                          </PopoverContent>
-                        </Popover>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <div />
-                </div>
-
-                {/* Introduction Text (collapsible card) */}
-                <Card>
-                  <CardHeader
-                    className="flex flex-row items-center justify-between gap-4 space-y-0 pb-3 cursor-pointer"
-                    onClick={() => setIntroCollapsed((v) => !v)}
-                  >
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full flex-shrink-0 bg-slate-400/60" />
-                      Introduction
-                    </CardTitle>
-                    {introCollapsed ? (
-                      <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    ) : (
-                      <ChevronUp className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    )}
-                  </CardHeader>
-                  {!introCollapsed && (
-                    <CardContent>
-                      <FormField
-                        control={form.control}
-                        name="introductionText"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormControl>
-                              <RichTextEditor
-                                content={field.value || ""}
-                                onChange={(html) => field.onChange(html)}
-                                placeholder="Enter introduction text..."
-                                data-testid="editor-introduction"
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </CardContent>
-                  )}
-                </Card>
 
                 {/* ── Progress Payments sections ── */}
                 {currentProject?.invoicingMethod === "progress_payments" && (
@@ -1419,7 +1382,7 @@ export default function ClientInvoiceDetail() {
                         <CardTitle className="text-base flex items-center gap-2">
                           <div className="w-2 h-2 rounded-full flex-shrink-0 bg-blue-400/70" />
                           Contract Price
-                          {isEstimateLocked() && (
+                          {getEffectiveContractPrice() && (
                             <Tooltip>
                               <TooltipTrigger>
                                 <Badge variant="secondary" className="flex items-center gap-1 text-xs">
@@ -1428,7 +1391,7 @@ export default function ClientInvoiceDetail() {
                                 </Badge>
                               </TooltipTrigger>
                               <TooltipContent>
-                                Contract price is locked because the estimate is approved
+                                Contract price is locked from the project's approved estimate
                               </TooltipContent>
                             </Tooltip>
                           )}
@@ -1495,214 +1458,186 @@ export default function ClientInvoiceDetail() {
                         </div>
                       </CardHeader>
 
-                      <CardContent className="space-y-4">
-                        {/* Estimate + progress selector */}
-                        <div className="grid grid-cols-2 gap-4">
-                          <Select
-                            value={selectedEstimateId}
-                            onValueChange={(value) => {
-                              setSelectedEstimateId(value);
-                              setLockedContractPrice(null);
-                              setIsCustomProgress(false);
-                              setCustomProgressPercent("");
-                            }}
-                          >
-                            <SelectTrigger data-testid="select-estimate">
-                              <SelectValue placeholder="Select estimate" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {estimates.map((estimate) => (
-                                <SelectItem
-                                  key={estimate.id}
-                                  value={estimate.id}
-                                  data-testid={`select-estimate-${estimate.id}`}
-                                >
-                                  {estimate.name}
-                                  {(estimate.status === "approved" || estimate.isLocked) && (
-                                    <Lock className="inline ml-1 h-3 w-3 text-muted-foreground" />
-                                  )}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                      <CardContent className="space-y-3 pt-0">
+                        {/* Locked contract price display + unlock popover */}
+                        {(() => {
+                          const baseCents = getEffectiveContractPrice();
+                          return (
+                            <div className="flex items-center gap-3 py-2 border-b">
+                              <span className="text-xs text-muted-foreground uppercase tracking-wide">
+                                Locked Contract Price
+                              </span>
+                              <span className="font-semibold text-sm">
+                                {baseCents ? formatCurrency(baseCents / 100) : (
+                                  <span className="text-muted-foreground italic">Not set</span>
+                                )}
+                              </span>
+                              {/* Unlock / override popover */}
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <button
+                                    type="button"
+                                    className="text-muted-foreground hover:text-foreground"
+                                    title="Override contract price"
+                                  >
+                                    <Unlock className="w-3.5 h-3.5" />
+                                  </button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-64 p-3" align="start">
+                                  <p className="text-sm font-medium mb-1">Override contract price?</p>
+                                  <p className="text-xs text-muted-foreground mb-3">
+                                    This will override the locked price from the project's approved estimate for this invoice only.
+                                  </p>
+                                  <div className="flex gap-2">
+                                    <Input
+                                      type="number"
+                                      placeholder="Amount (inc GST)"
+                                      defaultValue={baseCents ? (baseCents / 100).toFixed(2) : ""}
+                                      min="0"
+                                      step="0.01"
+                                      className="h-8 text-sm"
+                                      id="contract-price-override-input"
+                                    />
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      onClick={() => {
+                                        const input = document.getElementById("contract-price-override-input") as HTMLInputElement;
+                                        const val = parseFloat(input?.value || "0");
+                                        if (!isNaN(val) && val >= 0) {
+                                          setLockedContractPrice(Math.round(val * 100));
+                                        }
+                                      }}
+                                    >
+                                      Set
+                                    </Button>
+                                  </div>
+                                </PopoverContent>
+                              </Popover>
+                              {/* Set all % quick-fill */}
+                              <div className="ml-auto flex items-center gap-2">
+                                <span className="text-xs text-muted-foreground">Set all %:</span>
+                                {[10, 25, 50, 75, 100].map((pct) => (
+                                  <button
+                                    key={pct}
+                                    type="button"
+                                    className="text-xs px-1.5 py-0.5 rounded border border-border hover-elevate"
+                                    onClick={() =>
+                                      setContractClaimRows((prev) =>
+                                        prev.map((r) => ({ ...r, claimPercent: pct }))
+                                      )
+                                    }
+                                  >
+                                    {pct}%
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })()}
 
-                          {selectedEstimateId && (
-                            <Select
-                              value={isCustomProgress ? "custom" : progressPercent?.toString() || ""}
-                              onValueChange={(value) => {
-                                if (value === "custom") {
-                                  setIsCustomProgress(true);
-                                  setProgressPercent(undefined);
-                                } else {
-                                  setIsCustomProgress(false);
-                                  setCustomProgressPercent("");
-                                  const pct = parseInt(value);
-                                  setProgressPercent(pct);
-                                  // Bulk-set all line item claims to this %
-                                  setLineItemClaims((prev) => {
-                                    const next: ClaimState = {};
-                                    Object.keys(prev).forEach((id) => { next[id] = pct; });
-                                    return next;
-                                  });
-                                }
-                              }}
-                            >
-                              <SelectTrigger data-testid="select-progress-percent">
-                                <SelectValue placeholder="Set all %" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="10">Set all 10%</SelectItem>
-                                <SelectItem value="25">Set all 25%</SelectItem>
-                                <SelectItem value="50">Set all 50%</SelectItem>
-                                <SelectItem value="75">Set all 75%</SelectItem>
-                                <SelectItem value="100">Set all 100%</SelectItem>
-                                <SelectItem value="custom">Custom</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          )}
-                        </div>
-
-                        {selectedEstimateId && isCustomProgress && (
-                          <div className="flex items-center gap-2">
-                            <Input
-                              type="number"
-                              placeholder="Enter custom %"
-                              value={customProgressPercent}
-                              onChange={(e) => {
-                                setCustomProgressPercent(e.target.value);
-                                const val = parseInt(e.target.value);
-                                if (!isNaN(val) && val >= 0 && val <= 100) {
-                                  setLineItemClaims((prev) => {
-                                    const next: ClaimState = {};
-                                    Object.keys(prev).forEach((id) => { next[id] = val; });
-                                    return next;
-                                  });
-                                }
-                              }}
-                              min="0"
-                              max="100"
-                              data-testid="input-custom-progress"
-                              className="w-32"
-                            />
-                            <span className="text-sm text-muted-foreground">Set all rows</span>
-                          </div>
-                        )}
-
-                        {/* Contract price line item table — one row per estimate item */}
-                        {selectedEstimateId && getNonAllowanceItems().length > 0 && (
+                        {/* Claim rows table */}
+                        {contractClaimRows.length > 0 ? (
                           <>
                             <Table>
                               <TableHeader>
-                                {renderLineTableHeader(true)}
+                                {renderLineTableHeader()}
                               </TableHeader>
                               <TableBody>
-                                {getNonAllowanceItems().map((item) => {
-                                  const itemTotalCents = Math.round(item.priceIncTax * item.quantity * 100);
-                                  const itemTotalDollars = itemTotalCents / 100;
-                                  const pct = lineItemClaims[item.id] !== undefined ? lineItemClaims[item.id] : (progressPercent ?? 100);
-                                  const claimAmt = Math.round((itemTotalCents * pct) / 100) / 100;
+                                {contractClaimRows.map((row) => {
+                                  const baseCents = getEffectiveContractPrice() ?? 0;
+                                  const claimCents = Math.round((baseCents * row.claimPercent) / 100);
+                                  const claimAmt = claimCents / 100;
                                   const exTax = claimAmt / (1 + GST_RATE);
                                   const tax = claimAmt - exTax;
                                   return (
-                                    <TableRow key={item.id}>
+                                    <TableRow key={row.id} className="h-9">
                                       {isColVisible("name") && (
-                                        <TableCell className="font-medium text-sm">
-                                          {item.name}
+                                        <TableCell className="py-1">
+                                          <Input
+                                            value={row.name}
+                                            onChange={(e) => updateContractClaimRow(row.id, "name", e.target.value)}
+                                            className="h-7 text-sm"
+                                            placeholder="Claim name"
+                                          />
                                         </TableCell>
                                       )}
                                       {isColVisible("description") && (
-                                        <TableCell className="text-muted-foreground text-sm">
-                                          {item.description || ""}
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("contractTotal") && (
-                                        <TableCell className="text-right text-sm">
-                                          {formatCurrency(itemTotalDollars)}
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("remaining") && (
-                                        <TableCell className="text-right text-sm text-muted-foreground">
-                                          {formatCurrency(itemTotalDollars)}
+                                        <TableCell className="py-1">
+                                          <Input
+                                            value={row.description}
+                                            onChange={(e) => updateContractClaimRow(row.id, "description", e.target.value)}
+                                            className="h-7 text-sm"
+                                            placeholder="Description"
+                                          />
                                         </TableCell>
                                       )}
                                       {isColVisible("claimPercent") && (
-                                        <TableCell className="text-right">
+                                        <TableCell className="text-right py-1">
                                           <Input
                                             type="number"
                                             min="0"
                                             max="100"
-                                            value={pct}
+                                            value={row.claimPercent}
                                             onChange={(e) =>
-                                              setLineItemClaims((prev) => ({
-                                                ...prev,
-                                                [item.id]: parseInt(e.target.value) || 0,
-                                              }))
+                                              updateContractClaimRow(row.id, "claimPercent", parseFloat(e.target.value) || 0)
                                             }
-                                            className="h-7 w-16 text-right text-sm"
+                                            className="h-7 w-16 text-right text-sm ml-auto"
                                           />
                                         </TableCell>
                                       )}
                                       {isColVisible("claimAmount") && (
-                                        <TableCell className="text-right text-sm font-medium">
+                                        <TableCell className="text-right text-sm font-medium py-1">
                                           {formatCurrency(claimAmt)}
                                         </TableCell>
                                       )}
                                       {isColVisible("amountExTax") && (
-                                        <TableCell className="text-right text-sm">
+                                        <TableCell className="text-right text-sm py-1">
                                           {formatCurrency(exTax)}
                                         </TableCell>
                                       )}
                                       {isColVisible("amountTax") && (
-                                        <TableCell className="text-right text-sm">
+                                        <TableCell className="text-right text-sm py-1">
                                           {formatCurrency(tax)}
                                         </TableCell>
                                       )}
                                       {isColVisible("amountIncTax") && (
-                                        <TableCell className="text-right text-sm font-medium">
+                                        <TableCell className="text-right text-sm font-medium py-1">
                                           {formatCurrency(claimAmt)}
                                         </TableCell>
                                       )}
+                                      <TableCell className="py-1 w-8">
+                                        <button
+                                          type="button"
+                                          onClick={() => removeContractClaimRow(row.id)}
+                                          className="text-muted-foreground hover:text-destructive"
+                                        >
+                                          <X className="w-3.5 h-3.5" />
+                                        </button>
+                                      </TableCell>
                                     </TableRow>
                                   );
                                 })}
                               </TableBody>
                             </Table>
-
-                            {/* Section footer */}
-                            <div className="flex items-center justify-end gap-6 pt-2 border-t text-sm">
-                              <span className="text-muted-foreground">
-                                {showAmountsIncTax ? "Amount ex Tax:" : ""}
-                              </span>
-                              {!showAmountsIncTax && (
-                                <span className="font-medium">
-                                  {formatCurrency(calculateContractPrice() / 100 / (1 + GST_RATE))}
-                                </span>
-                              )}
-                              <span className="text-muted-foreground">
-                                {showAmountsIncTax ? "Amount inc Tax:" : "GST:"}
-                              </span>
-                              <span className="font-semibold">
-                                {showAmountsIncTax
-                                  ? formatCurrency(calculateContractPrice() / 100)
-                                  : formatCurrency(
-                                      (calculateContractPrice() / 100) -
-                                        calculateContractPrice() / 100 / (1 + GST_RATE)
-                                    )}
-                              </span>
-                            </div>
+                            {renderLineTableFooter(calculateContractPrice())}
                           </>
-                        )}
-
-                        {selectedEstimateId && getNonAllowanceItems().length === 0 && (
+                        ) : (
                           <p className="text-sm text-muted-foreground text-center py-4">
-                            No line items in selected estimate
+                            No claim rows yet. Click "Add Claim Row" to begin.
                           </p>
                         )}
 
-                        {!selectedEstimateId && (
-                          <p className="text-sm text-muted-foreground text-center py-4">
-                            Select an estimate above to set the contract price
-                          </p>
+                        {contractClaimRows.length < 5 && (
+                          <button
+                            type="button"
+                            onClick={addContractClaimRow}
+                            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                            data-testid="button-add-claim-row"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            Add Claim Row
+                          </button>
                         )}
                       </CardContent>
                     </Card>
@@ -1767,16 +1702,6 @@ export default function ClientInvoiceDetail() {
                                       {isColVisible("description") && (
                                         <TableCell className="text-sm text-muted-foreground">
                                           {variation.name}
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("contractTotal") && (
-                                        <TableCell className="text-right text-sm">
-                                          {formatCurrency(variation.totalAmount / 100)}
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("remaining") && (
-                                        <TableCell className="text-right text-sm">
-                                          {formatCurrency(variation.totalAmount / 100)}
                                         </TableCell>
                                       )}
                                       {isColVisible("claimPercent") && (
@@ -1850,7 +1775,6 @@ export default function ClientInvoiceDetail() {
                           variant="outline"
                           size="sm"
                           onClick={() => setAllowancesModalOpen(true)}
-                          disabled={!selectedEstimateId}
                           data-testid="button-select-allowances"
                         >
                           <Plus className="h-4 w-4 mr-1" />
@@ -1859,11 +1783,7 @@ export default function ClientInvoiceDetail() {
                       </CardHeader>
 
                       <CardContent>
-                        {!selectedEstimateId ? (
-                          <p className="text-sm text-muted-foreground text-center py-4">
-                            Select an estimate above to access allowances.
-                          </p>
-                        ) : selectedAllowanceIds.length === 0 ? (
+                        {selectedAllowanceIds.length === 0 ? (
                           <p className="text-sm text-muted-foreground text-center py-4">
                             No allowances added. Click "Select Allowances" to add finalized allowances.
                           </p>
@@ -1908,16 +1828,6 @@ export default function ClientInvoiceDetail() {
                                       {isColVisible("description") && (
                                         <TableCell className="text-sm text-muted-foreground">
                                           {item.description}
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("contractTotal") && (
-                                        <TableCell className="text-right text-sm">
-                                          {formatCurrency(totalCents / 100)}
-                                        </TableCell>
-                                      )}
-                                      {isColVisible("remaining") && (
-                                        <TableCell className="text-right text-sm">
-                                          {formatCurrency(totalCents / 100)}
                                         </TableCell>
                                       )}
                                       {isColVisible("claimPercent") && (
@@ -2214,66 +2124,6 @@ export default function ClientInvoiceDetail() {
                   </CardContent>
                 </Card>
 
-                {/* Payments History */}
-                {isEditMode && (
-                  <Card data-testid="section-payments-history">
-                    <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0">
-                      <CardTitle className="text-base flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full flex-shrink-0 bg-green-500/70" />
-                        Payments ({payments.length})
-                      </CardTitle>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setPaymentDialogOpen(true)}
-                        data-testid="button-record-payment"
-                      >
-                        <Plus className="h-4 w-4 mr-1" />
-                        Record Payment
-                      </Button>
-                    </CardHeader>
-                    <CardContent>
-                      {payments.length > 0 ? (
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Date</TableHead>
-                              <TableHead className="text-right">Amount</TableHead>
-                              <TableHead>Method</TableHead>
-                              <TableHead>Reference</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {payments.map((payment) => (
-                              <TableRow key={payment.id}>
-                                <TableCell className="text-sm">
-                                  {payment.paymentDate
-                                    ? format(new Date(payment.paymentDate), "d MMM yyyy")
-                                    : "-"}
-                                </TableCell>
-                                <TableCell className="text-right text-sm font-medium">
-                                  {formatCurrency(payment.amount / 100)}
-                                </TableCell>
-                                <TableCell className="text-sm text-muted-foreground">
-                                  {payment.paymentMethod || "-"}
-                                </TableCell>
-                                <TableCell className="text-sm text-muted-foreground">
-                                  {payment.reference || "-"}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      ) : (
-                        <p className="text-sm text-muted-foreground text-center py-4">
-                          No payments recorded
-                        </p>
-                      )}
-                    </CardContent>
-                  </Card>
-                )}
-
                 {/* Closing Text (collapsible card) */}
                 <Card>
                   <CardHeader
@@ -2399,7 +2249,7 @@ export default function ClientInvoiceDetail() {
                     <div className="grid grid-cols-5 gap-6">
                       {/* Left: Breakdown */}
                       <div className="col-span-3 space-y-1.5">
-                        {currentProject?.invoicingMethod === "progress_payments" && selectedEstimateId && (
+                        {currentProject?.invoicingMethod === "progress_payments" && contractClaimRows.length > 0 && (
                           <div className="flex justify-between text-sm">
                             <span className="text-muted-foreground">Contract Price</span>
                             <span className="font-medium tabular-nums">
@@ -2501,6 +2351,66 @@ export default function ClientInvoiceDetail() {
                     </div>
                   </CardContent>
                 </Card>
+
+                {/* Payments History — always last */}
+                {isEditMode && (
+                  <Card data-testid="section-payments-history">
+                    <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full flex-shrink-0 bg-green-500/70" />
+                        Payments ({payments.length})
+                      </CardTitle>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPaymentDialogOpen(true)}
+                        data-testid="button-record-payment"
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        Record Payment
+                      </Button>
+                    </CardHeader>
+                    <CardContent>
+                      {payments.length > 0 ? (
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Date</TableHead>
+                              <TableHead className="text-right">Amount</TableHead>
+                              <TableHead>Method</TableHead>
+                              <TableHead>Reference</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {payments.map((payment) => (
+                              <TableRow key={payment.id}>
+                                <TableCell className="text-sm">
+                                  {payment.paymentDate
+                                    ? format(new Date(payment.paymentDate), "d MMM yyyy")
+                                    : "-"}
+                                </TableCell>
+                                <TableCell className="text-right text-sm font-medium">
+                                  {formatCurrency(payment.amount / 100)}
+                                </TableCell>
+                                <TableCell className="text-sm text-muted-foreground">
+                                  {payment.paymentMethod || "-"}
+                                </TableCell>
+                                <TableCell className="text-sm text-muted-foreground">
+                                  {payment.reference || "-"}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      ) : (
+                        <p className="text-sm text-muted-foreground text-center py-4">
+                          No payments recorded
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
 
             </div>
           </div>

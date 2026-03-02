@@ -34,15 +34,12 @@ import {
   Send,
   Loader2,
   CreditCard,
-  TrendingUp,
 } from "lucide-react";
 import { type ClientInvoice, type Project } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { format, isPast } from "date-fns";
 import { cn } from "@/lib/utils";
-
-// ─── Status config ───────────────────────────────────────────────────────────
 
 const STATUS_OPTIONS = [
   { value: "all", label: "All statuses" },
@@ -53,53 +50,34 @@ const STATUS_OPTIONS = [
   { value: "overdue", label: "Overdue" },
 ];
 
-function StatusBadge({ status }: { status: string }) {
-  switch (status) {
-    case "draft":
-      return (
-        <Badge variant="secondary" className="gap-1 text-[11px] font-medium">
-          <FileText className="w-2.5 h-2.5" />
-          Draft
-        </Badge>
-      );
-    case "sent":
-      return (
-        <Badge className="gap-1 text-[11px] font-medium bg-blue-500 hover:bg-blue-500 text-white border-transparent">
-          <Send className="w-2.5 h-2.5" />
-          Sent
-        </Badge>
-      );
-    case "partial":
-      return (
-        <Badge className="gap-1 text-[11px] font-medium bg-amber-500 hover:bg-amber-500 text-white border-transparent">
-          <CreditCard className="w-2.5 h-2.5" />
-          Partial
-        </Badge>
-      );
-    case "paid":
-      return (
-        <Badge className="gap-1 text-[11px] font-medium bg-emerald-600 hover:bg-emerald-600 text-white border-transparent">
-          <CheckCircle2 className="w-2.5 h-2.5" />
-          Paid
-        </Badge>
-      );
-    case "overdue":
-      return (
-        <Badge variant="destructive" className="gap-1 text-[11px] font-medium">
-          <AlertCircle className="w-2.5 h-2.5" />
-          Overdue
-        </Badge>
-      );
-    default:
-      return (
-        <Badge variant="outline" className="text-[11px]">
-          {status}
-        </Badge>
-      );
-  }
-}
+const STATUS_DOT: Record<string, string> = {
+  draft: "bg-muted-foreground/60",
+  sent: "bg-blue-400",
+  partial: "bg-amber-400",
+  paid: "bg-emerald-500",
+  overdue: "bg-destructive",
+};
 
-// ─── Component ────────────────────────────────────────────────────────────────
+const STATUS_LABEL: Record<string, string> = {
+  draft: "Draft",
+  sent: "Sent",
+  partial: "Partial",
+  paid: "Paid",
+  overdue: "Overdue",
+};
+
+function StatusBadge({ status }: { status: string }) {
+  return (
+    <Badge
+      variant="secondary"
+      className="gap-1.5 text-[11px] font-medium"
+      data-testid={`badge-status-${status}`}
+    >
+      <span className={cn("w-1.5 h-1.5 rounded-full flex-shrink-0", STATUS_DOT[status] || "bg-muted-foreground")} />
+      {STATUS_LABEL[status] || status}
+    </Badge>
+  );
+}
 
 export default function ClientInvoices() {
   const [, setLocation] = useLocation();
@@ -176,11 +154,13 @@ export default function ClientInvoices() {
 
   const summary = useMemo(() => {
     const filtered = filteredInvoices;
+    const contractTotal = filtered.reduce((s, i) => s + ((i as any).lockedContractPrice || 0), 0);
     return {
       count: filtered.length,
       total: filtered.reduce((s, i) => s + i.totalAmount, 0),
       paid: filtered.reduce((s, i) => s + i.paidAmount, 0),
       balance: filtered.reduce((s, i) => s + i.balanceAmount, 0),
+      contractTotal,
     };
   }, [filteredInvoices]);
 
@@ -204,7 +184,10 @@ export default function ClientInvoices() {
     return format(new Date(date), "d MMM yyyy");
   };
 
-  // ── render ─────────────────────────────────────────────────────────────────
+  const invoiced = summary.total;
+  const paid = summary.paid;
+  const remaining = summary.balance;
+  const paidPct = invoiced > 0 ? Math.round((paid / invoiced) * 100) : 0;
 
   return (
     <div className="flex flex-col h-full" data-testid="page-client-invoices">
@@ -214,11 +197,6 @@ export default function ClientInvoices() {
           <h2 className="text-sm font-semibold" data-testid="text-page-title">
             {pageTitle}
           </h2>
-          {!invoicesLoading && (
-            <Badge variant="secondary" className="text-xs h-5" data-testid="text-invoice-count">
-              {filteredInvoices.length}
-            </Badge>
-          )}
         </div>
         <button
           className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
@@ -230,11 +208,11 @@ export default function ClientInvoices() {
         </button>
       </div>
 
-      {/* Row 2 — Filters + summary */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 border-b border-border flex-shrink-0 gap-4">
-        <div className="flex items-center gap-1.5">
-          {/* Search */}
-          <div className="relative w-48">
+      {/* Row 2 — Buildenr-style summary bar */}
+      <div className="h-9 bg-background flex items-center justify-between px-3 border-b border-border flex-shrink-0 gap-4">
+        {/* Left — Search + Status filter */}
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <div className="relative w-44">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
             <Input
               placeholder="Search invoices…"
@@ -244,15 +222,12 @@ export default function ClientInvoices() {
               data-testid="input-search"
             />
           </div>
-
-          {/* Status filter */}
           <Popover open={statusPopoverOpen} onOpenChange={setStatusPopoverOpen}>
             <PopoverTrigger asChild>
               <button
                 className={cn(
                   "h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1",
-                  selectedStatus !== "all" &&
-                    "border-[#bba7db] text-[#bba7db] bg-[#bba7db]/5"
+                  selectedStatus !== "all" && "border-[#bba7db] text-[#bba7db] bg-[#bba7db]/5"
                 )}
                 data-testid="filter-status-popover"
               >
@@ -284,8 +259,7 @@ export default function ClientInvoices() {
                   }}
                   className={cn(
                     "w-full text-left px-2 py-1.5 text-sm rounded-md flex items-center justify-between hover-elevate",
-                    selectedStatus === opt.value &&
-                      "bg-[#bba7db]/10 text-[#bba7db] font-medium"
+                    selectedStatus === opt.value && "bg-[#bba7db]/10 text-[#bba7db] font-medium"
                   )}
                   data-testid={`filter-status-${opt.value}`}
                 >
@@ -299,85 +273,42 @@ export default function ClientInvoices() {
           </Popover>
         </div>
 
-        {/* Summary totals */}
-        <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-          <span data-testid="text-summary-total">
-            Total:{" "}
-            <span className="font-semibold text-foreground">
-              {formatCurrency(summary.total)}
-            </span>
-          </span>
-          <span className="w-px h-3 bg-border" />
-          <span data-testid="text-summary-paid">
-            Paid:{" "}
-            <span className="font-semibold text-emerald-600">
-              {formatCurrency(summary.paid)}
-            </span>
-          </span>
-          <span className="w-px h-3 bg-border" />
-          <span data-testid="text-summary-balance">
-            Balance:{" "}
-            <span
-              className={cn(
-                "font-semibold",
-                summary.balance > 0 ? "text-foreground" : "text-emerald-600"
-              )}
-            >
-              {formatCurrency(summary.balance)}
-            </span>
-          </span>
-        </div>
-      </div>
-
-      {/* Summary progress strip */}
-      {invoices.length > 0 && (
-        <div className="flex-shrink-0 px-3 py-2 border-b border-border">
-          <div className="flex items-center gap-4">
-            <div className="flex-1 flex items-center gap-3">
-              <div className="flex-1 space-y-1">
-                <div className="flex justify-between text-[10px] text-muted-foreground mb-1">
-                  <span>Payment progress</span>
-                  <span>
-                    {summary.total > 0
-                      ? `${Math.round((summary.paid / summary.total) * 100)}% paid`
-                      : "0% paid"}
-                  </span>
-                </div>
-                <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-emerald-500 rounded-full transition-all"
-                    style={{
-                      width: summary.total > 0
-                        ? `${(summary.paid / summary.total) * 100}%`
-                        : "0%",
-                    }}
-                  />
-                </div>
-              </div>
+        {/* Right — summary stats */}
+        {!invoicesLoading && invoices.length > 0 && (
+          <div className="flex items-center gap-4 text-[11px]">
+            {/* Invoices count */}
+            <div className="flex flex-col items-end">
+              <span className="text-muted-foreground">Invoices</span>
+              <span className="font-semibold tabular-nums">{summary.count}</span>
             </div>
-
-            <div className="flex items-center gap-5 text-[11px]">
-              <div className="flex items-center gap-1.5">
-                <TrendingUp className="w-3 h-3 text-muted-foreground" />
-                <span className="text-muted-foreground">Invoiced:</span>
-                <span className="font-semibold">{formatCurrency(summary.total)}</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-                <span className="text-muted-foreground">Paid:</span>
-                <span className="font-semibold text-emerald-600">{formatCurrency(summary.paid)}</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Clock className="w-3 h-3 text-amber-500" />
-                <span className="text-muted-foreground">Outstanding:</span>
-                <span className={cn("font-semibold", summary.balance > 0 ? "text-foreground" : "text-emerald-600")}>
-                  {formatCurrency(summary.balance)}
-                </span>
-              </div>
+            <div className="w-px h-5 bg-border" />
+            {/* Paid % + amount */}
+            <div className="flex flex-col items-end">
+              <span className="text-emerald-500 font-semibold tabular-nums">{paidPct}%</span>
+              <span className="text-muted-foreground tabular-nums">{formatCurrency(paid)}</span>
+            </div>
+            <div className="w-px h-5 bg-border" />
+            {/* Invoiced */}
+            <div className="flex flex-col items-end">
+              <span className="text-muted-foreground">Invoiced</span>
+              <span className="font-semibold tabular-nums">{formatCurrency(invoiced)}</span>
+            </div>
+            <div className="w-px h-5 bg-border" />
+            {/* Remaining */}
+            <div className="flex flex-col items-end">
+              <span className="text-muted-foreground">Remaining</span>
+              <span
+                className={cn(
+                  "font-semibold tabular-nums",
+                  remaining <= 0 ? "text-emerald-600" : "text-foreground"
+                )}
+              >
+                {formatCurrency(remaining)}
+              </span>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Content */}
       <div className="flex-1 overflow-auto px-2 pb-2 pt-2">
@@ -406,20 +337,18 @@ export default function ClientInvoices() {
           <div className="border rounded-md overflow-hidden">
             <Table>
               <TableHeader>
-                <TableRow className="bg-muted/30">
-                  <TableHead className="text-xs font-semibold w-28">
-                    Invoice #
-                  </TableHead>
-                  <TableHead className="text-xs font-semibold">Name</TableHead>
+                <TableRow className="bg-muted/30 h-8">
+                  <TableHead className="text-xs font-medium text-muted-foreground w-32">Invoice #</TableHead>
+                  <TableHead className="text-xs font-medium text-muted-foreground">Name</TableHead>
                   {!projectIdFromUrl && (
-                    <TableHead className="text-xs font-semibold">Project</TableHead>
+                    <TableHead className="text-xs font-medium text-muted-foreground">Project</TableHead>
                   )}
-                  <TableHead className="text-xs font-semibold">Status</TableHead>
-                  <TableHead className="text-xs font-semibold">Invoice Date</TableHead>
-                  <TableHead className="text-xs font-semibold">Due Date</TableHead>
-                  <TableHead className="text-xs font-semibold text-right">Total</TableHead>
-                  <TableHead className="text-xs font-semibold text-right">Paid</TableHead>
-                  <TableHead className="text-xs font-semibold text-right">Balance</TableHead>
+                  <TableHead className="text-xs font-medium text-muted-foreground">Status</TableHead>
+                  <TableHead className="text-xs font-medium text-muted-foreground">Invoice Date</TableHead>
+                  <TableHead className="text-xs font-medium text-muted-foreground">Due Date</TableHead>
+                  <TableHead className="text-xs font-medium text-muted-foreground text-right">Total</TableHead>
+                  <TableHead className="text-xs font-medium text-muted-foreground text-right">Paid</TableHead>
+                  <TableHead className="text-xs font-medium text-muted-foreground text-right">Balance</TableHead>
                   <TableHead className="text-xs w-14" />
                 </TableRow>
               </TableHeader>
@@ -430,13 +359,13 @@ export default function ClientInvoices() {
                   return (
                     <TableRow
                       key={invoice.id}
-                      className="cursor-pointer hover-elevate group"
+                      className="cursor-pointer hover-elevate group h-8"
                       onClick={() => handleRowClick(invoice.id)}
                       data-testid={`row-invoice-${invoice.id}`}
                     >
                       {/* Invoice # */}
-                      <TableCell data-testid={`cell-number-${invoice.id}`}>
-                        <span className="font-mono text-xs font-semibold text-foreground">
+                      <TableCell className="py-1" data-testid={`cell-number-${invoice.id}`}>
+                        <span className="text-xs font-medium text-foreground">
                           {invoice.invoiceNumber || (
                             <span className="text-muted-foreground italic">No number</span>
                           )}
@@ -444,15 +373,15 @@ export default function ClientInvoices() {
                       </TableCell>
 
                       {/* Name */}
-                      <TableCell data-testid={`cell-name-${invoice.id}`}>
-                        <span className="text-sm text-foreground">
+                      <TableCell className="py-1" data-testid={`cell-name-${invoice.id}`}>
+                        <span className="text-xs text-foreground">
                           {(invoice as any).name || invoice.invoiceNumber || "-"}
                         </span>
                       </TableCell>
 
                       {/* Project (cross-project view only) */}
                       {!projectIdFromUrl && (
-                        <TableCell data-testid={`cell-project-${invoice.id}`}>
+                        <TableCell className="py-1" data-testid={`cell-project-${invoice.id}`}>
                           {proj ? (
                             <div className="flex items-center gap-1.5">
                               <ProjectIcon
@@ -460,9 +389,7 @@ export default function ClientInvoices() {
                                 color={proj.color || "#3b82f6"}
                                 className="w-3 h-3"
                               />
-                              <span className="text-xs text-muted-foreground">
-                                {proj.name}
-                              </span>
+                              <span className="text-xs text-muted-foreground">{proj.name}</span>
                             </div>
                           ) : (
                             <span className="text-xs text-muted-foreground">-</span>
@@ -471,68 +398,50 @@ export default function ClientInvoices() {
                       )}
 
                       {/* Status */}
-                      <TableCell data-testid={`cell-status-${invoice.id}`}>
+                      <TableCell className="py-1" data-testid={`cell-status-${invoice.id}`}>
                         <StatusBadge status={invoice.status} />
                       </TableCell>
 
                       {/* Invoice Date */}
-                      <TableCell
-                        className="text-xs text-muted-foreground"
-                        data-testid={`cell-invoice-date-${invoice.id}`}
-                      >
+                      <TableCell className="py-1 text-xs text-muted-foreground" data-testid={`cell-invoice-date-${invoice.id}`}>
                         {formatDate(invoice.invoiceDate)}
                       </TableCell>
 
                       {/* Due Date */}
                       <TableCell
                         className={cn(
-                          "text-xs",
-                          overdue
-                            ? "text-destructive font-medium"
-                            : "text-muted-foreground"
+                          "py-1 text-xs",
+                          overdue ? "text-destructive font-medium" : "text-muted-foreground"
                         )}
                         data-testid={`cell-due-date-${invoice.id}`}
                       >
                         {formatDate(invoice.dueDate)}
-                        {overdue && (
-                          <AlertCircle className="inline ml-1 w-3 h-3 text-destructive" />
-                        )}
+                        {overdue && <AlertCircle className="inline ml-1 w-3 h-3 text-destructive" />}
                       </TableCell>
 
                       {/* Total */}
-                      <TableCell
-                        className="text-xs font-semibold text-right"
-                        data-testid={`cell-total-${invoice.id}`}
-                      >
+                      <TableCell className="py-1 text-xs font-medium text-right" data-testid={`cell-total-${invoice.id}`}>
                         {formatCurrency(invoice.totalAmount)}
                       </TableCell>
 
                       {/* Paid */}
-                      <TableCell
-                        className="text-xs text-right text-emerald-600 font-medium"
-                        data-testid={`cell-paid-${invoice.id}`}
-                      >
+                      <TableCell className="py-1 text-xs text-right text-emerald-600 font-medium" data-testid={`cell-paid-${invoice.id}`}>
                         {invoice.paidAmount > 0 ? formatCurrency(invoice.paidAmount) : "-"}
                       </TableCell>
 
                       {/* Balance */}
                       <TableCell
                         className={cn(
-                          "text-xs font-semibold text-right",
+                          "py-1 text-xs font-medium text-right",
                           invoice.balanceAmount <= 0 ? "text-emerald-600" : ""
                         )}
                         data-testid={`cell-balance-${invoice.id}`}
                       >
-                        {invoice.balanceAmount <= 0
-                          ? "Paid"
-                          : formatCurrency(invoice.balanceAmount)}
+                        {invoice.balanceAmount <= 0 ? "Paid" : formatCurrency(invoice.balanceAmount)}
                       </TableCell>
 
                       {/* Actions */}
-                      <TableCell
-                        className="text-right"
-                        data-testid={`cell-actions-${invoice.id}`}
-                      >
+                      <TableCell className="py-1 text-right" data-testid={`cell-actions-${invoice.id}`}>
                         <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button
                             className="h-6 w-6 rounded hover-elevate flex items-center justify-center"
@@ -545,10 +454,7 @@ export default function ClientInvoices() {
                             <Eye className="h-3 w-3" />
                           </button>
                           <DropdownMenu>
-                            <DropdownMenuTrigger
-                              asChild
-                              onClick={(e) => e.stopPropagation()}
-                            >
+                            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                               <button
                                 className="h-6 w-6 rounded hover-elevate flex items-center justify-center"
                                 data-testid={`button-menu-${invoice.id}`}
@@ -556,10 +462,7 @@ export default function ClientInvoices() {
                                 <MoreVertical className="h-3 w-3" />
                               </button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent
-                              align="end"
-                              data-testid={`menu-${invoice.id}`}
-                            >
+                            <DropdownMenuContent align="end" data-testid={`menu-${invoice.id}`}>
                               <DropdownMenuItem
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -569,9 +472,7 @@ export default function ClientInvoices() {
                               >
                                 Edit
                               </DropdownMenuItem>
-                              <DropdownMenuItem
-                                data-testid={`menu-duplicate-${invoice.id}`}
-                              >
+                              <DropdownMenuItem data-testid={`menu-duplicate-${invoice.id}`}>
                                 Duplicate
                               </DropdownMenuItem>
                               <DropdownMenuItem

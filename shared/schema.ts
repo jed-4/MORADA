@@ -758,6 +758,7 @@ export const projects = pgTable("projects", {
   isArchived: boolean("is_archived").notNull().default(false), // Archived projects are hidden from main lists
   isBusiness: boolean("is_business").notNull().default(false), // Business-level project (vs construction project)
   invoicingMethod: text("invoicing_method").notNull().default("progress_payments"), // "progress_payments" | "cost_plus"
+  contractPrice: integer("contract_price"), // Locked agreed contract price in cents (set when project transitions to construction)
   
   // Google Drive integration
   googleDriveFolderId: text("google_drive_folder_id"), // Linked Google Drive folder ID
