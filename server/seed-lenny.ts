@@ -19,8 +19,13 @@ import {
   scheduleItems,
   siteDiaryTemplates,
   siteDiaryEntries,
+  timesheets,
+  budgets,
+  budgetLineItems,
+  costCodes,
+  users,
 } from "../shared/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 
 const SENTINEL_PROJECT_NAME = "Irwin Wildlife Compound Reno";
 
@@ -41,6 +46,17 @@ export async function seedLennyDemo(companyId: string, userId: string) {
 
   // Wrap everything in a transaction so a partial failure rolls back cleanly
   return await db.transaction(async (tx) => {
+    // ─── 0. COST CODE LOOKUP ───────────────────────────────────────────────────
+    // Look up cost codes by their numeric code for use throughout the seed
+    const CC_CODES = ['100','119','121','123','125','126','127','128','129','130','133','138','142'];
+    const ccRows = await tx.select({ id: costCodes.id, code: costCodes.code })
+      .from(costCodes)
+      .where(and(eq(costCodes.companyId, companyId), inArray(costCodes.code, CC_CODES)));
+    const cc = Object.fromEntries(ccRows.map(r => [r.code, r.id]));
+
+    // Set hourly rate on the seeding user so timesheets have a rate
+    await tx.update(users).set({ hourlyRate: '95.00' } as any).where(eq(users.id, userId));
+
     // ─── 1. CONTACTS ───────────────────────────────────────────────────────────
 
     const [steveIrwin] = await tx.insert(contacts).values({
@@ -269,43 +285,45 @@ export async function seedLennyDemo(companyId: string, userId: string) {
 
     // Demolition items
     await tx.insert(estimateItems).values([
-      { estimateId: est1.id, groupId: grp1a.id, name: "Demolition & strip-out", type: "Subcontractor", quantity: 1, unitCostExTax: 12500, taxAmount: 1250, priceIncTax: 13750, order: 0 },
-      { estimateId: est1.id, groupId: grp1a.id, name: "Asbestos removal & disposal", type: "Subcontractor", quantity: 1, unitCostExTax: 8800, taxAmount: 880, priceIncTax: 9680, order: 1 },
-      { estimateId: est1.id, groupId: grp1a.id, name: "Site prep & earthworks", type: "Subcontractor", quantity: 1, unitCostExTax: 22000, taxAmount: 2200, priceIncTax: 24200, order: 2 },
+      { estimateId: est1.id, groupId: grp1a.id, name: "Demolition & strip-out", type: "Subcontractor", costCode: cc['126'], quantity: 1, unitCostExTax: 12500, taxAmount: 1250, priceIncTax: 13750, order: 0 },
+      { estimateId: est1.id, groupId: grp1a.id, name: "Asbestos removal & disposal", type: "Subcontractor", costCode: cc['126'], quantity: 1, unitCostExTax: 8800, taxAmount: 880, priceIncTax: 9680, order: 1 },
+      { estimateId: est1.id, groupId: grp1a.id, name: "Site prep & earthworks", type: "Subcontractor", costCode: cc['129'], quantity: 1, unitCostExTax: 22000, taxAmount: 2200, priceIncTax: 24200, order: 2 },
     ]);
 
     // Framing items
     await tx.insert(estimateItems).values([
-      { estimateId: est1.id, groupId: grp1b.id, name: "Concrete slab", type: "Subcontractor", quantity: 1, unitCostExTax: 38500, taxAmount: 3850, priceIncTax: 42350, order: 0 },
-      { estimateId: est1.id, groupId: grp1b.id, name: "Timber frame supply & erect", type: "Subcontractor", quantity: 1, unitCostExTax: 52000, taxAmount: 5200, priceIncTax: 57200, order: 1 },
-      { estimateId: est1.id, groupId: grp1b.id, name: "Roof structure & sheeting", type: "Subcontractor", quantity: 1, unitCostExTax: 34000, taxAmount: 3400, priceIncTax: 37400, order: 2 },
+      { estimateId: est1.id, groupId: grp1b.id, name: "Concrete slab", type: "Subcontractor", costCode: cc['130'], quantity: 1, unitCostExTax: 38500, taxAmount: 3850, priceIncTax: 42350, order: 0 },
+      { estimateId: est1.id, groupId: grp1b.id, name: "Timber frame supply & erect", type: "Subcontractor", costCode: cc['133'], quantity: 1, unitCostExTax: 52000, taxAmount: 5200, priceIncTax: 57200, order: 1 },
+      { estimateId: est1.id, groupId: grp1b.id, name: "Roof structure & sheeting", type: "Subcontractor", costCode: cc['138'], quantity: 1, unitCostExTax: 34000, taxAmount: 3400, priceIncTax: 37400, order: 2 },
     ]);
 
     // Fit-Out items
     const [floorTilesItem] = await tx.insert(estimateItems).values({
       estimateId: est1.id, groupId: grp1c.id, name: "Floor Tiles PC", type: "Material",
+      costCode: cc['127'],
       allowance: "Prime Cost", allowanceStatus: "finalized",
       quantity: 1, unitCostExTax: 12000, taxAmount: 1200, priceIncTax: 13200, order: 0,
     }).returning();
 
     const [appliancesItem] = await tx.insert(estimateItems).values({
       estimateId: est1.id, groupId: grp1c.id, name: "Kitchen Appliances PC", type: "Material",
+      costCode: cc['127'],
       allowance: "Prime Cost", allowanceStatus: "pending",
       quantity: 1, unitCostExTax: 18000, taxAmount: 1800, priceIncTax: 19800, order: 1,
     }).returning();
 
     await tx.insert(estimateItems).values([
-      { estimateId: est1.id, groupId: grp1c.id, name: "Joinery & cabinetry", type: "Subcontractor", quantity: 1, unitCostExTax: 45000, taxAmount: 4500, priceIncTax: 49500, order: 2 },
-      { estimateId: est1.id, groupId: grp1c.id, name: "Plumbing rough-in & fit-off", type: "Subcontractor", quantity: 1, unitCostExTax: 28000, taxAmount: 2800, priceIncTax: 30800, order: 3 },
-      { estimateId: est1.id, groupId: grp1c.id, name: "Electrical rough-in & fit-off", type: "Subcontractor", quantity: 1, unitCostExTax: 24000, taxAmount: 2400, priceIncTax: 26400, order: 4 },
-      { estimateId: est1.id, groupId: grp1c.id, name: "Painting & decorating", type: "Subcontractor", quantity: 1, unitCostExTax: 18500, taxAmount: 1850, priceIncTax: 20350, order: 5 },
+      { estimateId: est1.id, groupId: grp1c.id, name: "Joinery & cabinetry", type: "Subcontractor", costCode: cc['123'], quantity: 1, unitCostExTax: 45000, taxAmount: 4500, priceIncTax: 49500, order: 2 },
+      { estimateId: est1.id, groupId: grp1c.id, name: "Plumbing rough-in & fit-off", type: "Subcontractor", costCode: cc['125'], quantity: 1, unitCostExTax: 28000, taxAmount: 2800, priceIncTax: 30800, order: 3 },
+      { estimateId: est1.id, groupId: grp1c.id, name: "Electrical rough-in & fit-off", type: "Subcontractor", costCode: cc['125'], quantity: 1, unitCostExTax: 24000, taxAmount: 2400, priceIncTax: 26400, order: 4 },
+      { estimateId: est1.id, groupId: grp1c.id, name: "Painting & decorating", type: "Subcontractor", costCode: cc['127'], quantity: 1, unitCostExTax: 18500, taxAmount: 1850, priceIncTax: 20350, order: 5 },
     ]);
 
     // External items
     await tx.insert(estimateItems).values([
-      { estimateId: est1.id, groupId: grp1d.id, name: "External decking", type: "Subcontractor", quantity: 1, unitCostExTax: 22000, taxAmount: 2200, priceIncTax: 24200, order: 0 },
-      { estimateId: est1.id, groupId: grp1d.id, name: "Fencing & gates", type: "Subcontractor", quantity: 1, unitCostExTax: 14500, taxAmount: 1450, priceIncTax: 15950, order: 1 },
-      { estimateId: est1.id, groupId: grp1d.id, name: "Landscaping & drainage", type: "Subcontractor", quantity: 1, unitCostExTax: 16000, taxAmount: 1600, priceIncTax: 17600, order: 2 },
+      { estimateId: est1.id, groupId: grp1d.id, name: "External decking", type: "Subcontractor", costCode: cc['142'], quantity: 1, unitCostExTax: 22000, taxAmount: 2200, priceIncTax: 24200, order: 0 },
+      { estimateId: est1.id, groupId: grp1d.id, name: "Fencing & gates", type: "Subcontractor", costCode: cc['142'], quantity: 1, unitCostExTax: 14500, taxAmount: 1450, priceIncTax: 15950, order: 1 },
+      { estimateId: est1.id, groupId: grp1d.id, name: "Landscaping & drainage", type: "Subcontractor", costCode: cc['119'], quantity: 1, unitCostExTax: 16000, taxAmount: 1600, priceIncTax: 17600, order: 2 },
     ]);
 
     // Variations
@@ -455,13 +473,13 @@ export async function seedLennyDemo(companyId: string, userId: string) {
     // Bills for Project 1
     const billDate = (d: string) => new Date(d);
     const billsData = [
-      { supplier: chopperRead.id, desc: "Concrete slab pour — Stage 1", total: 1980000, num: "BILL-4501-001", date: "2025-03-15" },
-      { supplier: chopperRead.id, desc: "Footings & pad preparation", total: 880000, num: "BILL-4501-002", date: "2025-03-28" },
-      { supplier: hughJackman.id, desc: "Timber frame supply and erection", total: 4620000, num: "BILL-4501-003", date: "2025-04-20" },
-      { supplier: alfStewart.id, desc: "Plumbing rough-in — wet areas", total: 850000, num: "BILL-4501-004", date: "2025-05-10" },
-      { supplier: russellCoight.id, desc: "Waterproofing & tiling — wet areas", total: 1100000, num: "BILL-4501-005", date: "2025-06-05" },
-      { supplier: chrisHemsworth.id, desc: "Electrical rough-in", total: 1400000, num: "BILL-4501-006", date: "2025-06-18" },
-      { supplier: blueysBuilding.id, desc: "Timber, fixings & sundry materials", total: 600000, num: "BILL-4501-007", date: "2025-07-02" },
+      { supplier: chopperRead.id, desc: "Concrete slab pour — Stage 1", total: 1980000, num: "BILL-4501-001", date: "2025-03-15", ccCode: '130' },
+      { supplier: chopperRead.id, desc: "Footings & pad preparation", total: 880000, num: "BILL-4501-002", date: "2025-03-28", ccCode: '129' },
+      { supplier: hughJackman.id, desc: "Timber frame supply and erection", total: 4620000, num: "BILL-4501-003", date: "2025-04-20", ccCode: '133' },
+      { supplier: alfStewart.id, desc: "Plumbing rough-in — wet areas", total: 850000, num: "BILL-4501-004", date: "2025-05-10", ccCode: '125' },
+      { supplier: russellCoight.id, desc: "Waterproofing & tiling — wet areas", total: 1100000, num: "BILL-4501-005", date: "2025-06-05", ccCode: '127' },
+      { supplier: chrisHemsworth.id, desc: "Electrical rough-in", total: 1400000, num: "BILL-4501-006", date: "2025-06-18", ccCode: '125' },
+      { supplier: blueysBuilding.id, desc: "Timber, fixings & sundry materials", total: 600000, num: "BILL-4501-007", date: "2025-07-02", ccCode: '100' },
     ];
 
     for (const b of billsData) {
@@ -490,7 +508,96 @@ export async function seedLennyDemo(companyId: string, userId: string) {
         total: subtotal,
         tax: "GST on expenses",
         order: 0,
+        costCodeId: cc[b.ccCode] || null,
       });
+    }
+
+    // ─── TIMESHEETS for Project 1 ──────────────────────────────────────────────
+    const tsEntries = [
+      { date: "2025-03-03", dur: 8,   desc: "Site induction & safety setup, demolition preparation",       ccCode: '126', rate: 95, end: "15:00:00" },
+      { date: "2025-03-05", dur: 9.5, desc: "Supervise strip-out, asbestos removal coordination",          ccCode: '126', rate: 95, end: "16:30:00" },
+      { date: "2025-03-10", dur: 8,   desc: "Site prep and earthworks supervision",                         ccCode: '129', rate: 95, end: "15:00:00" },
+      { date: "2025-03-17", dur: 10,  desc: "Footings inspection, formwork coordination",                   ccCode: '130', rate: 95, end: "17:00:00" },
+      { date: "2025-03-24", dur: 9,   desc: "Slab pour supervision — Stage 1",                              ccCode: '130', rate: 95, end: "16:00:00" },
+      { date: "2025-04-07", dur: 8.5, desc: "Frame delivery inspection, set out",                           ccCode: '128', rate: 95, end: "15:30:00" },
+      { date: "2025-04-14", dur: 8,   desc: "Timber frame erection supervision",                            ccCode: '133', rate: 95, end: "15:00:00" },
+      { date: "2025-04-28", dur: 9,   desc: "Frame progress inspection, roof framing coordination",         ccCode: '138', rate: 95, end: "16:00:00" },
+      { date: "2025-06-02", dur: 8,   desc: "Plumbing rough-in inspection, client walkthrough",             ccCode: '125', rate: 95, end: "15:00:00" },
+      { date: "2025-06-09", dur: 7.5, desc: "Electrical rough-in sign-off, site management",               ccCode: '125', rate: 95, end: "14:30:00" },
+      { date: "2025-07-07", dur: 8,   desc: "Joinery delivery check, cabinetry installation review",       ccCode: '123', rate: 95, end: "15:00:00" },
+      { date: "2025-07-21", dur: 8.5, desc: "Tiling & waterproofing inspection",                           ccCode: '127', rate: 95, end: "15:30:00" },
+      { date: "2025-08-11", dur: 9,   desc: "Painting contractor review, defects list",                    ccCode: '127', rate: 95, end: "16:00:00" },
+      { date: "2025-09-15", dur: 8,   desc: "Practical completion inspection walk, punch list",             ccCode: '121', rate: 95, end: "15:00:00" },
+      { date: "2025-10-06", dur: 6,   desc: "Final defects rectification supervision",                     ccCode: '127', rate: 95, end: "13:00:00" },
+    ];
+
+    for (const t of tsEntries) {
+      await tx.insert(timesheets).values({
+        projectId: proj1.id,
+        userId,
+        date: new Date(t.date),
+        startTime: "07:00:00",
+        endTime: t.end,
+        duration: t.dur,
+        breakDuration: 0.5,
+        description: t.desc,
+        status: "approved",
+        hourlyRate: String(t.rate),
+        total: String(Math.round(t.dur * t.rate * 100) / 100),
+        costCodeId: cc[t.ccCode] || null,
+        invoiced: false,
+        isActive: false,
+      } as any);
+    }
+
+    // ─── BUDGET for Project 1 ─────────────────────────────────────────────────
+    const [budget1] = await tx.insert(budgets).values({
+      projectId: proj1.id,
+      name: "Project Budget",
+      status: "active",
+      baselineAmount: 0,
+      revisedAmount: 0,
+      actualAmount: 0,
+      forecastAmount: 0,
+      varianceAmount: 0,
+      profitAmount: 0,
+      profitPercent: 0,
+    } as any).returning();
+
+    // Estimate-based budgeted amounts grouped by cost code
+    const budgetLines = [
+      { ccCode: '126', title: '126 - Labour - Demolition',       budgeted: 23430,  actual: 0        },
+      { ccCode: '129', title: '129 - Labour - Excavation',       budgeted: 24200,  actual: 800000   },
+      { ccCode: '130', title: '130 - Labour - Concrete Works',   budgeted: 42350,  actual: 1800000  },
+      { ccCode: '133', title: '133 - Labour - Framing',          budgeted: 57200,  actual: 4200000  },
+      { ccCode: '138', title: '138 - Labour - Roof Framing',     budgeted: 37400,  actual: 0        },
+      { ccCode: '127', title: '127 - Labour - Work to Existing', budgeted: 58700,  actual: 1000000  },
+      { ccCode: '123', title: '123 - Labour - General Carpentry',budgeted: 49500,  actual: 0        },
+      { ccCode: '125', title: '125 - Labour - Site Services',    budgeted: 57200,  actual: 2045454  },
+      { ccCode: '142', title: '142 - Labour - External Linings', budgeted: 40150,  actual: 0        },
+      { ccCode: '119', title: '119 - Site Clean',                budgeted: 17600,  actual: 0        },
+      { ccCode: '100', title: '100 - Preliminaries',             budgeted: 0,      actual: 545455   },
+    ];
+
+    let sortOrder = 0;
+    for (const line of budgetLines) {
+      const forecast = line.actual + Math.max(0, line.budgeted - line.actual);
+      const variance = line.budgeted - forecast;
+      const variancePercent = line.budgeted > 0 ? Math.round((variance / line.budgeted) * 100) : 0;
+      await tx.insert(budgetLineItems).values({
+        budgetId: budget1.id,
+        costCodeId: cc[line.ccCode] || null,
+        costCodeTitle: line.title,
+        categoryTitle: "",
+        budgetedAmount: line.budgeted,
+        actualAmount: line.actual,
+        variationAmount: 0,
+        forecastAmount: forecast,
+        variance,
+        variancePercent,
+        profitAmount: variance,
+        sortOrder: sortOrder++,
+      } as any);
     }
 
     // Schedule for Project 1
