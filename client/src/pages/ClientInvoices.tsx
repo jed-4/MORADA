@@ -528,28 +528,29 @@ export default function ClientInvoices() {
   return (
     <div className="flex flex-col h-full" data-testid="page-client-invoices">
 
-      {/* Row 1 — Title & Create */}
-      <div className="mx-3 mt-3 mb-0 rounded-lg border border-border/60 bg-card flex items-center justify-between px-3 h-9 gap-4 flex-shrink-0">
-        <h2 className="text-sm font-semibold truncate" data-testid="text-page-title">
-          {hasProjectContext
-            ? <>{currentProject!.name} <span className="text-muted-foreground font-normal">· Client Invoices</span></>
-            : pageTitle}
-        </h2>
-        <Button
-          size="sm"
-          variant="outline"
-          className="flex-shrink-0 h-7 text-xs px-2"
-          onClick={handleCreateInvoice}
-          data-testid="button-create-invoice"
-        >
-          <Plus className="w-3 h-3 mr-1" />
-          Create Invoice
-        </Button>
-      </div>
+      {/* Unified header card — title row + finance summary */}
+      <div className="mx-3 mt-3 rounded-lg border border-border bg-card flex-shrink-0 overflow-hidden">
 
-      {/* Row 2 — Financial summary panel */}
-      {!invoicesLoading && (
-        <div className="bg-[#bba7db]/10 border-b border-[#bba7db]/20 flex items-center px-5 py-3 gap-8 flex-shrink-0 flex-wrap">
+        {/* Row 1 — Title & Create */}
+        <div className="h-8 flex items-center justify-between px-3 border-b border-border/50">
+          <h2 className="text-sm font-semibold truncate" data-testid="text-page-title">
+            {hasProjectContext
+              ? <>{currentProject!.name} <span className="text-muted-foreground font-normal">· Client Invoices</span></>
+              : pageTitle}
+          </h2>
+          <button
+            className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5 flex-shrink-0"
+            onClick={handleCreateInvoice}
+            data-testid="button-create-invoice"
+          >
+            <Plus className="w-3 h-3" />
+            <span>Create Invoice</span>
+          </button>
+        </div>
+
+        {/* Row 2 — Finance summary (lilac, bottom section of card) */}
+        {!invoicesLoading && (
+        <div className="bg-[#bba7db]/10 flex items-center px-5 py-3 gap-8 flex-wrap">
 
           {/* Left — total project value: big number first, label below */}
           {hasProjectContext && (
@@ -640,8 +641,10 @@ export default function ClientInvoices() {
         </div>
       )}
 
+      </div>{/* end unified header card */}
+
       {/* Content — table card with search bar as first row */}
-      <div className="flex-1 overflow-auto px-3 pb-3 pt-2">
+      <div className="flex-1 overflow-auto px-3 pb-3 pt-1.5">
         <div className="border border-border rounded-md bg-background overflow-x-auto">
           <div style={{ minWidth: `${totalInnerWidth}px` }}>
 
