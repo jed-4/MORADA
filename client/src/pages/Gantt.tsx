@@ -3151,7 +3151,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
                 return (
                   <div key={item.id} style={{ height: `${ROW_HEIGHT}px` }} className="relative group/row">
                     <div 
-                      className={`absolute ${hasChildren ? 'top-[9px] h-[14px]' : 'top-1 h-6'}`}
+                      className={`absolute ${hasChildren ? 'top-[9px] h-[14px]' : 'top-1.5 h-5'}`}
                       style={{ 
                         left: `${barStart + (dragging?.id === item.id && dragging?.type === 'move' ? (dragging.currentDeltaX || 0) : 
                           (dragging?.type === 'move' && draggingCascadeIds.has(item.id) ? (dragging.currentDeltaX || 0) : 0))}px`, 

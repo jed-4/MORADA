@@ -636,7 +636,7 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
           <div ref={headerTimelineRef} className="h-[56px] border-b border-border flex-shrink-0 overflow-hidden">
             <div
               className="h-full flex"
-              style={{ width: totalWidth }}
+              style={{ minWidth: totalWidth, width: '100%' }}
             >
               {days.map((day) => {
                 const key = format(day, "yyyy-MM-dd");
@@ -682,6 +682,7 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
                   </div>
                 );
               })}
+              <div className="flex-1 border-l border-border/20" />
             </div>
           </div>
 
@@ -692,7 +693,7 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
               handleSyncScroll(e);
             }}
           >
-            <div className="relative" style={{ width: totalWidth }}>
+            <div className="relative" style={{ minWidth: totalWidth, width: '100%' }}>
               {(() => {
                 const todayIdx = days.findIndex((d) => isSameDay(d, today));
                 if (todayIdx === -1) return null;
