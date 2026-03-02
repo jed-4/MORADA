@@ -653,7 +653,7 @@ export default function ClientInvoices() {
 
       {/* Content — table card with search bar as first row */}
       <div className="flex-1 overflow-auto px-3 pb-3 pt-1.5">
-        <div className="border border-border rounded-md bg-background">
+        <div className="border border-border rounded-md bg-background overflow-hidden">
 
           {/* Search / filter / columns row — full card width, never scrolls horizontally */}
           <div className="h-9 flex items-center px-3 border-b border-border/50 gap-2 bg-background sticky top-0 z-20">

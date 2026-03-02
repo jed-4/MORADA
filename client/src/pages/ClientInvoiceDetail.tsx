@@ -965,52 +965,28 @@ export default function ClientInvoiceDetail() {
   // ── render helpers ────────────────────────────────────────────────────────────
 
   const renderLineTableHeader = (_includeContractCols: boolean = false) => (
-    <TableRow className="h-8 bg-muted/30">
-      {isColVisible("name") && <TableHead className="w-40 text-xs font-medium text-muted-foreground">Name</TableHead>}
-      {isColVisible("description") && <TableHead className="text-xs font-medium text-muted-foreground">Description</TableHead>}
+    <TableRow className="h-6 bg-muted/30">
+      {isColVisible("name") && <TableHead className="w-40 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal">Name</TableHead>}
+      {isColVisible("description") && <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal">Description</TableHead>}
       {isColVisible("claimPercent") && (
-        <TableHead className="text-right w-20 text-xs font-medium text-muted-foreground">Claim %</TableHead>
+        <TableHead className="text-right w-20 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal">Claim %</TableHead>
       )}
       {isColVisible("claimAmount") && (
-        <TableHead className="text-right w-28 text-xs font-medium text-muted-foreground">Claim $</TableHead>
+        <TableHead className="text-right w-28 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal">Claim $</TableHead>
       )}
       {isColVisible("amountExTax") && (
-        <TableHead className="text-right w-28 text-xs font-medium text-muted-foreground">Ex Tax</TableHead>
+        <TableHead className="text-right w-28 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal">Ex Tax</TableHead>
       )}
       {isColVisible("amountTax") && (
-        <TableHead className="text-right w-24 text-xs font-medium text-muted-foreground">Tax</TableHead>
+        <TableHead className="text-right w-24 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal">Tax</TableHead>
       )}
       {isColVisible("amountIncTax") && (
-        <TableHead className="text-right w-28 text-xs font-medium text-muted-foreground">Inc Tax</TableHead>
+        <TableHead className="text-right w-28 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal">Inc Tax</TableHead>
       )}
       <TableHead className="w-8" />
     </TableRow>
   );
 
-  const renderLineTableFooter = (claimAmountCents: number) => {
-    const claimAmt = claimAmountCents / 100;
-    const exTax = claimAmt / (1 + GST_RATE);
-    const tax = claimAmt - exTax;
-    return (
-      <TableRow className="border-t bg-muted/30 font-medium text-sm">
-        <TableCell colSpan={visibleColumns.filter((c) => !["amountExTax","amountTax","amountIncTax","claimAmount"].includes(c.id)).length + 1} className="text-right text-muted-foreground">
-          Subtotal
-        </TableCell>
-        {isColVisible("claimAmount") && (
-          <TableCell className="text-right">{formatCurrency(claimAmt)}</TableCell>
-        )}
-        {isColVisible("amountExTax") && (
-          <TableCell className="text-right">{formatCurrency(exTax)}</TableCell>
-        )}
-        {isColVisible("amountTax") && (
-          <TableCell className="text-right">{formatCurrency(tax)}</TableCell>
-        )}
-        {isColVisible("amountIncTax") && (
-          <TableCell className="text-right">{formatCurrency(claimAmt)}</TableCell>
-        )}
-      </TableRow>
-    );
-  };
 
   // ── render ────────────────────────────────────────────────────────────────────
 
@@ -1148,7 +1124,7 @@ export default function ClientInvoiceDetail() {
                           name="name"
                           render={({ field }) => (
                             <FormItem className="col-span-2">
-                              <FormLabel>Invoice Name*</FormLabel>
+                              <FormLabel className="text-[11px] text-muted-foreground/70 uppercase tracking-wide font-medium">Invoice Name*</FormLabel>
                               <FormControl>
                                 <Input {...field} data-testid="input-name" />
                               </FormControl>
@@ -1162,7 +1138,7 @@ export default function ClientInvoiceDetail() {
                           name="invoiceNumber"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel className="flex items-center gap-1.5">
+                              <FormLabel className="flex items-center gap-1.5 text-[11px] text-muted-foreground/70 uppercase tracking-wide font-medium">
                                 Invoice Number
                                 {!isEditMode && (
                                   <Tooltip>
@@ -1224,7 +1200,7 @@ export default function ClientInvoiceDetail() {
                           name="invoiceDate"
                           render={({ field }) => (
                             <FormItem className="flex flex-col">
-                              <FormLabel>Invoice Date</FormLabel>
+                              <FormLabel className="text-[11px] text-muted-foreground/70 uppercase tracking-wide font-medium">Invoice Date</FormLabel>
                               <Popover open={invoiceDateOpen} onOpenChange={setInvoiceDateOpen}>
                                 <PopoverTrigger asChild>
                                   <FormControl>
@@ -1268,7 +1244,7 @@ export default function ClientInvoiceDetail() {
                           name="dueDate"
                           render={({ field }) => (
                             <FormItem className="flex flex-col">
-                              <FormLabel>Due Date</FormLabel>
+                              <FormLabel className="text-[11px] text-muted-foreground/70 uppercase tracking-wide font-medium">Due Date</FormLabel>
                               <Popover open={dueDateOpen} onOpenChange={setDueDateOpen}>
                                 <PopoverTrigger asChild>
                                   <FormControl>
@@ -1518,24 +1494,6 @@ export default function ClientInvoiceDetail() {
                                   </div>
                                 </PopoverContent>
                               </Popover>
-                              {/* Set all % quick-fill */}
-                              <div className="ml-auto flex items-center gap-2">
-                                <span className="text-xs text-muted-foreground">Set all %:</span>
-                                {[10, 25, 50, 75, 100].map((pct) => (
-                                  <button
-                                    key={pct}
-                                    type="button"
-                                    className="text-xs px-1.5 py-0.5 rounded border border-border hover-elevate"
-                                    onClick={() =>
-                                      setContractClaimRows((prev) =>
-                                        prev.map((r) => ({ ...r, claimPercent: pct }))
-                                      )
-                                    }
-                                  >
-                                    {pct}%
-                                  </button>
-                                ))}
-                              </div>
                             </div>
                           );
                         })()}
@@ -1561,7 +1519,7 @@ export default function ClientInvoiceDetail() {
                                           <Input
                                             value={row.name}
                                             onChange={(e) => updateContractClaimRow(row.id, "name", e.target.value)}
-                                            className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm"
+                                            className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm placeholder:text-muted-foreground/30"
                                             placeholder="Claim name"
                                           />
                                         </TableCell>
@@ -1571,7 +1529,7 @@ export default function ClientInvoiceDetail() {
                                           <Input
                                             value={row.description}
                                             onChange={(e) => updateContractClaimRow(row.id, "description", e.target.value)}
-                                            className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm"
+                                            className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm placeholder:text-muted-foreground/30"
                                             placeholder="Description"
                                           />
                                         </TableCell>
@@ -1624,7 +1582,6 @@ export default function ClientInvoiceDetail() {
                                 })}
                               </TableBody>
                             </Table>
-                            {renderLineTableFooter(calculateContractPrice())}
                           </>
                         ) : (
                           <p className="text-sm text-muted-foreground text-center py-2">
@@ -1636,13 +1593,37 @@ export default function ClientInvoiceDetail() {
                           <button
                             type="button"
                             onClick={addContractClaimRow}
-                            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                            className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
                             data-testid="button-add-claim-row"
                           >
                             <Plus className="w-3.5 h-3.5" />
                             Add Claim Row
                           </button>
                         )}
+
+                        {contractClaimRows.length > 0 && (() => {
+                          const claimAmt = calculateContractPrice() / 100;
+                          const exTax = claimAmt / (1 + GST_RATE);
+                          const tax = claimAmt - exTax;
+                          return (
+                            <div className="flex justify-end pt-2 mt-1 border-t border-border/50">
+                              <div className="space-y-0.5 min-w-[210px]">
+                                <div className="flex justify-between gap-8 text-xs text-muted-foreground">
+                                  <span>Amount ex GST</span>
+                                  <span className="tabular-nums">{formatCurrency(exTax)}</span>
+                                </div>
+                                <div className="flex justify-between gap-8 text-xs text-muted-foreground">
+                                  <span>GST (10%)</span>
+                                  <span className="tabular-nums">{formatCurrency(tax)}</span>
+                                </div>
+                                <div className="flex justify-between gap-8 text-sm font-semibold border-t border-border/50 pt-1">
+                                  <span>Total inc GST</span>
+                                  <span className="tabular-nums">{formatCurrency(claimAmt)}</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>{/* end contract price content */}
                     </div>{/* end contract price sub-section */}
 
@@ -1653,22 +1634,27 @@ export default function ClientInvoiceDetail() {
                           <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber-400/70" />
                           <span className="text-xs font-medium">Variations</span>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => setVariationsModalOpen(true)}
-                          className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                          data-testid="button-select-variations"
-                        >
-                          <Plus className="w-3 h-3" />
-                          <span>Select Variations</span>
-                        </button>
+                        {selectedVariationIds.length > 0 && (
+                          <span className="text-xs font-medium tabular-nums text-muted-foreground">
+                            {formatCurrency(calculateVariationsTotal() / 100)}
+                          </span>
+                        )}
                       </div>
 
                       <div className="px-4 py-3">
                         {selectedVariationIds.length === 0 ? (
-                          <p className="text-sm text-muted-foreground text-center py-2">
-                            No variations added. Click "Select Variations" to add approved variations.
-                          </p>
+                          <div className="py-1.5 flex items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={() => setVariationsModalOpen(true)}
+                              className="h-7 px-3 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1.5"
+                              data-testid="button-select-variations"
+                            >
+                              <Plus className="w-3 h-3" />
+                              Select Variations
+                            </button>
+                            <span className="text-xs text-muted-foreground/50">No approved variations selected</span>
+                          </div>
                         ) : (
                           <>
                             <Table>
@@ -1761,6 +1747,17 @@ export default function ClientInvoiceDetail() {
                                     )}
                               </span>
                             </div>
+                            <div className="pt-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setVariationsModalOpen(true)}
+                                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+                                data-testid="button-select-variations"
+                              >
+                                <Plus className="w-3 h-3" />
+                                Add more variations
+                              </button>
+                            </div>
                           </>
                         )}
                       </div>{/* end variations content */}
@@ -1773,22 +1770,27 @@ export default function ClientInvoiceDetail() {
                           <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-emerald-400/70" />
                           <span className="text-xs font-medium">Allowances</span>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => setAllowancesModalOpen(true)}
-                          className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                          data-testid="button-select-allowances"
-                        >
-                          <Plus className="w-3 h-3" />
-                          <span>Select Allowances</span>
-                        </button>
+                        {selectedAllowanceIds.length > 0 && (
+                          <span className="text-xs font-medium tabular-nums text-muted-foreground">
+                            {formatCurrency(calculateAllowancesTotal() / 100)}
+                          </span>
+                        )}
                       </div>
 
                       <div className="px-4 py-3">
                         {selectedAllowanceIds.length === 0 ? (
-                          <p className="text-sm text-muted-foreground text-center py-2">
-                            No allowances added. Click "Select Allowances" to add finalized allowances.
-                          </p>
+                          <div className="py-1.5 flex items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={() => setAllowancesModalOpen(true)}
+                              className="h-7 px-3 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1.5"
+                              data-testid="button-select-allowances"
+                            >
+                              <Plus className="w-3 h-3" />
+                              Select Allowances
+                            </button>
+                            <span className="text-xs text-muted-foreground/50">No finalized allowances selected</span>
+                          </div>
                         ) : (
                           <>
                             <Table>
@@ -1885,6 +1887,17 @@ export default function ClientInvoiceDetail() {
                                       calculateAllowancesTotal() / 100 / (1 + GST_RATE)
                                     )}
                               </span>
+                            </div>
+                            <div className="pt-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setAllowancesModalOpen(true)}
+                                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+                                data-testid="button-select-allowances"
+                              >
+                                <Plus className="w-3 h-3" />
+                                Add more allowances
+                              </button>
                             </div>
                           </>
                         )}
