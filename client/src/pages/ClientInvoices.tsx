@@ -19,7 +19,6 @@ import {
   Search,
   Eye,
   MoreVertical,
-  AlertCircle,
   FileText,
   Loader2,
   RefreshCw,
@@ -434,15 +433,9 @@ export default function ClientInvoices() {
     if (!date) return <span className="text-muted-foreground/40 text-xs">—</span>;
     const d = new Date(date);
     return (
-      <div className="flex flex-col leading-tight">
-        <span className={cn("text-xs", overdue ? "text-destructive font-medium" : "text-foreground")}>
-          {format(d, "d MMM")}
-        </span>
-        <span className={cn("text-[10px]", overdue ? "text-destructive/70" : "text-muted-foreground")}>
-          {format(d, "yyyy")}
-        </span>
-        {overdue && <AlertCircle className="w-3 h-3 text-destructive mt-0.5" />}
-      </div>
+      <span className={cn("text-xs tabular-nums", overdue ? "text-destructive font-medium" : "text-foreground")}>
+        {format(d, "d MMM yyyy")}
+      </span>
     );
   };
 
@@ -536,7 +529,7 @@ export default function ClientInvoices() {
     <div className="flex flex-col h-full" data-testid="page-client-invoices">
 
       {/* Row 1 — Title & Create */}
-      <div className="h-9 bg-background flex items-center justify-between px-3 gap-4 flex-shrink-0">
+      <div className="mx-3 mt-3 mb-0 rounded-lg border border-border/60 bg-card flex items-center justify-between px-3 h-9 gap-4 flex-shrink-0">
         <h2 className="text-sm font-semibold truncate" data-testid="text-page-title">
           {hasProjectContext
             ? <>{currentProject!.name} <span className="text-muted-foreground font-normal">· Client Invoices</span></>
@@ -544,11 +537,12 @@ export default function ClientInvoices() {
         </h2>
         <Button
           size="sm"
-          className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white border-[#bba7db]/20 flex-shrink-0"
+          variant="outline"
+          className="flex-shrink-0 h-7 text-xs px-2"
           onClick={handleCreateInvoice}
           data-testid="button-create-invoice"
         >
-          <Plus className="w-3.5 h-3.5 mr-1" />
+          <Plus className="w-3 h-3 mr-1" />
           Create Invoice
         </Button>
       </div>
@@ -606,8 +600,8 @@ export default function ClientInvoices() {
             </>
           )}
 
-          {/* Right — invoices stats: group label + compact columns */}
-          <div className="flex flex-col gap-1">
+          {/* Right — invoices stats: group label + compact columns, pushed to far right */}
+          <div className="flex flex-col gap-1 ml-auto">
             <span className="text-[10px] uppercase tracking-widest font-medium text-muted-foreground/70">Invoices</span>
             <div className="flex items-end gap-6">
               <div className="flex flex-col">
@@ -646,233 +640,193 @@ export default function ClientInvoices() {
         </div>
       )}
 
-      {/* Row 3 — Search + Filter + Column selector */}
-      <div className="h-9 bg-background flex items-center px-3 border-b border-border flex-shrink-0 gap-2">
-        <div className="relative w-44">
-          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-          <Input
-            placeholder="Search invoices…"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-7 pr-2 h-6 text-xs"
-            data-testid="input-search"
-          />
-        </div>
+      {/* Content — table card with search bar as first row */}
+      <div className="flex-1 overflow-auto px-3 pb-3 pt-2">
+        <div className="border border-border rounded-md bg-background overflow-x-auto">
+          <div style={{ minWidth: `${totalInnerWidth}px` }}>
 
-        {/* Status filter */}
-        <Popover open={statusPopoverOpen} onOpenChange={setStatusPopoverOpen}>
-          <PopoverTrigger asChild>
-            <button
-              className={cn(
-                "h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1",
-                selectedStatus !== "all" && "border-[#bba7db] text-[#bba7db] bg-[#bba7db]/5"
-              )}
-              data-testid="filter-status-popover"
-            >
-              <span>
-                {selectedStatus === "all" ? "Status" : STATUS_OPTIONS.find((s) => s.value === selectedStatus)?.label}
-              </span>
-              {selectedStatus !== "all" && (
-                <span
-                  className="ml-0.5 text-[10px] text-[#bba7db] cursor-pointer"
-                  onClick={(e) => { e.stopPropagation(); setSelectedStatus("all"); }}
-                >×</span>
-              )}
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-44 p-1.5" align="start">
-            {STATUS_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => { setSelectedStatus(opt.value); setStatusPopoverOpen(false); }}
-                className={cn(
-                  "w-full text-left px-2 py-1.5 text-sm rounded-md flex items-center justify-between hover-elevate",
-                  selectedStatus === opt.value && "bg-[#bba7db]/10 text-[#bba7db] font-medium"
-                )}
-                data-testid={`filter-status-${opt.value}`}
-              >
-                <span>{opt.label}</span>
-                <span className="text-xs text-muted-foreground tabular-nums">{statusCounts[opt.value] ?? 0}</span>
-              </button>
-            ))}
-          </PopoverContent>
-        </Popover>
+            {/* Search / filter / columns row — top of card */}
+            <div className="h-9 flex items-center px-3 border-b border-border/50 gap-2 bg-background sticky top-0 z-20">
+              <div className="relative w-44">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+                <Input
+                  placeholder="Search invoices…"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-7 pr-2 h-6 text-xs border-border/40"
+                  data-testid="input-search"
+                />
+              </div>
 
-        {/* Column selector */}
-        <div className="ml-auto">
-          <Popover open={colPopoverOpen} onOpenChange={setColPopoverOpen}>
-            <PopoverTrigger asChild>
-              <button
-                className="h-6 w-6 flex items-center justify-center rounded-md border hover-elevate active-elevate-2 text-muted-foreground"
-                title="Configure columns"
-                data-testid="button-column-selector"
-              >
-                <Columns3 className="w-3.5 h-3.5" />
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-56 p-2" align="end" data-testid="popover-columns">
-              <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide px-1 mb-2">Columns</p>
-              <div className="space-y-0.5">
-                {columns.map((col, idx) => (
-                  <div
-                    key={col.key}
-                    className="flex items-center gap-2 px-1 py-1 rounded-md hover-elevate group"
+              <Popover open={statusPopoverOpen} onOpenChange={setStatusPopoverOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    className={cn(
+                      "h-6 px-2 text-xs border border-border/40 rounded-md hover-elevate active-elevate-2 flex items-center gap-1",
+                      selectedStatus !== "all" && "border-[#bba7db] text-[#bba7db] bg-[#bba7db]/5"
+                    )}
+                    data-testid="filter-status-popover"
                   >
-                    <input
-                      type="checkbox"
-                      checked={col.visible}
-                      disabled={col.required}
-                      onChange={() => !col.required && toggleColumn(col.key)}
-                      className="w-3.5 h-3.5 accent-[#bba7db] flex-shrink-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                    />
-                    <span className={cn("flex-1 text-xs", !col.visible && "text-muted-foreground/60")}>
-                      {col.label}
-                      {col.inactive && (
-                        <span className="ml-1 text-[10px] text-muted-foreground/50 italic">soon</span>
-                      )}
+                    <span>
+                      {selectedStatus === "all" ? "Status" : STATUS_OPTIONS.find((s) => s.value === selectedStatus)?.label}
                     </span>
-                    <div className="flex flex-col gap-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        className="h-3 w-4 flex items-center justify-center hover-elevate rounded disabled:opacity-20"
-                        onClick={() => moveColumn(col.key, -1)}
-                        disabled={idx === 0}
-                      >
-                        <ChevronUp className="w-2.5 h-2.5 text-muted-foreground" />
+                    {selectedStatus !== "all" && (
+                      <span
+                        className="ml-0.5 text-[10px] text-[#bba7db] cursor-pointer"
+                        onClick={(e) => { e.stopPropagation(); setSelectedStatus("all"); }}
+                      >×</span>
+                    )}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-44 p-1.5" align="start">
+                  {STATUS_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      onClick={() => { setSelectedStatus(opt.value); setStatusPopoverOpen(false); }}
+                      className={cn(
+                        "w-full text-left px-2 py-1.5 text-sm rounded-md flex items-center justify-between hover-elevate",
+                        selectedStatus === opt.value && "bg-[#bba7db]/10 text-[#bba7db] font-medium"
+                      )}
+                      data-testid={`filter-status-${opt.value}`}
+                    >
+                      <span>{opt.label}</span>
+                      <span className="text-xs text-muted-foreground tabular-nums">{statusCounts[opt.value] ?? 0}</span>
+                    </button>
+                  ))}
+                </PopoverContent>
+              </Popover>
+
+              <div className="ml-auto">
+                <Popover open={colPopoverOpen} onOpenChange={setColPopoverOpen}>
+                  <PopoverTrigger asChild>
+                    <button
+                      className="h-6 w-6 flex items-center justify-center rounded-md border border-border/40 hover-elevate active-elevate-2 text-muted-foreground"
+                      title="Configure columns"
+                      data-testid="button-column-selector"
+                    >
+                      <Columns3 className="w-3.5 h-3.5" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-56 p-2" align="end" data-testid="popover-columns">
+                    <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide px-1 mb-2">Columns</p>
+                    <div className="space-y-0.5">
+                      {columns.map((col, idx) => (
+                        <div key={col.key} className="flex items-center gap-2 px-1 py-1 rounded-md hover-elevate group">
+                          <input
+                            type="checkbox"
+                            checked={col.visible}
+                            disabled={col.required}
+                            onChange={() => !col.required && toggleColumn(col.key)}
+                            className="w-3.5 h-3.5 accent-[#bba7db] flex-shrink-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                          />
+                          <span className={cn("flex-1 text-xs", !col.visible && "text-muted-foreground/60")}>
+                            {col.label}
+                            {col.inactive && <span className="ml-1 text-[10px] text-muted-foreground/50 italic">soon</span>}
+                          </span>
+                          <div className="flex flex-col gap-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button className="h-3 w-4 flex items-center justify-center hover-elevate rounded disabled:opacity-20" onClick={() => moveColumn(col.key, -1)} disabled={idx === 0}>
+                              <ChevronUp className="w-2.5 h-2.5 text-muted-foreground" />
+                            </button>
+                            <button className="h-3 w-4 flex items-center justify-center hover-elevate rounded disabled:opacity-20" onClick={() => moveColumn(col.key, 1)} disabled={idx === columns.length - 1}>
+                              <ChevronDown className="w-2.5 h-2.5 text-muted-foreground" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
+            </div>
+
+            {/* Body — loading / empty / rows */}
+            {invoicesLoading ? (
+              <div className="flex items-center justify-center h-48">
+                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : filteredInvoices.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-48 gap-3">
+                <FileText className="w-8 h-8 text-muted-foreground/40" />
+                <p className="text-sm text-muted-foreground">
+                  {invoices.length === 0 ? "No invoices yet" : "No matching invoices"}
+                </p>
+                {invoices.length === 0 && (
+                  <Button size="sm" variant="outline" className="h-7 text-xs px-3" onClick={handleCreateInvoice} data-testid="button-add-first-invoice">
+                    <Plus className="w-3 h-3 mr-1" />
+                    Create First Invoice
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <>
+                {/* Column header row */}
+                <div className="h-7 px-3 flex items-center gap-2 border-b border-border bg-muted/30 sticky top-9 z-10">
+                  {visibleColumns.map((col) => (
+                    <HeaderCell
+                      key={col.key}
+                      col={col}
+                      width={colWidths[col.key]}
+                      sortCol={sortCol}
+                      sortDir={sortDir}
+                      onSort={handleSort}
+                      onResize={handleResize}
+                    />
+                  ))}
+                  {!projectIdFromUrl && (
+                    <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide flex-shrink-0" style={{ width: `${PROJECT_COL_WIDTH}px` }}>
+                      Project
+                    </div>
+                  )}
+                  <div className="flex-shrink-0" style={{ width: `${ACTIONS_WIDTH}px` }} />
+                </div>
+
+                {/* Data rows */}
+                {filteredInvoices.map((invoice) => (
+                  <div
+                    key={invoice.id}
+                    className="min-h-[40px] px-3 flex items-center gap-2 border-b border-border/50 last:border-b-0 cursor-pointer hover-elevate group transition-all duration-100"
+                    onClick={() => handleRowClick(invoice.id)}
+                    data-testid={`row-invoice-${invoice.id}`}
+                  >
+                    {visibleColumns.map((col) => renderCell(col, invoice))}
+
+                    {!projectIdFromUrl && (() => {
+                      const proj = getProject(invoice.projectId);
+                      return (
+                        <div key="project" className="flex-shrink-0" style={{ width: `${PROJECT_COL_WIDTH}px` }} data-testid={`cell-project-${invoice.id}`}>
+                          {proj ? (
+                            <div className="flex items-center gap-1.5">
+                              <ProjectIcon icon={proj.icon || "Briefcase"} color={proj.color || "#3b82f6"} className="w-3 h-3 flex-shrink-0" />
+                              <span className="text-xs text-muted-foreground truncate">{proj.name}</span>
+                            </div>
+                          ) : <span className="text-xs text-muted-foreground">—</span>}
+                        </div>
+                      );
+                    })()}
+
+                    <div className="flex-shrink-0 flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity" style={{ width: `${ACTIONS_WIDTH}px` }} data-testid={`cell-actions-${invoice.id}`}>
+                      <button className="h-6 w-6 rounded hover-elevate flex items-center justify-center" onClick={(e) => { e.stopPropagation(); handleRowClick(invoice.id); }} data-testid={`button-view-${invoice.id}`}>
+                        <Eye className="h-3 w-3" />
                       </button>
-                      <button
-                        className="h-3 w-4 flex items-center justify-center hover-elevate rounded disabled:opacity-20"
-                        onClick={() => moveColumn(col.key, 1)}
-                        disabled={idx === columns.length - 1}
-                      >
-                        <ChevronDown className="w-2.5 h-2.5 text-muted-foreground" />
-                      </button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                          <button className="h-6 w-6 rounded hover-elevate flex items-center justify-center" data-testid={`button-menu-${invoice.id}`}>
+                            <MoreVertical className="h-3 w-3" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" data-testid={`menu-${invoice.id}`}>
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleRowClick(invoice.id); }} data-testid={`menu-edit-${invoice.id}`}>Edit</DropdownMenuItem>
+                          <DropdownMenuItem data-testid={`menu-duplicate-${invoice.id}`}>Duplicate</DropdownMenuItem>
+                          <DropdownMenuItem className="text-destructive focus:text-destructive" data-testid={`menu-delete-${invoice.id}`}>Delete</DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </div>
                 ))}
-              </div>
-            </PopoverContent>
-          </Popover>
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="flex-1 overflow-auto px-3 pb-3 pt-3">
-        {invoicesLoading ? (
-          <div className="flex items-center justify-center h-48">
-            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-          </div>
-        ) : filteredInvoices.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-48 gap-3">
-            <FileText className="w-8 h-8 text-muted-foreground/40" />
-            <p className="text-sm text-muted-foreground">
-              {invoices.length === 0 ? "No invoices yet" : "No matching invoices"}
-            </p>
-            {invoices.length === 0 && (
-              <Button
-                size="sm"
-                className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
-                onClick={handleCreateInvoice}
-                data-testid="button-add-first-invoice"
-              >
-                <Plus className="w-3.5 h-3.5 mr-1" />
-                Create First Invoice
-              </Button>
+              </>
             )}
           </div>
-        ) : (
-          <div className="border border-border rounded-md bg-background overflow-x-auto">
-            {/* Inner wrapper enforces min-width so columns don't collapse */}
-            <div style={{ minWidth: `${totalInnerWidth}px` }}>
-
-              {/* Header row */}
-              <div className="h-7 px-3 flex items-center gap-2 border-b border-border bg-muted/30 sticky top-0 z-10">
-                {visibleColumns.map((col) => (
-                  <HeaderCell
-                    key={col.key}
-                    col={col}
-                    width={colWidths[col.key]}
-                    sortCol={sortCol}
-                    sortDir={sortDir}
-                    onSort={handleSort}
-                    onResize={handleResize}
-                  />
-                ))}
-                {!projectIdFromUrl && (
-                  <div
-                    className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide flex-shrink-0"
-                    style={{ width: `${PROJECT_COL_WIDTH}px` }}
-                  >Project</div>
-                )}
-                <div className="flex-shrink-0" style={{ width: `${ACTIONS_WIDTH}px` }} />
-              </div>
-
-              {/* Data rows */}
-              {filteredInvoices.map((invoice) => (
-                <div
-                  key={invoice.id}
-                  className="min-h-[40px] px-3 flex items-center gap-2 border-b border-border/50 last:border-b-0 cursor-pointer hover-elevate group transition-all duration-100"
-                  onClick={() => handleRowClick(invoice.id)}
-                  data-testid={`row-invoice-${invoice.id}`}
-                >
-                  {visibleColumns.map((col) => renderCell(col, invoice))}
-
-                  {/* Project column (global view only) */}
-                  {!projectIdFromUrl && (() => {
-                    const proj = getProject(invoice.projectId);
-                    return (
-                      <div
-                        key="project"
-                        className="flex-shrink-0"
-                        style={{ width: `${PROJECT_COL_WIDTH}px` }}
-                        data-testid={`cell-project-${invoice.id}`}
-                      >
-                        {proj ? (
-                          <div className="flex items-center gap-1.5">
-                            <ProjectIcon icon={proj.icon || "Briefcase"} color={proj.color || "#3b82f6"} className="w-3 h-3 flex-shrink-0" />
-                            <span className="text-xs text-muted-foreground truncate">{proj.name}</span>
-                          </div>
-                        ) : <span className="text-xs text-muted-foreground">—</span>}
-                      </div>
-                    );
-                  })()}
-
-                  {/* Actions */}
-                  <div
-                    className="flex-shrink-0 flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                    style={{ width: `${ACTIONS_WIDTH}px` }}
-                    data-testid={`cell-actions-${invoice.id}`}
-                  >
-                    <button
-                      className="h-6 w-6 rounded hover-elevate flex items-center justify-center"
-                      onClick={(e) => { e.stopPropagation(); handleRowClick(invoice.id); }}
-                      data-testid={`button-view-${invoice.id}`}
-                    >
-                      <Eye className="h-3 w-3" />
-                    </button>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                        <button
-                          className="h-6 w-6 rounded hover-elevate flex items-center justify-center"
-                          data-testid={`button-menu-${invoice.id}`}
-                        >
-                          <MoreVertical className="h-3 w-3" />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" data-testid={`menu-${invoice.id}`}>
-                        <DropdownMenuItem
-                          onClick={(e) => { e.stopPropagation(); handleRowClick(invoice.id); }}
-                          data-testid={`menu-edit-${invoice.id}`}
-                        >Edit</DropdownMenuItem>
-                        <DropdownMenuItem data-testid={`menu-duplicate-${invoice.id}`}>Duplicate</DropdownMenuItem>
-                        <DropdownMenuItem className="text-destructive focus:text-destructive" data-testid={`menu-delete-${invoice.id}`}>Delete</DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        </div>
       </div>
     </div>
   );
