@@ -1,20 +1,13 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useParams } from "wouter";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -44,11 +37,11 @@ import { cn } from "@/lib/utils";
 // ── Status chip colours ────────────────────────────────────────────────────
 
 const STATUS_OPTIONS = [
-  { value: "all", label: "All statuses" },
-  { value: "draft", label: "Draft" },
-  { value: "sent", label: "Sent" },
+  { value: "all",     label: "All statuses" },
+  { value: "draft",   label: "Draft" },
+  { value: "sent",    label: "Sent" },
   { value: "partial", label: "Partial" },
-  { value: "paid", label: "Paid" },
+  { value: "paid",    label: "Paid" },
   { value: "overdue", label: "Overdue" },
 ];
 
@@ -92,19 +85,20 @@ interface ColumnConfig {
   required?: boolean;
   align?: "left" | "right" | "center";
   inactive?: boolean;
+  widthClass: string;
 }
 
 const DEFAULT_COLUMNS: ColumnConfig[] = [
-  { key: "invoice_number", label: "Invoice #",     visible: true,  required: true  },
-  { key: "name",           label: "Name",           visible: true,  required: true  },
-  { key: "status",         label: "Status",         visible: true  },
-  { key: "invoice_date",   label: "Invoice Date",   visible: true  },
-  { key: "due_date",       label: "Due Date",       visible: true  },
-  { key: "total",          label: "Total",          visible: true,  align: "right"  },
-  { key: "paid",           label: "Paid",           visible: true,  align: "right"  },
-  { key: "due",            label: "Due",            visible: true,  align: "right"  },
-  { key: "xero",           label: "Xero",           visible: true,  align: "center" },
-  { key: "seen",           label: "Seen",           visible: true,  align: "center", inactive: true },
+  { key: "invoice_number", label: "Invoice #",     visible: true,  required: true,  widthClass: "w-24 flex-shrink-0" },
+  { key: "name",           label: "Name",           visible: true,  required: true,  widthClass: "flex-1 min-w-0" },
+  { key: "status",         label: "Status",         visible: true,                   widthClass: "w-20 flex-shrink-0" },
+  { key: "invoice_date",   label: "Invoice Date",   visible: true,                   widthClass: "w-20 flex-shrink-0" },
+  { key: "due_date",       label: "Due Date",       visible: true,                   widthClass: "w-20 flex-shrink-0" },
+  { key: "total",          label: "Total",          visible: true,  align: "right",  widthClass: "w-28 flex-shrink-0" },
+  { key: "paid",           label: "Paid",           visible: true,  align: "right",  widthClass: "w-28 flex-shrink-0" },
+  { key: "due",            label: "Due",            visible: true,  align: "right",  widthClass: "w-24 flex-shrink-0" },
+  { key: "xero",           label: "Xero",           visible: true,  align: "center", widthClass: "w-10 flex-shrink-0" },
+  { key: "seen",           label: "Seen",           visible: true,  align: "center", widthClass: "w-10 flex-shrink-0", inactive: true },
 ];
 
 // ── Main component ─────────────────────────────────────────────────────────
@@ -178,9 +172,6 @@ export default function ClientInvoices() {
     }).format(dollars);
   };
 
-  const formatDate = (date: Date | string | null | undefined) =>
-    date ? format(new Date(date), "d MMM yyyy") : "-";
-
   const isDueDateOverdue = (dueDate: Date | string | null | undefined, status: string) =>
     !(!dueDate || status === "paid") && isPast(new Date(dueDate));
 
@@ -209,15 +200,13 @@ export default function ClientInvoices() {
     const contractPriceCents      = (currentProject as any)?.contractPrice ?? 0;
     const approvedVariationsTotal = projectVariations.reduce((s, v) => s + (v.totalAmount ?? 0), 0);
 
-    // Allowances: split by status for the variation display
     const finalizedAllowances = projectAllowances
       .filter((a) => a.item?.allowanceStatus === "finalized")
       .reduce((s, a) => s + Math.round((a.item?.priceIncTax ?? 0) * (a.item?.quantity ?? 0) * 100), 0);
     const pendingAllowances = projectAllowances
       .filter((a) => a.item?.allowanceStatus !== "finalized")
       .reduce((s, a) => s + Math.round((a.item?.priceIncTax ?? 0) * (a.item?.quantity ?? 0) * 100), 0);
-    const allowancesTotal = finalizedAllowances + pendingAllowances;
-    // Variation = finalized − pending (finalized allowances shift cost upward)
+    const allowancesTotal    = finalizedAllowances + pendingAllowances;
     const allowancesVariation = finalizedAllowances - pendingAllowances;
 
     const projectTotal = contractPriceCents + approvedVariationsTotal;
@@ -238,9 +227,7 @@ export default function ClientInvoices() {
 
   // ── Column management ─────────────────────────────────────────────────────
 
-  const visibleColumns = useMemo(() =>
-    columns.filter((c) => c.visible),
-  [columns]);
+  const visibleColumns = useMemo(() => columns.filter((c) => c.visible), [columns]);
 
   const moveColumn = (key: ColumnKey, dir: -1 | 1) => {
     setColumns((prev) => {
@@ -271,90 +258,105 @@ export default function ClientInvoices() {
 
   const hasProjectContext = !!(projectIdFromUrl && currentProject);
 
-  // ── Cell renderer ─────────────────────────────────────────────────────────
+  // ── Date renderer — two stacked lines ─────────────────────────────────────
+
+  const renderDate = (
+    date: Date | string | null | undefined,
+    overdue = false
+  ) => {
+    if (!date) return <span className="text-muted-foreground/40 text-xs">—</span>;
+    const d = new Date(date);
+    return (
+      <div className="flex flex-col leading-tight">
+        <span className={cn("text-xs", overdue ? "text-destructive font-medium" : "text-foreground")}>
+          {format(d, "d MMM")}
+        </span>
+        <span className={cn("text-[10px]", overdue ? "text-destructive/70" : "text-muted-foreground")}>
+          {format(d, "yyyy")}
+        </span>
+        {overdue && <AlertCircle className="w-3 h-3 text-destructive mt-0.5" />}
+      </div>
+    );
+  };
+
+  // ── Cell content renderer ─────────────────────────────────────────────────
 
   const renderCell = (col: ColumnConfig, invoice: ClientInvoice) => {
     const overdue = isDueDateOverdue(invoice.dueDate, invoice.status);
+    const alignClass = col.align === "right" ? "justify-end" : col.align === "center" ? "justify-center" : "";
 
+    let content: ReactNode;
     switch (col.key) {
       case "invoice_number":
-        return (
-          <TableCell key={col.key} className="py-1" data-testid={`cell-number-${invoice.id}`}>
-            <span className="text-xs font-medium text-foreground">
-              {invoice.invoiceNumber || <span className="text-muted-foreground italic">No number</span>}
-            </span>
-          </TableCell>
+        content = (
+          <span className="text-xs font-semibold text-foreground" data-testid={`cell-number-${invoice.id}`}>
+            {invoice.invoiceNumber || <span className="text-muted-foreground italic font-normal">No number</span>}
+          </span>
         );
+        break;
       case "name":
-        return (
-          <TableCell key={col.key} className="py-1" data-testid={`cell-name-${invoice.id}`}>
-            <span className="text-xs text-foreground">
-              {(invoice as any).name || invoice.invoiceNumber || "-"}
-            </span>
-          </TableCell>
+        content = (
+          <span className="text-xs text-foreground leading-snug" data-testid={`cell-name-${invoice.id}`}>
+            {(invoice as any).name || invoice.invoiceNumber || "—"}
+          </span>
         );
+        break;
       case "status":
-        return (
-          <TableCell key={col.key} className="py-1" data-testid={`cell-status-${invoice.id}`}>
-            <StatusChip status={invoice.status} />
-          </TableCell>
-        );
+        content = <span data-testid={`cell-status-${invoice.id}`}><StatusChip status={invoice.status} /></span>;
+        break;
       case "invoice_date":
-        return (
-          <TableCell key={col.key} className="py-1 text-xs text-muted-foreground" data-testid={`cell-invoice-date-${invoice.id}`}>
-            {formatDate(invoice.invoiceDate)}
-          </TableCell>
-        );
+        content = <div data-testid={`cell-invoice-date-${invoice.id}`}>{renderDate(invoice.invoiceDate)}</div>;
+        break;
       case "due_date":
-        return (
-          <TableCell key={col.key} className={cn("py-1 text-xs", overdue ? "text-destructive font-medium" : "text-muted-foreground")} data-testid={`cell-due-date-${invoice.id}`}>
-            {formatDate(invoice.dueDate)}
-            {overdue && <AlertCircle className="inline ml-1 w-3 h-3 text-destructive" />}
-          </TableCell>
-        );
+        content = <div data-testid={`cell-due-date-${invoice.id}`}>{renderDate(invoice.dueDate, overdue)}</div>;
+        break;
       case "total":
-        return (
-          <TableCell key={col.key} className="py-1 text-xs font-medium text-right" data-testid={`cell-total-${invoice.id}`}>
+        content = (
+          <span className="text-xs font-medium tabular-nums" data-testid={`cell-total-${invoice.id}`}>
             {formatCurrency(invoice.totalAmount)}
-          </TableCell>
+          </span>
         );
+        break;
       case "paid":
-        return (
-          <TableCell key={col.key} className="py-1 text-xs text-right text-emerald-600 font-medium" data-testid={`cell-paid-${invoice.id}`}>
-            {invoice.paidAmount > 0 ? formatCurrency(invoice.paidAmount) : <span className="text-muted-foreground/50">—</span>}
-          </TableCell>
+        content = (
+          <span className="text-xs font-medium tabular-nums text-emerald-600 dark:text-emerald-400" data-testid={`cell-paid-${invoice.id}`}>
+            {invoice.paidAmount > 0 ? formatCurrency(invoice.paidAmount) : <span className="text-muted-foreground/40">—</span>}
+          </span>
         );
+        break;
       case "due":
-        return (
-          <TableCell
-            key={col.key}
-            className={cn("py-1 text-xs font-medium text-right", invoice.balanceAmount <= 0 ? "text-emerald-600" : "")}
+        content = (
+          <span
+            className={cn("text-xs font-medium tabular-nums", invoice.balanceAmount <= 0 ? "text-emerald-600 dark:text-emerald-400" : "")}
             data-testid={`cell-due-${invoice.id}`}
           >
-            {invoice.balanceAmount <= 0
-              ? <span className="text-emerald-600 font-medium">Paid</span>
-              : formatCurrency(invoice.balanceAmount)}
-          </TableCell>
+            {invoice.balanceAmount <= 0 ? "Paid" : formatCurrency(invoice.balanceAmount)}
+          </span>
         );
+        break;
       case "xero":
-        return (
-          <TableCell key={col.key} className="py-1 text-center" data-testid={`cell-xero-${invoice.id}`}>
-            <span title="Not synced with Xero">
-              <RefreshCw className="w-3 h-3 text-muted-foreground/30 mx-auto" />
-            </span>
-          </TableCell>
+        content = (
+          <span title="Not synced with Xero" data-testid={`cell-xero-${invoice.id}`}>
+            <RefreshCw className="w-3 h-3 text-muted-foreground/30" />
+          </span>
         );
+        break;
       case "seen":
-        return (
-          <TableCell key={col.key} className="py-1 text-center" data-testid={`cell-seen-${invoice.id}`}>
-            <span title="Email view tracking coming soon">
-              <Eye className="w-3 h-3 text-muted-foreground/30 mx-auto" />
-            </span>
-          </TableCell>
+        content = (
+          <span title="Email view tracking coming soon" data-testid={`cell-seen-${invoice.id}`}>
+            <Eye className="w-3 h-3 text-muted-foreground/30" />
+          </span>
         );
+        break;
       default:
-        return <TableCell key={col.key} />;
+        content = null;
     }
+
+    return (
+      <div key={col.key} className={cn("flex items-start", col.widthClass, alignClass)}>
+        {content}
+      </div>
+    );
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -363,16 +365,21 @@ export default function ClientInvoices() {
     <div className="flex flex-col h-full" data-testid="page-client-invoices">
 
       {/* Row 1 — Title & Create */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
-        <h2 className="text-sm font-semibold" data-testid="text-page-title">{pageTitle}</h2>
-        <button
-          className="h-6 px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+      <div className="h-9 bg-background flex items-center justify-between px-3 gap-4 flex-shrink-0">
+        <h2 className="text-sm font-semibold truncate" data-testid="text-page-title">
+          {hasProjectContext
+            ? <>{currentProject!.name} <span className="text-muted-foreground font-normal">· Client Invoices</span></>
+            : pageTitle}
+        </h2>
+        <Button
+          size="sm"
+          className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white border-[#bba7db]/20 flex-shrink-0"
           onClick={handleCreateInvoice}
           data-testid="button-create-invoice"
         >
-          <Plus className="w-3 h-3" />
-          <span>Create Invoice</span>
-        </button>
+          <Plus className="w-3.5 h-3.5 mr-1" />
+          Create Invoice
+        </Button>
       </div>
 
       {/* Row 2 — Financial summary panel */}
@@ -402,7 +409,7 @@ export default function ClientInvoices() {
                 </div>
                 <div className="flex items-center justify-between text-xs gap-4">
                   <span className="text-muted-foreground">Approved Variations</span>
-                  <span className="tabular-nums text-muted-foreground">
+                  <span className="tabular-nums">
                     {financials.approvedVariationsTotal > 0
                       ? <span className="text-emerald-600 dark:text-emerald-400">+{formatCurrency(financials.approvedVariationsTotal)}</span>
                       : <span className="text-muted-foreground/50">—</span>}
@@ -424,21 +431,24 @@ export default function ClientInvoices() {
             </div>
           )}
 
-          {/* Right zone — Paid / Invoiced / Remaining */}
-          <div className={cn("flex-1 flex items-center py-3 gap-0", hasProjectContext ? "justify-end" : "justify-center")}>
-            <div className="flex flex-col items-center px-6">
+          {/* Right zone — stat blocks */}
+          <div className={cn("flex-1 flex items-center py-3 gap-3", hasProjectContext ? "justify-end" : "justify-center")}>
+            {/* PAID */}
+            <div className="bg-muted/40 rounded-lg px-5 py-2.5 flex flex-col items-center min-w-[100px]">
               <span className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-medium mb-1">Paid</span>
               <span className="text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{financials.paidPct}%</span>
               <span className="text-xs tabular-nums text-muted-foreground mt-0.5">{formatCurrency(financials.paidTotal)}</span>
             </div>
-            <div className="w-px self-stretch bg-border my-3" />
-            <div className="flex flex-col items-center px-6">
+
+            {/* INVOICED */}
+            <div className="bg-muted/40 rounded-lg px-5 py-2.5 flex flex-col items-center min-w-[100px]">
               <span className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-medium mb-1">Invoiced</span>
               <span className="text-2xl font-bold tabular-nums">{financials.invoicedPct}%</span>
               <span className="text-xs tabular-nums text-muted-foreground mt-0.5">{formatCurrency(financials.invoicedTotal)}</span>
             </div>
-            <div className="w-px self-stretch bg-border my-3" />
-            <div className="flex flex-col items-center px-6">
+
+            {/* REMAINING */}
+            <div className="bg-muted/40 rounded-lg px-5 py-2.5 flex flex-col items-center min-w-[100px]">
               <span className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-medium mb-1">Remaining</span>
               <span className={cn(
                 "text-2xl font-bold tabular-nums",
@@ -448,8 +458,9 @@ export default function ClientInvoices() {
               )}>{financials.remainingPct}%</span>
               <span className="text-xs tabular-nums text-muted-foreground mt-0.5">{formatCurrency(financials.balanceTotal)}</span>
             </div>
-            <div className="w-px self-stretch bg-border my-3 ml-2" />
-            <div className="flex flex-col items-center px-5">
+
+            {/* INVOICES count */}
+            <div className="bg-muted/40 rounded-lg px-5 py-2.5 flex flex-col items-center min-w-[80px]">
               <span className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-medium mb-1">Invoices</span>
               <span className="text-2xl font-bold tabular-nums">{financials.count}</span>
               <span className="text-xs text-muted-foreground/60 mt-0.5">total</span>
@@ -530,7 +541,6 @@ export default function ClientInvoices() {
                     key={col.key}
                     className="flex items-center gap-2 px-1 py-1 rounded-md hover-elevate group"
                   >
-                    {/* Checkbox */}
                     <input
                       type="checkbox"
                       checked={col.visible}
@@ -544,7 +554,6 @@ export default function ClientInvoices() {
                         <span className="ml-1 text-[10px] text-muted-foreground/50 italic">soon</span>
                       )}
                     </span>
-                    {/* Reorder buttons */}
                     <div className="flex flex-col gap-0 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
                         className="h-3 w-4 flex items-center justify-center hover-elevate rounded disabled:opacity-20"
@@ -570,7 +579,7 @@ export default function ClientInvoices() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto px-2 pb-2 pt-2">
+      <div className="flex-1 overflow-auto px-3 pb-3 pt-3">
         {invoicesLoading ? (
           <div className="flex items-center justify-center h-48">
             <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
@@ -582,98 +591,96 @@ export default function ClientInvoices() {
               {invoices.length === 0 ? "No invoices yet" : "No matching invoices"}
             </p>
             {invoices.length === 0 && (
-              <button
-                className="h-7 px-3 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
+              <Button
+                size="sm"
+                className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
                 onClick={handleCreateInvoice}
                 data-testid="button-add-first-invoice"
               >
-                <Plus className="w-3.5 h-3.5" />
+                <Plus className="w-3.5 h-3.5 mr-1" />
                 Create First Invoice
-              </button>
+              </Button>
             )}
           </div>
         ) : (
-          <div className="border rounded-md overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/30 h-8">
-                  {visibleColumns.map((col) => (
-                    <TableHead
-                      key={col.key}
-                      className={cn(
-                        "text-xs font-medium text-muted-foreground",
-                        col.align === "right"  && "text-right",
-                        col.align === "center" && "text-center",
-                        col.key === "invoice_number" && "w-32",
-                        (col.key === "xero" || col.key === "seen") && "w-12",
-                      )}
-                    >
-                      {col.label}
-                    </TableHead>
-                  ))}
-                  {!projectIdFromUrl && (
-                    <TableHead className="text-xs font-medium text-muted-foreground">Project</TableHead>
-                  )}
-                  <TableHead className="text-xs w-14" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredInvoices.map((invoice) => (
-                  <TableRow
-                    key={invoice.id}
-                    className="cursor-pointer hover-elevate group h-8"
-                    onClick={() => handleRowClick(invoice.id)}
-                    data-testid={`row-invoice-${invoice.id}`}
-                  >
-                    {visibleColumns.map((col) => renderCell(col, invoice))}
-                    {!projectIdFromUrl && (() => {
-                      const proj = getProject(invoice.projectId);
-                      return (
-                        <TableCell key="project" className="py-1" data-testid={`cell-project-${invoice.id}`}>
-                          {proj ? (
-                            <div className="flex items-center gap-1.5">
-                              <ProjectIcon icon={proj.icon || "Briefcase"} color={proj.color || "#3b82f6"} className="w-3 h-3" />
-                              <span className="text-xs text-muted-foreground">{proj.name}</span>
-                            </div>
-                          ) : <span className="text-xs text-muted-foreground">-</span>}
-                        </TableCell>
-                      );
-                    })()}
+          <div className="border border-border rounded-md bg-background overflow-hidden">
 
-                    {/* Actions — always last */}
-                    <TableCell className="py-1 text-right" data-testid={`cell-actions-${invoice.id}`}>
-                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          className="h-6 w-6 rounded hover-elevate flex items-center justify-center"
-                          onClick={(e) => { e.stopPropagation(); handleRowClick(invoice.id); }}
-                          data-testid={`button-view-${invoice.id}`}
-                        >
-                          <Eye className="h-3 w-3" />
-                        </button>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                            <button
-                              className="h-6 w-6 rounded hover-elevate flex items-center justify-center"
-                              data-testid={`button-menu-${invoice.id}`}
-                            >
-                              <MoreVertical className="h-3 w-3" />
-                            </button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" data-testid={`menu-${invoice.id}`}>
-                            <DropdownMenuItem
-                              onClick={(e) => { e.stopPropagation(); handleRowClick(invoice.id); }}
-                              data-testid={`menu-edit-${invoice.id}`}
-                            >Edit</DropdownMenuItem>
-                            <DropdownMenuItem data-testid={`menu-duplicate-${invoice.id}`}>Duplicate</DropdownMenuItem>
-                            <DropdownMenuItem className="text-destructive focus:text-destructive" data-testid={`menu-delete-${invoice.id}`}>Delete</DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            {/* Header row */}
+            <div className="h-7 px-3 flex items-center gap-3 border-b border-border bg-muted/30 sticky top-0 z-10">
+              {visibleColumns.map((col) => (
+                <div
+                  key={col.key}
+                  className={cn(
+                    "text-[10px] font-medium text-muted-foreground uppercase tracking-wide",
+                    col.widthClass,
+                    col.align === "right"  && "text-right",
+                    col.align === "center" && "text-center",
+                  )}
+                >
+                  {col.label}
+                </div>
+              ))}
+              {!projectIdFromUrl && (
+                <div className="flex-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Project</div>
+              )}
+              <div className="w-14 flex-shrink-0" />
+            </div>
+
+            {/* Data rows */}
+            {filteredInvoices.map((invoice) => (
+              <div
+                key={invoice.id}
+                className="min-h-[40px] px-3 flex items-center gap-3 border-b border-border/50 last:border-b-0 cursor-pointer hover-elevate group transition-all duration-100"
+                onClick={() => handleRowClick(invoice.id)}
+                data-testid={`row-invoice-${invoice.id}`}
+              >
+                {visibleColumns.map((col) => renderCell(col, invoice))}
+
+                {/* Project column (global view only) */}
+                {!projectIdFromUrl && (() => {
+                  const proj = getProject(invoice.projectId);
+                  return (
+                    <div key="project" className="flex-1 min-w-0" data-testid={`cell-project-${invoice.id}`}>
+                      {proj ? (
+                        <div className="flex items-center gap-1.5">
+                          <ProjectIcon icon={proj.icon || "Briefcase"} color={proj.color || "#3b82f6"} className="w-3 h-3 flex-shrink-0" />
+                          <span className="text-xs text-muted-foreground truncate">{proj.name}</span>
+                        </div>
+                      ) : <span className="text-xs text-muted-foreground">—</span>}
+                    </div>
+                  );
+                })()}
+
+                {/* Actions */}
+                <div className="w-14 flex-shrink-0 flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity" data-testid={`cell-actions-${invoice.id}`}>
+                  <button
+                    className="h-6 w-6 rounded hover-elevate flex items-center justify-center"
+                    onClick={(e) => { e.stopPropagation(); handleRowClick(invoice.id); }}
+                    data-testid={`button-view-${invoice.id}`}
+                  >
+                    <Eye className="h-3 w-3" />
+                  </button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                      <button
+                        className="h-6 w-6 rounded hover-elevate flex items-center justify-center"
+                        data-testid={`button-menu-${invoice.id}`}
+                      >
+                        <MoreVertical className="h-3 w-3" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" data-testid={`menu-${invoice.id}`}>
+                      <DropdownMenuItem
+                        onClick={(e) => { e.stopPropagation(); handleRowClick(invoice.id); }}
+                        data-testid={`menu-edit-${invoice.id}`}
+                      >Edit</DropdownMenuItem>
+                      <DropdownMenuItem data-testid={`menu-duplicate-${invoice.id}`}>Duplicate</DropdownMenuItem>
+                      <DropdownMenuItem className="text-destructive focus:text-destructive" data-testid={`menu-delete-${invoice.id}`}>Delete</DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
