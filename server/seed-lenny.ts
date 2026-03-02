@@ -8,8 +8,6 @@ import {
   variations,
   variationItems,
   clientInvoices,
-  invoiceEstimates,
-  invoiceVariations,
   invoiceAllowances,
   clientInvoicePayments,
   bills,
@@ -264,7 +262,8 @@ export async function seedLennyDemo(companyId: string, userId: string) {
       ownerId: userId,
       proposedStartDate: "2025-03-01",
       proposedEndDate: "2025-10-31",
-      contractCost: 42350000, // $423,500 incl GST in cents
+      contractCost: 49738473,  // $497,384.73 incl GST in cents
+      contractPrice: 49738473, // Locked contract price (exercises cent-level rounding throughout)
     }).returning();
 
     // Estimate
@@ -284,17 +283,18 @@ export async function seedLennyDemo(companyId: string, userId: string) {
     const [grp1d] = await tx.insert(estimateGroups).values({ estimateId: est1.id, name: "External Works", order: 3 }).returning();
 
     // Demolition items
+    // All amounts in dollars (stored as-is; estimate items use dollar values not cents)
     await tx.insert(estimateItems).values([
       { estimateId: est1.id, groupId: grp1a.id, name: "Demolition & strip-out", type: "Subcontractor", costCode: cc['126'], quantity: 1, unitCostExTax: 12500, taxAmount: 1250, priceIncTax: 13750, order: 0 },
       { estimateId: est1.id, groupId: grp1a.id, name: "Asbestos removal & disposal", type: "Subcontractor", costCode: cc['126'], quantity: 1, unitCostExTax: 8800, taxAmount: 880, priceIncTax: 9680, order: 1 },
-      { estimateId: est1.id, groupId: grp1a.id, name: "Site prep & earthworks", type: "Subcontractor", costCode: cc['129'], quantity: 1, unitCostExTax: 22000, taxAmount: 2200, priceIncTax: 24200, order: 2 },
+      { estimateId: est1.id, groupId: grp1a.id, name: "Site prep & earthworks", type: "Subcontractor", costCode: cc['129'], quantity: 1, unitCostExTax: 34500, taxAmount: 3450, priceIncTax: 37950, order: 2 },
     ]);
 
     // Framing items
     await tx.insert(estimateItems).values([
       { estimateId: est1.id, groupId: grp1b.id, name: "Concrete slab", type: "Subcontractor", costCode: cc['130'], quantity: 1, unitCostExTax: 38500, taxAmount: 3850, priceIncTax: 42350, order: 0 },
-      { estimateId: est1.id, groupId: grp1b.id, name: "Timber frame supply & erect", type: "Subcontractor", costCode: cc['133'], quantity: 1, unitCostExTax: 52000, taxAmount: 5200, priceIncTax: 57200, order: 1 },
-      { estimateId: est1.id, groupId: grp1b.id, name: "Roof structure & sheeting", type: "Subcontractor", costCode: cc['138'], quantity: 1, unitCostExTax: 34000, taxAmount: 3400, priceIncTax: 37400, order: 2 },
+      { estimateId: est1.id, groupId: grp1b.id, name: "Timber frame supply & erect", type: "Subcontractor", costCode: cc['133'], quantity: 1, unitCostExTax: 74000, taxAmount: 7400, priceIncTax: 81400, order: 1 },
+      { estimateId: est1.id, groupId: grp1b.id, name: "Roof structure & sheeting", type: "Subcontractor", costCode: cc['138'], quantity: 1, unitCostExTax: 47500, taxAmount: 4750, priceIncTax: 52250, order: 2 },
     ]);
 
     // Fit-Out items
@@ -313,17 +313,18 @@ export async function seedLennyDemo(companyId: string, userId: string) {
     }).returning();
 
     await tx.insert(estimateItems).values([
-      { estimateId: est1.id, groupId: grp1c.id, name: "Joinery & cabinetry", type: "Subcontractor", costCode: cc['123'], quantity: 1, unitCostExTax: 45000, taxAmount: 4500, priceIncTax: 49500, order: 2 },
-      { estimateId: est1.id, groupId: grp1c.id, name: "Plumbing rough-in & fit-off", type: "Subcontractor", costCode: cc['125'], quantity: 1, unitCostExTax: 28000, taxAmount: 2800, priceIncTax: 30800, order: 3 },
-      { estimateId: est1.id, groupId: grp1c.id, name: "Electrical rough-in & fit-off", type: "Subcontractor", costCode: cc['125'], quantity: 1, unitCostExTax: 24000, taxAmount: 2400, priceIncTax: 26400, order: 4 },
+      { estimateId: est1.id, groupId: grp1c.id, name: "Joinery & cabinetry", type: "Subcontractor", costCode: cc['123'], quantity: 1, unitCostExTax: 61000, taxAmount: 6100, priceIncTax: 67100, order: 2 },
+      { estimateId: est1.id, groupId: grp1c.id, name: "Plumbing rough-in & fit-off", type: "Subcontractor", costCode: cc['125'], quantity: 1, unitCostExTax: 35500, taxAmount: 3550, priceIncTax: 39050, order: 3 },
+      { estimateId: est1.id, groupId: grp1c.id, name: "Electrical rough-in & fit-off", type: "Subcontractor", costCode: cc['125'], quantity: 1, unitCostExTax: 30000, taxAmount: 3000, priceIncTax: 33000, order: 4 },
       { estimateId: est1.id, groupId: grp1c.id, name: "Painting & decorating", type: "Subcontractor", costCode: cc['127'], quantity: 1, unitCostExTax: 18500, taxAmount: 1850, priceIncTax: 20350, order: 5 },
     ]);
 
     // External items
     await tx.insert(estimateItems).values([
-      { estimateId: est1.id, groupId: grp1d.id, name: "External decking", type: "Subcontractor", costCode: cc['142'], quantity: 1, unitCostExTax: 22000, taxAmount: 2200, priceIncTax: 24200, order: 0 },
+      { estimateId: est1.id, groupId: grp1d.id, name: "External decking", type: "Subcontractor", costCode: cc['142'], quantity: 1, unitCostExTax: 27500, taxAmount: 2750, priceIncTax: 30250, order: 0 },
       { estimateId: est1.id, groupId: grp1d.id, name: "Fencing & gates", type: "Subcontractor", costCode: cc['142'], quantity: 1, unitCostExTax: 14500, taxAmount: 1450, priceIncTax: 15950, order: 1 },
-      { estimateId: est1.id, groupId: grp1d.id, name: "Landscaping & drainage", type: "Subcontractor", costCode: cc['119'], quantity: 1, unitCostExTax: 16000, taxAmount: 1600, priceIncTax: 17600, order: 2 },
+      { estimateId: est1.id, groupId: grp1d.id, name: "Landscaping & drainage", type: "Subcontractor", costCode: cc['119'], quantity: 1, unitCostExTax: 22000, taxAmount: 2200, priceIncTax: 24200, order: 2 },
+      { estimateId: est1.id, groupId: grp1d.id, name: "Wildlife habitat restoration & fencing", type: "Subcontractor", costCode: cc['142'], quantity: 1, unitCostExTax: 18500, taxAmount: 1850, priceIncTax: 20350, order: 3 },
     ]);
 
     // Variations
@@ -392,21 +393,25 @@ export async function seedLennyDemo(companyId: string, userId: string) {
       sortOrder: 0,
     });
 
-    // Invoices
-    const inv1ContractExTax = Math.round(385300 * 0.25 * 100);
-    const inv1Gst = Math.round(inv1ContractExTax * 0.1);
-    const inv1Total = inv1ContractExTax + inv1Gst;
+    // ── Client Invoices for Project 1 (Irwin) ────────────────────────────────
+    // Contract price: $497,384.73 (49738473 cents)
+    // 4 progress payments totalling exactly the contract price.
+    // Amounts include GST. ex = total / 1.1 rounded, gst = total - ex.
 
+    // INV-1001 — Deposit 10% = $49,738.47
+    const inv1Total = 4973847;
+    const inv1Ex   = Math.round(inv1Total / 1.1);
+    const inv1Gst  = inv1Total - inv1Ex;
     const [inv1] = await tx.insert(clientInvoices).values({
       invoiceNumber: "INV-1001",
-      name: "Progress Claim 1 — 25% Contract",
+      name: "Deposit — 10% Contract",
       projectId: proj1.id,
-      invoiceDate: new Date("2025-05-01"),
-      dueDate: new Date("2025-05-15"),
+      invoiceDate: new Date("2025-03-01"),
+      dueDate: new Date("2025-03-14"),
       invoicingMethod: "progress_payments",
       status: "paid",
-      sentDate: new Date("2025-05-01"),
-      subtotal: inv1ContractExTax,
+      sentDate: new Date("2025-03-01"),
+      subtotal: inv1Ex,
       gstAmount: inv1Gst,
       totalAmount: inv1Total,
       paidAmount: inv1Total,
@@ -414,60 +419,93 @@ export async function seedLennyDemo(companyId: string, userId: string) {
       showAmountsIncTax: true,
     }).returning();
 
-    await tx.insert(invoiceEstimates).values({
-      invoiceId: inv1.id,
-      estimateId: est1.id,
-      progressPercent: 25,
-    });
-
     await tx.insert(clientInvoicePayments).values({
       invoiceId: inv1.id,
       amount: inv1Total,
-      paymentDate: new Date("2025-05-14"),
+      paymentDate: new Date("2025-03-10"),
       paymentMethod: "EFT",
-      reference: "Irwin-PP1",
+      reference: "Irwin-Deposit",
     });
 
-    const inv2ExTax = inv1ContractExTax + 772700;
-    const inv2Gst = Math.round(inv2ExTax * 0.1);
-    const inv2Total = inv2ExTax + inv2Gst;
-    const inv2Paid = Math.round(inv2Total / 2);
-
+    // INV-1002 — Progress Claim 2, Slab & Frame Complete 25% = $124,346.18
+    const inv2Total = 12434618;
+    const inv2Ex   = Math.round(inv2Total / 1.1);
+    const inv2Gst  = inv2Total - inv2Ex;
     const [inv2] = await tx.insert(clientInvoices).values({
       invoiceNumber: "INV-1002",
-      name: "Progress Claim 2 — Frame Stage",
+      name: "Progress Claim 2 — Slab & Frame Complete",
+      projectId: proj1.id,
+      invoiceDate: new Date("2025-05-01"),
+      dueDate: new Date("2025-05-15"),
+      invoicingMethod: "progress_payments",
+      status: "paid",
+      sentDate: new Date("2025-05-01"),
+      subtotal: inv2Ex,
+      gstAmount: inv2Gst,
+      totalAmount: inv2Total,
+      paidAmount: inv2Total,
+      balanceAmount: 0,
+      showAmountsIncTax: true,
+    }).returning();
+
+    await tx.insert(clientInvoicePayments).values({
+      invoiceId: inv2.id,
+      amount: inv2Total,
+      paymentDate: new Date("2025-05-12"),
+      paymentMethod: "EFT",
+      reference: "Irwin-PP2",
+    });
+
+    // INV-1003 — Progress Claim 3, Lock-Up Stage 35% = $174,084.66, half paid
+    const inv3Total = 17408466;
+    const inv3Ex   = Math.round(inv3Total / 1.1);
+    const inv3Gst  = inv3Total - inv3Ex;
+    const inv3Paid = 8704233; // exactly half
+    const [inv3] = await tx.insert(clientInvoices).values({
+      invoiceNumber: "INV-1003",
+      name: "Progress Claim 3 — Lock-Up Stage",
       projectId: proj1.id,
       invoiceDate: new Date("2025-07-01"),
       dueDate: new Date("2025-07-15"),
       invoicingMethod: "progress_payments",
       status: "partial",
       sentDate: new Date("2025-07-01"),
-      subtotal: inv2ExTax,
-      gstAmount: inv2Gst,
-      totalAmount: inv2Total,
-      paidAmount: inv2Paid,
-      balanceAmount: inv2Total - inv2Paid,
+      subtotal: inv3Ex,
+      gstAmount: inv3Gst,
+      totalAmount: inv3Total,
+      paidAmount: inv3Paid,
+      balanceAmount: inv3Total - inv3Paid,
       showAmountsIncTax: true,
     }).returning();
 
-    await tx.insert(invoiceEstimates).values({
-      invoiceId: inv2.id,
-      estimateId: est1.id,
-      progressPercent: 25,
-    });
-
-    await tx.insert(invoiceVariations).values({
-      invoiceId: inv2.id,
-      variationId: var1.id,
-      claimPercent: 100,
-    });
-
     await tx.insert(clientInvoicePayments).values({
-      invoiceId: inv2.id,
-      amount: inv2Paid,
-      paymentDate: new Date("2025-07-12"),
+      invoiceId: inv3.id,
+      amount: inv3Paid,
+      paymentDate: new Date("2025-07-10"),
       paymentMethod: "EFT",
-      reference: "Irwin-PP2-partial",
+      reference: "Irwin-PP3-partial",
+    });
+
+    // INV-1004 — Progress Claim 4, Practical Completion 30% = $149,215.42, unpaid
+    // Remainder after 10+25+35 = 30%. Total check: 4973847+12434618+17408466+14921542 = 49738473 ✓
+    const inv4Total = 49738473 - inv1Total - inv2Total - inv3Total; // = 14921542
+    const inv4Ex   = Math.round(inv4Total / 1.1);
+    const inv4Gst  = inv4Total - inv4Ex;
+    await tx.insert(clientInvoices).values({
+      invoiceNumber: "INV-1004",
+      name: "Progress Claim 4 — Practical Completion",
+      projectId: proj1.id,
+      invoiceDate: new Date("2025-09-01"),
+      dueDate: new Date("2025-09-15"),
+      invoicingMethod: "progress_payments",
+      status: "sent",
+      sentDate: new Date("2025-09-01"),
+      subtotal: inv4Ex,
+      gstAmount: inv4Gst,
+      totalAmount: inv4Total,
+      paidAmount: 0,
+      balanceAmount: inv4Total,
+      showAmountsIncTax: true,
     });
 
     // Bills for Project 1
@@ -791,8 +829,8 @@ export async function seedLennyDemo(companyId: string, userId: string) {
     }
 
     // Draft invoice for project 2
-    const inv3ExTax = 1090909;
-    const inv3Gst = Math.round(inv3ExTax * 0.1);
+    const inv2001ExTax = 1090909;
+    const inv2001Gst = Math.round(inv2001ExTax * 0.1);
 
     await tx.insert(clientInvoices).values({
       invoiceNumber: "INV-2001",
@@ -802,11 +840,11 @@ export async function seedLennyDemo(companyId: string, userId: string) {
       dueDate: new Date("2025-12-14"),
       invoicingMethod: "progress_payments",
       status: "draft",
-      subtotal: inv3ExTax,
-      gstAmount: inv3Gst,
-      totalAmount: inv3ExTax + inv3Gst,
+      subtotal: inv2001ExTax,
+      gstAmount: inv2001Gst,
+      totalAmount: inv2001ExTax + inv2001Gst,
       paidAmount: 0,
-      balanceAmount: inv3ExTax + inv3Gst,
+      balanceAmount: inv2001ExTax + inv2001Gst,
       showAmountsIncTax: true,
     });
 
