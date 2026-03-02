@@ -215,7 +215,7 @@ export interface IStorage {
   reorderNoteGroups(companyId: string, projectId: string | null, groupIds: string[]): Promise<NoteGroup[]>;
 
   // Tasks CRUD operations (specific to type="task")
-  getTasks(projectId?: string, status?: string, businessTasks?: boolean, assigneeId?: string, dateRange?: { startDate?: string; endDate?: string }): Promise<Task[]>;
+  getTasks(projectId?: string, status?: string, businessTasks?: boolean, assigneeId?: string, dateRange?: { startDate?: string; endDate?: string }, companyId?: string): Promise<Task[]>;
   getTasksByUser(userId: string, companyId: string): Promise<Task[]>;
   getTasksByCompany(companyId: string): Promise<Task[]>;
   getTask(id: string): Promise<Task | undefined>;
@@ -3064,7 +3064,7 @@ export class MemStorage implements IStorage {
   }
 
   // Tasks CRUD operations
-  async getTasks(projectId?: string, status?: string, businessTasks?: boolean, assigneeId?: string, dateRange?: { startDate?: string; endDate?: string }): Promise<Task[]> {
+  async getTasks(projectId?: string, status?: string, businessTasks?: boolean, assigneeId?: string, dateRange?: { startDate?: string; endDate?: string }, companyId?: string): Promise<Task[]> {
     const allTasks = Array.from(this.notes.values())
       .filter(note => note.type === "task") as Task[];
     
@@ -3084,6 +3084,10 @@ export class MemStorage implements IStorage {
       );
     }
     
+    if (companyId) {
+      filteredTasks = filteredTasks.filter(task => task.companyId === companyId);
+    }
+
     if (assigneeId) {
       filteredTasks = filteredTasks.filter(task => 
         task.assigneeId === assigneeId || 
@@ -6668,8 +6672,12 @@ export class DbStorage implements IStorage {
   }
 
   // Tasks CRUD operations
-  async getTasks(projectId?: string, status?: string, businessTasks?: boolean, assigneeId?: string, dateRange?: { startDate?: string; endDate?: string }): Promise<Task[]> {
+  async getTasks(projectId?: string, status?: string, businessTasks?: boolean, assigneeId?: string, dateRange?: { startDate?: string; endDate?: string }, companyId?: string): Promise<Task[]> {
     const conditions = [eq(schema.notes.type, "task")];
+
+    if (companyId) {
+      conditions.push(eq(schema.notes.companyId, companyId));
+    }
     
     if (businessTasks) {
       // Business tasks: use new taskContextType='business' or fallback to legacy (null projectId)

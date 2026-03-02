@@ -632,7 +632,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         status as string | undefined,
         businessTasks === 'true',
         assigneeId as string | undefined,
-        dateRange
+        dateRange,
+        user?.companyId as string | undefined
       );
       
       // Filter private tasks: only show if user is assigned or is admin

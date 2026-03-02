@@ -613,8 +613,8 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
   };
 
   // Local session order state - resets on page refresh
+  // Only populated when user explicitly row-drags; otherwise defaultItemIds (date-sorted) is used
   const [sessionItemOrder, setSessionItemOrder] = useState<string[]>([]);
-  const [orderInitialized, setOrderInitialized] = useState(false);
 
   const canNestItem = (activeId: string, targetId: string): boolean => {
     const activeItem = allItems.find(i => i.id === activeId);
@@ -933,14 +933,6 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
       .map(id => itemMap.get(id))
       .filter((item): item is ScheduleItem => item !== undefined);
   }, [allItems, sortableItemIds]);
-
-  // Initialize session order once items are loaded (freeze initial order for the session)
-  useEffect(() => {
-    if (!orderInitialized && defaultItemIds.length > 0) {
-      setSessionItemOrder([...defaultItemIds]);
-      setOrderInitialized(true);
-    }
-  }, [defaultItemIds, orderInitialized]);
 
   const itemsCacheKey = schedule?.id ? `/api/schedules/${schedule.id}/items` : `/api/projects/${projectId}/schedule-items`;
   const {
@@ -1544,12 +1536,14 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
       const deltaDays = Math.round(deltaX / pixelsPerDayRef.current);
       const cacheKey = schedule?.id ? `/api/schedules/${schedule.id}/items` : `/api/projects/${projectIdRef.current}/schedule-items`;
 
-      const updateCacheOptimistically = (itemId: number, newStart: Date, newEnd: Date) => {
+      const updateCacheOptimistically = (itemId: number | string, newStart: Date, newEnd: Date) => {
+        const startStr = format(newStart, 'yyyy-MM-dd');
+        const endStr = format(newEnd, 'yyyy-MM-dd');
         queryClient.setQueryData<ScheduleItem[]>([cacheKey], (oldData) => {
           if (!oldData) return oldData;
           return oldData.map(item => 
             item.id === itemId 
-              ? { ...item, startDate: newStart, endDate: newEnd }
+              ? { ...item, startDate: startStr, endDate: endStr }
               : item
           );
         });
@@ -1714,8 +1708,8 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
 
           mutate.mutate({
             id: drag.id,
-            startDate: newStart,
-            endDate: newEnd,
+            startDate: format(newStart, 'yyyy-MM-dd') as any,
+            endDate: format(newEnd, 'yyyy-MM-dd') as any,
           });
           
           for (const child of childItems) {
@@ -1723,8 +1717,8 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
               const { depNewStart, depNewEnd } = snapChildItem(child);
               mutate.mutate({
                 id: child.id,
-                startDate: depNewStart,
-                endDate: depNewEnd,
+                startDate: format(depNewStart, 'yyyy-MM-dd') as any,
+                endDate: format(depNewEnd, 'yyyy-MM-dd') as any,
               });
             }
           }
@@ -1733,8 +1727,8 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
             const { depNewStart, depNewEnd } = snapDepItem(depItem);
             mutate.mutate({
               id: depItem.id,
-              startDate: depNewStart,
-              endDate: depNewEnd,
+              startDate: format(depNewStart, 'yyyy-MM-dd') as any,
+              endDate: format(depNewEnd, 'yyyy-MM-dd') as any,
             });
           }
 
@@ -1742,8 +1736,8 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
             const { depNewStart, depNewEnd } = snapDepItem(depChild);
             mutate.mutate({
               id: depChild.id,
-              startDate: depNewStart,
-              endDate: depNewEnd,
+              startDate: format(depNewStart, 'yyyy-MM-dd') as any,
+              endDate: format(depNewEnd, 'yyyy-MM-dd') as any,
             });
           }
 
@@ -1759,8 +1753,8 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
             
             mutate.mutate({
               id: drag.id,
-              startDate: newStart,
-              endDate: drag.originalEnd,
+              startDate: format(newStart, 'yyyy-MM-dd') as any,
+              endDate: format(drag.originalEnd, 'yyyy-MM-dd') as any,
             });
 
             recalcLagForItem(drag.id, newStart, currentItems);
@@ -1776,8 +1770,8 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
             
             mutate.mutate({
               id: drag.id,
-              startDate: drag.originalStart,
-              endDate: newEnd,
+              startDate: format(drag.originalStart, 'yyyy-MM-dd') as any,
+              endDate: format(newEnd, 'yyyy-MM-dd') as any,
             });
 
             recalcLagForSuccessors(drag.id, newEnd, currentItems);

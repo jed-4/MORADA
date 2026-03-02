@@ -637,12 +637,16 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
         : null;
       const checklistInstanceName = linkedChecklist?.name || null;
       
-      const payload = { 
+      const payload: any = { 
         ...data, 
         tagIds: selectedTagIds,
         assigneeNames, // Cache names for display
         checklistInstanceName, // Cache checklist name for display
       };
+      // undefined is dropped by JSON.stringify — explicitly null to clear the DB column
+      if ((payload.assigneeIds || []).length === 0) {
+        payload.assigneeId = null;
+      }
       if (task) {
         return await apiRequest(`/api/tasks/${task.id}`, "PATCH", payload);
       } else {
