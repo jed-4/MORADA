@@ -251,6 +251,7 @@ export default function ClientInvoiceDetail() {
   const [labourSearch, setLabourSearch] = useState("");
   const [selectionsSearch, setSelectionsSearch] = useState("");
   const [labourDisplayMode, setLabourDisplayMode] = useState<"individual" | "by_user" | "by_date" | "single">("individual");
+  const [labourBreakByCostCode, setLabourBreakByCostCode] = useState(false);
   const [labourFilterUser, setLabourFilterUser] = useState("all");
   const [labourFilterStatus, setLabourFilterStatus] = useState("all");
   const [labourFilterCostCode, setLabourFilterCostCode] = useState("all");
@@ -558,6 +559,23 @@ export default function ClientInvoiceDetail() {
 
   const getSelectedTimesheets = () =>
     projectTimesheets.filter((t: any) => selectedTimesheetIds.includes(t.id));
+
+  const expandByCostCode = (timesheets: any[]): any[] => {
+    if (!labourBreakByCostCode) return timesheets;
+    return timesheets.flatMap((t: any) => {
+      const splits: any[] = t.costCodeSplits || [];
+      if (splits.length === 0) return [t];
+      return splits.map((s: any) => ({
+        ...t,
+        _splitId: s.id,
+        costCodeId: s.costCodeId,
+        duration: s.duration,
+        hourlyRate: s.hourlyRate,
+        total: s.total,
+        _isSplit: true,
+      }));
+    });
+  };
 
   const getSelectedSelectionOptions = () =>
     invoiceableSelections.filter((o: any) => selectedSelectionOptionIds.includes(o.id));
@@ -2157,36 +2175,181 @@ export default function ClientInvoiceDetail() {
                       <div className="px-4 py-3">
                         {selectedTimesheetIds.length === 0 ? (
                           <p className="text-sm text-muted-foreground text-center py-2">No labour entries selected.</p>
-                        ) : (
-                          <Table>
-                            <TableHeader>
-                              <TableRow className="h-6 bg-muted/30">
-                                <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
-                                <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Staff</TableHead>
-                                <TableHead className="text-right w-16 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Hours</TableHead>
-                                <TableHead className="text-right w-20 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Rate</TableHead>
-                                <TableHead className="text-right w-24 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total</TableHead>
-                                <TableHead className="w-8 py-0" />
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {getSelectedTimesheets().map((t: any) => (
-                                <TableRow key={t.id} className="h-9">
-                                  <TableCell className="text-sm py-1">{t.date ? format(new Date(t.date), "d MMM yyyy") : "—"}</TableCell>
-                                  <TableCell className="text-sm py-1">{getUserName(t.userId)}</TableCell>
-                                  <TableCell className="text-right text-sm py-1">{Number(t.duration).toFixed(1)}</TableCell>
-                                  <TableCell className="text-right text-sm py-1">{formatCurrency(Number(t.hourlyRate))}</TableCell>
-                                  <TableCell className="text-right text-sm font-medium py-1">{formatCurrency(Number(t.total))}</TableCell>
-                                  <TableCell className="py-1 w-8">
-                                    <button type="button" onClick={() => setSelectedTimesheetIds(prev => prev.filter(id => id !== t.id))} className="text-muted-foreground hover:text-destructive">
-                                      <X className="w-3.5 h-3.5" />
-                                    </button>
-                                  </TableCell>
+                        ) : (() => {
+                          const rows = expandByCostCode(getSelectedTimesheets());
+                          const thCls = "text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2";
+                          const showCostCode = labourBreakByCostCode;
+
+                          if (labourDisplayMode === "individual") {
+                            return (
+                              <Table>
+                                <TableHeader>
+                                  <TableRow className="h-6 bg-muted/30">
+                                    <TableHead className={thCls}>Date</TableHead>
+                                    <TableHead className={thCls}>Staff</TableHead>
+                                    {showCostCode && <TableHead className={thCls}>Cost Code</TableHead>}
+                                    <TableHead className={`text-right w-16 ${thCls}`}>Hours</TableHead>
+                                    <TableHead className={`text-right w-20 ${thCls}`}>Rate</TableHead>
+                                    <TableHead className={`text-right w-24 ${thCls}`}>Total</TableHead>
+                                    <TableHead className="w-8 py-0" />
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {rows.map((t: any) => {
+                                    const cc = showCostCode ? costCodes.find((c: any) => c.id === t.costCodeId) : null;
+                                    const rowKey = t._splitId ? `${t.id}-${t._splitId}` : t.id;
+                                    return (
+                                      <TableRow key={rowKey} className="h-9">
+                                        <TableCell className="text-sm py-1">{t.date ? format(new Date(t.date), "d MMM yyyy") : "—"}</TableCell>
+                                        <TableCell className="text-sm py-1">{getUserName(t.userId)}</TableCell>
+                                        {showCostCode && <TableCell className="text-sm py-1 text-muted-foreground">{cc?.code || cc?.name || "—"}</TableCell>}
+                                        <TableCell className="text-right text-sm py-1">{Number(t.duration).toFixed(1)}</TableCell>
+                                        <TableCell className="text-right text-sm py-1">{formatCurrency(Number(t.hourlyRate))}</TableCell>
+                                        <TableCell className="text-right text-sm font-medium py-1">{formatCurrency(Number(t.total))}</TableCell>
+                                        <TableCell className="py-1 w-8">
+                                          {!t._isSplit && (
+                                            <button type="button" onClick={() => setSelectedTimesheetIds(prev => prev.filter(id => id !== t.id))} className="text-muted-foreground hover:text-destructive">
+                                              <X className="w-3.5 h-3.5" />
+                                            </button>
+                                          )}
+                                        </TableCell>
+                                      </TableRow>
+                                    );
+                                  })}
+                                </TableBody>
+                              </Table>
+                            );
+                          }
+
+                          if (labourDisplayMode === "by_user") {
+                            const grouped = rows.reduce((acc: Record<string, any[]>, t: any) => {
+                              const key = `${t.userId}${showCostCode ? `|${t.costCodeId || "none"}` : ""}`;
+                              if (!acc[key]) acc[key] = [];
+                              acc[key].push(t);
+                              return acc;
+                            }, {});
+                            return (
+                              <Table>
+                                <TableHeader>
+                                  <TableRow className="h-6 bg-muted/30">
+                                    <TableHead className={thCls}>Staff</TableHead>
+                                    {showCostCode && <TableHead className={thCls}>Cost Code</TableHead>}
+                                    <TableHead className={`text-right w-20 ${thCls}`}>Hours</TableHead>
+                                    <TableHead className={`text-right w-20 ${thCls}`}>Avg Rate</TableHead>
+                                    <TableHead className={`text-right w-24 ${thCls}`}>Total</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {Object.entries(grouped).map(([key, group]) => {
+                                    const g = group as any[];
+                                    const userId = g[0].userId;
+                                    const ccId = showCostCode ? g[0].costCodeId : null;
+                                    const cc = showCostCode ? costCodes.find((c: any) => c.id === ccId) : null;
+                                    const totalHours = g.reduce((s, t) => s + Number(t.duration), 0);
+                                    const totalCost = g.reduce((s, t) => s + Number(t.total), 0);
+                                    const avgRate = totalHours > 0 ? totalCost / totalHours : 0;
+                                    return (
+                                      <TableRow key={key} className="h-9">
+                                        <TableCell className="text-sm py-1 font-medium">{getUserName(userId)}</TableCell>
+                                        {showCostCode && <TableCell className="text-sm py-1 text-muted-foreground">{cc?.code || cc?.name || "—"}</TableCell>}
+                                        <TableCell className="text-right text-sm py-1">{totalHours.toFixed(1)}</TableCell>
+                                        <TableCell className="text-right text-sm py-1">{formatCurrency(avgRate)}</TableCell>
+                                        <TableCell className="text-right text-sm font-medium py-1">{formatCurrency(totalCost)}</TableCell>
+                                      </TableRow>
+                                    );
+                                  })}
+                                </TableBody>
+                              </Table>
+                            );
+                          }
+
+                          if (labourDisplayMode === "by_date") {
+                            const grouped = rows.reduce((acc: Record<string, any[]>, t: any) => {
+                              const dk = t.date ? format(new Date(t.date), "yyyy-MM-dd") : "no-date";
+                              const key = showCostCode ? `${dk}|${t.costCodeId || "none"}` : dk;
+                              if (!acc[key]) acc[key] = [];
+                              acc[key].push(t);
+                              return acc;
+                            }, {});
+                            const sorted = Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b));
+                            return (
+                              <Table>
+                                <TableHeader>
+                                  <TableRow className="h-6 bg-muted/30">
+                                    <TableHead className={thCls}>Date</TableHead>
+                                    <TableHead className={thCls}>Staff</TableHead>
+                                    {showCostCode && <TableHead className={thCls}>Cost Code</TableHead>}
+                                    <TableHead className={`text-right w-20 ${thCls}`}>Hours</TableHead>
+                                    <TableHead className={`text-right w-20 ${thCls}`}>Avg Rate</TableHead>
+                                    <TableHead className={`text-right w-24 ${thCls}`}>Total</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {sorted.map(([key, group]) => {
+                                    const g = group as any[];
+                                    const dk = key.split("|")[0];
+                                    const ccId = showCostCode ? g[0].costCodeId : null;
+                                    const cc = showCostCode ? costCodes.find((c: any) => c.id === ccId) : null;
+                                    const staffNames = Array.from(new Set(g.map((t: any) => getUserName(t.userId)))).join(", ");
+                                    const totalHours = g.reduce((s, t) => s + Number(t.duration), 0);
+                                    const totalCost = g.reduce((s, t) => s + Number(t.total), 0);
+                                    const avgRate = totalHours > 0 ? totalCost / totalHours : 0;
+                                    return (
+                                      <TableRow key={key} className="h-9">
+                                        <TableCell className="text-sm py-1 tabular-nums">{dk !== "no-date" ? format(new Date(dk), "d MMM yyyy") : "—"}</TableCell>
+                                        <TableCell className="text-xs py-1 text-muted-foreground max-w-[140px] truncate">{staffNames}</TableCell>
+                                        {showCostCode && <TableCell className="text-sm py-1 text-muted-foreground">{cc?.code || cc?.name || "—"}</TableCell>}
+                                        <TableCell className="text-right text-sm py-1">{totalHours.toFixed(1)}</TableCell>
+                                        <TableCell className="text-right text-sm py-1">{formatCurrency(avgRate)}</TableCell>
+                                        <TableCell className="text-right text-sm font-medium py-1">{formatCurrency(totalCost)}</TableCell>
+                                      </TableRow>
+                                    );
+                                  })}
+                                </TableBody>
+                              </Table>
+                            );
+                          }
+
+                          // Single total
+                          const grouped = showCostCode ? rows.reduce((acc: Record<string, any[]>, t: any) => {
+                            const key = t.costCodeId || "none";
+                            if (!acc[key]) acc[key] = [];
+                            acc[key].push(t);
+                            return acc;
+                          }, {}) : { all: rows };
+                          return (
+                            <Table>
+                              <TableHeader>
+                                <TableRow className="h-6 bg-muted/30">
+                                  <TableHead className={thCls}>Description</TableHead>
+                                  {showCostCode && <TableHead className={thCls}>Cost Code</TableHead>}
+                                  <TableHead className={`text-right w-20 ${thCls}`}>Hours</TableHead>
+                                  <TableHead className={`text-right w-20 ${thCls}`}>Avg Rate</TableHead>
+                                  <TableHead className={`text-right w-24 ${thCls}`}>Total</TableHead>
                                 </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        )}
+                              </TableHeader>
+                              <TableBody>
+                                {Object.entries(grouped).map(([key, group]) => {
+                                  const g = group as any[];
+                                  const ccId = key !== "all" ? key : null;
+                                  const cc = ccId ? costCodes.find((c: any) => c.id === ccId) : null;
+                                  const totalHours = g.reduce((s, t) => s + Number(t.duration), 0);
+                                  const totalCost = g.reduce((s, t) => s + Number(t.total), 0);
+                                  const avgRate = totalHours > 0 ? totalCost / totalHours : 0;
+                                  return (
+                                    <TableRow key={key} className="h-9">
+                                      <TableCell className="text-sm py-1 font-medium">Labour</TableCell>
+                                      {showCostCode && <TableCell className="text-sm py-1 text-muted-foreground">{cc?.code || cc?.name || "—"}</TableCell>}
+                                      <TableCell className="text-right text-sm py-1">{totalHours.toFixed(1)}</TableCell>
+                                      <TableCell className="text-right text-sm py-1">{formatCurrency(avgRate)}</TableCell>
+                                      <TableCell className="text-right text-sm font-medium py-1">{formatCurrency(totalCost)}</TableCell>
+                                    </TableRow>
+                                  );
+                                })}
+                              </TableBody>
+                            </Table>
+                          );
+                        })()}
                       </div>
                     </div>
 
@@ -3062,26 +3225,39 @@ export default function ClientInvoiceDetail() {
             </DialogDescription>
           </DialogHeader>
 
-          {/* Display mode selector */}
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] uppercase tracking-wide text-muted-foreground/50 flex-shrink-0">Show as</span>
-            <div className="flex items-center rounded-full border border-border/50 overflow-hidden">
-              {(["individual", "by_user", "by_date", "single"] as const).map((mode, i, arr) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => setLabourDisplayMode(mode)}
-                  className={cn(
-                    "px-2.5 py-1 text-[11px] leading-none transition-colors",
-                    i < arr.length - 1 && "border-r border-border/50",
-                    labourDisplayMode === mode
-                      ? "bg-muted text-foreground font-medium"
-                      : "text-muted-foreground/60 hover:text-muted-foreground"
-                  )}
-                >
-                  {mode === "individual" ? "Individual lines" : mode === "by_user" ? "Group by staff" : mode === "by_date" ? "Group by date" : "Single total"}
-                </button>
-              ))}
+          {/* Invoice display mode + break by cost code */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground/50 flex-shrink-0">Invoice will show labour as</span>
+              <div className="flex items-center rounded-full border border-border/50 overflow-hidden">
+                {(["individual", "by_user", "by_date", "single"] as const).map((mode, i, arr) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setLabourDisplayMode(mode)}
+                    className={cn(
+                      "px-2.5 py-1 text-[11px] leading-none transition-colors",
+                      i < arr.length - 1 && "border-r border-border/50",
+                      labourDisplayMode === mode
+                        ? "bg-muted text-foreground font-medium"
+                        : "text-muted-foreground/60 hover:text-muted-foreground"
+                    )}
+                  >
+                    {mode === "individual" ? "Individual lines" : mode === "by_user" ? "Group by staff" : mode === "by_date" ? "Group by date" : "Single total"}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Switch
+                id="break-by-cost-code"
+                checked={labourBreakByCostCode}
+                onCheckedChange={setLabourBreakByCostCode}
+                className="scale-75 origin-left"
+              />
+              <label htmlFor="break-by-cost-code" className="text-[11px] text-muted-foreground cursor-pointer select-none">
+                Break down by cost code
+              </label>
             </div>
           </div>
 
@@ -3141,7 +3317,7 @@ export default function ClientInvoiceDetail() {
             </Select>
           </div>
 
-          {/* Table */}
+          {/* Table — always shows individual rows; "Invoice will show labour as" controls invoice rendering */}
           <div className="rounded-md border overflow-hidden">
             <div className="max-h-[340px] overflow-y-auto">
               <Table>
@@ -3161,191 +3337,48 @@ export default function ClientInvoiceDetail() {
                       const ccName = (cc?.code || cc?.name || "").toLowerCase();
                       return name.includes(q) || dateStr.includes(q) || ccName.includes(q);
                     });
-
-                  if (labourDisplayMode === "individual") {
-                    return (
-                      <>
-                        <TableHeader>
-                          <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
-                            <TableHead className="w-8 py-0 px-2" />
-                            <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
-                            <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Staff</TableHead>
-                            <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Status</TableHead>
-                            <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Hours</TableHead>
-                            <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Cost Code</TableHead>
-                            <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Labels</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {base.length === 0 ? (
-                            <TableRow><TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-8">No timesheets found.</TableCell></TableRow>
-                          ) : base.map((t: any) => {
-                            const isApproved = t.status === "approved";
-                            const isChecked = modalTimesheetIds.includes(t.id);
-                            const cc = costCodes.find((c: any) => c.id === t.costCodeId);
-                            const labels = (t.labels as string[] || []);
-                            return (
-                              <TableRow key={t.id} className={cn("h-9", isApproved ? "hover-elevate cursor-pointer" : "opacity-40 cursor-not-allowed")}
-                                onClick={() => { if (!isApproved) return; setModalTimesheetIds(prev => isChecked ? prev.filter(id => id !== t.id) : [...prev, t.id]); }}>
-                                <TableCell className="w-8 py-1 px-2">
-                                  <div className={cn("w-4 h-4 rounded border flex items-center justify-center", isChecked && isApproved ? "bg-primary border-primary" : "border-input")}>
-                                    {isChecked && isApproved && <Check className="h-3 w-3 text-primary-foreground" />}
-                                  </div>
-                                </TableCell>
-                                <TableCell className="py-1 text-sm tabular-nums">{t.date ? format(new Date(t.date), "d MMM yy") : "—"}</TableCell>
-                                <TableCell className="py-1 text-sm font-medium">{getUserName(t.userId)}</TableCell>
-                                <TableCell className="py-1">
-                                  {isApproved
-                                    ? <span className="flex items-center gap-1 text-xs"><div className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />Approved</span>
-                                    : <span className="flex items-center gap-1 text-xs"><div className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />Pending</span>}
-                                </TableCell>
-                                <TableCell className="py-1 text-right text-sm tabular-nums">{Number(t.duration).toFixed(1)}</TableCell>
-                                <TableCell className="py-1 text-sm text-muted-foreground">{cc?.code || cc?.name || "—"}</TableCell>
-                                <TableCell className="py-1 text-xs text-muted-foreground truncate max-w-[120px]">{labels.length > 0 ? labels.slice(0, 3).join(", ") : "—"}</TableCell>
-                              </TableRow>
-                            );
-                          })}
-                        </TableBody>
-                      </>
-                    );
-                  }
-
-                  if (labourDisplayMode === "by_user") {
-                    const grouped = base.reduce((acc: Record<string, any[]>, t: any) => {
-                      if (!acc[t.userId]) acc[t.userId] = [];
-                      acc[t.userId].push(t);
-                      return acc;
-                    }, {});
-                    return (
-                      <>
-                        <TableHeader>
-                          <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
-                            <TableHead className="w-8 py-0 px-2" />
-                            <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Staff</TableHead>
-                            <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Timesheets</TableHead>
-                            <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Hours</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {Object.entries(grouped).length === 0 ? (
-                            <TableRow><TableCell colSpan={4} className="text-center text-sm text-muted-foreground py-8">No timesheets found.</TableCell></TableRow>
-                          ) : Object.entries(grouped).map(([userId, timesheets]) => {
-                            const approved = (timesheets as any[]).filter(t => t.status === "approved");
-                            const totalHours = (timesheets as any[]).reduce((s, t) => s + Number(t.duration), 0);
-                            const approvedIds = approved.map((t: any) => t.id);
-                            const allChecked = approvedIds.length > 0 && approvedIds.every(id => modalTimesheetIds.includes(id));
-                            const someChecked = approvedIds.some(id => modalTimesheetIds.includes(id));
-                            const hasApproved = approved.length > 0;
-                            return (
-                              <TableRow key={userId} className={cn("h-9", hasApproved ? "hover-elevate cursor-pointer" : "opacity-40 cursor-not-allowed")}
-                                onClick={() => {
-                                  if (!hasApproved) return;
-                                  setModalTimesheetIds(prev =>
-                                    allChecked ? prev.filter(id => !approvedIds.includes(id)) : [...prev.filter(id => !approvedIds.includes(id)), ...approvedIds]
-                                  );
-                                }}>
-                                <TableCell className="w-8 py-1 px-2">
-                                  <div className={cn("w-4 h-4 rounded border flex items-center justify-center", (allChecked || someChecked) && hasApproved ? "bg-primary border-primary" : "border-input")}>
-                                    {allChecked && hasApproved && <Check className="h-3 w-3 text-primary-foreground" />}
-                                    {someChecked && !allChecked && hasApproved && <div className="w-2 h-0.5 bg-primary-foreground" />}
-                                  </div>
-                                </TableCell>
-                                <TableCell className="py-1 text-sm font-medium">{getUserName(userId)}</TableCell>
-                                <TableCell className="py-1 text-right text-sm tabular-nums text-muted-foreground">{(timesheets as any[]).length}</TableCell>
-                                <TableCell className="py-1 text-right text-sm tabular-nums">{totalHours.toFixed(1)}</TableCell>
-                              </TableRow>
-                            );
-                          })}
-                        </TableBody>
-                      </>
-                    );
-                  }
-
-                  if (labourDisplayMode === "by_date") {
-                    const grouped = base.reduce((acc: Record<string, any[]>, t: any) => {
-                      const dk = t.date ? format(new Date(t.date), "yyyy-MM-dd") : "no-date";
-                      if (!acc[dk]) acc[dk] = [];
-                      acc[dk].push(t);
-                      return acc;
-                    }, {});
-                    const sorted = Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b));
-                    return (
-                      <>
-                        <TableHeader>
-                          <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
-                            <TableHead className="w-8 py-0 px-2" />
-                            <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
-                            <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Staff</TableHead>
-                            <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Hours</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {sorted.length === 0 ? (
-                            <TableRow><TableCell colSpan={4} className="text-center text-sm text-muted-foreground py-8">No timesheets found.</TableCell></TableRow>
-                          ) : sorted.map(([dk, timesheets]) => {
-                            const approved = (timesheets as any[]).filter(t => t.status === "approved");
-                            const totalHours = (timesheets as any[]).reduce((s, t) => s + Number(t.duration), 0);
-                            const approvedIds = approved.map((t: any) => t.id);
-                            const allChecked = approvedIds.length > 0 && approvedIds.every(id => modalTimesheetIds.includes(id));
-                            const someChecked = approvedIds.some(id => modalTimesheetIds.includes(id));
-                            const hasApproved = approved.length > 0;
-                            const userNames = Array.from(new Set((timesheets as any[]).map((t: any) => getUserName(t.userId)))).join(", ");
-                            return (
-                              <TableRow key={dk} className={cn("h-9", hasApproved ? "hover-elevate cursor-pointer" : "opacity-40 cursor-not-allowed")}
-                                onClick={() => {
-                                  if (!hasApproved) return;
-                                  setModalTimesheetIds(prev =>
-                                    allChecked ? prev.filter(id => !approvedIds.includes(id)) : [...prev.filter(id => !approvedIds.includes(id)), ...approvedIds]
-                                  );
-                                }}>
-                                <TableCell className="w-8 py-1 px-2">
-                                  <div className={cn("w-4 h-4 rounded border flex items-center justify-center", (allChecked || someChecked) && hasApproved ? "bg-primary border-primary" : "border-input")}>
-                                    {allChecked && hasApproved && <Check className="h-3 w-3 text-primary-foreground" />}
-                                    {someChecked && !allChecked && hasApproved && <div className="w-2 h-0.5 bg-primary-foreground" />}
-                                  </div>
-                                </TableCell>
-                                <TableCell className="py-1 text-sm tabular-nums">{dk !== "no-date" ? format(new Date(dk), "d MMM yy") : "—"}</TableCell>
-                                <TableCell className="py-1 text-xs text-muted-foreground truncate max-w-[200px]">{userNames}</TableCell>
-                                <TableCell className="py-1 text-right text-sm tabular-nums">{totalHours.toFixed(1)}</TableCell>
-                              </TableRow>
-                            );
-                          })}
-                        </TableBody>
-                      </>
-                    );
-                  }
-
-                  {/* Single total */}
-                  const approved = base.filter((t: any) => t.status === "approved");
-                  const totalHours = approved.reduce((s: number, t: any) => s + Number(t.duration), 0);
-                  const approvedIds = approved.map((t: any) => t.id);
-                  const allChecked = approvedIds.length > 0 && approvedIds.every((id: string) => modalTimesheetIds.includes(id));
                   return (
                     <>
                       <TableHeader>
                         <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
                           <TableHead className="w-8 py-0 px-2" />
-                          <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Description</TableHead>
-                          <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Timesheets</TableHead>
-                          <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total Hours</TableHead>
+                          <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
+                          <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Staff</TableHead>
+                          <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Status</TableHead>
+                          <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Hours</TableHead>
+                          <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Cost Code</TableHead>
+                          <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Labels</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {approvedIds.length === 0 ? (
-                          <TableRow><TableCell colSpan={4} className="text-center text-sm text-muted-foreground py-8">No approved timesheets found.</TableCell></TableRow>
-                        ) : (
-                          <TableRow className="h-9 hover-elevate cursor-pointer"
-                            onClick={() => setModalTimesheetIds(allChecked ? [] : [...approvedIds])}>
-                            <TableCell className="w-8 py-1 px-2">
-                              <div className={cn("w-4 h-4 rounded border flex items-center justify-center", allChecked ? "bg-primary border-primary" : "border-input")}>
-                                {allChecked && <Check className="h-3 w-3 text-primary-foreground" />}
-                              </div>
-                            </TableCell>
-                            <TableCell className="py-1 text-sm font-medium">All project labour</TableCell>
-                            <TableCell className="py-1 text-right text-sm tabular-nums text-muted-foreground">{approvedIds.length}</TableCell>
-                            <TableCell className="py-1 text-right text-sm tabular-nums">{totalHours.toFixed(1)}</TableCell>
-                          </TableRow>
-                        )}
+                        {base.length === 0 ? (
+                          <TableRow><TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-8">No timesheets found.</TableCell></TableRow>
+                        ) : base.map((t: any) => {
+                          const isApproved = t.status === "approved";
+                          const isChecked = modalTimesheetIds.includes(t.id);
+                          const cc = costCodes.find((c: any) => c.id === t.costCodeId);
+                          const labels = (t.labels as string[] || []);
+                          return (
+                            <TableRow key={t.id} className={cn("h-9", isApproved ? "hover-elevate cursor-pointer" : "opacity-40 cursor-not-allowed")}
+                              onClick={() => { if (!isApproved) return; setModalTimesheetIds(prev => isChecked ? prev.filter(id => id !== t.id) : [...prev, t.id]); }}>
+                              <TableCell className="w-8 py-1 px-2">
+                                <div className={cn("w-4 h-4 rounded border flex items-center justify-center", isChecked && isApproved ? "bg-primary border-primary" : "border-input")}>
+                                  {isChecked && isApproved && <Check className="h-3 w-3 text-primary-foreground" />}
+                                </div>
+                              </TableCell>
+                              <TableCell className="py-1 text-sm tabular-nums">{t.date ? format(new Date(t.date), "d MMM yy") : "—"}</TableCell>
+                              <TableCell className="py-1 text-sm font-medium">{getUserName(t.userId)}</TableCell>
+                              <TableCell className="py-1">
+                                {isApproved
+                                  ? <span className="flex items-center gap-1 text-xs"><div className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />Approved</span>
+                                  : <span className="flex items-center gap-1 text-xs"><div className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />Pending</span>}
+                              </TableCell>
+                              <TableCell className="py-1 text-right text-sm tabular-nums">{Number(t.duration).toFixed(1)}</TableCell>
+                              <TableCell className="py-1 text-sm text-muted-foreground">{cc?.code || cc?.name || "—"}</TableCell>
+                              <TableCell className="py-1 text-xs text-muted-foreground truncate max-w-[120px]">{labels.length > 0 ? labels.slice(0, 3).join(", ") : "—"}</TableCell>
+                            </TableRow>
+                          );
+                        })}
                       </TableBody>
                     </>
                   );
