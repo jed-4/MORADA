@@ -88,6 +88,8 @@ import type {
   Bill,
 } from "@shared/schema";
 
+const GST_RATE = 0.1;
+
 // ─── Column config ──────────────────────────────────────────────────────────
 
 type ColumnId =
@@ -1135,7 +1137,6 @@ export default function ClientInvoiceDetail() {
   const paid = invoice?.paidAmount ? invoice.paidAmount / 100 : 0;
   const due = total - paid;
   const contractTotal = calculateContractPrice() / 100;
-  const GST_RATE = 0.1;
 
   // ── render helpers ────────────────────────────────────────────────────────────
 
