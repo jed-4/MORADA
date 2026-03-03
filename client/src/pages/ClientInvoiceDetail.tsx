@@ -807,6 +807,21 @@ export default function ClientInvoiceDetail() {
     },
   });
 
+  const voidPaymentMutation = useMutation({
+    mutationFn: async (paymentId: string) => {
+      const res = await apiRequest(`/api/client-invoice-payments/${paymentId}/void`, "PATCH");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/client-invoices/${effectiveInvoiceId}/payments`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/client-invoices/${effectiveInvoiceId}`] });
+      toast({ title: "Payment voided" });
+    },
+    onError: () => {
+      toast({ title: "Failed to void payment", variant: "destructive" });
+    },
+  });
+
   const recordPaymentMutation = useMutation({
     mutationFn: async (data: PaymentFormData) => {
       const paymentData = {
@@ -2489,29 +2504,45 @@ export default function ClientInvoiceDetail() {
                       {payments.length > 0 ? (
                         <Table>
                           <TableHeader>
-                            <TableRow>
-                              <TableHead>Date</TableHead>
-                              <TableHead className="text-right">Amount</TableHead>
-                              <TableHead>Method</TableHead>
-                              <TableHead>Reference</TableHead>
+                            <TableRow className="h-6 bg-muted/30">
+                              <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
+                              <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Amount</TableHead>
+                              <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Method</TableHead>
+                              <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Reference</TableHead>
+                              <TableHead className="w-16 py-0 px-2" />
                             </TableRow>
                           </TableHeader>
                           <TableBody>
                             {payments.map((payment) => (
-                              <TableRow key={payment.id}>
-                                <TableCell className="text-sm">
+                              <TableRow key={payment.id} className={cn("h-9", (payment as any).isVoided && "opacity-50")}>
+                                <TableCell className="text-sm px-2">
                                   {payment.paymentDate
                                     ? format(new Date(payment.paymentDate), "d MMM yyyy")
                                     : "-"}
                                 </TableCell>
-                                <TableCell className="text-right text-sm font-medium">
+                                <TableCell className={cn("text-right text-sm font-medium px-2", (payment as any).isVoided && "line-through")}>
                                   {formatCurrency(payment.amount / 100)}
                                 </TableCell>
-                                <TableCell className="text-sm text-muted-foreground">
+                                <TableCell className="text-sm text-muted-foreground px-2">
                                   {payment.paymentMethod || "-"}
                                 </TableCell>
-                                <TableCell className="text-sm text-muted-foreground">
+                                <TableCell className="text-sm text-muted-foreground px-2">
                                   {payment.reference || "-"}
+                                </TableCell>
+                                <TableCell className="px-2 w-16">
+                                  {(payment as any).isVoided ? (
+                                    <Badge variant="secondary" className="text-[10px] h-4 px-1.5">Voided</Badge>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => voidPaymentMutation.mutate(payment.id)}
+                                      disabled={voidPaymentMutation.isPending}
+                                      className="h-5 px-1.5 text-[10px] border rounded text-muted-foreground hover-elevate flex items-center gap-0.5"
+                                      data-testid={`button-void-payment-${payment.id}`}
+                                    >
+                                      Void
+                                    </button>
+                                  )}
                                 </TableCell>
                               </TableRow>
                             ))}

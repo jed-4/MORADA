@@ -2044,6 +2044,7 @@ export const clientInvoicePayments = pgTable("client_invoice_payments", {
   paymentMethod: text("payment_method"),
   reference: text("reference"),
   notes: text("notes"),
+  isVoided: boolean("is_voided").notNull().default(false),
   recordedBy: varchar("recorded_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

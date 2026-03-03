@@ -10850,6 +10850,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/client-invoice-payments/:id/void", requireAuth, async (req, res) => {
+    try {
+      const result = await storage.voidClientInvoicePayment(req.params.id);
+      if (!result) {
+        return res.status(404).json({ error: "Client invoice payment not found" });
+      }
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to void client invoice payment" });
+    }
+  });
+
   // Invoice-Estimate Junction Routes
   app.get("/api/client-invoices/:id/estimates", async (req, res) => {
     try {

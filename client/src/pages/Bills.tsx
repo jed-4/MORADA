@@ -112,7 +112,6 @@ export default function Bills() {
   const [selectedBills, setSelectedBills] = useState<Set<string>>(new Set());
   const [setupInstructionsOpen, setSetupInstructionsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedPhases, setSelectedPhases] = useState<string[]>([]);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [changeProjectDialogOpen, setChangeProjectDialogOpen] = useState(false);
   const [changeSupplierDialogOpen, setChangeSupplierDialogOpen] = useState(false);
@@ -240,11 +239,6 @@ export default function Bills() {
     return format(new Date(date), "dd MMM yyyy");
   };
 
-  const getProjectPhase = (projId: string): string => {
-    const project = projects.find((p) => p.id === projId);
-    return project?.currentSystemPhase || "lead";
-  };
-
   const filteredBills = useMemo(() => {
     return bills.filter((bill) => {
       if (selectedStatus !== "all" && bill.status !== selectedStatus) return false;
@@ -260,13 +254,9 @@ export default function Bills() {
           project?.name?.toLowerCase().includes(searchLower);
         if (!matchesSearch) return false;
       }
-      if (selectedPhases.length > 0) {
-        const projectPhase = getProjectPhase(bill.projectId);
-        if (!selectedPhases.includes(projectPhase)) return false;
-      }
       return true;
     });
-  }, [bills, selectedStatus, searchTerm, suppliers, projects, selectedPhases]);
+  }, [bills, selectedStatus, searchTerm, suppliers, projects]);
 
   const statusCounts = useMemo(() => ({
     all: bills.length,
@@ -564,53 +554,6 @@ export default function Bills() {
 
             {/* Search / filter row — sticky */}
             <div className="h-9 flex items-center px-3 border-b border-border/50 gap-2 bg-background sticky top-0 z-20">
-              {/* Phase filter */}
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button
-                    className={cn(
-                      "h-6 w-auto px-2 py-0 text-xs rounded-md flex items-center gap-1 flex-shrink-0",
-                      selectedPhases.length > 0 ? "bg-[#bba7db]/10 text-[#bba7db] border border-[#bba7db]/30 font-medium" : "border hover-elevate active-elevate-2"
-                    )}
-                    data-testid="filter-phase-popover"
-                  >
-                    <span>Phase</span>
-                    {selectedPhases.length > 0 && (
-                      <Badge variant="secondary" className="ml-0.5 h-4 px-1 text-[10px]">{selectedPhases.length}</Badge>
-                    )}
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent className="w-48 p-2" align="start">
-                  <div className="space-y-1">
-                    {[
-                      { key: "lead", name: "Lead" },
-                      { key: "pre_construction", name: "Pre-Construction" },
-                      { key: "construction", name: "Construction" },
-                      { key: "post_construction", name: "Post-Construction" },
-                      { key: "archive", name: "Archive" },
-                    ].map((phase) => (
-                      <button
-                        key={phase.key}
-                        onClick={() => {
-                          const newPhases = selectedPhases.includes(phase.key)
-                            ? selectedPhases.filter(p => p !== phase.key)
-                            : [...selectedPhases, phase.key];
-                          setSelectedPhases(newPhases);
-                        }}
-                        className={cn(
-                          "w-full text-left px-2 py-1.5 text-sm rounded transition-colors flex items-center gap-2 hover-elevate",
-                          selectedPhases.includes(phase.key) ? "bg-[#bba7db]/10 text-[#bba7db] font-medium" : ""
-                        )}
-                        data-testid={`filter-phase-${phase.key}`}
-                      >
-                        <Checkbox checked={selectedPhases.includes(phase.key)} onCheckedChange={() => {}} className="pointer-events-none" />
-                        {phase.name}
-                      </button>
-                    ))}
-                  </div>
-                </PopoverContent>
-              </Popover>
-
               {/* Search — left side with thin border */}
               <div className="relative flex-shrink-0">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />

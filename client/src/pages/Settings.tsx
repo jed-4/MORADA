@@ -2359,7 +2359,7 @@ const DEFAULT_CLIENT_INVOICE_TERMS = "This payment claim is in accordance with y
 function TermsConditionsSection() {
   const { toast } = useToast();
 
-  const { data: companySettings } = useQuery<{ termsAndConditions?: string }>({
+  const { data: companySettings } = useQuery<{ termsAndConditions?: string; termsTemplates?: Array<{ id: string; name: string; content: string; defaultFor: string[] }> }>({
     queryKey: ["/api/company-settings"],
   });
 
@@ -2377,6 +2377,19 @@ function TermsConditionsSection() {
     },
   });
 
+  const saveTemplatesMutation = useMutation({
+    mutationFn: async (updatedTemplates: Array<{ id: string; name: string; content: string; defaultFor: string[] }>) => {
+      const res = await apiRequest("/api/company-settings", "PATCH", { termsTemplates: updatedTemplates });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
+    },
+    onError: () => {
+      toast({ title: "Failed to save templates", variant: "destructive" });
+    },
+  });
+
   const clientInvoiceContent = companySettings?.termsAndConditions ?? DEFAULT_CLIENT_INVOICE_TERMS;
 
   const [templates, setTemplates] = useState<Array<{
@@ -2384,20 +2397,14 @@ function TermsConditionsSection() {
     name: string;
     content: string;
     defaultFor: string[];
-  }>>([
-    {
-      id: "2",
-      name: "Purchase Orders",
-      content: "Standard purchase order terms and conditions apply. All goods must be delivered to the specified site address. Payment terms are net 30 days from invoice date.",
-      defaultFor: ["purchase_orders"]
-    },
-    {
-      id: "3",
-      name: "Quotes",
-      content: "This quote is valid for 30 days from the date of issue. Prices are subject to change based on material availability. GST is included in all prices unless otherwise stated.",
-      defaultFor: ["quotes"]
+  }>>([]);
+
+  useEffect(() => {
+    if (companySettings?.termsTemplates) {
+      setTemplates(companySettings.termsTemplates);
     }
-  ]);
+  }, [companySettings?.termsTemplates]);
+
   const [editingTemplate, setEditingTemplate] = useState<typeof templates[0] | null>(null);
   const [editingClientInvoice, setEditingClientInvoice] = useState(false);
   const [isAddingTemplate, setIsAddingTemplate] = useState(false);
@@ -2411,18 +2418,23 @@ function TermsConditionsSection() {
   ];
 
   const handleSaveTemplate = (template: typeof templates[0]) => {
+    let updated: typeof templates;
     if (editingTemplate) {
-      setTemplates(templates.map(t => t.id === template.id ? template : t));
+      updated = templates.map(t => t.id === template.id ? template : t);
     } else {
-      setTemplates([...templates, { ...template, id: Date.now().toString() }]);
+      updated = [...templates, { ...template, id: Date.now().toString() }];
     }
+    setTemplates(updated);
+    saveTemplatesMutation.mutate(updated);
     setEditingTemplate(null);
     setIsAddingTemplate(false);
     toast({ title: "Template saved successfully" });
   };
 
   const handleDeleteTemplate = (id: string) => {
-    setTemplates(templates.filter(t => t.id !== id));
+    const updated = templates.filter(t => t.id !== id);
+    setTemplates(updated);
+    saveTemplatesMutation.mutate(updated);
     toast({ title: "Template deleted" });
   };
 

@@ -274,6 +274,10 @@ export default function Variations() {
   };
 
   const orderedColumns = [...columnConfig].sort((a, b) => a.order - b.order).filter(c => isColVisible(c.id));
+  const totalWidth = orderedColumns.reduce((sum, col) => {
+    const def = ALL_COLUMNS.find(d => d.id === col.id);
+    return sum + (def?.defaultWidth ?? 100);
+  }, 0);
 
   const renderCell = (col: { id: string }, variation: Variation & { isSeen?: boolean }) => {
     switch (col.id) {
@@ -505,45 +509,41 @@ export default function Variations() {
       {/* ── Content ── */}
       <div className="flex-1 overflow-auto px-3 pb-3 pt-1.5">
 
-        {currentView === "kanban" ? (
-          <div className="border border-border rounded-md bg-background overflow-hidden">
-            <KanbanView />
-          </div>
-        ) : (
-          <div className="border border-border rounded-md bg-background overflow-hidden">
+        <div className="border border-border rounded-md bg-background overflow-hidden">
 
-            {/* Search / controls row — sticky top */}
-            <div className="h-9 flex items-center px-3 border-b border-border/50 gap-2 bg-background sticky top-0 z-20">
-              {/* Kanban toggle — leftmost */}
-              <button
-                onClick={() => setCurrentView(currentView === "kanban" ? "table" : "kanban")}
-                className={cn(
-                  "h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 flex-shrink-0",
-                  currentView === "kanban"
-                    ? "bg-[#bba7db] text-white border-[#bba7db]/20"
-                    : "hover-elevate active-elevate-2"
-                )}
-                data-testid="button-kanban-view"
-              >
-                <Columns3 className="w-3 h-3" />
-                <span>Kanban</span>
-              </button>
+          {/* Search / controls row — always visible for both views */}
+          <div className="h-9 flex items-center px-3 border-b border-border/50 gap-2 bg-background sticky top-0 z-20">
+            {/* Kanban toggle — leftmost */}
+            <button
+              onClick={() => setCurrentView(currentView === "kanban" ? "table" : "kanban")}
+              className={cn(
+                "h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 flex-shrink-0",
+                currentView === "kanban"
+                  ? "bg-[#bba7db] text-white border-[#bba7db]/20"
+                  : "hover-elevate active-elevate-2"
+              )}
+              data-testid="button-kanban-view"
+            >
+              <Columns3 className="w-3 h-3" />
+              <span>Kanban</span>
+            </button>
 
-              <div className="w-px h-4 bg-border mx-0.5 flex-shrink-0" />
+            <div className="w-px h-4 bg-border mx-0.5 flex-shrink-0" />
 
-              {/* Search — left, thin border */}
-              <div className="relative flex-shrink-0">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-                <Input
-                  placeholder="Search variations..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-7 pr-2 py-0 h-6 text-xs w-44 border border-border/50"
-                  data-testid="variations-search-input"
-                />
-              </div>
+            {/* Search — left, thin border */}
+            <div className="relative flex-shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+              <Input
+                placeholder="Search variations..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-7 pr-2 py-0 h-6 text-xs w-44 border border-border/50"
+                data-testid="variations-search-input"
+              />
+            </div>
 
-              {/* Column picker — far right */}
+            {/* Column picker — far right (only relevant in table view) */}
+            {currentView === "table" && (
               <Popover open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
                 <PopoverTrigger asChild>
                   <button
@@ -589,14 +589,21 @@ export default function Variations() {
                   </div>
                 </PopoverContent>
               </Popover>
-            </div>
+            )}
+            {currentView === "kanban" && <div className="ml-auto" />}
+          </div>
+
+          {currentView === "kanban" ? (
+            <KanbanView />
+          ) : (
+            <>
 
             {/* Column header — sticky below search row, synced scroll */}
             <div
               ref={headerScrollRef}
               className="overflow-x-hidden sticky top-9 z-10 border-b border-border bg-muted/50"
             >
-              <Table style={{ tableLayout: "fixed" }}>
+              <Table style={{ tableLayout: "fixed", minWidth: totalWidth }}>
                 <TableHeader>
                   <TableRow className="h-5 bg-muted/50 hover:bg-muted/50">
                     {orderedColumns.map((col) => {
@@ -629,7 +636,7 @@ export default function Variations() {
               onScroll={syncHeaderScroll}
               className="overflow-x-auto"
             >
-              <Table style={{ tableLayout: "fixed" }}>
+              <Table style={{ tableLayout: "fixed", minWidth: totalWidth }}>
                 <TableBody>
                   {variationsLoading ? (
                     <TableRow>
@@ -672,8 +679,9 @@ export default function Variations() {
                 </TableBody>
               </Table>
             </div>
-          </div>
-        )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

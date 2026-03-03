@@ -629,6 +629,7 @@ export interface IStorage {
   getClientInvoicePayments(invoiceId: string): Promise<ClientInvoicePayment[]>;
   createClientInvoicePayment(payment: InsertClientInvoicePayment): Promise<ClientInvoicePayment>;
   deleteClientInvoicePayment(id: string): Promise<boolean>;
+  voidClientInvoicePayment(id: string): Promise<ClientInvoicePayment | undefined>;
 
   // Invoice-Estimate Junction Table
   getInvoiceEstimates(invoiceId: string): Promise<InvoiceEstimate[]>;
@@ -12618,6 +12619,19 @@ export class DbStorage implements IStorage {
     } catch (error) {
       console.error("Database error in deleteClientInvoicePayment:", error);
       return false;
+    }
+  }
+
+  async voidClientInvoicePayment(id: string): Promise<ClientInvoicePayment | undefined> {
+    try {
+      const result = await db.update(schema.clientInvoicePayments)
+        .set({ isVoided: true, updatedAt: new Date() })
+        .where(eq(schema.clientInvoicePayments.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in voidClientInvoicePayment:", error);
+      throw error;
     }
   }
 
