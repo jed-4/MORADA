@@ -250,6 +250,11 @@ export default function ClientInvoiceDetail() {
   const [billsSearch, setBillsSearch] = useState("");
   const [labourSearch, setLabourSearch] = useState("");
   const [selectionsSearch, setSelectionsSearch] = useState("");
+  const [labourDisplayMode, setLabourDisplayMode] = useState<"individual" | "by_user" | "by_date" | "single">("individual");
+  const [labourFilterUser, setLabourFilterUser] = useState("all");
+  const [labourFilterStatus, setLabourFilterStatus] = useState("all");
+  const [labourFilterCostCode, setLabourFilterCostCode] = useState("all");
+  const [labourFilterLabel, setLabourFilterLabel] = useState("all");
   const [modalBillIds, setModalBillIds] = useState<string[]>([]);
   const [modalTimesheetIds, setModalTimesheetIds] = useState<string[]>([]);
   const [modalSelectionOptionIds, setModalSelectionOptionIds] = useState<string[]>([]);
@@ -307,12 +312,6 @@ export default function ClientInvoiceDetail() {
   const { data: currentProject } = useQuery<Project>({
     queryKey: [`/api/projects/${selectedProjectId}`],
     enabled: !!selectedProjectId,
-  });
-
-  const clientContactId = (currentProject as any)?.clientId || null;
-  const { data: clientContact } = useQuery<any>({
-    queryKey: [`/api/contacts/${clientContactId}`],
-    enabled: !!clientContactId,
   });
 
   const { data: estimates = [] } = useQuery<Estimate[]>({
@@ -1482,28 +1481,6 @@ export default function ClientInvoiceDetail() {
                         />
                         <div />
                       </div>
-
-                      {/* Bill To strip */}
-                      {(companySettings?.companyName || clientContact) && (
-                        <div className="grid grid-cols-2 gap-4 pt-1 border-t border-border/30">
-                          <div>
-                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground/50 mb-1">From</p>
-                            <p className="text-xs font-medium leading-snug">{companySettings?.companyName || "—"}</p>
-                            {companySettings?.address && (
-                              <p className="text-xs text-muted-foreground leading-snug">{companySettings.address}</p>
-                            )}
-                          </div>
-                          <div>
-                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground/50 mb-1">Bill To</p>
-                            <p className="text-xs font-medium leading-snug">{clientContact?.name || "—"}</p>
-                            {(clientContact?.addressFormatted || clientContact?.addressStreet) && (
-                              <p className="text-xs text-muted-foreground leading-snug">
-                                {clientContact.addressFormatted || [clientContact.addressStreet, clientContact.addressCity, clientContact.addressState, clientContact.addressPostcode].filter(Boolean).join(", ")}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      )}
 
                       {/* Invoice Type toggle — subtle pill */}
                       <div className="flex items-center gap-1.5 pt-0.5">
@@ -3084,108 +3061,299 @@ export default function ClientInvoiceDetail() {
               Approved timesheets can be selected. Submitted timesheets are pending approval.
             </DialogDescription>
           </DialogHeader>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              placeholder="Search by staff, date or cost code..."
-              value={labourSearch}
-              onChange={(e) => setLabourSearch(e.target.value)}
-              className="pl-8 h-8 text-sm"
-            />
+
+          {/* Display mode selector */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] uppercase tracking-wide text-muted-foreground/50 flex-shrink-0">Show as</span>
+            <div className="flex items-center rounded-full border border-border/50 overflow-hidden">
+              {(["individual", "by_user", "by_date", "single"] as const).map((mode, i, arr) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setLabourDisplayMode(mode)}
+                  className={cn(
+                    "px-2.5 py-1 text-[11px] leading-none transition-colors",
+                    i < arr.length - 1 && "border-r border-border/50",
+                    labourDisplayMode === mode
+                      ? "bg-muted text-foreground font-medium"
+                      : "text-muted-foreground/60 hover:text-muted-foreground"
+                  )}
+                >
+                  {mode === "individual" ? "Individual lines" : mode === "by_user" ? "Group by staff" : mode === "by_date" ? "Group by date" : "Single total"}
+                </button>
+              ))}
+            </div>
           </div>
+
+          {/* Filters row */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative flex-1 min-w-32">
+              <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Search..."
+                value={labourSearch}
+                onChange={(e) => setLabourSearch(e.target.value)}
+                className="pl-8 h-7 text-xs"
+              />
+            </div>
+            <Select value={labourFilterUser} onValueChange={setLabourFilterUser}>
+              <SelectTrigger className="h-7 text-xs w-36">
+                <SelectValue placeholder="All staff" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All staff</SelectItem>
+                {Array.from(new Set(projectTimesheets.map((t: any) => t.userId))).map((uid: any) => (
+                  <SelectItem key={uid} value={uid}>{getUserName(uid)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={labourFilterStatus} onValueChange={setLabourFilterStatus}>
+              <SelectTrigger className="h-7 text-xs w-32">
+                <SelectValue placeholder="All status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All status</SelectItem>
+                <SelectItem value="approved">Approved</SelectItem>
+                <SelectItem value="submitted">Pending</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={labourFilterCostCode} onValueChange={setLabourFilterCostCode}>
+              <SelectTrigger className="h-7 text-xs w-36">
+                <SelectValue placeholder="All cost codes" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All cost codes</SelectItem>
+                {costCodes.map((cc: any) => (
+                  <SelectItem key={cc.id} value={cc.id}>{cc.code || cc.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={labourFilterLabel} onValueChange={setLabourFilterLabel}>
+              <SelectTrigger className="h-7 text-xs w-32">
+                <SelectValue placeholder="All labels" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All labels</SelectItem>
+                {Array.from(new Set(projectTimesheets.flatMap((t: any) => t.labels || []))).map((lbl: any) => (
+                  <SelectItem key={lbl} value={lbl}>{lbl}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Table */}
           <div className="rounded-md border overflow-hidden">
-            <div className="max-h-[380px] overflow-y-auto">
+            <div className="max-h-[340px] overflow-y-auto">
               <Table>
-                <TableHeader>
-                  <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
-                    <TableHead className="w-8 py-0 px-2" />
-                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
-                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Staff</TableHead>
-                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Status</TableHead>
-                    <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Hours</TableHead>
-                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Cost Code</TableHead>
-                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Labels</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(() => {
-                    const filtered = projectTimesheets
-                      .filter((t: any) => t.status === "approved" || t.status === "submitted")
-                      .filter((t: any) => {
-                        if (!labourSearch) return true;
-                        const q = labourSearch.toLowerCase();
-                        const name = getUserName(t.userId).toLowerCase();
-                        const dateStr = t.date ? format(new Date(t.date), "d MMM yy").toLowerCase() : "";
-                        const cc = costCodes.find((c: any) => c.id === t.costCodeId);
-                        const ccName = (cc?.code || cc?.name || "").toLowerCase();
-                        return name.includes(q) || dateStr.includes(q) || ccName.includes(q);
-                      });
-                    if (filtered.length === 0) {
-                      return (
-                        <TableRow>
-                          <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-8">
-                            No timesheets found for this project.
-                          </TableCell>
-                        </TableRow>
-                      );
-                    }
-                    return filtered.map((t: any) => {
-                      const isApproved = t.status === "approved";
-                      const isChecked = modalTimesheetIds.includes(t.id);
+                {(() => {
+                  const base = projectTimesheets
+                    .filter((t: any) => t.status === "approved" || t.status === "submitted")
+                    .filter((t: any) => labourFilterStatus === "all" || t.status === labourFilterStatus)
+                    .filter((t: any) => labourFilterUser === "all" || t.userId === labourFilterUser)
+                    .filter((t: any) => labourFilterCostCode === "all" || t.costCodeId === labourFilterCostCode)
+                    .filter((t: any) => labourFilterLabel === "all" || (t.labels || []).includes(labourFilterLabel))
+                    .filter((t: any) => {
+                      if (!labourSearch) return true;
+                      const q = labourSearch.toLowerCase();
+                      const name = getUserName(t.userId).toLowerCase();
+                      const dateStr = t.date ? format(new Date(t.date), "d MMM yy").toLowerCase() : "";
                       const cc = costCodes.find((c: any) => c.id === t.costCodeId);
-                      const labels = (t.labels as string[] || []);
-                      return (
-                        <TableRow
-                          key={t.id}
-                          className={cn(
-                            "h-9",
-                            isApproved ? "hover-elevate cursor-pointer" : "opacity-40 cursor-not-allowed"
-                          )}
-                          onClick={() => {
-                            if (!isApproved) return;
-                            setModalTimesheetIds(prev =>
-                              isChecked ? prev.filter(id => id !== t.id) : [...prev, t.id]
-                            );
-                          }}
-                        >
-                          <TableCell className="w-8 py-1 px-2">
-                            <div className={cn(
-                              "w-4 h-4 rounded border flex items-center justify-center",
-                              isChecked && isApproved ? "bg-primary border-primary" : "border-input"
-                            )}>
-                              {isChecked && isApproved && <Check className="h-3 w-3 text-primary-foreground" />}
-                            </div>
-                          </TableCell>
-                          <TableCell className="py-1 text-sm tabular-nums">
-                            {t.date ? format(new Date(t.date), "d MMM yy") : "—"}
-                          </TableCell>
-                          <TableCell className="py-1 text-sm font-medium">{getUserName(t.userId)}</TableCell>
-                          <TableCell className="py-1">
-                            {isApproved ? (
-                              <span className="flex items-center gap-1 text-xs">
-                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />
-                                Approved
-                              </span>
-                            ) : (
-                              <span className="flex items-center gap-1 text-xs">
-                                <div className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />
-                                Pending
-                              </span>
-                            )}
-                          </TableCell>
-                          <TableCell className="py-1 text-right text-sm tabular-nums">{Number(t.duration).toFixed(1)}</TableCell>
-                          <TableCell className="py-1 text-sm text-muted-foreground">{cc?.code || cc?.name || "—"}</TableCell>
-                          <TableCell className="py-1 text-xs text-muted-foreground truncate max-w-[120px]">
-                            {labels.length > 0 ? labels.slice(0, 3).join(", ") : "—"}
-                          </TableCell>
-                        </TableRow>
-                      );
+                      const ccName = (cc?.code || cc?.name || "").toLowerCase();
+                      return name.includes(q) || dateStr.includes(q) || ccName.includes(q);
                     });
-                  })()}
-                </TableBody>
+
+                  if (labourDisplayMode === "individual") {
+                    return (
+                      <>
+                        <TableHeader>
+                          <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
+                            <TableHead className="w-8 py-0 px-2" />
+                            <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
+                            <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Staff</TableHead>
+                            <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Status</TableHead>
+                            <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Hours</TableHead>
+                            <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Cost Code</TableHead>
+                            <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Labels</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {base.length === 0 ? (
+                            <TableRow><TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-8">No timesheets found.</TableCell></TableRow>
+                          ) : base.map((t: any) => {
+                            const isApproved = t.status === "approved";
+                            const isChecked = modalTimesheetIds.includes(t.id);
+                            const cc = costCodes.find((c: any) => c.id === t.costCodeId);
+                            const labels = (t.labels as string[] || []);
+                            return (
+                              <TableRow key={t.id} className={cn("h-9", isApproved ? "hover-elevate cursor-pointer" : "opacity-40 cursor-not-allowed")}
+                                onClick={() => { if (!isApproved) return; setModalTimesheetIds(prev => isChecked ? prev.filter(id => id !== t.id) : [...prev, t.id]); }}>
+                                <TableCell className="w-8 py-1 px-2">
+                                  <div className={cn("w-4 h-4 rounded border flex items-center justify-center", isChecked && isApproved ? "bg-primary border-primary" : "border-input")}>
+                                    {isChecked && isApproved && <Check className="h-3 w-3 text-primary-foreground" />}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="py-1 text-sm tabular-nums">{t.date ? format(new Date(t.date), "d MMM yy") : "—"}</TableCell>
+                                <TableCell className="py-1 text-sm font-medium">{getUserName(t.userId)}</TableCell>
+                                <TableCell className="py-1">
+                                  {isApproved
+                                    ? <span className="flex items-center gap-1 text-xs"><div className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />Approved</span>
+                                    : <span className="flex items-center gap-1 text-xs"><div className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />Pending</span>}
+                                </TableCell>
+                                <TableCell className="py-1 text-right text-sm tabular-nums">{Number(t.duration).toFixed(1)}</TableCell>
+                                <TableCell className="py-1 text-sm text-muted-foreground">{cc?.code || cc?.name || "—"}</TableCell>
+                                <TableCell className="py-1 text-xs text-muted-foreground truncate max-w-[120px]">{labels.length > 0 ? labels.slice(0, 3).join(", ") : "—"}</TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </>
+                    );
+                  }
+
+                  if (labourDisplayMode === "by_user") {
+                    const grouped = base.reduce((acc: Record<string, any[]>, t: any) => {
+                      if (!acc[t.userId]) acc[t.userId] = [];
+                      acc[t.userId].push(t);
+                      return acc;
+                    }, {});
+                    return (
+                      <>
+                        <TableHeader>
+                          <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
+                            <TableHead className="w-8 py-0 px-2" />
+                            <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Staff</TableHead>
+                            <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Timesheets</TableHead>
+                            <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Hours</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {Object.entries(grouped).length === 0 ? (
+                            <TableRow><TableCell colSpan={4} className="text-center text-sm text-muted-foreground py-8">No timesheets found.</TableCell></TableRow>
+                          ) : Object.entries(grouped).map(([userId, timesheets]) => {
+                            const approved = (timesheets as any[]).filter(t => t.status === "approved");
+                            const totalHours = (timesheets as any[]).reduce((s, t) => s + Number(t.duration), 0);
+                            const approvedIds = approved.map((t: any) => t.id);
+                            const allChecked = approvedIds.length > 0 && approvedIds.every(id => modalTimesheetIds.includes(id));
+                            const someChecked = approvedIds.some(id => modalTimesheetIds.includes(id));
+                            const hasApproved = approved.length > 0;
+                            return (
+                              <TableRow key={userId} className={cn("h-9", hasApproved ? "hover-elevate cursor-pointer" : "opacity-40 cursor-not-allowed")}
+                                onClick={() => {
+                                  if (!hasApproved) return;
+                                  setModalTimesheetIds(prev =>
+                                    allChecked ? prev.filter(id => !approvedIds.includes(id)) : [...prev.filter(id => !approvedIds.includes(id)), ...approvedIds]
+                                  );
+                                }}>
+                                <TableCell className="w-8 py-1 px-2">
+                                  <div className={cn("w-4 h-4 rounded border flex items-center justify-center", (allChecked || someChecked) && hasApproved ? "bg-primary border-primary" : "border-input")}>
+                                    {allChecked && hasApproved && <Check className="h-3 w-3 text-primary-foreground" />}
+                                    {someChecked && !allChecked && hasApproved && <div className="w-2 h-0.5 bg-primary-foreground" />}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="py-1 text-sm font-medium">{getUserName(userId)}</TableCell>
+                                <TableCell className="py-1 text-right text-sm tabular-nums text-muted-foreground">{(timesheets as any[]).length}</TableCell>
+                                <TableCell className="py-1 text-right text-sm tabular-nums">{totalHours.toFixed(1)}</TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </>
+                    );
+                  }
+
+                  if (labourDisplayMode === "by_date") {
+                    const grouped = base.reduce((acc: Record<string, any[]>, t: any) => {
+                      const dk = t.date ? format(new Date(t.date), "yyyy-MM-dd") : "no-date";
+                      if (!acc[dk]) acc[dk] = [];
+                      acc[dk].push(t);
+                      return acc;
+                    }, {});
+                    const sorted = Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b));
+                    return (
+                      <>
+                        <TableHeader>
+                          <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
+                            <TableHead className="w-8 py-0 px-2" />
+                            <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
+                            <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Staff</TableHead>
+                            <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Hours</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {sorted.length === 0 ? (
+                            <TableRow><TableCell colSpan={4} className="text-center text-sm text-muted-foreground py-8">No timesheets found.</TableCell></TableRow>
+                          ) : sorted.map(([dk, timesheets]) => {
+                            const approved = (timesheets as any[]).filter(t => t.status === "approved");
+                            const totalHours = (timesheets as any[]).reduce((s, t) => s + Number(t.duration), 0);
+                            const approvedIds = approved.map((t: any) => t.id);
+                            const allChecked = approvedIds.length > 0 && approvedIds.every(id => modalTimesheetIds.includes(id));
+                            const someChecked = approvedIds.some(id => modalTimesheetIds.includes(id));
+                            const hasApproved = approved.length > 0;
+                            const userNames = Array.from(new Set((timesheets as any[]).map((t: any) => getUserName(t.userId)))).join(", ");
+                            return (
+                              <TableRow key={dk} className={cn("h-9", hasApproved ? "hover-elevate cursor-pointer" : "opacity-40 cursor-not-allowed")}
+                                onClick={() => {
+                                  if (!hasApproved) return;
+                                  setModalTimesheetIds(prev =>
+                                    allChecked ? prev.filter(id => !approvedIds.includes(id)) : [...prev.filter(id => !approvedIds.includes(id)), ...approvedIds]
+                                  );
+                                }}>
+                                <TableCell className="w-8 py-1 px-2">
+                                  <div className={cn("w-4 h-4 rounded border flex items-center justify-center", (allChecked || someChecked) && hasApproved ? "bg-primary border-primary" : "border-input")}>
+                                    {allChecked && hasApproved && <Check className="h-3 w-3 text-primary-foreground" />}
+                                    {someChecked && !allChecked && hasApproved && <div className="w-2 h-0.5 bg-primary-foreground" />}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="py-1 text-sm tabular-nums">{dk !== "no-date" ? format(new Date(dk), "d MMM yy") : "—"}</TableCell>
+                                <TableCell className="py-1 text-xs text-muted-foreground truncate max-w-[200px]">{userNames}</TableCell>
+                                <TableCell className="py-1 text-right text-sm tabular-nums">{totalHours.toFixed(1)}</TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </>
+                    );
+                  }
+
+                  {/* Single total */}
+                  const approved = base.filter((t: any) => t.status === "approved");
+                  const totalHours = approved.reduce((s: number, t: any) => s + Number(t.duration), 0);
+                  const approvedIds = approved.map((t: any) => t.id);
+                  const allChecked = approvedIds.length > 0 && approvedIds.every((id: string) => modalTimesheetIds.includes(id));
+                  return (
+                    <>
+                      <TableHeader>
+                        <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
+                          <TableHead className="w-8 py-0 px-2" />
+                          <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Description</TableHead>
+                          <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Timesheets</TableHead>
+                          <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total Hours</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {approvedIds.length === 0 ? (
+                          <TableRow><TableCell colSpan={4} className="text-center text-sm text-muted-foreground py-8">No approved timesheets found.</TableCell></TableRow>
+                        ) : (
+                          <TableRow className="h-9 hover-elevate cursor-pointer"
+                            onClick={() => setModalTimesheetIds(allChecked ? [] : [...approvedIds])}>
+                            <TableCell className="w-8 py-1 px-2">
+                              <div className={cn("w-4 h-4 rounded border flex items-center justify-center", allChecked ? "bg-primary border-primary" : "border-input")}>
+                                {allChecked && <Check className="h-3 w-3 text-primary-foreground" />}
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-1 text-sm font-medium">All project labour</TableCell>
+                            <TableCell className="py-1 text-right text-sm tabular-nums text-muted-foreground">{approvedIds.length}</TableCell>
+                            <TableCell className="py-1 text-right text-sm tabular-nums">{totalHours.toFixed(1)}</TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </>
+                  );
+                })()}
               </Table>
             </div>
           </div>
+
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setLabourModalOpen(false)}>Cancel</Button>
             <Button
