@@ -307,6 +307,12 @@ export default function ClientInvoiceDetail() {
     enabled: !!selectedProjectId,
   });
 
+  const clientContactId = (currentProject as any)?.clientId || null;
+  const { data: clientContact } = useQuery<any>({
+    queryKey: [`/api/contacts/${clientContactId}`],
+    enabled: !!clientContactId,
+  });
+
   const { data: estimates = [] } = useQuery<Estimate[]>({
     queryKey: [`/api/estimates?projectId=${selectedProjectId}`],
     enabled: !!selectedProjectId,
@@ -350,6 +356,10 @@ export default function ClientInvoiceDetail() {
 
   const { data: users = [] } = useQuery<any[]>({
     queryKey: ["/api/users"],
+  });
+
+  const { data: costCodes = [] } = useQuery<any[]>({
+    queryKey: ["/api/cost-codes"],
   });
 
   const { data: estimateItems = [] } = useQuery<EstimateItem[]>({
@@ -614,10 +624,12 @@ export default function ClientInvoiceDetail() {
 
   const calculateSubtotal = () => {
     if (invoiceType === "progress_payments") {
-      const contract = calculateContractPrice() / 100;
-      const vars = calculateVariationsTotal() / 100;
-      const allowances = calculateAllowancesTotal() / 100;
-      const custom = calculateCustomLinesSubtotal();
+      // contractPrice, variation totalAmount, and allowance priceIncTax are all stored inc-GST.
+      // Divide by (1 + GST_RATE) to get the ex-GST base so calculateGST() doesn't double-count.
+      const contract = calculateContractPrice() / 100 / (1 + GST_RATE);
+      const vars = calculateVariationsTotal() / 100 / (1 + GST_RATE);
+      const allowances = calculateAllowancesTotal() / 100 / (1 + GST_RATE);
+      const custom = calculateCustomLinesSubtotal(); // user-entered dollar amounts are already ex-GST
       return contract + vars + allowances + custom;
     } else {
       return calculateLabourTotal() / 100 + calculateBillsTotal() / 100 + calculateSelectionsTotal() / 100 + calculateCustomLinesSubtotal();
@@ -1470,31 +1482,53 @@ export default function ClientInvoiceDetail() {
                         <div />
                       </div>
 
-                      {/* Invoice Type toggle */}
-                      <div className="flex items-center gap-2">
-                        <span className="text-[11px] text-muted-foreground/70 uppercase tracking-wide font-medium min-w-[90px]">Invoice Type</span>
-                        <div className="flex items-center border rounded-md overflow-hidden h-8">
+                      {/* Bill To strip */}
+                      {(companySettings?.companyName || clientContact) && (
+                        <div className="grid grid-cols-2 gap-4 pt-1 border-t border-border/30">
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground/50 mb-1">From</p>
+                            <p className="text-xs font-medium leading-snug">{companySettings?.companyName || "—"}</p>
+                            {companySettings?.address && (
+                              <p className="text-xs text-muted-foreground leading-snug">{companySettings.address}</p>
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground/50 mb-1">Bill To</p>
+                            <p className="text-xs font-medium leading-snug">{clientContact?.name || "—"}</p>
+                            {(clientContact?.addressFormatted || clientContact?.addressStreet) && (
+                              <p className="text-xs text-muted-foreground leading-snug">
+                                {clientContact.addressFormatted || [clientContact.addressStreet, clientContact.addressCity, clientContact.addressState, clientContact.addressPostcode].filter(Boolean).join(", ")}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Invoice Type toggle — subtle pill */}
+                      <div className="flex items-center gap-1.5 pt-0.5">
+                        <span className="text-[10px] text-muted-foreground/40 uppercase tracking-wide">Type:</span>
+                        <div className="flex items-center rounded-full border border-border/50 overflow-hidden">
                           <button
                             type="button"
                             onClick={() => setInvoiceType("progress_payments")}
                             className={cn(
-                              "px-3 text-xs h-full transition-colors",
+                              "px-2.5 py-0.5 text-[11px] leading-none transition-colors",
                               invoiceType === "progress_payments"
-                                ? "bg-[#bba7db]/20 text-foreground font-medium"
-                                : "text-muted-foreground hover:bg-muted/50"
+                                ? "bg-muted text-foreground font-medium"
+                                : "text-muted-foreground/50 hover:text-muted-foreground"
                             )}
                           >
-                            Progress Payment
+                            Progress
                           </button>
-                          <div className="w-px h-4 bg-border" />
+                          <div className="w-px h-3 bg-border/50" />
                           <button
                             type="button"
                             onClick={() => setInvoiceType("cost_plus")}
                             className={cn(
-                              "px-3 text-xs h-full transition-colors",
+                              "px-2.5 py-0.5 text-[11px] leading-none transition-colors",
                               invoiceType === "cost_plus"
-                                ? "bg-[#bba7db]/20 text-foreground font-medium"
-                                : "text-muted-foreground hover:bg-muted/50"
+                                ? "bg-muted text-foreground font-medium"
+                                : "text-muted-foreground/50 hover:text-muted-foreground"
                             )}
                           >
                             Cost Plus
@@ -2135,7 +2169,7 @@ export default function ClientInvoiceDetail() {
                         </div>
                         <button
                           type="button"
-                          onClick={() => { setModalTimesheetIds([]); setLabourModalOpen(true); }}
+                          onClick={() => { setModalTimesheetIds([...selectedTimesheetIds]); setLabourModalOpen(true); }}
                           className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
                         >
                           <Plus className="w-3 h-3" />
@@ -2192,7 +2226,7 @@ export default function ClientInvoiceDetail() {
                         </div>
                         <button
                           type="button"
-                          onClick={() => { setModalBillIds([]); setBillsModalOpen(true); }}
+                          onClick={() => { setModalBillIds([...selectedBillIds]); setBillsModalOpen(true); }}
                           className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
                         >
                           <Plus className="w-3 h-3" />
@@ -2247,7 +2281,7 @@ export default function ClientInvoiceDetail() {
                         </div>
                         <button
                           type="button"
-                          onClick={() => { setModalSelectionOptionIds([]); setSelectionsModalOpen(true); }}
+                          onClick={() => { setModalSelectionOptionIds([...selectedSelectionOptionIds]); setSelectionsModalOpen(true); }}
                           className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
                         >
                           <Plus className="w-3 h-3" />
@@ -3042,85 +3076,125 @@ export default function ClientInvoiceDetail() {
 
       {/* ── Import Labour Modal ── */}
       <Dialog open={labourModalOpen} onOpenChange={setLabourModalOpen}>
-        <DialogContent className="max-w-2xl" data-testid="dialog-labour">
+        <DialogContent className="max-w-3xl" data-testid="dialog-labour">
           <DialogHeader>
             <DialogTitle>Import Labour</DialogTitle>
             <DialogDescription>
-              Approved timesheets can be added. Submitted timesheets are pending approval.
+              Approved timesheets can be selected. Submitted timesheets are pending approval.
             </DialogDescription>
           </DialogHeader>
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
             <Input
-              placeholder="Search by staff or date..."
+              placeholder="Search by staff, date or cost code..."
               value={labourSearch}
               onChange={(e) => setLabourSearch(e.target.value)}
               className="pl-8 h-8 text-sm"
             />
           </div>
-          <div className="space-y-1 max-h-96 overflow-y-auto">
-            {projectTimesheets
-              .filter((t: any) => t.status === "approved" || t.status === "submitted")
-              .filter((t: any) => {
-                if (!labourSearch) return true;
-                const q = labourSearch.toLowerCase();
-                const name = getUserName(t.userId).toLowerCase();
-                const dateStr = t.date ? format(new Date(t.date), "d MMM yyyy").toLowerCase() : "";
-                return name.includes(q) || dateStr.includes(q);
-              })
-              .map((t: any) => {
-                const isApproved = t.status === "approved";
-                const isChecked = modalTimesheetIds.includes(t.id);
-                return (
-                  <div
-                    key={t.id}
-                    className={cn(
-                      "flex items-center gap-3 px-3 py-2 rounded-md border",
-                      isApproved ? "hover-elevate cursor-pointer" : "opacity-50 cursor-not-allowed bg-muted/30"
-                    )}
-                    onClick={() => {
-                      if (!isApproved) return;
-                      setModalTimesheetIds(prev =>
-                        isChecked ? prev.filter(id => id !== t.id) : [...prev, t.id]
+          <div className="rounded-md border overflow-hidden">
+            <div className="max-h-[380px] overflow-y-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
+                    <TableHead className="w-8 py-0 px-2" />
+                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
+                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Staff</TableHead>
+                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Status</TableHead>
+                    <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Hours</TableHead>
+                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Cost Code</TableHead>
+                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Labels</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(() => {
+                    const filtered = projectTimesheets
+                      .filter((t: any) => t.status === "approved" || t.status === "submitted")
+                      .filter((t: any) => {
+                        if (!labourSearch) return true;
+                        const q = labourSearch.toLowerCase();
+                        const name = getUserName(t.userId).toLowerCase();
+                        const dateStr = t.date ? format(new Date(t.date), "d MMM yy").toLowerCase() : "";
+                        const cc = costCodes.find((c: any) => c.id === t.costCodeId);
+                        const ccName = (cc?.code || cc?.name || "").toLowerCase();
+                        return name.includes(q) || dateStr.includes(q) || ccName.includes(q);
+                      });
+                    if (filtered.length === 0) {
+                      return (
+                        <TableRow>
+                          <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-8">
+                            No timesheets found for this project.
+                          </TableCell>
+                        </TableRow>
                       );
-                    }}
-                  >
-                    <div className={cn(
-                      "w-4 h-4 rounded border flex items-center justify-center flex-shrink-0",
-                      isChecked && isApproved ? "bg-primary border-primary" : "border-input"
-                    )}>
-                      {isChecked && isApproved && <Check className="h-3 w-3 text-primary-foreground" />}
-                    </div>
-                    <div className="flex-1 grid grid-cols-4 gap-2 min-w-0">
-                      <span className="text-sm">{t.date ? format(new Date(t.date), "d MMM yyyy") : "—"}</span>
-                      <span className="text-sm font-medium truncate">{getUserName(t.userId)}</span>
-                      <span className="text-sm text-muted-foreground">{Number(t.duration).toFixed(1)}h @ {formatCurrency(Number(t.hourlyRate))}/hr</span>
-                      <span className="text-sm font-medium text-right">{formatCurrency(Number(t.total))}</span>
-                    </div>
-                    {!isApproved && (
-                      <Badge variant="secondary" className="text-xs flex-shrink-0">Pending Approval</Badge>
-                    )}
-                  </div>
-                );
-              })}
-            {projectTimesheets.filter((t: any) => t.status === "approved" || t.status === "submitted").length === 0 && (
-              <p className="text-sm text-muted-foreground text-center py-8">No timesheets found for this project.</p>
-            )}
+                    }
+                    return filtered.map((t: any) => {
+                      const isApproved = t.status === "approved";
+                      const isChecked = modalTimesheetIds.includes(t.id);
+                      const cc = costCodes.find((c: any) => c.id === t.costCodeId);
+                      const labels = (t.labels as string[] || []);
+                      return (
+                        <TableRow
+                          key={t.id}
+                          className={cn(
+                            "h-9",
+                            isApproved ? "hover-elevate cursor-pointer" : "opacity-40 cursor-not-allowed"
+                          )}
+                          onClick={() => {
+                            if (!isApproved) return;
+                            setModalTimesheetIds(prev =>
+                              isChecked ? prev.filter(id => id !== t.id) : [...prev, t.id]
+                            );
+                          }}
+                        >
+                          <TableCell className="w-8 py-1 px-2">
+                            <div className={cn(
+                              "w-4 h-4 rounded border flex items-center justify-center",
+                              isChecked && isApproved ? "bg-primary border-primary" : "border-input"
+                            )}>
+                              {isChecked && isApproved && <Check className="h-3 w-3 text-primary-foreground" />}
+                            </div>
+                          </TableCell>
+                          <TableCell className="py-1 text-sm tabular-nums">
+                            {t.date ? format(new Date(t.date), "d MMM yy") : "—"}
+                          </TableCell>
+                          <TableCell className="py-1 text-sm font-medium">{getUserName(t.userId)}</TableCell>
+                          <TableCell className="py-1">
+                            {isApproved ? (
+                              <span className="flex items-center gap-1 text-xs">
+                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />
+                                Approved
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-1 text-xs">
+                                <div className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />
+                                Pending
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="py-1 text-right text-sm tabular-nums">{Number(t.duration).toFixed(1)}</TableCell>
+                          <TableCell className="py-1 text-sm text-muted-foreground">{cc?.code || cc?.name || "—"}</TableCell>
+                          <TableCell className="py-1 text-xs text-muted-foreground truncate max-w-[120px]">
+                            {labels.length > 0 ? labels.slice(0, 3).join(", ") : "—"}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    });
+                  })()}
+                </TableBody>
+              </Table>
+            </div>
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setLabourModalOpen(false)}>Cancel</Button>
             <Button
               onClick={() => {
-                setSelectedTimesheetIds(prev => {
-                  const next = [...prev];
-                  modalTimesheetIds.forEach(id => { if (!next.includes(id)) next.push(id); });
-                  return next;
-                });
+                setSelectedTimesheetIds([...modalTimesheetIds]);
                 setLabourModalOpen(false);
               }}
               disabled={modalTimesheetIds.length === 0}
             >
-              Add {modalTimesheetIds.length > 0 ? `${modalTimesheetIds.length} ` : ""}Selected
+              Add {modalTimesheetIds.length > 0 ? `${modalTimesheetIds.length} ` : ""}to Invoice
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -3144,60 +3218,81 @@ export default function ClientInvoiceDetail() {
               className="pl-8 h-8 text-sm"
             />
           </div>
-          <div className="space-y-1 max-h-96 overflow-y-auto">
-            {bills
-              .filter((b) => {
-                if (!billsSearch) return true;
-                const q = billsSearch.toLowerCase();
-                return (
-                  b.billNumber?.toLowerCase().includes(q) ||
-                  (b as any).supplierName?.toLowerCase().includes(q)
-                );
-              })
-              .map((b) => {
-                const isChecked = modalBillIds.includes(b.id);
-                return (
-                  <div
-                    key={b.id}
-                    className="flex items-center gap-3 px-3 py-2 rounded-md border hover-elevate cursor-pointer"
-                    onClick={() =>
-                      setModalBillIds(prev =>
-                        isChecked ? prev.filter(id => id !== b.id) : [...prev, b.id]
-                      )
+          <div className="rounded-md border overflow-hidden">
+            <div className="max-h-[380px] overflow-y-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
+                    <TableHead className="w-8 py-0 px-2" />
+                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Bill No.</TableHead>
+                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Supplier</TableHead>
+                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
+                    <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(() => {
+                    const filtered = bills.filter((b) => {
+                      if (!billsSearch) return true;
+                      const q = billsSearch.toLowerCase();
+                      return (
+                        b.billNumber?.toLowerCase().includes(q) ||
+                        (b as any).supplierName?.toLowerCase().includes(q)
+                      );
+                    });
+                    if (filtered.length === 0) {
+                      return (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-8">
+                            No bills found for this project.
+                          </TableCell>
+                        </TableRow>
+                      );
                     }
-                  >
-                    <div className={cn(
-                      "w-4 h-4 rounded border flex items-center justify-center flex-shrink-0",
-                      isChecked ? "bg-primary border-primary" : "border-input"
-                    )}>
-                      {isChecked && <Check className="h-3 w-3 text-primary-foreground" />}
-                    </div>
-                    <div className="flex-1 grid grid-cols-3 gap-2 min-w-0">
-                      <span className="text-sm font-medium font-mono">{b.billNumber}</span>
-                      <span className="text-sm text-muted-foreground truncate">{(b as any).supplierName || "—"}</span>
-                      <span className="text-sm font-medium text-right">{formatCurrency(b.total / 100)}</span>
-                    </div>
-                  </div>
-                );
-              })}
-            {bills.length === 0 && (
-              <p className="text-sm text-muted-foreground text-center py-8">No bills found for this project.</p>
-            )}
+                    return filtered.map((b) => {
+                      const isChecked = modalBillIds.includes(b.id);
+                      return (
+                        <TableRow
+                          key={b.id}
+                          className="h-9 hover-elevate cursor-pointer"
+                          onClick={() =>
+                            setModalBillIds(prev =>
+                              isChecked ? prev.filter(id => id !== b.id) : [...prev, b.id]
+                            )
+                          }
+                        >
+                          <TableCell className="w-8 py-1 px-2">
+                            <div className={cn(
+                              "w-4 h-4 rounded border flex items-center justify-center",
+                              isChecked ? "bg-primary border-primary" : "border-input"
+                            )}>
+                              {isChecked && <Check className="h-3 w-3 text-primary-foreground" />}
+                            </div>
+                          </TableCell>
+                          <TableCell className="py-1 text-sm font-medium font-mono">{b.billNumber}</TableCell>
+                          <TableCell className="py-1 text-sm text-muted-foreground">{(b as any).supplierName || "—"}</TableCell>
+                          <TableCell className="py-1 text-sm text-muted-foreground">
+                            {(b as any).billDate ? format(new Date((b as any).billDate), "d MMM yy") : "—"}
+                          </TableCell>
+                          <TableCell className="py-1 text-right text-sm font-medium tabular-nums">{formatCurrency(b.total / 100)}</TableCell>
+                        </TableRow>
+                      );
+                    });
+                  })()}
+                </TableBody>
+              </Table>
+            </div>
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setBillsModalOpen(false)}>Cancel</Button>
             <Button
               onClick={() => {
-                setSelectedBillIds(prev => {
-                  const next = [...prev];
-                  modalBillIds.forEach(id => { if (!next.includes(id)) next.push(id); });
-                  return next;
-                });
+                setSelectedBillIds([...modalBillIds]);
                 setBillsModalOpen(false);
               }}
               disabled={modalBillIds.length === 0}
             >
-              Add {modalBillIds.length > 0 ? `${modalBillIds.length} ` : ""}Selected
+              Add {modalBillIds.length > 0 ? `${modalBillIds.length} ` : ""}to Invoice
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -3221,69 +3316,82 @@ export default function ClientInvoiceDetail() {
               className="pl-8 h-8 text-sm"
             />
           </div>
-          <div className="space-y-1 max-h-96 overflow-y-auto">
-            {invoiceableSelections
-              .filter((o: any) => {
-                if (!selectionsSearch) return true;
-                const q = selectionsSearch.toLowerCase();
-                return (
-                  o.name?.toLowerCase().includes(q) ||
-                  o.selectionName?.toLowerCase().includes(q) ||
-                  o.room?.toLowerCase().includes(q)
-                );
-              })
-              .map((o: any) => {
-                const isChecked = modalSelectionOptionIds.includes(o.id);
-                return (
-                  <div
-                    key={o.id}
-                    className="flex items-center gap-3 px-3 py-2 rounded-md border hover-elevate cursor-pointer"
-                    onClick={() =>
-                      setModalSelectionOptionIds(prev =>
-                        isChecked ? prev.filter(id => id !== o.id) : [...prev, o.id]
-                      )
+          <div className="rounded-md border overflow-hidden">
+            <div className="max-h-[380px] overflow-y-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
+                    <TableHead className="w-8 py-0 px-2" />
+                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Selection</TableHead>
+                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Room</TableHead>
+                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Option</TableHead>
+                    <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Qty</TableHead>
+                    <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(() => {
+                    const filtered = invoiceableSelections.filter((o: any) => {
+                      if (!selectionsSearch) return true;
+                      const q = selectionsSearch.toLowerCase();
+                      return (
+                        o.name?.toLowerCase().includes(q) ||
+                        o.selectionName?.toLowerCase().includes(q) ||
+                        o.room?.toLowerCase().includes(q)
+                      );
+                    });
+                    if (filtered.length === 0) {
+                      return (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-center text-sm text-muted-foreground py-8">
+                            No invoiceable selections found for this project.
+                          </TableCell>
+                        </TableRow>
+                      );
                     }
-                  >
-                    <div className={cn(
-                      "w-4 h-4 rounded border flex items-center justify-center flex-shrink-0",
-                      isChecked ? "bg-primary border-primary" : "border-input"
-                    )}>
-                      {isChecked && <Check className="h-3 w-3 text-primary-foreground" />}
-                    </div>
-                    <div className="flex-1 grid grid-cols-3 gap-2 min-w-0">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium truncate">{o.selectionName || "—"}</p>
-                        {o.room && <p className="text-xs text-muted-foreground">{o.room}</p>}
-                      </div>
-                      <span className="text-sm truncate self-center">{o.name}</span>
-                      <div className="text-right self-center">
-                        <span className="text-sm font-medium">{formatCurrency((o.totalCost || 0) / 100)}</span>
-                        {o.quantity && o.unitType && (
-                          <p className="text-xs text-muted-foreground">{o.quantity} {o.unitType}</p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            {invoiceableSelections.length === 0 && (
-              <p className="text-sm text-muted-foreground text-center py-8">No invoiceable selections found for this project.</p>
-            )}
+                    return filtered.map((o: any) => {
+                      const isChecked = modalSelectionOptionIds.includes(o.id);
+                      return (
+                        <TableRow
+                          key={o.id}
+                          className="h-9 hover-elevate cursor-pointer"
+                          onClick={() =>
+                            setModalSelectionOptionIds(prev =>
+                              isChecked ? prev.filter(id => id !== o.id) : [...prev, o.id]
+                            )
+                          }
+                        >
+                          <TableCell className="w-8 py-1 px-2">
+                            <div className={cn(
+                              "w-4 h-4 rounded border flex items-center justify-center",
+                              isChecked ? "bg-primary border-primary" : "border-input"
+                            )}>
+                              {isChecked && <Check className="h-3 w-3 text-primary-foreground" />}
+                            </div>
+                          </TableCell>
+                          <TableCell className="py-1 text-sm font-medium truncate max-w-[140px]">{o.selectionName || "—"}</TableCell>
+                          <TableCell className="py-1 text-sm text-muted-foreground">{o.room || "—"}</TableCell>
+                          <TableCell className="py-1 text-sm">{o.name}</TableCell>
+                          <TableCell className="py-1 text-right text-sm tabular-nums">{o.quantity || "—"}</TableCell>
+                          <TableCell className="py-1 text-right text-sm font-medium tabular-nums">{formatCurrency((o.totalCost || 0) / 100)}</TableCell>
+                        </TableRow>
+                      );
+                    });
+                  })()}
+                </TableBody>
+              </Table>
+            </div>
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setSelectionsModalOpen(false)}>Cancel</Button>
             <Button
               onClick={() => {
-                setSelectedSelectionOptionIds(prev => {
-                  const next = [...prev];
-                  modalSelectionOptionIds.forEach(id => { if (!next.includes(id)) next.push(id); });
-                  return next;
-                });
+                setSelectedSelectionOptionIds([...modalSelectionOptionIds]);
                 setSelectionsModalOpen(false);
               }}
               disabled={modalSelectionOptionIds.length === 0}
             >
-              Add {modalSelectionOptionIds.length > 0 ? `${modalSelectionOptionIds.length} ` : ""}Selected
+              Add {modalSelectionOptionIds.length > 0 ? `${modalSelectionOptionIds.length} ` : ""}to Invoice
             </Button>
           </DialogFooter>
         </DialogContent>
