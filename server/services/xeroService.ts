@@ -473,6 +473,28 @@ export class XeroService {
     const data = (await response.json()) as any;
     return data.Invoices?.[0] || data;
   }
+
+  async getInvoice(connectionId: string, invoiceId: string): Promise<any> {
+    const accessToken = await this.getValidToken(connectionId);
+    const connection = await storage.getXeroConnection(connectionId);
+    if (!connection) throw new Error("Xero connection not found");
+
+    const response = await fetch(`${XERO_API_BASE}/Invoices/${invoiceId}`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Xero-Tenant-Id": connection.tenantId,
+        Accept: "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to fetch Xero invoice: ${response.status} ${errorText}`);
+    }
+
+    const data = (await response.json()) as any;
+    return data.Invoices?.[0] || null;
+  }
 }
 
 export const xeroService = new XeroService();

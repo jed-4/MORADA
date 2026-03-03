@@ -20345,6 +20345,7 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
           quantity: typeof item.quantity === "number" ? item.quantity : 1,
           unitAmount: typeof item.unitPrice === "number" ? item.unitPrice / 100 : 0,
           taxType: item.taxable ? "OUTPUT" : "NONE",
+          accountCode: (item as any).xeroAccountCode || undefined,
           tracking: tracking.length > 0 ? tracking : undefined,
         };
       });
@@ -20378,6 +20379,95 @@ Keep language casual and encouraging. Focus on what they can accomplish.`
     } catch (error: any) {
       console.error("Error pushing client invoice to Xero:", error);
       res.status(500).json({ error: error.message || "Failed to push client invoice to Xero" });
+    }
+  });
+
+  // Xero: Sync client invoice payment from Xero
+  app.post("/api/xero/sync-client-invoice-payment/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const invoice = await storage.getClientInvoice(req.params.id);
+      if (!invoice) return res.status(404).json({ error: "Invoice not found" });
+      if (!invoice.xeroInvoiceId) return res.status(400).json({ error: "Invoice has not been pushed to Xero" });
+
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) return res.status(400).json({ error: "Xero is not connected" });
+
+      const xeroInvoice = await xeroService.getInvoice(connection.id, invoice.xeroInvoiceId);
+      if (!xeroInvoice) return res.status(404).json({ error: "Xero invoice not found" });
+
+      const amountPaidCents = Math.round((xeroInvoice.AmountPaid || 0) * 100);
+      const currentPaid = invoice.paidAmount || 0;
+      const diff = amountPaidCents - currentPaid;
+
+      if (diff > 0) {
+        await storage.createClientInvoicePayment({
+          invoiceId: invoice.id,
+          amount: diff,
+          paymentDate: new Date(),
+          paymentMethod: "Xero Sync",
+          reference: "Synced from Xero",
+          notes: null,
+          isVoided: false,
+          recordedBy: user?.id || null,
+        } as any);
+
+        const newBalance = (invoice.totalAmount || 0) - amountPaidCents;
+        const newStatus = amountPaidCents >= (invoice.totalAmount || 0) ? "paid" : "partial";
+        await storage.updateClientInvoice(invoice.id, {
+          paidAmount: amountPaidCents,
+          balanceAmount: Math.max(0, newBalance),
+          status: newStatus,
+        } as any);
+      }
+
+      res.json({ synced: diff > 0, amountPaidCents, xeroStatus: xeroInvoice.Status, diff });
+    } catch (error: any) {
+      console.error("Error syncing client invoice payment from Xero:", error);
+      res.status(500).json({ error: error.message || "Failed to sync payment from Xero" });
+    }
+  });
+
+  // Xero: Sync bill paid status from Xero when reconciled
+  app.post("/api/xero/sync-bill-payment/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const bill = await storage.getBillById(req.params.id);
+      if (!bill) return res.status(404).json({ error: "Bill not found" });
+      if (!bill.xeroInvoiceId) return res.status(400).json({ error: "Bill has not been pushed to Xero" });
+
+      const connection = await storage.getXeroConnectionByCompanyId(companyId);
+      if (!connection) return res.status(400).json({ error: "Xero is not connected" });
+
+      const xeroInvoice = await xeroService.getInvoice(connection.id, bill.xeroInvoiceId);
+      if (!xeroInvoice) return res.status(404).json({ error: "Xero invoice not found" });
+
+      const amountPaidCents = Math.round((xeroInvoice.AmountPaid || 0) * 100);
+      const xeroStatus = xeroInvoice.Status as string;
+
+      let newStatus: string = bill.status;
+      if (xeroStatus === "PAID") {
+        newStatus = "paid";
+      } else if (amountPaidCents > 0 && amountPaidCents < (bill.total || 0)) {
+        newStatus = "awaiting_payment";
+      }
+
+      await storage.updateBill(bill.id, {
+        status: newStatus as any,
+        paidAmount: amountPaidCents,
+        xeroPaidStatus: xeroStatus,
+      } as any);
+
+      res.json({ synced: true, xeroStatus, amountPaidCents, newStatus });
+    } catch (error: any) {
+      console.error("Error syncing bill payment from Xero:", error);
+      res.status(500).json({ error: error.message || "Failed to sync bill payment from Xero" });
     }
   });
 

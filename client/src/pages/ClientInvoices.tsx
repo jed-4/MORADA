@@ -377,6 +377,7 @@ export default function ClientInvoices() {
 
     const projectTotal = contractPriceCents + approvedVariationsTotal;
     const base = projectTotal > 0 ? projectTotal : invoicedTotal;
+    const toInvoiceTotal = Math.max(0, projectTotal - invoicedTotal);
 
     const paidPct      = base > 0 ? Math.round((paidTotal    / base) * 100) : 0;
     const invoicedPct  = base > 0 ? Math.round((invoicedTotal / base) * 100) : 0;
@@ -384,7 +385,7 @@ export default function ClientInvoices() {
 
     return {
       count: filteredInvoices.length,
-      invoicedTotal, paidTotal, balanceTotal,
+      invoicedTotal, paidTotal, balanceTotal, toInvoiceTotal,
       contractPriceCents, approvedVariationsTotal,
       allowancesTotal, finalizedAllowances, pendingAllowances, allowancesVariation,
       projectTotal, paidPct, invoicedPct, remainingPct,
@@ -626,7 +627,7 @@ export default function ClientInvoices() {
                 </span>
               </div>
               <div className="flex flex-col">
-                <span className="text-[10px] text-muted-foreground">Remaining</span>
+                <span className="text-[10px] text-muted-foreground">Outstanding</span>
                 <span className={cn(
                   "text-base font-bold tabular-nums leading-tight",
                   financials.balanceTotal <= 0
@@ -638,6 +639,19 @@ export default function ClientInvoices() {
                   {formatCurrency(financials.balanceTotal)}
                 </span>
               </div>
+              {hasProjectContext && financials.projectTotal > 0 && (
+                <div className="flex flex-col">
+                  <span className="text-[10px] text-muted-foreground">To Invoice</span>
+                  <span className={cn(
+                    "text-base font-bold tabular-nums leading-tight",
+                    financials.toInvoiceTotal === 0
+                      ? "text-muted-foreground/60"
+                      : "text-foreground"
+                  )}>
+                    {formatCurrency(financials.toInvoiceTotal)}
+                  </span>
+                </div>
+              )}
               {!hasProjectContext && (
                 <div className="flex flex-col">
                   <span className="text-[10px] text-muted-foreground">Count</span>

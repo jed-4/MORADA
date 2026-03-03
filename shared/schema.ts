@@ -1073,6 +1073,7 @@ export const systemConfiguration = pgTable("system_configuration", {
   estimateStartNumber: integer("estimate_start_number").notNull().default(1000),
   variationStartNumber: integer("variation_start_number").notNull().default(1000),
   clientInvoiceStartNumber: integer("client_invoice_start_number").notNull().default(1000),
+  clientInvoiceDefaultXeroAccount: text("client_invoice_default_xero_account"),
   billStartNumber: integer("bill_start_number").notNull().default(1000),
   purchaseOrderStartNumber: integer("purchase_order_start_number").notNull().default(1000),
   rfqStartNumber: integer("rfq_start_number").notNull().default(1000),
@@ -2018,6 +2019,7 @@ export const clientInvoiceItems = pgTable("client_invoice_items", {
   sortOrder: integer("sort_order").notNull().default(0),
   unit: text("unit"), // e.g. "hr", "m2", "unit"
   costCodeId: varchar("cost_code_id").references(() => costCodes.id, { onDelete: "set null" }),
+  xeroAccountCode: text("xero_account_code"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

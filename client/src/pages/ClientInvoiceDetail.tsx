@@ -196,6 +196,7 @@ type CustomLine = {
   sortOrder: number;
   unit?: string;
   costCodeId?: string | null;
+  xeroAccountCode?: string | null;
 };
 
 // ─── Contract claim row ───────────────────────────────────────────────────────
@@ -296,6 +297,7 @@ export default function ClientInvoiceDetail() {
     ];
   });
   const [customLineColPickerOpen, setCustomLineColPickerOpen] = useState(false);
+  const [bulkAccountCode, setBulkAccountCode] = useState("");
   const [modalBillIds, setModalBillIds] = useState<string[]>([]);
   const [modalTimesheetIds, setModalTimesheetIds] = useState<string[]>([]);
   const [modalSelectionOptionIds, setModalSelectionOptionIds] = useState<string[]>([]);
@@ -305,8 +307,12 @@ export default function ClientInvoiceDetail() {
     queryKey: ["/api/xero/status"],
   });
 
-  const { data: companySettings } = useQuery<{ termsAndConditions?: string; termsTemplates?: Array<{ id: string; name: string; content: string }>; companyName?: string; address?: string }>({
+  const { data: companySettings } = useQuery<{ termsAndConditions?: string; termsTemplates?: Array<{ id: string; name: string; content: string }>; companyName?: string; address?: string; clientInvoiceDefaultXeroAccount?: string | null }>({
     queryKey: ["/api/company-settings"],
+  });
+
+  const { data: xeroAccounts = [] } = useQuery<Array<{ code: string; name: string; type: string; accountId: string }>>({
+    queryKey: ["/api/xero/accounts"],
   });
 
   const { data: invoice, isLoading: invoiceLoading } = useQuery<ClientInvoice>({
@@ -506,6 +512,7 @@ export default function ClientInvoiceDetail() {
           sortOrder: item.sortOrder,
           unit: (item as any).unit || "unit",
           costCodeId: (item as any).costCodeId || null,
+          xeroAccountCode: (item as any).xeroAccountCode || null,
         }))
       );
     }
@@ -857,6 +864,7 @@ export default function ClientInvoiceDetail() {
           sortOrder: i,
           unit: item.unit || null,
           costCodeId: item.costCodeId || null,
+          xeroAccountCode: item.xeroAccountCode || null,
         });
       }
 
@@ -957,6 +965,7 @@ export default function ClientInvoiceDetail() {
           sortOrder: i,
           unit: item.unit || null,
           costCodeId: item.costCodeId || null,
+          xeroAccountCode: item.xeroAccountCode || null,
         };
         if (item.id) {
           await apiRequest(`/api/client-invoice-items/${item.id}`, "PATCH", itemData);
@@ -1151,6 +1160,7 @@ export default function ClientInvoiceDetail() {
         sortOrder: customLines.length,
         unit: "unit",
         costCodeId: null,
+        xeroAccountCode: companySettings?.clientInvoiceDefaultXeroAccount || null,
       },
     ]);
   };
@@ -1205,6 +1215,29 @@ export default function ClientInvoiceDetail() {
       setXeroPushing(false);
     }
   };
+
+  const syncPaymentMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest(`/api/xero/sync-client-invoice-payment/${effectiveInvoiceId}`, "POST");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as any).error || "Failed to sync");
+      }
+      return res.json() as Promise<{ synced: boolean; diff: number; xeroStatus: string }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/client-invoices/${effectiveInvoiceId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/client-invoices/${effectiveInvoiceId}/payments`] });
+      if (data.synced && data.diff > 0) {
+        toast({ title: "Payment synced from Xero", description: `$${(data.diff / 100).toFixed(2)} recorded — status: ${data.xeroStatus}` });
+      } else {
+        toast({ title: "Already up to date", description: `Xero status: ${data.xeroStatus}` });
+      }
+    },
+    onError: (error: Error) => {
+      toast({ title: "Sync failed", description: error.message, variant: "destructive" });
+    },
+  });
 
   const onSubmit = (data: InvoiceFormData) => {
     if (isEditMode) updateMutation.mutate(data);
@@ -1364,6 +1397,24 @@ export default function ClientInvoiceDetail() {
                   <span className="text-[10px] text-green-600 dark:text-green-400 flex items-center gap-0.5 px-1">
                     Synced to Xero
                   </span>
+                )}
+                {!isEditMode && (invoice as any)?.xeroInvoiceId && xeroStatus?.connected && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => syncPaymentMutation.mutate()}
+                    disabled={syncPaymentMutation.isPending}
+                    data-testid="button-sync-payment-from-xero"
+                    className="h-7 text-xs gap-1.5"
+                  >
+                    {syncPaymentMutation.isPending ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-3 h-3" />
+                    )}
+                    Sync from Xero
+                  </Button>
                 )}
               </div>
             </div>
@@ -2548,7 +2599,43 @@ export default function ClientInvoiceDetail() {
                       <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[#bba7db]/70" />
                       <span className="text-xs font-medium">Custom Lines</span>
                     </div>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1.5">
+                      {customLines.length > 0 && (
+                        <>
+                          {xeroAccounts.length > 0 ? (
+                            <Select value={bulkAccountCode || "__none__"} onValueChange={setBulkAccountCode}>
+                              <SelectTrigger className="h-6 w-36 text-xs border-dashed" data-testid="select-bulk-xero-account">
+                                <SelectValue placeholder="Xero account…" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__none__"><span className="text-muted-foreground">— None —</span></SelectItem>
+                                {xeroAccounts.map((acc) => (
+                                  <SelectItem key={acc.code} value={acc.code}>{acc.code} — {acc.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <input
+                              value={bulkAccountCode}
+                              onChange={(e) => setBulkAccountCode(e.target.value)}
+                              placeholder="Account"
+                              className="h-6 w-24 px-2 text-xs border border-dashed rounded-md bg-transparent focus:outline-none focus:ring-1 focus:ring-ring"
+                              data-testid="input-bulk-xero-account"
+                            />
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const code = bulkAccountCode === "__none__" ? null : bulkAccountCode || null;
+                              setCustomLines(customLines.map((l) => ({ ...l, xeroAccountCode: code })));
+                            }}
+                            className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                            data-testid="button-set-all-account"
+                          >
+                            Set all
+                          </button>
+                        </>
+                      )}
                       <Popover open={customLineColPickerOpen} onOpenChange={setCustomLineColPickerOpen}>
                         <PopoverTrigger asChild>
                           <button type="button" className="h-6 w-6 flex items-center justify-center rounded hover-elevate text-muted-foreground">
@@ -2589,7 +2676,7 @@ export default function ClientInvoiceDetail() {
                         No custom lines. Click "Add Line" to add a custom line item.
                       </p>
                     ) : (
-                      <Table className="min-w-[860px]">
+                      <Table className="min-w-[1060px]">
                         <TableHeader>
                           <TableRow className="h-6 bg-muted/30">
                             <TableHead className="w-8 py-0 px-2" />
@@ -2600,6 +2687,7 @@ export default function ClientInvoiceDetail() {
                             <TableHead className="text-right w-14 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Qty</TableHead>
                             <TableHead className="text-right w-24 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Unit Cost</TableHead>
                             <TableHead className="w-28 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Tax</TableHead>
+                            <TableHead className="w-32 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Account</TableHead>
                             {isColVisible("amountExTax") && (
                               <TableHead className="text-right w-24 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Ex Tax</TableHead>
                             )}
@@ -2695,6 +2783,33 @@ export default function ClientInvoiceDetail() {
                                   >
                                     {line.taxable ? "GST on income" : "No Tax"}
                                   </button>
+                                </TableCell>
+                                {/* Account */}
+                                <TableCell className="py-1 w-32">
+                                  {xeroAccounts.length > 0 ? (
+                                    <Select
+                                      value={line.xeroAccountCode || "__none__"}
+                                      onValueChange={(val) => updateCustomLine(index, "xeroAccountCode", val === "__none__" ? null : val)}
+                                    >
+                                      <SelectTrigger className="h-7 text-xs border-0 bg-transparent shadow-none focus:ring-1 focus:ring-ring px-1 rounded-sm w-full" data-testid={`select-account-${index}`}>
+                                        <SelectValue placeholder="— Account —" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="__none__"><span className="text-muted-foreground">— None —</span></SelectItem>
+                                        {xeroAccounts.map((acc) => (
+                                          <SelectItem key={acc.code} value={acc.code}>{acc.code} — {acc.name}</SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  ) : (
+                                    <input
+                                      value={line.xeroAccountCode || ""}
+                                      onChange={(e) => updateCustomLine(index, "xeroAccountCode", e.target.value || null)}
+                                      placeholder="Account"
+                                      className="w-full h-7 px-1.5 text-xs bg-transparent border-0 outline-none focus:ring-1 focus:ring-ring rounded-sm placeholder:text-muted-foreground/30"
+                                      data-testid={`input-account-${index}`}
+                                    />
+                                  )}
                                 </TableCell>
                                 {isColVisible("amountExTax") && (
                                   <TableCell className="text-right text-sm py-1">

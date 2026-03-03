@@ -21,7 +21,8 @@ import {
   ChevronDown,
   Settings2,
   Eye,
-  Maximize2
+  Maximize2,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -181,6 +182,10 @@ export default function BillDetail() {
 
   const { data: xeroAccounts = [] } = useQuery<Array<{ code: string; name: string; type: string; accountId: string }>>({
     queryKey: ["/api/xero/accounts"],
+  });
+
+  const { data: xeroStatus } = useQuery<{ connected: boolean }>({
+    queryKey: ["/api/xero/status"],
   });
 
   const { data: approvals = [] } = useQuery<BillApproval[]>({
@@ -790,6 +795,25 @@ export default function BillDetail() {
         description: error.message || "Failed to submit bill for approval",
         variant: "destructive",
       });
+    },
+  });
+
+  const syncBillPaymentMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest(`/api/xero/sync-bill-payment/${id}`, "POST");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as any).error || "Failed to sync from Xero");
+      }
+      return res.json() as Promise<{ synced: boolean; xeroStatus: string; amountPaidCents: number }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bills", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      toast({ title: "Synced from Xero", description: `Bill status in Xero: ${data.xeroStatus}` });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Sync failed", description: error.message, variant: "destructive" });
     },
   });
 
@@ -2187,6 +2211,24 @@ export default function BillDetail() {
                     })()}
                   </div>
                   <div className="flex items-center gap-2">
+                    {isEditMode && (bill as any)?.xeroInvoiceId && xeroStatus?.connected && bill?.status !== "paid" && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => syncBillPaymentMutation.mutate()}
+                        disabled={syncBillPaymentMutation.isPending}
+                        className="gap-1.5"
+                        data-testid="button-sync-bill-from-xero"
+                      >
+                        {syncBillPaymentMutation.isPending ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <RefreshCw className="w-3.5 h-3.5" />
+                        )}
+                        Sync from Xero
+                      </Button>
+                    )}
                     <Button
                       type="button"
                       variant="outline"
