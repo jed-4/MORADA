@@ -2016,6 +2016,8 @@ export const clientInvoiceItems = pgTable("client_invoice_items", {
   totalPrice: integer("total_price").notNull().default(0),
   taxable: boolean("taxable").notNull().default(true),
   sortOrder: integer("sort_order").notNull().default(0),
+  unit: text("unit"), // e.g. "hr", "m2", "unit"
+  costCodeId: varchar("cost_code_id").references(() => costCodes.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

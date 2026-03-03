@@ -26,6 +26,10 @@ import {
   Check,
   X,
   Search,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
+  LayoutGrid,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -110,6 +114,17 @@ interface ColumnDef {
   defaultVisible: boolean;
 }
 
+const INVOICE_BILL_COLUMNS = [
+  { id: "billNumber", label: "Bill No.", required: true },
+  { id: "status", label: "Status", required: false },
+  { id: "supplier", label: "Supplier", required: false },
+  { id: "reference", label: "Reference", required: false },
+  { id: "date", label: "Date", required: false },
+  { id: "total", label: "Total", required: true },
+  { id: "due", label: "Due", required: false },
+  { id: "xero", label: "Xero", required: false },
+];
+
 const ALL_COLUMNS: ColumnDef[] = [
   { id: "name", label: "Name", required: true, defaultVisible: true },
   { id: "description", label: "Description", required: false, defaultVisible: true },
@@ -179,6 +194,8 @@ type CustomLine = {
   totalPrice: number;
   taxable: boolean;
   sortOrder: number;
+  unit?: string;
+  costCodeId?: string | null;
 };
 
 // ─── Contract claim row ───────────────────────────────────────────────────────
@@ -256,6 +273,29 @@ export default function ClientInvoiceDetail() {
   const [labourFilterStatus, setLabourFilterStatus] = useState("all");
   const [labourFilterCostCode, setLabourFilterCostCode] = useState("all");
   const [labourFilterLabel, setLabourFilterLabel] = useState("all");
+  const [labourSortCol, setLabourSortCol] = useState<string>("date");
+  const [labourSortDir, setLabourSortDir] = useState<"asc" | "desc">("asc");
+  // Bills modal state
+  const [billsSortCol, setBillsSortCol] = useState<string>("date");
+  const [billsSortDir, setBillsSortDir] = useState<"asc" | "desc">("desc");
+  const [billsColPickerOpen, setBillsColPickerOpen] = useState(false);
+  const [billsColConfig, setBillsColConfig] = useState<{ id: string; visible: boolean }[]>(() => {
+    try {
+      const saved = localStorage.getItem("invoice-bills-col-v1");
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [
+      { id: "billNumber", visible: true },
+      { id: "status", visible: true },
+      { id: "supplier", visible: true },
+      { id: "reference", visible: false },
+      { id: "date", visible: true },
+      { id: "total", visible: true },
+      { id: "due", visible: false },
+      { id: "xero", visible: false },
+    ];
+  });
+  const [customLineColPickerOpen, setCustomLineColPickerOpen] = useState(false);
   const [modalBillIds, setModalBillIds] = useState<string[]>([]);
   const [modalTimesheetIds, setModalTimesheetIds] = useState<string[]>([]);
   const [modalSelectionOptionIds, setModalSelectionOptionIds] = useState<string[]>([]);
@@ -464,6 +504,8 @@ export default function ClientInvoiceDetail() {
           totalPrice: item.totalPrice / 100,
           taxable: item.taxable,
           sortOrder: item.sortOrder,
+          unit: (item as any).unit || "unit",
+          costCodeId: (item as any).costCodeId || null,
         }))
       );
     }
@@ -707,6 +749,32 @@ export default function ClientInvoiceDetail() {
 
   const isColVisible = (id: ColumnId) => visibleColumns.some((c) => c.id === id);
 
+  const isBillColVisible = (id: string) => {
+    const col = billsColConfig.find((c) => c.id === id);
+    return col ? col.visible : true;
+  };
+
+  const toggleBillCol = (id: string) => {
+    const updated = billsColConfig.map((c) => c.id === id ? { ...c, visible: !c.visible } : c);
+    setBillsColConfig(updated);
+    try { localStorage.setItem("invoice-bills-col-v1", JSON.stringify(updated)); } catch {}
+  };
+
+  const labourSortToggle = (col: string) => {
+    if (labourSortCol === col) setLabourSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setLabourSortCol(col); setLabourSortDir("asc"); }
+  };
+
+  const billsSortToggle = (col: string) => {
+    if (billsSortCol === col) setBillsSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setBillsSortCol(col); setBillsSortDir("asc"); }
+  };
+
+  const SortIcon = ({ col, current, dir }: { col: string; current: string; dir: "asc" | "desc" }) => {
+    if (col !== current) return <ArrowUpDown className="w-3 h-3 opacity-30 ml-0.5 inline" />;
+    return dir === "asc" ? <ArrowUp className="w-3 h-3 ml-0.5 inline" /> : <ArrowDown className="w-3 h-3 ml-0.5 inline" />;
+  };
+
   const toggleColumn = (id: ColumnId) => {
     const def = ALL_COLUMNS.find((d) => d.id === id);
     if (def?.required) return;
@@ -787,6 +855,8 @@ export default function ClientInvoiceDetail() {
           totalPrice: Math.round(item.totalPrice * 100),
           taxable: item.taxable,
           sortOrder: i,
+          unit: item.unit || null,
+          costCodeId: item.costCodeId || null,
         });
       }
 
@@ -885,6 +955,8 @@ export default function ClientInvoiceDetail() {
           totalPrice: Math.round(item.totalPrice * 100),
           taxable: item.taxable,
           sortOrder: i,
+          unit: item.unit || null,
+          costCodeId: item.costCodeId || null,
         };
         if (item.id) {
           await apiRequest(`/api/client-invoice-items/${item.id}`, "PATCH", itemData);
@@ -1077,6 +1149,8 @@ export default function ClientInvoiceDetail() {
         totalPrice: 0,
         taxable: true,
         sortOrder: customLines.length,
+        unit: "unit",
+        costCodeId: null,
       },
     ]);
   };
@@ -2474,40 +2548,66 @@ export default function ClientInvoiceDetail() {
                       <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[#bba7db]/70" />
                       <span className="text-xs font-medium">Custom Lines</span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={addCustomLine}
-                      className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                      data-testid="button-add-custom-line"
-                    >
-                      <Plus className="w-3 h-3" />
-                      <span>Add Line</span>
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <Popover open={customLineColPickerOpen} onOpenChange={setCustomLineColPickerOpen}>
+                        <PopoverTrigger asChild>
+                          <button type="button" className="h-6 w-6 flex items-center justify-center rounded hover-elevate text-muted-foreground">
+                            <LayoutGrid className="w-3.5 h-3.5" />
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-44 p-2" align="end">
+                          <p className="text-xs font-medium text-muted-foreground mb-2 px-1">Columns</p>
+                          {ALL_COLUMNS.filter((c) => !c.required && ["description", "amountExTax", "amountTax", "amountIncTax"].includes(c.id)).map((col) => (
+                            <button
+                              key={col.id}
+                              type="button"
+                              className="flex items-center gap-2 w-full px-1 py-1 text-sm rounded hover-elevate"
+                              onClick={() => toggleColumn(col.id as any)}
+                            >
+                              <div className={cn("w-4 h-4 rounded border flex items-center justify-center flex-shrink-0", isColVisible(col.id as any) ? "bg-primary border-primary" : "border-input")}>
+                                {isColVisible(col.id as any) && <Check className="h-3 w-3 text-primary-foreground" />}
+                              </div>
+                              <span>{col.label}</span>
+                            </button>
+                          ))}
+                        </PopoverContent>
+                      </Popover>
+                      <button
+                        type="button"
+                        onClick={addCustomLine}
+                        className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                        data-testid="button-add-custom-line"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>Add Line</span>
+                      </button>
+                    </div>
                   </div>
-                  <div className="px-4 py-3">
+                  <div className="overflow-x-auto">
                     {customLines.length === 0 ? (
-                      <p className="text-sm text-muted-foreground text-center py-2">
+                      <p className="text-sm text-muted-foreground text-center py-4 px-4">
                         No custom lines. Click "Add Line" to add a custom line item.
                       </p>
                     ) : (
-                      <Table>
+                      <Table className="min-w-[860px]">
                         <TableHeader>
                           <TableRow className="h-6 bg-muted/30">
-                            {isColVisible("name") && <TableHead className="w-36 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Name</TableHead>}
+                            <TableHead className="w-8 py-0 px-2" />
+                            {isColVisible("name") && <TableHead className="w-32 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Name</TableHead>}
                             {isColVisible("description") && <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Description</TableHead>}
-                            <TableHead className="text-right w-16 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Qty</TableHead>
-                            <TableHead className="text-right w-24 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Price</TableHead>
-                            {isColVisible("claimAmount") && (
-                              <TableHead className="text-right w-28 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Claim $</TableHead>
-                            )}
+                            <TableHead className="w-36 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Cost Code</TableHead>
+                            <TableHead className="w-20 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Unit</TableHead>
+                            <TableHead className="text-right w-14 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Qty</TableHead>
+                            <TableHead className="text-right w-24 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Unit Cost</TableHead>
+                            <TableHead className="w-28 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Tax</TableHead>
                             {isColVisible("amountExTax") && (
                               <TableHead className="text-right w-24 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Ex Tax</TableHead>
                             )}
                             {isColVisible("amountTax") && (
-                              <TableHead className="text-right w-20 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Tax</TableHead>
+                              <TableHead className="text-right w-20 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Tax $</TableHead>
                             )}
                             {isColVisible("amountIncTax") && (
-                              <TableHead className="text-right w-28 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Inc Tax</TableHead>
+                              <TableHead className="text-right w-24 text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Inc Tax</TableHead>
                             )}
                             <TableHead className="w-8 py-0" />
                           </TableRow>
@@ -2518,13 +2618,15 @@ export default function ClientInvoiceDetail() {
                             const tax = line.totalPrice - exTax;
                             return (
                               <TableRow key={index} className="h-9" data-testid={`custom-line-${index}`}>
+                                {/* Visual-only checkbox */}
+                                <TableCell className="py-1 px-2 w-8">
+                                  <div className="w-4 h-4 rounded border border-input flex items-center justify-center" />
+                                </TableCell>
                                 {isColVisible("name") && (
                                   <TableCell className="py-1">
                                     <Input
                                       value={line.name}
-                                      onChange={(e) =>
-                                        updateCustomLine(index, "name", e.target.value)
-                                      }
+                                      onChange={(e) => updateCustomLine(index, "name", e.target.value)}
                                       placeholder="Name"
                                       className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm placeholder:text-muted-foreground/30"
                                     />
@@ -2534,47 +2636,66 @@ export default function ClientInvoiceDetail() {
                                   <TableCell className="py-1">
                                     <Input
                                       value={line.description}
-                                      onChange={(e) =>
-                                        updateCustomLine(index, "description", e.target.value)
-                                      }
+                                      onChange={(e) => updateCustomLine(index, "description", e.target.value)}
                                       placeholder="Description"
                                       className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm placeholder:text-muted-foreground/30"
                                     />
                                   </TableCell>
                                 )}
+                                {/* Cost Code */}
+                                <TableCell className="py-1 w-36">
+                                  <Select
+                                    value={line.costCodeId || "__none__"}
+                                    onValueChange={(v) => updateCustomLine(index, "costCodeId", v === "__none__" ? null : v)}
+                                  >
+                                    <SelectTrigger className="h-7 text-xs border-0 bg-transparent shadow-none focus:ring-1 focus:ring-ring px-1 rounded-sm w-full">
+                                      <SelectValue placeholder="— Cost code —" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="__none__"><span className="text-muted-foreground">— None —</span></SelectItem>
+                                      {(costCodes as any[]).map((cc: any) => (
+                                        <SelectItem key={cc.id} value={cc.id}>{cc.title || cc.code}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </TableCell>
+                                {/* Unit */}
+                                <TableCell className="py-1 w-20">
+                                  <Input
+                                    value={line.unit || ""}
+                                    onChange={(e) => updateCustomLine(index, "unit", e.target.value)}
+                                    placeholder="unit"
+                                    className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm placeholder:text-muted-foreground/30"
+                                  />
+                                </TableCell>
+                                {/* Qty */}
                                 <TableCell className="py-1">
                                   <Input
                                     type="number"
                                     value={line.quantity}
-                                    onChange={(e) =>
-                                      updateCustomLine(
-                                        index,
-                                        "quantity",
-                                        parseFloat(e.target.value) || 0
-                                      )
-                                    }
+                                    onChange={(e) => updateCustomLine(index, "quantity", parseFloat(e.target.value) || 0)}
                                     className="h-7 w-14 text-right text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm ml-auto"
                                   />
                                 </TableCell>
+                                {/* Unit Cost */}
                                 <TableCell className="py-1">
                                   <Input
                                     type="number"
                                     value={line.unitPrice}
-                                    onChange={(e) =>
-                                      updateCustomLine(
-                                        index,
-                                        "unitPrice",
-                                        parseFloat(e.target.value) || 0
-                                      )
-                                    }
+                                    onChange={(e) => updateCustomLine(index, "unitPrice", parseFloat(e.target.value) || 0)}
                                     className="h-7 w-20 text-right text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm ml-auto"
                                   />
                                 </TableCell>
-                                {isColVisible("claimAmount") && (
-                                  <TableCell className="text-right text-sm font-medium py-1">
-                                    {formatCurrency(line.totalPrice)}
-                                  </TableCell>
-                                )}
+                                {/* Tax text */}
+                                <TableCell className="py-1 w-28">
+                                  <button
+                                    type="button"
+                                    onClick={() => updateCustomLine(index, "taxable", !line.taxable)}
+                                    className="text-xs text-muted-foreground hover:text-foreground whitespace-nowrap"
+                                  >
+                                    {line.taxable ? "GST on income" : "No Tax"}
+                                  </button>
+                                </TableCell>
                                 {isColVisible("amountExTax") && (
                                   <TableCell className="text-right text-sm py-1">
                                     {line.taxable ? formatCurrency(exTax) : formatCurrency(line.totalPrice)}
@@ -3319,10 +3440,10 @@ export default function ClientInvoiceDetail() {
 
           {/* Table — always shows individual rows; "Invoice will show labour as" controls invoice rendering */}
           <div className="rounded-md border overflow-hidden">
-            <div className="max-h-[340px] overflow-y-auto">
-              <Table>
+            <div className="max-h-[340px] overflow-y-auto overflow-x-auto">
+              <Table className="min-w-[640px]">
                 {(() => {
-                  const base = projectTimesheets
+                  const filtered = projectTimesheets
                     .filter((t: any) => t.status === "approved" || t.status === "submitted")
                     .filter((t: any) => labourFilterStatus === "all" || t.status === labourFilterStatus)
                     .filter((t: any) => labourFilterUser === "all" || t.userId === labourFilterUser)
@@ -3334,20 +3455,36 @@ export default function ClientInvoiceDetail() {
                       const name = getUserName(t.userId).toLowerCase();
                       const dateStr = t.date ? format(new Date(t.date), "d MMM yy").toLowerCase() : "";
                       const cc = costCodes.find((c: any) => c.id === t.costCodeId);
-                      const ccName = (cc?.code || cc?.name || "").toLowerCase();
+                      const ccName = ((cc?.title || cc?.code) || "").toLowerCase();
                       return name.includes(q) || dateStr.includes(q) || ccName.includes(q);
                     });
+                  const base = [...filtered].sort((a: any, b: any) => {
+                    let av: any, bv: any;
+                    if (labourSortCol === "date") { av = a.date || ""; bv = b.date || ""; }
+                    else if (labourSortCol === "staff") { av = getUserName(a.userId); bv = getUserName(b.userId); }
+                    else if (labourSortCol === "status") { av = a.status; bv = b.status; }
+                    else if (labourSortCol === "hours") { av = Number(a.duration); bv = Number(b.duration); }
+                    else if (labourSortCol === "costCode") {
+                      const ca = costCodes.find((c: any) => c.id === a.costCodeId);
+                      const cb = costCodes.find((c: any) => c.id === b.costCodeId);
+                      av = ca?.title || ca?.code || ""; bv = cb?.title || cb?.code || "";
+                    } else { av = ""; bv = ""; }
+                    if (av < bv) return labourSortDir === "asc" ? -1 : 1;
+                    if (av > bv) return labourSortDir === "asc" ? 1 : -1;
+                    return 0;
+                  });
+                  const thCls = "text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2 cursor-pointer select-none hover:text-muted-foreground whitespace-nowrap";
                   return (
                     <>
                       <TableHeader>
                         <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
                           <TableHead className="w-8 py-0 px-2" />
-                          <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
-                          <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Staff</TableHead>
-                          <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Status</TableHead>
-                          <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Hours</TableHead>
-                          <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Cost Code</TableHead>
-                          <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Labels</TableHead>
+                          <TableHead className={thCls} onClick={() => labourSortToggle("date")}>Date <SortIcon col="date" current={labourSortCol} dir={labourSortDir} /></TableHead>
+                          <TableHead className={thCls} onClick={() => labourSortToggle("staff")}>Staff <SortIcon col="staff" current={labourSortCol} dir={labourSortDir} /></TableHead>
+                          <TableHead className={thCls} onClick={() => labourSortToggle("status")}>Status <SortIcon col="status" current={labourSortCol} dir={labourSortDir} /></TableHead>
+                          <TableHead className={`text-right ${thCls}`} onClick={() => labourSortToggle("hours")}>Hours <SortIcon col="hours" current={labourSortCol} dir={labourSortDir} /></TableHead>
+                          <TableHead className={thCls} onClick={() => labourSortToggle("costCode")}>Cost Code <SortIcon col="costCode" current={labourSortCol} dir={labourSortDir} /></TableHead>
+                          <TableHead className={`${thCls} cursor-default`}>Labels</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -3366,15 +3503,15 @@ export default function ClientInvoiceDetail() {
                                   {isChecked && isApproved && <Check className="h-3 w-3 text-primary-foreground" />}
                                 </div>
                               </TableCell>
-                              <TableCell className="py-1 text-sm tabular-nums">{t.date ? format(new Date(t.date), "d MMM yy") : "—"}</TableCell>
-                              <TableCell className="py-1 text-sm font-medium">{getUserName(t.userId)}</TableCell>
-                              <TableCell className="py-1">
+                              <TableCell className="py-1 text-sm tabular-nums whitespace-nowrap">{t.date ? format(new Date(t.date), "d MMM yy") : "—"}</TableCell>
+                              <TableCell className="py-1 text-sm font-medium whitespace-nowrap">{getUserName(t.userId)}</TableCell>
+                              <TableCell className="py-1 whitespace-nowrap">
                                 {isApproved
                                   ? <span className="flex items-center gap-1 text-xs"><div className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />Approved</span>
                                   : <span className="flex items-center gap-1 text-xs"><div className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />Pending</span>}
                               </TableCell>
                               <TableCell className="py-1 text-right text-sm tabular-nums">{Number(t.duration).toFixed(1)}</TableCell>
-                              <TableCell className="py-1 text-sm text-muted-foreground">{cc?.code || cc?.name || "—"}</TableCell>
+                              <TableCell className="py-1 text-sm text-muted-foreground whitespace-nowrap">{cc?.title || cc?.code || "—"}</TableCell>
                               <TableCell className="py-1 text-xs text-muted-foreground truncate max-w-[120px]">{labels.length > 0 ? labels.slice(0, 3).join(", ") : "—"}</TableCell>
                             </TableRow>
                           );
@@ -3404,84 +3541,151 @@ export default function ClientInvoiceDetail() {
 
       {/* ── Import Bills Modal ── */}
       <Dialog open={billsModalOpen} onOpenChange={setBillsModalOpen}>
-        <DialogContent className="max-w-2xl" data-testid="dialog-bills">
+        <DialogContent className="max-w-4xl" data-testid="dialog-bills">
           <DialogHeader>
             <DialogTitle>Import Bills</DialogTitle>
             <DialogDescription>
               Select bills to include in this invoice.
             </DialogDescription>
           </DialogHeader>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              placeholder="Search by bill number or supplier..."
-              value={billsSearch}
-              onChange={(e) => setBillsSearch(e.target.value)}
-              className="pl-8 h-8 text-sm"
-            />
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Search by bill number or supplier..."
+                value={billsSearch}
+                onChange={(e) => setBillsSearch(e.target.value)}
+                className="pl-8 h-8 text-sm"
+              />
+            </div>
+            <Popover open={billsColPickerOpen} onOpenChange={setBillsColPickerOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="icon" className="flex-shrink-0">
+                  <LayoutGrid className="w-4 h-4" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-44 p-2" align="end">
+                <p className="text-xs font-medium text-muted-foreground mb-2 px-1">Columns</p>
+                {INVOICE_BILL_COLUMNS.filter((c) => !c.required).map((col) => (
+                  <button
+                    key={col.id}
+                    type="button"
+                    className="flex items-center gap-2 w-full px-1 py-1 text-sm rounded hover-elevate"
+                    onClick={() => toggleBillCol(col.id)}
+                  >
+                    <div className={cn("w-4 h-4 rounded border flex items-center justify-center flex-shrink-0", isBillColVisible(col.id) ? "bg-primary border-primary" : "border-input")}>
+                      {isBillColVisible(col.id) && <Check className="h-3 w-3 text-primary-foreground" />}
+                    </div>
+                    <span>{col.label}</span>
+                  </button>
+                ))}
+              </PopoverContent>
+            </Popover>
           </div>
           <div className="rounded-md border overflow-hidden">
-            <div className="max-h-[380px] overflow-y-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
-                    <TableHead className="w-8 py-0 px-2" />
-                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Bill No.</TableHead>
-                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Supplier</TableHead>
-                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
-                    <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(() => {
-                    const filtered = bills.filter((b) => {
-                      if (!billsSearch) return true;
-                      const q = billsSearch.toLowerCase();
-                      return (
-                        b.billNumber?.toLowerCase().includes(q) ||
-                        (b as any).supplierName?.toLowerCase().includes(q)
-                      );
-                    });
-                    if (filtered.length === 0) {
-                      return (
-                        <TableRow>
-                          <TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-8">
-                            No bills found for this project.
-                          </TableCell>
+            <div className="max-h-[380px] overflow-y-auto overflow-x-auto">
+              <Table className="min-w-[560px]">
+                {(() => {
+                  const filtered = bills.filter((b) => {
+                    if (!billsSearch) return true;
+                    const q = billsSearch.toLowerCase();
+                    return (
+                      b.billNumber?.toLowerCase().includes(q) ||
+                      (b as any).supplierName?.toLowerCase().includes(q)
+                    );
+                  });
+                  const sorted = [...filtered].sort((a: any, b_: any) => {
+                    let av: any, bv: any;
+                    if (billsSortCol === "billNumber") { av = a.billNumber || ""; bv = b_.billNumber || ""; }
+                    else if (billsSortCol === "status") { av = a.status || ""; bv = b_.status || ""; }
+                    else if (billsSortCol === "supplier") { av = a.supplierName || ""; bv = b_.supplierName || ""; }
+                    else if (billsSortCol === "reference") { av = a.reference || ""; bv = b_.reference || ""; }
+                    else if (billsSortCol === "date") { av = a.billDate || ""; bv = b_.billDate || ""; }
+                    else if (billsSortCol === "total") { av = a.total || 0; bv = b_.total || 0; }
+                    else if (billsSortCol === "due") { av = a.dueDate || ""; bv = b_.dueDate || ""; }
+                    else { av = ""; bv = ""; }
+                    if (av < bv) return billsSortDir === "asc" ? -1 : 1;
+                    if (av > bv) return billsSortDir === "asc" ? 1 : -1;
+                    return 0;
+                  });
+                  const colCount = 1 + INVOICE_BILL_COLUMNS.filter((c) => isBillColVisible(c.id)).length;
+                  const thCls = "text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2 cursor-pointer select-none hover:text-muted-foreground whitespace-nowrap";
+                  const billStatusBadge = (status: string) => {
+                    const map: Record<string, { label: string; cls: string }> = {
+                      draft: { label: "Draft", cls: "text-muted-foreground" },
+                      awaiting_approval: { label: "Pending Approval", cls: "text-amber-600 dark:text-amber-400" },
+                      awaiting_payment: { label: "Awaiting Payment", cls: "text-blue-600 dark:text-blue-400" },
+                      paid: { label: "Paid", cls: "text-emerald-600 dark:text-emerald-400" },
+                    };
+                    const s = map[status] || { label: status || "—", cls: "text-muted-foreground" };
+                    return (
+                      <span className={cn("flex items-center gap-1 text-xs whitespace-nowrap", s.cls)}>
+                        <div className={cn("w-1.5 h-1.5 rounded-full flex-shrink-0", {
+                          "bg-muted-foreground/60": status === "draft",
+                          "bg-amber-400": status === "awaiting_approval",
+                          "bg-blue-400": status === "awaiting_payment",
+                          "bg-emerald-400": status === "paid",
+                        })} />
+                        {s.label}
+                      </span>
+                    );
+                  };
+                  return (
+                    <>
+                      <TableHeader>
+                        <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
+                          <TableHead className="w-8 py-0 px-2" />
+                          {isBillColVisible("billNumber") && <TableHead className={thCls} onClick={() => billsSortToggle("billNumber")}>Bill No. <SortIcon col="billNumber" current={billsSortCol} dir={billsSortDir} /></TableHead>}
+                          {isBillColVisible("status") && <TableHead className={thCls} onClick={() => billsSortToggle("status")}>Status <SortIcon col="status" current={billsSortCol} dir={billsSortDir} /></TableHead>}
+                          {isBillColVisible("supplier") && <TableHead className={thCls} onClick={() => billsSortToggle("supplier")}>Supplier <SortIcon col="supplier" current={billsSortCol} dir={billsSortDir} /></TableHead>}
+                          {isBillColVisible("reference") && <TableHead className={thCls} onClick={() => billsSortToggle("reference")}>Reference <SortIcon col="reference" current={billsSortCol} dir={billsSortDir} /></TableHead>}
+                          {isBillColVisible("date") && <TableHead className={thCls} onClick={() => billsSortToggle("date")}>Date <SortIcon col="date" current={billsSortCol} dir={billsSortDir} /></TableHead>}
+                          {isBillColVisible("total") && <TableHead className={`text-right ${thCls}`} onClick={() => billsSortToggle("total")}>Total <SortIcon col="total" current={billsSortCol} dir={billsSortDir} /></TableHead>}
+                          {isBillColVisible("due") && <TableHead className={thCls} onClick={() => billsSortToggle("due")}>Due <SortIcon col="due" current={billsSortCol} dir={billsSortDir} /></TableHead>}
+                          {isBillColVisible("xero") && <TableHead className={`${thCls} cursor-default`}>Xero</TableHead>}
                         </TableRow>
-                      );
-                    }
-                    return filtered.map((b) => {
-                      const isChecked = modalBillIds.includes(b.id);
-                      return (
-                        <TableRow
-                          key={b.id}
-                          className="h-9 hover-elevate cursor-pointer"
-                          onClick={() =>
-                            setModalBillIds(prev =>
-                              isChecked ? prev.filter(id => id !== b.id) : [...prev, b.id]
-                            )
-                          }
-                        >
-                          <TableCell className="w-8 py-1 px-2">
-                            <div className={cn(
-                              "w-4 h-4 rounded border flex items-center justify-center",
-                              isChecked ? "bg-primary border-primary" : "border-input"
-                            )}>
-                              {isChecked && <Check className="h-3 w-3 text-primary-foreground" />}
-                            </div>
-                          </TableCell>
-                          <TableCell className="py-1 text-sm font-medium font-mono">{b.billNumber}</TableCell>
-                          <TableCell className="py-1 text-sm text-muted-foreground">{(b as any).supplierName || "—"}</TableCell>
-                          <TableCell className="py-1 text-sm text-muted-foreground">
-                            {(b as any).billDate ? format(new Date((b as any).billDate), "d MMM yy") : "—"}
-                          </TableCell>
-                          <TableCell className="py-1 text-right text-sm font-medium tabular-nums">{formatCurrency(b.total / 100)}</TableCell>
-                        </TableRow>
-                      );
-                    });
-                  })()}
-                </TableBody>
+                      </TableHeader>
+                      <TableBody>
+                        {sorted.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={colCount} className="text-center text-sm text-muted-foreground py-8">
+                              No bills found for this project.
+                            </TableCell>
+                          </TableRow>
+                        ) : sorted.map((b) => {
+                          const isChecked = modalBillIds.includes(b.id);
+                          return (
+                            <TableRow
+                              key={b.id}
+                              className="h-9 hover-elevate cursor-pointer"
+                              onClick={() => setModalBillIds(prev => isChecked ? prev.filter(id => id !== b.id) : [...prev, b.id])}
+                            >
+                              <TableCell className="w-8 py-1 px-2">
+                                <div className={cn("w-4 h-4 rounded border flex items-center justify-center", isChecked ? "bg-primary border-primary" : "border-input")}>
+                                  {isChecked && <Check className="h-3 w-3 text-primary-foreground" />}
+                                </div>
+                              </TableCell>
+                              {isBillColVisible("billNumber") && <TableCell className="py-1 text-sm font-medium font-mono whitespace-nowrap">{b.billNumber}</TableCell>}
+                              {isBillColVisible("status") && <TableCell className="py-1">{billStatusBadge((b as any).status)}</TableCell>}
+                              {isBillColVisible("supplier") && <TableCell className="py-1 text-sm text-muted-foreground whitespace-nowrap">{(b as any).supplierName || "—"}</TableCell>}
+                              {isBillColVisible("reference") && <TableCell className="py-1 text-sm text-muted-foreground whitespace-nowrap">{(b as any).reference || "—"}</TableCell>}
+                              {isBillColVisible("date") && <TableCell className="py-1 text-sm text-muted-foreground whitespace-nowrap">{(b as any).billDate ? format(new Date((b as any).billDate), "d MMM yy") : "—"}</TableCell>}
+                              {isBillColVisible("total") && <TableCell className="py-1 text-right text-sm font-medium tabular-nums whitespace-nowrap">{formatCurrency(b.total / 100)}</TableCell>}
+                              {isBillColVisible("due") && <TableCell className="py-1 text-sm text-muted-foreground whitespace-nowrap">{(b as any).dueDate ? format(new Date((b as any).dueDate), "d MMM yy") : "—"}</TableCell>}
+                              {isBillColVisible("xero") && (
+                                <TableCell className="py-1 text-sm">
+                                  {(b as any).xeroInvoiceId
+                                    ? <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400"><div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />Synced</span>
+                                    : <span className="text-muted-foreground/40">—</span>}
+                                </TableCell>
+                              )}
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </>
+                  );
+                })()}
               </Table>
             </div>
           </div>
