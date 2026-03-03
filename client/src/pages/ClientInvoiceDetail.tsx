@@ -220,6 +220,7 @@ export default function ClientInvoiceDetail() {
   const [introCollapsed, setIntroCollapsed] = useState(true);
   const [closingCollapsed, setClosingCollapsed] = useState(true);
   const [termsCollapsed, setTermsCollapsed] = useState(true);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [invoiceNumberOverride, setInvoiceNumberOverride] = useState(false);
   const [variationsModalOpen, setVariationsModalOpen] = useState(false);
   const [allowancesModalOpen, setAllowancesModalOpen] = useState(false);
@@ -2408,8 +2409,9 @@ export default function ClientInvoiceDetail() {
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-muted-foreground flex-shrink-0">Load template:</span>
                           <Select
-                            value=""
+                            value={selectedTemplateId}
                             onValueChange={(id) => {
+                              setSelectedTemplateId(id);
                               const tpl = companySettings.termsTemplates!.find(t => t.id === id);
                               if (tpl) form.setValue("termsAndConditions", tpl.content);
                             }}
