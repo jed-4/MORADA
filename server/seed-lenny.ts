@@ -541,19 +541,10 @@ export async function seedLennyDemo(companyId: string, userId: string) {
     ]);
 
     // Invoice Allowances — finalized PC items claimed on INV-1003 (lock-up stage)
-    // Query IDs because they were inserted via bulk array (no individual .returning())
-    const pcItemRows = await tx.select({ id: estimateItems.id, name: estimateItems.name })
-      .from(estimateItems)
-      .where(and(
-        eq(estimateItems.estimateId, est1.id),
-        inArray(estimateItems.name, ["Floor Tiles PC", "Kitchen Appliances PC"])
-      ));
-    const floorTilesItem = pcItemRows.find(r => r.name === "Floor Tiles PC");
-    const kitchenAppItem = pcItemRows.find(r => r.name === "Kitchen Appliances PC");
-    if (floorTilesItem && kitchenAppItem) {
+    if (floorTilesItem && appliancesItem) {
       await tx.insert(invoiceAllowances).values([
         { invoiceId: inv3.id, estimateItemId: floorTilesItem.id, claimPercent: 100 },
-        { invoiceId: inv3.id, estimateItemId: kitchenAppItem.id, claimPercent: 100 },
+        { invoiceId: inv3.id, estimateItemId: appliancesItem.id, claimPercent: 100 },
       ]);
     }
 
