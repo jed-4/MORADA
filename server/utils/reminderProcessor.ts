@@ -36,7 +36,7 @@ export async function processReminders() {
           userId: reminder.userId,
           scheduledFor: new Date(),
           status: "pending",
-          deliveryChannel: "in_app",
+          deliveryMethod: "in_app",
         });
         
         // Create in-app notification for the bell icon
@@ -85,7 +85,7 @@ export async function processReminders() {
               userId: reminder.userId,
               scheduledFor: new Date(),
               status: "delivered",
-              deliveryChannel: "email",
+              deliveryMethod: "email",
               deliveredAt: new Date(),
             });
           } catch (emailError) {
@@ -153,7 +153,7 @@ export async function processReminders() {
             userId: user.id,
             scheduledFor: new Date(),
             status: "pending",
-            deliveryChannel: "in_app",
+            deliveryMethod: "in_app",
           });
           
           if (deliverySettings.email !== false && user.email) {
@@ -171,7 +171,7 @@ export async function processReminders() {
                 userId: user.id,
                 scheduledFor: new Date(),
                 status: "delivered",
-                deliveryChannel: "email",
+                deliveryMethod: "email",
                 deliveredAt: new Date(),
               });
             } catch (emailError) {

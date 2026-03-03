@@ -1225,13 +1225,16 @@ export default function EstimateDetail() {
         }
         
         // Check if overGroup is a descendant of draggedGroup (prevent circular nesting)
-        let checkGroup = overGroup;
-        while (checkGroup.parentGroupId) {
+        // Use a visited set to guard against missing or circular parentGroupId references
+        const visited = new Set<string>();
+        let checkGroup: typeof overGroup | undefined = overGroup;
+        while (checkGroup?.parentGroupId) {
+          if (visited.has(checkGroup.id)) break; // circular reference — stop walking
+          visited.add(checkGroup.id);
           if (checkGroup.parentGroupId === draggedGroupId) {
             return;
           }
-          checkGroup = groups.find(g => g.id === checkGroup.parentGroupId) || checkGroup;
-          if (checkGroup.id === overGroup.id) break; // Safety check to prevent infinite loop
+          checkGroup = groups.find(g => g.id === checkGroup!.parentGroupId);
         }
         
         
