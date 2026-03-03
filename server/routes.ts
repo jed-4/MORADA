@@ -63,6 +63,8 @@ import {
   insertInvoiceVariationSchema,
   insertInvoiceAllowanceSchema,
   insertInvoiceBillSchema,
+  insertInvoiceTimesheetSchema,
+  insertInvoiceSelectionSchema,
   insertSiteDiaryTemplateSchema,
   insertSiteDiaryEntrySchema,
   insertActivitySchema,
@@ -146,7 +148,7 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
-import { eq, and, asc, desc, or, isNull, sql, min, max, gte, lte, inArray } from "drizzle-orm";
+import { eq, and, asc, desc, or, isNull, sql, min, max, gte, lte, inArray, gt } from "drizzle-orm";
 import { PasswordUtils } from "./utils/auth";
 import { requireAuth, requireAdmin, requireTeamMember, requirePermission, toSafeUser } from "./middleware/auth";
 import multer from "multer";
@@ -11066,6 +11068,114 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete invoice bill" });
+    }
+  });
+
+  // Invoice Timesheet Routes
+  app.get("/api/client-invoices/:id/timesheets", async (req, res) => {
+    try {
+      const rows = await storage.getInvoiceTimesheets(req.params.id);
+      res.json(rows);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch invoice timesheets" });
+    }
+  });
+
+  app.post("/api/client-invoices/:id/timesheets", async (req, res) => {
+    try {
+      const validationResult = insertInvoiceTimesheetSchema.safeParse({
+        ...req.body,
+        invoiceId: req.params.id,
+      });
+      if (!validationResult.success) {
+        return res.status(400).json({ error: "Validation failed" });
+      }
+      const row = await storage.createInvoiceTimesheet(validationResult.data);
+      res.status(201).json(row);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create invoice timesheet" });
+    }
+  });
+
+  app.delete("/api/invoice-timesheets/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteInvoiceTimesheet(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Invoice timesheet not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete invoice timesheet" });
+    }
+  });
+
+  // Invoice Selection Routes
+  app.get("/api/client-invoices/:id/selections", async (req, res) => {
+    try {
+      const rows = await storage.getInvoiceSelections(req.params.id);
+      res.json(rows);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch invoice selections" });
+    }
+  });
+
+  app.post("/api/client-invoices/:id/selections", async (req, res) => {
+    try {
+      const validationResult = insertInvoiceSelectionSchema.safeParse({
+        ...req.body,
+        invoiceId: req.params.id,
+      });
+      if (!validationResult.success) {
+        return res.status(400).json({ error: "Validation failed" });
+      }
+      const row = await storage.createInvoiceSelection(validationResult.data);
+      res.status(201).json(row);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create invoice selection" });
+    }
+  });
+
+  app.delete("/api/invoice-selections/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteInvoiceSelection(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Invoice selection not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete invoice selection" });
+    }
+  });
+
+  // Invoiceable Selection Options picker
+  app.get("/api/projects/:projectId/selection-options/invoiceable", async (req, res) => {
+    try {
+      const { projectId } = req.params;
+      const rows = await db
+        .select({
+          id: schema.selectionOptions.id,
+          selectionId: schema.selectionOptions.selectionId,
+          name: schema.selectionOptions.name,
+          totalCost: schema.selectionOptions.totalCost,
+          quantity: schema.selectionOptions.quantity,
+          unitType: schema.selectionOptions.unitType,
+          category: schema.selectionOptions.category,
+          isSelectedByClient: schema.selectionOptions.isSelectedByClient,
+          selectionName: schema.selections.name,
+          room: schema.selections.room,
+        })
+        .from(schema.selectionOptions)
+        .innerJoin(schema.selections, eq(schema.selectionOptions.selectionId, schema.selections.id))
+        .where(
+          and(
+            eq(schema.selections.projectId, projectId),
+            eq(schema.selectionOptions.isSelectedByClient, true),
+            gt(schema.selectionOptions.totalCost, 0)
+          )
+        );
+      res.json(rows);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch invoiceable selection options" });
     }
   });
 

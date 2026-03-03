@@ -51,6 +51,8 @@ import {
   type InvoiceVariation, type InsertInvoiceVariation,
   type InvoiceAllowance, type InsertInvoiceAllowance,
   type InvoiceBill, type InsertInvoiceBill,
+  type InvoiceTimesheet, type InsertInvoiceTimesheet,
+  type InvoiceSelection, type InsertInvoiceSelection,
   type SiteDiaryTemplate, type InsertSiteDiaryTemplate,
   type SiteDiaryEntry, type InsertSiteDiaryEntry,
   type ChecklistTemplate, type InsertChecklistTemplate,
@@ -653,6 +655,16 @@ export interface IStorage {
   getInvoiceBills(invoiceId: string): Promise<InvoiceBill[]>;
   createInvoiceBill(data: InsertInvoiceBill): Promise<InvoiceBill>;
   deleteInvoiceBill(id: string): Promise<boolean>;
+
+  // Invoice-Timesheet Junction Table
+  getInvoiceTimesheets(invoiceId: string): Promise<any[]>;
+  createInvoiceTimesheet(data: InsertInvoiceTimesheet): Promise<InvoiceTimesheet>;
+  deleteInvoiceTimesheet(id: string): Promise<boolean>;
+
+  // Invoice-Selection Junction Table
+  getInvoiceSelections(invoiceId: string): Promise<any[]>;
+  createInvoiceSelection(data: InsertInvoiceSelection): Promise<InvoiceSelection>;
+  deleteInvoiceSelection(id: string): Promise<boolean>;
 
   // Proposals CRUD
   getProposals(projectId?: string, status?: string): Promise<Proposal[]>;
@@ -12815,6 +12827,108 @@ export class DbStorage implements IStorage {
       return true;
     } catch (error) {
       console.error("Database error in deleteInvoiceBill:", error);
+      return false;
+    }
+  }
+
+  // Invoice-Timesheet Junction Table
+  async getInvoiceTimesheets(invoiceId: string): Promise<any[]> {
+    try {
+      const rows = await db
+        .select({
+          id: schema.invoiceTimesheets.id,
+          invoiceId: schema.invoiceTimesheets.invoiceId,
+          timesheetId: schema.invoiceTimesheets.timesheetId,
+          createdAt: schema.invoiceTimesheets.createdAt,
+          date: schema.timesheets.date,
+          userId: schema.timesheets.userId,
+          duration: schema.timesheets.duration,
+          hourlyRate: schema.timesheets.hourlyRate,
+          total: schema.timesheets.total,
+          status: schema.timesheets.status,
+          description: schema.timesheets.description,
+        })
+        .from(schema.invoiceTimesheets)
+        .innerJoin(schema.timesheets, eq(schema.invoiceTimesheets.timesheetId, schema.timesheets.id))
+        .where(eq(schema.invoiceTimesheets.invoiceId, invoiceId));
+      return rows;
+    } catch (error) {
+      console.error("Database error in getInvoiceTimesheets:", error);
+      throw error;
+    }
+  }
+
+  async createInvoiceTimesheet(data: InsertInvoiceTimesheet): Promise<InvoiceTimesheet> {
+    try {
+      const result = await db.insert(schema.invoiceTimesheets)
+        .values(data)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createInvoiceTimesheet:", error);
+      throw error;
+    }
+  }
+
+  async deleteInvoiceTimesheet(id: string): Promise<boolean> {
+    try {
+      await db.delete(schema.invoiceTimesheets)
+        .where(eq(schema.invoiceTimesheets.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteInvoiceTimesheet:", error);
+      return false;
+    }
+  }
+
+  // Invoice-Selection Junction Table
+  async getInvoiceSelections(invoiceId: string): Promise<any[]> {
+    try {
+      const rows = await db
+        .select({
+          id: schema.invoiceSelections.id,
+          invoiceId: schema.invoiceSelections.invoiceId,
+          selectionOptionId: schema.invoiceSelections.selectionOptionId,
+          createdAt: schema.invoiceSelections.createdAt,
+          optionName: schema.selectionOptions.name,
+          totalCost: schema.selectionOptions.totalCost,
+          quantity: schema.selectionOptions.quantity,
+          unitType: schema.selectionOptions.unitType,
+          selectionId: schema.selectionOptions.selectionId,
+          selectionName: schema.selections.name,
+          room: schema.selections.room,
+          category: schema.selectionOptions.category,
+        })
+        .from(schema.invoiceSelections)
+        .innerJoin(schema.selectionOptions, eq(schema.invoiceSelections.selectionOptionId, schema.selectionOptions.id))
+        .innerJoin(schema.selections, eq(schema.selectionOptions.selectionId, schema.selections.id))
+        .where(eq(schema.invoiceSelections.invoiceId, invoiceId));
+      return rows;
+    } catch (error) {
+      console.error("Database error in getInvoiceSelections:", error);
+      throw error;
+    }
+  }
+
+  async createInvoiceSelection(data: InsertInvoiceSelection): Promise<InvoiceSelection> {
+    try {
+      const result = await db.insert(schema.invoiceSelections)
+        .values(data)
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createInvoiceSelection:", error);
+      throw error;
+    }
+  }
+
+  async deleteInvoiceSelection(id: string): Promise<boolean> {
+    try {
+      await db.delete(schema.invoiceSelections)
+        .where(eq(schema.invoiceSelections.id, id));
+      return true;
+    } catch (error) {
+      console.error("Database error in deleteInvoiceSelection:", error);
       return false;
     }
   }

@@ -2151,6 +2151,22 @@ export const insertInvoiceTimesheetSchema = createInsertSchema(invoiceTimesheets
 export type InsertInvoiceTimesheet = z.infer<typeof insertInvoiceTimesheetSchema>;
 export type InvoiceTimesheet = typeof invoiceTimesheets.$inferSelect;
 
+// Invoice-Selection junction table
+export const invoiceSelections = pgTable("invoice_selections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceId: varchar("invoice_id").notNull().references(() => clientInvoices.id, { onDelete: "cascade" }),
+  selectionOptionId: varchar("selection_option_id").notNull().references(() => selectionOptions.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertInvoiceSelectionSchema = createInsertSchema(invoiceSelections).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertInvoiceSelection = z.infer<typeof insertInvoiceSelectionSchema>;
+export type InvoiceSelection = typeof invoiceSelections.$inferSelect;
+
 // Proposals (client-facing proposals generated from estimates)
 export const proposals = pgTable("proposals", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
