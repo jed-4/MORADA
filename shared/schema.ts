@@ -992,7 +992,7 @@ export const companySettings = pgTable("company_settings", {
   
   // Client invoice terms & conditions (company-wide default)
   termsAndConditions: text("terms_and_conditions"),
-  termsTemplates: jsonb("terms_templates").default([]), // Array of { id, name, content } T&C templates
+  termsTemplates: jsonb("terms_templates").$type<Array<{ id: string; name: string; content: string; defaultFor: string[] }>>().default([]), // Array of { id, name, content } T&C templates
   
   // Insurance expiry reminder settings
   insuranceReminderRoleId: varchar("insurance_reminder_role_id").references(() => userRoles.id), // Which role receives insurance expiry reminders (defaults to General Manager)

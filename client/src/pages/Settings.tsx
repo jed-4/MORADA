@@ -2380,10 +2380,12 @@ function TermsConditionsSection() {
   const saveTemplatesMutation = useMutation({
     mutationFn: async (updatedTemplates: Array<{ id: string; name: string; content: string; defaultFor: string[] }>) => {
       const res = await apiRequest("/api/company-settings", "PATCH", { termsTemplates: updatedTemplates });
+      if (!res.ok) throw new Error("Failed to save");
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
+      toast({ title: "Template saved" });
     },
     onError: () => {
       toast({ title: "Failed to save templates", variant: "destructive" });
@@ -2428,14 +2430,12 @@ function TermsConditionsSection() {
     saveTemplatesMutation.mutate(updated);
     setEditingTemplate(null);
     setIsAddingTemplate(false);
-    toast({ title: "Template saved successfully" });
   };
 
   const handleDeleteTemplate = (id: string) => {
     const updated = templates.filter(t => t.id !== id);
     setTemplates(updated);
     saveTemplatesMutation.mutate(updated);
-    toast({ title: "Template deleted" });
   };
 
   return (
