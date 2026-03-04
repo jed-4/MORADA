@@ -3677,11 +3677,16 @@ export class MemStorage implements IStorage {
       throw new Error("Cannot create item in locked estimate. Unlock the estimate first.");
     }
     
-    // Calculate tax amount and price inc tax if not provided
+    // Calculate tax amount and price inc tax including quantity and markup
     const unitCostExTax = insertItem.unitCostExTax || 0;
+    const quantity = insertItem.quantity || 1;
+    const markupPercent = insertItem.markupPercent || 0;
     const taxRate = estimate?.taxRate || 10; // Default 10% GST
-    const taxAmount = Math.round(unitCostExTax * taxRate / 100);
-    const priceIncTax = unitCostExTax + taxAmount;
+    const builderCostExTax = unitCostExTax * quantity;
+    const markupAmount = Math.round(builderCostExTax * (markupPercent / 100) * 100) / 100;
+    const clientPriceExTax = Math.round((builderCostExTax + markupAmount) * 100) / 100;
+    const taxAmount = Math.round(clientPriceExTax * (taxRate / 100) * 100) / 100;
+    const priceIncTax = Math.round((clientPriceExTax + taxAmount) * 100) / 100;
     
     try {
       const estimateItem = {
@@ -3742,11 +3747,16 @@ export class MemStorage implements IStorage {
 
     const taxRate = estimate?.taxRate || 10; // Default 10% GST
     
-    // Prepare all items with calculated tax
+    // Prepare all items with calculated tax, quantity, and markup
     const preparedItems = insertItems.map(insertItem => {
       const unitCostExTax = insertItem.unitCostExTax || 0;
-      const taxAmount = Math.round(unitCostExTax * taxRate / 100);
-      const priceIncTax = unitCostExTax + taxAmount;
+      const quantity = insertItem.quantity || 1;
+      const markupPercent = insertItem.markupPercent || 0;
+      const builderCostExTax = unitCostExTax * quantity;
+      const markupAmount = Math.round(builderCostExTax * (markupPercent / 100) * 100) / 100;
+      const clientPriceExTax = Math.round((builderCostExTax + markupAmount) * 100) / 100;
+      const taxAmount = Math.round(clientPriceExTax * (taxRate / 100) * 100) / 100;
+      const priceIncTax = Math.round((clientPriceExTax + taxAmount) * 100) / 100;
       
       return {
         ...insertItem,

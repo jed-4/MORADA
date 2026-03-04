@@ -3367,10 +3367,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         groupMap.set(group.name.toLowerCase().trim(), group.id);
       }
       
-      console.log('[IMPORT] Existing groups for matching:', 
-        Array.from(groupMap.entries()).map(([name, id]) => `${name} -> ${id}`)
-      );
-
       // Collect all unique group names from import data
       const uniqueGroupNames = new Set<string>();
       items.forEach(item => {
@@ -3383,7 +3379,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const groupName of Array.from(uniqueGroupNames)) {
         const normalizedName = groupName.toLowerCase().trim();
         if (!groupMap.has(normalizedName)) {
-          console.log(`[IMPORT] Creating new group: "${groupName}"`);
           const newGroup = await storage.createEstimateGroup({
             estimateId,
             name: groupName,
@@ -3393,13 +3388,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             parentGroupId: undefined,
           });
           groupMap.set(normalizedName, newGroup.id);
-          console.log(`[IMPORT] Created group "${groupName}" with ID ${newGroup.id}`);
         }
       }
-
-      console.log('[IMPORT] Final group map:', 
-        Array.from(groupMap.entries()).map(([name, id]) => `${name} -> ${id}`)
-      );
 
       // Validate all items first
       const validatedItems: any[] = [];
@@ -3407,13 +3397,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const errors: Array<{ row: number; errors: string[] }> = [];
       
       items.forEach((item, index) => {
-        console.log(`[Import] Processing item ${index}:`, {
-          name: item.name,
-          costCode: item.costCode,
-          rawQuantity: item.quantity,
-          rawUnitCostExTax: item.unitCostExTax,
-          rawMarkupPercent: item.markupPercent
-        });
         
         // Validate and map cost code to company cost codes
         let costCodeToStore = null;
@@ -3433,11 +3416,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           );
           
           if (matchedCostCode) {
-            // Store the cost code ID (UUID)
             costCodeToStore = matchedCostCode.id;
-            console.log(`[IMPORT] Item "${item.name}" - Matched cost code "${item.costCode}" to ID ${matchedCostCode.id}`);
-          } else {
-            console.log(`[IMPORT] Item "${item.name}" - No match for cost code "${item.costCode}"`);
           }
         }
 
@@ -3449,12 +3428,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const matchedGroupId = groupMap.get(groupNameToMatch);
           if (matchedGroupId) {
             groupIdToStore = matchedGroupId;
-            console.log(`[IMPORT] Item "${item.name}" - Matched group "${item.group}" to group ID ${matchedGroupId}`);
-          } else {
-            console.log(`[IMPORT] Item "${item.name}" - No match for group "${item.group}" (normalized: "${groupNameToMatch}")`);
           }
-        } else {
-          console.log(`[IMPORT] Item "${item.name}" - No group specified in import data`);
         }
         
         const unitCostExTax = item.unitCostExTax || 0;
@@ -3494,7 +3468,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           proposalVisible: item.proposalVisible !== undefined ? item.proposalVisible : true,
           shownAs: item.shownAs || undefined,
           trackLabourHours: false,
-          order: 0,
+          order: index,
         };
         
         const validationResult = insertEstimateItemSchema.safeParse(itemData);
@@ -3529,13 +3503,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Items are imported without groups - user can organize them manually later
 
-      console.log(`[Import] Creating ${validatedItems.length} items for estimate ${estimateId}`);
-      console.log('[Import] Sample item:', validatedItems[0]);
-      
       const createdItems = await storage.bulkCreateEstimateItems(validatedItems);
-      
-      console.log(`[Import] Successfully created ${createdItems.length} items`);
-      console.log('[Import] Sample created item:', createdItems[0]);
       
       res.status(201).json({
         success: true,
@@ -3687,7 +3655,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             costCode: item.costCode || null,
             status: item.status || "incomplete",
             proposalVisible: true,
-            sortOrder: index,
+            order: index,
           };
 
           const createdItem = await storage.createEstimateItem(itemData);
