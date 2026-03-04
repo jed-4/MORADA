@@ -512,7 +512,7 @@ export function parseImportRow(
         if (fieldKey === "unitCostExTax") {
           data[fieldKey] = typeof value === "string" ? parseCurrency(value) : (value || 0);
         } else if (fieldKey === "quantity") {
-          data[fieldKey] = typeof value === "string" ? parseFloat(value.replace(/[,\s]/g, "")) || 1 : (value || 1);
+          data[fieldKey] = typeof value === "string" ? parseFloat(value.replace(/[,\s]/g, "")) || 0 : (value ?? 0);
         } else if (fieldKey === "markupPercent") {
           data[fieldKey] = typeof value === "string" ? parseFloat(value) || 0 : (value || 0);
         } else if (fieldKey === "costCode") {
