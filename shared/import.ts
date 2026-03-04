@@ -323,6 +323,12 @@ export const defaultColumnMappings: Record<string, keyof ImportEstimateItem> = {
   "unit price": "unitCostExTax",
   "rate": "unitCostExTax",
   "cost": "unitCostExTax",
+  "unit cost ex. tax": "unitCostExTax",
+  "unit cost ex tax": "unitCostExTax",
+  "unit cost (ex. tax)": "unitCostExTax",
+  "unit cost (ex tax)": "unitCostExTax",
+  "cost (ex.)": "unitCostExTax",
+  "cost ex.": "unitCostExTax",
   
   // Allowance variations
   "allowance": "allowance",

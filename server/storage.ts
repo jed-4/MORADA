@@ -8542,9 +8542,14 @@ export class DbStorage implements IStorage {
       }
       
       const unitCostExTax = insertItem.unitCostExTax || 0;
+      const quantity = insertItem.quantity || 1;
+      const markupPercent = insertItem.markupPercent || 0;
       const taxRate = estimate?.taxRate || 10;
-      const taxAmount = Math.round(unitCostExTax * taxRate / 100);
-      const priceIncTax = unitCostExTax + taxAmount;
+      const builderCostExTax = unitCostExTax * quantity;
+      const markupAmount = Math.round(builderCostExTax * (markupPercent / 100) * 100) / 100;
+      const clientPriceExTax = Math.round((builderCostExTax + markupAmount) * 100) / 100;
+      const taxAmount = Math.round(clientPriceExTax * (taxRate / 100) * 100) / 100;
+      const priceIncTax = Math.round((clientPriceExTax + taxAmount) * 100) / 100;
       
       const estimateItem = {
         ...insertItem,
@@ -8579,8 +8584,13 @@ export class DbStorage implements IStorage {
       
       const preparedItems = insertItems.map(insertItem => {
         const unitCostExTax = insertItem.unitCostExTax || 0;
-        const taxAmount = Math.round(unitCostExTax * taxRate / 100);
-        const priceIncTax = unitCostExTax + taxAmount;
+        const quantity = insertItem.quantity || 1;
+        const markupPercent = insertItem.markupPercent || 0;
+        const builderCostExTax = unitCostExTax * quantity;
+        const markupAmount = Math.round(builderCostExTax * (markupPercent / 100) * 100) / 100;
+        const clientPriceExTax = Math.round((builderCostExTax + markupAmount) * 100) / 100;
+        const taxAmount = Math.round(clientPriceExTax * (taxRate / 100) * 100) / 100;
+        const priceIncTax = Math.round((clientPriceExTax + taxAmount) * 100) / 100;
         
         return {
           ...insertItem,
