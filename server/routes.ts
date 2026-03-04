@@ -697,11 +697,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Unauthorized - no company context" });
       }
 
-      // Preprocess: remove empty/null date/time fields to avoid validation errors
+      // Preprocess: remove empty/null date/time/assignee fields to avoid validation errors
       const body = { ...req.body };
       if (body.dueDate === "" || body.dueDate === null) delete body.dueDate;
       if (body.startTime === "" || body.startTime === null) delete body.startTime;
       if (body.endTime === "" || body.endTime === null) delete body.endTime;
+      if (body.assigneeId === "" || body.assigneeId === null) delete body.assigneeId;
 
       console.log("[POST /api/tasks] Request body:", JSON.stringify(body, null, 2));
       const validationResult = insertTaskSchema.safeParse(body);
@@ -764,11 +765,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "Forbidden - task belongs to another company" });
       }
 
-      // Preprocess: remove empty/null date/time fields to avoid validation errors
+      // Preprocess: remove empty/null date/time/assignee fields to avoid validation errors
       const body = { ...req.body };
       if (body.dueDate === "" || body.dueDate === null) delete body.dueDate;
       if (body.startTime === "" || body.startTime === null) delete body.startTime;
       if (body.endTime === "" || body.endTime === null) delete body.endTime;
+      if (body.assigneeId === "" || body.assigneeId === null) delete body.assigneeId;
 
       const updateSchema = insertTaskSchema.partial();
       const validationResult = updateSchema.safeParse(body);
@@ -3432,7 +3434,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         
         const unitCostExTax = item.unitCostExTax || 0;
-        const quantity = item.quantity || 1;
+        const quantity = item.quantity ?? 0;
         const markupPercent = item.markupPercent ?? null;
         
         const builderCostExTax = Math.round(unitCostExTax * quantity * 100) / 100;
@@ -3617,8 +3619,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const item = items[index];
 
         try {
-          // Find the group ID
-          const groupId = groupNameToId.get(item.groupName);
+          // Find the group ID — use same normalizeName as the map keys
+          const groupId = groupNameToId.get(normalizeName(item.groupName));
           if (!groupId) {
             errors.push({
               row: index + 1,
@@ -3628,7 +3630,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
 
           const unitCostExTax = item.unitCostExTax || 0;
-          const quantity = item.quantity || 1;
+          const quantity = item.quantity ?? 0;
           const markupPercent = item.markupPercent ?? 0;
 
           const builderCostExTax = Math.round(unitCostExTax * quantity * 100) / 100;
