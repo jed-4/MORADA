@@ -1,0 +1,29 @@
+LABOUR - Preliminaries	Preliminaries & General	MATERIAL	Complete	100	Preliminaries	16	75	7.5	82.5	unit	1200
+LABOUR - Off-Site Project Management	Preliminaries & General	LABOUR	Complete	120	Labour - Project Management (Off-Site)	70	100	10	110	unit	7000
+LABOUR - On-Site Project Management	Preliminaries & General	LABOUR	Complete	121	Labour - Project Management (On-Site)	50	90	9	99	unit	4500
+Home Building Compensation Fund	Preliminaries & General	ALLOWANCE	Complete	101	HBCF	1	1800	180	1980	unit	1800
+HBCF Broker Fee	Preliminaries & General	MATERIAL	Complete	101	HBCF	1	510	51	561	unit	510
+HIA Contract	Preliminaries & General	MATERIAL	Complete	100	Preliminaries	1	40	4	44	unit	40
+Project Management	Preliminaries & General	LABOUR	Complete	120	Labour - Project Management (Off-Site)	0	900	90	990	Weeks	0
+Construction Insurance	Preliminaries & General	MATERIAL	Complete	100	Preliminaries	0	0	0	0	unit	0
+Public Liability Insurance	Preliminaries & General	MATERIAL	Complete	100	Preliminaries	0	0	0	0	unit	0
+Work Cover	Preliminaries & General	MATERIAL	Complete	100	Preliminaries	0	0	0	0	Ea	0
+Buildpass	Preliminaries & General	MATERIAL	Complete	100	Preliminaries	2	175	17.5	192.5	unit	350
+Health & Safety	Preliminaries & General	FEE	Complete	100	Preliminaries	1	1	0.1	1.1	unit	1
+Toolbox Meeting On-site	Preliminaries & General	MATERIAL	Not Relevant	100	Preliminaries	1	1	0.1	1.1	unit	1
+Job Photography	Preliminaries & General	MATERIAL	Not Relevant	100	Preliminaries	0	1000	100	1100	unit	0
+Power Cost During Build	Preliminaries & General	MATERIAL	Not Relevant	100	Preliminaries	0	0	0	0	unit	0
+Buildern Project Management	Preliminaries & General	MATERIAL	Complete	100	Preliminaries	1	250	25	275	unit	250
+Contract Signing	Preliminaries & General	LABOUR	Complete	100	Preliminaries	2	80	8	88	unit	160
+Quantity Surveying	Preliminaries & General	SUBCONTRACTOR	Not Relevant	100	Preliminaries	0	0	0	0	unit	0
+Future Builder	Preliminaries & General	FEE	Complete	100	Preliminaries	1	1813.64	181.364	1995.004	unit	1813.64
+Asbestos Testing	Preliminaries & General	FEE	Not Relevant	100	Preliminaries	0	0	0	0	unit	0
+Subscriptions	Preliminaries & General	MATERIAL	Complete	100	Preliminaries	2	172	17.2	189.2	Months	344
+Handover Gift	Preliminaries & General	MATERIAL	Complete	100	Preliminaries	1	200	20	220	unit	200
+Waste Management	Preliminaries & General	LABOUR	Not Relevant	100	Preliminaries	0	0	0	0	unit	0
+Refer & Earn	Preliminaries & General	FEE	Not Relevant	100	Preliminaries	1	0	0	0	unit	0
+Warehouse	Preliminaries & General	FEE	Complete	100	Preliminaries	4	220	22	242	Weeks	880
+New Tool	Preliminaries & General	MATERIAL	Not Relevant	100	Preliminaries	1	0	0	0	unit	0
+Site Identification Surveying	Preliminaries & General	SUBCONTRACTOR	Not Relevant	100	Preliminaries	1	0	0	0	unit	0
+Final Building Location Report	Preliminaries & General	SUBCONTRACTOR	Not Relevant	100	Preliminaries	1	0	0	0	unit	0
+Engineering	Preliminaries & General	MATERIAL	Complete	100	Preliminaries	1	545.4545	54.5455	600	unit	545.45
