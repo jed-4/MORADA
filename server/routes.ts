@@ -3622,6 +3622,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Find the group ID — use same normalizeName as the map keys
           const groupId = groupNameToId.get(normalizeName(item.groupName));
           if (!groupId) {
+            console.error(`[Import] Item "${item.name}" dropped: group "${item.groupName}" not found in map (keys: ${[...groupNameToId.keys()].join(', ')})`);
             errors.push({
               row: index + 1,
               errors: [`Group "${item.groupName}" not found`]
@@ -3663,6 +3664,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const createdItem = await storage.createEstimateItem(itemData);
           createdItems.push(createdItem);
         } catch (error: any) {
+          console.error(`[Import] Item "${item.name}" failed to create:`, error.message, JSON.stringify(itemData));
           errors.push({
             row: index + 1,
             errors: [error.message || "Failed to create item"]

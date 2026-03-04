@@ -3679,7 +3679,7 @@ export class MemStorage implements IStorage {
     
     // Calculate tax amount and price inc tax including quantity and markup
     const unitCostExTax = insertItem.unitCostExTax || 0;
-    const quantity = insertItem.quantity || 1;
+    const quantity = insertItem.quantity ?? 0;
     const markupPercent = insertItem.markupPercent || 0;
     const taxRate = estimate?.taxRate || 10; // Default 10% GST
     const builderCostExTax = unitCostExTax * quantity;
@@ -3750,7 +3750,7 @@ export class MemStorage implements IStorage {
     // Prepare all items with calculated tax, quantity, and markup
     const preparedItems = insertItems.map(insertItem => {
       const unitCostExTax = insertItem.unitCostExTax || 0;
-      const quantity = insertItem.quantity || 1;
+      const quantity = insertItem.quantity ?? 0;
       const markupPercent = insertItem.markupPercent || 0;
       const builderCostExTax = unitCostExTax * quantity;
       const markupAmount = Math.round(builderCostExTax * (markupPercent / 100) * 100) / 100;
@@ -8542,7 +8542,7 @@ export class DbStorage implements IStorage {
       }
       
       const unitCostExTax = insertItem.unitCostExTax || 0;
-      const quantity = insertItem.quantity || 1;
+      const quantity = insertItem.quantity ?? 0;
       const markupPercent = insertItem.markupPercent || 0;
       const taxRate = estimate?.taxRate || 10;
       const builderCostExTax = unitCostExTax * quantity;
@@ -8584,7 +8584,7 @@ export class DbStorage implements IStorage {
       
       const preparedItems = insertItems.map(insertItem => {
         const unitCostExTax = insertItem.unitCostExTax || 0;
-        const quantity = insertItem.quantity || 1;
+        const quantity = insertItem.quantity ?? 0;
         const markupPercent = insertItem.markupPercent || 0;
         const builderCostExTax = unitCostExTax * quantity;
         const markupAmount = Math.round(builderCostExTax * (markupPercent / 100) * 100) / 100;

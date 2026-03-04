@@ -260,7 +260,12 @@ export function ImportFullEstimateDialog({
       const result = await response.json();
       onImportComplete();
       handleClose();
-      alert(`Successfully imported estimate with ${result.groupCount} groups and ${result.itemCount} items!`);
+      if (result.errorCount > 0) {
+        const errorDetails = result.errors?.slice(0, 5).map((e: any) => e.errors?.join(', ')).filter(Boolean).join('\n') || 'Unknown errors';
+        alert(`Imported ${result.itemCount} of ${result.itemCount + result.errorCount} items (${result.errorCount} failed).\n\nFailed items:\n${errorDetails}`);
+      } else {
+        alert(`Successfully imported estimate with ${result.groupCount} groups and ${result.itemCount} items!`);
+      }
     } catch (error: any) {
       console.error("Import error:", error);
       alert(error.message || "Failed to import estimate");
