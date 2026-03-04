@@ -5251,7 +5251,7 @@ export default function EstimateDetail() {
                                   <GripVertical className="h-4 w-4 text-muted-foreground" />
                                   <span className="font-semibold text-sm">{group.name}</span>
                                   <span className="text-xs text-muted-foreground ml-auto">
-                                    {groupedItems[group.id]?.length || 0} items
+                                    {items.filter(i => i.groupId === group.id && !i.parentItemId).length} items
                                   </span>
                                 </div>
                               </div>

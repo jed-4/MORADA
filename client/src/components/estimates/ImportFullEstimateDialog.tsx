@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Upload, FileSpreadsheet, CheckCircle2, AlertCircle } from "lucide-react";
+import { Upload, FileSpreadsheet, CheckCircle2, AlertCircle, Info } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
   Dialog,
@@ -74,6 +74,7 @@ export function ImportFullEstimateDialog({
   const [groups, setGroups] = useState<ImportEstimateGroup[]>([]);
   const [items, setItems] = useState<ImportEstimateWithGroupsItem[]>([]);
   const [parseErrors, setParseErrors] = useState<string[]>([]);
+  const [autoCreatedGroups, setAutoCreatedGroups] = useState<string[]>([]);
   const [isImporting, setIsImporting] = useState(false);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -211,9 +212,23 @@ export function ImportFullEstimateDialog({
       }
     });
 
+    // Second pass: auto-create groups for any parent name referenced by items
+    // but missing from the groups list. This handles cases where the user removed
+    // GROUP rows from the Buildern export — without this, items whose parent group
+    // has no GROUP row are silently dropped at the backend.
+    const newlyCreated: string[] = [];
+    for (const item of parsedItems) {
+      if (item.groupName && !groupNames.has(item.groupName)) {
+        parsedGroups.push({ name: item.groupName, sortOrder: sortOrder++ });
+        groupNames.add(item.groupName);
+        newlyCreated.push(item.groupName);
+      }
+    }
+
     setGroups(parsedGroups);
     setItems(parsedItems);
     setParseErrors(errors);
+    setAutoCreatedGroups(newlyCreated);
     setStep("name");
   };
 
@@ -264,6 +279,7 @@ export function ImportFullEstimateDialog({
     setGroups([]);
     setItems([]);
     setParseErrors([]);
+    setAutoCreatedGroups([]);
     onClose();
   };
 
@@ -563,6 +579,21 @@ export function ImportFullEstimateDialog({
                 )}
               </div>
             </div>
+
+            {autoCreatedGroups.length > 0 && (
+              <div className="flex gap-3 p-3 rounded-md bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800">
+                <Info className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+                <div className="text-sm text-blue-700 dark:text-blue-300">
+                  <p className="font-medium mb-1">
+                    {autoCreatedGroups.length} section{autoCreatedGroups.length > 1 ? "s" : ""} auto-created
+                  </p>
+                  <p className="text-xs text-blue-600 dark:text-blue-400">
+                    These sections had no GROUP row in your file and were created automatically so their items weren't lost:{" "}
+                    <span className="font-medium">{autoCreatedGroups.join(", ")}</span>
+                  </p>
+                </div>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="estimate-name">Estimate Name</Label>

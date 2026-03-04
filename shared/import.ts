@@ -884,6 +884,17 @@ export function parseFullEstimateImport(
       }
     }
   });
+
+  // Second pass: auto-create groups for any parent name referenced by items but
+  // missing from the groups list. This handles cases where the user removed GROUP
+  // rows from the Buildern export before importing — without this, items whose
+  // parent group has no GROUP row are silently dropped at the backend.
+  for (const item of items) {
+    if (item.groupName && !groupNames.has(item.groupName)) {
+      groups.push({ name: item.groupName, sortOrder: sortOrder++ });
+      groupNames.add(item.groupName);
+    }
+  }
   
   return { format, groups, items, errors };
 }
