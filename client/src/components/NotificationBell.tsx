@@ -50,6 +50,7 @@ const NOTIFICATION_TYPE_ICONS: Record<string, any> = {
   task_assigned: UserPlus,
   task_mentioned: CheckSquare,
   task_completed: Check,
+  project_assigned: UserPlus,
 };
 
 export function NotificationBell() {
@@ -66,7 +67,7 @@ export function NotificationBell() {
     enabled: !!user,
   });
 
-  const { data: notifications = [] } = useQuery<Notification[]>({
+  const { data: notifications = [], isLoading: notificationsLoading } = useQuery<Notification[]>({
     queryKey: ["/api/notifications"],
     enabled: isOpen && !!user,
   });
@@ -234,7 +235,19 @@ export function NotificationBell() {
           
           <TabsContent value="notifications" className="m-0">
             <ScrollArea className="max-h-80">
-              {notifications.length === 0 ? (
+              {notificationsLoading ? (
+                <div className="space-y-1 p-2">
+                  {[1, 2].map((i) => (
+                    <div key={i} className="flex items-start gap-2 p-2 rounded-md">
+                      <div className="w-8 h-8 rounded-lg bg-muted animate-pulse flex-shrink-0" />
+                      <div className="flex-1 space-y-1.5">
+                        <div className="h-3 bg-muted animate-pulse rounded w-3/4" />
+                        <div className="h-2.5 bg-muted animate-pulse rounded w-1/2" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : notifications.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-8 text-center">
                   <Bell className="h-8 w-8 text-muted-foreground/40 mb-2" />
                   <p className="text-sm text-muted-foreground">No notifications</p>
