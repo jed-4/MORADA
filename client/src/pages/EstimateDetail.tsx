@@ -231,14 +231,6 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
           className="absolute inset-1 rounded border-2 border-dashed border-muted-foreground/30 pointer-events-none"
           style={{ gridColumn: '1 / -1' }}
         />
-        {/* Keep grid cells but make them invisible to maintain layout */}
-        <div className="h-10 px-1 flex items-center justify-center invisible" role="gridcell">
-          {isDraggable && (
-            <div {...attributes} {...listeners}>
-              <GripVertical className="h-4 w-4 text-muted-foreground" />
-            </div>
-          )}
-        </div>
         {/* Render children with visibility hidden to maintain column widths */}
         <div style={{ display: 'contents', visibility: 'hidden' }}>
           {children}
@@ -272,17 +264,16 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
       {dropIndicator === 'below' && (
         <div className="absolute -bottom-[2px] left-0 right-0 h-1 bg-blue-500 z-50 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.6)]" />
       )}
-      <div className="h-10 px-1 flex items-center justify-center" role="gridcell">
-        {isDraggable && (
-          <div
-            {...attributes}
-            {...listeners}
-            className="opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing transition-opacity"
-          >
-            <GripVertical className="h-4 w-4 text-muted-foreground" />
-          </div>
-        )}
-      </div>
+      {/* Drag handle — floats in left dead zone, zero grid cost */}
+      {isDraggable && (
+        <div
+          {...attributes}
+          {...listeners}
+          className="absolute -left-5 top-0 h-full w-5 flex items-center justify-center opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing transition-opacity z-10"
+        >
+          <GripVertical className="h-4 w-4 text-muted-foreground" />
+        </div>
+      )}
       {children}
     </div>
   );
@@ -3294,8 +3285,8 @@ export default function EstimateDetail() {
     // Use passed visibleCols for consistency, fallback to filtering columns
     const visibleColumns = visibleCols || columns.filter(col => col.visible);
     
-    // Generate grid template if not provided
-    const effectiveGridTemplate = gridTemplate || `32px 24px ${visibleColumns.map(c => `${c.widthPx}px`).join(' ')} 80px`;
+    // Generate grid template if not provided (no 32px handle column)
+    const effectiveGridTemplate = gridTemplate || `24px ${visibleColumns.map(c => `${c.widthPx}px`).join(' ')} 80px`;
     
     // Build className for visual containment - 40px row height
     let itemClassName = "";
@@ -4727,9 +4718,9 @@ export default function EstimateDetail() {
       </div>{/* end header card */}
 
       {/* Main Content - Horizontal scroll only, vertical flows naturally */}
-      <div className="flex-1 overflow-auto min-h-0 px-3 pb-4 pt-2">
+      <div className="flex-1 overflow-auto min-h-0 pl-5 pr-3 pb-4 pt-2">
         <div className="inline-block min-w-full">
-          <div className="border border-border rounded-md bg-background overflow-hidden">
+          <div className="border border-border rounded-md bg-background">
 
             {/* Toolbar row — sticky at top of table card */}
             <div className="h-9 flex items-center justify-between px-3 border-b border-border/50 gap-1.5 bg-background sticky top-0 z-20">
@@ -5021,11 +5012,11 @@ export default function EstimateDetail() {
                         allSortableIds = [...groupIds, ...subgroupIds, ...allItemIds];
                       }
                       
-                      const tableWidth = columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 24 + 32;
+                      const tableWidth = columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 24;
                       
-                      // Generate CSS Grid template
+                      // Generate CSS Grid template (no 32px handle column — handle floats in dead zone)
                       const visibleCols = columns.filter(col => col.visible);
-                      const gridTemplate = `32px 24px ${visibleCols.map(c => `${c.widthPx}px`).join(' ')} 80px`;
+                      const gridTemplate = `24px ${visibleCols.map(c => `${c.widthPx}px`).join(' ')} 80px`;
                       
                       // Get all subgroups for passing to EstimateGroupCard
                       const allSubgroups = groups.filter(g => g.parentGroupId);
@@ -5044,8 +5035,6 @@ export default function EstimateDetail() {
                               minWidth: `${tableWidth}px`
                             }}
                           >
-                            {/* Drag handle column */}
-                            <div className="h-9 px-1 flex items-center" role="columnheader" />
                             {/* Checkbox column */}
                             <div className="h-9 px-2 flex items-center" role="columnheader">
                               <Checkbox

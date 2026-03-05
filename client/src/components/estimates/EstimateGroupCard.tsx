@@ -194,17 +194,31 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
   
   // Use passed visibleCols for consistency with parent, fallback to filtering columns
   const visibleCols = parentVisibleCols || columns.filter(col => col.visible);
-  const gridTemplate = parentGridTemplate || `32px 24px ${visibleCols.map(c => `${c.widthPx}px`).join(' ')} 80px`;
+  const gridTemplate = parentGridTemplate || `24px ${visibleCols.map(c => `${c.widthPx}px`).join(' ')} 80px`;
   const cellBase = "h-10 px-2 flex items-center text-sm overflow-hidden";
 
   // Alternating background for visual differentiation between groups
   const isEvenGroup = groupIndex % 2 === 0;
   
   return (
-    <Card 
+    <div
       ref={setNodeRef}
       style={style}
-      className={`rounded-md overflow-hidden ${nestingLevel > 0 ? 'ml-8' : ''} ${isGroupSelected ? 'ring-2 ring-[#bba7db]' : ''}`}
+      className={`relative ${nestingLevel > 0 ? 'ml-8' : ''}`}
+    >
+      {/* Drag handle — floats in left dead zone, outside the Card */}
+      {!isLocked && (
+        <div
+          {...attributes}
+          {...listeners}
+          className="absolute -left-5 top-0 h-10 w-5 flex items-center justify-center opacity-0 hover:opacity-100 cursor-grab active:cursor-grabbing transition-opacity z-20"
+          data-testid={`drag-handle-group-${group.id}`}
+        >
+          <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
+        </div>
+      )}
+    <Card 
+      className={`rounded-md overflow-hidden ${isGroupSelected ? 'ring-2 ring-[#bba7db]' : ''}`}
       data-testid={`card-group-${group.id}`}
     >
       {/* Group Header - CSS Grid */}
@@ -219,17 +233,6 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
         className="h-10 bg-muted/50 hover-elevate transition-colors border-b border-border/50"
         data-testid={`row-group-${group.id}`}
       >
-        {/* Drag handle */}
-        <div className="h-10 px-1 flex items-center justify-center" role="gridcell">
-          <div
-            {...attributes}
-            {...listeners}
-            className="cursor-grab active:cursor-grabbing opacity-0 hover:opacity-100 transition-opacity"
-            data-testid={`drag-handle-group-${group.id}`}
-          >
-            <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
-          </div>
-        </div>
         {/* Checkbox */}
         <div className="h-10 px-2 flex items-center" role="gridcell">
           <Checkbox
@@ -439,8 +442,6 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
               }}
               className={`h-10 transition-colors border-b border-border/50 last:border-b-0 ${isAddingLine ? 'bg-muted/20' : 'hover-elevate'} group/addline`}
             >
-              {/* Empty drag handle cell */}
-              <div className="h-10 px-1 flex items-center justify-center" role="gridcell" />
               {/* Empty checkbox cell */}
               <div className="h-10 px-2 flex items-center" role="gridcell" />
               
@@ -547,5 +548,6 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
         </div>
       </div>
     </Card>
+    </div>
   );
 };
