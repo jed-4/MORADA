@@ -5138,16 +5138,12 @@ export default function EstimateDetail() {
                           const groupId = String(activeId).replace('group-', '');
                           const group = groups.find(g => g.id === groupId);
                           if (group) {
-                            const nestingLevel = group.parentGroupId ? 2 : 1;
-                            const borderColor = nestingLevel === 1 ? '#3b82f6' : '#10b981';
-                            
                             return (
-                              <div className="bg-background dark:bg-card border-2 border-blue-400 rounded-lg shadow-2xl px-4 py-3 cursor-grabbing">
-                                <div className="flex items-center gap-3">
-                                  <div style={{ width: 4, height: 24, backgroundColor: borderColor, borderRadius: 2 }} />
-                                  <GripVertical className="h-4 w-4 text-muted-foreground" />
-                                  <span className="font-semibold text-sm">{group.name}</span>
-                                  <span className="text-xs text-muted-foreground ml-auto">
+                              <div className="border border-border rounded-md bg-background shadow-md cursor-grabbing opacity-90" style={{ minWidth: '320px' }}>
+                                <div className="h-10 bg-muted/50 flex items-center gap-2 px-3">
+                                  <GripVertical className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                                  <span className="font-semibold text-xs truncate">{group.name}</span>
+                                  <span className="text-xs text-muted-foreground ml-auto flex-shrink-0">
                                     {items.filter(i => i.groupId === group.id && !i.parentItemId).length} items
                                   </span>
                                 </div>
@@ -5155,46 +5151,18 @@ export default function EstimateDetail() {
                             );
                           }
                         }
-                        // Dragging an item - render a more complete preview
+                        // Dragging an item
                         const item = items.find(i => i.id === activeId);
                         if (item) {
-                          // Find the status option for display
-                          const activeStatusOptions = estimateItemStatusCategory?.options?.filter((opt: any) => opt.isActive) || [];
-                          const statusOption = activeStatusOptions.find((opt: any) => opt.key === item.status);
-                          const statusLabel = statusOption?.name || item.status || '-';
-                          
                           return (
-                            <div 
-                              className="bg-background dark:bg-card border-2 border-blue-400 rounded-lg shadow-2xl cursor-grabbing"
-                              style={{ minWidth: '400px', maxWidth: '600px' }}
+                            <div
+                              className="border border-border rounded-md bg-background shadow-md cursor-grabbing opacity-90"
+                              style={{ minWidth: '320px' }}
                             >
-                              <div className="flex items-center gap-3 px-3 py-2.5 border-b border-border/50">
-                                <GripVertical className="h-4 w-4 text-blue-500 flex-shrink-0" />
-                                <span className="font-medium text-sm truncate flex-1">{item.name}</span>
-                                {item.costCode && (
-                                  <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded flex-shrink-0">
-                                    {item.costCode}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="flex items-center justify-between gap-4 px-3 py-2 text-xs">
-                                <div className="flex items-center gap-3">
-                                  {statusLabel !== '-' && (
-                                    <span 
-                                      className="px-2 py-0.5 rounded text-xs font-medium"
-                                      style={statusOption?.color ? {
-                                        backgroundColor: `${statusOption.color}20`,
-                                        color: statusOption.color
-                                      } : undefined}
-                                    >
-                                      {statusLabel}
-                                    </span>
-                                  )}
-                                  <span className="text-muted-foreground">
-                                    Qty: {item.quantity || 1} {item.unitType || 'ea'}
-                                  </span>
-                                </div>
-                                <span className="font-semibold text-[#bba7db]">
+                              <div className="h-10 flex items-center gap-2 px-3">
+                                <GripVertical className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                                <span className="text-sm truncate flex-1">{item.name}</span>
+                                <span className="text-xs font-medium text-[#bba7db] flex-shrink-0 tabular-nums">
                                   {formatCurrency(item.priceIncTax || 0)}
                                 </span>
                               </div>
