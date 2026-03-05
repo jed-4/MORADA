@@ -216,7 +216,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
           width: `${tableWidth}px`,
           minWidth: `${tableWidth}px`
         }}
-        className="h-10 bg-card hover-elevate transition-colors border-b border-border/50"
+        className="h-10 bg-muted/50 hover-elevate transition-colors border-b border-border/50"
         data-testid={`row-group-${group.id}`}
       >
         {/* Drag handle */}
