@@ -204,14 +204,14 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
     <div
       ref={setNodeRef}
       style={style}
-      className={`relative ${nestingLevel > 0 ? 'ml-8' : ''}`}
+      className={`relative group/grp ${nestingLevel > 0 ? 'ml-8' : ''}`}
     >
       {/* Drag handle — floats in left dead zone, outside the Card */}
       {!isLocked && (
         <div
           {...attributes}
           {...listeners}
-          className="absolute -left-3 top-0 h-10 w-4 flex items-center justify-center opacity-0 hover:opacity-100 cursor-grab active:cursor-grabbing transition-opacity z-20"
+          className="absolute -left-3 top-0 h-10 w-4 flex items-center justify-center opacity-0 group-hover/grp:opacity-100 cursor-grab active:cursor-grabbing transition-opacity z-20"
           data-testid={`drag-handle-group-${group.id}`}
         >
           <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
