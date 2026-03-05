@@ -1462,9 +1462,10 @@ export default function EstimateDetail() {
   });
 
   // Fetch estimate statuses from field settings
-  const { data: estimateStatuses = [] } = useQuery<FieldOption[]>({
-    queryKey: ["/api/field-categories/estimate.status/options"],
+  const { data: estimateStatusCategory } = useQuery<FieldCategoryWithOptions>({
+    queryKey: ["/api/field-categories/by-key/estimate.status"],
   });
+  const estimateStatuses = estimateStatusCategory?.options?.filter(o => o.isActive) ?? [];
 
   // Mutation for creating new estimate
   const createEstimateMutation = useMutation({
