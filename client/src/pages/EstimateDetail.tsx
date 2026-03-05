@@ -4497,7 +4497,7 @@ export default function EstimateDetail() {
   return (
     <div className="flex flex-col h-full">
       {/* Unified header card — breadcrumb row + filter row + finance summary */}
-      <div className="mx-3 mt-3 rounded-lg border border-border bg-card flex-shrink-0 overflow-hidden">
+      <div className="mx-3 mt-3 rounded-t-lg border border-b-0 border-border bg-card flex-shrink-0 overflow-hidden">
 
       {/* Row 1 - Breadcrumb + Actions */}
       <div className="h-8 flex items-center justify-between px-3 border-b border-border/50">
@@ -4913,7 +4913,7 @@ export default function EstimateDetail() {
       </div>{/* end unified header card */}
 
       {/* Main Content - Horizontal scroll only, vertical flows naturally */}
-      <div className="flex-1 overflow-auto min-h-0 px-4 pb-4">
+      <div className="flex-1 overflow-auto min-h-0 px-3 pb-4">
         <div className="inline-block min-w-full">
               {itemsLoading || groupsLoading ? (
                   <div className="animate-pulse space-y-3">
@@ -5034,7 +5034,7 @@ export default function EstimateDetail() {
                         <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
                           {/* CSS Grid Header */}
                           <div 
-                            className="bg-card border-y border-border/50 sticky top-0 z-30"
+                            className="bg-card border-x border-b border-border rounded-b-lg sticky top-0 z-30"
                             role="row"
                             style={{ 
                               display: 'grid', 
