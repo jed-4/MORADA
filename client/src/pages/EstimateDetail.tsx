@@ -4488,7 +4488,7 @@ export default function EstimateDetail() {
   return (
     <div className="flex flex-col h-full">
       {/* Unified header card — breadcrumb row + finance summary */}
-      <div className="ml-6 mr-3 mt-3 rounded-lg border border-border bg-card flex-shrink-0 overflow-hidden">
+      <div className="mx-3 mt-3 rounded-lg border border-border bg-card flex-shrink-0 overflow-hidden">
 
       {/* Row 1 - Breadcrumb + Actions */}
       <div className="h-8 flex items-center justify-between px-3 border-b border-border/50">
@@ -4718,7 +4718,7 @@ export default function EstimateDetail() {
       </div>{/* end header card */}
 
       {/* Main Content - Horizontal scroll only, vertical flows naturally */}
-      <div className="flex-1 overflow-auto min-h-0 pl-6 pr-3 pb-4 pt-2">
+      <div className="flex-1 overflow-auto min-h-0 px-3 pb-4 pt-2">
         <div className="inline-block min-w-full">
           <div className="border border-border rounded-md bg-background">
 
