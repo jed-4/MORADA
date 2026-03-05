@@ -4628,10 +4628,12 @@ export default function EstimateDetail() {
 
       {/* Finance summary — collapsible */}
       {summary && !isSummaryExpanded && (
-        <div className="bg-[#bba7db]/10 flex items-center px-5 py-1.5 gap-3 border-b border-[#bba7db]/20">
-          <span className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Total</span>
-          <span className="text-sm font-bold tabular-nums text-[#bba7db]">{formatCurrency(summary.total)}</span>
-          <span className="text-[11px] text-muted-foreground">inc. GST</span>
+        <div className="bg-[#bba7db]/10 flex items-center justify-between px-5 py-1.5 border-b border-[#bba7db]/20">
+          <span className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Summary</span>
+          <div className="flex items-baseline gap-2">
+            <span className="text-sm font-bold tabular-nums text-[#bba7db]">{formatCurrency(summary.total)}</span>
+            <span className="text-[11px] text-muted-foreground">inc. GST</span>
+          </div>
         </div>
       )}
       {summary && isSummaryExpanded && (
@@ -5032,7 +5034,7 @@ export default function EstimateDetail() {
                         <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
                           {/* CSS Grid Header */}
                           <div 
-                            className="bg-muted/30 border-b border-border mb-1.5 rounded-xl sticky top-0 z-30"
+                            className="bg-muted/30 border-b border-border mb-1.5 sticky top-0 z-30"
                             role="row"
                             style={{ 
                               display: 'grid', 
@@ -5042,9 +5044,9 @@ export default function EstimateDetail() {
                             }}
                           >
                             {/* Drag handle column */}
-                            <div className="h-9 px-1 flex items-center" role="columnheader" />
+                            <div className="h-7 px-1 flex items-center" role="columnheader" />
                             {/* Checkbox column */}
-                            <div className="h-9 px-2 flex items-center" role="columnheader">
+                            <div className="h-7 px-2 flex items-center" role="columnheader">
                               <Checkbox
                                 checked={selectedItems.size > 0 && selectedItems.size === items.length}
                                 onCheckedChange={handleSelectAll}
@@ -5058,9 +5060,9 @@ export default function EstimateDetail() {
                               <div 
                                 key={column.id}
                                 role="columnheader"
-                                className="h-9 px-2 flex items-center relative group/header"
+                                className="h-7 px-2 flex items-center relative group/header"
                               >
-                                <span className="truncate text-[11px] font-medium text-muted-foreground uppercase tracking-wide">{column.label}</span>
+                                <span className="truncate text-[10px] font-medium text-muted-foreground uppercase tracking-wide">{column.label}</span>
                                 {/* Resize handle - hidden on last column and on mobile */}
                                 {index < visibleCols.length - 1 && (
                                   <div
@@ -5077,8 +5079,8 @@ export default function EstimateDetail() {
                               </div>
                             ))}
                             {/* Actions column */}
-                            <div className="h-9 px-2 flex items-center" role="columnheader">
-                              <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Actions</span>
+                            <div className="h-7 px-2 flex items-center" role="columnheader">
+                              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Actions</span>
                             </div>
                           </div>
                           
@@ -5224,12 +5226,10 @@ export default function EstimateDetail() {
           <span className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Builder Cost</span>
           <span className="tabular-nums font-medium">{formatCurrency((summary as any)?.builderCostTotal ?? summary?.subtotal ?? 0)}</span>
         </div>
-        {((summary as any)?.globalMarkupPercent ?? estimate?.projectMarkupPercent ?? 0) > 0 && (
+        {((summary as any)?.globalMarkupAmount ?? 0) !== 0 && (
           <div className="flex items-center gap-1.5">
             <span className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Global Markup</span>
-            <span className="tabular-nums font-medium text-[#bba7db]">
-              {(summary as any)?.globalMarkupPercent ?? estimate?.projectMarkupPercent ?? 0}%
-            </span>
+            <span className="tabular-nums font-medium">{formatCurrency((summary as any)?.globalMarkupAmount ?? 0)}</span>
           </div>
         )}
         <div className="flex items-center gap-1.5">
