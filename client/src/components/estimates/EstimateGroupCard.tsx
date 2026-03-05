@@ -211,7 +211,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
         <div
           {...attributes}
           {...listeners}
-          className="absolute -left-5 top-0 h-10 w-5 flex items-center justify-center opacity-0 hover:opacity-100 cursor-grab active:cursor-grabbing transition-opacity z-20"
+          className="absolute -left-8 top-0 h-10 w-8 flex items-center justify-center opacity-0 hover:opacity-100 cursor-grab active:cursor-grabbing transition-opacity z-20"
           data-testid={`drag-handle-group-${group.id}`}
         >
           <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />

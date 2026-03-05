@@ -269,7 +269,7 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
         <div
           {...attributes}
           {...listeners}
-          className="absolute -left-5 top-0 h-full w-5 flex items-center justify-center opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing transition-opacity z-10"
+          className="absolute -left-8 top-0 h-full w-8 flex items-center justify-center opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing transition-opacity z-10"
         >
           <GripVertical className="h-4 w-4 text-muted-foreground" />
         </div>
@@ -4718,7 +4718,7 @@ export default function EstimateDetail() {
       </div>{/* end header card */}
 
       {/* Main Content - Horizontal scroll only, vertical flows naturally */}
-      <div className="flex-1 overflow-auto min-h-0 pl-5 pr-3 pb-4 pt-2">
+      <div className="flex-1 overflow-auto min-h-0 pl-8 pr-3 pb-4 pt-2">
         <div className="inline-block min-w-full">
           <div className="border border-border rounded-md bg-background">
 
