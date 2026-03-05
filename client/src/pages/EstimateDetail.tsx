@@ -4496,8 +4496,8 @@ export default function EstimateDetail() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Unified header card — breadcrumb row + filter row + finance summary */}
-      <div className="mx-3 mt-3 rounded-t-lg border border-b-0 border-border bg-card flex-shrink-0 overflow-hidden">
+      {/* Unified header card — breadcrumb row + finance summary */}
+      <div className="mx-3 mt-3 rounded-lg border border-border bg-card flex-shrink-0 overflow-hidden">
 
       {/* Row 1 - Breadcrumb + Actions */}
       <div className="h-8 flex items-center justify-between px-3 border-b border-border/50">
@@ -4724,197 +4724,198 @@ export default function EstimateDetail() {
         </div>
       )}
 
-      {/* Filters + Controls */}
-      <div className="h-9 flex items-center justify-between px-3 gap-1.5">
-        {/* Left: Controls + Filter Chips */}
-        <div className="flex items-center gap-1.5 flex-1">
-          {/* Group Expand/Collapse - Icon only */}
-          {groups.length > 0 && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-                    onClick={handleToggleAllGroups}
-                    data-testid="button-toggle-all-groups"
-                  >
-                    {groups.some(group => !group.isCollapsed) ? (
-                      <ChevronUp className="h-3 w-3" />
-                    ) : (
-                      <ChevronDown className="h-3 w-3" />
-                    )}
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>{groups.some(group => !group.isCollapsed) ? 'Collapse all groups' : 'Expand all groups'}</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
-          
-          {/* Hide/Show Add Lines toggle */}
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  className={`h-6 w-6 text-xs border rounded-md flex items-center justify-center ${hideAddLines ? 'bg-muted' : ''} hover-elevate active-elevate-2`}
-                  onClick={() => setHideAddLines(!hideAddLines)}
-                  data-testid="button-toggle-add-lines"
-                >
-                  {hideAddLines ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>{hideAddLines ? 'Show add line rows' : 'Hide add line rows'}</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-
-          {/* Search Input */}
-          <div className="relative">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-            <Input
-              placeholder="Search items..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-6 pl-7 pr-2 text-xs w-40 border-border/30"
-              data-testid="input-search-items"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-1 top-1/2 -translate-y-1/2 h-4 w-4 flex items-center justify-center text-muted-foreground hover:text-foreground"
-                data-testid="button-clear-search"
-              >
-                ×
-              </button>
-            )}
-          </div>
-          
-          {/* Filter by Type */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button 
-                className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                  filterType !== 'all' 
-                    ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
-                    : 'hover-elevate'
-                } active-elevate-2`}
-                data-testid="filter-type"
-              >
-                <span>{filterType === 'all' ? 'All Types' : filterType}</span>
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem onClick={() => { hasUserModifiedRef.current = true; setFilterType('all'); }}>All Types</DropdownMenuItem>
-              {Array.from(new Set(items.map(item => item.type))).map(type => (
-                <DropdownMenuItem key={type} onClick={() => { hasUserModifiedRef.current = true; setFilterType(type); }}>{type}</DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Filter by Status */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button 
-                className={`h-6 w-auto px-2 text-xs border rounded-md ${
-                  filterStatus !== 'all' 
-                    ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
-                    : 'hover-elevate'
-                } active-elevate-2`}
-                data-testid="filter-status"
-              >
-                <span>{filterStatus === 'all' ? 'All Status' : estimateItemStatusCategory?.options?.find((opt: any) => opt.key === filterStatus)?.name || filterStatus}</span>
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem onClick={() => { hasUserModifiedRef.current = true; setFilterStatus('all'); }}>All Status</DropdownMenuItem>
-              {estimateItemStatusCategory?.options?.filter((opt: any) => opt.isActive).map((option: any) => (
-                <DropdownMenuItem key={option.key} onClick={() => { hasUserModifiedRef.current = true; setFilterStatus(option.key); }}>{option.name}</DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-
-        {/* Right: Controls */}
-        <div className="flex items-center gap-1.5">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-                data-testid="button-column-visibility"
-              >
-                <Columns className="w-3 h-3" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-72">
-              <div className="px-2 py-1.5 text-sm font-semibold">Columns (visibility & order)</div>
-              {columns.map((column, index) => (
-                <DropdownMenuItem 
-                  key={column.id}
-                  onClick={(e) => e.preventDefault()}
-                  className="flex items-center justify-between gap-2"
-                >
-                  <div className="flex items-center flex-1 min-w-0">
-                    <Checkbox
-                      checked={column.visible}
-                      onCheckedChange={() => toggleColumn(column.id)}
-                      className="mr-2 flex-shrink-0"
-                    />
-                    <span className="truncate">{column.label}</span>
-                  </div>
-                  <div className="flex items-center gap-0.5 flex-shrink-0">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        moveColumnUp(column.id);
-                      }}
-                      disabled={index === 0}
-                      className={`p-0.5 rounded hover:bg-muted ${index === 0 ? 'opacity-30 cursor-not-allowed' : ''}`}
-                      data-testid={`button-move-column-up-${column.id}`}
-                    >
-                      <ChevronUp className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        moveColumnDown(column.id);
-                      }}
-                      disabled={index === columns.length - 1}
-                      className={`p-0.5 rounded hover:bg-muted ${index === columns.length - 1 ? 'opacity-30 cursor-not-allowed' : ''}`}
-                      data-testid={`button-move-column-down-${column.id}`}
-                    >
-                      <ChevronDown className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <button 
-            className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
-            data-testid="button-add-group" 
-            onClick={handleAddGroup}
-            disabled={estimate?.isLocked}
-          >
-            <FolderPlus className="w-3 h-3" />
-            <span>Group</span>
-          </button>
-
-          <button 
-            className="h-6 w-auto px-2 text-xs bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5 rounded-md"
-            data-testid="button-add-item" 
-            onClick={handleAddItem}
-            disabled={estimate?.isLocked}
-          >
-            <Plus className="w-3 h-3" />
-            <span>New Item</span>
-          </button>
-        </div>
-      </div>
-
-      </div>{/* end unified header card */}
+      </div>{/* end header card */}
 
       {/* Main Content - Horizontal scroll only, vertical flows naturally */}
-      <div className="flex-1 overflow-auto min-h-0 px-3 pb-4">
+      <div className="flex-1 overflow-auto min-h-0 px-3 pb-4 pt-2">
         <div className="inline-block min-w-full">
+          <div className="border border-border rounded-md bg-background overflow-hidden">
+
+            {/* Toolbar row — sticky at top of table card */}
+            <div className="h-9 flex items-center justify-between px-3 border-b border-border/50 gap-1.5 bg-background sticky top-0 z-20">
+              {/* Left: Controls + Filter Chips */}
+              <div className="flex items-center gap-1.5 flex-1">
+                {/* Group Expand/Collapse - Icon only */}
+                {groups.length > 0 && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                          onClick={handleToggleAllGroups}
+                          data-testid="button-toggle-all-groups"
+                        >
+                          {groups.some(group => !group.isCollapsed) ? (
+                            <ChevronUp className="h-3 w-3" />
+                          ) : (
+                            <ChevronDown className="h-3 w-3" />
+                          )}
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>{groups.some(group => !group.isCollapsed) ? 'Collapse all groups' : 'Expand all groups'}</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
+                
+                {/* Hide/Show Add Lines toggle */}
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        className={`h-6 w-6 text-xs border rounded-md flex items-center justify-center ${hideAddLines ? 'bg-muted' : ''} hover-elevate active-elevate-2`}
+                        onClick={() => setHideAddLines(!hideAddLines)}
+                        data-testid="button-toggle-add-lines"
+                      >
+                        {hideAddLines ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>{hideAddLines ? 'Show add line rows' : 'Hide add line rows'}</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+
+                {/* Search Input */}
+                <div className="relative">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                  <Input
+                    placeholder="Search items..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="h-6 pl-7 pr-2 text-xs w-40 border-border/30"
+                    data-testid="input-search-items"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-1 top-1/2 -translate-y-1/2 h-4 w-4 flex items-center justify-center text-muted-foreground hover:text-foreground"
+                      data-testid="button-clear-search"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+                
+                {/* Filter by Type */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button 
+                      className={`h-6 w-auto px-2 text-xs border rounded-md ${
+                        filterType !== 'all' 
+                          ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                          : 'hover-elevate'
+                      } active-elevate-2`}
+                      data-testid="filter-type"
+                    >
+                      <span>{filterType === 'all' ? 'All Types' : filterType}</span>
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    <DropdownMenuItem onClick={() => { hasUserModifiedRef.current = true; setFilterType('all'); }}>All Types</DropdownMenuItem>
+                    {Array.from(new Set(items.map(item => item.type))).map(type => (
+                      <DropdownMenuItem key={type} onClick={() => { hasUserModifiedRef.current = true; setFilterType(type); }}>{type}</DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                {/* Filter by Status */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button 
+                      className={`h-6 w-auto px-2 text-xs border rounded-md ${
+                        filterStatus !== 'all' 
+                          ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90' 
+                          : 'hover-elevate'
+                      } active-elevate-2`}
+                      data-testid="filter-status"
+                    >
+                      <span>{filterStatus === 'all' ? 'All Status' : estimateItemStatusCategory?.options?.find((opt: any) => opt.key === filterStatus)?.name || filterStatus}</span>
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    <DropdownMenuItem onClick={() => { hasUserModifiedRef.current = true; setFilterStatus('all'); }}>All Status</DropdownMenuItem>
+                    {estimateItemStatusCategory?.options?.filter((opt: any) => opt.isActive).map((option: any) => (
+                      <DropdownMenuItem key={option.key} onClick={() => { hasUserModifiedRef.current = true; setFilterStatus(option.key); }}>{option.name}</DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+
+              {/* Right: Controls */}
+              <div className="flex items-center gap-1.5">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                      data-testid="button-column-visibility"
+                    >
+                      <Columns className="w-3 h-3" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-72">
+                    <div className="px-2 py-1.5 text-sm font-semibold">Columns (visibility & order)</div>
+                    {columns.map((column, index) => (
+                      <DropdownMenuItem 
+                        key={column.id}
+                        onClick={(e) => e.preventDefault()}
+                        className="flex items-center justify-between gap-2"
+                      >
+                        <div className="flex items-center flex-1 min-w-0">
+                          <Checkbox
+                            checked={column.visible}
+                            onCheckedChange={() => toggleColumn(column.id)}
+                            className="mr-2 flex-shrink-0"
+                          />
+                          <span className="truncate">{column.label}</span>
+                        </div>
+                        <div className="flex items-center gap-0.5 flex-shrink-0">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              moveColumnUp(column.id);
+                            }}
+                            disabled={index === 0}
+                            className={`p-0.5 rounded hover:bg-muted ${index === 0 ? 'opacity-30 cursor-not-allowed' : ''}`}
+                            data-testid={`button-move-column-up-${column.id}`}
+                          >
+                            <ChevronUp className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              moveColumnDown(column.id);
+                            }}
+                            disabled={index === columns.length - 1}
+                            className={`p-0.5 rounded hover:bg-muted ${index === columns.length - 1 ? 'opacity-30 cursor-not-allowed' : ''}`}
+                            data-testid={`button-move-column-down-${column.id}`}
+                          >
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                <button 
+                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-0.5"
+                  data-testid="button-add-group" 
+                  onClick={handleAddGroup}
+                  disabled={estimate?.isLocked}
+                >
+                  <FolderPlus className="w-3 h-3" />
+                  <span>Group</span>
+                </button>
+
+                <button 
+                  className="h-6 w-auto px-2 text-xs bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5 rounded-md"
+                  data-testid="button-add-item" 
+                  onClick={handleAddItem}
+                  disabled={estimate?.isLocked}
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>New Item</span>
+                </button>
+              </div>
+            </div>
               {itemsLoading || groupsLoading ? (
                   <div className="animate-pulse space-y-3">
                     {[...Array(3)].map((_, i) => (
@@ -5034,7 +5035,7 @@ export default function EstimateDetail() {
                         <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
                           {/* CSS Grid Header */}
                           <div 
-                            className="bg-card border-x border-b border-border rounded-b-lg sticky top-0 z-30"
+                            className="bg-muted/50 border-b border-border sticky top-9 z-10"
                             role="row"
                             style={{ 
                               display: 'grid', 
@@ -5084,7 +5085,7 @@ export default function EstimateDetail() {
                             </div>
                           </div>
                           
-                          <div className="space-y-2 pt-1">
+                          <div className="space-y-2 p-2">
                             {/* Ungrouped items - CSS Grid based */}
                             {ungroupedItems.length > 0 && (
                               <Card className="rounded-md overflow-hidden" style={{ minWidth: `${tableWidth}px` }}>
@@ -5217,6 +5218,7 @@ export default function EstimateDetail() {
                   </DragOverlay>
                 </DndContext>
               )}
+          </div>{/* end table card */}
         </div>
       </div>
 
