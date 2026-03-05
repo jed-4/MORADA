@@ -69,7 +69,7 @@ import { EstimateGroupCard } from "@/components/estimates/EstimateGroupCard";
 import { useUndoStack } from "@/hooks/useUndoStack";
 import { CreateRFQDialog } from "@/components/rfq/CreateRFQDialog";
 import { CreatePOFromEstimateDialog } from "@/components/estimates/CreatePOFromEstimateDialog";
-import { Package, Undo2, ChevronsUpDown, Search, ShoppingCart, Pencil, X } from "lucide-react";
+import { Package, Undo2, ChevronsUpDown, Search, ShoppingCart, Pencil, X, SlidersHorizontal } from "lucide-react";
 import {
   DropdownMenuSub,
   DropdownMenuSubContent,
@@ -4500,21 +4500,21 @@ export default function EstimateDetail() {
 
       {/* Row 1 - Breadcrumb + Actions */}
       <div className="h-8 flex items-center justify-between px-3 border-b border-border/50">
-        {/* Left: Breadcrumb Navigation */}
-        <div className="flex items-center gap-2">
+        {/* Left: Breadcrumb + Status */}
+        <div className="flex items-center gap-2 min-w-0">
           <Button 
             variant="ghost" 
             size="icon" 
-            className="h-6 w-6"
+            className="h-6 w-6 flex-shrink-0"
             onClick={() => setLocation(`/projects/${project?.id}/estimates`)} 
             data-testid="button-back-to-estimates" 
             aria-label="Back to Estimates"
           >
             <ArrowLeft className="w-3 h-3" />
           </Button>
-          <div className="flex items-center gap-1.5 text-xs">
-            <span className="text-muted-foreground">{project?.name || 'Project'}</span>
-            <span className="text-muted-foreground">/</span>
+          <div className="flex items-center gap-1.5 text-xs min-w-0">
+            <span className="text-muted-foreground flex-shrink-0">{project?.name || 'Project'}</span>
+            <span className="text-muted-foreground flex-shrink-0">/</span>
             {isEditingName ? (
               <Input
                 value={editingName}
@@ -4527,7 +4527,7 @@ export default function EstimateDetail() {
               />
             ) : (
               <span 
-                className="font-semibold cursor-pointer hover:text-[#bba7db] transition-colors" 
+                className="font-semibold cursor-pointer hover:text-[#bba7db] transition-colors truncate" 
                 data-testid="text-estimate-title"
                 onClick={handleNameEdit}
                 title="Click to edit estimate name"
@@ -4535,91 +4535,77 @@ export default function EstimateDetail() {
                 {estimate?.name || 'Estimate'}
               </span>
             )}
+            {estimate && <span className="flex-shrink-0">{getStatusBadge(estimate)}</span>}
           </div>
         </div>
 
-        {/* Right: Action Buttons */}
-        <div className="flex items-center gap-1.5">
-          {estimate && getStatusBadge(estimate)}
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-                  onClick={handleOpenEditEstimateDialog}
-                  data-testid="button-edit-estimate"
-                >
-                  <Edit className="w-3 h-3" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>Edit estimate</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          <MultiUserSelect
-            value={estimate?.assigneeIds || []}
-            onValueChange={(assigneeIds) => updateAssigneesMutation.mutate(assigneeIds)}
-            placeholder="Assignees"
-            disabled={estimate?.isLocked}
-            className="w-auto min-w-[100px] max-w-[200px]"
-            data-testid="select-estimate-assignees"
-          />
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-                  onClick={handleToggleLock}
-                  data-testid="button-toggle-lock"
-                >
-                  {estimate?.isLocked ? <Lock className="w-3 h-3" /> : <LockOpen className="w-3 h-3" />}
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>{estimate?.isLocked ? 'Unlock estimate' : 'Lock estimate'}</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-                  onClick={() => setIsImportOpen(true)}
-                  disabled={estimate?.isLocked}
-                  data-testid="button-import-estimate"
-                >
-                  <Upload className="w-3 h-3" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>Import items</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-                  onClick={() => setIsCatalogOpen(true)}
-                  disabled={estimate?.isLocked}
-                  data-testid="button-open-catalog"
-                >
-                  <Package className="w-3 h-3" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>Browse catalog</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          {effectiveEstimateId && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div>
-                    <EstimateNotesPopover estimateId={effectiveEstimateId} />
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent>Estimate notes</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
-        </div>
+        {/* Right: Options popover */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center flex-shrink-0"
+              data-testid="button-estimate-options"
+            >
+              <SlidersHorizontal className="w-3 h-3" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-64 p-3" align="end">
+            <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2">Assignees</p>
+            <MultiUserSelect
+              value={estimate?.assigneeIds || []}
+              onValueChange={(assigneeIds) => updateAssigneesMutation.mutate(assigneeIds)}
+              placeholder="Assignees"
+              disabled={estimate?.isLocked}
+              className="w-full"
+              data-testid="select-estimate-assignees"
+            />
+            <Separator className="my-3" />
+            <div className="flex flex-col gap-0.5">
+              <button
+                className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left"
+                onClick={handleOpenEditEstimateDialog}
+                data-testid="button-edit-estimate"
+              >
+                <Edit className="w-3.5 h-3.5 text-muted-foreground" />
+                Edit estimate details
+              </button>
+              <button
+                className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left"
+                onClick={handleToggleLock}
+                data-testid="button-toggle-lock"
+              >
+                {estimate?.isLocked
+                  ? <Lock className="w-3.5 h-3.5 text-muted-foreground" />
+                  : <LockOpen className="w-3.5 h-3.5 text-muted-foreground" />}
+                {estimate?.isLocked ? 'Unlock estimate' : 'Lock estimate'}
+              </button>
+              <button
+                className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                onClick={() => setIsImportOpen(true)}
+                disabled={estimate?.isLocked}
+                data-testid="button-import-estimate"
+              >
+                <Upload className="w-3.5 h-3.5 text-muted-foreground" />
+                Import items
+              </button>
+              <button
+                className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                onClick={() => setIsCatalogOpen(true)}
+                disabled={estimate?.isLocked}
+                data-testid="button-open-catalog"
+              >
+                <Package className="w-3.5 h-3.5 text-muted-foreground" />
+                Browse catalog
+              </button>
+              {effectiveEstimateId && (
+                <div className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md">
+                  <EstimateNotesPopover estimateId={effectiveEstimateId} />
+                  <span className="text-xs">Estimate notes</span>
+                </div>
+              )}
+            </div>
+          </PopoverContent>
+        </Popover>
       </div>
 
       {/* Finance summary (lilac, always visible) */}
@@ -4726,9 +4712,9 @@ export default function EstimateDetail() {
                     data-testid="button-toggle-all-groups"
                   >
                     {groups.some(group => !group.isCollapsed) ? (
-                      <ChevronsUpDown className="h-3 w-3" />
+                      <ChevronUp className="h-3 w-3" />
                     ) : (
-                      <ChevronsUpDown className="h-3 w-3" />
+                      <ChevronDown className="h-3 w-3" />
                     )}
                   </button>
                 </TooltipTrigger>
@@ -4760,7 +4746,7 @@ export default function EstimateDetail() {
               placeholder="Search items..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-6 pl-7 pr-2 text-xs w-40"
+              className="h-6 pl-7 pr-2 text-xs w-40 border-border/30"
               data-testid="input-search-items"
             />
             {searchQuery && (
@@ -4886,7 +4872,7 @@ export default function EstimateDetail() {
           </button>
 
           <button 
-            className="h-6 w-auto px-2 text-xs bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+            className="h-6 w-auto px-2 text-xs bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5 rounded-md"
             data-testid="button-add-item" 
             onClick={handleAddItem}
             disabled={estimate?.isLocked}
