@@ -4626,52 +4626,51 @@ export default function EstimateDetail() {
       {summary && (
         <div className="bg-[#bba7db]/10 flex items-center px-5 py-3 gap-6 flex-wrap">
 
-          {/* Hard left — breakdown: builder cost, line markup, global markup */}
-          <div className="flex flex-col gap-0.5 text-xs">
-            <div className="flex items-baseline gap-1.5">
+          {/* Hard left — breakdown: builder cost, line markup, global markup (ledger-aligned) */}
+          <div className="flex flex-col gap-0.5 text-xs min-w-[220px]">
+            <div className="flex items-baseline justify-between gap-4">
               <span className="text-muted-foreground">Builder Cost</span>
-              <span className="text-muted-foreground/40">·</span>
-              <span className="tabular-nums font-medium" data-testid="text-builder-cost-subtotal">
+              <span className="tabular-nums font-medium text-right" data-testid="text-builder-cost-subtotal">
                 {formatCurrency((summary as any).builderCostTotal ?? summary.subtotal)}
               </span>
             </div>
             {((summary as any).lineItemMarkupAmount ?? 0) !== 0 && (
-              <div className="flex items-baseline gap-1.5">
+              <div className="flex items-baseline justify-between gap-4">
                 <span className="text-muted-foreground">Line Markup</span>
-                <span className="text-muted-foreground/40">·</span>
-                <span className="tabular-nums font-medium" data-testid="text-line-item-markup">
+                <span className="tabular-nums font-medium text-right" data-testid="text-line-item-markup">
                   {formatCurrency((summary as any).lineItemMarkupAmount ?? 0)}
                 </span>
               </div>
             )}
-            <div className="flex items-baseline gap-1.5">
-              <span className="text-muted-foreground">Global Markup</span>
-              <span className="text-muted-foreground/40">·</span>
-              {isEditingMarkup ? (
-                <Input
-                  value={editingMarkup}
-                  onChange={(e) => setEditingMarkup(e.target.value)}
-                  onKeyDown={handleMarkupKeyDown}
-                  onBlur={handleMarkupSave}
-                  className="inline-block w-12 h-5 text-xs bg-transparent border-b border-primary p-0 px-1 focus-visible:ring-0 focus-visible:ring-offset-0"
-                  data-testid="input-markup-percentage"
-                  autoFocus
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.1"
-                />
-              ) : (
-                <span
-                  className="text-[#bba7db] underline underline-offset-2 decoration-dotted cursor-pointer hover:opacity-80 transition-opacity tabular-nums font-medium"
-                  onClick={handleMarkupEdit}
-                  title="Click to edit global markup %"
-                  data-testid="text-markup-percentage"
-                >
-                  {estimate?.projectMarkupPercent || 0}%<Pencil className="w-2.5 h-2.5 inline ml-0.5 mb-0.5 opacity-60" />
-                </span>
-              )}
-              <span className="tabular-nums font-medium" data-testid="text-global-markup">
+            <div className="flex items-baseline justify-between gap-4">
+              <span className="text-muted-foreground flex items-baseline gap-1">
+                Global Markup
+                {isEditingMarkup ? (
+                  <Input
+                    value={editingMarkup}
+                    onChange={(e) => setEditingMarkup(e.target.value)}
+                    onKeyDown={handleMarkupKeyDown}
+                    onBlur={handleMarkupSave}
+                    className="inline-block w-12 h-5 text-xs bg-transparent border-b border-primary p-0 px-1 focus-visible:ring-0 focus-visible:ring-offset-0"
+                    data-testid="input-markup-percentage"
+                    autoFocus
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                  />
+                ) : (
+                  <span
+                    className="text-[#bba7db] underline underline-offset-2 decoration-dotted cursor-pointer hover:opacity-80 transition-opacity font-medium"
+                    onClick={handleMarkupEdit}
+                    title="Click to edit global markup %"
+                    data-testid="text-markup-percentage"
+                  >
+                    {estimate?.projectMarkupPercent || 0}%<Pencil className="w-2.5 h-2.5 inline ml-0.5 mb-0.5 opacity-60" />
+                  </span>
+                )}
+              </span>
+              <span className="tabular-nums font-medium text-right" data-testid="text-global-markup">
                 {formatCurrency((summary as any).globalMarkupAmount ?? summary.markupAmount)}
               </span>
             </div>
