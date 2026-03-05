@@ -5034,7 +5034,7 @@ export default function EstimateDetail() {
                         <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
                           {/* CSS Grid Header */}
                           <div 
-                            className="bg-muted/30 border-b border-border mb-1.5 sticky top-0 z-30"
+                            className="bg-background border-b border-border/50 sticky top-0 z-30"
                             role="row"
                             style={{ 
                               display: 'grid', 
@@ -5044,9 +5044,9 @@ export default function EstimateDetail() {
                             }}
                           >
                             {/* Drag handle column */}
-                            <div className="h-7 px-1 flex items-center" role="columnheader" />
+                            <div className="h-9 px-1 flex items-center" role="columnheader" />
                             {/* Checkbox column */}
-                            <div className="h-7 px-2 flex items-center" role="columnheader">
+                            <div className="h-9 px-2 flex items-center" role="columnheader">
                               <Checkbox
                                 checked={selectedItems.size > 0 && selectedItems.size === items.length}
                                 onCheckedChange={handleSelectAll}
@@ -5060,7 +5060,7 @@ export default function EstimateDetail() {
                               <div 
                                 key={column.id}
                                 role="columnheader"
-                                className="h-7 px-2 flex items-center relative group/header"
+                                className="h-9 px-2 flex items-center relative group/header"
                               >
                                 <span className="truncate text-[10px] font-medium text-muted-foreground uppercase tracking-wide">{column.label}</span>
                                 {/* Resize handle - hidden on last column and on mobile */}
@@ -5079,7 +5079,7 @@ export default function EstimateDetail() {
                               </div>
                             ))}
                             {/* Actions column */}
-                            <div className="h-7 px-2 flex items-center" role="columnheader">
+                            <div className="h-9 px-2 flex items-center" role="columnheader">
                               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Actions</span>
                             </div>
                           </div>
