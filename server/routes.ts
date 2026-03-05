@@ -3377,19 +3377,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       });
 
-      // Create any missing groups
-      for (const groupName of Array.from(uniqueGroupNames)) {
+      // Create any missing groups with sequential order values (preserving import order)
+      // Build an ordered list of group names as they appear in the CSV (first occurrence order)
+      const orderedGroupNames: string[] = [];
+      const seenGroupNames = new Set<string>();
+      items.forEach(item => {
+        if (item.group && item.group.trim()) {
+          const normalized = item.group.trim().toLowerCase();
+          if (!seenGroupNames.has(normalized)) {
+            seenGroupNames.add(normalized);
+            orderedGroupNames.push(item.group.trim());
+          }
+        }
+      });
+
+      // Find the max existing group order to start new groups after it
+      const maxExistingOrder = existingGroups.reduce((max, g) => Math.max(max, g.order ?? 0), -1);
+      let nextOrder = maxExistingOrder + 1;
+
+      for (const groupName of orderedGroupNames) {
         const normalizedName = groupName.toLowerCase().trim();
         if (!groupMap.has(normalizedName)) {
           const newGroup = await storage.createEstimateGroup({
             estimateId,
             name: groupName,
             description: undefined,
-            order: 0,
+            order: nextOrder,
             isCollapsed: false,
             parentGroupId: undefined,
           });
           groupMap.set(normalizedName, newGroup.id);
+          nextOrder++;
         }
       }
 

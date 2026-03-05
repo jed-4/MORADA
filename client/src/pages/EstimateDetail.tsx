@@ -70,7 +70,7 @@ import { EstimateGroupCard } from "@/components/estimates/EstimateGroupCard";
 import { useUndoStack } from "@/hooks/useUndoStack";
 import { CreateRFQDialog } from "@/components/rfq/CreateRFQDialog";
 import { CreatePOFromEstimateDialog } from "@/components/estimates/CreatePOFromEstimateDialog";
-import { Package, Undo2, ChevronsUpDown, Search, ShoppingCart } from "lucide-react";
+import { Package, Undo2, ChevronsUpDown, Search, ShoppingCart, Pencil, X } from "lucide-react";
 import {
   DropdownMenuSub,
   DropdownMenuSubContent,
@@ -2535,19 +2535,25 @@ export default function EstimateDetail() {
     const anyExpanded = groups.some(group => !group.isCollapsed);
     const targetState = anyExpanded; // true = collapse all, false = expand all
     
-    // Update all groups
+    // Optimistically update the cache immediately — no refetch to avoid reorder flicker
+    queryClient.setQueryData(
+      ["/api/estimates", effectiveEstimateId, "groups"],
+      (old: any) => {
+        if (!Array.isArray(old)) return old;
+        return old.map(group => ({ ...group, isCollapsed: targetState }));
+      }
+    );
+    
+    // Fire API calls in parallel (fire-and-forget with error handling)
     const updatePromises = groups.map(group => 
       apiRequest(`/api/estimate-groups/${group.id}`, "PATCH", { isCollapsed: targetState })
     );
     
     try {
       await Promise.all(updatePromises);
-      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
-      toast({
-        title: "Success",
-        description: targetState ? "All groups collapsed." : "All groups expanded.",
-      });
     } catch (error: any) {
+      // Rollback optimistic update on failure
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
       toast({
         title: "Error",
         description: error.message || "Failed to update groups.",
@@ -4805,97 +4811,6 @@ export default function EstimateDetail() {
         </div>
       </div>
 
-      {/* Row 3: Bulk Actions Toolbar (conditional) */}
-      {(selectedItems.size > 0 || selectedGroups.size > 0) && (
-        <div>
-          <div className="flex items-center justify-between px-4 py-2 bg-[#bba7db]/10 border-t border-[#bba7db]/20">
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-medium text-[#bba7db]">
-                {selectedItems.size + selectedGroups.size} selected
-              </span>
-              <Separator orientation="vertical" className="h-4" />
-              <Button
-                variant="outline"
-                className="h-6 px-2 text-xs"
-                onClick={() => {
-                  setSelectedItems(new Set());
-                  setSelectedGroups(new Set());
-                }}
-                data-testid="button-clear-selection"
-              >
-                Clear
-              </Button>
-            </div>
-            <div className="flex items-center gap-2">
-              {selectedItems.size > 0 && (
-                <>
-                  <Button
-                    variant="outline"
-                    className="h-6 px-2 text-xs"
-                    onClick={() => { setBulkMarkupValue(""); setIsBulkMarkupDialogOpen(true); }}
-                    disabled={estimate?.isLocked}
-                    data-testid="button-bulk-set-markup"
-                  >
-                    Set Markup %
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="h-6 px-2 text-xs"
-                    onClick={() => setIsBulkStatusDialogOpen(true)}
-                    disabled={estimate?.isLocked}
-                    data-testid="button-bulk-change-status"
-                  >
-                    Change Status
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="h-6 px-2 text-xs"
-                    onClick={() => setIsBulkGroupDialogOpen(true)}
-                    disabled={estimate?.isLocked}
-                    data-testid="button-bulk-move-group"
-                  >
-                    Move to Group
-                  </Button>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className="h-6 px-2 text-xs"
-                        disabled={estimate?.isLocked}
-                        data-testid="button-create-from-estimate"
-                      >
-                        <Plus className="w-3 h-3 mr-1" />
-                        Create
-                        <ChevronDown className="w-3 h-3 ml-1" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => setIsCreatePOOpen(true)}>
-                        <ShoppingCart className="w-3.5 h-3.5 mr-2" />
-                        Purchase Order
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setIsCreateRFQOpen(true)}>
-                        <Package className="w-3.5 h-3.5 mr-2" />
-                        RFQ
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </>
-              )}
-              <Button
-                variant="destructive"
-                className="h-6 px-2 text-xs"
-                onClick={() => setIsBulkDeleteDialogOpen(true)}
-                disabled={estimate?.isLocked}
-                data-testid="button-bulk-delete"
-              >
-                <Trash2 className="w-3 h-3 mr-1" />
-                Delete
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Collapsible Summary - Fixed above scroll area */}
       {summary && (
@@ -4977,7 +4892,7 @@ export default function EstimateDetail() {
                       />
                     ) : (
                       <span 
-                        className="cursor-pointer hover:text-primary transition-colors underline decoration-dotted"
+                        className="text-primary underline underline-offset-2 decoration-dotted cursor-pointer hover:opacity-80 transition-opacity"
                         onClick={(e) => {
                           e.stopPropagation();
                           handleMarkupEdit();
@@ -4985,7 +4900,7 @@ export default function EstimateDetail() {
                         title="Click to edit global markup percentage"
                         data-testid="text-markup-percentage"
                       >
-                        {estimate?.projectMarkupPercent || 0}
+                        {estimate?.projectMarkupPercent || 0}<Pencil className="w-3 h-3 inline ml-0.5 mb-0.5 opacity-60" />
                       </span>
                     )}
                     %)
@@ -5096,96 +5011,6 @@ export default function EstimateDetail() {
                     }}
                   >
                     <div className="space-y-4">
-                      {/* Bulk Actions Toolbar */}
-                      {(selectedItems.size > 0 || selectedGroups.size > 0) && (
-                        <div className="flex items-center justify-between bg-primary/10 border border-primary/20 rounded-md px-4 py-2">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium">
-                              {selectedItems.size > 0 && `${selectedItems.size} item${selectedItems.size !== 1 ? 's' : ''}`}
-                              {selectedItems.size > 0 && selectedGroups.size > 0 && ', '}
-                              {selectedGroups.size > 0 && `${selectedGroups.size} group${selectedGroups.size !== 1 ? 's' : ''}`}
-                              {' selected'}
-                            </span>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7"
-                              onClick={handleClearSelection}
-                              data-testid="button-clear-selection"
-                            >
-                              Clear Selection
-                            </Button>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {selectedItems.size > 0 && selectedGroups.size === 0 && (
-                              <>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-7"
-                                  onClick={() => { setBulkMarkupValue(""); setIsBulkMarkupDialogOpen(true); }}
-                                  disabled={estimate?.isLocked}
-                                  data-testid="button-bulk-set-markup-inline"
-                                >
-                                  Set Markup %
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-7"
-                                  onClick={() => setIsBulkStatusDialogOpen(true)}
-                                  data-testid="button-bulk-change-status"
-                                >
-                                  Change Status
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-7"
-                                  onClick={() => setIsBulkGroupDialogOpen(true)}
-                                  data-testid="button-bulk-change-group"
-                                >
-                                  Move to Group
-                                </Button>
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button
-                                      variant="default"
-                                      size="sm"
-                                      className="h-7"
-                                      data-testid="button-create-from-estimate-inline"
-                                    >
-                                      <Plus className="w-3 h-3 mr-1" />
-                                      Create
-                                      <ChevronDown className="w-3 h-3 ml-1" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onClick={() => setIsCreatePOOpen(true)}>
-                                      <ShoppingCart className="w-3.5 h-3.5 mr-2" />
-                                      Purchase Order
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => setIsCreateRFQOpen(true)}>
-                                      <Package className="w-3.5 h-3.5 mr-2" />
-                                      RFQ
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              </>
-                            )}
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              className="h-7"
-                              onClick={() => setIsBulkDeleteDialogOpen(true)}
-                              data-testid="button-bulk-delete"
-                            >
-                              <Trash2 className="w-3 h-3 mr-1" />
-                              Delete
-                            </Button>
-                          </div>
-                        </div>
-                      )}
 {(() => {
                       const { sortedGroups, subgroupsByParent, groupedItems, ungroupedItems } = organizeItemsByGroups();
                       
@@ -5238,7 +5063,7 @@ export default function EstimateDetail() {
                         <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
                           {/* CSS Grid Header */}
                           <div 
-                            className="bg-muted/30 border-b-2 border-gray-200 dark:border-gray-700 mb-1.5 rounded-xl sticky top-0 z-30"
+                            className="bg-background border-b-2 border-gray-200 dark:border-gray-700 mb-1.5 rounded-xl sticky top-0 z-30"
                             role="row"
                             style={{ 
                               display: 'grid', 
@@ -7209,6 +7034,103 @@ export default function EstimateDetail() {
         />
       </div>
       
+      {/* Fixed Floating Bulk Action Bar */}
+      {(selectedItems.size > 0 || selectedGroups.size > 0) && (
+        <div className="fixed bottom-0 left-0 right-0 z-50 h-12 bg-background border-t shadow-lg flex items-center justify-between px-4 gap-4" data-testid="bulk-action-bar">
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleClearSelection}
+              data-testid="button-clear-selection"
+              title="Clear selection"
+            >
+              <X className="w-4 h-4" />
+            </Button>
+            <span className="text-sm font-medium">
+              {selectedItems.size > 0 && `${selectedItems.size} item${selectedItems.size !== 1 ? 's' : ''}`}
+              {selectedItems.size > 0 && selectedGroups.size > 0 && ', '}
+              {selectedGroups.size > 0 && `${selectedGroups.size} group${selectedGroups.size !== 1 ? 's' : ''}`}
+              {' selected'}
+            </span>
+            {selectedItems.size > 0 && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => { setBulkMarkupValue(""); setIsBulkMarkupDialogOpen(true); }}
+                  disabled={estimate?.isLocked}
+                  data-testid="button-bulk-set-markup"
+                >
+                  Set Markup %
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsBulkStatusDialogOpen(true)}
+                  disabled={estimate?.isLocked}
+                  data-testid="button-bulk-change-status"
+                >
+                  Change Status
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsBulkGroupDialogOpen(true)}
+                  disabled={estimate?.isLocked}
+                  data-testid="button-bulk-move-group"
+                >
+                  Move to Group
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={estimate?.isLocked}
+                      data-testid="button-create-from-estimate"
+                    >
+                      <Plus className="w-3 h-3 mr-1" />
+                      Create
+                      <ChevronDown className="w-3 h-3 ml-1" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" side="top">
+                    <DropdownMenuItem onClick={() => setIsCreatePOOpen(true)}>
+                      <ShoppingCart className="w-3.5 h-3.5 mr-2" />
+                      Purchase Order
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setIsCreateRFQOpen(true)}>
+                      <Package className="w-3.5 h-3.5 mr-2" />
+                      RFQ
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </>
+            )}
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setIsBulkDeleteDialogOpen(true)}
+              disabled={estimate?.isLocked}
+              data-testid="button-bulk-delete"
+            >
+              <Trash2 className="w-3 h-3 mr-1" />
+              Delete
+            </Button>
+          </div>
+          {summary && (
+            <div className="flex items-center gap-4 text-xs text-muted-foreground flex-shrink-0 ml-auto">
+              <span>Builder Cost: <span className="font-semibold text-foreground">{formatCurrency((summary as any).builderCostTotal ?? summary.subtotal)}</span></span>
+              <span className="text-border">|</span>
+              <span>Global Markup: <span className="font-semibold text-foreground">{formatCurrency((summary as any).globalMarkupAmount ?? summary.markupAmount)}</span></span>
+              <span className="text-border">|</span>
+              <span>Total (inc. GST): <span className="font-semibold text-foreground">{formatCurrency(summary.total)}</span></span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Undo Toast */}
       {undoStack.showUndoToast && undoStack.lastAction && (
         <div className="undo-toast">

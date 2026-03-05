@@ -3912,7 +3912,11 @@ export class MemStorage implements IStorage {
   async getEstimateGroups(estimateId: string): Promise<EstimateGroup[]> {
     const groups = Array.from(this.estimateGroups.values())
       .filter(group => group.estimateId === estimateId);
-    return groups.sort((a, b) => (a.order || 0) - (b.order || 0));
+    return groups.sort((a, b) => {
+      const orderDiff = (a.order || 0) - (b.order || 0);
+      if (orderDiff !== 0) return orderDiff;
+      return a.id.localeCompare(b.id);
+    });
   }
 
   async getEstimateGroup(id: string): Promise<EstimateGroup | undefined> {
@@ -8807,7 +8811,7 @@ export class DbStorage implements IStorage {
     try {
       const groups = await db.select().from(schema.estimateGroups)
         .where(eq(schema.estimateGroups.estimateId, estimateId))
-        .orderBy(asc(schema.estimateGroups.order));
+        .orderBy(asc(schema.estimateGroups.order), asc(schema.estimateGroups.id));
       return groups;
     } catch (error) {
       console.error("Database error in getEstimateGroups:", error);

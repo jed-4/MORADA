@@ -432,9 +432,8 @@ export default function PersonalCalendar() {
         .map((item: any) => item.parentItemId)
     );
 
-    // Schedule items assigned to the current user
+    // Schedule items — show all (assignedToId references contacts table, not user IDs)
     const scheduleEvents: CalendarEvent[] = allScheduleItems
-      .filter((item: any) => item.assignedToId === displayedUserId)
       .filter((item: any) => {
         const isParent = parentItemIds.has(item.id);
         const isChild = !!(item as any).parentItemId;
