@@ -89,9 +89,11 @@ export default function ProjectEstimates() {
     setLocation(`/projects/${projectId}/estimates/new`);
   };
 
-  // Drag and drop sensors
+  // Drag and drop sensors — require 8px movement to distinguish click from drag
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
@@ -226,8 +228,13 @@ export default function ProjectEstimates() {
     const overData = over.data.current;
     const targetStatus = overData?.sortable?.containerId || overId;
 
-    // Only update if dropping into a different status
-    if (typeof targetStatus === 'string' && targetStatus !== estimate.status) {
+    // Guard: only proceed if targetStatus is a known status key from field settings
+    // This prevents a UUID (card ID) or any other unexpected value being saved as status
+    const validStatusKeys = estimateStatuses.map(s => s.key);
+    const isValidStatus = typeof targetStatus === 'string' && validStatusKeys.includes(targetStatus);
+
+    // Only update if dropping into a different, valid status column
+    if (isValidStatus && targetStatus !== estimate.status) {
       updateEstimateStatusMutation.mutate({
         estimateId: estimate.id,
         status: targetStatus,
