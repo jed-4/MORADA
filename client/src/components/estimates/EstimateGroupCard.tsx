@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -201,10 +200,10 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
   const isEvenGroup = groupIndex % 2 === 0;
   
   return (
-    <Card 
+    <div 
       ref={setNodeRef}
       style={style}
-      className={`rounded-md overflow-hidden ${nestingLevel > 0 ? 'ml-8' : ''} ${isGroupSelected ? 'ring-2 ring-[#bba7db]' : ''}`}
+      className={`border-y border-r border-border rounded-r-md overflow-hidden bg-background ${nestingLevel > 0 ? 'ml-8' : ''} ${isGroupSelected ? 'ring-2 ring-[#bba7db]' : ''}`}
       data-testid={`card-group-${group.id}`}
     >
       {/* Group Header - CSS Grid */}
@@ -546,6 +545,6 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
           ))}
         </div>
       </div>
-    </Card>
+    </div>
   );
 };
