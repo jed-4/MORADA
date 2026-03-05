@@ -261,7 +261,7 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
       ref={combinedRef}
       role="row"
       style={style}
-      className={`relative ${className} group hover:bg-gray-50 dark:hover:bg-muted/50 transition-colors border-b border-gray-100 dark:border-gray-800`}
+      className={`relative ${className} group hover-elevate transition-colors border-b border-border/50 last:border-b-0`}
       data-testid={`row-item-${id}`}
       data-sortable-id={id}
     >
@@ -4725,7 +4725,7 @@ export default function EstimateDetail() {
       )}
 
       {/* Filters + Controls */}
-      <div className="h-9 flex items-center justify-between px-3 gap-1.5 border-b border-border/50">
+      <div className="h-9 flex items-center justify-between px-3 gap-1.5">
         {/* Left: Controls + Filter Chips */}
         <div className="flex items-center gap-1.5 flex-1">
           {/* Group Expand/Collapse - Icon only */}
@@ -5034,7 +5034,7 @@ export default function EstimateDetail() {
                         <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
                           {/* CSS Grid Header */}
                           <div 
-                            className="bg-background border-b border-border/50 sticky top-0 z-30"
+                            className="bg-card border-y border-border/50 sticky top-0 z-30"
                             role="row"
                             style={{ 
                               display: 'grid', 
@@ -5084,10 +5084,10 @@ export default function EstimateDetail() {
                             </div>
                           </div>
                           
-                          <div className="space-y-1.5">
+                          <div className="space-y-2 pt-1">
                             {/* Ungrouped items - CSS Grid based */}
                             {ungroupedItems.length > 0 && (
-                              <Card className="rounded-xl overflow-visible" style={{ minWidth: `${tableWidth}px` }}>
+                              <Card className="rounded-md overflow-hidden" style={{ minWidth: `${tableWidth}px` }}>
                                 <div role="grid" style={{ width: `${tableWidth}px`, minWidth: `${tableWidth}px` }}>
                                   {ungroupedItems.map((item) => renderItemWithSubItems(item, undefined, gridTemplate, visibleCols))}
                                 </div>

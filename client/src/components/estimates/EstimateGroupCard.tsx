@@ -204,7 +204,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
     <Card 
       ref={setNodeRef}
       style={style}
-      className={`rounded-xl overflow-visible ${nestingLevel > 0 ? 'ml-8' : ''} ${isGroupSelected ? 'ring-2 ring-[#bba7db]' : ''} ${isEvenGroup ? '' : 'bg-muted/20'}`}
+      className={`rounded-md overflow-hidden ${nestingLevel > 0 ? 'ml-8' : ''} ${isGroupSelected ? 'ring-2 ring-[#bba7db]' : ''}`}
       data-testid={`card-group-${group.id}`}
     >
       {/* Group Header - CSS Grid */}
@@ -216,7 +216,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
           width: `${tableWidth}px`,
           minWidth: `${tableWidth}px`
         }}
-        className="h-10 bg-muted/30 hover:bg-muted/50 transition-colors border-b border-gray-100 dark:border-gray-800"
+        className="h-10 bg-card hover-elevate transition-colors border-b border-border/50"
         data-testid={`row-group-${group.id}`}
       >
         {/* Drag handle */}
@@ -437,7 +437,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                 width: `${tableWidth}px`,
                 minWidth: `${tableWidth}px`
               }}
-              className={`h-10 transition-colors border-b border-gray-100 dark:border-gray-800 ${isAddingLine ? 'bg-muted/20' : 'hover:bg-muted/30'} group/addline`}
+              className={`h-10 transition-colors border-b border-border/50 last:border-b-0 ${isAddingLine ? 'bg-muted/20' : 'hover-elevate'} group/addline`}
             >
               {/* Empty drag handle cell */}
               <div className="h-10 px-1 flex items-center justify-center" role="gridcell" />
@@ -511,7 +511,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
 
           {/* Child subgroups */}
           {childSubgroups.map((childGroup, childIndex) => (
-            <div key={`subgroup-${childGroup.id}`} className="border-t">
+            <div key={`subgroup-${childGroup.id}`} className="border-t border-border/50">
               <EstimateGroupCard
                 group={childGroup}
                 groupedItems={groupedItems}
