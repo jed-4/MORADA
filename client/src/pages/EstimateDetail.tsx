@@ -29,14 +29,13 @@ import { CSS } from '@dnd-kit/utilities';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { 
   ArrowLeft, 
   Lock, 
   LockOpen,
   Unlock, 
   FileText, 
-  Calculator,
   Plus,
   Edit,
   Trash2,
@@ -394,8 +393,6 @@ export default function EstimateDetail() {
   const [editingName, setEditingName] = useState("");
   const [isEditingMarkup, setIsEditingMarkup] = useState(false);
   const [editingMarkup, setEditingMarkup] = useState("");
-  
-  // Summary expansion state
   
   // Add item modal state
   const [isAddItemOpen, setIsAddItemOpen] = useState(false);
