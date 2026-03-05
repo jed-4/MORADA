@@ -4723,7 +4723,7 @@ export default function EstimateDetail() {
           <div className="border border-border rounded-md bg-background">
 
             {/* Toolbar row — sticky at top of table card */}
-            <div className="h-9 flex items-center justify-between px-3 border-b border-border/50 gap-1.5 bg-background sticky top-0 z-20">
+            <div className="h-9 flex items-center justify-between px-3 border-b border-border/50 gap-1.5 bg-background sticky top-0 z-20 rounded-t-md">
               {/* Left: Controls + Filter Chips */}
               <div className="flex items-center gap-1.5 flex-1">
                 {/* Group Expand/Collapse - Icon only */}
