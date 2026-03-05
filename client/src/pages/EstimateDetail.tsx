@@ -5074,7 +5074,7 @@ export default function EstimateDetail() {
                             </div>
                           </div>
                           
-                          <div className="space-y-2 p-2">
+                          <div className="space-y-2 py-2 pr-2">
                             {/* Ungrouped items - CSS Grid based */}
                             {ungroupedItems.length > 0 && (
                               <Card className="rounded-md overflow-hidden" style={{ minWidth: `${tableWidth}px` }}>
