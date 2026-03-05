@@ -270,6 +270,7 @@ export type ImportRowResult = {
   rowIndex: number;
   data?: ImportEstimateItem;
   errors?: string[];
+  warnings?: string[]; // Soft warnings - row still imports, but something was auto-defaulted
   costCodeMatch?: CostCodeMatch;
   typeMatch?: FuzzyMatch<string>;
   unitTypeMatch?: FuzzyMatch<string>;
@@ -534,11 +535,12 @@ export function parseImportRow(
           const rawValue = value !== undefined && value !== null && value !== "" ? String(value) : undefined;
           if (rawValue) {
             typeMatch = matchType(rawValue);
-            // Only apply high-confidence matches - let validation catch others
             if (typeMatch?.matchedValue && typeMatch.confidence === "high") {
               data[fieldKey] = typeMatch.matchedValue;
             } else {
-              data[fieldKey] = rawValue; // Keep original for validation to catch
+              // Unknown type — default to "Material" so the row still imports.
+              // A soft warning is recorded; the user can override via the type dropdown.
+              data[fieldKey] = "Material";
             }
           }
         } else if (fieldKey === "unitType") {
@@ -619,9 +621,16 @@ export function parseImportRow(
     // Validate the parsed data
     const validated = importEstimateItemSchema.parse(data);
     
+    // Build soft warnings for auto-defaulted fields
+    const warnings: string[] = [];
+    if (typeMatch && !typeMatch.matchedValue && typeMatch.rawValue) {
+      warnings.push(`type: Unrecognised value "${typeMatch.rawValue}" — imported as Material`);
+    }
+    
     return {
       rowIndex,
       data: validated,
+      warnings: warnings.length > 0 ? warnings : undefined,
       costCodeMatch,
       typeMatch,
       unitTypeMatch,

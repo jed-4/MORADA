@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { flushSync } from "react-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { format, isWithinInterval } from "date-fns";
+import { format, isWithinInterval, startOfWeek, startOfMonth, subMonths, addMonths, endOfWeek, endOfMonth } from "date-fns";
 import {
   Select,
   SelectContent,
@@ -24,7 +24,7 @@ import {
 import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
 import { TaskDetailModal } from "@/components/TaskDetailModal";
 import TaskEditModal from "@/components/TaskEditModal";
-import type { Task, CompanySettings } from "@shared/schema";
+import type { Task, CompanySettings, ScheduleItem, Schedule } from "@shared/schema";
 import { CalendarFilters as CalendarFiltersType } from "@/components/CalendarFilters";
 import { CalendarView } from "@/components/SavedViews";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -94,6 +94,19 @@ export default function PersonalCalendar() {
 
   const displayedUserId = user?.id;
 
+  const [showParentItems, setShowParentItems] = useState(true);
+  const [showChildItems, setShowChildItems] = useState(true);
+
+  const dateRange = useMemo(() => {
+    const bufferMonths = 1;
+    const rangeStart = startOfWeek(startOfMonth(subMonths(currentDate, bufferMonths)));
+    const rangeEnd = endOfWeek(endOfMonth(addMonths(currentDate, bufferMonths)));
+    return {
+      startDate: format(rangeStart, 'yyyy-MM-dd'),
+      endDate: format(rangeEnd, 'yyyy-MM-dd'),
+    };
+  }, [currentDate]);
+
   // Fetch tasks for displayed user
   const { data: userTasks = [], isLoading: isLoadingTasks } = useQuery({
     queryKey: ["/api/tasks", displayedUserId],
@@ -103,6 +116,23 @@ export default function PersonalCalendar() {
         ? allTasks.filter((task: any) => task.assigneeId === displayedUserId && task.dueDate) 
         : [];
     },
+    enabled: !!displayedUserId,
+  });
+
+  // Fetch schedule items for calendar
+  const { data: allScheduleItems = [] } = useQuery<ScheduleItem[]>({
+    queryKey: ["/api/schedule-items/all", { startDate: dateRange.startDate, endDate: dateRange.endDate }],
+    queryFn: async () => {
+      const response = await fetch(`/api/schedule-items/all?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`);
+      if (!response.ok) throw new Error('Failed to fetch schedule items');
+      return response.json();
+    },
+    enabled: !!displayedUserId,
+  });
+
+  // Fetch all schedules to map schedule items to projects
+  const { data: schedules = [] } = useQuery<Schedule[]>({
+    queryKey: ["/api/schedules"],
     enabled: !!displayedUserId,
   });
 
@@ -395,7 +425,40 @@ export default function PersonalCalendar() {
         };
       });
 
-    const allEvents = [...taskEvents, ...googleCalendarEvents];
+    // Build set of parent item IDs (items that have children)
+    const parentItemIds = new Set(
+      allScheduleItems
+        .filter((item: any) => item.parentItemId)
+        .map((item: any) => item.parentItemId)
+    );
+
+    // Schedule items assigned to the current user
+    const scheduleEvents: CalendarEvent[] = allScheduleItems
+      .filter((item: any) => item.assignedToId === displayedUserId)
+      .filter((item: any) => {
+        const isParent = parentItemIds.has(item.id);
+        const isChild = !!(item as any).parentItemId;
+        if (isParent && !showParentItems) return false;
+        if (isChild && !showChildItems) return false;
+        return true;
+      })
+      .map((item: any) => {
+        const schedule = schedules.find((s: any) => s.id === item.scheduleId);
+        const project = schedule ? projects.find((p: any) => p.id === (schedule as any).projectId) : undefined;
+        return {
+          id: item.id,
+          title: item.name,
+          startDate: new Date(item.startDate),
+          endDate: new Date(item.endDate),
+          color: project?.color || companySettings?.brandColor || "#3B82F6",
+          projectId: (schedule as any)?.projectId,
+          projectColor: project?.color || companySettings?.brandColor || "#3B82F6",
+          type: "schedule" as const,
+          assigneeId: item.assignedToId,
+        };
+      });
+
+    const allEvents = [...taskEvents, ...scheduleEvents, ...googleCalendarEvents];
 
     // Apply filters
     let filtered = allEvents;
@@ -435,7 +498,7 @@ export default function PersonalCalendar() {
     }
 
     return filtered;
-  }, [userTasks, projects, completedOption, googleCalendarEvents, filters, displayedUserId, taskTemplates, companySettings?.brandColor]);
+  }, [userTasks, allScheduleItems, schedules, projects, completedOption, googleCalendarEvents, filters, displayedUserId, taskTemplates, companySettings?.brandColor, showParentItems, showChildItems]);
 
   const handleEventComplete = (eventId: string, completed: boolean) => {
     if (eventId.startsWith('google-')) {
@@ -864,33 +927,56 @@ export default function PersonalCalendar() {
                       { value: 'google-calendar', label: 'Google Calendar' },
                     ].map((type) => {
                       const isGoogleOption = type.value === 'google-calendar';
+                      const isScheduleOption = type.value === 'schedule-item';
                       const isCurrentlySelected = filters.eventTypes?.includes(type.value) || false;
                       const isNotConnected = isGoogleOption && !isGoogleCalendarConnected;
                       const cannotAddNew = isNotConnected && !isCurrentlySelected;
+                      const scheduleDisabled = isScheduleOption && filters.eventTypes !== undefined && !filters.eventTypes.includes('schedule-item');
                       
                       return (
-                        <label 
-                          key={type.value} 
-                          className={`flex items-center gap-2 ${cannotAddNew ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                          title={isNotConnected ? 'Connect Google Calendar in Profile settings' : undefined}
-                        >
-                          <Checkbox
-                            checked={isCurrentlySelected}
-                            disabled={cannotAddNew}
-                            onCheckedChange={() => {
-                              if (cannotAddNew) return;
-                              const current = filters.eventTypes || [];
-                              const updated = current.includes(type.value)
-                                ? current.filter(t => t !== type.value)
-                                : [...current, type.value];
-                              setFilters({...filters, eventTypes: updated.length > 0 ? updated : undefined});
-                            }}
-                          />
-                          <span className="text-xs">{type.label}</span>
-                          {isNotConnected && (
-                            <span className="text-[10px] text-muted-foreground">(not connected)</span>
+                        <div key={type.value}>
+                          <label 
+                            className={`flex items-center gap-2 ${cannotAddNew ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                            title={isNotConnected ? 'Connect Google Calendar in Profile settings' : undefined}
+                          >
+                            <Checkbox
+                              checked={isCurrentlySelected}
+                              disabled={cannotAddNew}
+                              onCheckedChange={() => {
+                                if (cannotAddNew) return;
+                                const current = filters.eventTypes || [];
+                                const updated = current.includes(type.value)
+                                  ? current.filter(t => t !== type.value)
+                                  : [...current, type.value];
+                                setFilters({...filters, eventTypes: updated.length > 0 ? updated : undefined});
+                              }}
+                            />
+                            <span className="text-xs">{type.label}</span>
+                            {isNotConnected && (
+                              <span className="text-[10px] text-muted-foreground">(not connected)</span>
+                            )}
+                          </label>
+                          {isScheduleOption && (
+                            <div className="mt-1 space-y-1">
+                              <label className={`flex items-center gap-2 cursor-pointer pl-5 ${scheduleDisabled ? "opacity-40 pointer-events-none" : ""}`}>
+                                <Checkbox
+                                  checked={showParentItems}
+                                  onCheckedChange={() => setShowParentItems(!showParentItems)}
+                                  disabled={scheduleDisabled}
+                                />
+                                <span className="text-xs">Parents</span>
+                              </label>
+                              <label className={`flex items-center gap-2 cursor-pointer pl-5 ${scheduleDisabled ? "opacity-40 pointer-events-none" : ""}`}>
+                                <Checkbox
+                                  checked={showChildItems}
+                                  onCheckedChange={() => setShowChildItems(!showChildItems)}
+                                  disabled={scheduleDisabled}
+                                />
+                                <span className="text-xs">Children</span>
+                              </label>
+                            </div>
                           )}
-                        </label>
+                        </div>
                       );
                     })}
                   </div>

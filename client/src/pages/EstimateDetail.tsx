@@ -144,6 +144,7 @@ type ColumnConfig = { id: string; label: string; visible: boolean; widthPx: numb
 const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'costCode', label: 'Cost Code', visible: true, widthPx: 90 },
   { id: 'costCategoryId', label: 'Category', visible: false, widthPx: 100 },
+  { id: 'type', label: 'Type', visible: true, widthPx: 80 },
   { id: 'item', label: 'Item', visible: true, widthPx: 140 },
   { id: 'description', label: 'Description', visible: true, widthPx: 160 },
   { id: 'status', label: 'Status', visible: true, widthPx: 85 },
@@ -427,6 +428,8 @@ export default function EstimateDetail() {
   const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false);
   const [isBulkStatusDialogOpen, setIsBulkStatusDialogOpen] = useState(false);
   const [isBulkGroupDialogOpen, setIsBulkGroupDialogOpen] = useState(false);
+  const [isBulkMarkupDialogOpen, setIsBulkMarkupDialogOpen] = useState(false);
+  const [bulkMarkupValue, setBulkMarkupValue] = useState("");
   const [bulkActionStatus, setBulkActionStatus] = useState<string>('');
   const [bulkActionGroup, setBulkActionGroup] = useState<string>('');
   
@@ -1659,6 +1662,29 @@ export default function EstimateDetail() {
     },
   });
 
+  const bulkMarkupMutation = useMutation({
+    mutationFn: async ({ itemIds, markupPercent }: { itemIds: string[]; markupPercent: number }) => {
+      return await apiRequest(`/api/estimates/${effectiveEstimateId}/items/bulk-markup`, "PATCH", { itemIds, markupPercent });
+    },
+    onSuccess: (_, { itemIds }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "summary"] });
+      setIsBulkMarkupDialogOpen(false);
+      setSelectedItems(new Set());
+      toast({
+        title: "Markup updated",
+        description: `Updated markup for ${itemIds.length} item${itemIds.length !== 1 ? 's' : ''}.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update markup.",
+        variant: "destructive",
+      });
+    },
+  });
+
   // Mutation for adding estimate items with optimistic updates
   const addItemMutation = useMutation({
     mutationFn: async (data: InsertEstimateItem) => {
@@ -2406,6 +2432,9 @@ export default function EstimateDetail() {
             const matchedCode = costCodes.find(code => code.id === item.costCode);
             const displayCode = matchedCode ? `${matchedCode.code} - ${matchedCode.title}` : '';
             row.push(escapeCsvField(displayCode));
+            break;
+          case 'type':
+            row.push(escapeCsvField(item.type || ''));
             break;
           case 'item':
             row.push(escapeCsvField(item.name || ''));
@@ -3664,6 +3693,51 @@ export default function EstimateDetail() {
           </div>
         );
       }
+
+      case 'type': {
+        const typeColors: Record<string, string> = {
+          Material: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+          Labour: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
+          Subcontractor: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300',
+          Fee: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
+        };
+        const typeColor = typeColors[item.type] || typeColors.Material;
+        if (isEditing) {
+          return (
+            <div className={cellBase} role="gridcell">
+              <Select
+                value={editingValue || item.type}
+                onValueChange={(value) => {
+                  updateItemMutation.mutate({ itemId: item.id, data: { type: value as any } });
+                  setEditingCell(null);
+                }}
+              >
+                <SelectTrigger className="h-7 text-xs" data-testid={`select-edit-type-${item.id}`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Material">Material</SelectItem>
+                  <SelectItem value="Labour">Labour</SelectItem>
+                  <SelectItem value="Subcontractor">Subcontractor</SelectItem>
+                  <SelectItem value="Fee">Fee</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          );
+        }
+        return (
+          <div
+            className={`${cellBase} ${!isLocked ? 'cursor-pointer' : ''}`}
+            role="gridcell"
+            onClick={(e) => { e.stopPropagation(); if (!isLocked) handleCellEdit(item, 'type'); }}
+            data-testid={`cell-type-${item.id}`}
+          >
+            <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium ${typeColor}`}>
+              {item.type || 'Material'}
+            </span>
+          </div>
+        );
+      }
       
       case 'item':
         const subItems = getSubItems(item.id);
@@ -4418,7 +4492,7 @@ export default function EstimateDetail() {
   }
 
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col h-full">
       {/* UNIFIED 2-ROW HEADER - MATCHES TASKS */}
       
       {/* Row 1 - Breadcrumb + Actions (36px) */}
@@ -4758,6 +4832,15 @@ export default function EstimateDetail() {
                   <Button
                     variant="outline"
                     className="h-6 px-2 text-xs"
+                    onClick={() => { setBulkMarkupValue(""); setIsBulkMarkupDialogOpen(true); }}
+                    disabled={estimate?.isLocked}
+                    data-testid="button-bulk-set-markup"
+                  >
+                    Set Markup %
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="h-6 px-2 text-xs"
                     onClick={() => setIsBulkStatusDialogOpen(true)}
                     disabled={estimate?.isLocked}
                     data-testid="button-bulk-change-status"
@@ -4848,18 +4931,36 @@ export default function EstimateDetail() {
               <CardContent className="pt-0 pb-3 space-y-2">
                 <Separator />
                 
-                {/* Builder's Cost - Sum of raw costs (should match group totals) */}
+                {/* Builder's Cost - Sum of raw costs */}
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Builder's Cost (ex-tax)</span>
                   <span className="font-semibold" data-testid="text-builder-cost-subtotal">
-                    {formatCurrency(summary.subtotal)}
+                    {formatCurrency((summary as any).builderCostTotal ?? summary.subtotal)}
                   </span>
                 </div>
 
-                {/* Markup Line - Total markup from all items */}
+                {/* Line Item Markup (per-item, only shown when non-zero) */}
+                {((summary as any).lineItemMarkupAmount ?? 0) !== 0 && (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Line Item Markup</span>
+                    <span className="font-semibold" data-testid="text-line-item-markup">
+                      {formatCurrency((summary as any).lineItemMarkupAmount ?? 0)}
+                    </span>
+                  </div>
+                )}
+
+                {/* Subtotal ex-tax */}
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Subtotal (ex-tax)</span>
+                  <span className="font-semibold" data-testid="text-subtotal-ex-tax">
+                    {formatCurrency((summary as any).subtotalExTax ?? summary.subtotalWithMarkup)}
+                  </span>
+                </div>
+
+                {/* Global Markup Line */}
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">
-                    Markup (Default: 
+                    Global Markup (
                     {isEditingMarkup ? (
                       <Input
                         value={editingMarkup}
@@ -4881,7 +4982,7 @@ export default function EstimateDetail() {
                           e.stopPropagation();
                           handleMarkupEdit();
                         }}
-                        title="Click to edit default markup percentage"
+                        title="Click to edit global markup percentage"
                         data-testid="text-markup-percentage"
                       >
                         {estimate?.projectMarkupPercent || 0}
@@ -4889,16 +4990,16 @@ export default function EstimateDetail() {
                     )}
                     %)
                   </span>
-                  <span className="font-semibold" data-testid="text-markup">
-                    {formatCurrency(summary.markupAmount)}
+                  <span className="font-semibold" data-testid="text-global-markup">
+                    {formatCurrency((summary as any).globalMarkupAmount ?? summary.markupAmount)}
                   </span>
                 </div>
 
-                {/* Client Amount Ex Tax */}
+                {/* Total ex-tax */}
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Client Amount (ex-tax)</span>
-                  <span className="font-semibold" data-testid="text-client-price-ex-tax">
-                    {formatCurrency(summary.subtotalWithMarkup)}
+                  <span className="text-muted-foreground">Total (ex-tax)</span>
+                  <span className="font-semibold" data-testid="text-total-ex-tax">
+                    {formatCurrency((summary as any).totalExTax ?? summary.subtotalWithMarkup)}
                   </span>
                 </div>
 
@@ -4912,9 +5013,9 @@ export default function EstimateDetail() {
 
                 <Separator className="my-2" />
 
-                {/* Total Line (Client Amount Inc Tax) */}
+                {/* Total Line (inc tax) */}
                 <div className="flex items-center justify-between pt-1">
-                  <span className="text-sm font-medium">Client Amount (inc. GST)</span>
+                  <span className="text-sm font-medium">Total (inc. GST)</span>
                   <span className="text-lg font-bold text-primary" data-testid="text-total-inc-tax">
                     {formatCurrency(summary.total)}
                   </span>
@@ -4926,7 +5027,7 @@ export default function EstimateDetail() {
       )}
 
       {/* Main Content - Horizontal scroll only, vertical flows naturally */}
-      <div className="flex-1 overflow-x-auto px-4 pb-4">
+      <div className="flex-1 overflow-auto min-h-0 px-4 pb-4">
         <div className="inline-block min-w-full">
               {itemsLoading || groupsLoading ? (
                   <div className="animate-pulse space-y-3">
@@ -5018,6 +5119,16 @@ export default function EstimateDetail() {
                           <div className="flex items-center gap-2">
                             {selectedItems.size > 0 && selectedGroups.size === 0 && (
                               <>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7"
+                                  onClick={() => { setBulkMarkupValue(""); setIsBulkMarkupDialogOpen(true); }}
+                                  disabled={estimate?.isLocked}
+                                  data-testid="button-bulk-set-markup-inline"
+                                >
+                                  Set Markup %
+                                </Button>
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -5127,7 +5238,7 @@ export default function EstimateDetail() {
                         <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
                           {/* CSS Grid Header */}
                           <div 
-                            className="bg-muted/30 border-b-2 border-gray-200 dark:border-gray-700 mb-1.5 rounded-xl"
+                            className="bg-muted/30 border-b-2 border-gray-200 dark:border-gray-700 mb-1.5 rounded-xl sticky top-0 z-30"
                             role="row"
                             style={{ 
                               display: 'grid', 
@@ -6963,6 +7074,59 @@ export default function EstimateDetail() {
         </DialogContent>
       </Dialog>
       
+      {/* Bulk Markup Dialog */}
+      <Dialog open={isBulkMarkupDialogOpen} onOpenChange={setIsBulkMarkupDialogOpen}>
+        <DialogContent className="rounded-xl max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Set Markup %</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <p className="text-sm text-muted-foreground">
+              Set per-item markup for {selectedItems.size} selected item{selectedItems.size !== 1 ? 's' : ''}:
+            </p>
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                min="0"
+                max="1000"
+                step="0.1"
+                placeholder="e.g. 15"
+                value={bulkMarkupValue}
+                onChange={(e) => setBulkMarkupValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const pct = parseFloat(bulkMarkupValue);
+                    if (!isNaN(pct) && pct >= 0) {
+                      bulkMarkupMutation.mutate({ itemIds: Array.from(selectedItems), markupPercent: pct });
+                    }
+                  }
+                }}
+                data-testid="input-bulk-markup-percent"
+                autoFocus
+              />
+              <span className="text-sm text-muted-foreground">%</span>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsBulkMarkupDialogOpen(false)} data-testid="button-cancel-bulk-markup">
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                const pct = parseFloat(bulkMarkupValue);
+                if (!isNaN(pct) && pct >= 0) {
+                  bulkMarkupMutation.mutate({ itemIds: Array.from(selectedItems), markupPercent: pct });
+                }
+              }}
+              disabled={bulkMarkupMutation.isPending || bulkMarkupValue === "" || isNaN(parseFloat(bulkMarkupValue)) || parseFloat(bulkMarkupValue) < 0}
+              data-testid="button-confirm-bulk-markup"
+            >
+              {bulkMarkupMutation.isPending ? "Applying..." : "Apply"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Create RFQ Dialog */}
       <CreateRFQDialog
         open={isCreateRFQOpen}

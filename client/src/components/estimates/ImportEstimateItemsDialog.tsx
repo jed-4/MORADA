@@ -593,6 +593,8 @@ export function ImportEstimateItemsDialog({
                           !typeCorrectionApplied;
                         const typeIsMatched = parsed?.typeMatch?.matchedValue && parsed.typeMatch.confidence === "high";
                         
+                        const hasTypeWarning = !hasError && !!parsed?.warnings?.some(w => w.includes("type:")) && !typeCorrectionApplied;
+                        
                         return (
                           <TableRow 
                             key={`${groupName}-${index}`}
@@ -600,14 +602,16 @@ export function ImportEstimateItemsDialog({
                               hasError && !hasOnlyFixableErrors && !typeNowFixed && "bg-destructive/10",
                               hasOnlyFixableErrors && !typeNowFixed && "bg-amber-50 dark:bg-amber-900/20",
                               typeNowFixed && "bg-green-50 dark:bg-green-900/20",
+                              hasTypeWarning && "bg-amber-50/60 dark:bg-amber-900/10",
                               isGroupSelected && !hasError && "bg-primary/10"
                             )}
                           >
                             <TableCell>
                               {hasError && !hasOnlyFixableErrors && !typeNowFixed && <AlertCircle className="h-4 w-4 text-destructive" />}
                               {hasOnlyFixableErrors && !typeNowFixed && <AlertCircle className="h-4 w-4 text-amber-500" />}
+                              {hasTypeWarning && <AlertCircle className="h-4 w-4 text-amber-400" />}
                               {typeNowFixed && <CheckCircle className="h-4 w-4 text-green-600" />}
-                              {!hasError && !typeNowFixed && (
+                              {!hasError && !typeNowFixed && !hasTypeWarning && (
                                 <CheckCircle className="h-4 w-4 text-green-600" />
                               )}
                             </TableCell>

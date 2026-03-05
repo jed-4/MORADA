@@ -3686,6 +3686,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Bulk markup update for estimate items
+  app.patch("/api/estimates/:estimateId/items/bulk-markup", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      const { estimateId } = req.params;
+      const { itemIds, markupPercent } = req.body;
+
+      if (!Array.isArray(itemIds) || itemIds.length === 0) {
+        return res.status(400).json({ error: "itemIds must be a non-empty array" });
+      }
+      if (typeof markupPercent !== 'number' || markupPercent < 0) {
+        return res.status(400).json({ error: "markupPercent must be a non-negative number" });
+      }
+
+      const items = await storage.getEstimateItems(estimateId);
+      let updated = 0;
+
+      for (const itemId of itemIds) {
+        const item = items.find(i => i.id === itemId);
+        if (!item) continue;
+
+        const builderCostRaw = item.unitCostExTax * item.quantity;
+        const amountExTax = Math.round(builderCostRaw * (1 + markupPercent / 100) * 100) / 100;
+        const gstAmount = Math.round(amountExTax * 0.10 * 100) / 100;
+        const priceIncTax = Math.round((amountExTax + gstAmount) * 100) / 100;
+
+        await storage.updateEstimateItem(itemId, {
+          markupPercent,
+          taxAmount: gstAmount,
+          priceIncTax,
+        });
+        updated++;
+      }
+
+      res.json({ updated });
+    } catch (error) {
+      console.error("Error in bulk markup update:", error);
+      res.status(500).json({ error: "Failed to update markup" });
+    }
+  });
+
   // Reorder estimate items - MUST come before /api/estimate-items/:id to avoid route conflict
   app.patch("/api/estimate-items/reorder", requireAuth, requireTeamMember, async (req, res) => {
     try {
