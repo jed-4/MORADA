@@ -278,16 +278,8 @@ export default function Estimates() {
     // Fetch summary for this estimate
     const { data: summary } = useQuery<EstimateSummary>({
       queryKey: ["/api/estimates", estimate.id, "summary"],
-      queryFn: async () => {
-        const response = await fetch(`/api/estimates/${estimate.id}/summary`, {
-          credentials: "include",
-        });
-        if (!response.ok) {
-          throw new Error(`${response.status}: ${response.statusText}`);
-        }
-        return response.json();
-      },
       enabled: !!estimate.id,
+      staleTime: 0,
     });
 
     const handleEstimateClick = () => {
@@ -663,16 +655,8 @@ function SortableEstimateCard({ estimate, estimateStatuses, projects }: {
   // Fetch summary for this estimate
   const { data: summary } = useQuery<EstimateSummary>({
     queryKey: ["/api/estimates", estimate.id, "summary"],
-    queryFn: async () => {
-      const response = await fetch(`/api/estimates/${estimate.id}/summary`, {
-        credentials: "include",
-      });
-      if (!response.ok) {
-        throw new Error(`${response.status}: ${response.statusText}`);
-      }
-      return response.json();
-    },
     enabled: !!estimate.id,
+    staleTime: 0,
   });
 
   const handleEstimateClick = (e: React.MouseEvent) => {
