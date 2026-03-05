@@ -259,10 +259,10 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
     >
       {/* Drop indicator line - shows above or below based on position */}
       {dropIndicator === 'above' && (
-        <div className="absolute -top-[2px] left-0 right-0 h-1 bg-blue-500 z-50 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.6)]" />
+        <div className="absolute -top-[2px] left-0 right-0 h-1 bg-[#bba7db] z-50 rounded-full shadow-[0_0_8px_rgba(187,167,219,0.6)]" />
       )}
       {dropIndicator === 'below' && (
-        <div className="absolute -bottom-[2px] left-0 right-0 h-1 bg-blue-500 z-50 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.6)]" />
+        <div className="absolute -bottom-[2px] left-0 right-0 h-1 bg-[#bba7db] z-50 rounded-full shadow-[0_0_8px_rgba(187,167,219,0.6)]" />
       )}
       {/* Drag handle — floats in left dead zone, zero grid cost */}
       {isDraggable && (
