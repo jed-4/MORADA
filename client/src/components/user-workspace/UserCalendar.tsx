@@ -326,9 +326,15 @@ export default function UserCalendar({ user, isOwnPage }: UserCalendarProps) {
         // If view doesn't have eventTypes defined, use default (all selected)
         if (!normalizedFilters.eventTypes) {
           normalizedFilters.eventTypes = defaultEventTypes;
-        } else if (!normalizedFilters.eventTypes.includes("google-calendar")) {
-          // Ensure google-calendar is always included in eventTypes
-          normalizedFilters.eventTypes = [...normalizedFilters.eventTypes, "google-calendar"];
+        } else {
+          if (!normalizedFilters.eventTypes.includes("google-calendar")) {
+            // Ensure google-calendar is always included in eventTypes
+            normalizedFilters.eventTypes = [...normalizedFilters.eventTypes, "google-calendar"];
+          }
+          if (!normalizedFilters.eventTypes.includes("schedule")) {
+            // Ensure schedule is always included in eventTypes (backward compat for old saved views)
+            normalizedFilters.eventTypes = [...normalizedFilters.eventTypes, "schedule"];
+          }
         }
         setFilters(normalizedFilters);
       }

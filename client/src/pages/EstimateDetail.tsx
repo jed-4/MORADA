@@ -396,7 +396,6 @@ export default function EstimateDetail() {
   const [editingMarkup, setEditingMarkup] = useState("");
   
   // Summary expansion state
-  const [isSummaryExpanded, setIsSummaryExpanded] = useState(false);
   
   // Add item modal state
   const [isAddItemOpen, setIsAddItemOpen] = useState(false);
@@ -4499,10 +4498,11 @@ export default function EstimateDetail() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* UNIFIED 2-ROW HEADER - MATCHES TASKS */}
-      
-      {/* Row 1 - Breadcrumb + Actions (36px) */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
+      {/* Unified header card — breadcrumb row + filter row + finance summary */}
+      <div className="mx-3 mt-3 rounded-lg border border-border bg-card flex-shrink-0 overflow-hidden">
+
+      {/* Row 1 - Breadcrumb + Actions */}
+      <div className="h-8 flex items-center justify-between px-3 border-b border-border/50">
         {/* Left: Breadcrumb Navigation */}
         <div className="flex items-center gap-2">
           <Button 
@@ -4625,8 +4625,8 @@ export default function EstimateDetail() {
         </div>
       </div>
 
-      {/* Row 2 - Filters + Controls (36px) */}
-      <div className="h-9 bg-background flex items-center justify-between px-2 gap-1.5 border-b border-border flex-shrink-0">
+      {/* Row 2 - Filters + Controls */}
+      <div className="h-9 flex items-center justify-between px-3 gap-1.5 border-b border-border/50">
         {/* Left: Controls + Filter Chips */}
         <div className="flex items-center gap-1.5 flex-1">
           {/* Group Expand/Collapse - Icon only */}
@@ -4812,134 +4812,95 @@ export default function EstimateDetail() {
       </div>
 
 
-      {/* Collapsible Summary - Fixed above scroll area */}
+      {/* Row 3 — Finance summary (lilac, always visible) */}
       {summary && (
-        <div className="px-4 pt-4 pb-2 flex-shrink-0">
-          <Card className="rounded-xl bg-card">
-            <CardHeader className="cursor-pointer hover-elevate py-2.5" onClick={() => setIsSummaryExpanded(!isSummaryExpanded)}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    className="h-6 w-6"
-                    data-testid="button-toggle-summary"
-                  >
-                    {isSummaryExpanded ? (
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    ) : (
-                      <ChevronRight className="h-3.5 w-3.5" />
-                    )}
-                  </Button>
-                  <CardTitle className="flex items-center text-sm font-semibold">
-                    <Calculator className="w-4 h-4 mr-1.5" />
-                    Estimate Total
-                  </CardTitle>
-                </div>
-                <div className="text-lg font-bold text-[#bba7db]" data-testid="text-total">
-                  {formatCurrency(summary.total)}
-                </div>
+        <div className="bg-[#bba7db]/10 flex items-center px-5 py-3 gap-8 flex-wrap">
+
+          {/* Left — total: big number first, label below */}
+          <div className="flex flex-col">
+            <span className="text-2xl font-bold tabular-nums leading-tight" data-testid="text-total-inc-tax">
+              {formatCurrency(summary.total)}
+            </span>
+            <span className="text-[11px] text-muted-foreground mt-0.5">Total (inc. GST)</span>
+          </div>
+
+          {/* Middle — breakdown lines with dot separators */}
+          <div className="flex flex-col gap-0.5 text-xs">
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-muted-foreground">Builder Cost</span>
+              <span className="text-muted-foreground/40">·</span>
+              <span className="tabular-nums font-medium" data-testid="text-builder-cost-subtotal">
+                {formatCurrency((summary as any).builderCostTotal ?? summary.subtotal)}
+              </span>
+            </div>
+            {((summary as any).lineItemMarkupAmount ?? 0) !== 0 && (
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-muted-foreground">Line Markup</span>
+                <span className="text-muted-foreground/40">·</span>
+                <span className="tabular-nums font-medium" data-testid="text-line-item-markup">
+                  {formatCurrency((summary as any).lineItemMarkupAmount ?? 0)}
+                </span>
               </div>
-            </CardHeader>
-            
-            {isSummaryExpanded && (
-              <CardContent className="pt-0 pb-3 space-y-2">
-                <Separator />
-                
-                {/* Builder's Cost - Sum of raw costs */}
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Builder's Cost (ex-tax)</span>
-                  <span className="font-semibold" data-testid="text-builder-cost-subtotal">
-                    {formatCurrency((summary as any).builderCostTotal ?? summary.subtotal)}
-                  </span>
-                </div>
-
-                {/* Line Item Markup (per-item, only shown when non-zero) */}
-                {((summary as any).lineItemMarkupAmount ?? 0) !== 0 && (
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Line Item Markup</span>
-                    <span className="font-semibold" data-testid="text-line-item-markup">
-                      {formatCurrency((summary as any).lineItemMarkupAmount ?? 0)}
-                    </span>
-                  </div>
-                )}
-
-                {/* Subtotal ex-tax */}
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Subtotal (ex-tax)</span>
-                  <span className="font-semibold" data-testid="text-subtotal-ex-tax">
-                    {formatCurrency((summary as any).subtotalExTax ?? summary.subtotalWithMarkup)}
-                  </span>
-                </div>
-
-                {/* Global Markup Line */}
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">
-                    Global Markup (
-                    {isEditingMarkup ? (
-                      <Input
-                        value={editingMarkup}
-                        onChange={(e) => setEditingMarkup(e.target.value)}
-                        onKeyDown={handleMarkupKeyDown}
-                        onBlur={handleMarkupSave}
-                        className="inline-block w-12 h-5 text-xs bg-transparent border-b border-primary p-0 px-1 focus-visible:ring-0 focus-visible:ring-offset-0"
-                        data-testid="input-markup-percentage"
-                        autoFocus
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.1"
-                      />
-                    ) : (
-                      <span 
-                        className="text-primary underline underline-offset-2 decoration-dotted cursor-pointer hover:opacity-80 transition-opacity"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleMarkupEdit();
-                        }}
-                        title="Click to edit global markup percentage"
-                        data-testid="text-markup-percentage"
-                      >
-                        {estimate?.projectMarkupPercent || 0}<Pencil className="w-3 h-3 inline ml-0.5 mb-0.5 opacity-60" />
-                      </span>
-                    )}
-                    %)
-                  </span>
-                  <span className="font-semibold" data-testid="text-global-markup">
-                    {formatCurrency((summary as any).globalMarkupAmount ?? summary.markupAmount)}
-                  </span>
-                </div>
-
-                {/* Total ex-tax */}
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Total (ex-tax)</span>
-                  <span className="font-semibold" data-testid="text-total-ex-tax">
-                    {formatCurrency((summary as any).totalExTax ?? summary.subtotalWithMarkup)}
-                  </span>
-                </div>
-
-                {/* GST Line */}
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">GST ({estimate?.taxRate || 10}%)</span>
-                  <span className="font-semibold" data-testid="text-tax">
-                    {formatCurrency(summary.taxAmount)}
-                  </span>
-                </div>
-
-                <Separator className="my-2" />
-
-                {/* Total Line (inc tax) */}
-                <div className="flex items-center justify-between pt-1">
-                  <span className="text-sm font-medium">Total (inc. GST)</span>
-                  <span className="text-lg font-bold text-primary" data-testid="text-total-inc-tax">
-                    {formatCurrency(summary.total)}
-                  </span>
-                </div>
-              </CardContent>
             )}
-          </Card>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-muted-foreground">Global Markup</span>
+              <span className="text-muted-foreground/40">·</span>
+              {isEditingMarkup ? (
+                <Input
+                  value={editingMarkup}
+                  onChange={(e) => setEditingMarkup(e.target.value)}
+                  onKeyDown={handleMarkupKeyDown}
+                  onBlur={handleMarkupSave}
+                  className="inline-block w-12 h-5 text-xs bg-transparent border-b border-primary p-0 px-1 focus-visible:ring-0 focus-visible:ring-offset-0"
+                  data-testid="input-markup-percentage"
+                  autoFocus
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                />
+              ) : (
+                <span
+                  className="text-[#bba7db] underline underline-offset-2 decoration-dotted cursor-pointer hover:opacity-80 transition-opacity tabular-nums font-medium"
+                  onClick={handleMarkupEdit}
+                  title="Click to edit global markup %"
+                  data-testid="text-markup-percentage"
+                >
+                  {estimate?.projectMarkupPercent || 0}%<Pencil className="w-2.5 h-2.5 inline ml-0.5 mb-0.5 opacity-60" />
+                </span>
+              )}
+              <span className="tabular-nums font-medium" data-testid="text-global-markup">
+                {formatCurrency((summary as any).globalMarkupAmount ?? summary.markupAmount)}
+              </span>
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div className="w-px self-stretch bg-[#bba7db]/30 mx-1" />
+
+          {/* Right — ex-tax + GST breakdown, pushed right */}
+          <div className="flex flex-col gap-1 ml-auto">
+            <span className="text-[10px] uppercase tracking-widest font-medium text-muted-foreground/70">Estimate</span>
+            <div className="flex items-end gap-6">
+              <div className="flex flex-col">
+                <span className="text-[10px] text-muted-foreground">Ex-tax</span>
+                <span className="text-base font-bold tabular-nums leading-tight" data-testid="text-total-ex-tax">
+                  {formatCurrency((summary as any).totalExTax ?? summary.subtotalWithMarkup)}
+                </span>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[10px] text-muted-foreground">GST ({estimate?.taxRate || 10}%)</span>
+                <span className="text-base font-bold tabular-nums leading-tight" data-testid="text-tax">
+                  {formatCurrency(summary.taxAmount)}
+                </span>
+              </div>
+            </div>
+          </div>
+
         </div>
       )}
+
+      </div>{/* end unified header card */}
 
       {/* Main Content - Horizontal scroll only, vertical flows naturally */}
       <div className="flex-1 overflow-auto min-h-0 px-4 pb-4">
@@ -7036,7 +6997,7 @@ export default function EstimateDetail() {
       
       {/* Fixed Floating Bulk Action Bar */}
       {(selectedItems.size > 0 || selectedGroups.size > 0) && (
-        <div className="fixed bottom-0 left-0 right-0 z-50 h-12 bg-background border-t shadow-lg flex items-center justify-between px-4 gap-4" data-testid="bulk-action-bar">
+        <div className="fixed bottom-4 left-4 right-4 z-50 h-9 bg-background border rounded-lg shadow-lg flex items-center gap-3 px-3" data-testid="bulk-action-bar">
           <div className="flex items-center gap-2 flex-shrink-0">
             <Button
               variant="ghost"
@@ -7062,7 +7023,7 @@ export default function EstimateDetail() {
                   disabled={estimate?.isLocked}
                   data-testid="button-bulk-set-markup"
                 >
-                  Set Markup %
+                  Markup
                 </Button>
                 <Button
                   variant="outline"
@@ -7071,7 +7032,7 @@ export default function EstimateDetail() {
                   disabled={estimate?.isLocked}
                   data-testid="button-bulk-change-status"
                 >
-                  Change Status
+                  Status
                 </Button>
                 <Button
                   variant="outline"
@@ -7080,7 +7041,7 @@ export default function EstimateDetail() {
                   disabled={estimate?.isLocked}
                   data-testid="button-bulk-move-group"
                 >
-                  Move to Group
+                  Move
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -7119,15 +7080,6 @@ export default function EstimateDetail() {
               Delete
             </Button>
           </div>
-          {summary && (
-            <div className="flex items-center gap-4 text-xs text-muted-foreground flex-shrink-0 ml-auto">
-              <span>Builder Cost: <span className="font-semibold text-foreground">{formatCurrency((summary as any).builderCostTotal ?? summary.subtotal)}</span></span>
-              <span className="text-border">|</span>
-              <span>Global Markup: <span className="font-semibold text-foreground">{formatCurrency((summary as any).globalMarkupAmount ?? summary.markupAmount)}</span></span>
-              <span className="text-border">|</span>
-              <span>Total (inc. GST): <span className="font-semibold text-foreground">{formatCurrency(summary.total)}</span></span>
-            </div>
-          )}
         </div>
       )}
 
