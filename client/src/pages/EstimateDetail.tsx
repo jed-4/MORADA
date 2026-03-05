@@ -390,6 +390,7 @@ export default function EstimateDetail() {
   
   // Inline editing state
   const [isEditingName, setIsEditingName] = useState(false);
+  const [isSummaryExpanded, setIsSummaryExpanded] = useState(true);
   const [editingName, setEditingName] = useState("");
   const [isEditingMarkup, setIsEditingMarkup] = useState(false);
   const [editingMarkup, setEditingMarkup] = useState("");
@@ -4539,77 +4540,101 @@ export default function EstimateDetail() {
           </div>
         </div>
 
-        {/* Right: Options popover */}
-        <Popover>
-          <PopoverTrigger asChild>
-            <button
-              className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center flex-shrink-0"
-              data-testid="button-estimate-options"
-            >
-              <SlidersHorizontal className="w-3 h-3" />
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-64 p-3" align="end">
-            <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2">Assignees</p>
-            <MultiUserSelect
-              value={estimate?.assigneeIds || []}
-              onValueChange={(assigneeIds) => updateAssigneesMutation.mutate(assigneeIds)}
-              placeholder="Assignees"
-              disabled={estimate?.isLocked}
-              className="w-full"
-              data-testid="select-estimate-assignees"
-            />
-            <Separator className="my-3" />
-            <div className="flex flex-col gap-0.5">
+        {/* Right: Notes + Collapse summary + Options popover */}
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {effectiveEstimateId && (
+            <EstimateNotesPopover estimateId={effectiveEstimateId} />
+          )}
+          {summary && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                    onClick={() => setIsSummaryExpanded(v => !v)}
+                    data-testid="button-toggle-summary"
+                  >
+                    {isSummaryExpanded
+                      ? <ChevronUp className="h-3 w-3" />
+                      : <ChevronDown className="h-3 w-3" />}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>{isSummaryExpanded ? 'Collapse summary' : 'Expand summary'}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+          <Popover>
+            <PopoverTrigger asChild>
               <button
-                className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left"
-                onClick={handleOpenEditEstimateDialog}
-                data-testid="button-edit-estimate"
+                className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+                data-testid="button-estimate-options"
               >
-                <Edit className="w-3.5 h-3.5 text-muted-foreground" />
-                Edit estimate details
+                <SlidersHorizontal className="w-3 h-3" />
               </button>
-              <button
-                className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left"
-                onClick={handleToggleLock}
-                data-testid="button-toggle-lock"
-              >
-                {estimate?.isLocked
-                  ? <Lock className="w-3.5 h-3.5 text-muted-foreground" />
-                  : <LockOpen className="w-3.5 h-3.5 text-muted-foreground" />}
-                {estimate?.isLocked ? 'Unlock estimate' : 'Lock estimate'}
-              </button>
-              <button
-                className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"
-                onClick={() => setIsImportOpen(true)}
+            </PopoverTrigger>
+            <PopoverContent className="w-64 p-3" align="end">
+              <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2">Assignees</p>
+              <MultiUserSelect
+                value={estimate?.assigneeIds || []}
+                onValueChange={(assigneeIds) => updateAssigneesMutation.mutate(assigneeIds)}
+                placeholder="Assignees"
                 disabled={estimate?.isLocked}
-                data-testid="button-import-estimate"
-              >
-                <Upload className="w-3.5 h-3.5 text-muted-foreground" />
-                Import items
-              </button>
-              <button
-                className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"
-                onClick={() => setIsCatalogOpen(true)}
-                disabled={estimate?.isLocked}
-                data-testid="button-open-catalog"
-              >
-                <Package className="w-3.5 h-3.5 text-muted-foreground" />
-                Browse catalog
-              </button>
-              {effectiveEstimateId && (
-                <div className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md">
-                  <EstimateNotesPopover estimateId={effectiveEstimateId} />
-                  <span className="text-xs">Estimate notes</span>
-                </div>
-              )}
-            </div>
-          </PopoverContent>
-        </Popover>
+                className="w-full"
+                data-testid="select-estimate-assignees"
+              />
+              <Separator className="my-3" />
+              <div className="flex flex-col gap-0.5">
+                <button
+                  className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left"
+                  onClick={handleOpenEditEstimateDialog}
+                  data-testid="button-edit-estimate"
+                >
+                  <Edit className="w-3.5 h-3.5 text-muted-foreground" />
+                  Edit estimate details
+                </button>
+                <button
+                  className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left"
+                  onClick={handleToggleLock}
+                  data-testid="button-toggle-lock"
+                >
+                  {estimate?.isLocked
+                    ? <Lock className="w-3.5 h-3.5 text-muted-foreground" />
+                    : <LockOpen className="w-3.5 h-3.5 text-muted-foreground" />}
+                  {estimate?.isLocked ? 'Unlock estimate' : 'Lock estimate'}
+                </button>
+                <button
+                  className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                  onClick={() => setIsImportOpen(true)}
+                  disabled={estimate?.isLocked}
+                  data-testid="button-import-estimate"
+                >
+                  <Upload className="w-3.5 h-3.5 text-muted-foreground" />
+                  Import items
+                </button>
+                <button
+                  className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                  onClick={() => setIsCatalogOpen(true)}
+                  disabled={estimate?.isLocked}
+                  data-testid="button-open-catalog"
+                >
+                  <Package className="w-3.5 h-3.5 text-muted-foreground" />
+                  Browse catalog
+                </button>
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
       </div>
 
-      {/* Finance summary (lilac, always visible) */}
-      {summary && (
+      {/* Finance summary — collapsible */}
+      {summary && !isSummaryExpanded && (
+        <div className="bg-[#bba7db]/10 flex items-center px-5 py-1.5 gap-3 border-b border-[#bba7db]/20">
+          <span className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Total</span>
+          <span className="text-sm font-bold tabular-nums text-[#bba7db]">{formatCurrency(summary.total)}</span>
+          <span className="text-[11px] text-muted-foreground">inc. GST</span>
+        </div>
+      )}
+      {summary && isSummaryExpanded && (
         <div className="bg-[#bba7db]/10 flex items-center px-5 py-3 gap-6 flex-wrap">
 
           {/* Hard left — breakdown: builder cost, line markup, global markup (ledger-aligned) */}
@@ -5007,7 +5032,7 @@ export default function EstimateDetail() {
                         <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
                           {/* CSS Grid Header */}
                           <div 
-                            className="bg-background border-b-2 border-gray-200 dark:border-gray-700 mb-1.5 rounded-xl sticky top-0 z-30"
+                            className="bg-muted/30 border-b border-border mb-1.5 rounded-xl sticky top-0 z-30"
                             role="row"
                             style={{ 
                               display: 'grid', 
@@ -5017,9 +5042,9 @@ export default function EstimateDetail() {
                             }}
                           >
                             {/* Drag handle column */}
-                            <div className="h-10 px-1 flex items-center" role="columnheader" />
+                            <div className="h-9 px-1 flex items-center" role="columnheader" />
                             {/* Checkbox column */}
-                            <div className="h-10 px-2 flex items-center" role="columnheader">
+                            <div className="h-9 px-2 flex items-center" role="columnheader">
                               <Checkbox
                                 checked={selectedItems.size > 0 && selectedItems.size === items.length}
                                 onCheckedChange={handleSelectAll}
@@ -5033,9 +5058,9 @@ export default function EstimateDetail() {
                               <div 
                                 key={column.id}
                                 role="columnheader"
-                                className="h-10 px-2 flex items-center text-xs font-semibold relative group/header"
+                                className="h-9 px-2 flex items-center relative group/header"
                               >
-                                <span className="truncate">{column.label}</span>
+                                <span className="truncate text-[11px] font-medium text-muted-foreground uppercase tracking-wide">{column.label}</span>
                                 {/* Resize handle - hidden on last column and on mobile */}
                                 {index < visibleCols.length - 1 && (
                                   <div
@@ -5052,8 +5077,8 @@ export default function EstimateDetail() {
                               </div>
                             ))}
                             {/* Actions column */}
-                            <div className="h-10 px-2 flex items-center text-xs font-semibold" role="columnheader">
-                              Actions
+                            <div className="h-9 px-2 flex items-center" role="columnheader">
+                              <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Actions</span>
                             </div>
                           </div>
                           
@@ -5194,22 +5219,27 @@ export default function EstimateDetail() {
       </div>
 
       {/* Quick Totals Footer - Fixed at bottom outside scroll area */}
-      <div className="h-10 bg-muted/50 border-t border-border flex items-center justify-end px-4 gap-6 text-xs flex-shrink-0">
+      <div className="h-10 bg-muted/30 border-t border-border flex items-center justify-end px-4 gap-5 text-xs flex-shrink-0">
         <div className="flex items-center gap-1.5">
-          <span className="text-muted-foreground">Items:</span>
-          <span className="font-medium">{summary?.itemCount || items.length}</span>
+          <span className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Builder Cost</span>
+          <span className="tabular-nums font-medium">{formatCurrency((summary as any)?.builderCostTotal ?? summary?.subtotal ?? 0)}</span>
         </div>
+        {((summary as any)?.globalMarkupPercent ?? estimate?.projectMarkupPercent ?? 0) > 0 && (
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Global Markup</span>
+            <span className="tabular-nums font-medium text-[#bba7db]">
+              {(summary as any)?.globalMarkupPercent ?? estimate?.projectMarkupPercent ?? 0}%
+            </span>
+          </div>
+        )}
         <div className="flex items-center gap-1.5">
-          <span className="text-muted-foreground">Builder's Cost:</span>
-          <span className="font-medium">{formatCurrency(summary?.subtotal || 0)}</span>
+          <span className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Subtotal</span>
+          <span className="tabular-nums font-medium">{formatCurrency((summary as any)?.totalExTax ?? summary?.subtotalWithMarkup ?? 0)}</span>
         </div>
+        <div className="w-px self-stretch bg-border/60 my-2" />
         <div className="flex items-center gap-1.5">
-          <span className="text-muted-foreground">GST ({taxRate}%):</span>
-          <span className="font-medium">{formatCurrency(summary?.taxAmount || 0)}</span>
-        </div>
-        <div className="flex items-center gap-1.5 border-l pl-4">
-          <span className="text-muted-foreground font-medium">Total (Inc GST):</span>
-          <span className="font-semibold text-[#bba7db]">{formatCurrency(summary?.total || 0)}</span>
+          <span className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Total</span>
+          <span className="tabular-nums font-semibold text-[#bba7db]">{formatCurrency(summary?.total || 0)}</span>
         </div>
       </div>
 
