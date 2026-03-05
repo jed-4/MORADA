@@ -4214,6 +4214,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Summary Calculations API Route
   app.get("/api/estimates/:id/summary", async (req, res) => {
     try {
+      res.set('Cache-Control', 'no-store');
       const summary = await storage.getEstimateSummary(req.params.id);
       res.json(summary);
     } catch (error) {
