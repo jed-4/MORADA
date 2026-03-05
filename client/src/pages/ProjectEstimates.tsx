@@ -254,15 +254,14 @@ export default function ProjectEstimates() {
   }, [estimates]);
 
   const formatCurrency = (amount: number) => {
-    const dollars = amount / 100;
-    const isWholeNumber = dollars % 1 === 0;
+    const isWholeNumber = amount % 1 === 0;
     
     return new Intl.NumberFormat('en-AU', {
       style: 'currency',
       currency: 'AUD',
       minimumFractionDigits: isWholeNumber ? 0 : 2,
       maximumFractionDigits: 2
-    }).format(dollars);
+    }).format(amount);
   };
 
   const getStatusBadge = (estimate: Estimate) => {
@@ -795,15 +794,14 @@ function SortableEstimateCard({ estimate, estimateStatuses, projectId }: {
   };
 
   const formatCurrency = (amount: number) => {
-    const dollars = amount / 100;
-    const isWholeNumber = dollars % 1 === 0;
+    const isWholeNumber = amount % 1 === 0;
     
     return new Intl.NumberFormat('en-AU', {
       style: 'currency',
       currency: 'AUD',
       minimumFractionDigits: isWholeNumber ? 0 : 2,
       maximumFractionDigits: 2
-    }).format(dollars);
+    }).format(amount);
   };
 
   const getStatusBadge = (estimate: Estimate) => {
