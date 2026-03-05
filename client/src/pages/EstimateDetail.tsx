@@ -4729,7 +4729,7 @@ export default function EstimateDetail() {
       {/* Main Content - Horizontal scroll only, vertical flows naturally */}
       <div className="flex-1 overflow-auto min-h-0 px-3 pb-4 pt-2">
         <div className="inline-block min-w-full">
-          <div className="border-y border-r border-border rounded-r-md bg-background overflow-hidden">
+          <div className="border border-border rounded-md bg-background overflow-hidden">
 
             {/* Toolbar row — sticky at top of table card */}
             <div className="h-9 flex items-center justify-between px-3 border-b border-border/50 gap-1.5 bg-background sticky top-0 z-20">
@@ -5085,14 +5085,14 @@ export default function EstimateDetail() {
                             </div>
                           </div>
                           
-                          <div className="space-y-2 pt-2 pr-2 pb-2">
+                          <div className="space-y-2 p-2">
                             {/* Ungrouped items - CSS Grid based */}
                             {ungroupedItems.length > 0 && (
-                              <div className="border-y border-r border-border rounded-r-md overflow-hidden" style={{ minWidth: `${tableWidth}px` }}>
+                              <Card className="rounded-md overflow-hidden" style={{ minWidth: `${tableWidth}px` }}>
                                 <div role="grid" style={{ width: `${tableWidth}px`, minWidth: `${tableWidth}px` }}>
                                   {ungroupedItems.map((item) => renderItemWithSubItems(item, undefined, gridTemplate, visibleCols))}
                                 </div>
-                              </div>
+                              </Card>
                             )}
                             
                             {/* Grouped items using EstimateGroupCard */}
