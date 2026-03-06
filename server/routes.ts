@@ -3972,7 +3972,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const group = await storage.createEstimateGroup(validationResult.data);
+      // Auto-assign order so new groups land at the bottom and don't collide with existing groups
+      const createData = { ...validationResult.data };
+      try {
+        const existingGroups = await storage.getEstimateGroups(req.params.id);
+        const siblings = existingGroups.filter(g =>
+          (createData.parentGroupId ?? null) === (g.parentGroupId ?? null)
+        );
+        const maxOrder = siblings.reduce((m, g) => Math.max(m, g.order ?? 0), -1);
+        createData.order = maxOrder + 1;
+      } catch {
+        // Non-critical — fall back to provided order
+      }
+
+      const group = await storage.createEstimateGroup(createData);
       res.status(201).json(group);
     } catch (error: any) {
       if (error.message?.includes("locked estimate")) {

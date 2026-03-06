@@ -4551,37 +4551,6 @@ export default function EstimateDetail() {
                 {estimate?.name || 'Estimate'}
               </span>
             )}
-            {/* Revision switcher — shows when multiple revisions exist */}
-            {estimate && estimateVersions.length > 1 ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button className="flex-shrink-0 flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded border border-[#bba7db]/40 bg-[#bba7db]/10 text-[#bba7db] hover-elevate">
-                    <Layers className="h-2.5 w-2.5" />
-                    <span>{getRevLabel(estimate.version)}</span>
-                    <ChevronDown className="h-2.5 w-2.5 opacity-70" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-44">
-                  {estimateVersions.map(v => (
-                    <DropdownMenuItem
-                      key={v.id}
-                      onClick={() => setLocation(`/projects/${v.projectId}/estimates/${v.id}`)}
-                      className={v.id === effectiveEstimateId ? "bg-accent" : ""}
-                    >
-                      <Layers className="w-3.5 h-3.5 mr-2 text-muted-foreground" />
-                      <span className="flex-1">{getRevLabel(v.version)}</span>
-                      {v.isLocked && <Lock className="w-3 h-3 text-muted-foreground/60" />}
-                      {!v.isLocked && v.id === effectiveEstimateId && <span className="text-[10px] text-[#bba7db]">current</span>}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : estimate && estimate.version > 1 ? (
-              <span className="flex-shrink-0 flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded border border-[#bba7db]/40 bg-[#bba7db]/10 text-[#bba7db]">
-                <Layers className="h-2.5 w-2.5" />
-                {getRevLabel(estimate.version)}
-              </span>
-            ) : null}
             {estimate && <span className="flex-shrink-0">{getStatusBadge(estimate)}</span>}
           </div>
         </div>
@@ -4628,6 +4597,51 @@ export default function EstimateDetail() {
                 className="w-full"
                 data-testid="select-estimate-assignees"
               />
+              <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mt-3 mb-2">Revisions</p>
+              <div className="flex items-center gap-2">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      className="flex-1 flex items-center justify-between gap-1 text-xs h-8 px-2 rounded-md border bg-background hover-elevate min-w-0"
+                      data-testid="button-revision-switcher"
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <Layers className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                        <span className="truncate">{estimate ? getRevLabel(estimate.version) : 'Rev A'}</span>
+                        {estimate?.isLocked && <Lock className="h-2.5 w-2.5 text-muted-foreground/60 flex-shrink-0" />}
+                      </div>
+                      <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-52">
+                    {estimateVersions.map(v => (
+                      <DropdownMenuItem
+                        key={v.id}
+                        onClick={() => setLocation(`/projects/${v.projectId}/estimates/${v.id}`)}
+                        className={v.id === effectiveEstimateId ? "bg-accent" : ""}
+                        data-testid={`revision-item-${v.id}`}
+                      >
+                        <Layers className="w-3.5 h-3.5 mr-2 text-muted-foreground" />
+                        <span className="flex-1">{getRevLabel(v.version)}</span>
+                        {v.isLocked && <Lock className="w-3 h-3 text-muted-foreground/60" />}
+                        {!v.isLocked && v.id === effectiveEstimateId && <span className="text-[10px] text-[#bba7db]">current</span>}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                {estimate?.isLocked && (
+                  <button
+                    className="flex items-center gap-1 px-2 h-8 text-xs rounded-md border hover-elevate active-elevate-2 disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+                    onClick={() => createVersionMutation.mutate()}
+                    disabled={createVersionMutation.isPending}
+                    data-testid="button-new-revision"
+                    title="Create new revision"
+                  >
+                    <Plus className="w-3 h-3" />
+                    New
+                  </button>
+                )}
+              </div>
               <Separator className="my-3" />
               <div className="flex flex-col gap-0.5">
                 <button
@@ -4648,17 +4662,6 @@ export default function EstimateDetail() {
                     : <LockOpen className="w-3.5 h-3.5 text-muted-foreground" />}
                   {estimate?.isLocked ? 'Unlock estimate' : 'Lock estimate'}
                 </button>
-                {estimate?.isLocked && (
-                  <button
-                    className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"
-                    onClick={() => createVersionMutation.mutate()}
-                    disabled={createVersionMutation.isPending}
-                    data-testid="button-new-revision"
-                  >
-                    <Layers className="w-3.5 h-3.5 text-muted-foreground" />
-                    {createVersionMutation.isPending ? 'Creating...' : 'New revision'}
-                  </button>
-                )}
                 <button
                   className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left disabled:opacity-40 disabled:cursor-not-allowed"
                   onClick={() => setIsImportOpen(true)}
@@ -5092,7 +5095,7 @@ export default function EstimateDetail() {
                         <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
                           {/* CSS Grid Header */}
                           <div 
-                            className="bg-muted/50 border-b border-border sticky top-9 z-10"
+                            className="bg-muted border-b border-border sticky top-9 z-10 pl-px"
                             role="row"
                             style={{ 
                               display: 'grid', 

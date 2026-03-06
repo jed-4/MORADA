@@ -195,7 +195,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
   // Use passed visibleCols for consistency with parent, fallback to filtering columns
   const visibleCols = parentVisibleCols || columns.filter(col => col.visible);
   const gridTemplate = parentGridTemplate || `24px ${visibleCols.map(c => `${c.widthPx}px`).join(' ')} 80px`;
-  const cellBase = "h-10 px-2 flex items-center text-sm overflow-hidden";
+  const cellBase = "h-8 px-2 flex items-center text-sm overflow-hidden";
 
   // Alternating background for visual differentiation between groups
   const isEvenGroup = groupIndex % 2 === 0;
@@ -211,7 +211,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
         <div
           {...attributes}
           {...listeners}
-          className="absolute -left-3 top-0 h-10 w-4 flex items-center justify-center opacity-0 group-hover/grp:opacity-100 cursor-grab active:cursor-grabbing transition-opacity z-20"
+          className="absolute -left-3 top-0 h-8 w-4 flex items-center justify-center opacity-0 group-hover/grp:opacity-100 cursor-grab active:cursor-grabbing transition-opacity z-20"
           data-testid={`drag-handle-group-${group.id}`}
         >
           <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
@@ -230,11 +230,11 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
           width: `${tableWidth}px`,
           minWidth: `${tableWidth}px`
         }}
-        className="h-10 bg-muted/50 hover-elevate transition-colors border-b border-border/50"
+        className="h-8 bg-muted/50 hover-elevate transition-colors border-b border-border/50"
         data-testid={`row-group-${group.id}`}
       >
         {/* Checkbox */}
-        <div className="h-10 px-2 flex items-center" role="gridcell">
+        <div className="h-8 px-2 flex items-center" role="gridcell">
           <Checkbox
             checked={isGroupSelected}
             onCheckedChange={() => onToggleGroupSelection(group.id)}

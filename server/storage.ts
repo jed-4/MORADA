@@ -3952,10 +3952,13 @@ export class MemStorage implements IStorage {
       return undefined;
     }
 
-    // Check if parent estimate is locked
-    const estimate = await this.getEstimate(group.estimateId);
-    if (estimate?.isLocked) {
-      throw new Error("Cannot update group in locked estimate. Unlock the estimate first.");
+    // Allow isCollapsed toggle on locked estimates (UI-only state)
+    const onlyTogglingCollapse = Object.keys(updateGroup).length === 1 && 'isCollapsed' in updateGroup;
+    if (!onlyTogglingCollapse) {
+      const estimate = await this.getEstimate(group.estimateId);
+      if (estimate?.isLocked) {
+        throw new Error("Cannot update group in locked estimate. Unlock the estimate first.");
+      }
     }
 
     const updatedGroup: EstimateGroup = {
@@ -4002,11 +4005,17 @@ export class MemStorage implements IStorage {
       throw new Error("Cannot duplicate group in locked estimate. Unlock the estimate first.");
     }
 
+    // Find max order among siblings to place duplicate at the bottom
+    const allGroups = await this.getEstimateGroups(group.estimateId);
+    const siblings = allGroups.filter(g => (g.parentGroupId ?? null) === (group.parentGroupId ?? null));
+    const maxOrder = siblings.reduce((m, g) => Math.max(m, g.order ?? 0), -1);
+
     // Create duplicate with new ID
     const newGroup: EstimateGroup = {
       ...group,
       id: crypto.randomUUID(),
       name: `${group.name} (Copy)`,
+      order: maxOrder + 1,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -8869,10 +8878,13 @@ export class DbStorage implements IStorage {
         return undefined;
       }
 
-      // Check if parent estimate is locked
-      const estimate = await this.getEstimate(existingGroup.estimateId);
-      if (estimate?.isLocked) {
-        throw new Error("Cannot update group in locked estimate. Unlock the estimate first.");
+      // Allow isCollapsed toggle on locked estimates (UI-only state)
+      const onlyTogglingCollapse = Object.keys(updateGroup).length === 1 && 'isCollapsed' in updateGroup;
+      if (!onlyTogglingCollapse) {
+        const estimate = await this.getEstimate(existingGroup.estimateId);
+        if (estimate?.isLocked) {
+          throw new Error("Cannot update group in locked estimate. Unlock the estimate first.");
+        }
       }
 
       const result = await db
@@ -8948,11 +8960,25 @@ export class DbStorage implements IStorage {
         throw new Error("Cannot duplicate group in locked estimate. Unlock the estimate first.");
       }
 
+      // Find max order among siblings to place duplicate at the bottom
+      const [maxOrderResult] = await db
+        .select({ maxOrder: max(schema.estimateGroups.order) })
+        .from(schema.estimateGroups)
+        .where(
+          and(
+            eq(schema.estimateGroups.estimateId, group[0].estimateId),
+            group[0].parentGroupId
+              ? eq(schema.estimateGroups.parentGroupId, group[0].parentGroupId)
+              : isNull(schema.estimateGroups.parentGroupId)
+          )
+        );
+
       // Create duplicate with new ID
       const newGroupData = {
         ...group[0],
         id: undefined,
         name: `${group[0].name} (Copy)`,
+        order: (maxOrderResult?.maxOrder ?? -1) + 1,
         createdAt: undefined,
         updatedAt: undefined,
       };
