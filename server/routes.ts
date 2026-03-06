@@ -15541,14 +15541,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const startDate = new Date(createData.startDate);
           if (!isWorkingDay(startDate)) {
             const newStart = skipToWorkingDay(startDate);
-            createData.startDate = newStart.toISOString().split('T')[0];
+            createData.startDate = newStart;
             if (createData.endDate && createData.duration) {
               const newEnd = addWD(newStart, Math.max(0, (createData.duration || 1) - 1));
-              createData.endDate = newEnd.toISOString().split('T')[0];
+              createData.endDate = newEnd;
             } else if (createData.endDate) {
               const endDate = new Date(createData.endDate);
               if (!isWorkingDay(endDate)) {
-                createData.endDate = skipToWorkingDay(endDate).toISOString().split('T')[0];
+                createData.endDate = skipToWorkingDay(endDate);
               }
             }
           } else if (createData.endDate) {
@@ -15556,12 +15556,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
             if (!isWorkingDay(endDate)) {
               const workDuration = countWD(startDate, endDate);
               const newEnd = addWD(startDate, Math.max(0, workDuration - 1));
-              createData.endDate = newEnd.toISOString().split('T')[0];
+              createData.endDate = newEnd;
             }
           }
         }
       }
       
+      // Auto-assign sortOrder so new items appear at the bottom of their sibling group
+      try {
+        const siblingConditions: any[] = [eq(scheduleItems.scheduleId, createData.scheduleId)];
+        if (createData.parentItemId) {
+          siblingConditions.push(eq(scheduleItems.parentItemId, createData.parentItemId));
+        } else {
+          siblingConditions.push(isNull(scheduleItems.parentItemId));
+        }
+        const [maxResult] = await db
+          .select({ maxSort: max(scheduleItems.sortOrder) })
+          .from(scheduleItems)
+          .where(and(...siblingConditions));
+        createData.sortOrder = (maxResult?.maxSort ?? -1) + 1;
+      } catch {
+        // Non-critical — fall back to default sortOrder
+      }
+
       const item = await storage.createScheduleItem(createData);
       
       // Log activity for schedule item creation

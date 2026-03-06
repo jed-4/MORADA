@@ -58,7 +58,7 @@ import { ScheduleColorPicker } from "@/components/schedule/ScheduleColorPicker";
 import { ActivityNotesPopover } from "@/components/ActivityNotesPopover";
 import { ContactSelect } from "@/components/ContactSelect";
 import { AssigneeSelect } from "@/components/AssigneeSelect";
-import type { ScheduleItem } from "@shared/schema";
+import type { ScheduleItem, NonWorkingDay } from "@shared/schema";
 import { useWeekStartDay } from "@/hooks/useWeekStartDay";
 
 type ZoomLevel = 'day' | 'week' | 'month';
@@ -67,6 +67,7 @@ const ROW_HEIGHT = 32;
 interface GanttProps {
   onEditItem?: (item: ScheduleItem) => void;
   baselineItems?: any[];
+  nonWorkingDays?: NonWorkingDay[];
 }
 
 function SortableColumnItem({ 
@@ -473,7 +474,7 @@ function useGanttRowDrag(
   };
 }
 
-export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {}) {
+export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays = [] }: GanttProps = {}) {
   const { projectId } = useParams();
   const { toast } = useToast();
   const weekStartDay = useWeekStartDay();
@@ -1201,7 +1202,12 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
       const dayOfWeek = getDay(day);
       // Sunday (0) is non-working only if includeSunday is false/not set
       // Saturday (6) is non-working only if includeSaturday is false/not set
-      const isWeekend = (dayOfWeek === 0 && !schedule?.includeSunday) || (dayOfWeek === 6 && !schedule?.includeSaturday);
+      const isWeekendDay = (dayOfWeek === 0 && !schedule?.includeSunday) || (dayOfWeek === 6 && !schedule?.includeSaturday);
+      const dayStr = format(day, 'yyyy-MM-dd');
+      const isHoliday = nonWorkingDays.length > 0 && nonWorkingDays.some(nwd => {
+        return new Date(nwd.date).toISOString().slice(0, 10) === dayStr;
+      });
+      const isWeekend = isWeekendDay || isHoliday;
       
       // If we've moved to a new week, save the previous week
       if (weekStart.getTime() !== currentWeekStart.getTime() && currentWeekDays.length > 0) {
@@ -1236,7 +1242,7 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     }
     
     return weeks;
-  }, [timelineStart, timelineEnd, zoomLevel, projectStartDate, schedule]);
+  }, [timelineStart, timelineEnd, zoomLevel, projectStartDate, schedule, nonWorkingDays]);
 
   // Calculate pixels per day based on zoom level
   const pixelsPerDay = useMemo(() => {
@@ -1306,11 +1312,18 @@ export default function Gantt({ onEditItem, baselineItems = [] }: GanttProps = {
     return '#9ca3af';
   };
 
-  // Check if a date is a non-working day (weekend based on schedule settings)
+  // Check if a date is a non-working day (weekend or company holiday)
   const isNonWorkingDay = (date: Date): boolean => {
     const day = getDay(date); // 0 = Sunday, 6 = Saturday
     if (day === 0 && !schedule?.includeSunday) return true;
     if (day === 6 && !schedule?.includeSaturday) return true;
+    if (nonWorkingDays.length > 0) {
+      const dateStr = date.toISOString().slice(0, 10);
+      if (nonWorkingDays.some(nwd => {
+        const nwdStr = new Date(nwd.date).toISOString().slice(0, 10);
+        return nwdStr === dateStr;
+      })) return true;
+    }
     return false;
   };
 

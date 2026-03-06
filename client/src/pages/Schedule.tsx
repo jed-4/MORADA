@@ -2009,6 +2009,7 @@ export default function Schedule() {
                   setShowItemDialog(true);
                 }}
                 baselineItems={activeBaselineId ? baselineItems as any[] : []}
+                nonWorkingDays={nonWorkingDays as any[]}
               />
             )}
 

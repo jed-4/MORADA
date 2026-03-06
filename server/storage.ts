@@ -14904,7 +14904,7 @@ export class DbStorage implements IStorage {
       return await db.select()
         .from(schema.scheduleItems)
         .where(eq(schema.scheduleItems.scheduleId, scheduleId))
-        .orderBy(schema.scheduleItems.startDate, schema.scheduleItems.sortOrder);
+        .orderBy(asc(schema.scheduleItems.sortOrder), asc(schema.scheduleItems.startDate));
     } catch (error) {
       console.error("Database error in getScheduleItems:", error);
       throw error;
@@ -14917,7 +14917,7 @@ export class DbStorage implements IStorage {
         .from(schema.scheduleItems)
         .innerJoin(schema.schedules, eq(schema.scheduleItems.scheduleId, schema.schedules.id))
         .where(eq(schema.schedules.projectId, projectId))
-        .orderBy(schema.scheduleItems.startDate, schema.scheduleItems.sortOrder);
+        .orderBy(asc(schema.scheduleItems.sortOrder), asc(schema.scheduleItems.startDate));
       
       // Apply pagination if provided
       if (pagination?.limit !== undefined) {
