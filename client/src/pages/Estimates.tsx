@@ -21,7 +21,8 @@ import {
   LayoutGrid,
   Columns3,
   Download,
-  ChevronDown
+  ChevronDown,
+  GripVertical,
 } from "lucide-react";
 import {
   Select,
@@ -40,6 +41,7 @@ import {
   closestCorners,
   DragStartEvent,
   DragEndEvent,
+  DragOverEvent,
   useDroppable,
 } from '@dnd-kit/core';
 import {
@@ -66,6 +68,7 @@ export default function Estimates() {
   const [selectedStatus, setSelectedStatus] = useState("All");
   const [currentView, setCurrentView] = useState<'grid' | 'kanban'>('grid');
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [hoveredColumnId, setHoveredColumnId] = useState<string | null>(null);
   const [cardWidth, setCardWidth] = useState<'compact' | 'comfortable' | 'spacious'>('comfortable');
 
   const handleNewEstimate = () => {
@@ -178,11 +181,18 @@ export default function Estimates() {
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string);
+    setHoveredColumnId(null);
+  };
+
+  const handleDragOver = (event: DragOverEvent) => {
+    const { over } = event;
+    setHoveredColumnId(over ? (over.data.current?.sortable?.containerId || String(over.id)) : null);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     setActiveId(null);
+    setHoveredColumnId(null);
 
     if (!over) return;
 
@@ -531,6 +541,7 @@ export default function Estimates() {
                 sensors={sensors}
                 collisionDetection={closestCorners}
                 onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
                 onDragEnd={handleDragEnd}
               >
                 <div className="flex gap-4 overflow-x-auto pb-4">
@@ -549,12 +560,13 @@ export default function Estimates() {
                           estimateStatuses={estimateStatuses}
                           projects={projects}
                           cardWidth={cardWidth}
+                          isHighlighted={hoveredColumnId === status.key}
                         />
                       );
                     })}
                 </div>
 
-                <DragOverlay>
+                <DragOverlay dropAnimation={null}>
                   {activeId ? (
                     <div className="bg-card border border-border/50 rounded-xl p-2 shadow-lg opacity-90">
                       <div className="font-medium text-sm">
@@ -573,15 +585,16 @@ export default function Estimates() {
 }
 
 // Kanban Column Component
-function KanbanColumn({ status, estimates, count, estimateStatuses, projects, cardWidth }: { 
+function KanbanColumn({ status, estimates, count, estimateStatuses, projects, cardWidth, isHighlighted }: { 
   status: FieldOption; 
   estimates: Estimate[]; 
   count: number;
   estimateStatuses: FieldOption[];
   projects: Project[];
   cardWidth: 'compact' | 'comfortable' | 'spacious';
+  isHighlighted: boolean;
 }) {
-  const { setNodeRef, isOver } = useDroppable({
+  const { setNodeRef } = useDroppable({
     id: status.key,
   });
 
@@ -598,7 +611,7 @@ function KanbanColumn({ status, estimates, count, estimateStatuses, projects, ca
     <div className={`flex-shrink-0 ${getWidthClass()}`}>
       <div
         className={`rounded-xl border transition-all duration-200 ${
-          isOver ? 'border-2 border-[#bba7db] border-dashed bg-[#bba7db]/10' : 'border-border/50'
+          isHighlighted ? 'border-2 border-[#bba7db] border-dashed bg-[#bba7db]/10' : 'border-border/50'
         }`}
       >
         <div className="px-3 py-2 border-b border-border/50 bg-muted/30">
@@ -649,7 +662,7 @@ function SortableEstimateCard({ estimate, estimateStatuses, projects }: {
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1,
+    opacity: isDragging ? 0 : 1,
   };
 
   // Fetch summary for this estimate
@@ -660,7 +673,6 @@ function SortableEstimateCard({ estimate, estimateStatuses, projects }: {
   });
 
   const handleEstimateClick = (e: React.MouseEvent) => {
-    // Prevent navigation if this was a drag action
     if (isDragging) {
       e.preventDefault();
       return;
@@ -713,20 +725,28 @@ function SortableEstimateCard({ estimate, estimateStatuses, projects }: {
       ref={setNodeRef}
       style={style}
       {...attributes}
-      {...listeners}
       onClick={handleEstimateClick}
-      className="bg-card border border-border/50 rounded-xl p-2 mb-2 cursor-pointer hover-elevate shadow-sm"
+      className="bg-card border border-border/50 rounded-xl p-2 mb-2 cursor-pointer hover-elevate shadow-sm group flex items-start gap-1"
       data-testid={`kanban-estimate-card-${estimate.id}`}
     >
-      <h4 className="font-medium text-sm mb-0.5 line-clamp-1">{estimate.name}</h4>
-      <p className="text-[10px] text-muted-foreground mb-2">
-        {getProjectName(estimate.projectId)}
-      </p>
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold">
-          {summary ? formatCurrency(summary.total) : 'Loading...'}
-        </span>
-        {getStatusBadge(estimate)}
+      <div
+        {...listeners}
+        className="invisible group-hover:visible cursor-grab flex-shrink-0 mt-0.5"
+        onClick={e => e.stopPropagation()}
+      >
+        <GripVertical className="h-4 w-4 text-muted-foreground/50" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <h4 className="font-medium text-sm mb-0.5 line-clamp-1">{estimate.name}</h4>
+        <p className="text-[10px] text-muted-foreground mb-2">
+          {getProjectName(estimate.projectId)}
+        </p>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs font-semibold">
+            {summary ? formatCurrency(summary.total) : 'Loading...'}
+          </span>
+          {getStatusBadge(estimate)}
+        </div>
       </div>
     </div>
   );

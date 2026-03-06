@@ -17,6 +17,7 @@ import {
   closestCorners,
   DragStartEvent,
   DragEndEvent,
+  DragOverEvent,
   useDroppable,
 } from '@dnd-kit/core';
 import {
@@ -38,7 +39,8 @@ import {
   Trash2,
   LayoutGrid,
   Columns3,
-  ChevronDown
+  ChevronDown,
+  GripVertical,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -80,6 +82,7 @@ export default function ProjectEstimates() {
   const [currentView, setCurrentView] = useState<'grid' | 'kanban'>('grid');
   const [cardWidth, setCardWidth] = useState<'compact' | 'comfortable' | 'spacious'>('comfortable');
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [hoveredColumnId, setHoveredColumnId] = useState<string | null>(null);
 
   if (!projectId) {
     return <div>Invalid project ID</div>;
@@ -205,10 +208,17 @@ export default function ProjectEstimates() {
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string);
+    setHoveredColumnId(null);
+  };
+
+  const handleDragOver = (event: DragOverEvent) => {
+    const { over } = event;
+    setHoveredColumnId(over ? (over.data.current?.sortable?.containerId || String(over.id)) : null);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
+    setHoveredColumnId(null);
     
     if (!over) {
       setActiveId(null);
@@ -303,7 +313,36 @@ export default function ProjectEstimates() {
     });
   }, [estimates, searchTerm, selectedStatus]);
 
-  const EstimateCard = ({ estimate }: { estimate: Estimate }) => {
+  const getRevLabel = (v: number) => "Rev " + String.fromCharCode(64 + v);
+
+  // Group filtered estimates by their root (parentEstimateId || id)
+  const revisionGroupsMap = useMemo(() => {
+    const groups = new Map<string, Estimate[]>();
+    for (const estimate of filteredEstimates) {
+      const rootId = estimate.parentEstimateId || estimate.id;
+      if (!groups.has(rootId)) groups.set(rootId, []);
+      groups.get(rootId)!.push(estimate);
+    }
+    for (const [, group] of groups) {
+      group.sort((a, b) => a.version - b.version);
+    }
+    return groups;
+  }, [filteredEstimates]);
+
+  // For grid: one entry per group — active (non-locked) version preferred, else latest
+  const gridEstimateGroups = useMemo(() => {
+    return Array.from(revisionGroupsMap.values()).map(group => ({
+      primary: group.find(e => !e.isLocked) || group[group.length - 1],
+      versions: group,
+    }));
+  }, [revisionGroupsMap]);
+
+  // For kanban: only show the latest version per group
+  const kanbanEstimates = useMemo(() => {
+    return Array.from(revisionGroupsMap.values()).map(group => group[group.length - 1]);
+  }, [revisionGroupsMap]);
+
+  const EstimateCard = ({ estimate, versions }: { estimate: Estimate; versions: Estimate[] }) => {
     // Fetch summary for this estimate
     const { data: summary } = useQuery<EstimateSummary>({
       queryKey: ["/api/estimates", estimate.id, "summary"],
@@ -406,6 +445,25 @@ export default function ProjectEstimates() {
             </DropdownMenu>
           </div>
         </div>
+        {/* Revision history chips — shown when multiple revisions exist */}
+        {versions.length > 1 && (
+          <div className="flex gap-1 mt-2 pt-2 border-t border-border/30" onClick={e => e.stopPropagation()}>
+            <span className="text-[10px] text-muted-foreground self-center mr-1">Revisions:</span>
+            {versions.map(v => (
+              <button
+                key={v.id}
+                onClick={() => setLocation(`/projects/${projectId}/estimates/${v.id}`)}
+                className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                  v.id === estimate.id
+                    ? 'bg-[#bba7db]/20 border-[#bba7db]/50 text-[#bba7db] font-medium'
+                    : 'border-border/50 text-muted-foreground hover-elevate'
+                }`}
+              >
+                {getRevLabel(v.version)}
+              </button>
+            ))}
+          </div>
+        )}
       </Card>
     );
   };
@@ -612,8 +670,8 @@ export default function ProjectEstimates() {
             {/* Grid View */}
             {currentView === 'grid' && (
               <div className="space-y-2">
-                {filteredEstimates.map((estimate) => (
-                  <EstimateCard key={estimate.id} estimate={estimate} />
+                {gridEstimateGroups.map(({ primary, versions }) => (
+                  <EstimateCard key={primary.id} estimate={primary} versions={versions} />
                 ))}
               </div>
             )}
@@ -624,6 +682,7 @@ export default function ProjectEstimates() {
                 sensors={sensors}
                 collisionDetection={closestCorners}
                 onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
                 onDragEnd={handleDragEnd}
               >
                 <div className="flex gap-4 overflow-x-auto pb-4">
@@ -631,23 +690,24 @@ export default function ProjectEstimates() {
                     .filter(status => status.isActive)
                     .sort((a, b) => a.sortOrder - b.sortOrder)
                     .map(status => {
-                      const columnEstimates = filteredEstimates.filter(est => est.status === status.key);
+                      const columnEstimates = kanbanEstimates.filter(est => est.status === status.key);
                       
                       return (
                         <KanbanColumn
                           key={status.key}
                           status={status}
                           estimates={columnEstimates}
-                          count={statusCounts[status.key] || 0}
+                          count={columnEstimates.length}
                           estimateStatuses={estimateStatuses}
                           projectId={projectId}
                           cardWidth={cardWidth}
+                          isHighlighted={hoveredColumnId === status.key}
                         />
                       );
                     })}
                 </div>
 
-                <DragOverlay>
+                <DragOverlay dropAnimation={null}>
                   {activeId ? (
                     <div className="bg-card border border-border/50 rounded-xl p-2 shadow-lg opacity-90">
                       <div className="font-medium text-sm">
@@ -702,15 +762,16 @@ export default function ProjectEstimates() {
 }
 
 // Kanban Column Component
-function KanbanColumn({ status, estimates, count, estimateStatuses, projectId, cardWidth }: { 
+function KanbanColumn({ status, estimates, count, estimateStatuses, projectId, cardWidth, isHighlighted }: { 
   status: FieldOption; 
   estimates: Estimate[]; 
   count: number;
   estimateStatuses: FieldOption[];
   projectId: string;
   cardWidth: 'compact' | 'comfortable' | 'spacious';
+  isHighlighted: boolean;
 }) {
-  const { setNodeRef, isOver } = useDroppable({
+  const { setNodeRef } = useDroppable({
     id: status.key,
   });
 
@@ -727,7 +788,7 @@ function KanbanColumn({ status, estimates, count, estimateStatuses, projectId, c
     <div className={`flex-shrink-0 ${getWidthClass()}`}>
       <div
         className={`rounded-xl border transition-all duration-200 ${
-          isOver ? 'border-2 border-[#bba7db] border-dashed bg-[#bba7db]/10' : 'border-border/50'
+          isHighlighted ? 'border-2 border-[#bba7db] border-dashed bg-[#bba7db]/10' : 'border-border/50'
         }`}
       >
         <div className="px-3 py-2 border-b border-border/50 bg-muted/30">
@@ -778,7 +839,7 @@ function SortableEstimateCard({ estimate, estimateStatuses, projectId }: {
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1,
+    opacity: isDragging ? 0 : 1,
   };
 
   // Fetch summary for this estimate
@@ -797,6 +858,7 @@ function SortableEstimateCard({ estimate, estimateStatuses, projectId }: {
   });
 
   const handleEstimateClick = () => {
+    if (isDragging) return;
     setLocation(`/projects/${projectId}/estimates/${estimate.id}`);
   };
 
@@ -839,17 +901,25 @@ function SortableEstimateCard({ estimate, estimateStatuses, projectId }: {
       ref={setNodeRef}
       style={style}
       {...attributes}
-      {...listeners}
       onClick={handleEstimateClick}
-      className="bg-card border border-border/50 rounded-xl p-2 mb-2 cursor-move hover-elevate shadow-sm"
+      className="bg-card border border-border/50 rounded-xl p-2 mb-2 cursor-pointer hover-elevate shadow-sm group flex items-start gap-1"
       data-testid={`kanban-estimate-card-${estimate.id}`}
     >
-      <h4 className="font-medium text-sm mb-2 line-clamp-1">{estimate.name}</h4>
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold">
-          {summary ? formatCurrency(summary.total) : 'Loading...'}
-        </span>
-        {getStatusBadge(estimate)}
+      <div
+        {...listeners}
+        className="invisible group-hover:visible cursor-grab flex-shrink-0 mt-0.5"
+        onClick={e => e.stopPropagation()}
+      >
+        <GripVertical className="h-4 w-4 text-muted-foreground/50" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <h4 className="font-medium text-sm mb-2 line-clamp-1">{estimate.name}</h4>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs font-semibold">
+            {summary ? formatCurrency(summary.total) : 'Loading...'}
+          </span>
+          {getStatusBadge(estimate)}
+        </div>
       </div>
     </div>
   );

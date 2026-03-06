@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, timestamp, json, jsonb, integer, boolean, pgEnum, numeric, index, uniqueIndex, date, doublePrecision } from "drizzle-orm/pg-core";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -830,6 +831,7 @@ export const estimates = pgTable("estimates", {
   ownerId: varchar("owner_id").references(() => users.id),
   ownerName: text("owner_name"),
   assigneeIds: text("assignee_ids").array().default([]), // Multiple user IDs who can work on this estimate
+  parentEstimateId: varchar("parent_estimate_id").references((): AnyPgColumn => estimates.id), // Links all revisions back to the original (Rev A) estimate
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

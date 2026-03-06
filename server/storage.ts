@@ -356,6 +356,7 @@ export interface IStorage {
 
   // Versioning and Locking
   createEstimateVersion(estimateId: string, newVersionData?: Partial<InsertEstimate>): Promise<Estimate>;
+  getEstimateVersions(estimateId: string): Promise<Estimate[]>;
   lockEstimate(estimateId: string): Promise<Estimate | undefined>;
   unlockEstimate(estimateId: string): Promise<Estimate | undefined>;
   
@@ -4333,6 +4334,8 @@ export class MemStorage implements IStorage {
     // Create new version
     const newId = randomUUID();
     const now = new Date();
+    // parentEstimateId always points to the original Rev A (root) estimate
+    const parentEstimateId = currentEstimate.parentEstimateId || estimateId;
     const newVersion: Estimate = {
       ...currentEstimate,
       ...newVersionData,
@@ -4340,6 +4343,7 @@ export class MemStorage implements IStorage {
       version: currentEstimate.version + 1,
       isLocked: false,
       status: "working",
+      parentEstimateId,
       createdAt: now,
       updatedAt: now,
     };
@@ -4379,6 +4383,15 @@ export class MemStorage implements IStorage {
 
     this.estimates.set(newId, newVersion);
     return newVersion;
+  }
+
+  async getEstimateVersions(estimateId: string): Promise<Estimate[]> {
+    const current = this.estimates.get(estimateId);
+    if (!current) return [];
+    const rootId = current.parentEstimateId || estimateId;
+    return Array.from(this.estimates.values())
+      .filter(e => e.id === rootId || e.parentEstimateId === rootId)
+      .sort((a, b) => a.version - b.version);
   }
 
   async lockEstimate(estimateId: string): Promise<Estimate | undefined> {
@@ -9730,8 +9743,72 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async createEstimateVersion(estimateId: string, newVersionData?: Partial<InsertEstimate>): Promise<Estimate> { throw new Error("Not implemented"); }
-  
+  async createEstimateVersion(estimateId: string, newVersionData?: Partial<InsertEstimate>): Promise<Estimate> {
+    const [currentEstimate] = await db.select().from(schema.estimates).where(eq(schema.estimates.id, estimateId)).limit(1);
+    if (!currentEstimate) throw new Error("Estimate not found");
+
+    // Lock the current version
+    await db.update(schema.estimates)
+      .set({ isLocked: true, status: "locked", updatedAt: new Date() })
+      .where(eq(schema.estimates.id, estimateId));
+
+    // parentEstimateId always points to the original Rev A (root) estimate
+    const parentEstimateId = currentEstimate.parentEstimateId || estimateId;
+    const newId = randomUUID();
+    const now = new Date();
+
+    const [newVersion] = await db.insert(schema.estimates).values({
+      ...currentEstimate,
+      ...newVersionData,
+      id: newId,
+      version: currentEstimate.version + 1,
+      isLocked: false,
+      status: "working",
+      parentEstimateId,
+      createdAt: now,
+      updatedAt: now,
+    }).returning();
+
+    // Clone groups and build a mapping old→new group id
+    const groups = await db.select().from(schema.estimateGroups).where(eq(schema.estimateGroups.estimateId, estimateId));
+    const groupMapping = new Map<string, string>();
+    for (const group of groups) {
+      const newGroupId = randomUUID();
+      groupMapping.set(group.id, newGroupId);
+      await db.insert(schema.estimateGroups).values({
+        ...group,
+        id: newGroupId,
+        estimateId: newId,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    // Clone items with updated groupId references
+    const items = await db.select().from(schema.estimateItems).where(eq(schema.estimateItems.estimateId, estimateId));
+    for (const item of items) {
+      await db.insert(schema.estimateItems).values({
+        ...item,
+        id: randomUUID(),
+        estimateId: newId,
+        groupId: item.groupId ? (groupMapping.get(item.groupId) ?? null) : null,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    return newVersion;
+  }
+
+  async getEstimateVersions(estimateId: string): Promise<Estimate[]> {
+    const [current] = await db.select().from(schema.estimates).where(eq(schema.estimates.id, estimateId)).limit(1);
+    if (!current) return [];
+    const rootId = current.parentEstimateId || estimateId;
+    return db.select().from(schema.estimates)
+      .where(or(eq(schema.estimates.id, rootId), eq(schema.estimates.parentEstimateId, rootId)))
+      .orderBy(asc(schema.estimates.version));
+  }
+
   async lockEstimate(estimateId: string): Promise<Estimate | undefined> {
     try {
       const result = await db.update(schema.estimates)

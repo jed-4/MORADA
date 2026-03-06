@@ -4187,6 +4187,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/estimates/:id/versions", async (req, res) => {
+    try {
+      const versions = await storage.getEstimateVersions(req.params.id);
+      res.json(versions);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch estimate versions" });
+    }
+  });
+
   app.post("/api/estimates/:id/lock", async (req, res) => {
     try {
       const lockedEstimate = await storage.lockEstimate(req.params.id);
