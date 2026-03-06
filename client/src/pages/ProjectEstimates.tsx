@@ -743,7 +743,7 @@ function KanbanColumn({ status, estimates, count, estimateStatuses, projectId, c
           ref={setNodeRef}
           className="min-h-[200px] p-2"
         >
-          <SortableContext items={estimates.map(e => e.id)} strategy={verticalListSortingStrategy}>
+          <SortableContext id={status.key} items={estimates.map(e => e.id)} strategy={verticalListSortingStrategy}>
             {estimates.map(estimate => (
               <SortableEstimateCard 
                 key={estimate.id} 
