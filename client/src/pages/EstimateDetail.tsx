@@ -3687,7 +3687,7 @@ export default function EstimateDetail() {
     const cellKey = `${item.id}-${columnId}`;
     
     // Common grid cell base class
-    const cellBase = "h-8 px-2 flex items-center text-sm overflow-hidden";
+    const cellBase = "h-8 px-2 flex items-center text-xs overflow-hidden";
 
     switch (columnId) {
       case 'costCode':
@@ -5347,14 +5347,15 @@ export default function EstimateDetail() {
                           const group = groups.find(g => g.id === groupId);
                           if (group) {
                             return (
-                              <div className="border border-border rounded-md bg-background shadow-md cursor-grabbing opacity-90" style={{ minWidth: '320px' }}>
-                                <div className="h-10 bg-muted/50 flex items-center gap-2 px-3">
-                                  <GripVertical className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                                  <span className="font-semibold text-xs truncate">{group.name}</span>
-                                  <span className="text-xs text-muted-foreground ml-auto flex-shrink-0">
-                                    {items.filter(i => i.groupId === group.id && !i.parentItemId).length} items
-                                  </span>
-                                </div>
+                              <div
+                                className="h-8 flex items-center gap-2 px-3 bg-[#bba7db]/15 border-l-2 border-[#bba7db] opacity-90 cursor-grabbing"
+                                style={{ minWidth: '320px' }}
+                              >
+                                <GripVertical className="h-3.5 w-3.5 text-[#bba7db] flex-shrink-0" />
+                                <span className="font-semibold text-xs truncate flex-1">{group.name}</span>
+                                <span className="text-xs text-muted-foreground flex-shrink-0">
+                                  {items.filter(i => i.groupId === group.id && !i.parentItemId).length} items
+                                </span>
                               </div>
                             );
                           }
@@ -5364,16 +5365,14 @@ export default function EstimateDetail() {
                         if (item) {
                           return (
                             <div
-                              className="border border-border rounded-md bg-background shadow-md cursor-grabbing opacity-90"
+                              className="h-8 flex items-center gap-2 px-3 bg-[#bba7db]/15 border-l-2 border-[#bba7db] opacity-90 cursor-grabbing"
                               style={{ minWidth: '320px' }}
                             >
-                              <div className="h-10 flex items-center gap-2 px-3">
-                                <GripVertical className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                                <span className="text-sm truncate flex-1">{item.name}</span>
-                                <span className="text-xs font-medium text-[#bba7db] flex-shrink-0 tabular-nums">
-                                  {formatCurrency(item.priceIncTax || 0)}
-                                </span>
-                              </div>
+                              <GripVertical className="h-3.5 w-3.5 text-[#bba7db] flex-shrink-0" />
+                              <span className="text-xs truncate flex-1">{item.name}</span>
+                              <span className="text-xs font-medium text-[#bba7db] flex-shrink-0 tabular-nums">
+                                {formatCurrency(item.priceIncTax || 0)}
+                              </span>
                             </div>
                           );
                         }

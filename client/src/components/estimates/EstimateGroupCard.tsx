@@ -195,7 +195,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
   // Use passed visibleCols for consistency with parent, fallback to filtering columns
   const visibleCols = parentVisibleCols || columns.filter(col => col.visible);
   const gridTemplate = parentGridTemplate || `24px ${visibleCols.map(c => `${c.widthPx}px`).join(' ')} 80px`;
-  const cellBase = "h-8 px-2 flex items-center text-sm overflow-hidden";
+  const cellBase = "h-8 px-2 flex items-center text-xs overflow-hidden";
 
   // Alternating background for visual differentiation between groups
   const isEvenGroup = groupIndex % 2 === 0;
