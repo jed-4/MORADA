@@ -3865,7 +3865,7 @@ export default function EstimateDetail() {
                 </Button>
               )}
               <span 
-                className={`font-medium text-sm truncate max-w-[180px] block ${!isLocked ? 'cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1' : ''}`}
+                className="font-medium truncate max-w-[180px] block cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1 text-[12px]"
                 title={isLocked ? item.name : 'Click to edit'}
                 onClick={(e) => {
                   e.stopPropagation();
