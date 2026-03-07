@@ -634,6 +634,11 @@ export default function EstimateDetail() {
   
   // Track drop target and position for indicator line
   const [dropTarget, setDropTarget] = useState<{ id: string; position: 'above' | 'below' } | null>(null);
+  const dropTargetRef = React.useRef<{ id: string; position: 'above' | 'below' } | null>(null);
+  const setDropTargetSync = (val: { id: string; position: 'above' | 'below' } | null) => {
+    dropTargetRef.current = val;
+    setDropTarget(val);
+  };
 
   // Native DOM ghost refs — updated directly without React re-render for lag-free drag feedback
   const nativeGhostRef = React.useRef<HTMLElement | null>(null);
@@ -1092,7 +1097,7 @@ export default function EstimateDetail() {
   // Handle drag start
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(String(event.active.id));
-    setDropTarget(null);
+    setDropTargetSync(null);
 
     // Create a native DOM ghost immediately — query the DOM directly for the rect
     // because event.active.rect.current?.initial is null at onDragStart time in dnd-kit v6
@@ -1166,7 +1171,7 @@ export default function EstimateDetail() {
   // Handle drag cancel - clear all drag state
   const handleDragCancel = () => {
     setActiveId(null);
-    setDropTarget(null);
+    setDropTargetSync(null);
     removeNativeGhost();
   };
   
@@ -1176,7 +1181,7 @@ export default function EstimateDetail() {
     const { over, active, delta } = event;
     
     if (!over || !active) {
-      setDropTarget(null);
+      setDropTargetSync(null);
       return;
     }
     
@@ -1189,7 +1194,7 @@ export default function EstimateDetail() {
       : (document.querySelector(`[data-sortable-id="${activeIdStr}"]`) as HTMLElement | null);
     const activeInitialRect = activeEl?.getBoundingClientRect();
     if (!activeInitialRect || !delta) {
-      setDropTarget(null);
+      setDropTargetSync(null);
       return;
     }
 
@@ -1200,7 +1205,7 @@ export default function EstimateDetail() {
     if (activeIdStr.startsWith('group-')) {
       const groupEls = document.querySelectorAll('[data-sortable-group-id]');
       if (groupEls.length === 0) {
-        setDropTarget(null);
+        setDropTargetSync(null);
         return;
       }
       const groupPositions: { id: string; top: number; bottom: number; midpoint: number }[] = [];
@@ -1210,31 +1215,31 @@ export default function EstimateDetail() {
         const rect = el.getBoundingClientRect();
         groupPositions.push({ id: `group-${gid}`, top: rect.top, bottom: rect.bottom, midpoint: rect.top + rect.height / 2 });
       });
-      if (groupPositions.length === 0) { setDropTarget(null); return; }
+      if (groupPositions.length === 0) { setDropTargetSync(null); return; }
       groupPositions.sort((a, b) => a.top - b.top);
       if (cursorY < groupPositions[0].midpoint) {
-        setDropTarget({ id: groupPositions[0].id, position: 'above' });
+        setDropTargetSync({ id: groupPositions[0].id, position: 'above' });
         return;
       }
       const lastGrp = groupPositions[groupPositions.length - 1];
       if (cursorY > lastGrp.midpoint) {
-        setDropTarget({ id: lastGrp.id, position: 'below' });
+        setDropTargetSync({ id: lastGrp.id, position: 'below' });
         return;
       }
       for (let i = 0; i < groupPositions.length; i++) {
         const cur = groupPositions[i];
         const nxt = groupPositions[i + 1];
-        if (cursorY <= cur.midpoint) { setDropTarget({ id: cur.id, position: 'above' }); return; }
-        if (!nxt || cursorY <= nxt.midpoint) { setDropTarget({ id: cur.id, position: 'below' }); return; }
+        if (cursorY <= cur.midpoint) { setDropTargetSync({ id: cur.id, position: 'above' }); return; }
+        if (!nxt || cursorY <= nxt.midpoint) { setDropTargetSync({ id: cur.id, position: 'below' }); return; }
       }
-      setDropTarget(null);
+      setDropTargetSync(null);
       return;
     }
     
     // Find all sortable item rows in the DOM (excluding the active one)
     const allRows = document.querySelectorAll('[data-sortable-id]');
     if (allRows.length === 0) {
-      setDropTarget(null);
+      setDropTargetSync(null);
       return;
     }
     
@@ -1254,7 +1259,7 @@ export default function EstimateDetail() {
     });
     
     if (rowPositions.length === 0) {
-      setDropTarget(null);
+      setDropTargetSync(null);
       return;
     }
     
@@ -1264,14 +1269,14 @@ export default function EstimateDetail() {
     // Find where the cursor is relative to all rows
     // If cursor is above all rows, show indicator above first row
     if (cursorY < rowPositions[0].midpoint) {
-      setDropTarget({ id: rowPositions[0].id, position: 'above' });
+      setDropTargetSync({ id: rowPositions[0].id, position: 'above' });
       return;
     }
     
     // If cursor is below all rows, show indicator below last row
     const lastRow = rowPositions[rowPositions.length - 1];
     if (cursorY > lastRow.midpoint) {
-      setDropTarget({ id: lastRow.id, position: 'below' });
+      setDropTargetSync({ id: lastRow.id, position: 'below' });
       return;
     }
     
@@ -1282,45 +1287,39 @@ export default function EstimateDetail() {
       
       if (cursorY <= current.midpoint) {
         // Cursor is in the top half of this row - show indicator above it
-        setDropTarget({ id: current.id, position: 'above' });
+        setDropTargetSync({ id: current.id, position: 'above' });
         return;
       } else if (!next || cursorY <= next.midpoint) {
         // Cursor is in the bottom half of current row - show indicator below it
-        setDropTarget({ id: current.id, position: 'below' });
+        setDropTargetSync({ id: current.id, position: 'below' });
         return;
       }
     }
     
     // Fallback
-    setDropTarget(null);
+    setDropTargetSync(null);
   };
 
   // Handle drag end for reordering items, groups, and cross-group moves
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     
-    // Capture dropTarget BEFORE clearing — React state updates are async so
-    // dropTarget still holds the last-render value when read synchronously here
-    const capturedDropTarget = dropTarget;
+    // Read from ref — not state — so we always get the value written by the LAST
+    // handleDragMove call, even if React hasn't flushed that setState yet.
+    const capturedDropTarget = dropTargetRef.current;
     
     // Clear active drag state, drop target, and native DOM ghost
     setActiveId(null);
-    setDropTarget(null);
+    setDropTargetSync(null);
     removeNativeGhost();
     
     const activeIdStr = String(active.id);
     const isDraggingGroup = activeIdStr.startsWith('group-');
 
-    // For item drags: use our cursor-based capturedDropTarget.id as the effective
-    // over ID. dnd-kit's closestCenter may return a large group card as `over`
-    // instead of the actual item row beneath the cursor, so we bypass it here.
-    // For group drags: keep using dnd-kit's over (group detection works correctly).
-    let effectiveOverId: string | null;
-    if (!isDraggingGroup) {
-      effectiveOverId = capturedDropTarget?.id ?? null;
-    } else {
-      effectiveOverId = over ? String(over.id) : null;
-    }
+    // Both item and group drags use cursor-based capturedDropTarget — dnd-kit's
+    // closestCenter can return large-area targets (group cards) instead of the
+    // precise row/group the cursor is actually over.
+    const effectiveOverId: string | null = capturedDropTarget?.id ?? null;
 
     if (!effectiveOverId || effectiveOverId === activeIdStr) return;
     
@@ -1372,12 +1371,18 @@ export default function EstimateDetail() {
         if (isOverGroupSameLevel) {
           // Reorder at same level
           const sortedSameLevelGroups = sameLevelGroups.sort((a, b) => (a.order || 0) - (b.order || 0));
-          const oldIndex = sortedSameLevelGroups.findIndex(g => g.id === draggedGroupId);
-          const newIndex = sortedSameLevelGroups.findIndex(g => g.id === overGroupId);
           
-          if (oldIndex === -1 || newIndex === -1) return;
-          
-          const reorderedGroups = arrayMove(sortedSameLevelGroups, oldIndex, newIndex);
+          // Remove dragged group, find target in remaining list, then insert before/after
+          const withoutDragged = sortedSameLevelGroups.filter(g => g.id !== draggedGroupId);
+          const targetIdx = withoutDragged.findIndex(g => g.id === overGroupId);
+          if (targetIdx === -1) return;
+          const insertBefore = capturedDropTarget?.position === 'above';
+          const insertAt = insertBefore ? targetIdx : targetIdx + 1;
+          const reorderedGroups = [
+            ...withoutDragged.slice(0, insertAt),
+            draggedGroup,
+            ...withoutDragged.slice(insertAt)
+          ];
           const updates = reorderedGroups.map((group, index) => ({
             id: group.id,
             order: index
@@ -1538,16 +1543,23 @@ export default function EstimateDetail() {
       return;
     }
     
-    // Same container - reorder within it
-    const newIndex = sourceContainerItems.findIndex(item => item.id === effectiveOverId);
+    // Same container - reorder within it using position-aware insertion
+    const targetIdx = sourceContainerItems.findIndex(item => item.id === effectiveOverId);
     
-    if (newIndex === -1) {
+    if (targetIdx === -1) {
       return;
     }
     
-    
-    // Reorder within the container
-    const reorderedItems = arrayMove(sourceContainerItems, oldIndex, newIndex);
+    const sameContainerDraggedItem = sourceContainerItems[oldIndex];
+    const withoutDragged = sourceContainerItems.filter(item => item.id !== sameContainerDraggedItem.id);
+    const targetIdxInRemaining = withoutDragged.findIndex(item => item.id === effectiveOverId);
+    const insertBefore = capturedDropTarget?.position === 'above';
+    const insertAt = insertBefore ? targetIdxInRemaining : targetIdxInRemaining + 1;
+    const reorderedItems = [
+      ...withoutDragged.slice(0, insertAt),
+      sameContainerDraggedItem,
+      ...withoutDragged.slice(insertAt)
+    ];
     
     // Build updates with new order values (0, 1, 2, ...)
     const updates = reorderedItems.map((item, index) => ({
