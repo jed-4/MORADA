@@ -1299,16 +1299,33 @@ export default function EstimateDetail() {
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     
+    // Capture dropTarget BEFORE clearing — React state updates are async so
+    // dropTarget still holds the last-render value when read synchronously here
+    const capturedDropTarget = dropTarget;
+    
     // Clear active drag state, drop target, and native DOM ghost
     setActiveId(null);
     setDropTarget(null);
     removeNativeGhost();
     
-    if (!over || active.id === over.id) return;
+    const activeIdStr = String(active.id);
+    const isDraggingGroup = activeIdStr.startsWith('group-');
+
+    // For item drags: use our cursor-based capturedDropTarget.id as the effective
+    // over ID. dnd-kit's closestCenter may return a large group card as `over`
+    // instead of the actual item row beneath the cursor, so we bypass it here.
+    // For group drags: keep using dnd-kit's over (group detection works correctly).
+    let effectiveOverId: string | null;
+    if (!isDraggingGroup) {
+      effectiveOverId = capturedDropTarget?.id ?? null;
+    } else {
+      effectiveOverId = over ? String(over.id) : null;
+    }
+
+    if (!effectiveOverId || effectiveOverId === activeIdStr) return;
     
     // Check if dragging a group (groups have IDs prefixed with "group-")
-    const isDraggingGroup = String(active.id).startsWith('group-');
-    const isOverGroup = String(over.id).startsWith('group-');
+    const isOverGroup = effectiveOverId.startsWith('group-');
     
     if (isDraggingGroup) {
       // Extract group IDs
@@ -1322,7 +1339,7 @@ export default function EstimateDetail() {
       
       if (isOverGroup) {
         // Dragging a group onto another group
-        const overGroupId = String(over.id).replace('group-', '');
+        const overGroupId = effectiveOverId.replace('group-', '');
         const overGroup = groups.find(g => g.id === overGroupId);
         
         if (!overGroup) {
@@ -1400,7 +1417,7 @@ export default function EstimateDetail() {
     
     // Find the dragged item and target item
     const draggedItem = items.find(item => item.id === active.id);
-    const targetItem = items.find(item => item.id === over.id);
+    const targetItem = items.find(item => item.id === effectiveOverId);
     
     if (!draggedItem) {
       return;
@@ -1408,7 +1425,7 @@ export default function EstimateDetail() {
     
     // Handle dropping onto a group header (cross-group move to end of group)
     if (isOverGroup) {
-      const targetGroupId = String(over.id).replace('group-', '');
+      const targetGroupId = effectiveOverId.replace('group-', '');
       
       if (targetGroupId === draggedItem.groupId) {
         return;
@@ -1485,7 +1502,7 @@ export default function EstimateDetail() {
         .filter(item => !item.parentItemId && (item.groupId || null) === targetGroupId)
         .sort((a, b) => (a.order || 0) - (b.order || 0));
       
-      const targetIndex = targetContainerItems.findIndex(item => item.id === over.id);
+      const targetIndex = targetContainerItems.findIndex(item => item.id === effectiveOverId);
       const insertionIndex = targetIndex >= 0 ? targetIndex : targetContainerItems.length;
       
       // Remove from source, add to target at insertion point
@@ -1522,7 +1539,7 @@ export default function EstimateDetail() {
     }
     
     // Same container - reorder within it
-    const newIndex = sourceContainerItems.findIndex(item => item.id === over.id);
+    const newIndex = sourceContainerItems.findIndex(item => item.id === effectiveOverId);
     
     if (newIndex === -1) {
       return;
