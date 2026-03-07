@@ -1032,19 +1032,21 @@ export default function Settings() {
                 name="taxRate"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Tax Rate (%)</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        placeholder="10"
-                        {...field}
-                        disabled={!isEditing}
-                        data-testid="tax-rate-input"
-                        min="0"
-                        max="100"
-                        step="0.1"
-                      />
-                    </FormControl>
+                    <FormLabel>Tax Rate</FormLabel>
+                    <Select
+                      onValueChange={(value) => field.onChange(parseFloat(value))}
+                      value={String(field.value ?? 10)}
+                      disabled={!isEditing}
+                    >
+                      <FormControl>
+                        <SelectTrigger data-testid="tax-rate-input">
+                          <SelectValue placeholder="Select tax rate" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="10">Australian GST (10%)</SelectItem>
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )}

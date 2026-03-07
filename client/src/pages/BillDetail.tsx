@@ -453,13 +453,14 @@ export default function BillDetail() {
   const calculateTax = () => {
     const taxableItems = lineItems.filter((item) => item.tax === "GST on expenses");
     
+    const gstRate = Number(companySettings?.taxRate ?? 10) / 100;
     if (taxMode === "inclusive") {
       const taxableTotal = taxableItems.reduce((sum, item) => sum + item.total, 0);
-      return taxableTotal / 11;
+      return taxableTotal * gstRate / (1 + gstRate);
     }
     
     const taxableAmount = taxableItems.reduce((sum, item) => sum + item.total, 0);
-    return taxableAmount * 0.1;
+    return taxableAmount * gstRate;
   };
 
   const calculateTotal = () => {
@@ -486,16 +487,18 @@ export default function BillDetail() {
   };
 
   const getLineExTax = (item: LineItem) => {
+    const gstRate = Number(companySettings?.taxRate ?? 10) / 100;
     if (taxMode === "inclusive" && item.tax === "GST on expenses") {
-      return item.total - item.total / 11;
+      return item.total / (1 + gstRate);
     }
     return item.total;
   };
 
   const getLineTax = (item: LineItem) => {
+    const gstRate = Number(companySettings?.taxRate ?? 10) / 100;
     if (item.tax !== "GST on expenses") return 0;
-    if (taxMode === "inclusive") return item.total / 11;
-    return item.total * 0.1;
+    if (taxMode === "inclusive") return item.total * gstRate / (1 + gstRate);
+    return item.total * gstRate;
   };
 
   const getLineIncTax = (item: LineItem) => {
@@ -1983,10 +1986,8 @@ export default function BillDetail() {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="GST on expenses">
-                                GST on expenses
-                              </SelectItem>
-                              <SelectItem value="No GST">No GST</SelectItem>
+                              <SelectItem value="GST on expenses">GST on Expenses</SelectItem>
+                              <SelectItem value="No GST">GST Free Expenses</SelectItem>
                             </SelectContent>
                           </Select>
                         </td>

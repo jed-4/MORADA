@@ -53,6 +53,7 @@ import {
   Settings2,
   GripVertical,
   Lock,
+  CheckCircle2,
 } from "lucide-react";
 import { type Bill, type Project, type Supplier } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
@@ -182,6 +183,24 @@ export default function Bills() {
       setChangeSupplierDialogOpen(false);
       setSelectedSupplierId("");
       toast({ title: "Supplier updated", description: `Successfully updated supplier for ${selectedBills.size} bill(s).` });
+    },
+    onError: (error: Error) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      toast({ title: "Partial failure", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const bulkApproveMutation = useMutation({
+    mutationFn: async (billIds: string[]) => {
+      const results = await Promise.allSettled(billIds.map((id) => apiRequest(`/api/bills/${id}`, "PATCH", { status: "awaiting_payment" })));
+      const failed = results.filter(r => r.status === "rejected").length;
+      if (failed > 0) throw new Error(`${failed} of ${billIds.length} bills failed to approve`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      const count = selectedBills.size;
+      setSelectedBills(new Set());
+      toast({ title: "Bills approved", description: `Successfully approved ${count} bill(s).` });
     },
     onError: (error: Error) => {
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
@@ -490,6 +509,9 @@ export default function Bills() {
           <div className="flex items-center gap-1.5">
             <Button variant="ghost" size="sm" className="text-xs" style={{ backgroundColor: "#bba7db", color: "white" }} onClick={() => setChangeProjectDialogOpen(true)}>Change Project</Button>
             <Button variant="ghost" size="sm" className="text-xs" style={{ backgroundColor: "#bba7db", color: "white" }} onClick={() => setChangeSupplierDialogOpen(true)}>Change Supplier</Button>
+            <Button variant="ghost" size="sm" className="text-xs" style={{ backgroundColor: "#22c55e", color: "white" }} disabled={bulkApproveMutation.isPending} onClick={() => bulkApproveMutation.mutate(Array.from(selectedBills))}>
+              <CheckCircle2 className="w-3 h-3 mr-1" />{bulkApproveMutation.isPending ? "Approving..." : "Approve"}
+            </Button>
             <Button variant="ghost" size="sm" className="text-xs text-destructive" onClick={() => setDeleteDialogOpen(true)}>
               <Trash2 className="w-3 h-3 mr-1" />Delete
             </Button>
