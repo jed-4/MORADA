@@ -4922,13 +4922,13 @@ export default function EstimateDetail() {
 
       </div>{/* end header card */}
 
-      {/* Main Content - Horizontal scroll only, vertical flows naturally */}
+      {/* Main Content - horizontal scroll only, vertical flows naturally */}
       <div className="flex-1 overflow-auto min-h-0 px-3 pb-4 pt-2">
         <div className="inline-block min-w-full">
           <div className="border border-border rounded-md bg-background">
 
             {/* Toolbar row — sticky at top of table card */}
-            <div className="h-9 flex items-center justify-between px-3 border-b border-border/50 gap-1.5 bg-background sticky top-0 z-20 rounded-t-md">
+            <div className="h-9 flex items-center justify-between px-3 border-b border-border/50 gap-1.5 bg-background sticky top-0 z-[100] rounded-t-md">
               {/* Left: Controls + Filter Chips */}
               <div className="flex items-center gap-1.5 flex-1">
                 {/* Group Expand/Collapse - Icon only */}
@@ -5234,7 +5234,7 @@ export default function EstimateDetail() {
                         <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
                           {/* CSS Grid Header */}
                           <div 
-                            className="bg-muted border-b border-border sticky top-9 z-30 pl-px"
+                            className="bg-muted border-b border-border sticky top-9 z-[99] pl-px"
                             role="row"
                             style={{ 
                               display: 'grid', 
@@ -5348,7 +5348,7 @@ export default function EstimateDetail() {
                           if (group) {
                             return (
                               <div
-                                className="h-8 flex items-center gap-2 px-3 bg-[#bba7db]/15 border-l-2 border-[#bba7db] opacity-90 cursor-grabbing"
+                                className="h-8 flex items-center gap-2 px-3 bg-[#bba7db]/30 border-l-2 border-[#bba7db] shadow-sm opacity-95 cursor-grabbing"
                                 style={{ minWidth: '320px' }}
                               >
                                 <GripVertical className="h-3.5 w-3.5 text-[#bba7db] flex-shrink-0" />
@@ -5365,7 +5365,7 @@ export default function EstimateDetail() {
                         if (item) {
                           return (
                             <div
-                              className="h-8 flex items-center gap-2 px-3 bg-[#bba7db]/15 border-l-2 border-[#bba7db] opacity-90 cursor-grabbing"
+                              className="h-8 flex items-center gap-2 px-3 bg-[#bba7db]/30 border-l-2 border-[#bba7db] shadow-sm opacity-95 cursor-grabbing"
                               style={{ minWidth: '320px' }}
                             >
                               <GripVertical className="h-3.5 w-3.5 text-[#bba7db] flex-shrink-0" />

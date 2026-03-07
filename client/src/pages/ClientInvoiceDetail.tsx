@@ -1430,7 +1430,7 @@ export default function ClientInvoiceDetail() {
 
                   {/* Section header */}
                   <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50">
-                    <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
+                    <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[#bba7db]/80" />
                     <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Invoice Info</span>
                   </div>
 
@@ -1665,7 +1665,7 @@ export default function ClientInvoiceDetail() {
                       onClick={() => setIntroCollapsed((v) => !v)}
                     >
                       <div className="flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
+                        <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-sky-400/70" />
                         <span className="text-xs font-medium">Introduction</span>
                       </div>
                       {introCollapsed ? (
@@ -1703,7 +1703,7 @@ export default function ClientInvoiceDetail() {
                 {/* Card 2 — Financials */}
                 <div className="rounded-lg border border-border bg-card overflow-hidden">
                   <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-                    <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
+                    <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-emerald-400/70" />
                     <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Financials</span>
                   </div>
 
@@ -3045,7 +3045,7 @@ export default function ClientInvoiceDetail() {
                     onClick={() => setClosingCollapsed((v) => !v)}
                   >
                     <div className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
+                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber-400/70" />
                       <span className="text-xs font-medium">Closing Text</span>
                     </div>
                     {closingCollapsed ? (
@@ -3163,7 +3163,7 @@ export default function ClientInvoiceDetail() {
                   <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
                     <div className="flex items-center gap-2">
                       <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
-                      <Paperclip className="h-3 w-3 text-muted-foreground" />
+                      <Paperclip className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                       <span className="text-xs font-medium">Attachments</span>
                     </div>
                   </div>
