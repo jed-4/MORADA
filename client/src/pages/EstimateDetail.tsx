@@ -15,7 +15,6 @@ import {
   useSensors,
   DragEndEvent,
   DragStartEvent,
-  DragOverlay,
   MeasuringStrategy,
 } from '@dnd-kit/core';
 import {
@@ -627,11 +626,15 @@ export default function EstimateDetail() {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  // Track active drag item for DragOverlay
+  // Track active drag item
   const [activeId, setActiveId] = useState<string | null>(null);
   
-  // Track drop target and position for Google Sheets-style indicator
+  // Track drop target and position for indicator line
   const [dropTarget, setDropTarget] = useState<{ id: string; position: 'above' | 'below' } | null>(null);
+
+  // Native DOM ghost refs — updated directly without React re-render for lag-free drag feedback
+  const nativeGhostRef = React.useRef<HTMLElement | null>(null);
+  const nativeGhostListenerRef = React.useRef<((e: PointerEvent) => void) | null>(null);
   
   // Catalog Sidebar state
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
@@ -1087,12 +1090,75 @@ export default function EstimateDetail() {
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(String(event.active.id));
     setDropTarget(null);
+
+    // Create a native DOM ghost immediately — no React re-render needed, so it appears without lag
+    const activeIdStr = String(event.active.id);
+    const sourceRect = event.active.rect.current?.initial;
+    const activatorEvent = event.activatorEvent as PointerEvent;
+
+    if (sourceRect) {
+      let displayName = '';
+      if (activeIdStr.startsWith('group-')) {
+        const groupId = activeIdStr.replace('group-', '');
+        displayName = groups.find(g => g.id === groupId)?.name || 'Group';
+      } else {
+        displayName = items.find(i => i.id === activeIdStr)?.name || 'Item';
+      }
+
+      const ghost = document.createElement('div');
+      Object.assign(ghost.style, {
+        position: 'fixed',
+        zIndex: '9999',
+        pointerEvents: 'none',
+        width: `${sourceRect.width}px`,
+        height: '32px',
+        top: `${sourceRect.top}px`,
+        left: `${sourceRect.left}px`,
+        display: 'flex',
+        alignItems: 'center',
+        padding: '0 12px',
+        background: 'rgba(187,167,219,0.25)',
+        borderLeft: '2px solid #bba7db',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+        cursor: 'grabbing',
+        overflow: 'hidden',
+        fontSize: '12px',
+        color: 'var(--foreground)',
+        whiteSpace: 'nowrap',
+        textOverflow: 'ellipsis',
+      });
+      ghost.textContent = displayName;
+      document.body.appendChild(ghost);
+      nativeGhostRef.current = ghost;
+
+      const initialY = activatorEvent?.clientY ?? (sourceRect.top + sourceRect.height / 2);
+      const handlePointerMove = (e: PointerEvent) => {
+        if (!nativeGhostRef.current) return;
+        const deltaY = e.clientY - initialY;
+        nativeGhostRef.current.style.top = `${sourceRect.top + deltaY}px`;
+      };
+      window.addEventListener('pointermove', handlePointerMove, { passive: true });
+      nativeGhostListenerRef.current = handlePointerMove;
+    }
   };
   
+  // Helper: remove the native DOM ghost and its pointermove listener
+  const removeNativeGhost = () => {
+    if (nativeGhostRef.current) {
+      document.body.removeChild(nativeGhostRef.current);
+      nativeGhostRef.current = null;
+    }
+    if (nativeGhostListenerRef.current) {
+      window.removeEventListener('pointermove', nativeGhostListenerRef.current);
+      nativeGhostListenerRef.current = null;
+    }
+  };
+
   // Handle drag cancel - clear all drag state
   const handleDragCancel = () => {
     setActiveId(null);
     setDropTarget(null);
+    removeNativeGhost();
   };
   
   // Handle drag move - track position for Google Sheets-style indicator
@@ -1106,22 +1172,51 @@ export default function EstimateDetail() {
     }
     
     const activeIdStr = String(active.id);
-    
-    // Skip if dragging a group (groups have their own visual feedback)
-    if (activeIdStr.startsWith('group-')) {
-      setDropTarget(null);
-      return;
-    }
-    
+
     // Get the current cursor Y position from the dragged element
     const activeInitialRect = active.rect?.current?.initial;
     if (!activeInitialRect || !delta) {
       setDropTarget(null);
       return;
     }
-    
+
     // Calculate cursor position (center of dragged element)
     const cursorY = activeInitialRect.top + activeInitialRect.height / 2 + delta.y;
+
+    // Handle group drag — show indicator between group cards
+    if (activeIdStr.startsWith('group-')) {
+      const groupEls = document.querySelectorAll('[data-sortable-group-id]');
+      if (groupEls.length === 0) {
+        setDropTarget(null);
+        return;
+      }
+      const groupPositions: { id: string; top: number; bottom: number; midpoint: number }[] = [];
+      groupEls.forEach((el) => {
+        const gid = el.getAttribute('data-sortable-group-id');
+        if (!gid || `group-${gid}` === activeIdStr) return;
+        const rect = el.getBoundingClientRect();
+        groupPositions.push({ id: `group-${gid}`, top: rect.top, bottom: rect.bottom, midpoint: rect.top + rect.height / 2 });
+      });
+      if (groupPositions.length === 0) { setDropTarget(null); return; }
+      groupPositions.sort((a, b) => a.top - b.top);
+      if (cursorY < groupPositions[0].midpoint) {
+        setDropTarget({ id: groupPositions[0].id, position: 'above' });
+        return;
+      }
+      const lastGrp = groupPositions[groupPositions.length - 1];
+      if (cursorY > lastGrp.midpoint) {
+        setDropTarget({ id: lastGrp.id, position: 'below' });
+        return;
+      }
+      for (let i = 0; i < groupPositions.length; i++) {
+        const cur = groupPositions[i];
+        const nxt = groupPositions[i + 1];
+        if (cursorY <= cur.midpoint) { setDropTarget({ id: cur.id, position: 'above' }); return; }
+        if (!nxt || cursorY <= nxt.midpoint) { setDropTarget({ id: cur.id, position: 'below' }); return; }
+      }
+      setDropTarget(null);
+      return;
+    }
     
     // Find all sortable item rows in the DOM (excluding the active one)
     const allRows = document.querySelectorAll('[data-sortable-id]');
@@ -1191,9 +1286,10 @@ export default function EstimateDetail() {
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     
-    // Clear active drag state and drop target
+    // Clear active drag state, drop target, and native DOM ghost
     setActiveId(null);
     setDropTarget(null);
+    removeNativeGhost();
     
     if (!over || active.id === over.id) return;
     
@@ -5293,93 +5389,55 @@ export default function EstimateDetail() {
                             )}
                             
                             {/* Grouped items using EstimateGroupCard */}
-                            {sortedGroups.map((group, groupIndex) => (
-                              <EstimateGroupCard
-                                key={`group-${group.id}`}
-                                group={group}
-                                groupedItems={groupedItems}
-                                columns={columns}
-                                tableWidth={tableWidth}
-                                gridTemplate={gridTemplate}
-                                visibleCols={visibleCols}
-                                handleToggleGroupCollapse={handleToggleGroupCollapse}
-                                renderItemRow={renderItemWithSubItems}
-                                onDeleteGroup={(groupId) => {
-                                  setGroupToDelete(groupId);
-                                  setIsDeleteGroupDialogOpen(true);
-                                }}
-                                onEditGroup={handleEditGroup}
-                                onDuplicateGroup={handleDuplicateGroup}
-                                onCopyGroup={handleCopyGroup}
-                                onAddSubgroup={handleAddSubgroup}
-                                onAddItemToGroup={handleAddItemToGroup}
-                                onInlineAddItem={handleInlineAddItem}
-                                isLocked={estimate?.isLocked || false}
-                                selectedItems={selectedItems}
-                                selectedGroups={selectedGroups}
-                                onToggleGroupSelection={handleToggleGroupSelection}
-                                nestingLevel={0}
-                                groupTotals={groupTotalsMap[group.id]}
-                                formatCurrency={formatCurrency}
-                                subgroups={allSubgroups}
-                                allGroups={groups}
-                                onCreateFrom={() => toast({ title: "Create from Group", description: "Coming soon" })}
-                                activeDragId={activeId}
-                                hideAddLines={hideAddLines}
-                                groupIndex={groupIndex}
-                                onApplyCostCode={(groupId) => applyGroupCostCodeMutation.mutate(groupId)}
-                                costCodes={costCodes}
-                                costCategories={costCategories}
-                              />
-                            ))}
+                            {sortedGroups.map((group, groupIndex) => {
+                              const groupDropIndicator = dropTarget?.id === `group-${group.id}` ? dropTarget.position : undefined;
+                              return (
+                                <EstimateGroupCard
+                                  key={`group-${group.id}`}
+                                  group={group}
+                                  groupedItems={groupedItems}
+                                  columns={columns}
+                                  tableWidth={tableWidth}
+                                  gridTemplate={gridTemplate}
+                                  visibleCols={visibleCols}
+                                  handleToggleGroupCollapse={handleToggleGroupCollapse}
+                                  renderItemRow={renderItemWithSubItems}
+                                  onDeleteGroup={(groupId) => {
+                                    setGroupToDelete(groupId);
+                                    setIsDeleteGroupDialogOpen(true);
+                                  }}
+                                  onEditGroup={handleEditGroup}
+                                  onDuplicateGroup={handleDuplicateGroup}
+                                  onCopyGroup={handleCopyGroup}
+                                  onAddSubgroup={handleAddSubgroup}
+                                  onAddItemToGroup={handleAddItemToGroup}
+                                  onInlineAddItem={handleInlineAddItem}
+                                  isLocked={estimate?.isLocked || false}
+                                  selectedItems={selectedItems}
+                                  selectedGroups={selectedGroups}
+                                  onToggleGroupSelection={handleToggleGroupSelection}
+                                  nestingLevel={0}
+                                  groupTotals={groupTotalsMap[group.id]}
+                                  formatCurrency={formatCurrency}
+                                  subgroups={allSubgroups}
+                                  allGroups={groups}
+                                  onCreateFrom={() => toast({ title: "Create from Group", description: "Coming soon" })}
+                                  activeDragId={activeId}
+                                  hideAddLines={hideAddLines}
+                                  groupIndex={groupIndex}
+                                  onApplyCostCode={(groupId) => applyGroupCostCodeMutation.mutate(groupId)}
+                                  costCodes={costCodes}
+                                  costCategories={costCategories}
+                                  dropIndicator={groupDropIndicator}
+                                />
+                              );
+                            })}
                           </div>
                         </SortableContext>
                         </div>
                       );
                     })()}
                   </div>
-                  <DragOverlay dropAnimation={null}>
-                    {activeId ? (
-                      (() => {
-                        // Check if dragging a group
-                        if (String(activeId).startsWith('group-')) {
-                          const groupId = String(activeId).replace('group-', '');
-                          const group = groups.find(g => g.id === groupId);
-                          if (group) {
-                            return (
-                              <div
-                                className="h-8 flex items-center gap-2 px-3 bg-[#bba7db]/30 border-l-2 border-[#bba7db] shadow-sm opacity-95 cursor-grabbing"
-                                style={{ minWidth: '320px' }}
-                              >
-                                <GripVertical className="h-3.5 w-3.5 text-[#bba7db] flex-shrink-0" />
-                                <span className="font-semibold text-xs truncate flex-1">{group.name}</span>
-                                <span className="text-xs text-muted-foreground flex-shrink-0">
-                                  {items.filter(i => i.groupId === group.id && !i.parentItemId).length} items
-                                </span>
-                              </div>
-                            );
-                          }
-                        }
-                        // Dragging an item
-                        const item = items.find(i => i.id === activeId);
-                        if (item) {
-                          return (
-                            <div
-                              className="h-8 flex items-center gap-2 px-3 bg-[#bba7db]/30 border-l-2 border-[#bba7db] shadow-sm opacity-95 cursor-grabbing"
-                              style={{ minWidth: '320px' }}
-                            >
-                              <GripVertical className="h-3.5 w-3.5 text-[#bba7db] flex-shrink-0" />
-                              <span className="text-xs truncate flex-1">{item.name}</span>
-                              <span className="text-xs font-medium text-[#bba7db] flex-shrink-0 tabular-nums">
-                                {formatCurrency(item.priceIncTax || 0)}
-                              </span>
-                            </div>
-                          );
-                        }
-                        return null;
-                      })()
-                    ) : null}
-                  </DragOverlay>
                 </DndContext>
               )}
           </div>{/* end table card */}

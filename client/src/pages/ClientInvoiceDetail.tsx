@@ -90,6 +90,7 @@ import type {
   EstimateItem,
   Variation,
   Bill,
+  Contact,
 } from "@shared/schema";
 
 const GST_RATE = 0.1;
@@ -359,6 +360,11 @@ export default function ClientInvoiceDetail() {
   const { data: currentProject } = useQuery<Project>({
     queryKey: [`/api/projects/${selectedProjectId}`],
     enabled: !!selectedProjectId,
+  });
+
+  const { data: clientContact } = useQuery<Contact>({
+    queryKey: [`/api/contacts/${(currentProject as any)?.clientId}`],
+    enabled: !!(currentProject as any)?.clientId,
   });
 
   const { data: estimates = [] } = useQuery<Estimate[]>({
@@ -1424,6 +1430,38 @@ export default function ClientInvoiceDetail() {
           {/* Main Content */}
           <div className="flex-1 overflow-auto">
             <div className="max-w-4xl mx-auto px-3 py-3 space-y-3">
+
+                {/* Bill To strip — shows billing recipient (client + project) */}
+                {(currentProject || clientContact) && (
+                  <div className="rounded-lg border border-border bg-card overflow-hidden">
+                    <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
+                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[#bba7db]/80" />
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Bill To</span>
+                    </div>
+                    <div className="px-4 py-2.5 flex items-start gap-6">
+                      {clientContact && (
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold truncate">{clientContact.name}</div>
+                          {clientContact.company && (
+                            <div className="text-xs text-muted-foreground truncate">{clientContact.company}</div>
+                          )}
+                          {(clientContact.addressFormatted || clientContact.address) && (
+                            <div className="text-xs text-muted-foreground truncate">{clientContact.addressFormatted || clientContact.address}</div>
+                          )}
+                        </div>
+                      )}
+                      {currentProject && (
+                        <div className="min-w-0">
+                          <div className="text-[10px] text-muted-foreground/60 uppercase tracking-wide">Project</div>
+                          <div className="text-xs font-medium truncate">{(currentProject as any).name}</div>
+                          {(currentProject as any).location && (
+                            <div className="text-xs text-muted-foreground truncate">{(currentProject as any).location}</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* Card 1 — Invoice Info */}
                 <div className="rounded-lg border border-border bg-card overflow-hidden">

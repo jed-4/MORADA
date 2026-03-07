@@ -69,6 +69,7 @@ interface EstimateGroupCardProps {
   onApplyCostCode?: (groupId: string) => void;
   costCodes?: CostCode[];
   costCategories?: CostCategory[];
+  dropIndicator?: 'above' | 'below' | null;
 }
 
 export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
@@ -103,6 +104,7 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
   onApplyCostCode,
   costCodes = [],
   costCategories = [],
+  dropIndicator,
 }) => {
   const [isAddingLine, setIsAddingLine] = useState(false);
   const [newItemName, setNewItemName] = useState('');
@@ -205,7 +207,15 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
       ref={setNodeRef}
       style={style}
       className={`relative group/grp ${nestingLevel > 0 ? 'ml-8' : ''}`}
+      data-sortable-group-id={group.id}
     >
+      {/* Drop indicator line — shown when another group is dragged over this one */}
+      {dropIndicator === 'above' && (
+        <div className="absolute -top-[2px] left-0 right-0 h-1 bg-[#bba7db] z-50 rounded-full shadow-[0_0_8px_rgba(187,167,219,0.6)]" />
+      )}
+      {dropIndicator === 'below' && (
+        <div className="absolute -bottom-[2px] left-0 right-0 h-1 bg-[#bba7db] z-50 rounded-full shadow-[0_0_8px_rgba(187,167,219,0.6)]" />
+      )}
       {/* Drag handle — floats in left dead zone, outside the Card */}
       {!isLocked && (
         <div
