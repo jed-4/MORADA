@@ -174,9 +174,10 @@ interface SortableRowProps {
   isDraggable?: boolean;
   gridTemplate: string;
   dropIndicator?: 'above' | 'below' | null;
+  activeDragId?: string | null;
 }
 
-const SortableRow = React.memo(({ id, children, className, isDraggable = true, gridTemplate, dropIndicator }: SortableRowProps) => {
+const SortableRow = React.memo(({ id, children, className, isDraggable = true, gridTemplate, dropIndicator, activeDragId }: SortableRowProps) => {
   const {
     attributes,
     listeners,
@@ -242,10 +243,12 @@ const SortableRow = React.memo(({ id, children, className, isDraggable = true, g
 
   // Normal rendering when not dragging
   // Only apply Y-axis transform to prevent horizontal shifting
+  // Skip transform when a group is being dragged (items shouldn't fly around)
+  const isGroupBeingDragged = activeDragId && String(activeDragId).startsWith('group-');
   const style: React.CSSProperties = {
     display: 'grid',
     gridTemplateColumns: gridTemplate,
-    transform: transform ? `translateY(${Math.round(transform.y)}px)` : undefined,
+    transform: (transform && !isGroupBeingDragged) ? `translateY(${Math.round(transform.y)}px)` : undefined,
     transition: transition || 'transform 150ms ease',
   };
 
@@ -1091,10 +1094,16 @@ export default function EstimateDetail() {
     setActiveId(String(event.active.id));
     setDropTarget(null);
 
-    // Create a native DOM ghost immediately — no React re-render needed, so it appears without lag
+    // Create a native DOM ghost immediately — query the DOM directly for the rect
+    // because event.active.rect.current?.initial is null at onDragStart time in dnd-kit v6
     const activeIdStr = String(event.active.id);
-    const sourceRect = event.active.rect.current?.initial;
     const activatorEvent = event.activatorEvent as PointerEvent;
+
+    // Query the source element directly by data attribute
+    const sourceEl = activeIdStr.startsWith('group-')
+      ? (document.querySelector(`[data-sortable-group-id="${activeIdStr.replace('group-', '')}"]`) as HTMLElement | null)
+      : (document.querySelector(`[data-sortable-id="${activeIdStr}"]`) as HTMLElement | null);
+    const sourceRect = sourceEl?.getBoundingClientRect();
 
     if (sourceRect) {
       let displayName = '';
@@ -1173,14 +1182,18 @@ export default function EstimateDetail() {
     
     const activeIdStr = String(active.id);
 
-    // Get the current cursor Y position from the dragged element
-    const activeInitialRect = active.rect?.current?.initial;
+    // Get the current cursor Y position — query the DOM directly because
+    // active.rect?.current?.initial can be stale or null during drag
+    const activeEl = activeIdStr.startsWith('group-')
+      ? (document.querySelector(`[data-sortable-group-id="${activeIdStr.replace('group-', '')}"]`) as HTMLElement | null)
+      : (document.querySelector(`[data-sortable-id="${activeIdStr}"]`) as HTMLElement | null);
+    const activeInitialRect = activeEl?.getBoundingClientRect();
     if (!activeInitialRect || !delta) {
       setDropTarget(null);
       return;
     }
 
-    // Calculate cursor position (center of dragged element)
+    // Calculate cursor position (center of dragged element + drag delta)
     const cursorY = activeInitialRect.top + activeInitialRect.height / 2 + delta.y;
 
     // Handle group drag — show indicator between group cards
@@ -3503,7 +3516,7 @@ export default function EstimateDetail() {
     
     const rows = [
       // Parent item row - CSS Grid
-      <SortableRow key={item.id} id={item.id} className={itemClassName} isDraggable={!isLocked} gridTemplate={effectiveGridTemplate} dropIndicator={itemDropIndicator}>
+      <SortableRow key={item.id} id={item.id} className={itemClassName} isDraggable={!isLocked} gridTemplate={effectiveGridTemplate} dropIndicator={itemDropIndicator} activeDragId={activeId}>
         {/* Checkbox cell */}
         <div className="h-8 px-2 flex items-center" role="gridcell">
           <Checkbox
@@ -3624,7 +3637,7 @@ export default function EstimateDetail() {
       subItems.forEach(subItem => {
         const subItemDropIndicator = dropTarget?.id === subItem.id ? dropTarget.position : undefined;
         rows.push(
-          <SortableRow key={subItem.id} id={subItem.id} className="bg-muted/20" isDraggable={!isLocked} gridTemplate={effectiveGridTemplate} dropIndicator={subItemDropIndicator}>
+          <SortableRow key={subItem.id} id={subItem.id} className="bg-muted/20" isDraggable={!isLocked} gridTemplate={effectiveGridTemplate} dropIndicator={subItemDropIndicator} activeDragId={activeId}>
             <div className="h-8 px-2 flex items-center" role="gridcell">
               <Checkbox
                 checked={selectedItems.has(subItem.id)}
@@ -5298,23 +5311,12 @@ export default function EstimateDetail() {
                         allItemIds.push(subItem.id);
                       });
                       
-                      // Dynamically filter sortable IDs based on what's being dragged
-                      // When dragging an item, only include items to prevent groups from being reordered
-                      // When dragging a group, only include groups to prevent items from interfering
-                      const isDraggingGroup = activeId && String(activeId).startsWith('group-');
-                      const isDraggingItem = activeId && !String(activeId).startsWith('group-');
-                      
-                      let allSortableIds: string[];
-                      if (isDraggingItem) {
-                        // When dragging an item, only items are sortable (prevents group movement)
-                        allSortableIds = allItemIds;
-                      } else if (isDraggingGroup) {
-                        // When dragging a group, only groups are sortable (prevents item interference)
-                        allSortableIds = [...groupIds, ...subgroupIds];
-                      } else {
-                        // No active drag - include everything for initial setup
-                        allSortableIds = [...groupIds, ...subgroupIds, ...allItemIds];
-                      }
+                      // Keep SortableContext items stable throughout the entire drag lifecycle.
+                      // Changing this list mid-drag causes dnd-kit to lose its `over` state,
+                      // which prevents handleDragEnd from receiving a valid drop target.
+                      // Item-vs-group interference is handled in SortableRow/EstimateGroupCard
+                      // by skipping transforms based on activeDragId.
+                      const allSortableIds = [...groupIds, ...subgroupIds, ...allItemIds];
                       
                       const tableWidth = columns.filter(col => col.visible).reduce((sum, col) => sum + col.widthPx, 0) + 80 + 24;
                       
