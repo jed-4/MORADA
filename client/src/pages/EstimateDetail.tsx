@@ -55,7 +55,8 @@ import {
   Copy,
   Columns,
   Layers,
-  Flag
+  Flag,
+  Check
 } from "lucide-react";
 import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema, type FieldCategoryWithOptions, type FieldOption, type CompanySettings, type CostCode, type CostCategory } from "@shared/schema";
 import { useForm } from "react-hook-form";
@@ -80,6 +81,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -1787,8 +1789,9 @@ export default function EstimateDetail() {
   });
 
   const createVersionMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest(`/api/estimates/${effectiveEstimateId}/version`, "POST");
+    mutationFn: async (sourceId?: string) => {
+      const id = sourceId ?? effectiveEstimateId;
+      const res = await apiRequest(`/api/estimates/${id}/version`, "POST");
       return res as unknown as Estimate;
     },
     onSuccess: (newVersion: Estimate) => {
@@ -1800,6 +1803,63 @@ export default function EstimateDetail() {
       toast({ title: "Error", description: "Failed to create new revision.", variant: "destructive" });
     },
   });
+
+  const renameRevisionMutation = useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+      return await apiRequest(`/api/estimates/${id}`, "PATCH", { name });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "versions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId] });
+      toast({ title: "Revision renamed" });
+    },
+    onError: () => toast({ title: "Error", description: "Failed to rename.", variant: "destructive" }),
+  });
+
+  const setAsWorkingMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest(`/api/estimates/${id}`, "PATCH", { isLocked: false });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
+      toast({ title: "Set as working", description: "This revision is now unlocked for editing." });
+    },
+    onError: () => toast({ title: "Error", description: "Failed to set as working.", variant: "destructive" }),
+  });
+
+  const setAsContractMutation = useMutation({
+    mutationFn: async (estimateId: string) => {
+      const summary = await apiRequest(`/api/estimates/${estimateId}/summary`);
+      const totalCents = Math.round((summary?.total ?? 0) * 100);
+      return await apiRequest(`/api/projects/${projectId}`, "PATCH", {
+        selectedEstimateId: estimateId,
+        contractPrice: totalCents > 0 ? totalCents : null,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId] });
+      toast({ title: "Contract estimate set", description: "This revision is now the contract estimate." });
+    },
+    onError: () => toast({ title: "Error", description: "Failed to set as contract.", variant: "destructive" }),
+  });
+
+  const deleteRevisionMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest(`/api/estimates/${id}`, "DELETE");
+    },
+    onSuccess: (_data, deletedId) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
+      toast({ title: "Revision deleted" });
+      if (deletedId === effectiveEstimateId && estimateVersions.length > 1) {
+        const other = estimateVersions.find(v => v.id !== deletedId);
+        if (other) setLocation(`/projects/${other.projectId}/estimates/${other.id}`);
+      }
+    },
+    onError: () => toast({ title: "Error", description: "Failed to delete revision.", variant: "destructive" }),
+  });
+
+  const [renamingRevisionId, setRenamingRevisionId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
 
   // Mutation for toggling group collapse state with optimistic updates
   const toggleGroupCollapseMutation = useMutation({
@@ -3349,7 +3409,7 @@ export default function EstimateDetail() {
       // Parent item row - CSS Grid
       <SortableRow key={item.id} id={item.id} className={itemClassName} isDraggable={!isLocked} gridTemplate={effectiveGridTemplate} dropIndicator={itemDropIndicator}>
         {/* Checkbox cell */}
-        <div className="h-10 px-2 flex items-center" role="gridcell">
+        <div className="h-8 px-2 flex items-center" role="gridcell">
           <Checkbox
             checked={selectedItems.has(item.id)}
             onCheckedChange={() => handleToggleSelection(item.id)}
@@ -3364,7 +3424,7 @@ export default function EstimateDetail() {
           return React.cloneElement(cell as React.ReactElement, { key: `${item.id}-${column.id}` });
         })}
         {/* Actions cell */}
-        <div className="h-10 px-2 flex items-center" role="gridcell">
+        <div className="h-8 px-2 flex items-center" role="gridcell">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button 
@@ -3469,7 +3529,7 @@ export default function EstimateDetail() {
         const subItemDropIndicator = dropTarget?.id === subItem.id ? dropTarget.position : undefined;
         rows.push(
           <SortableRow key={subItem.id} id={subItem.id} className="bg-muted/20" isDraggable={!isLocked} gridTemplate={effectiveGridTemplate} dropIndicator={subItemDropIndicator}>
-            <div className="h-10 px-2 flex items-center" role="gridcell">
+            <div className="h-8 px-2 flex items-center" role="gridcell">
               <Checkbox
                 checked={selectedItems.has(subItem.id)}
                 onCheckedChange={() => handleToggleSelection(subItem.id)}
@@ -3483,7 +3543,7 @@ export default function EstimateDetail() {
               const cell = renderCell(subItem, column.id);
               return React.cloneElement(cell as React.ReactElement, { key: `${subItem.id}-${column.id}` });
             })}
-            <div className="h-10 px-2 flex items-center" role="gridcell">
+            <div className="h-8 px-2 flex items-center" role="gridcell">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button 
@@ -3627,7 +3687,7 @@ export default function EstimateDetail() {
     const cellKey = `${item.id}-${columnId}`;
     
     // Common grid cell base class
-    const cellBase = "h-10 px-2 flex items-center text-sm overflow-hidden";
+    const cellBase = "h-8 px-2 flex items-center text-sm overflow-hidden";
 
     switch (columnId) {
       case 'costCode':
@@ -4597,50 +4657,126 @@ export default function EstimateDetail() {
                 className="w-full"
                 data-testid="select-estimate-assignees"
               />
-              <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mt-3 mb-2">Revisions</p>
-              <div className="flex items-center gap-2">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      className="flex-1 flex items-center justify-between gap-1 text-xs h-8 px-2 rounded-md border bg-background hover-elevate min-w-0"
-                      data-testid="button-revision-switcher"
-                    >
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <Layers className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                        <span className="truncate">{estimate ? getRevLabel(estimate.version) : 'Rev A'}</span>
-                        {estimate?.isLocked && <Lock className="h-2.5 w-2.5 text-muted-foreground/60 flex-shrink-0" />}
-                      </div>
-                      <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-52">
-                    {estimateVersions.map(v => (
-                      <DropdownMenuItem
-                        key={v.id}
-                        onClick={() => setLocation(`/projects/${v.projectId}/estimates/${v.id}`)}
-                        className={v.id === effectiveEstimateId ? "bg-accent" : ""}
-                        data-testid={`revision-item-${v.id}`}
-                      >
-                        <Layers className="w-3.5 h-3.5 mr-2 text-muted-foreground" />
-                        <span className="flex-1">{getRevLabel(v.version)}</span>
-                        {v.isLocked && <Lock className="w-3 h-3 text-muted-foreground/60" />}
-                        {!v.isLocked && v.id === effectiveEstimateId && <span className="text-[10px] text-[#bba7db]">current</span>}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+              <div className="flex items-center justify-between mt-3 mb-1.5">
+                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Revisions</p>
                 {estimate?.isLocked && (
                   <button
-                    className="flex items-center gap-1 px-2 h-8 text-xs rounded-md border hover-elevate active-elevate-2 disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+                    className="flex items-center gap-1 px-2 h-6 text-[11px] rounded border hover-elevate active-elevate-2 disabled:opacity-40 disabled:cursor-not-allowed"
                     onClick={() => createVersionMutation.mutate()}
                     disabled={createVersionMutation.isPending}
                     data-testid="button-new-revision"
-                    title="Create new revision"
+                    title="Create new revision from current"
                   >
                     <Plus className="w-3 h-3" />
                     New
                   </button>
                 )}
+              </div>
+              <div className="rounded-md border overflow-hidden">
+                {estimateVersions.map(v => {
+                  const isContract = v.id === project?.selectedEstimateId;
+                  const isCurrent = v.id === effectiveEstimateId;
+                  const isRenaming = renamingRevisionId === v.id;
+                  return (
+                    <div key={v.id} className={`flex items-center group/rev border-b last:border-b-0 ${isCurrent ? 'bg-accent/50' : ''}`}>
+                      {isRenaming ? (
+                        <form
+                          className="flex-1 flex items-center gap-1 px-2 h-8"
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            if (renameValue.trim()) {
+                              renameRevisionMutation.mutate({ id: v.id, name: renameValue.trim() });
+                            }
+                            setRenamingRevisionId(null);
+                          }}
+                        >
+                          <input
+                            autoFocus
+                            value={renameValue}
+                            onChange={e => setRenameValue(e.target.value)}
+                            className="flex-1 text-xs bg-background border rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-[#bba7db]"
+                            onBlur={() => setRenamingRevisionId(null)}
+                            onKeyDown={e => e.key === 'Escape' && setRenamingRevisionId(null)}
+                          />
+                          <button type="submit" className="text-[#bba7db]"><Check className="h-3 w-3" /></button>
+                        </form>
+                      ) : (
+                        <button
+                          className="flex-1 flex items-center gap-1.5 px-2 h-8 text-xs text-left min-w-0 hover-elevate"
+                          onClick={() => setLocation(`/projects/${v.projectId}/estimates/${v.id}`)}
+                          data-testid={`revision-item-${v.id}`}
+                        >
+                          <Layers className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                          <span className="truncate flex-1">{getRevLabel(v.version)}{v.name && v.name !== estimate?.name ? ` — ${v.name}` : ''}</span>
+                          {isContract && <Badge className="text-[9px] px-1 h-4 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 no-default-active-elevate">Contract</Badge>}
+                          {!isContract && v.isLocked && <Lock className="h-2.5 w-2.5 text-muted-foreground/50 flex-shrink-0" />}
+                          {!v.isLocked && isCurrent && <span className="text-[9px] text-[#bba7db] flex-shrink-0">working</span>}
+                        </button>
+                      )}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7 invisible group-hover/rev:visible flex-shrink-0 mr-0.5"
+                            data-testid={`button-revision-menu-${v.id}`}
+                          >
+                            <MoreHorizontal className="h-3.5 w-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-44">
+                          <DropdownMenuItem
+                            onClick={() => { setRenamingRevisionId(v.id); setRenameValue(v.name || getRevLabel(v.version)); }}
+                            data-testid={`revision-rename-${v.id}`}
+                          >
+                            <Pencil className="w-3.5 h-3.5 mr-2" />
+                            Rename
+                          </DropdownMenuItem>
+                          {v.isLocked && (
+                            <DropdownMenuItem
+                              onClick={() => setAsWorkingMutation.mutate(v.id)}
+                              data-testid={`revision-set-working-${v.id}`}
+                            >
+                              <LockOpen className="w-3.5 h-3.5 mr-2" />
+                              Set as Working
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem
+                            onClick={() => setAsContractMutation.mutate(v.id)}
+                            data-testid={`revision-set-contract-${v.id}`}
+                          >
+                            {isContract
+                              ? <Check className="w-3.5 h-3.5 mr-2 text-emerald-500" />
+                              : <Check className="w-3.5 h-3.5 mr-2 opacity-0" />
+                            }
+                            Set as Contract
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => createVersionMutation.mutate(v.id)}
+                            data-testid={`revision-duplicate-${v.id}`}
+                          >
+                            <Copy className="w-3.5 h-3.5 mr-2" />
+                            Duplicate
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => {
+                              if (estimateVersions.length <= 1) return;
+                              if (!confirm(`Delete ${getRevLabel(v.version)}? This cannot be undone.`)) return;
+                              deleteRevisionMutation.mutate(v.id);
+                            }}
+                            disabled={estimateVersions.length <= 1}
+                            className="text-destructive focus:text-destructive"
+                            data-testid={`revision-delete-${v.id}`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5 mr-2" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  );
+                })}
               </div>
               <Separator className="my-3" />
               <div className="flex flex-col gap-0.5">
@@ -5053,13 +5189,16 @@ export default function EstimateDetail() {
                       Object.values(subgroupsByParent).forEach(subgroups => {
                         subgroupIds.push(...subgroups.map(sg => `group-${sg.id}`));
                       });
+                      const expandedGroupIds = new Set(groups.filter(g => !g.isCollapsed).map(g => g.id));
                       const allItemIds = [...ungroupedItems.map(i => i.id)];
-                      Object.values(groupedItems).forEach(groupItems => {
-                        allItemIds.push(...groupItems.map(i => i.id));
+                      Object.entries(groupedItems).forEach(([groupId, groupItems]) => {
+                        if (expandedGroupIds.has(groupId)) {
+                          allItemIds.push(...groupItems.map(i => i.id));
+                        }
                       });
                       
-                      // Add all sub-item IDs to the sortable context
-                      items.filter(item => item.parentItemId).forEach(subItem => {
+                      // Add sub-item IDs only from expanded groups (prevents dnd-kit from tracking hidden nodes)
+                      items.filter(item => item.parentItemId && (!item.groupId || expandedGroupIds.has(item.groupId))).forEach(subItem => {
                         allItemIds.push(subItem.id);
                       });
                       
@@ -5095,7 +5234,7 @@ export default function EstimateDetail() {
                         <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
                           {/* CSS Grid Header */}
                           <div 
-                            className="bg-muted border-b border-border sticky top-9 z-10 pl-px"
+                            className="bg-muted border-b border-border sticky top-9 z-30 pl-px"
                             role="row"
                             style={{ 
                               display: 'grid', 
@@ -5105,7 +5244,7 @@ export default function EstimateDetail() {
                             }}
                           >
                             {/* Checkbox column */}
-                            <div className="h-9 px-2 flex items-center" role="columnheader">
+                            <div className="h-8 px-2 flex items-center" role="columnheader">
                               <Checkbox
                                 checked={selectedItems.size > 0 && selectedItems.size === items.length}
                                 onCheckedChange={handleSelectAll}
@@ -5119,7 +5258,7 @@ export default function EstimateDetail() {
                               <div 
                                 key={column.id}
                                 role="columnheader"
-                                className="h-9 px-2 flex items-center relative group/header"
+                                className="h-8 px-2 flex items-center relative group/header"
                               >
                                 <span className="truncate text-[10px] font-medium text-muted-foreground uppercase tracking-wide">{column.label}</span>
                                 {/* Resize handle - hidden on last column and on mobile */}
@@ -5138,7 +5277,7 @@ export default function EstimateDetail() {
                               </div>
                             ))}
                             {/* Actions column */}
-                            <div className="h-9 px-2 flex items-center" role="columnheader">
+                            <div className="h-8 px-2 flex items-center" role="columnheader">
                               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Actions</span>
                             </div>
                           </div>
