@@ -36,6 +36,14 @@ interface WorkloadItem {
   projectName: string;
   projectColor: string | null;
   scheduleCategory: string | null;
+  teamId?: string | null;
+  teamName?: string | null;
+}
+
+interface Team {
+  id: string;
+  name: string;
+  color: string;
 }
 
 interface ContactRow {
@@ -169,6 +177,21 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
     queryKey: [workloadUrl],
   });
 
+  const { data: teams = [] } = useQuery<Team[]>({
+    queryKey: ["/api/teams"],
+  });
+
+  const [hiddenTeams, setHiddenTeams] = useState<Set<string>>(new Set());
+
+  const toggleTeam = useCallback((id: string) => {
+    setHiddenTeams((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
   const allAssignees = useMemo(() => {
     const map = new Map<string, { id: string; name: string; color: string }>();
     for (const item of items) {
@@ -271,11 +294,32 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
     };
   }, [items, hiddenAssignees, hiddenProjects, hidePreconstructionSchedule]);
 
+  // Build team rows from items with teamId
+  const teamRows = useMemo(() => {
+    const teamMap = new Map<string, ContactRow>();
+    for (const item of items) {
+      if (!item.teamId || !item.teamName) continue;
+      if (item.status === "completed" || item.status === "cancelled") continue;
+      if (item.type === "parent") continue;
+      if (hiddenProjects.has(item.projectId)) continue;
+      if (hidePreconstructionSchedule && item.scheduleCategory === "preconstruction") continue;
+      if (hiddenTeams.has(item.teamId)) continue;
+      let row = teamMap.get(item.teamId);
+      if (!row) {
+        const team = teams.find((t) => t.id === item.teamId);
+        row = { id: `team:${item.teamId}`, name: item.teamName, color: team?.color || "#6b7280", items: [] };
+        teamMap.set(item.teamId, row);
+      }
+      row.items.push(item);
+    }
+    return Array.from(teamMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [items, teams, hiddenTeams, hiddenProjects, hidePreconstructionSchedule]);
+
   const allRows = useMemo(() => {
-    const rows = [...contactRows];
+    const rows: ContactRow[] = [...teamRows, ...contactRows];
     if (unassignedRow && !hideUnassigned) rows.push(unassignedRow);
     return rows;
-  }, [contactRows, unassignedRow, hideUnassigned]);
+  }, [teamRows, contactRows, unassignedRow, hideUnassigned]);
 
   const dayOffsets = useMemo(() => {
     const offsets: number[] = [];
@@ -598,9 +642,16 @@ export default function CompanyWorkload({ onSwitchView }: CompanyWorkloadProps) 
                   className="w-2.5 h-2.5 rounded-full shrink-0 mt-0.5"
                   style={{ backgroundColor: row.color }}
                 />
-                <span className="text-xs font-medium truncate flex-1">
-                  {row.name}
-                </span>
+                <div className="flex-1 flex items-center gap-1 min-w-0">
+                  <span className="text-xs font-medium truncate">
+                    {row.name}
+                  </span>
+                  {row.id.startsWith("team:") && (
+                    <span className="shrink-0 text-[9px] px-1 py-px rounded bg-muted text-muted-foreground font-medium uppercase tracking-wide">
+                      Team
+                    </span>
+                  )}
+                </div>
                 {assigneeOverloads.get(row.id)?.isOverloaded && (
                   <Tooltip>
                     <TooltipTrigger asChild>

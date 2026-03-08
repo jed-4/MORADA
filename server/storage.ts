@@ -1102,6 +1102,13 @@ export interface IStorage {
   createXeroConnection(data: import("@shared/schema").InsertXeroConnection): Promise<import("@shared/schema").XeroConnection>;
   updateXeroConnection(id: string, data: Partial<import("@shared/schema").XeroConnection>): Promise<import("@shared/schema").XeroConnection | undefined>;
   deleteXeroConnection(id: string): Promise<boolean>;
+
+  // Teams (T006)
+  getTeams(companyId: string): Promise<import("@shared/schema").Team[]>;
+  getTeam(id: string): Promise<import("@shared/schema").Team | undefined>;
+  createTeam(data: import("@shared/schema").InsertTeam): Promise<import("@shared/schema").Team>;
+  updateTeam(id: string, data: Partial<import("@shared/schema").InsertTeam>): Promise<import("@shared/schema").Team | undefined>;
+  deleteTeam(id: string): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
@@ -5560,6 +5567,13 @@ export class MemStorage implements IStorage {
   async deleteXeroConnection(id: string): Promise<boolean> {
     return false;
   }
+
+  // Teams (T006) - MemStorage stubs
+  async getTeams(companyId: string): Promise<import("@shared/schema").Team[]> { return []; }
+  async getTeam(id: string): Promise<import("@shared/schema").Team | undefined> { return undefined; }
+  async createTeam(data: import("@shared/schema").InsertTeam): Promise<import("@shared/schema").Team> { throw new Error("Not implemented"); }
+  async updateTeam(id: string, data: Partial<import("@shared/schema").InsertTeam>): Promise<import("@shared/schema").Team | undefined> { return undefined; }
+  async deleteTeam(id: string): Promise<boolean> { return false; }
 }
 
 // Database-backed storage implementation
@@ -19532,6 +19546,61 @@ export class DbStorage implements IStorage {
       return (result as any).rowCount > 0;
     } catch (error) {
       console.error("Database error in deleteXeroConnection:", error);
+      throw error;
+    }
+  }
+
+  // ============================================================
+  // TEAMS (T006)
+  // ============================================================
+
+  async getTeams(companyId: string): Promise<schema.Team[]> {
+    try {
+      return await db.select().from(schema.teams)
+        .where(eq(schema.teams.companyId, companyId))
+        .orderBy(schema.teams.name);
+    } catch (error) {
+      console.error("Database error in getTeams:", error);
+      throw error;
+    }
+  }
+
+  async getTeam(id: string): Promise<schema.Team | undefined> {
+    try {
+      const [team] = await db.select().from(schema.teams).where(eq(schema.teams.id, id));
+      return team;
+    } catch (error) {
+      console.error("Database error in getTeam:", error);
+      throw error;
+    }
+  }
+
+  async createTeam(data: schema.InsertTeam): Promise<schema.Team> {
+    try {
+      const [team] = await db.insert(schema.teams).values(data).returning();
+      return team;
+    } catch (error) {
+      console.error("Database error in createTeam:", error);
+      throw error;
+    }
+  }
+
+  async updateTeam(id: string, data: Partial<schema.InsertTeam>): Promise<schema.Team | undefined> {
+    try {
+      const [team] = await db.update(schema.teams).set(data).where(eq(schema.teams.id, id)).returning();
+      return team;
+    } catch (error) {
+      console.error("Database error in updateTeam:", error);
+      throw error;
+    }
+  }
+
+  async deleteTeam(id: string): Promise<boolean> {
+    try {
+      const result = await db.delete(schema.teams).where(eq(schema.teams.id, id));
+      return (result as any).rowCount > 0;
+    } catch (error) {
+      console.error("Database error in deleteTeam:", error);
       throw error;
     }
   }

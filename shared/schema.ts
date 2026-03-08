@@ -1891,6 +1891,15 @@ export const variations = pgTable("variations", {
   approvedDate: timestamp("approved_date"),
   rejectionReason: text("rejection_reason"),
   termsAndConditions: text("terms_and_conditions"),
+  // Attachments (T002)
+  attachments: jsonb("attachments").default([]), // Array of {name, url, size?, type?}
+  // Client portal (T003)
+  portalToken: text("portal_token").unique(),
+  portalSentAt: timestamp("portal_sent_at"),
+  clientSignedName: text("client_signed_name"),
+  clientSignedDate: timestamp("client_signed_date"),
+  builderSignedName: text("builder_signed_name"),
+  builderSignedDate: timestamp("builder_signed_date"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -1903,11 +1912,20 @@ export const insertVariationSchema = createInsertSchema(variations).omit({
   status: z.enum(["draft", "action", "pending", "approved", "rejected"]).default("draft"),
   approvalDeadline: z.coerce.date().optional(),
   approvedDate: z.coerce.date().optional(),
+  clientSignedDate: z.coerce.date().optional(),
+  builderSignedDate: z.coerce.date().optional(),
+  portalSentAt: z.coerce.date().optional(),
   subtotal: z.number().default(0),
   gstAmount: z.number().default(0),
   totalAmount: z.number().default(0),
   paidAmount: z.number().default(0),
   balanceAmount: z.number().default(0),
+  attachments: z.array(z.object({
+    name: z.string(),
+    url: z.string(),
+    size: z.number().optional(),
+    type: z.string().optional(),
+  })).optional(),
 });
 
 export type InsertVariation = z.infer<typeof insertVariationSchema>;
@@ -3055,6 +3073,23 @@ export const insertNonWorkingDaySchema = createInsertSchema(nonWorkingDays).omit
 export type InsertNonWorkingDay = z.infer<typeof insertNonWorkingDaySchema>;
 export type NonWorkingDay = typeof nonWorkingDays.$inferSelect;
 
+// Teams — on-site crew groups that can be assigned to schedule items (T006)
+export const teams = pgTable("teams", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  color: text("color").notNull().default("#6b7280"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertTeamSchema = createInsertSchema(teams).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertTeam = z.infer<typeof insertTeamSchema>;
+export type Team = typeof teams.$inferSelect;
+
 // Schedule Items (individual tasks/activities in the schedule)
 export const scheduleItems = pgTable("schedule_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -3082,6 +3117,8 @@ export const scheduleItems = pgTable("schedule_items", {
   assignedToId: varchar("assigned_to_id").references(() => contacts.id), // Contact/supplier assigned
   assignedToName: text("assigned_to_name"), // Cached for performance
   assignedToColor: text("assigned_to_color"), // Color from contact's scheduleColor
+  teamId: varchar("team_id").references(() => teams.id, { onDelete: "set null" }), // Team assignment (T006)
+  teamName: text("team_name"), // Cached team name for performance
   
   // Organization
   groupId: varchar("group_id"), // For grouping items (phases, stages)

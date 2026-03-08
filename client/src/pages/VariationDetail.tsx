@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { format } from "date-fns";
+import { pdf } from "@react-pdf/renderer";
 import { 
   ArrowLeft, 
   Plus, 
@@ -23,7 +24,14 @@ import {
   ChevronUp,
   Search,
   Paperclip,
+  Eye,
+  Download,
+  Mail,
+  Upload,
+  ExternalLink,
 } from "lucide-react";
+import { VariationPreviewContent } from "@/components/variations/VariationPreviewContent";
+import { VariationDocument } from "@/components/variations/pdf/VariationDocument";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -153,6 +161,20 @@ export default function VariationDetail() {
   const [termsCollapsed, setTermsCollapsed] = useState(true);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
 
+  // T002: Attachments state
+  const [attachments, setAttachments] = useState<Array<{ name: string; url: string; size?: number; type?: string }>>([]);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
+
+  // T003: Preview / PDF / Send state
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [sendModalOpen, setSendModalOpen] = useState(false);
+  const [sendTo, setSendTo] = useState("");
+  const [sendSubject, setSendSubject] = useState("");
+  const [sendBody, setSendBody] = useState("");
+  const [sendAttachPdf, setSendAttachPdf] = useState(true);
+  const [pdfGenerating, setPdfGenerating] = useState(false);
+
   // ── Queries ──────────────────────────────────────────────────────────────
 
   const { data: variation, isLoading: variationLoading } = useQuery<Variation>({
@@ -186,8 +208,15 @@ export default function VariationDetail() {
   const { data: companySettings } = useQuery<{
     termsAndConditions?: string;
     termsTemplates?: Array<{ id: string; name: string; content: string }>;
+    brandColor?: string;
   }>({
     queryKey: ["/api/company-settings"],
+  });
+
+  const { data: companyInfo } = useQuery<{
+    id: string; name: string; abn?: string; phone?: string; email?: string; logo?: string;
+  }>({
+    queryKey: ["/api/company"],
   });
 
   const form = useForm<VariationFormData>({
@@ -237,6 +266,11 @@ export default function VariationDetail() {
         termsAndConditions: (variation as any).termsAndConditions || "",
         status: variation.status as "draft" | "action" | "pending" | "approved" | "rejected",
       });
+      // T002: Load attachments
+      const storedAttachments = (variation as any).attachments;
+      if (Array.isArray(storedAttachments) && storedAttachments.length > 0) {
+        setAttachments(storedAttachments);
+      }
     }
   }, [variation, isEditMode, form]);
 
@@ -636,7 +670,13 @@ export default function VariationDetail() {
       queryClient.invalidateQueries({ queryKey: ["/api/variations"] });
       queryClient.invalidateQueries({ queryKey: [`/api/variations/${effectiveVariationId}`] });
       setApproveDialogOpen(false);
-      toast({ title: "Success", description: "Variation approved successfully" });
+      toast({ title: "Variation approved", description: "Variation approved successfully" });
+      // T005: Show EOT toast if project end date was extended
+      if (approvedVariation.scheduleExtended) {
+        const { days, newEndDate } = approvedVariation.scheduleExtended;
+        const formatted = new Date(newEndDate).toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric" });
+        toast({ title: "Project end date extended", description: `Extended by ${days} working day${days !== 1 ? "s" : ""} to ${formatted}` });
+      }
       if (user?.id) {
         logActivity({
           projectId: approvedVariation.projectId,
@@ -684,6 +724,138 @@ export default function VariationDetail() {
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message || "Failed to reject variation", variant: "destructive" });
+    },
+  });
+
+  // T002: Attachment upload handler
+  const handleUploadAttachment = async (file: File) => {
+    if (!effectiveVariationId) return;
+    setUploadingAttachment(true);
+    try {
+      // Request presigned URL
+      const urlRes = await apiRequest("/api/uploads/request-url", "POST", {
+        name: file.name,
+        size: file.size,
+        contentType: file.type,
+      });
+      const { uploadURL, objectPath } = await urlRes.json();
+
+      // Upload to object storage
+      await fetch(uploadURL, {
+        method: "PUT",
+        body: file,
+        headers: { "Content-Type": file.type },
+      });
+
+      const newAttachment = {
+        name: file.name,
+        url: objectPath,
+        size: file.size,
+        type: file.type,
+      };
+
+      const updated = [...attachments, newAttachment];
+      setAttachments(updated);
+
+      // Persist to variation
+      await apiRequest(`/api/variations/${effectiveVariationId}`, "PATCH", {
+        attachments: updated,
+      });
+      queryClient.invalidateQueries({ queryKey: [`/api/variations/${effectiveVariationId}`] });
+      toast({ title: "File uploaded", description: file.name });
+    } catch (err) {
+      toast({ title: "Upload failed", description: "Failed to upload file", variant: "destructive" });
+    } finally {
+      setUploadingAttachment(false);
+    }
+  };
+
+  const handleDeleteAttachment = async (index: number) => {
+    if (!effectiveVariationId) return;
+    const updated = attachments.filter((_, i) => i !== index);
+    setAttachments(updated);
+    await apiRequest(`/api/variations/${effectiveVariationId}`, "PATCH", { attachments: updated });
+    queryClient.invalidateQueries({ queryKey: [`/api/variations/${effectiveVariationId}`] });
+  };
+
+  // T003: Download PDF
+  const handleDownloadPdf = async () => {
+    setPdfGenerating(true);
+    try {
+      const blob = await pdf(
+        <VariationDocument
+          variation={variation as any}
+          items={existingCostLines}
+          bills={existingVariationBills}
+          company={companyInfo}
+          project={projects.find((p) => p.id === form.watch("projectId")) as any}
+          brandColor={companySettings?.brandColor || "#6d28d9"}
+        />
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `variation-${variation?.variationNumber || "export"}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast({ title: "PDF generation failed", variant: "destructive" });
+    } finally {
+      setPdfGenerating(false);
+    }
+  };
+
+  // T003: Open send modal (pre-fill and get portal token)
+  const handleOpenSendModal = async () => {
+    if (!effectiveVariationId) return;
+    try {
+      const res = await apiRequest(`/api/variations/${effectiveVariationId}/portal-token`, "POST", {});
+      const { portalUrl } = await res.json();
+      const fullUrl = `${window.location.origin}${portalUrl}`;
+      setSendTo("");
+      setSendSubject(`Variation ${variation?.variationNumber || ""} — ${variation?.name || ""}`);
+      setSendBody(`Hi,\n\nPlease review the variation below.\n\nYou can view and approve it online at:\n${fullUrl}\n\nKind regards,\n${user?.firstName || ""} ${user?.lastName || ""}`);
+      setSendModalOpen(true);
+    } catch {
+      toast({ title: "Failed to prepare email", variant: "destructive" });
+    }
+  };
+
+  // T003: Send email
+  const sendEmailMutation = useMutation({
+    mutationFn: async () => {
+      let pdfBase64: string | undefined;
+      if (sendAttachPdf) {
+        const blob = await pdf(
+          <VariationDocument
+            variation={variation as any}
+            items={existingCostLines}
+            bills={existingVariationBills}
+            company={companyInfo}
+            project={projects.find((p) => p.id === form.watch("projectId")) as any}
+            brandColor={companySettings?.brandColor || "#6d28d9"}
+          />
+        ).toBlob();
+        const arrayBuf = await blob.arrayBuffer();
+        pdfBase64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuf)));
+      }
+      const res = await apiRequest(`/api/variations/${effectiveVariationId}/send`, "POST", {
+        to: sendTo,
+        subject: sendSubject,
+        body: sendBody,
+        pdfBase64,
+        pdfFilename: `variation-${variation?.variationNumber || "export"}.pdf`,
+      });
+      if (!res.ok) throw new Error("Send failed");
+      return res.json();
+    },
+    onSuccess: () => {
+      setSendModalOpen(false);
+      toast({ title: "Email sent", description: `Variation sent to ${sendTo}` });
+      queryClient.invalidateQueries({ queryKey: [`/api/variations/${effectiveVariationId}`] });
+    },
+    onError: () => {
+      toast({ title: "Failed to send email", variant: "destructive" });
     },
   });
 
@@ -801,6 +973,38 @@ export default function VariationDetail() {
 
           <div className="flex items-center gap-1.5">
             {isEditMode && variationLoading && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />}
+            {isEditMode && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setPreviewOpen(true)}
+                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                  data-testid="button-preview-variation"
+                >
+                  <Eye className="w-3 h-3" />
+                  <span>Preview</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadPdf}
+                  disabled={pdfGenerating}
+                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                  data-testid="button-download-pdf"
+                >
+                  {pdfGenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                  <span>PDF</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenSendModal}
+                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                  data-testid="button-send-to-client"
+                >
+                  <Mail className="w-3 h-3" />
+                  <span>Send</span>
+                </button>
+              </>
+            )}
             {isEditMode && variation?.status === "draft" && (
               <button
                 type="button"
@@ -1038,7 +1242,7 @@ export default function VariationDetail() {
                         </button>
                       }
                     />
-                    <div className="px-4 py-3">
+                    <div className="px-4 py-3 overflow-x-auto">
                       {costLines.length === 0 ? (
                         <div className="py-1.5 flex items-center gap-3">
                           <button
@@ -1053,7 +1257,7 @@ export default function VariationDetail() {
                           <span className="text-xs text-muted-foreground/50">Items added here appear as a mini estimate</span>
                         </div>
                       ) : (
-                        <div className="overflow-x-auto">
+                        <div>
                           <table className="w-full text-sm border-collapse min-w-[700px]">
                             <thead>
                               <tr className="h-6 bg-muted/30">
@@ -1524,11 +1728,65 @@ export default function VariationDetail() {
                   <div className="border-t border-border/50">
                     <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
                       <div className="w-1.5 h-1.5 rounded-full bg-slate-400/70 flex-shrink-0" />
-                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide" data-testid="text-attachments-title">Attachments</span>
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide" data-testid="text-attachments-title">
+                        Attachments {attachments.length > 0 && `· ${attachments.length}`}
+                      </span>
                       <Paperclip className="h-3 w-3 text-muted-foreground/50 ml-0.5" />
+                      {isEditMode && (
+                        <button
+                          type="button"
+                          onClick={() => attachmentInputRef.current?.click()}
+                          disabled={uploadingAttachment}
+                          className="ml-auto h-5 px-1.5 text-[10px] border rounded flex items-center gap-1 hover-elevate active-elevate-2 text-muted-foreground"
+                          data-testid="button-upload-attachment"
+                        >
+                          {uploadingAttachment ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Upload className="w-2.5 h-2.5" />}
+                          Upload
+                        </button>
+                      )}
                     </div>
-                    <div className="px-4 py-4">
-                      <p className="text-sm text-muted-foreground text-center py-2" data-testid="attachments-stub">No attachments added.</p>
+                    <input
+                      ref={attachmentInputRef}
+                      type="file"
+                      className="hidden"
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) { handleUploadAttachment(f); e.target.value = ""; } }}
+                    />
+                    <div className="px-4 py-3">
+                      {attachments.length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-1" data-testid="attachments-empty">No attachments added.</p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {attachments.map((att, idx) => (
+                            <div key={idx} className="flex items-center gap-2 text-sm group">
+                              <Paperclip className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                              <span className="flex-1 truncate text-foreground">{att.name}</span>
+                              {att.size && (
+                                <span className="text-xs text-muted-foreground flex-shrink-0">
+                                  {(att.size / 1024).toFixed(0)}KB
+                                </span>
+                              )}
+                              <a
+                                href={att.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="opacity-0 group-hover:opacity-100 transition-opacity"
+                              >
+                                <ExternalLink className="w-3 h-3 text-muted-foreground hover:text-foreground" />
+                              </a>
+                              {isEditMode && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteAttachment(idx)}
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity"
+                                  data-testid={`button-delete-attachment-${idx}`}
+                                >
+                                  <Trash2 className="w-3 h-3 text-muted-foreground hover:text-destructive" />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -1851,6 +2109,87 @@ export default function VariationDetail() {
             <Button type="button" variant="outline" onClick={() => { setRejectDialogOpen(false); setRejectReason(""); }} data-testid="button-cancel-reject">Cancel</Button>
             <Button type="button" variant="destructive" onClick={() => rejectMutation.mutate(rejectReason)} disabled={!rejectReason.trim() || rejectMutation.isPending} data-testid="button-confirm-reject">
               {rejectMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Rejecting...</> : <><X className="mr-2 h-4 w-4" />Reject Variation</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Preview Modal ── */}
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-w-4xl w-full max-h-[90vh] overflow-y-auto p-0" data-testid="dialog-variation-preview">
+          <DialogHeader className="px-6 pt-5 pb-0">
+            <DialogTitle>Variation Preview</DialogTitle>
+          </DialogHeader>
+          <div className="px-6 pb-6">
+            <VariationPreviewContent
+              variation={variation as any}
+              items={existingCostLines}
+              bills={existingVariationBills}
+              company={companyInfo}
+              project={projects.find((p) => p.id === form.watch("projectId")) as any}
+              brandColor={companySettings?.brandColor || "#6d28d9"}
+              mode="preview"
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Send to Client Modal ── */}
+      <Dialog open={sendModalOpen} onOpenChange={setSendModalOpen}>
+        <DialogContent className="max-w-lg" data-testid="dialog-send-variation">
+          <DialogHeader>
+            <DialogTitle>Send Variation to Client</DialogTitle>
+            <DialogDescription>Email the client a link to view and approve this variation online.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">To</label>
+              <Input
+                value={sendTo}
+                onChange={(e) => setSendTo(e.target.value)}
+                placeholder="client@example.com"
+                className="mt-1"
+                data-testid="input-send-to"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Subject</label>
+              <Input
+                value={sendSubject}
+                onChange={(e) => setSendSubject(e.target.value)}
+                className="mt-1"
+                data-testid="input-send-subject"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Message</label>
+              <Textarea
+                value={sendBody}
+                onChange={(e) => setSendBody(e.target.value)}
+                rows={6}
+                className="mt-1"
+                data-testid="textarea-send-body"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                id="attach-pdf"
+                type="checkbox"
+                checked={sendAttachPdf}
+                onChange={(e) => setSendAttachPdf(e.target.checked)}
+                className="h-3.5 w-3.5"
+              />
+              <label htmlFor="attach-pdf" className="text-sm text-muted-foreground">Attach PDF copy</label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSendModalOpen(false)} data-testid="button-cancel-send">Cancel</Button>
+            <Button
+              onClick={() => sendEmailMutation.mutate()}
+              disabled={!sendTo.trim() || sendEmailMutation.isPending}
+              data-testid="button-confirm-send"
+            >
+              {sendEmailMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Sending...</> : <><Mail className="mr-2 h-4 w-4" />Send</>}
             </Button>
           </DialogFooter>
         </DialogContent>

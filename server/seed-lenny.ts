@@ -39,6 +39,7 @@ import {
   scopeItems,
   minutes,
   paymentTermsOptions,
+  teams,
 } from "../shared/schema";
 import { eq, and, inArray } from "drizzle-orm";
 
@@ -1480,6 +1481,97 @@ export async function seedLennyDemo(companyId: string, userId: string) {
         author: "Lenny Builder",
         ownerId: userId,
       });
+    }
+
+    // ─── TEAMS ─────────────────────────────────────────────────────────────────
+    const [siteCrew] = await tx.insert(teams).values({
+      companyId,
+      name: "Site Crew",
+      color: "#f59e0b",
+    }).returning();
+
+    const [finishingCrew] = await tx.insert(teams).values({
+      companyId,
+      name: "Finishing Crew",
+      color: "#8b5cf6",
+    }).returning();
+
+    // Assign several Irwin project schedule items to each team
+    const siteCrewItems = await db
+      .select({ id: scheduleItems.id })
+      .from(scheduleItems)
+      .where(
+        and(
+          eq(scheduleItems.scheduleId, sched1.id),
+          inArray(scheduleItems.name, [
+            "Demolition",
+            "Slab",
+            "Frame",
+            "Roof",
+            "Brickwork",
+            "Footings",
+            "Earthworks",
+          ])
+        )
+      );
+
+    if (siteCrewItems.length > 0) {
+      for (const item of siteCrewItems) {
+        await db.update(scheduleItems)
+          .set({ teamId: siteCrew.id, teamName: siteCrew.name })
+          .where(eq(scheduleItems.id, item.id));
+      }
+    } else {
+      // fallback: assign the first 3 schedule items to Site Crew
+      const firstItems = await db
+        .select({ id: scheduleItems.id })
+        .from(scheduleItems)
+        .where(eq(scheduleItems.scheduleId, sched1.id))
+        .limit(3);
+      for (const item of firstItems) {
+        await db.update(scheduleItems)
+          .set({ teamId: siteCrew.id, teamName: siteCrew.name })
+          .where(eq(scheduleItems.id, item.id));
+      }
+    }
+
+    const finishingCrewItems = await db
+      .select({ id: scheduleItems.id })
+      .from(scheduleItems)
+      .where(
+        and(
+          eq(scheduleItems.scheduleId, sched1.id),
+          inArray(scheduleItems.name, [
+            "Electrical",
+            "Plumbing",
+            "Painting",
+            "Tiling",
+            "Joinery",
+            "Fit-out",
+            "Cabinetry",
+          ])
+        )
+      );
+
+    if (finishingCrewItems.length > 0) {
+      for (const item of finishingCrewItems) {
+        await db.update(scheduleItems)
+          .set({ teamId: finishingCrew.id, teamName: finishingCrew.name })
+          .where(eq(scheduleItems.id, item.id));
+      }
+    } else {
+      // fallback: assign the next 3 schedule items to Finishing Crew
+      const nextItems = await db
+        .select({ id: scheduleItems.id })
+        .from(scheduleItems)
+        .where(eq(scheduleItems.scheduleId, sched1.id))
+        .limit(3)
+        .offset(3);
+      for (const item of nextItems) {
+        await db.update(scheduleItems)
+          .set({ teamId: finishingCrew.id, teamName: finishingCrew.name })
+          .where(eq(scheduleItems.id, item.id));
+      }
     }
 
     // ─── PAYMENT TERMS OPTIONS ─────────────────────────────────────────────────

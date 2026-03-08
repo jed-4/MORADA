@@ -5,6 +5,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { format, addDays } from "date-fns";
+import { pdf } from "@react-pdf/renderer";
+import { InvoiceDocument } from "@/components/invoices/pdf/InvoiceDocument";
 import {
   ArrowLeft,
   Plus,
@@ -13,6 +15,8 @@ import {
   Loader2,
   Eye,
   Send,
+  Download,
+  Mail,
   DollarSign,
   Paperclip,
   ChevronDown,
@@ -308,7 +312,19 @@ export default function ClientInvoiceDetail() {
     queryKey: ["/api/xero/status"],
   });
 
-  const { data: companySettings } = useQuery<{ termsAndConditions?: string; termsTemplates?: Array<{ id: string; name: string; content: string }>; companyName?: string; address?: string; clientInvoiceDefaultXeroAccount?: string | null }>({
+  // T004: PDF + email state
+  const [invoicePdfGenerating, setInvoicePdfGenerating] = useState(false);
+  const [invoiceSendModalOpen, setInvoiceSendModalOpen] = useState(false);
+  const [invoiceSendTo, setInvoiceSendTo] = useState("");
+  const [invoiceSendSubject, setInvoiceSendSubject] = useState("");
+  const [invoiceSendBody, setInvoiceSendBody] = useState("");
+  const [invoiceSendAttachPdf, setInvoiceSendAttachPdf] = useState(true);
+
+  const { data: companyInfo } = useQuery<{ id: string; name: string; abn?: string; phone?: string; email?: string; logo?: string }>({
+    queryKey: ["/api/company"],
+  });
+
+  const { data: companySettings } = useQuery<{ termsAndConditions?: string; termsTemplates?: Array<{ id: string; name: string; content: string }>; companyName?: string; address?: string; clientInvoiceDefaultXeroAccount?: string | null; brandColor?: string }>({
     queryKey: ["/api/company-settings"],
   });
 
@@ -1268,6 +1284,149 @@ export default function ClientInvoiceDetail() {
   const due = total - paid;
   const contractTotal = calculateContractPrice() / 100;
 
+  // T004: Build PDF line items from current invoice state
+  const buildInvoicePdfLineItems = () => {
+    const lineItems: Array<{ label: string; description?: string; claimPct?: number; amountExTax: number; gst: number; amountIncTax: number }> = [];
+    const GST = 0.1;
+    if (invoiceType === "progress_payments") {
+      // Contract claim rows
+      for (const row of contractClaimRows) {
+        const base = getEffectiveContractPrice();
+        if (!base || !row.claimPercent) continue;
+        const incTax = Math.round((base * row.claimPercent) / 100);
+        const exTax = Math.round(incTax / (1 + GST));
+        const gst = incTax - exTax;
+        lineItems.push({ label: row.name || "Contract Claim", description: row.description, claimPct: row.claimPercent, amountExTax: exTax, gst, amountIncTax: incTax });
+      }
+      // Selected variations
+      for (const v of getSelectedVariations()) {
+        const pct = variationClaims[v.id] ?? 100;
+        const incTax = Math.round((v.totalAmount * pct) / 100);
+        const exTax = Math.round(incTax / (1 + GST));
+        const gst = incTax - exTax;
+        lineItems.push({ label: `Variation ${v.variationNumber || ""}`, description: v.name || undefined, claimPct: pct, amountExTax: exTax, gst, amountIncTax: incTax });
+      }
+      // Selected allowances
+      for (const item of getSelectedAllowanceItems()) {
+        const pct = allowanceClaims[item.id] ?? 100;
+        const incTax = Math.round((item.priceIncTax * pct) / 100);
+        const exTax = Math.round(incTax / (1 + GST));
+        const gst = incTax - exTax;
+        lineItems.push({ label: `Allowance - ${item.name || ""}`, claimPct: pct, amountExTax: exTax, gst, amountIncTax: incTax });
+      }
+    } else {
+      // Bills
+      for (const bill of getSelectedBills()) {
+        const incTax = bill.total;
+        const exTax = Math.round(incTax / (1 + GST));
+        lineItems.push({ label: bill.supplierName || "Bill", description: bill.billNumber || undefined, amountExTax: exTax, gst: incTax - exTax, amountIncTax: incTax });
+      }
+    }
+    // Custom lines (always)
+    for (const line of customLines) {
+      const exTax = Math.round(line.totalPrice * 100);
+      const gst = Math.round(exTax * GST);
+      lineItems.push({ label: line.description || "Custom Item", amountExTax: exTax, gst, amountIncTax: exTax + gst });
+    }
+    return lineItems;
+  };
+
+  const handleDownloadInvoicePdf = async () => {
+    setInvoicePdfGenerating(true);
+    try {
+      const subtotalCents = Math.round(amountExTax() * 100);
+      const gstCents = Math.round(amountTax() * 100);
+      const totalCents = Math.round(amountIncTax() * 100);
+      const paidCents = Math.round(paid * 100);
+      const balanceDueCents = totalCents - paidCents;
+      const blob = await pdf(
+        <InvoiceDocument
+          invoiceNumber={form.watch("invoiceNumber") || invoice?.invoiceNumber || "Invoice"}
+          issueDate={form.watch("invoiceDate") || invoice?.invoiceDate}
+          dueDate={form.watch("dueDate") || invoice?.dueDate}
+          company={companyInfo}
+          clientName={clientContact?.name}
+          projectName={currentProject?.name}
+          projectAddress={(currentProject as any)?.address || (clientContact as any)?.addressFormatted}
+          lineItems={buildInvoicePdfLineItems()}
+          subtotalCents={subtotalCents}
+          gstCents={gstCents}
+          totalCents={totalCents}
+          paidCents={paidCents}
+          balanceDueCents={balanceDueCents}
+          brandColor={companySettings?.brandColor || "#6d28d9"}
+        />
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `invoice-${form.watch("invoiceNumber") || "export"}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("PDF generation error:", err);
+      toast({ title: "PDF generation failed", variant: "destructive" });
+    } finally {
+      setInvoicePdfGenerating(false);
+    }
+  };
+
+  const handleOpenInvoiceSendModal = () => {
+    setInvoiceSendTo(clientContact?.email || "");
+    setInvoiceSendSubject(`Invoice ${form.watch("invoiceNumber") || invoice?.invoiceNumber || ""} — ${currentProject?.name || ""}`);
+    setInvoiceSendBody(`Hi ${clientContact?.name || ""},\n\nPlease find your invoice attached.\n\nKind regards,\n${user?.firstName || ""} ${user?.lastName || ""}`);
+    setInvoiceSendModalOpen(true);
+  };
+
+  const sendInvoiceEmailMutation = useMutation({
+    mutationFn: async () => {
+      let pdfBase64: string | undefined;
+      if (invoiceSendAttachPdf && effectiveInvoiceId) {
+        const subtotalCents = Math.round(amountExTax() * 100);
+        const gstCents = Math.round(amountTax() * 100);
+        const totalCents = Math.round(amountIncTax() * 100);
+        const paidCents = Math.round(paid * 100);
+        const blob = await pdf(
+          <InvoiceDocument
+            invoiceNumber={form.watch("invoiceNumber") || invoice?.invoiceNumber || "Invoice"}
+            issueDate={form.watch("invoiceDate") || invoice?.invoiceDate}
+            dueDate={form.watch("dueDate") || invoice?.dueDate}
+            company={companyInfo}
+            clientName={clientContact?.name}
+            projectName={currentProject?.name}
+            projectAddress={(currentProject as any)?.address || (clientContact as any)?.addressFormatted}
+            lineItems={buildInvoicePdfLineItems()}
+            subtotalCents={subtotalCents}
+            gstCents={gstCents}
+            totalCents={totalCents}
+            paidCents={paidCents}
+            balanceDueCents={totalCents - paidCents}
+            brandColor={companySettings?.brandColor || "#6d28d9"}
+          />
+        ).toBlob();
+        const arrayBuf = await blob.arrayBuffer();
+        pdfBase64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuf)));
+      }
+      const res = await apiRequest(`/api/client-invoices/${effectiveInvoiceId}/send-email`, "POST", {
+        to: invoiceSendTo,
+        subject: invoiceSendSubject,
+        body: invoiceSendBody,
+        pdfBase64,
+        pdfFilename: `invoice-${invoice?.invoiceNumber || "export"}.pdf`,
+      });
+      if (!res.ok) throw new Error("Failed to send email");
+    },
+    onSuccess: () => {
+      toast({ title: "Email sent successfully" });
+      setInvoiceSendModalOpen(false);
+    },
+    onError: () => {
+      toast({ title: "Failed to send email", variant: "destructive" });
+    },
+  });
+
   // ── render helpers ────────────────────────────────────────────────────────────
 
   const renderLineTableHeader = (_includeContractCols: boolean = false) => (
@@ -1320,14 +1479,29 @@ export default function ClientInvoiceDetail() {
               </div>
 
               <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                  data-testid="button-preview"
-                >
-                  <Eye className="w-3 h-3" />
-                  <span>Preview</span>
-                </button>
+                {isEditMode && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleDownloadInvoicePdf}
+                      disabled={invoicePdfGenerating}
+                      className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                      data-testid="button-download-invoice-pdf"
+                    >
+                      {invoicePdfGenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                      <span>PDF</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleOpenInvoiceSendModal}
+                      className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                      data-testid="button-email-invoice"
+                    >
+                      <Mail className="w-3 h-3" />
+                      <span>Email</span>
+                    </button>
+                  </>
+                )}
                 <button
                   type="submit"
                   disabled={createMutation.isPending || updateMutation.isPending}
@@ -4099,6 +4273,65 @@ export default function ClientInvoiceDetail() {
               </DialogFooter>
             </form>
           </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Send Invoice Email Modal ── */}
+      <Dialog open={invoiceSendModalOpen} onOpenChange={setInvoiceSendModalOpen}>
+        <DialogContent className="max-w-lg" data-testid="dialog-send-invoice-email">
+          <DialogHeader>
+            <DialogTitle>Email Invoice</DialogTitle>
+            <DialogDescription>Send this invoice to the client by email.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">To</label>
+              <Input
+                value={invoiceSendTo}
+                onChange={(e) => setInvoiceSendTo(e.target.value)}
+                placeholder="client@example.com"
+                className="mt-1"
+                data-testid="input-invoice-send-to"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Subject</label>
+              <Input
+                value={invoiceSendSubject}
+                onChange={(e) => setInvoiceSendSubject(e.target.value)}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Message</label>
+              <Textarea
+                value={invoiceSendBody}
+                onChange={(e) => setInvoiceSendBody(e.target.value)}
+                rows={5}
+                className="mt-1"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                id="invoice-attach-pdf"
+                type="checkbox"
+                checked={invoiceSendAttachPdf}
+                onChange={(e) => setInvoiceSendAttachPdf(e.target.checked)}
+                className="h-3.5 w-3.5"
+              />
+              <label htmlFor="invoice-attach-pdf" className="text-sm text-muted-foreground">Attach PDF copy</label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setInvoiceSendModalOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => sendInvoiceEmailMutation.mutate()}
+              disabled={!invoiceSendTo.trim() || sendInvoiceEmailMutation.isPending}
+              data-testid="button-confirm-send-invoice-email"
+            >
+              {sendInvoiceEmailMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Sending...</> : <><Mail className="mr-2 h-4 w-4" />Send</>}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

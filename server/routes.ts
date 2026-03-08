@@ -9444,11 +9444,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // T005: Get pre-update variation to detect status transition
+      const prevVariation = await storage.getVariation(req.params.id);
+
       const variation = await storage.updateVariation(req.params.id, validationResult.data);
       if (!variation) {
         return res.status(404).json({ error: "Variation not found" });
       }
-      res.json(variation);
+
+      // T005: EOT — extend project end date when variation is approved and has daysChanged
+      let scheduleExtended: { days: number; newEndDate: string } | undefined;
+      const wasApproved = prevVariation?.status !== "approved" && (variation as any).status === "approved";
+      const daysChanged = (variation as any).daysChanged ?? 0;
+
+      if (wasApproved && daysChanged > 0 && (variation as any).projectId) {
+        const project = await storage.getProject((variation as any).projectId);
+        if (project && project.proposedEndDate) {
+          // Add working days (Mon-Fri) to the current proposedEndDate
+          let date = new Date(project.proposedEndDate);
+          let remaining = daysChanged;
+          while (remaining > 0) {
+            date.setDate(date.getDate() + 1);
+            const day = date.getDay();
+            if (day !== 0 && day !== 6) remaining--;
+          }
+          const newEndDate = date.toISOString().split("T")[0];
+          await storage.updateProject((variation as any).projectId, { proposedEndDate: newEndDate });
+          scheduleExtended = { days: daysChanged, newEndDate };
+        }
+      }
+
+      res.json({ ...variation, scheduleExtended });
     } catch (error) {
       res.status(500).json({ error: "Failed to update variation" });
     }
@@ -9575,6 +9601,211 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(results);
     } catch (error) {
       res.status(500).json({ error: "Failed to update variation timesheets" });
+    }
+  });
+
+  // ============================================
+  // TEAMS API ROUTES (T006)
+  // ============================================
+
+  app.get("/api/teams", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user.companyId;
+      if (!companyId) return res.status(401).json({ error: "Not authenticated" });
+      const teams = await storage.getTeams(companyId);
+      res.json(teams);
+    } catch (error) {
+      console.error("Error fetching teams:", error);
+      res.status(500).json({ error: "Failed to fetch teams" });
+    }
+  });
+
+  app.post("/api/teams", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const companyId = req.user.companyId;
+      if (!companyId) return res.status(401).json({ error: "Not authenticated" });
+      const { name, color } = req.body;
+      if (!name) return res.status(400).json({ error: "Name is required" });
+      const team = await storage.createTeam({ companyId, name, color: color || "#6b7280" });
+      res.status(201).json(team);
+    } catch (error) {
+      console.error("Error creating team:", error);
+      res.status(500).json({ error: "Failed to create team" });
+    }
+  });
+
+  app.patch("/api/teams/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const { name, color } = req.body;
+      const team = await storage.updateTeam(req.params.id, { name, color });
+      if (!team) return res.status(404).json({ error: "Team not found" });
+      res.json(team);
+    } catch (error) {
+      console.error("Error updating team:", error);
+      res.status(500).json({ error: "Failed to update team" });
+    }
+  });
+
+  app.delete("/api/teams/:id", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const deleted = await storage.deleteTeam(req.params.id);
+      if (!deleted) return res.status(404).json({ error: "Team not found" });
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting team:", error);
+      res.status(500).json({ error: "Failed to delete team" });
+    }
+  });
+
+  // ============================================
+  // VARIATION PORTAL + PDF + EMAIL (T003)
+  // ============================================
+
+  // Generate / retrieve portal token for a variation
+  app.post("/api/variations/:id/portal-token", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const variation = await storage.getVariation(req.params.id);
+      if (!variation) return res.status(404).json({ error: "Variation not found" });
+
+      let token = (variation as any).portalToken;
+      if (!token) {
+        token = require("crypto").randomUUID();
+        await storage.updateVariation(req.params.id, { portalToken: token } as any);
+      }
+
+      res.json({ portalToken: token, portalUrl: `/portal/variation/${token}` });
+    } catch (error) {
+      console.error("Error generating portal token:", error);
+      res.status(500).json({ error: "Failed to generate portal token" });
+    }
+  });
+
+  // Public portal — fetch variation data by token (no auth required)
+  app.get("/api/portal/variation/:token", async (req, res) => {
+    try {
+      const { token } = req.params;
+      // Find variation by portal token
+      const { db } = await import("./db");
+      const { variations, projects, companies } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+
+      const [variation] = await db.select().from(variations).where(eq(variations.portalToken, token));
+      if (!variation) return res.status(404).json({ error: "Portal link not found or expired" });
+
+      const [project] = variation.projectId
+        ? await db.select().from(projects).where(eq(projects.id, variation.projectId))
+        : [undefined];
+
+      const company = project
+        ? await storage.getCompany((project as any).companyId)
+        : undefined;
+
+      const items = await storage.getVariationItems(variation.id);
+      const bills = await storage.getVariationBills(variation.id);
+      const timesheets = await storage.getVariationTimesheets(variation.id);
+
+      res.json({ variation, items, bills, timesheets, project, company });
+    } catch (error) {
+      console.error("Error fetching portal variation:", error);
+      res.status(500).json({ error: "Failed to fetch portal data" });
+    }
+  });
+
+  // Public portal — client/builder sign
+  app.post("/api/portal/variation/:token/sign", async (req, res) => {
+    try {
+      const { token } = req.params;
+      const { signerType, name, action, rejectionReason } = req.body as {
+        signerType: "client" | "builder";
+        name: string;
+        action: "approve" | "reject";
+        rejectionReason?: string;
+      };
+
+      if (!name) return res.status(400).json({ error: "Name is required" });
+
+      const { db } = await import("./db");
+      const { variations } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+
+      const [variation] = await db.select().from(variations).where(eq(variations.portalToken, token));
+      if (!variation) return res.status(404).json({ error: "Portal link not found" });
+
+      const now = new Date();
+      const updates: Record<string, any> = {};
+
+      if (signerType === "client") {
+        updates.clientSignedName = name;
+        updates.clientSignedDate = now;
+        updates.status = action === "approve" ? "pending" : "rejected";
+        if (rejectionReason) updates.rejectionReason = rejectionReason;
+      } else {
+        updates.builderSignedName = name;
+        updates.builderSignedDate = now;
+        if (action === "approve") updates.status = "approved";
+      }
+
+      const updated = await storage.updateVariation(variation.id, updates as any);
+      res.json({ success: true, variation: updated });
+    } catch (error) {
+      console.error("Error signing variation:", error);
+      res.status(500).json({ error: "Failed to sign variation" });
+    }
+  });
+
+  // Send variation to client via email (with optional PDF)
+  app.post("/api/variations/:id/send", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const variation = await storage.getVariation(req.params.id);
+      if (!variation) return res.status(404).json({ error: "Variation not found" });
+
+      const { to, subject, body, pdfBase64, pdfFilename } = req.body as {
+        to: string;
+        subject: string;
+        body: string;
+        pdfBase64?: string;
+        pdfFilename?: string;
+      };
+
+      if (!to || !subject || !body) return res.status(400).json({ error: "to, subject, and body are required" });
+
+      // Ensure portal token exists
+      let token = (variation as any).portalToken;
+      if (!token) {
+        token = require("crypto").randomUUID();
+        await storage.updateVariation(variation.id, { portalToken: token } as any);
+      }
+
+      const attachments = pdfBase64 ? [{
+        filename: pdfFilename || `variation-${(variation as any).variationNumber || variation.id}.pdf`,
+        content: pdfBase64,
+        mimeType: "application/pdf",
+      }] : undefined;
+
+      const { GmailEmailService } = await import("./services/gmailEmailService");
+      const { GoogleOAuthService } = await import("./services/googleOAuthService");
+      const googleOAuthService = new GoogleOAuthService(storage);
+      const gmailService = new GmailEmailService(storage, googleOAuthService);
+
+      const result = await gmailService.sendEmailAsUser(userId, {
+        to,
+        subject,
+        html: body.replace(/\n/g, "<br>"),
+        attachments,
+      });
+
+      if (!result.success) {
+        return res.status(500).json({ error: result.error || "Failed to send email" });
+      }
+
+      // Mark portalSentAt
+      await storage.updateVariation(variation.id, { portalSentAt: new Date() } as any);
+
+      res.json({ success: true, messageId: result.messageId });
+    } catch (error) {
+      console.error("Error sending variation:", error);
+      res.status(500).json({ error: "Failed to send variation" });
     }
   });
 
@@ -11250,6 +11481,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // T004: Send invoice by email (with optional PDF attachment)
+  app.post("/api/client-invoices/:id/send-email", requireAuth, requireTeamMember, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const invoice = await storage.getClientInvoice(req.params.id);
+      if (!invoice) return res.status(404).json({ error: "Invoice not found" });
+
+      const { to, subject, body, pdfBase64, pdfFilename } = req.body as {
+        to: string;
+        subject: string;
+        body: string;
+        pdfBase64?: string;
+        pdfFilename?: string;
+      };
+
+      if (!to || !subject || !body) return res.status(400).json({ error: "to, subject, and body are required" });
+
+      const attachments = pdfBase64 ? [{
+        filename: pdfFilename || `invoice-${(invoice as any).invoiceNumber || invoice.id}.pdf`,
+        content: pdfBase64,
+        mimeType: "application/pdf",
+      }] : undefined;
+
+      const { GmailEmailService } = await import("./services/gmailEmailService");
+      const { GoogleOAuthService } = await import("./services/googleOAuthService");
+      const googleOAuthService = new GoogleOAuthService(storage);
+      const gmailService = new GmailEmailService(storage, googleOAuthService);
+
+      const result = await gmailService.sendEmailAsUser(userId, {
+        to,
+        subject,
+        html: body.replace(/\n/g, "<br>"),
+        attachments,
+      });
+
+      if (!result.success) {
+        return res.status(500).json({ error: result.error || "Failed to send email" });
+      }
+
+      res.json({ success: true, messageId: result.messageId });
+    } catch (error) {
+      console.error("Error sending invoice email:", error);
+      res.status(500).json({ error: "Failed to send invoice email" });
+    }
+  });
+
   // Invoiceable Selection Options picker
   app.get("/api/projects/:projectId/selection-options/invoiceable", async (req, res) => {
     try {
@@ -11691,6 +11968,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Company Settings routes (read: all authenticated users, write: admin only)
+  // Get current user's company info (for document branding)
+  app.get("/api/company", requireAuth, async (req: any, res) => {
+    try {
+      const companyId = req.user?.companyId;
+      if (!companyId) return res.json({});
+      const company = await storage.getCompany(companyId);
+      res.json(company || {});
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch company" });
+    }
+  });
+
   app.get("/api/company-settings", requireAuth, async (req, res) => {
     try {
       const settings = await storage.getCompanySettings();
@@ -15481,6 +15770,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         projectName: projectsTable.name,
         projectColor: projectsTable.color,
         scheduleCategory: schedules.scheduleCategory,
+        teamId: scheduleItems.teamId,
+        teamName: scheduleItems.teamName,
       })
         .from(scheduleItems)
         .innerJoin(schedules, eq(scheduleItems.scheduleId, schedules.id))

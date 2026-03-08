@@ -2,11 +2,18 @@ import { google } from 'googleapis';
 import { GoogleOAuthService } from './googleOAuthService';
 import type { IStorage } from '../storage';
 
+interface EmailAttachment {
+  filename: string;
+  content: string; // base64 encoded
+  mimeType: string;
+}
+
 interface SendEmailParams {
   to: string | string[];
   subject: string;
   html: string;
   replyTo?: string;
+  attachments?: EmailAttachment[];
 }
 
 interface SendEmailResult {
@@ -22,21 +29,51 @@ export class GmailEmailService {
     private googleOAuthService: GoogleOAuthService
   ) {}
 
-  private createEmailMessage(from: string, to: string | string[], subject: string, html: string): string {
+  private createEmailMessage(from: string, to: string | string[], subject: string, html: string, attachments?: EmailAttachment[]): string {
     const toAddresses = Array.isArray(to) ? to.join(', ') : to;
-    
+    const boundary = `boundary_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
+    if (!attachments || attachments.length === 0) {
+      const messageParts = [
+        `From: ${from}`,
+        `To: ${toAddresses}`,
+        `Subject: ${subject}`,
+        'MIME-Version: 1.0',
+        'Content-Type: text/html; charset=UTF-8',
+        '',
+        html
+      ];
+      return Buffer.from(messageParts.join('\r\n')).toString('base64url');
+    }
+
+    // multipart/mixed for attachments
     const messageParts = [
       `From: ${from}`,
       `To: ${toAddresses}`,
       `Subject: ${subject}`,
       'MIME-Version: 1.0',
-      'Content-Type: text/html; charset=UTF-8',
+      `Content-Type: multipart/mixed; boundary="${boundary}"`,
       '',
-      html
+      `--${boundary}`,
+      'Content-Type: text/html; charset=UTF-8',
+      'Content-Transfer-Encoding: quoted-printable',
+      '',
+      html,
     ];
-    
-    const message = messageParts.join('\r\n');
-    return Buffer.from(message).toString('base64url');
+
+    for (const att of attachments) {
+      messageParts.push(
+        `--${boundary}`,
+        `Content-Type: ${att.mimeType}; name="${att.filename}"`,
+        'Content-Transfer-Encoding: base64',
+        `Content-Disposition: attachment; filename="${att.filename}"`,
+        '',
+        att.content,
+      );
+    }
+
+    messageParts.push(`--${boundary}--`);
+    return Buffer.from(messageParts.join('\r\n')).toString('base64url');
   }
 
   async sendEmailAsUser(userId: string, params: SendEmailParams): Promise<SendEmailResult> {
@@ -69,7 +106,7 @@ export class GmailEmailService {
       
       const gmail = await this.googleOAuthService.getGmailClient(userId);
       
-      const raw = this.createEmailMessage(fromAddress, params.to, params.subject, params.html);
+      const raw = this.createEmailMessage(fromAddress, params.to, params.subject, params.html, params.attachments);
       
       const response = await gmail.users.messages.send({
         userId: 'me',
