@@ -88,9 +88,12 @@ type VariationFormData = z.infer<typeof variationFormSchema>;
 type CostLine = {
   id?: string;
   description: string;
+  type: string;
+  unitType: string;
+  costCode: string;
   quantity: number;
-  unitPrice: number;
-  totalPrice: number;
+  unitCostExTax: number;
+  markupPercent: number | null;
   taxable: boolean;
   sortOrder: number;
 };
@@ -142,7 +145,10 @@ export default function VariationDetail() {
   const [allowancesModalOpen, setAllowancesModalOpen] = useState(false);
   const [allowancesSearch, setAllowancesSearch] = useState("");
 
-  // Documentation collapse state
+  // Section collapse state
+  const [billsCollapsed, setBillsCollapsed] = useState(true);
+  const [labourCollapsed, setLabourCollapsed] = useState(true);
+  const [allowancesCollapsed, setAllowancesCollapsed] = useState(true);
   const [closingCollapsed, setClosingCollapsed] = useState(true);
   const [termsCollapsed, setTermsCollapsed] = useState(true);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
@@ -240,12 +246,15 @@ export default function VariationDetail() {
       const allowanceItems = existingCostLines.filter((item) => (item as any).itemType === "allowance");
 
       setCostLines(
-        costItems.map((item) => ({
+        costItems.map((item: any) => ({
           id: item.id,
           description: item.description,
+          type: item.type || "Material",
+          unitType: item.unitType || "each",
+          costCode: item.costCode || "",
           quantity: item.quantity,
-          unitPrice: item.unitPrice / 100,
-          totalPrice: item.totalPrice / 100,
+          unitCostExTax: item.unitCostExTax ?? (item.unitPrice / 100),
+          markupPercent: item.markupPercent ?? null,
           taxable: item.taxable,
           sortOrder: item.sortOrder,
         }))
@@ -259,18 +268,22 @@ export default function VariationDetail() {
           sortOrder: item.sortOrder,
         }))
       );
+
+      if (allowanceItems.length > 0) setAllowancesCollapsed(false);
     }
   }, [existingCostLines, isEditMode]);
 
   useEffect(() => {
     if (existingVariationBills.length > 0 && isEditMode) {
       setSelectedBillIds(existingVariationBills.map((vb: any) => vb.billId));
+      setBillsCollapsed(false);
     }
   }, [existingVariationBills, isEditMode]);
 
   useEffect(() => {
     if (existingVariationTimesheets.length > 0 && isEditMode) {
       setSelectedTimesheetIds(existingVariationTimesheets.map((vt: any) => vt.timesheetId));
+      setLabourCollapsed(false);
     }
   }, [existingVariationTimesheets, isEditMode]);
 
@@ -329,21 +342,21 @@ export default function VariationDetail() {
 
   // ── Cost line mutations ───────────────────────────────────────────────────
 
+  const getCostLineAmountExTax = (line: CostLine) => {
+    const markup = (line.markupPercent ?? 0) / 100;
+    return line.quantity * line.unitCostExTax * (1 + markup);
+  };
+
   const addCostLine = () => {
     setCostLines([
       ...costLines,
-      { description: "", quantity: 1, unitPrice: 0, totalPrice: 0, taxable: true, sortOrder: costLines.length },
+      { description: "", type: "Material", unitType: "each", costCode: "", quantity: 1, unitCostExTax: 0, markupPercent: null, taxable: true, sortOrder: costLines.length },
     ]);
   };
 
   const updateCostLine = (index: number, field: keyof CostLine, value: any) => {
     const updated = [...costLines];
     updated[index] = { ...updated[index], [field]: value };
-    if (field === "quantity" || field === "unitPrice") {
-      const qty = field === "quantity" ? value : updated[index].quantity;
-      const price = field === "unitPrice" ? value : updated[index].unitPrice;
-      updated[index].totalPrice = qty * price;
-    }
     setCostLines(updated);
   };
 
@@ -354,7 +367,7 @@ export default function VariationDetail() {
   // ── Financial calculations ─────────────────────────────────────────────────
 
   const calculateCostLinesSubtotal = () =>
-    costLines.reduce((sum, item) => sum + item.totalPrice, 0);
+    costLines.reduce((sum, item) => sum + getCostLineAmountExTax(item), 0);
 
   const calculateAllowancesTotal = () =>
     allowanceLines.reduce((sum, item) => sum + item.amount, 0);
@@ -371,7 +384,7 @@ export default function VariationDetail() {
   const calculateGST = () => {
     const taxableAmount = costLines
       .filter((item) => item.taxable)
-      .reduce((sum, item) => sum + item.totalPrice, 0);
+      .reduce((sum, item) => sum + getCostLineAmountExTax(item), 0);
     return taxableAmount * 0.1;
   };
 
@@ -414,12 +427,19 @@ export default function VariationDetail() {
 
       for (let i = 0; i < costLines.length; i++) {
         const item = costLines[i];
+        const amountExTax = getCostLineAmountExTax(item);
+        const markupFactor = 1 + (item.markupPercent ?? 0) / 100;
         await apiRequest(`/api/variations/${newVariation.id}/items`, "POST", {
           variationId: newVariation.id,
           description: item.description,
+          type: item.type,
+          unitType: item.unitType,
+          costCode: item.costCode || null,
           quantity: item.quantity,
-          unitPrice: Math.round(item.unitPrice * 100),
-          totalPrice: Math.round(item.totalPrice * 100),
+          unitCostExTax: item.unitCostExTax,
+          markupPercent: item.markupPercent ?? null,
+          unitPrice: Math.round(item.unitCostExTax * markupFactor * 100),
+          totalPrice: Math.round(amountExTax * 100),
           taxable: item.taxable,
           sortOrder: i,
           itemType: "cost_line",
@@ -501,12 +521,19 @@ export default function VariationDetail() {
       // Save cost lines
       for (let i = 0; i < costLines.length; i++) {
         const item = costLines[i];
+        const amountExTax = getCostLineAmountExTax(item);
+        const markupFactor = 1 + (item.markupPercent ?? 0) / 100;
         const itemData = {
           variationId: effectiveVariationId,
           description: item.description,
+          type: item.type,
+          unitType: item.unitType,
+          costCode: item.costCode || null,
           quantity: item.quantity,
-          unitPrice: Math.round(item.unitPrice * 100),
-          totalPrice: Math.round(item.totalPrice * 100),
+          unitCostExTax: item.unitCostExTax,
+          markupPercent: item.markupPercent ?? null,
+          unitPrice: Math.round(item.unitCostExTax * markupFactor * 100),
+          totalPrice: Math.round(amountExTax * 100),
           taxable: item.taxable,
           sortOrder: i,
           itemType: "cost_line",
@@ -730,9 +757,12 @@ export default function VariationDetail() {
         <div className={cn("w-1.5 h-1.5 rounded-full flex-shrink-0", dotColor)} />
         <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</span>
       </div>
-      {collapsible ? (
-        collapsed ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" /> : <ChevronUp className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-      ) : rightEl}
+        <div className="flex items-center gap-2">
+        {rightEl}
+        {collapsible && (
+          collapsed ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" /> : <ChevronUp className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+        )}
+      </div>
     </div>
   );
 
@@ -995,7 +1025,7 @@ export default function VariationDetail() {
                   <div>
                     <SubHeader
                       dotColor="bg-amber-400/70"
-                      label="Cost Lines"
+                      label={costLines.length > 0 ? `Cost Lines · ${formatCurrency(calculateCostLinesSubtotal())}` : "Cost Lines"}
                       rightEl={
                         <button
                           type="button"
@@ -1010,42 +1040,106 @@ export default function VariationDetail() {
                     />
                     <div className="px-4 py-3">
                       {costLines.length === 0 ? (
-                        <p className="text-sm text-muted-foreground text-center py-2" data-testid="empty-cost-lines">No cost lines added yet.</p>
+                        <div className="py-1.5 flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={addCostLine}
+                            className="h-7 px-3 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1.5"
+                            data-testid="empty-cost-lines"
+                          >
+                            <Plus className="w-3 h-3" />
+                            Add first item
+                          </button>
+                          <span className="text-xs text-muted-foreground/50">Items added here appear as a mini estimate</span>
+                        </div>
                       ) : (
-                        <Table>
-                          <TableHeader>
-                            <TableRow className="h-6 bg-muted/30">
-                              <TableHead className="w-[45%] text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Description</TableHead>
-                              <TableHead className="w-20 text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Qty</TableHead>
-                              <TableHead className="w-28 text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Unit Price</TableHead>
-                              <TableHead className="w-28 text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total</TableHead>
-                              <TableHead className="w-8 py-0" />
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {costLines.map((line, index) => (
-                              <TableRow key={index} className="h-9" data-testid={`row-cost-line-${index}`}>
-                                <TableCell className="px-2 py-1">
-                                  <Input value={line.description} onChange={(e) => updateCostLine(index, "description", e.target.value)} placeholder="Description" className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm" data-testid={`input-description-${index}`} />
-                                </TableCell>
-                                <TableCell className="px-2 py-1">
-                                  <Input type="number" value={line.quantity} onChange={(e) => updateCostLine(index, "quantity", parseFloat(e.target.value) || 0)} min="0" step="1" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm" data-testid={`input-quantity-${index}`} />
-                                </TableCell>
-                                <TableCell className="px-2 py-1">
-                                  <Input type="number" value={line.unitPrice} onChange={(e) => updateCostLine(index, "unitPrice", parseFloat(e.target.value) || 0)} min="0" step="0.01" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm" data-testid={`input-unit-price-${index}`} />
-                                </TableCell>
-                                <TableCell className="px-2 py-1 text-right">
-                                  <span className="text-sm font-medium tabular-nums" data-testid={`text-total-${index}`}>{formatCurrency(line.totalPrice)}</span>
-                                </TableCell>
-                                <TableCell className="px-2 py-1">
-                                  <button type="button" onClick={() => deleteCostLine(index)} className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2 text-muted-foreground" data-testid={`button-delete-${index}`}>
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </button>
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm border-collapse min-w-[700px]">
+                            <thead>
+                              <tr className="h-6 bg-muted/30">
+                                <th className="w-[72px] text-left text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Type</th>
+                                <th className="text-left text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Description</th>
+                                <th className="w-[72px] text-left text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Cost Code</th>
+                                <th className="w-14 text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Qty</th>
+                                <th className="w-12 text-left text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Unit</th>
+                                <th className="w-24 text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Unit Cost</th>
+                                <th className="w-16 text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Mkup %</th>
+                                <th className="w-24 text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Amt ex Tax</th>
+                                <th className="w-24 text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Amt inc Tax</th>
+                                <th className="w-8" />
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {costLines.map((line, index) => {
+                                const typeColors: Record<string, string> = {
+                                  Material: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+                                  Labour: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
+                                  Subcontractor: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
+                                  Fee: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
+                                };
+                                const amtExTax = getCostLineAmountExTax(line);
+                                const amtIncTax = line.taxable ? amtExTax * 1.1 : amtExTax;
+                                return (
+                                  <tr key={index} className="h-9 border-b border-border/30 last:border-0" data-testid={`row-cost-line-${index}`}>
+                                    <td className="px-2 py-1">
+                                      <Select
+                                        value={line.type}
+                                        onValueChange={(val) => updateCostLine(index, "type", val)}
+                                      >
+                                        <SelectTrigger className="h-6 text-xs border-0 bg-transparent shadow-none px-1 rounded-sm focus:ring-1 focus:ring-ring w-full">
+                                          <span className={cn("inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium", typeColors[line.type] || typeColors.Material)}>
+                                            {line.type}
+                                          </span>
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="Material">Material</SelectItem>
+                                          <SelectItem value="Labour">Labour</SelectItem>
+                                          <SelectItem value="Subcontractor">Subcontractor</SelectItem>
+                                          <SelectItem value="Fee">Fee</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                    </td>
+                                    <td className="px-2 py-1">
+                                      <Input value={line.description} onChange={(e) => updateCostLine(index, "description", e.target.value)} placeholder="Description" className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm" data-testid={`input-description-${index}`} />
+                                    </td>
+                                    <td className="px-2 py-1">
+                                      <Input value={line.costCode} onChange={(e) => updateCostLine(index, "costCode", e.target.value)} placeholder="—" className="h-7 text-xs border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm text-muted-foreground" data-testid={`input-cost-code-${index}`} />
+                                    </td>
+                                    <td className="px-2 py-1">
+                                      <Input type="number" value={line.quantity} onChange={(e) => updateCostLine(index, "quantity", parseFloat(e.target.value) || 0)} min="0" step="any" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm" data-testid={`input-quantity-${index}`} />
+                                    </td>
+                                    <td className="px-2 py-1">
+                                      <Input value={line.unitType} onChange={(e) => updateCostLine(index, "unitType", e.target.value)} placeholder="each" className="h-7 text-xs border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm text-muted-foreground" data-testid={`input-unit-type-${index}`} />
+                                    </td>
+                                    <td className="px-2 py-1">
+                                      <Input type="number" value={line.unitCostExTax} onChange={(e) => updateCostLine(index, "unitCostExTax", parseFloat(e.target.value) || 0)} min="0" step="0.01" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm" data-testid={`input-unit-cost-${index}`} />
+                                    </td>
+                                    <td className="px-2 py-1">
+                                      <Input type="number" value={line.markupPercent ?? ""} onChange={(e) => updateCostLine(index, "markupPercent", e.target.value === "" ? null : parseFloat(e.target.value) || 0)} min="0" step="1" placeholder="0" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm" data-testid={`input-markup-${index}`} />
+                                    </td>
+                                    <td className="px-2 py-1 text-right">
+                                      <span className="text-sm font-medium tabular-nums" data-testid={`text-amt-ex-tax-${index}`}>{formatCurrency(amtExTax)}</span>
+                                    </td>
+                                    <td className="px-2 py-1 text-right">
+                                      <span className="text-sm tabular-nums text-muted-foreground" data-testid={`text-amt-inc-tax-${index}`}>{formatCurrency(amtIncTax)}</span>
+                                    </td>
+                                    <td className="px-2 py-1">
+                                      <button type="button" onClick={() => deleteCostLine(index)} className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2 text-muted-foreground" data-testid={`button-delete-${index}`}>
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </button>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                          <div className="flex items-center justify-end gap-6 pt-2 border-t border-border/30 text-sm">
+                            <span className="text-muted-foreground">Ex Tax:</span>
+                            <span className="font-semibold tabular-nums">{formatCurrency(calculateCostLinesSubtotal())}</span>
+                            <span className="text-muted-foreground">Inc Tax:</span>
+                            <span className="font-semibold tabular-nums">{formatCurrency(costLines.filter(l => l.taxable).reduce((s, l) => s + getCostLineAmountExTax(l) * 1.1, 0) + costLines.filter(l => !l.taxable).reduce((s, l) => s + getCostLineAmountExTax(l), 0))}</span>
+                          </div>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -1055,10 +1149,13 @@ export default function VariationDetail() {
                     <SubHeader
                       dotColor="bg-orange-400/70"
                       label={selectedBillIds.length > 0 ? `Bills · ${formatCurrency(calculateBillsTotal())}` : "Bills"}
+                      collapsible
+                      collapsed={billsCollapsed}
+                      onToggle={() => setBillsCollapsed((v) => !v)}
                       rightEl={
                         <button
                           type="button"
-                          onClick={() => { setModalBillIds([...selectedBillIds]); setBillsModalOpen(true); }}
+                          onClick={(e) => { e.stopPropagation(); setModalBillIds([...selectedBillIds]); setBillsModalOpen(true); }}
                           className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
                           data-testid="button-import-bills"
                         >
@@ -1067,6 +1164,7 @@ export default function VariationDetail() {
                         </button>
                       }
                     />
+                    {!billsCollapsed && (
                     <div className="px-4 py-3">
                       {selectedBillIds.length === 0 ? (
                         <p className="text-sm text-muted-foreground text-center py-2">No bills selected.</p>
@@ -1099,6 +1197,7 @@ export default function VariationDetail() {
                         </Table>
                       )}
                     </div>
+                    )}
                   </div>
 
                   {/* Labour sub-section */}
@@ -1106,10 +1205,13 @@ export default function VariationDetail() {
                     <SubHeader
                       dotColor="bg-indigo-400/70"
                       label={selectedTimesheetIds.length > 0 ? `Labour · ${formatCurrency(calculateLabourTotal())}` : "Labour"}
+                      collapsible
+                      collapsed={labourCollapsed}
+                      onToggle={() => setLabourCollapsed((v) => !v)}
                       rightEl={
                         <button
                           type="button"
-                          onClick={() => { setModalTimesheetIds([...selectedTimesheetIds]); setLabourModalOpen(true); }}
+                          onClick={(e) => { e.stopPropagation(); setModalTimesheetIds([...selectedTimesheetIds]); setLabourModalOpen(true); }}
                           className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
                           data-testid="button-import-labour"
                         >
@@ -1118,6 +1220,7 @@ export default function VariationDetail() {
                         </button>
                       }
                     />
+                    {!labourCollapsed && (
                     <div className="px-4 py-3">
                       {selectedTimesheetIds.length === 0 ? (
                         <p className="text-sm text-muted-foreground text-center py-2">No labour selected.</p>
@@ -1150,6 +1253,7 @@ export default function VariationDetail() {
                         </Table>
                       )}
                     </div>
+                    )}
                   </div>
 
                   {/* Allowances sub-section */}
@@ -1157,11 +1261,14 @@ export default function VariationDetail() {
                     <SubHeader
                       dotColor="bg-teal-400/70"
                       label={allowanceLines.length > 0 ? `Allowances · ${formatCurrency(calculateAllowancesTotal())}` : "Allowances"}
+                      collapsible
+                      collapsed={allowancesCollapsed}
+                      onToggle={() => setAllowancesCollapsed((v) => !v)}
                       rightEl={
                         <div className="flex items-center gap-1.5">
                           <button
                             type="button"
-                            onClick={() => setAllowancesModalOpen(true)}
+                            onClick={(e) => { e.stopPropagation(); setAllowancesModalOpen(true); }}
                             className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
                             data-testid="button-import-allowance"
                           >
@@ -1180,6 +1287,7 @@ export default function VariationDetail() {
                         </div>
                       }
                     />
+                    {!allowancesCollapsed && (
                     <div className="px-4 py-3">
                       {allowanceLines.length === 0 ? (
                         <div className="py-1.5 flex items-center gap-3">
@@ -1249,6 +1357,7 @@ export default function VariationDetail() {
                         </>
                       )}
                     </div>
+                    )}
                   </div>
 
                   {/* ── Variation Summary panel ── */}

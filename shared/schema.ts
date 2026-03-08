@@ -1919,11 +1919,16 @@ export const variationItems = pgTable("variation_items", {
   variationId: varchar("variation_id").notNull().references(() => variations.id, { onDelete: "cascade" }),
   description: text("description").notNull(),
   quantity: integer("quantity").notNull().default(1),
-  unitPrice: integer("unit_price").notNull().default(0), // Price in cents
-  totalPrice: integer("total_price").notNull().default(0), // Total price in cents
+  unitPrice: integer("unit_price").notNull().default(0), // Client price per unit in cents (ex tax)
+  totalPrice: integer("total_price").notNull().default(0), // Client price total in cents (ex tax)
   taxable: boolean("taxable").notNull().default(true), // For GST calculation
   sortOrder: integer("sort_order").notNull().default(0), // For ordering
   itemType: text("item_type").notNull().default("cost_line"), // "cost_line" | "allowance"
+  type: text("type").notNull().default("Material"), // "Material" | "Labour" | "Subcontractor" | "Fee"
+  unitType: text("unit_type").notNull().default("each"), // "each" | "m" | "m2" | "hr" etc
+  unitCostExTax: doublePrecision("unit_cost_ex_tax").notNull().default(0), // Builder cost per unit in dollars
+  markupPercent: integer("markup_percent"), // Item-level markup % (null = 0%)
+  costCode: text("cost_code"), // Free-text cost code label
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -1937,6 +1942,8 @@ export const insertVariationItemSchema = createInsertSchema(variationItems).omit
   unitPrice: z.number().default(0),
   totalPrice: z.number().default(0),
   sortOrder: z.number().default(0),
+  unitCostExTax: z.number().default(0),
+  markupPercent: z.number().optional().nullable(),
 });
 
 export type InsertVariationItem = z.infer<typeof insertVariationItemSchema>;
