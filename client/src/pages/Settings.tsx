@@ -2062,17 +2062,18 @@ function DefaultValuesSection() {
               />
             </div>
             <div>
-              <Label className="text-sm font-medium">Default Tax Rate (%)</Label>
-              <Input
-                type="number"
+              <Label className="text-sm font-medium">Tax Rate</Label>
+              <Select
                 value={defaults.defaultTaxRate}
-                onChange={(e) => setDefaults({ ...defaults, defaultTaxRate: e.target.value })}
-                min="0"
-                max="100"
-                step="0.1"
-                className="mt-1.5"
-                data-testid="input-tax-rate"
-              />
+                onValueChange={(value) => setDefaults({ ...defaults, defaultTaxRate: value })}
+              >
+                <SelectTrigger className="mt-1.5" data-testid="input-tax-rate">
+                  <SelectValue placeholder="Select tax rate" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">Australian GST (10%)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </CardContent>

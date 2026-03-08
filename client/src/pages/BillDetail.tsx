@@ -1264,6 +1264,7 @@ export default function BillDetail() {
                       <FormItem className="space-y-1">
                         <FormLabel className="text-xs">Project *</FormLabel>
                         <Select
+                          key={`project-${projects.length}-${businessProject?.id ?? ''}`}
                           onValueChange={field.onChange}
                           value={field.value}
                           disabled={!isEditMode && !!projectId}
@@ -1301,6 +1302,7 @@ export default function BillDetail() {
                       <FormItem className="space-y-1">
                         <FormLabel className="text-xs">Pay to *</FormLabel>
                         <Select
+                          key={`supplier-${suppliers.length}`}
                           onValueChange={field.onChange}
                           value={field.value}
                         >

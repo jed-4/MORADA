@@ -311,7 +311,7 @@ export class XeroService {
       case "GST on expenses":
         return "INPUT";
       case "No GST":
-        return "NONE";
+        return "EXEMPTEXPENSES";
       default:
         return "INPUT";
     }

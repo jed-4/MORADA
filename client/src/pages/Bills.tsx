@@ -499,14 +499,14 @@ export default function Bills() {
 
       </div>{/* end header card */}
 
-      {/* ── Bulk selection action bar ── */}
+      {/* ── Bulk selection action bar (floating) ── */}
       {selectedBills.size > 0 && (
-        <div className="h-8 bg-muted/60 flex items-center justify-between px-3 mx-3 mt-1 rounded-md flex-shrink-0">
+        <div className="fixed bottom-0 left-0 right-0 z-50 bg-background border-t border-border shadow-lg flex items-center justify-between px-4 h-14">
           <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">{selectedBills.size} selected</span>
+            <span className="text-sm text-muted-foreground">{selectedBills.size} selected</span>
             <Button variant="ghost" size="sm" className="text-xs" onClick={() => setSelectedBills(new Set())}>Deselect</Button>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" className="text-xs" style={{ backgroundColor: "#bba7db", color: "white" }} onClick={() => setChangeProjectDialogOpen(true)}>Change Project</Button>
             <Button variant="ghost" size="sm" className="text-xs" style={{ backgroundColor: "#bba7db", color: "white" }} onClick={() => setChangeSupplierDialogOpen(true)}>Change Supplier</Button>
             <Button variant="ghost" size="sm" className="text-xs" style={{ backgroundColor: "#22c55e", color: "white" }} disabled={bulkApproveMutation.isPending} onClick={() => bulkApproveMutation.mutate(Array.from(selectedBills))}>
