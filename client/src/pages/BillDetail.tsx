@@ -164,11 +164,15 @@ export default function BillDetail() {
   });
 
   const { data: suppliers = [] } = useQuery<any[]>({
-    queryKey: ["/api/contacts", { contactType: "supplier" }],
+    queryKey: ["/api/contacts", { contactTypes: "supplier,trade" }],
     queryFn: async () => {
-      const res = await fetch("/api/contacts?contactType=supplier", { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch suppliers");
-      return res.json();
+      const [suppliersRes, tradesRes] = await Promise.all([
+        fetch("/api/contacts?contactType=supplier", { credentials: "include" }),
+        fetch("/api/contacts?contactType=trade", { credentials: "include" }),
+      ]);
+      if (!suppliersRes.ok || !tradesRes.ok) throw new Error("Failed to fetch contacts");
+      const [supplierList, tradeList] = await Promise.all([suppliersRes.json(), tradesRes.json()]);
+      return [...supplierList, ...tradeList].sort((a, b) => a.name.localeCompare(b.name));
     },
   });
 
@@ -635,7 +639,7 @@ export default function BillDetail() {
       return await apiRequest("/api/contacts", "POST", { ...data, contactType: "supplier" });
     },
     onSuccess: (newSupplier: any) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/contacts", { contactType: "supplier" }] });
+      queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
       form.setValue("supplierId", newSupplier.id);
       setAddSupplierDialogOpen(false);
       supplierForm.reset();
@@ -1264,7 +1268,7 @@ export default function BillDetail() {
                       <FormItem className="space-y-1">
                         <FormLabel className="text-xs">Project *</FormLabel>
                         <Select
-                          key={`project-${projects.length}-${businessProject?.id ?? ''}`}
+                          key={`project-${field.value}-${projects.length}-${businessProject?.id ?? ''}`}
                           onValueChange={field.onChange}
                           value={field.value}
                           disabled={!isEditMode && !!projectId}
@@ -1302,7 +1306,7 @@ export default function BillDetail() {
                       <FormItem className="space-y-1">
                         <FormLabel className="text-xs">Pay to *</FormLabel>
                         <Select
-                          key={`supplier-${suppliers.length}`}
+                          key={`supplier-${field.value}-${suppliers.length}`}
                           onValueChange={field.onChange}
                           value={field.value}
                         >
