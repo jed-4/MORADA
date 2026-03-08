@@ -472,44 +472,20 @@ export default function Variations() {
         </div>
 
         {/* Row 3 — Lilac summary strip */}
-        <div className="bg-[#bba7db]/10 flex items-center px-5 py-3 gap-8 flex-wrap">
-
-          {/* Left — approved total: big number in project context */}
-          {projectIdFromUrl && statusTotals.approved > 0 && (
-            <>
-              <div className="flex flex-col">
-                <span className="text-2xl font-bold tabular-nums leading-tight text-emerald-600 dark:text-emerald-400">
-                  {formatCurrency(statusTotals.approved)}
-                </span>
-                <span className="text-[11px] text-muted-foreground mt-0.5">Approved Total</span>
-              </div>
-              <div className="w-px self-stretch bg-[#bba7db]/30 mx-1" />
-            </>
-          )}
-
-          {/* Right — status group */}
-          <div className="flex flex-col gap-1 ml-auto">
-            <span className="text-[10px] uppercase tracking-widest font-medium text-muted-foreground/70">Variations</span>
-            <div className="flex items-end gap-6">
-              <div className="flex flex-col" data-testid="text-total-action">
-                <span className="text-[10px] text-muted-foreground">Action</span>
-                <span className="text-base font-bold tabular-nums leading-tight">
-                  {formatCurrency(statusTotals.action)}
-                </span>
-              </div>
-              <div className="flex flex-col" data-testid="text-total-pending">
-                <span className="text-[10px] text-muted-foreground">Pending</span>
-                <span className="text-base font-bold tabular-nums leading-tight">
-                  {formatCurrency(statusTotals.pending)}
-                </span>
-              </div>
-              <div className="flex flex-col" data-testid="text-total-approved">
-                <span className="text-[10px] text-muted-foreground">Approved</span>
-                <span className="text-base font-bold tabular-nums leading-tight text-emerald-600 dark:text-emerald-400">
-                  {formatCurrency(statusTotals.approved)}
-                </span>
-              </div>
-            </div>
+        <div className="bg-[#bba7db]/10 flex items-center px-4 py-2 gap-5 text-xs">
+          <div className="flex items-center gap-1.5" data-testid="text-total-action">
+            <span className="text-muted-foreground">Action</span>
+            <span className="font-semibold tabular-nums">{formatCurrency(statusTotals.action)}</span>
+          </div>
+          <div className="w-px h-3.5 bg-[#bba7db]/40" />
+          <div className="flex items-center gap-1.5" data-testid="text-total-pending">
+            <span className="text-muted-foreground">Pending</span>
+            <span className="font-semibold tabular-nums">{formatCurrency(statusTotals.pending)}</span>
+          </div>
+          <div className="w-px h-3.5 bg-[#bba7db]/40" />
+          <div className="flex items-center gap-1.5" data-testid="text-total-approved">
+            <span className="text-muted-foreground">Approved</span>
+            <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{formatCurrency(statusTotals.approved)}</span>
           </div>
         </div>
 
