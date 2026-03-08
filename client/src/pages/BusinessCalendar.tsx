@@ -12,6 +12,8 @@ import {
   Briefcase,
   ExternalLink,
   SlidersHorizontal,
+  Pencil,
+  ChevronDown,
 } from "lucide-react";
 import { format, isWithinInterval, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths } from "date-fns";
 import type { Task, ScheduleItem, Project, User as UserType, FieldCategoryWithOptions, Schedule, CompanySettings } from "@shared/schema";
@@ -43,6 +45,12 @@ import {
 } from "@/components/ui/dialog";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useLocation } from "wouter";
 import TaskEditModal from "@/components/TaskEditModal";
 
@@ -70,7 +78,10 @@ export default function BusinessCalendar() {
   const [selectedViewId, setSelectedViewId] = useState<string | undefined>();
   const [showCreateViewDialog, setShowCreateViewDialog] = useState(false);
   const [showDeleteViewDialog, setShowDeleteViewDialog] = useState(false);
+  const [showEditViewDialog, setShowEditViewDialog] = useState(false);
   const [viewToDelete, setViewToDelete] = useState<CalendarView | null>(null);
+  const [viewToEdit, setViewToEdit] = useState<CalendarView | null>(null);
+  const [editViewName, setEditViewName] = useState("");
   const [newViewName, setNewViewName] = useState("");
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
@@ -538,10 +549,80 @@ export default function BusinessCalendar() {
     }
   };
 
+  const createViewMutation = useMutation({
+    mutationFn: async (data: { name: string }) => {
+      return await apiRequest("/api/calendar-views", "POST", {
+        name: data.name,
+        calendarType: "business",
+        filters,
+        calendarMode,
+      });
+    },
+    onSuccess: (newView) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", "business"] });
+      setSelectedViewId(newView.id);
+      setShowCreateViewDialog(false);
+      setNewViewName("");
+      toast({ title: "View created", description: `"${newView.name}" has been saved.` });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to create view.", variant: "destructive" });
+    },
+  });
+
+  const updateViewMutation = useMutation({
+    mutationFn: async (data: { id: string; name?: string; filters?: any; calendarMode?: string }) => {
+      return await apiRequest(`/api/calendar-views/${data.id}`, "PATCH", {
+        ...(data.name !== undefined && { name: data.name }),
+        ...(data.filters !== undefined && { filters: data.filters }),
+        ...(data.calendarMode !== undefined && { calendarMode: data.calendarMode }),
+      });
+    },
+    onSuccess: (updatedView) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", "business"] });
+      setShowCreateViewDialog(false);
+      setShowEditViewDialog(false);
+      setViewToEdit(null);
+      toast({ title: "View saved", description: `"${updatedView.name}" has been updated.` });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to save view.", variant: "destructive" });
+    },
+  });
+
+  const deleteViewMutation = useMutation({
+    mutationFn: async (viewId: string) => {
+      await apiRequest(`/api/calendar-views/${viewId}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", "business"] });
+      if (viewToDelete && selectedViewId === viewToDelete.id) {
+        setSelectedViewId(undefined);
+      }
+      setShowDeleteViewDialog(false);
+      setViewToDelete(null);
+      toast({ title: "View deleted", description: `"${viewToDelete?.name}" has been removed.` });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to delete view.", variant: "destructive" });
+    },
+  });
+
   const handleViewSelect = (view: CalendarView) => {
     setSelectedViewId(view.id);
     setFilters(normalizeFilterDates(view.filters || {}));
     setCalendarMode(view.calendarMode || "week");
+  };
+
+  const handleEditView = (view: CalendarView) => {
+    setViewToEdit(view);
+    setEditViewName(view.name);
+    setShowEditViewDialog(true);
+  };
+
+  const handleUpdateView = () => {
+    if (!viewToEdit || !editViewName.trim()) return;
+    updateViewMutation.mutate({ id: viewToEdit.id, name: editViewName, filters, calendarMode });
   };
 
   // Navigation handlers
@@ -603,60 +684,18 @@ export default function BusinessCalendar() {
   // View management
   const currentView = views.find((v: CalendarView) => v.id === selectedViewId);
 
-  const handleSaveView = async () => {
-    if (!currentView || currentView.isDefault) return;
-    
-    try {
-      await apiRequest(`/api/calendar-views/${currentView.id}`, "PATCH", {
-        filters,
-        calendarMode,
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", "business"] });
-      toast({ title: "View Updated", description: "Your view has been saved successfully." });
-    } catch (error) {
-      toast({ title: "Error", description: "Failed to save view.", variant: "destructive" });
+  const handleSaveView = () => {
+    if (!currentView) return;
+    if (currentView.isDefault) {
+      setShowCreateViewDialog(true);
+    } else {
+      updateViewMutation.mutate({ id: currentView.id, filters, calendarMode });
     }
   };
 
   const handleDeleteView = (view: CalendarView) => {
     setViewToDelete(view);
     setShowDeleteViewDialog(true);
-  };
-
-  const confirmDeleteView = async () => {
-    if (!viewToDelete) return;
-    
-    try {
-      await apiRequest(`/api/calendar-views/${viewToDelete.id}`, "DELETE");
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", "business"] });
-      setShowDeleteViewDialog(false);
-      setViewToDelete(null);
-      if (selectedViewId === viewToDelete.id) {
-        setSelectedViewId(undefined);
-      }
-      toast({ title: "View Deleted", description: "View has been removed." });
-    } catch (error) {
-      toast({ title: "Error", description: "Failed to delete view.", variant: "destructive" });
-    }
-  };
-
-  const createNewView = async () => {
-    if (!newViewName.trim()) return;
-    
-    try {
-      await apiRequest("/api/calendar-views", "POST", {
-        name: newViewName,
-        calendarType: "business",
-        filters,
-        calendarMode,
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar-views", "business"] });
-      setShowCreateViewDialog(false);
-      setNewViewName("");
-      toast({ title: "View Created", description: "Your new view has been saved." });
-    } catch (error) {
-      toast({ title: "Error", description: "Failed to create view.", variant: "destructive" });
-    }
   };
 
   const isLoading = isLoadingProjects || isLoadingTasks || isLoadingSchedule;
@@ -709,41 +748,55 @@ export default function BusinessCalendar() {
           {/* View Tabs */}
           <div className="flex items-center gap-0.5" data-testid="tabs-calendar-views">
             {views.map((view: CalendarView) => (
-              <div key={view.id} className="relative group">
+              <div key={view.id} className="flex items-center">
                 <button
                   onClick={() => handleViewSelect(view)}
-                  className={`h-6 w-auto px-2 text-xs border rounded-md ${
+                  className={`relative h-9 px-2 text-xs flex items-center gap-1 transition-colors ${
                     selectedViewId === view.id
-                      ? 'bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90'
-                      : 'hover-elevate'
-                  } active-elevate-2 flex items-center gap-1`}
+                      ? 'text-[#bba7db] font-medium'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
                   data-testid={`tab-${view.id}`}
                 >
-                  {view.name}
+                  <span>{view.name}</span>
+                  {selectedViewId === view.id && (
+                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#bba7db] rounded-full" />
+                  )}
                 </button>
-                {!view.isDefault && (
-                  <button
-                    className="absolute -right-1 -top-1 h-4 w-4 rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteView(view);
-                    }}
-                    data-testid={`button-delete-${view.id}`}
-                  >
-                    <X className="h-2 w-2" />
-                  </button>
+                {selectedViewId === view.id && !view.isDefault && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        className="h-5 px-0.5 text-[#bba7db] hover:text-[#bba7db]/80 flex items-center"
+                        data-testid={`button-view-options-${view.id}`}
+                      >
+                        <ChevronDown className="h-3 w-3" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      <DropdownMenuItem
+                        onClick={() => handleEditView(view)}
+                        data-testid={`menu-edit-${view.id}`}
+                      >
+                        <Pencil className="h-3 w-3 mr-2" />
+                        Edit View
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => handleDeleteView(view)}
+                        className="text-destructive"
+                        data-testid={`menu-delete-${view.id}`}
+                      >
+                        <X className="h-3 w-3 mr-2" />
+                        Delete View
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 )}
               </div>
             ))}
             <button
               className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-              onClick={() => {
-                if (currentView && !currentView.isDefault) {
-                  handleSaveView();
-                } else {
-                  setShowCreateViewDialog(true);
-                }
-              }}
+              onClick={() => setShowCreateViewDialog(true)}
               data-testid="button-add-view"
             >
               <Plus className="w-3 h-3" />
@@ -1221,17 +1274,17 @@ export default function BusinessCalendar() {
       </div>
      </div>
 
-      {/* Create View Dialog */}
-      <Dialog open={showCreateViewDialog} onOpenChange={setShowCreateViewDialog}>
-        <DialogContent>
+      {/* Save / Create View Dialog */}
+      <Dialog open={showCreateViewDialog} onOpenChange={(open) => { setShowCreateViewDialog(open); if (!open) setNewViewName(""); }}>
+        <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>Save View</DialogTitle>
+            <DialogTitle>Save As New View</DialogTitle>
             <DialogDescription>
-              Save your current filters and calendar mode as a new view
+              Save your current filters and calendar mode as a new view.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
               <Label htmlFor="view-name">View Name</Label>
               <Input
                 id="view-name"
@@ -1242,25 +1295,62 @@ export default function BusinessCalendar() {
               />
             </div>
           </div>
-          <DialogFooter>
-            <button
-              className="h-8 px-3 text-sm border rounded-md hover-elevate active-elevate-2"
-              onClick={() => {
-                setShowCreateViewDialog(false);
-                setNewViewName("");
-              }}
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => { setShowCreateViewDialog(false); setNewViewName(""); }}
+              data-testid="button-cancel-view"
             >
               Cancel
-            </button>
-            <button
-              className="h-8 px-3 text-sm rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2"
-              onClick={createNewView}
-              disabled={!newViewName.trim()}
+            </Button>
+            <Button
+              onClick={() => newViewName.trim() && createViewMutation.mutate({ name: newViewName.trim() })}
+              disabled={!newViewName.trim() || createViewMutation.isPending}
               data-testid="button-confirm-save-view"
             >
-              Save View
-            </button>
-          </DialogFooter>
+              {createViewMutation.isPending ? "Saving..." : "Save View"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit View Dialog */}
+      <Dialog open={showEditViewDialog} onOpenChange={setShowEditViewDialog}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Edit View</DialogTitle>
+            <DialogDescription>
+              Update the view name and save current filters to this view.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="edit-view-name">View Name</Label>
+              <Input
+                id="edit-view-name"
+                value={editViewName}
+                onChange={(e) => setEditViewName(e.target.value)}
+                placeholder="My Custom View"
+                data-testid="input-edit-view-name"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowEditViewDialog(false)}
+              data-testid="button-cancel-edit"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleUpdateView}
+              disabled={!editViewName.trim() || updateViewMutation.isPending}
+              data-testid="button-update-view"
+            >
+              {updateViewMutation.isPending ? "Updating..." : "Update View"}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -1273,21 +1363,23 @@ export default function BusinessCalendar() {
               Are you sure you want to delete "{viewToDelete?.name}"? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
-            <button
-              className="h-8 px-3 text-sm border rounded-md hover-elevate active-elevate-2"
+          <div className="flex justify-end gap-2 mt-4">
+            <Button
+              variant="outline"
               onClick={() => setShowDeleteViewDialog(false)}
+              data-testid="button-cancel-delete"
             >
               Cancel
-            </button>
-            <button
-              className="h-8 px-3 text-sm rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 active-elevate-2"
-              onClick={confirmDeleteView}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => viewToDelete && deleteViewMutation.mutate(viewToDelete.id)}
+              disabled={deleteViewMutation.isPending}
               data-testid="button-confirm-delete-view"
             >
-              Delete
-            </button>
-          </DialogFooter>
+              {deleteViewMutation.isPending ? "Deleting..." : "Delete"}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
