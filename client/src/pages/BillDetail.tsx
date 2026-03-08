@@ -149,10 +149,11 @@ export default function BillDetail() {
     enabled: isEditMode,
   });
 
-  const { data: existingLineItems = [] } = useQuery<BillLineItem[]>({
+  const { data: existingLineItemsData, isLoading: existingLineItemsLoading } = useQuery<BillLineItem[]>({
     queryKey: ["/api/bills", id, "line-items"],
     enabled: isEditMode,
   });
+  const existingLineItems = existingLineItemsData ?? [];
 
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
@@ -247,10 +248,11 @@ export default function BillDetail() {
     enabled: !!currentProjectId,
   });
 
-  const { data: existingAllowances = [] } = useQuery<any[]>({
+  const { data: existingAllowancesData, isLoading: existingAllowancesLoading } = useQuery<any[]>({
     queryKey: ["/api/bills", id, "line-item-allowances"],
     enabled: isEditMode,
   });
+  const existingAllowances = existingAllowancesData ?? [];
 
   useEffect(() => {
     if (bill && isEditMode) {
@@ -288,6 +290,7 @@ export default function BillDetail() {
   }, [suppliers.length, bill?.id, isEditMode]);
 
   useEffect(() => {
+    if (existingLineItemsLoading || existingAllowancesLoading) return;
     if (existingLineItems.length > 0 && isEditMode) {
       setLineItems(
         existingLineItems.map((item) => {
@@ -310,7 +313,7 @@ export default function BillDetail() {
         })
       );
     }
-  }, [existingLineItems, existingAllowances, isEditMode]);
+  }, [existingLineItemsLoading, existingAllowancesLoading, existingLineItems, existingAllowances, isEditMode]);
 
   useEffect(() => {
     if (!isEditMode && projects.length > 0) {
