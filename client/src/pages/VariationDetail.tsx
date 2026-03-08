@@ -22,7 +22,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -572,107 +571,142 @@ export default function VariationDetail() {
 
   return (
     <div className="flex h-full flex-col" data-testid="page-variation-detail">
-      <div className="flex-none border-b bg-background">
-        <div className="h-12 px-4 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
+
+      {/* ── Unified header card ── */}
+      <div className="mx-3 mt-3 rounded-lg border border-border bg-card flex-shrink-0 overflow-hidden">
+
+        {/* Row 1 — Title & Actions */}
+        <div className="h-8 flex items-center justify-between px-3 border-b border-border/50">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
               onClick={handleCancel}
+              className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2"
               data-testid="button-back"
             >
-              <ArrowLeft className="w-4 h-4" />
-            </Button>
-
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-semibold" data-testid="text-page-title">
-                {isEditMode ? form.watch("variationNumber") : "New Variation"}
-              </h1>
-              {isEditMode && variation?.status && getStatusBadge(variation.status)}
-            </div>
-            
+              <ArrowLeft className="h-3.5 w-3.5 text-muted-foreground" />
+            </button>
+            <h2 className="text-sm font-semibold" data-testid="text-page-title">
+              {isEditMode ? form.watch("variationNumber") : "New Variation"}
+            </h2>
+            {isEditMode && variation?.status && getStatusBadge(variation.status)}
             {projectName && (
-              <span className="text-sm text-muted-foreground" data-testid="text-project-name">
+              <span className="text-xs text-muted-foreground ml-1" data-testid="text-project-name">
                 {projectName}
               </span>
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             {isEditMode && variationLoading && (
-              <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+              <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
             )}
             {isEditMode && variation?.status === "draft" && (
-              <Button
+              <button
                 type="button"
-                variant="outline"
-                size="sm"
                 onClick={() => moveToActionMutation.mutate()}
                 disabled={moveToActionMutation.isPending}
+                className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
                 data-testid="button-move-to-action"
               >
                 {moveToActionMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 animate-spin mr-1" />
+                  <Loader2 className="w-3 h-3 animate-spin" />
                 ) : (
-                  <Send className="w-4 h-4 mr-1" />
+                  <Send className="w-3 h-3" />
                 )}
-                Move to Action
-              </Button>
+                <span>Move to Action</span>
+              </button>
             )}
             {isEditMode && variation?.status === "action" && (
-              <Button
+              <button
                 type="button"
-                size="sm"
-                className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
                 onClick={() => sendForApprovalMutation.mutate()}
                 disabled={sendForApprovalMutation.isPending}
+                className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
                 data-testid="button-send-for-approval"
               >
                 {sendForApprovalMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 animate-spin mr-1" />
+                  <Loader2 className="w-3 h-3 animate-spin" />
                 ) : (
-                  <Send className="w-4 h-4 mr-1" />
+                  <Send className="w-3 h-3" />
                 )}
-                Send for Approval
-              </Button>
+                <span>Send for Approval</span>
+              </button>
             )}
             {isEditMode && variation?.status === "pending" && (
               <>
-                <Button
+                <button
                   type="button"
-                  variant="outline"
-                  size="sm"
                   onClick={() => setRejectDialogOpen(true)}
                   disabled={rejectMutation.isPending}
+                  className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
                   data-testid="button-reject"
                 >
-                  <X className="w-4 h-4 mr-1" />
-                  Reject
-                </Button>
-                <Button
+                  <X className="w-3 h-3" />
+                  <span>Reject</span>
+                </button>
+                <button
                   type="button"
-                  size="sm"
-                  className="bg-green-600 hover:bg-green-600/90 text-white"
                   onClick={() => setApproveDialogOpen(true)}
                   disabled={approveMutation.isPending}
+                  className="h-6 w-auto px-2 text-xs border rounded-md bg-emerald-600 text-white border-emerald-600/20 hover:bg-emerald-600/90 active-elevate-2 flex items-center gap-1"
                   data-testid="button-approve"
                 >
-                  <Check className="w-4 h-4 mr-1" />
-                  Approve
-                </Button>
+                  <Check className="w-3 h-3" />
+                  <span>Approve</span>
+                </button>
               </>
             )}
+            <button
+              type="button"
+              onClick={form.handleSubmit(onSubmit)}
+              disabled={createMutation.isPending || updateMutation.isPending}
+              className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
+              data-testid="button-save"
+            >
+              {(createMutation.isPending || updateMutation.isPending) ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <FileText className="w-3 h-3" />
+              )}
+              <span>{isEditMode ? "Save Changes" : "Create Variation"}</span>
+            </button>
           </div>
         </div>
-      </div>
+
+        {/* Row 2 — Live financial summary strip */}
+        <div className="bg-[#bba7db]/10 flex items-center px-4 py-2 gap-5 text-xs">
+          <div className="flex items-center gap-1.5" data-testid="header-summary-subtotal">
+            <span className="text-muted-foreground">Subtotal</span>
+            <span className="font-semibold tabular-nums">{formatCurrency(calculateSubtotal())}</span>
+          </div>
+          <div className="w-px h-3.5 bg-[#bba7db]/40" />
+          <div className="flex items-center gap-1.5" data-testid="header-summary-gst">
+            <span className="text-muted-foreground">GST</span>
+            <span className="font-semibold tabular-nums">{formatCurrency(calculateGST())}</span>
+          </div>
+          <div className="w-px h-3.5 bg-[#bba7db]/40" />
+          <div className="flex items-center gap-1.5" data-testid="header-summary-total">
+            <span className="text-muted-foreground">Total</span>
+            <span className="font-semibold tabular-nums text-[#bba7db]">{formatCurrency(calculateTotal())}</span>
+          </div>
+        </div>
+
+      </div>{/* end unified header card */}
 
       <div className="flex-1 overflow-auto">
-        <div className="max-w-7xl mx-auto p-6 grid grid-cols-3 gap-6">
+        <div className="max-w-5xl mx-auto px-3 py-3 grid grid-cols-3 gap-3">
           <div className="col-span-2">
             <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                <Card>
-                  <CardContent className="pt-6 space-y-4">
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
+
+                {/* General Info section */}
+                <div className="rounded-lg border border-border bg-card overflow-hidden">
+                  <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
+                    <div className="w-1.5 h-1.5 rounded-full bg-[#bba7db]/80 flex-shrink-0" />
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">General Info</span>
+                  </div>
+                  <div className="p-4 space-y-4">
                     <FormField
                       control={form.control}
                       name="name"
@@ -680,9 +714,9 @@ export default function VariationDetail() {
                         <FormItem>
                           <FormLabel>Name *</FormLabel>
                           <FormControl>
-                            <Input 
-                              placeholder="Enter variation name" 
-                              {...field} 
+                            <Input
+                              placeholder="Enter variation name"
+                              {...field}
                               data-testid="input-name"
                             />
                           </FormControl>
@@ -736,9 +770,9 @@ export default function VariationDetail() {
                           <FormItem>
                             <FormLabel>Days Changed</FormLabel>
                             <FormControl>
-                              <Input 
-                                type="number" 
-                                placeholder="0" 
+                              <Input
+                                type="number"
+                                placeholder="0"
                                 {...field}
                                 onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
                                 value={field.value || ""}
@@ -758,10 +792,10 @@ export default function VariationDetail() {
                         <FormItem>
                           <FormLabel>Introduction Text</FormLabel>
                           <FormControl>
-                            <Textarea 
-                              placeholder="Enter introduction text" 
+                            <Textarea
+                              placeholder="Enter introduction text"
                               className="resize-none min-h-[80px]"
-                              {...field} 
+                              {...field}
                               data-testid="textarea-introduction"
                             />
                           </FormControl>
@@ -769,89 +803,92 @@ export default function VariationDetail() {
                         </FormItem>
                       )}
                     />
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
 
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-lg font-medium" data-testid="text-cost-lines-title">Cost Lines</h3>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={addCostLine}
-                        data-testid="button-add-cost-line"
-                      >
-                        <Plus className="h-4 w-4 mr-2" />
-                        Add Item
-                      </Button>
+                {/* Cost Lines section */}
+                <div className="rounded-lg border border-border bg-card overflow-hidden">
+                  <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
+                    <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-amber-400/70 flex-shrink-0" />
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide" data-testid="text-cost-lines-title">Cost Lines</span>
                     </div>
-
+                    <button
+                      type="button"
+                      onClick={addCostLine}
+                      className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                      data-testid="button-add-cost-line"
+                    >
+                      <Plus className="h-3 w-3" />
+                      <span>Add Item</span>
+                    </button>
+                  </div>
+                  <div className="p-4">
                     {costLines.length === 0 ? (
-                      <div className="text-center py-12 border rounded-lg border-dashed" data-testid="empty-cost-lines">
-                        <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
-                        <p className="text-muted-foreground">There are no cost lines added yet</p>
+                      <div className="text-center py-10 border rounded-md border-dashed" data-testid="empty-cost-lines">
+                        <FileText className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                        <p className="text-muted-foreground text-sm">No cost lines added yet</p>
                       </div>
                     ) : (
-                      <div className="border rounded-lg">
+                      <div className="border rounded-md overflow-hidden">
                         <Table>
                           <TableHeader>
-                            <TableRow>
-                              <TableHead className="w-[40%]" data-testid="table-header-description">Description</TableHead>
-                              <TableHead className="w-[15%]" data-testid="table-header-quantity">Quantity</TableHead>
-                              <TableHead className="w-[20%]" data-testid="table-header-unit-price">Unit Price</TableHead>
-                              <TableHead className="w-[20%]" data-testid="table-header-total">Total</TableHead>
-                              <TableHead className="w-[5%]"></TableHead>
+                            <TableRow className="bg-muted/30 hover:bg-muted/30">
+                              <TableHead className="w-[40%] text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-1.5 px-3" data-testid="table-header-description">Description</TableHead>
+                              <TableHead className="w-[15%] text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-1.5 px-3" data-testid="table-header-quantity">Qty</TableHead>
+                              <TableHead className="w-[20%] text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-1.5 px-3" data-testid="table-header-unit-price">Unit Price</TableHead>
+                              <TableHead className="w-[20%] text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-1.5 px-3" data-testid="table-header-total">Total</TableHead>
+                              <TableHead className="w-[5%]" />
                             </TableRow>
                           </TableHeader>
                           <TableBody>
                             {costLines.map((line, index) => (
                               <TableRow key={index} data-testid={`row-cost-line-${index}`}>
-                                <TableCell>
+                                <TableCell className="px-3 py-1.5">
                                   <Input
                                     value={line.description}
                                     onChange={(e) => updateCostLine(index, "description", e.target.value)}
                                     placeholder="Description"
+                                    className="h-7 text-xs"
                                     data-testid={`input-description-${index}`}
                                   />
                                 </TableCell>
-                                <TableCell>
+                                <TableCell className="px-3 py-1.5">
                                   <Input
                                     type="number"
                                     value={line.quantity}
                                     onChange={(e) => updateCostLine(index, "quantity", parseFloat(e.target.value) || 0)}
                                     min="0"
                                     step="1"
+                                    className="h-7 text-xs"
                                     data-testid={`input-quantity-${index}`}
                                   />
                                 </TableCell>
-                                <TableCell>
+                                <TableCell className="px-3 py-1.5">
                                   <Input
                                     type="number"
                                     value={line.unitPrice}
                                     onChange={(e) => updateCostLine(index, "unitPrice", parseFloat(e.target.value) || 0)}
                                     min="0"
                                     step="0.01"
+                                    className="h-7 text-xs"
                                     data-testid={`input-unit-price-${index}`}
                                   />
                                 </TableCell>
-                                <TableCell>
-                                  <div className="font-medium" data-testid={`text-total-${index}`}>
+                                <TableCell className="px-3 py-1.5 text-right">
+                                  <span className="text-xs font-medium tabular-nums" data-testid={`text-total-${index}`}>
                                     {formatCurrency(line.totalPrice)}
-                                  </div>
+                                  </span>
                                 </TableCell>
-                                <TableCell>
-                                  <Button
+                                <TableCell className="px-2 py-1.5">
+                                  <button
                                     type="button"
-                                    variant="ghost"
-                                    size="icon"
                                     onClick={() => deleteCostLine(index)}
+                                    className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2 text-muted-foreground"
                                     data-testid={`button-delete-${index}`}
                                   >
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
                                 </TableCell>
                               </TableRow>
                             ))}
@@ -859,125 +896,113 @@ export default function VariationDetail() {
                         </Table>
                       </div>
                     )}
-
                   </div>
-                </CardContent>
-              </Card>
+                </div>
 
-              <Card>
-                <CardContent className="pt-6">
-                  <FormField
-                    control={form.control}
-                    name="closingText"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Closing Text</FormLabel>
-                        <FormControl>
-                          <Textarea 
-                            placeholder="Enter closing text" 
-                            className="resize-none min-h-[80px]"
-                            {...field} 
-                            data-testid="textarea-closing"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </CardContent>
-              </Card>
+                {/* Closing Text section */}
+                <div className="rounded-lg border border-border bg-card overflow-hidden">
+                  <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
+                    <div className="w-1.5 h-1.5 rounded-full bg-sky-400/70 flex-shrink-0" />
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Closing Text</span>
+                  </div>
+                  <div className="p-4">
+                    <FormField
+                      control={form.control}
+                      name="closingText"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormControl>
+                            <Textarea
+                              placeholder="Enter closing text"
+                              className="resize-none min-h-[80px]"
+                              {...field}
+                              data-testid="textarea-closing"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                </div>
 
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="space-y-4">
-                    <h3 className="text-base font-medium" data-testid="text-attachments-title">Attachments</h3>
-                    <div className="text-center py-8 border rounded-lg border-dashed" data-testid="attachments-stub">
-                      <p className="text-muted-foreground text-sm">Attachments section coming soon</p>
+                {/* Attachments section */}
+                <div className="rounded-lg border border-border bg-card overflow-hidden">
+                  <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
+                    <div className="w-1.5 h-1.5 rounded-full bg-slate-400/70 flex-shrink-0" />
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide" data-testid="text-attachments-title">Attachments</span>
+                  </div>
+                  <div className="p-4">
+                    <div className="text-center py-8 border rounded-md border-dashed" data-testid="attachments-stub">
+                      <p className="text-muted-foreground text-sm">Attachments coming soon</p>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
+                </div>
 
-              <div className="flex justify-end items-center gap-3 pb-6">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleCancel}
-                  data-testid="button-cancel"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  className="bg-[#bba7db] hover:bg-[#bba7db]/90 text-white"
-                  disabled={createMutation.isPending || updateMutation.isPending}
-                  data-testid="button-save"
-                >
-                  {(createMutation.isPending || updateMutation.isPending) && (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  )}
-                  {isEditMode ? "Save Changes" : "Create Variation"}
-                </Button>
-              </div>
               </form>
             </Form>
           </div>
 
+          {/* Right column */}
           <div className="col-span-1">
-            <div className="sticky top-6 space-y-6">
-              <Card>
-                <CardContent className="pt-6">
-                  <h3 className="text-base font-medium mb-4">Summary</h3>
-                  <div className="space-y-3">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground" data-testid="text-label-subtotal">Subtotal</span>
-                      <span className="font-medium" data-testid="text-subtotal">
-                        {formatCurrency(calculateSubtotal())}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground" data-testid="text-label-gst">GST (10%)</span>
-                      <span className="font-medium" data-testid="text-gst">
-                        {formatCurrency(calculateGST())}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-lg font-semibold pt-3 border-t">
-                      <span data-testid="text-label-total">Total</span>
-                      <span className="text-[#bba7db]" data-testid="text-total">
-                        {formatCurrency(calculateTotal())}
-                      </span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+            <div className="sticky top-3 space-y-3">
 
+              {/* Summary card */}
+              <div className="rounded-lg border border-border bg-card overflow-hidden">
+                <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400/70 flex-shrink-0" />
+                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Summary</span>
+                </div>
+                <div className="p-4 space-y-2.5">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground" data-testid="text-label-subtotal">Subtotal</span>
+                    <span className="font-medium tabular-nums" data-testid="text-subtotal">{formatCurrency(calculateSubtotal())}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground" data-testid="text-label-gst">GST (10%)</span>
+                    <span className="font-medium tabular-nums" data-testid="text-gst">{formatCurrency(calculateGST())}</span>
+                  </div>
+                  <div className="flex justify-between pt-2.5 border-t">
+                    <span className="text-sm font-semibold" data-testid="text-label-total">Total</span>
+                    <span className="text-sm font-semibold tabular-nums text-[#bba7db]" data-testid="text-total">{formatCurrency(calculateTotal())}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Schedule Impact card */}
               {isEditMode && variation?.daysChanged && variation.daysChanged !== 0 && (
-                <Card>
-                  <CardContent className="pt-6">
-                    <h3 className="text-base font-medium mb-4">Schedule Impact</h3>
+                <div className="rounded-lg border border-border bg-card overflow-hidden">
+                  <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
+                    <div className="w-1.5 h-1.5 rounded-full bg-orange-400/70 flex-shrink-0" />
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Schedule Impact</span>
+                  </div>
+                  <div className="p-4">
                     <div className="flex items-center gap-2">
-                      <CalendarIcon className="w-4 h-4 text-muted-foreground" />
+                      <CalendarIcon className="w-3.5 h-3.5 text-muted-foreground" />
                       <span className="text-sm">
                         {variation.daysChanged > 0 ? "+" : ""}{variation.daysChanged} day{Math.abs(variation.daysChanged) !== 1 ? "s" : ""}
                       </span>
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
               )}
 
+              {/* Deadline card */}
               {isEditMode && variation?.approvalDeadline && (
-                <Card>
-                  <CardContent className="pt-6">
-                    <h3 className="text-base font-medium mb-4">Deadline</h3>
+                <div className="rounded-lg border border-border bg-card overflow-hidden">
+                  <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
+                    <div className="w-1.5 h-1.5 rounded-full bg-rose-400/70 flex-shrink-0" />
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Deadline</span>
+                  </div>
+                  <div className="p-4">
                     <div className="flex items-center gap-2">
-                      <Clock className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-sm">
-                        {format(new Date(variation.approvalDeadline), "PPP")}
-                      </span>
+                      <Clock className="w-3.5 h-3.5 text-muted-foreground" />
+                      <span className="text-sm">{format(new Date(variation.approvalDeadline), "PPP")}</span>
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
               )}
+
             </div>
           </div>
         </div>
