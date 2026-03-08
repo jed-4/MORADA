@@ -1923,6 +1923,7 @@ export const variationItems = pgTable("variation_items", {
   totalPrice: integer("total_price").notNull().default(0), // Total price in cents
   taxable: boolean("taxable").notNull().default(true), // For GST calculation
   sortOrder: integer("sort_order").notNull().default(0), // For ordering
+  itemType: text("item_type").notNull().default("cost_line"), // "cost_line" | "allowance"
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

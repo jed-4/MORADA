@@ -95,6 +95,13 @@ type CostLine = {
   sortOrder: number;
 };
 
+type AllowanceLine = {
+  id?: string;
+  description: string;
+  amount: number;
+  sortOrder: number;
+};
+
 const labelCls = "h-4 leading-none flex items-center text-[11px] text-muted-foreground/70 uppercase tracking-wide font-medium";
 
 export default function VariationDetail() {
@@ -112,6 +119,7 @@ export default function VariationDetail() {
 
   // Cost lines state
   const [costLines, setCostLines] = useState<CostLine[]>([]);
+  const [allowanceLines, setAllowanceLines] = useState<AllowanceLine[]>([]);
 
   // Dialog state
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
@@ -219,14 +227,26 @@ export default function VariationDetail() {
 
   useEffect(() => {
     if (existingCostLines.length > 0 && isEditMode) {
+      const costItems = existingCostLines.filter((item) => (item as any).itemType !== "allowance");
+      const allowanceItems = existingCostLines.filter((item) => (item as any).itemType === "allowance");
+
       setCostLines(
-        existingCostLines.map((item) => ({
+        costItems.map((item) => ({
           id: item.id,
           description: item.description,
           quantity: item.quantity,
           unitPrice: item.unitPrice / 100,
           totalPrice: item.totalPrice / 100,
           taxable: item.taxable,
+          sortOrder: item.sortOrder,
+        }))
+      );
+
+      setAllowanceLines(
+        allowanceItems.map((item) => ({
+          id: item.id,
+          description: item.description,
+          amount: item.totalPrice / 100,
           sortOrder: item.sortOrder,
         }))
       );
@@ -279,6 +299,25 @@ export default function VariationDetail() {
     return name.includes(q) || dateStr.includes(q);
   });
 
+  // ── Allowance line handlers ────────────────────────────────────────────────
+
+  const addAllowanceLine = () => {
+    setAllowanceLines([
+      ...allowanceLines,
+      { description: "", amount: 0, sortOrder: allowanceLines.length },
+    ]);
+  };
+
+  const updateAllowanceLine = (index: number, field: keyof AllowanceLine, value: any) => {
+    const updated = [...allowanceLines];
+    updated[index] = { ...updated[index], [field]: value };
+    setAllowanceLines(updated);
+  };
+
+  const deleteAllowanceLine = (index: number) => {
+    setAllowanceLines(allowanceLines.filter((_, i) => i !== index));
+  };
+
   // ── Cost line mutations ───────────────────────────────────────────────────
 
   const addCostLine = () => {
@@ -308,6 +347,9 @@ export default function VariationDetail() {
   const calculateCostLinesSubtotal = () =>
     costLines.reduce((sum, item) => sum + item.totalPrice, 0);
 
+  const calculateAllowancesTotal = () =>
+    allowanceLines.reduce((sum, item) => sum + item.amount, 0);
+
   const calculateBillsTotal = () =>
     getSelectedBills().reduce((sum: number, b: any) => sum + (b.total || 0) / 100, 0);
 
@@ -315,7 +357,7 @@ export default function VariationDetail() {
     getSelectedTimesheets().reduce((sum: number, t: any) => sum + (t.total || 0) / 100, 0);
 
   const calculateSubtotal = () =>
-    calculateCostLinesSubtotal() + calculateBillsTotal() + calculateLabourTotal();
+    calculateCostLinesSubtotal() + calculateAllowancesTotal() + calculateBillsTotal() + calculateLabourTotal();
 
   const calculateGST = () => {
     const taxableAmount = costLines
@@ -371,6 +413,21 @@ export default function VariationDetail() {
           totalPrice: Math.round(item.totalPrice * 100),
           taxable: item.taxable,
           sortOrder: i,
+          itemType: "cost_line",
+        });
+      }
+
+      for (let i = 0; i < allowanceLines.length; i++) {
+        const item = allowanceLines[i];
+        await apiRequest(`/api/variations/${newVariation.id}/items`, "POST", {
+          variationId: newVariation.id,
+          description: item.description,
+          quantity: 1,
+          unitPrice: Math.round(item.amount * 100),
+          totalPrice: Math.round(item.amount * 100),
+          taxable: false,
+          sortOrder: i,
+          itemType: "allowance",
         });
       }
 
@@ -415,13 +472,24 @@ export default function VariationDetail() {
       const variationRes = await apiRequest(`/api/variations/${effectiveVariationId}`, "PATCH", variationData);
       const updatedVariation = await variationRes.json() as Variation;
 
-      const existingIds = existingCostLines.map((item) => item.id);
-      const currentIds = costLines.map((item) => item.id).filter(Boolean);
-      const toDelete = existingIds.filter((id) => !currentIds.includes(id));
-      for (const itemId of toDelete) {
+      const existingCostLineItems = existingCostLines.filter((item) => (item as any).itemType !== "allowance");
+      const existingAllowanceItems = existingCostLines.filter((item) => (item as any).itemType === "allowance");
+
+      // Delete removed cost lines
+      const existingCostIds = existingCostLineItems.map((item) => item.id);
+      const currentCostIds = costLines.map((item) => item.id).filter(Boolean);
+      for (const itemId of existingCostIds.filter((id) => !currentCostIds.includes(id))) {
         await apiRequest(`/api/variation-items/${itemId}`, "DELETE");
       }
 
+      // Delete removed allowance lines
+      const existingAllowanceIds = existingAllowanceItems.map((item) => item.id);
+      const currentAllowanceIds = allowanceLines.map((item) => item.id).filter(Boolean);
+      for (const itemId of existingAllowanceIds.filter((id) => !currentAllowanceIds.includes(id))) {
+        await apiRequest(`/api/variation-items/${itemId}`, "DELETE");
+      }
+
+      // Save cost lines
       for (let i = 0; i < costLines.length; i++) {
         const item = costLines[i];
         const itemData = {
@@ -432,6 +500,27 @@ export default function VariationDetail() {
           totalPrice: Math.round(item.totalPrice * 100),
           taxable: item.taxable,
           sortOrder: i,
+          itemType: "cost_line",
+        };
+        if (item.id) {
+          await apiRequest(`/api/variation-items/${item.id}`, "PATCH", itemData);
+        } else {
+          await apiRequest(`/api/variations/${effectiveVariationId}/items`, "POST", itemData);
+        }
+      }
+
+      // Save allowance lines
+      for (let i = 0; i < allowanceLines.length; i++) {
+        const item = allowanceLines[i];
+        const itemData = {
+          variationId: effectiveVariationId,
+          description: item.description,
+          quantity: 1,
+          unitPrice: Math.round(item.amount * 100),
+          totalPrice: Math.round(item.amount * 100),
+          taxable: false,
+          sortOrder: i,
+          itemType: "allowance",
         };
         if (item.id) {
           await apiRequest(`/api/variation-items/${item.id}`, "PATCH", itemData);
@@ -1055,6 +1144,75 @@ export default function VariationDetail() {
                     </div>
                   </div>
 
+                  {/* Allowances sub-section */}
+                  <div className="border-t border-border/50" data-testid="section-allowances">
+                    <SubHeader
+                      dotColor="bg-teal-400/70"
+                      label={allowanceLines.length > 0 ? `Allowances · ${formatCurrency(calculateAllowancesTotal())}` : "Allowances"}
+                      rightEl={
+                        <button
+                          type="button"
+                          onClick={addAllowanceLine}
+                          className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                          data-testid="button-add-allowance"
+                        >
+                          <Plus className="w-3 h-3" />
+                          Add Allowance
+                        </button>
+                      }
+                    />
+                    <div className="px-4 py-3">
+                      {allowanceLines.length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-2">No allowance adjustments added.</p>
+                      ) : (
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="h-6 bg-muted/30">
+                              <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Description</TableHead>
+                              <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2 w-36">Adjustment ($)</TableHead>
+                              <TableHead className="w-8 py-0" />
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {allowanceLines.map((line, index) => (
+                              <TableRow key={index} className="h-9" data-testid={`row-allowance-${index}`}>
+                                <TableCell className="px-2 py-1">
+                                  <Input
+                                    value={line.description}
+                                    onChange={(e) => updateAllowanceLine(index, "description", e.target.value)}
+                                    placeholder="e.g. Kitchen allowance adjustment"
+                                    className="h-7 text-xs"
+                                    data-testid={`input-allowance-description-${index}`}
+                                  />
+                                </TableCell>
+                                <TableCell className="px-2 py-1">
+                                  <Input
+                                    type="number"
+                                    value={line.amount}
+                                    onChange={(e) => updateAllowanceLine(index, "amount", parseFloat(e.target.value) || 0)}
+                                    step="0.01"
+                                    className="h-7 text-xs text-right"
+                                    data-testid={`input-allowance-amount-${index}`}
+                                  />
+                                </TableCell>
+                                <TableCell className="px-2 py-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => deleteAllowanceLine(index)}
+                                    className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2 text-muted-foreground"
+                                    data-testid={`button-delete-allowance-${index}`}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      )}
+                    </div>
+                  </div>
+
                 </div>
 
                 {/* ── Documentation Card ── */}
@@ -1206,6 +1364,12 @@ export default function VariationDetail() {
                     <div className="flex justify-between text-xs">
                       <span className="text-muted-foreground">Labour ({selectedTimesheetIds.length})</span>
                       <span className="font-medium tabular-nums">{formatCurrency(calculateLabourTotal())}</span>
+                    </div>
+                  )}
+                  {calculateAllowancesTotal() !== 0 && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">Allowances ({allowanceLines.length})</span>
+                      <span className={`font-medium tabular-nums ${calculateAllowancesTotal() < 0 ? "text-red-500" : ""}`}>{formatCurrency(calculateAllowancesTotal())}</span>
                     </div>
                   )}
                   <div className="flex justify-between text-xs">
