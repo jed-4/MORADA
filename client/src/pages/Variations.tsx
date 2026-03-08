@@ -5,7 +5,6 @@ import { usePageTitle } from "@/hooks/usePageTitle";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Popover,
   PopoverContent,
@@ -28,9 +27,8 @@ import {
   AlertCircle,
   Columns3,
   Search,
-  Settings2,
-  GripVertical,
-  Lock,
+  ChevronUp,
+  ChevronDown,
   Eye,
   EyeOff,
 } from "lucide-react";
@@ -93,8 +91,6 @@ export default function Variations() {
   const [searchTerm, setSearchTerm] = useState("");
   const [columnConfig, setColumnConfig] = useState<{ id: string; visible: boolean; order: number }[]>(loadColumnConfig);
   const [columnPickerOpen, setColumnPickerOpen] = useState(false);
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [dragOverId, setDragOverId] = useState<string | null>(null);
 
   const headerScrollRef = useRef<HTMLDivElement>(null);
   const bodyScrollRef = useRef<HTMLDivElement>(null);
@@ -249,28 +245,17 @@ export default function Variations() {
     saveColumnConfig(updated);
   };
 
-  const onDragStart = (id: string) => setDragId(id);
-  const onDragOver = (id: string, e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOverId(id);
-  };
-  const onDrop = (targetId: string) => {
-    if (!dragId || dragId === targetId) {
-      setDragId(null);
-      setDragOverId(null);
-      return;
-    }
+  const moveColumn = (id: string, direction: -1 | 1) => {
     const sorted = [...columnConfig].sort((a, b) => a.order - b.order);
-    const fromIdx = sorted.findIndex((c) => c.id === dragId);
-    const toIdx = sorted.findIndex((c) => c.id === targetId);
+    const idx = sorted.findIndex((c) => c.id === id);
+    const newIdx = idx + direction;
+    if (newIdx < 0 || newIdx >= sorted.length) return;
     const reordered = [...sorted];
-    const [moved] = reordered.splice(fromIdx, 1);
-    reordered.splice(toIdx, 0, moved);
+    const [moved] = reordered.splice(idx, 1);
+    reordered.splice(newIdx, 0, moved);
     const updated = reordered.map((c, i) => ({ ...c, order: i }));
     setColumnConfig(updated);
     saveColumnConfig(updated);
-    setDragId(null);
-    setDragOverId(null);
   };
 
   const orderedColumns = [...columnConfig].sort((a, b) => a.order - b.order).filter(c => isColVisible(c.id));
@@ -440,12 +425,11 @@ export default function Variations() {
 
         {/* Row 1 — Title & Add button */}
         <div className="h-8 flex items-center justify-between px-3 border-b border-border/50">
-          <div className="flex items-center gap-2">
-            <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber-400/70" />
-            <h2 className="text-sm font-semibold" data-testid="text-page-title">
-              {pageTitle}
-            </h2>
-          </div>
+          <h2 className="text-sm font-semibold truncate" data-testid="text-page-title">
+            {projectIdFromUrl && projects.find(p => p.id === projectIdFromUrl)
+              ? <>{projects.find(p => p.id === projectIdFromUrl)!.name} <span className="text-muted-foreground font-normal">· Variations</span></>
+              : pageTitle}
+          </h2>
           <button
             className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-0.5"
             onClick={handleAddVariation}
@@ -488,19 +472,44 @@ export default function Variations() {
         </div>
 
         {/* Row 3 — Lilac summary strip */}
-        <div className="bg-[#bba7db]/10 flex items-center px-5 py-2">
-          <div className="flex items-center gap-4 text-[10px] text-muted-foreground ml-auto">
-            <span data-testid="text-total-action">
-              Action <span className="font-medium text-foreground ml-1">{formatCurrency(statusTotals.action)}</span>
-            </span>
-            <span className="w-px h-3 bg-[#bba7db]/40 self-center" />
-            <span data-testid="text-total-pending">
-              Pending <span className="font-medium text-foreground ml-1">{formatCurrency(statusTotals.pending)}</span>
-            </span>
-            <span className="w-px h-3 bg-[#bba7db]/40 self-center" />
-            <span data-testid="text-total-approved">
-              Approved <span className="font-medium text-emerald-600 dark:text-emerald-400 ml-1">{formatCurrency(statusTotals.approved)}</span>
-            </span>
+        <div className="bg-[#bba7db]/10 flex items-center px-5 py-3 gap-8 flex-wrap">
+
+          {/* Left — approved total: big number in project context */}
+          {projectIdFromUrl && statusTotals.approved > 0 && (
+            <>
+              <div className="flex flex-col">
+                <span className="text-2xl font-bold tabular-nums leading-tight text-emerald-600 dark:text-emerald-400">
+                  {formatCurrency(statusTotals.approved)}
+                </span>
+                <span className="text-[11px] text-muted-foreground mt-0.5">Approved Total</span>
+              </div>
+              <div className="w-px self-stretch bg-[#bba7db]/30 mx-1" />
+            </>
+          )}
+
+          {/* Right — status group */}
+          <div className="flex flex-col gap-1 ml-auto">
+            <span className="text-[10px] uppercase tracking-widest font-medium text-muted-foreground/70">Variations</span>
+            <div className="flex items-end gap-6">
+              <div className="flex flex-col" data-testid="text-total-action">
+                <span className="text-[10px] text-muted-foreground">Action</span>
+                <span className="text-base font-bold tabular-nums leading-tight">
+                  {formatCurrency(statusTotals.action)}
+                </span>
+              </div>
+              <div className="flex flex-col" data-testid="text-total-pending">
+                <span className="text-[10px] text-muted-foreground">Pending</span>
+                <span className="text-base font-bold tabular-nums leading-tight">
+                  {formatCurrency(statusTotals.pending)}
+                </span>
+              </div>
+              <div className="flex flex-col" data-testid="text-total-approved">
+                <span className="text-[10px] text-muted-foreground">Approved</span>
+                <span className="text-base font-bold tabular-nums leading-tight text-emerald-600 dark:text-emerald-400">
+                  {formatCurrency(statusTotals.approved)}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -547,42 +556,52 @@ export default function Variations() {
               <Popover open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
                 <PopoverTrigger asChild>
                   <button
-                    className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2 border border-transparent ml-auto flex-shrink-0"
+                    className="h-6 w-6 flex items-center justify-center rounded-md border border-border/40 hover-elevate active-elevate-2 text-muted-foreground ml-auto flex-shrink-0"
+                    title="Configure columns"
                     data-testid="button-column-picker"
                   >
-                    <Settings2 className="h-3.5 w-3.5 text-muted-foreground" />
+                    <Columns3 className="w-3.5 h-3.5" />
                   </button>
                 </PopoverTrigger>
-                <PopoverContent className="w-52 p-3" align="end">
-                  <p className="text-xs font-medium mb-2 text-muted-foreground">Columns — drag to reorder</p>
-                  <div className="space-y-1">
+                <PopoverContent className="w-56 p-2" align="end">
+                  <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide px-1 mb-2">Columns</p>
+                  <div className="space-y-0.5">
                     {[...columnConfig].sort((a, b) => a.order - b.order).map((col) => {
                       const def = ALL_COLUMNS.find((d) => d.id === col.id)!;
                       if (col.id === "project" && projectIdFromUrl) return null;
                       if (col.id === "relatedItems" && !projectIdFromUrl) return null;
+                      const visibleCols = [...columnConfig]
+                        .sort((a, b) => a.order - b.order)
+                        .filter(c => !(c.id === "project" && projectIdFromUrl) && !(c.id === "relatedItems" && !projectIdFromUrl));
+                      const visibleIdx = visibleCols.findIndex(c => c.id === col.id);
                       return (
-                        <div
-                          key={col.id}
-                          draggable
-                          onDragStart={() => onDragStart(col.id)}
-                          onDragOver={(e) => onDragOver(col.id, e)}
-                          onDrop={() => onDrop(col.id)}
-                          className={cn(
-                            "flex items-center gap-2 p-1.5 rounded-md text-sm select-none",
-                            dragOverId === col.id ? "bg-accent" : "hover-elevate"
-                          )}
-                        >
-                          <GripVertical className="h-3 w-3 text-muted-foreground cursor-grab flex-shrink-0" />
-                          <Checkbox
+                        <div key={col.id} className="flex items-center gap-2 px-1 py-1 rounded-md hover-elevate group">
+                          <input
+                            type="checkbox"
                             checked={def.required ? true : col.visible}
                             disabled={def.required}
-                            onCheckedChange={() => toggleColumn(col.id)}
-                            className="border-border/50"
+                            onChange={() => !def.required && toggleColumn(col.id)}
+                            className="w-3.5 h-3.5 accent-[#bba7db] flex-shrink-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                           />
-                          <span className={cn("flex-1 text-xs", def.required && "text-muted-foreground")}>
+                          <span className={cn("flex-1 text-xs", !col.visible && "text-muted-foreground/60")}>
                             {def.label}
                           </span>
-                          {def.required && <Lock className="h-3 w-3 text-muted-foreground flex-shrink-0" />}
+                          <div className="flex flex-col gap-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              className="h-3 w-4 flex items-center justify-center hover-elevate rounded disabled:opacity-20"
+                              onClick={() => moveColumn(col.id, -1)}
+                              disabled={visibleIdx === 0}
+                            >
+                              <ChevronUp className="w-2.5 h-2.5 text-muted-foreground" />
+                            </button>
+                            <button
+                              className="h-3 w-4 flex items-center justify-center hover-elevate rounded disabled:opacity-20"
+                              onClick={() => moveColumn(col.id, 1)}
+                              disabled={visibleIdx === visibleCols.length - 1}
+                            >
+                              <ChevronDown className="w-2.5 h-2.5 text-muted-foreground" />
+                            </button>
+                          </div>
                         </div>
                       );
                     })}
@@ -601,11 +620,11 @@ export default function Variations() {
             {/* Column header — sticky below search row, synced scroll */}
             <div
               ref={headerScrollRef}
-              className="overflow-x-hidden sticky top-9 z-10 border-b border-border bg-muted/50"
+              className="overflow-x-hidden sticky top-9 z-10 border-b border-border bg-muted/30"
             >
               <Table style={{ tableLayout: "fixed", minWidth: totalWidth }}>
                 <TableHeader>
-                  <TableRow className="h-5 bg-muted/50 hover:bg-muted/50">
+                  <TableRow className="h-5 bg-muted/30 hover:bg-muted/30">
                     {orderedColumns.map((col) => {
                       const def = ALL_COLUMNS.find((d) => d.id === col.id)!;
                       const isRight = ["total", "paid", "balance"].includes(col.id);
