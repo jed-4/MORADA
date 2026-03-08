@@ -52,6 +52,8 @@ import {
   type InvoiceAllowance, type InsertInvoiceAllowance,
   type InvoiceBill, type InsertInvoiceBill,
   type InvoiceTimesheet, type InsertInvoiceTimesheet,
+  type VariationBill, type InsertVariationBill,
+  type VariationTimesheet, type InsertVariationTimesheet,
   type InvoiceSelection, type InsertInvoiceSelection,
   type SiteDiaryTemplate, type InsertSiteDiaryTemplate,
   type SiteDiaryEntry, type InsertSiteDiaryEntry,
@@ -651,6 +653,16 @@ export interface IStorage {
   createInvoiceAllowance(data: InsertInvoiceAllowance): Promise<InvoiceAllowance>;
   updateInvoiceAllowance(id: string, data: Partial<InsertInvoiceAllowance>): Promise<InvoiceAllowance | undefined>;
   deleteInvoiceAllowance(id: string): Promise<boolean>;
+
+  // Variation-Bill Junction Table
+  getVariationBills(variationId: string): Promise<any[]>;
+  createVariationBill(data: InsertVariationBill): Promise<VariationBill>;
+  deleteVariationBillsByVariationId(variationId: string): Promise<void>;
+
+  // Variation-Timesheet Junction Table
+  getVariationTimesheets(variationId: string): Promise<any[]>;
+  createVariationTimesheet(data: InsertVariationTimesheet): Promise<VariationTimesheet>;
+  deleteVariationTimesheetsByVariationId(variationId: string): Promise<void>;
 
   // Invoice-Bill Junction Table
   getInvoiceBills(invoiceId: string): Promise<InvoiceBill[]>;
@@ -12946,7 +12958,95 @@ export class DbStorage implements IStorage {
     }
   }
 
-  // Invoice-Bill Junction Table
+  // Variation-Bill Junction Table
+  async getVariationBills(variationId: string): Promise<any[]> {
+    try {
+      const rows = await db
+        .select({
+          id: schema.variationBills.id,
+          variationId: schema.variationBills.variationId,
+          billId: schema.variationBills.billId,
+          createdAt: schema.variationBills.createdAt,
+          billNumber: schema.bills.billNumber,
+          supplierName: schema.bills.supplierName,
+          billDate: schema.bills.billDate,
+          total: schema.bills.total,
+        })
+        .from(schema.variationBills)
+        .innerJoin(schema.bills, eq(schema.variationBills.billId, schema.bills.id))
+        .where(eq(schema.variationBills.variationId, variationId));
+      return rows;
+    } catch (error) {
+      console.error("Database error in getVariationBills:", error);
+      throw error;
+    }
+  }
+
+  async createVariationBill(data: InsertVariationBill): Promise<VariationBill> {
+    try {
+      const result = await db.insert(schema.variationBills).values(data).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createVariationBill:", error);
+      throw error;
+    }
+  }
+
+  async deleteVariationBillsByVariationId(variationId: string): Promise<void> {
+    try {
+      await db.delete(schema.variationBills).where(eq(schema.variationBills.variationId, variationId));
+    } catch (error) {
+      console.error("Database error in deleteVariationBillsByVariationId:", error);
+      throw error;
+    }
+  }
+
+  // Variation-Timesheet Junction Table
+  async getVariationTimesheets(variationId: string): Promise<any[]> {
+    try {
+      const rows = await db
+        .select({
+          id: schema.variationTimesheets.id,
+          variationId: schema.variationTimesheets.variationId,
+          timesheetId: schema.variationTimesheets.timesheetId,
+          createdAt: schema.variationTimesheets.createdAt,
+          date: schema.timesheets.date,
+          userId: schema.timesheets.userId,
+          duration: schema.timesheets.duration,
+          hourlyRate: schema.timesheets.hourlyRate,
+          total: schema.timesheets.total,
+          status: schema.timesheets.status,
+          description: schema.timesheets.description,
+        })
+        .from(schema.variationTimesheets)
+        .innerJoin(schema.timesheets, eq(schema.variationTimesheets.timesheetId, schema.timesheets.id))
+        .where(eq(schema.variationTimesheets.variationId, variationId));
+      return rows;
+    } catch (error) {
+      console.error("Database error in getVariationTimesheets:", error);
+      throw error;
+    }
+  }
+
+  async createVariationTimesheet(data: InsertVariationTimesheet): Promise<VariationTimesheet> {
+    try {
+      const result = await db.insert(schema.variationTimesheets).values(data).returning();
+      return result[0];
+    } catch (error) {
+      console.error("Database error in createVariationTimesheet:", error);
+      throw error;
+    }
+  }
+
+  async deleteVariationTimesheetsByVariationId(variationId: string): Promise<void> {
+    try {
+      await db.delete(schema.variationTimesheets).where(eq(schema.variationTimesheets.variationId, variationId));
+    } catch (error) {
+      console.error("Database error in deleteVariationTimesheetsByVariationId:", error);
+      throw error;
+    }
+  }
+
   async getInvoiceBills(invoiceId: string): Promise<InvoiceBill[]> {
     try {
       return await db.select()

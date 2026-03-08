@@ -9528,6 +9528,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Variation Bills Routes
+  app.get("/api/variations/:id/bills", async (req, res) => {
+    try {
+      const bills = await storage.getVariationBills(req.params.id);
+      res.json(bills);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch variation bills" });
+    }
+  });
+
+  app.post("/api/variations/:id/bills", async (req, res) => {
+    try {
+      const { billIds } = req.body as { billIds: string[] };
+      await storage.deleteVariationBillsByVariationId(req.params.id);
+      const results = [];
+      for (const billId of (billIds || [])) {
+        const vb = await storage.createVariationBill({ variationId: req.params.id, billId });
+        results.push(vb);
+      }
+      res.json(results);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update variation bills" });
+    }
+  });
+
+  // Variation Timesheets Routes
+  app.get("/api/variations/:id/timesheets", async (req, res) => {
+    try {
+      const timesheets = await storage.getVariationTimesheets(req.params.id);
+      res.json(timesheets);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch variation timesheets" });
+    }
+  });
+
+  app.post("/api/variations/:id/timesheets", async (req, res) => {
+    try {
+      const { timesheetIds } = req.body as { timesheetIds: string[] };
+      await storage.deleteVariationTimesheetsByVariationId(req.params.id);
+      const results = [];
+      for (const timesheetId of (timesheetIds || [])) {
+        const vt = await storage.createVariationTimesheet({ variationId: req.params.id, timesheetId });
+        results.push(vt);
+      }
+      res.json(results);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update variation timesheets" });
+    }
+  });
+
   // ============================================
   // PURCHASE ORDERS API ROUTES
   // ============================================

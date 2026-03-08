@@ -1890,6 +1890,7 @@ export const variations = pgTable("variations", {
   approvedBy: varchar("approved_by").references(() => users.id),
   approvedDate: timestamp("approved_date"),
   rejectionReason: text("rejection_reason"),
+  termsAndConditions: text("terms_and_conditions"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -1939,6 +1940,38 @@ export const insertVariationItemSchema = createInsertSchema(variationItems).omit
 
 export type InsertVariationItem = z.infer<typeof insertVariationItemSchema>;
 export type VariationItem = typeof variationItems.$inferSelect;
+
+// Junction table: Variation to Bills
+export const variationBills = pgTable("variation_bills", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  variationId: varchar("variation_id").notNull().references(() => variations.id, { onDelete: "cascade" }),
+  billId: varchar("bill_id").notNull().references(() => bills.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertVariationBillSchema = createInsertSchema(variationBills).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertVariationBill = z.infer<typeof insertVariationBillSchema>;
+export type VariationBill = typeof variationBills.$inferSelect;
+
+// Junction table: Variation to Timesheets
+export const variationTimesheets = pgTable("variation_timesheets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  variationId: varchar("variation_id").notNull().references(() => variations.id, { onDelete: "cascade" }),
+  timesheetId: varchar("timesheet_id").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertVariationTimesheetSchema = createInsertSchema(variationTimesheets).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertVariationTimesheet = z.infer<typeof insertVariationTimesheetSchema>;
+export type VariationTimesheet = typeof variationTimesheets.$inferSelect;
 
 // Client Invoices
 export const clientInvoices = pgTable("client_invoices", {

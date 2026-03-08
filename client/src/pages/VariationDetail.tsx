@@ -18,7 +18,11 @@ import {
   AlertCircle,
   Clock,
   CheckCircle,
-  XCircle
+  XCircle,
+  ChevronDown,
+  ChevronUp,
+  Search,
+  Paperclip,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -37,7 +41,6 @@ import {
   FormControl,
   FormField,
   FormItem,
-  FormLabel,
   FormMessage,
 } from "@/components/ui/form";
 import {
@@ -54,6 +57,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -69,6 +79,7 @@ const variationFormSchema = z.object({
   daysChanged: z.number().optional(),
   introductionText: z.string().optional(),
   closingText: z.string().optional(),
+  termsAndConditions: z.string().optional(),
   status: z.enum(["draft", "action", "pending", "approved", "rejected"]).default("draft"),
 });
 
@@ -84,6 +95,8 @@ type CostLine = {
   sortOrder: number;
 };
 
+const labelCls = "h-4 leading-none flex items-center text-[11px] text-muted-foreground/70 uppercase tracking-wide font-medium";
+
 export default function VariationDetail() {
   const { id, variationId, projectId: projectIdFromParams } = useParams<{ 
     id?: string; 
@@ -94,14 +107,35 @@ export default function VariationDetail() {
   const { toast } = useToast();
   const { user } = useAuth();
   
-  // Normalize variation ID - prioritize variationId (from project-scoped routes), fall back to id (from global routes)
   const effectiveVariationId = variationId || id;
   const isEditMode = !!(effectiveVariationId && effectiveVariationId !== "new");
 
+  // Cost lines state
   const [costLines, setCostLines] = useState<CostLine[]>([]);
+
+  // Dialog state
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [approveDialogOpen, setApproveDialogOpen] = useState(false);
+
+  // Bills state
+  const [selectedBillIds, setSelectedBillIds] = useState<string[]>([]);
+  const [modalBillIds, setModalBillIds] = useState<string[]>([]);
+  const [billsModalOpen, setBillsModalOpen] = useState(false);
+  const [billsSearch, setBillsSearch] = useState("");
+
+  // Labour state
+  const [selectedTimesheetIds, setSelectedTimesheetIds] = useState<string[]>([]);
+  const [modalTimesheetIds, setModalTimesheetIds] = useState<string[]>([]);
+  const [labourModalOpen, setLabourModalOpen] = useState(false);
+  const [labourSearch, setLabourSearch] = useState("");
+
+  // Documentation collapse state
+  const [closingCollapsed, setClosingCollapsed] = useState(true);
+  const [termsCollapsed, setTermsCollapsed] = useState(true);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+
+  // ── Queries ──────────────────────────────────────────────────────────────
 
   const { data: variation, isLoading: variationLoading } = useQuery<Variation>({
     queryKey: [`/api/variations/${effectiveVariationId}`],
@@ -113,8 +147,29 @@ export default function VariationDetail() {
     enabled: isEditMode,
   });
 
+  const { data: existingVariationBills = [] } = useQuery<any[]>({
+    queryKey: [`/api/variations/${effectiveVariationId}/bills`],
+    enabled: isEditMode,
+  });
+
+  const { data: existingVariationTimesheets = [] } = useQuery<any[]>({
+    queryKey: [`/api/variations/${effectiveVariationId}/timesheets`],
+    enabled: isEditMode,
+  });
+
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
+  });
+
+  const { data: users = [] } = useQuery<any[]>({
+    queryKey: ["/api/users"],
+  });
+
+  const { data: companySettings } = useQuery<{
+    termsAndConditions?: string;
+    termsTemplates?: Array<{ id: string; name: string; content: string }>;
+  }>({
+    queryKey: ["/api/company-settings"],
   });
 
   const form = useForm<VariationFormData>({
@@ -127,9 +182,24 @@ export default function VariationDetail() {
       daysChanged: undefined,
       introductionText: "",
       closingText: "",
+      termsAndConditions: "",
       status: "draft",
     },
   });
+
+  const watchedProjectId = form.watch("projectId");
+
+  const { data: projectBills = [] } = useQuery<any[]>({
+    queryKey: [`/api/bills?projectId=${watchedProjectId}`],
+    enabled: !!watchedProjectId,
+  });
+
+  const { data: projectTimesheets = [] } = useQuery<any[]>({
+    queryKey: [`/api/projects/${watchedProjectId}/timesheets`],
+    enabled: !!watchedProjectId,
+  });
+
+  // ── Effects ───────────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (variation && isEditMode) {
@@ -141,6 +211,7 @@ export default function VariationDetail() {
         daysChanged: variation.daysChanged || undefined,
         introductionText: variation.introductionText || "",
         closingText: variation.closingText || "",
+        termsAndConditions: (variation as any).termsAndConditions || "",
         status: variation.status as "draft" | "action" | "pending" | "approved" | "rejected",
       });
     }
@@ -163,41 +234,68 @@ export default function VariationDetail() {
   }, [existingCostLines, isEditMode]);
 
   useEffect(() => {
+    if (existingVariationBills.length > 0 && isEditMode) {
+      setSelectedBillIds(existingVariationBills.map((vb: any) => vb.billId));
+    }
+  }, [existingVariationBills, isEditMode]);
+
+  useEffect(() => {
+    if (existingVariationTimesheets.length > 0 && isEditMode) {
+      setSelectedTimesheetIds(existingVariationTimesheets.map((vt: any) => vt.timesheetId));
+    }
+  }, [existingVariationTimesheets, isEditMode]);
+
+  useEffect(() => {
     if (!isEditMode && projects.length > 0) {
       const projectIdToUse = projectIdFromParams || projects[0]?.id;
       if (projectIdToUse) {
         form.setValue("projectId", projectIdToUse);
-        
-        // Variation number will be auto-generated on backend
         form.setValue("variationNumber", "Auto-generated");
       }
     }
   }, [projects, isEditMode, form, projectIdFromParams]);
 
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  const getUserName = (userId: string) => {
+    const u = users.find((usr: any) => usr.id === userId);
+    return u ? `${u.firstName || ""} ${u.lastName || ""}`.trim() || u.email || userId : userId;
+  };
+
+  const getSelectedBills = () => projectBills.filter((b: any) => selectedBillIds.includes(b.id));
+  const getSelectedTimesheets = () => projectTimesheets.filter((t: any) => selectedTimesheetIds.includes(t.id));
+
+  const filteredBills = projectBills.filter((b: any) => {
+    if (!billsSearch) return true;
+    const q = billsSearch.toLowerCase();
+    return (b.billNumber || "").toLowerCase().includes(q) || (b.supplierName || "").toLowerCase().includes(q);
+  });
+
+  const filteredTimesheets = projectTimesheets.filter((t: any) => {
+    if (!labourSearch) return true;
+    const q = labourSearch.toLowerCase();
+    const name = getUserName(t.userId).toLowerCase();
+    const dateStr = t.date ? format(new Date(t.date), "d MMM yy").toLowerCase() : "";
+    return name.includes(q) || dateStr.includes(q);
+  });
+
+  // ── Cost line mutations ───────────────────────────────────────────────────
+
   const addCostLine = () => {
     setCostLines([
       ...costLines,
-      {
-        description: "",
-        quantity: 1,
-        unitPrice: 0,
-        totalPrice: 0,
-        taxable: true,
-        sortOrder: costLines.length,
-      },
+      { description: "", quantity: 1, unitPrice: 0, totalPrice: 0, taxable: true, sortOrder: costLines.length },
     ]);
   };
 
   const updateCostLine = (index: number, field: keyof CostLine, value: any) => {
     const updated = [...costLines];
     updated[index] = { ...updated[index], [field]: value };
-    
     if (field === "quantity" || field === "unitPrice") {
       const qty = field === "quantity" ? value : updated[index].quantity;
       const price = field === "unitPrice" ? value : updated[index].unitPrice;
       updated[index].totalPrice = qty * price;
     }
-    
     setCostLines(updated);
   };
 
@@ -205,9 +303,19 @@ export default function VariationDetail() {
     setCostLines(costLines.filter((_, i) => i !== index));
   };
 
-  const calculateSubtotal = () => {
-    return costLines.reduce((sum, item) => sum + item.totalPrice, 0);
-  };
+  // ── Financial calculations ─────────────────────────────────────────────────
+
+  const calculateCostLinesSubtotal = () =>
+    costLines.reduce((sum, item) => sum + item.totalPrice, 0);
+
+  const calculateBillsTotal = () =>
+    getSelectedBills().reduce((sum: number, b: any) => sum + (b.total || 0) / 100, 0);
+
+  const calculateLabourTotal = () =>
+    getSelectedTimesheets().reduce((sum: number, t: any) => sum + (t.total || 0) / 100, 0);
+
+  const calculateSubtotal = () =>
+    calculateCostLinesSubtotal() + calculateBillsTotal() + calculateLabourTotal();
 
   const calculateGST = () => {
     const taxableAmount = costLines
@@ -216,23 +324,26 @@ export default function VariationDetail() {
     return taxableAmount * 0.1;
   };
 
-  const calculateTotal = () => {
-    const subtotal = calculateSubtotal();
-    const gst = calculateGST();
-    return subtotal + gst;
-  };
+  const calculateTotal = () => calculateSubtotal() + calculateGST();
 
   const formatCurrency = (amount: number) => {
-    // Check if it's a whole number
     const isWholeNumber = amount % 1 === 0;
-    
     return new Intl.NumberFormat("en-AU", {
       style: "currency",
       currency: "AUD",
       minimumFractionDigits: isWholeNumber ? 0 : 2,
-      maximumFractionDigits: 2
+      maximumFractionDigits: 2,
     }).format(amount);
   };
+
+  // ── Save bills/timesheets helper ──────────────────────────────────────────
+
+  const saveBillsAndTimesheets = async (varId: string) => {
+    await apiRequest(`/api/variations/${varId}/bills`, "POST", { billIds: selectedBillIds });
+    await apiRequest(`/api/variations/${varId}/timesheets`, "POST", { timesheetIds: selectedTimesheetIds });
+  };
+
+  // ── Mutations ─────────────────────────────────────────────────────────────
 
   const createMutation = useMutation({
     mutationFn: async (data: VariationFormData) => {
@@ -263,15 +374,12 @@ export default function VariationDetail() {
         });
       }
 
+      await saveBillsAndTimesheets(newVariation.id);
       return newVariation;
     },
     onSuccess: (newVariation) => {
       queryClient.invalidateQueries({ queryKey: ["/api/variations"] });
-      toast({
-        title: "Success",
-        description: "Variation created successfully",
-      });
-      
+      toast({ title: "Success", description: "Variation created successfully" });
       if (user?.id) {
         logActivity({
           projectId: newVariation.projectId,
@@ -281,18 +389,13 @@ export default function VariationDetail() {
           description: `User created variation '${newVariation.name}'`,
           entityId: newVariation.id,
           entityName: newVariation.name,
-          metadata: {}
+          metadata: {},
         });
       }
-      
       handleCancel();
     },
     onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to create variation",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: error.message || "Failed to create variation", variant: "destructive" });
     },
   });
 
@@ -314,7 +417,6 @@ export default function VariationDetail() {
 
       const existingIds = existingCostLines.map((item) => item.id);
       const currentIds = costLines.map((item) => item.id).filter(Boolean);
-      
       const toDelete = existingIds.filter((id) => !currentIds.includes(id));
       for (const itemId of toDelete) {
         await apiRequest(`/api/variation-items/${itemId}`, "DELETE");
@@ -331,7 +433,6 @@ export default function VariationDetail() {
           taxable: item.taxable,
           sortOrder: i,
         };
-
         if (item.id) {
           await apiRequest(`/api/variation-items/${item.id}`, "PATCH", itemData);
         } else {
@@ -339,16 +440,15 @@ export default function VariationDetail() {
         }
       }
 
+      await saveBillsAndTimesheets(effectiveVariationId!);
       return updatedVariation;
     },
     onSuccess: (updatedVariation) => {
       queryClient.invalidateQueries({ queryKey: ["/api/variations"] });
       queryClient.invalidateQueries({ queryKey: [`/api/variations/${effectiveVariationId}`] });
-      toast({
-        title: "Success",
-        description: "Variation updated successfully",
-      });
-      
+      queryClient.invalidateQueries({ queryKey: [`/api/variations/${effectiveVariationId}/bills`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/variations/${effectiveVariationId}/timesheets`] });
+      toast({ title: "Success", description: "Variation updated successfully" });
       if (user?.id) {
         logActivity({
           projectId: updatedVariation.projectId,
@@ -358,66 +458,43 @@ export default function VariationDetail() {
           description: `User updated variation '${updatedVariation.name}'`,
           entityId: updatedVariation.id,
           entityName: updatedVariation.name,
-          metadata: {}
+          metadata: {},
         });
       }
-      
       handleCancel();
     },
     onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to update variation",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: error.message || "Failed to update variation", variant: "destructive" });
     },
   });
 
   const moveToActionMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest(`/api/variations/${effectiveVariationId}`, "PATCH", {
-        status: "action"
-      });
+      const response = await apiRequest(`/api/variations/${effectiveVariationId}`, "PATCH", { status: "action" });
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/variations"] });
       queryClient.invalidateQueries({ queryKey: [`/api/variations/${effectiveVariationId}`] });
-      toast({
-        title: "Success",
-        description: "Variation moved to Action",
-      });
+      toast({ title: "Success", description: "Variation moved to Action" });
     },
     onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to move variation to Action",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: error.message || "Failed to move variation to Action", variant: "destructive" });
     },
   });
 
   const sendForApprovalMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest(`/api/variations/${effectiveVariationId}`, "PATCH", {
-        status: "pending"
-      });
+      const response = await apiRequest(`/api/variations/${effectiveVariationId}`, "PATCH", { status: "pending" });
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/variations"] });
       queryClient.invalidateQueries({ queryKey: [`/api/variations/${effectiveVariationId}`] });
-      toast({
-        title: "Success",
-        description: "Variation sent for approval",
-      });
+      toast({ title: "Success", description: "Variation sent for approval" });
     },
     onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to send variation for approval",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: error.message || "Failed to send variation for approval", variant: "destructive" });
     },
   });
 
@@ -434,11 +511,7 @@ export default function VariationDetail() {
       queryClient.invalidateQueries({ queryKey: ["/api/variations"] });
       queryClient.invalidateQueries({ queryKey: [`/api/variations/${effectiveVariationId}`] });
       setApproveDialogOpen(false);
-      toast({
-        title: "Success",
-        description: "Variation approved successfully",
-      });
-      
+      toast({ title: "Success", description: "Variation approved successfully" });
       if (user?.id) {
         logActivity({
           projectId: approvedVariation.projectId,
@@ -448,16 +521,12 @@ export default function VariationDetail() {
           description: `User approved variation '${approvedVariation.name}'`,
           entityId: approvedVariation.id,
           entityName: approvedVariation.name,
-          metadata: {}
+          metadata: {},
         });
       }
     },
     onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to approve variation",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: error.message || "Failed to approve variation", variant: "destructive" });
     },
   });
 
@@ -474,11 +543,7 @@ export default function VariationDetail() {
       queryClient.invalidateQueries({ queryKey: [`/api/variations/${effectiveVariationId}`] });
       setRejectDialogOpen(false);
       setRejectReason("");
-      toast({
-        title: "Success",
-        description: "Variation rejected",
-      });
-      
+      toast({ title: "Success", description: "Variation rejected" });
       if (user?.id) {
         logActivity({
           projectId: rejectedVariation.projectId,
@@ -488,16 +553,12 @@ export default function VariationDetail() {
           description: `User rejected variation '${rejectedVariation.name}'`,
           entityId: rejectedVariation.id,
           entityName: rejectedVariation.name,
-          metadata: {}
+          metadata: {},
         });
       }
     },
     onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to reject variation",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: error.message || "Failed to reject variation", variant: "destructive" });
     },
   });
 
@@ -520,40 +581,15 @@ export default function VariationDetail() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "draft":
-        return (
-          <Badge variant="secondary" data-testid="badge-status-draft">
-            <FileText className="w-3 h-3 mr-1" />
-            Draft
-          </Badge>
-        );
+        return <Badge variant="secondary" data-testid="badge-status-draft"><FileText className="w-3 h-3 mr-1" />Draft</Badge>;
       case "action":
-        return (
-          <Badge variant="destructive" data-testid="badge-status-action">
-            <AlertCircle className="w-3 h-3 mr-1" />
-            Action
-          </Badge>
-        );
+        return <Badge variant="destructive" data-testid="badge-status-action"><AlertCircle className="w-3 h-3 mr-1" />Action</Badge>;
       case "pending":
-        return (
-          <Badge variant="default" data-testid="badge-status-pending">
-            <Clock className="w-3 h-3 mr-1" />
-            Pending
-          </Badge>
-        );
+        return <Badge variant="default" data-testid="badge-status-pending"><Clock className="w-3 h-3 mr-1" />Pending</Badge>;
       case "approved":
-        return (
-          <Badge variant="outline" className="border-green-500 text-green-700" data-testid="badge-status-approved">
-            <CheckCircle className="w-3 h-3 mr-1" />
-            Approved
-          </Badge>
-        );
+        return <Badge variant="outline" className="border-green-500 text-green-700" data-testid="badge-status-approved"><CheckCircle className="w-3 h-3 mr-1" />Approved</Badge>;
       case "rejected":
-        return (
-          <Badge variant="outline" className="border-red-500 text-red-700" data-testid="badge-status-rejected">
-            <XCircle className="w-3 h-3 mr-1" />
-            Rejected
-          </Badge>
-        );
+        return <Badge variant="outline" className="border-red-500 text-red-700" data-testid="badge-status-rejected"><XCircle className="w-3 h-3 mr-1" />Rejected</Badge>;
       default:
         return <Badge variant="outline" data-testid={`badge-status-${status}`}>{status}</Badge>;
     }
@@ -568,6 +604,44 @@ export default function VariationDetail() {
   }
 
   const projectName = projects.find((p) => p.id === form.watch("projectId"))?.name || "";
+
+  // ── Sub-section header component ─────────────────────────────────────────
+  const SubHeader = ({
+    dotColor,
+    label,
+    rightEl,
+    collapsible,
+    collapsed,
+    onToggle,
+  }: {
+    dotColor: string;
+    label: string;
+    rightEl?: React.ReactNode;
+    collapsible?: boolean;
+    collapsed?: boolean;
+    onToggle?: () => void;
+  }) => (
+    <div
+      className={cn(
+        "h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40",
+        collapsible && "cursor-pointer"
+      )}
+      onClick={collapsible ? onToggle : undefined}
+    >
+      <div className="flex items-center gap-2">
+        <div className={cn("w-1.5 h-1.5 rounded-full flex-shrink-0", dotColor)} />
+        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</span>
+      </div>
+      {collapsible ? (
+        collapsed ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" /> : <ChevronUp className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+      ) : rightEl}
+    </div>
+  );
+
+  // ── Compact label ─────────────────────────────────────────────────────────
+  const FieldLabel = ({ children }: { children: React.ReactNode }) => (
+    <div className={labelCls}>{children}</div>
+  );
 
   return (
     <div className="flex h-full flex-col" data-testid="page-variation-detail">
@@ -598,9 +672,7 @@ export default function VariationDetail() {
           </div>
 
           <div className="flex items-center gap-1.5">
-            {isEditMode && variationLoading && (
-              <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
-            )}
+            {isEditMode && variationLoading && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />}
             {isEditMode && variation?.status === "draft" && (
               <button
                 type="button"
@@ -609,11 +681,7 @@ export default function VariationDetail() {
                 className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
                 data-testid="button-move-to-action"
               >
-                {moveToActionMutation.isPending ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                ) : (
-                  <Send className="w-3 h-3" />
-                )}
+                {moveToActionMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
                 <span>Move to Action</span>
               </button>
             )}
@@ -625,11 +693,7 @@ export default function VariationDetail() {
                 className="h-6 w-auto px-2 text-xs border rounded-md bg-[#bba7db] text-white border-[#bba7db]/20 hover:bg-[#bba7db]/90 active-elevate-2 flex items-center gap-1"
                 data-testid="button-send-for-approval"
               >
-                {sendForApprovalMutation.isPending ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                ) : (
-                  <Send className="w-3 h-3" />
-                )}
+                {sendForApprovalMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
                 <span>Send for Approval</span>
               </button>
             )}
@@ -692,7 +756,7 @@ export default function VariationDetail() {
           </div>
         </div>
 
-      </div>{/* end unified header card */}
+      </div>
 
       <div className="flex-1 overflow-auto">
         <div className="max-w-5xl mx-auto px-3 py-3 grid grid-cols-3 gap-3">
@@ -700,83 +764,122 @@ export default function VariationDetail() {
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
 
-                {/* General Info section */}
+                {/* ── General Info ── */}
                 <div className="rounded-lg border border-border bg-card overflow-hidden">
                   <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
                     <div className="w-1.5 h-1.5 rounded-full bg-[#bba7db]/80 flex-shrink-0" />
                     <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">General Info</span>
                   </div>
-                  <div className="p-4 space-y-4">
-                    <FormField
-                      control={form.control}
-                      name="name"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Name *</FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="Enter variation name"
-                              {...field}
-                              data-testid="input-name"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                  <div className="p-4 space-y-3">
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <FormField
-                        control={form.control}
-                        name="approvalDeadline"
-                        render={({ field }) => (
-                          <FormItem className="flex flex-col">
-                            <FormLabel>Approval Deadline</FormLabel>
-                            <Popover>
-                              <PopoverTrigger asChild>
-                                <FormControl>
-                                  <Button
-                                    variant="outline"
-                                    className={cn(
-                                      "justify-start text-left font-normal",
-                                      !field.value && "text-muted-foreground"
-                                    )}
-                                    data-testid="button-approval-deadline"
-                                  >
-                                    <CalendarIcon className="mr-2 h-4 w-4" />
-                                    {field.value ? format(field.value, "PPP") : "Pick a date"}
-                                  </Button>
-                                </FormControl>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-auto p-0" align="start">
-                                <Calendar
-                                  mode="single"
-                                  selected={field.value}
-                                  onSelect={field.onChange}
-                                  initialFocus
-                                  data-testid="calendar-approval-deadline"
+                    {/* Row 1: Name (col-span-2) + Variation Number */}
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="col-span-2 space-y-1">
+                        <FieldLabel>Name *</FieldLabel>
+                        <FormField
+                          control={form.control}
+                          name="name"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormControl>
+                                <Input className="h-8 text-sm" placeholder="Enter variation name" {...field} data-testid="input-name" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <FieldLabel>Variation No.</FieldLabel>
+                        <FormField
+                          control={form.control}
+                          name="variationNumber"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormControl>
+                                <Input className="h-8 text-sm" placeholder="Auto-generated" {...field} data-testid="input-variation-number" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Row 2: Approval Deadline + Days Changed */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <FieldLabel>Approval Deadline</FieldLabel>
+                        <FormField
+                          control={form.control}
+                          name="approvalDeadline"
+                          render={({ field }) => (
+                            <FormItem>
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <FormControl>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className={cn(
+                                        "w-full h-8 justify-start text-left font-normal text-sm",
+                                        !field.value && "text-muted-foreground"
+                                      )}
+                                      data-testid="button-approval-deadline"
+                                    >
+                                      <CalendarIcon className="mr-2 h-3.5 w-3.5" />
+                                      {field.value ? format(field.value, "d MMM yyyy") : "Pick a date"}
+                                    </Button>
+                                  </FormControl>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0" align="start">
+                                  <Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus />
+                                </PopoverContent>
+                              </Popover>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <FieldLabel>Days Changed</FieldLabel>
+                        <FormField
+                          control={form.control}
+                          name="daysChanged"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormControl>
+                                <Input
+                                  type="number"
+                                  className="h-8 text-sm"
+                                  placeholder="0"
+                                  {...field}
+                                  onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                                  value={field.value || ""}
+                                  data-testid="input-days-changed"
                                 />
-                              </PopoverContent>
-                            </Popover>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    </div>
 
+                    {/* Row 3: Introduction Text */}
+                    <div className="space-y-1">
+                      <FieldLabel>Introduction Text</FieldLabel>
                       <FormField
                         control={form.control}
-                        name="daysChanged"
+                        name="introductionText"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Days Changed</FormLabel>
                             <FormControl>
-                              <Input
-                                type="number"
-                                placeholder="0"
+                              <Textarea
+                                placeholder="Enter introduction text"
+                                className="resize-none min-h-[72px] text-sm"
                                 {...field}
-                                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
-                                value={field.value || ""}
-                                data-testid="input-days-changed"
+                                data-testid="textarea-introduction"
                               />
                             </FormControl>
                             <FormMessage />
@@ -785,108 +888,60 @@ export default function VariationDetail() {
                       />
                     </div>
 
-                    <FormField
-                      control={form.control}
-                      name="introductionText"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Introduction Text</FormLabel>
-                          <FormControl>
-                            <Textarea
-                              placeholder="Enter introduction text"
-                              className="resize-none min-h-[80px]"
-                              {...field}
-                              data-testid="textarea-introduction"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
                   </div>
                 </div>
 
-                {/* Cost Lines section */}
-                <div className="rounded-lg border border-border bg-card overflow-hidden">
-                  <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
-                    <div className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full bg-amber-400/70 flex-shrink-0" />
-                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide" data-testid="text-cost-lines-title">Cost Lines</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={addCostLine}
-                      className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                      data-testid="button-add-cost-line"
-                    >
-                      <Plus className="h-3 w-3" />
-                      <span>Add Item</span>
-                    </button>
-                  </div>
-                  <div className="p-4">
-                    {costLines.length === 0 ? (
-                      <div className="text-center py-10 border rounded-md border-dashed" data-testid="empty-cost-lines">
-                        <FileText className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-                        <p className="text-muted-foreground text-sm">No cost lines added yet</p>
-                      </div>
-                    ) : (
-                      <div className="border rounded-md overflow-hidden">
+                {/* ── Financials ── */}
+                <div className="rounded-lg border border-border bg-card overflow-hidden" data-testid="section-financials">
+
+                  {/* Cost Lines sub-section */}
+                  <div>
+                    <SubHeader
+                      dotColor="bg-amber-400/70"
+                      label="Cost Lines"
+                      rightEl={
+                        <button
+                          type="button"
+                          onClick={addCostLine}
+                          className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                          data-testid="button-add-cost-line"
+                        >
+                          <Plus className="h-3 w-3" />
+                          <span>Add Item</span>
+                        </button>
+                      }
+                    />
+                    <div className="px-4 py-3">
+                      {costLines.length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-2" data-testid="empty-cost-lines">No cost lines added yet.</p>
+                      ) : (
                         <Table>
                           <TableHeader>
-                            <TableRow className="bg-muted/30 hover:bg-muted/30">
-                              <TableHead className="w-[40%] text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-1.5 px-3" data-testid="table-header-description">Description</TableHead>
-                              <TableHead className="w-[15%] text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-1.5 px-3" data-testid="table-header-quantity">Qty</TableHead>
-                              <TableHead className="w-[20%] text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-1.5 px-3" data-testid="table-header-unit-price">Unit Price</TableHead>
-                              <TableHead className="w-[20%] text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-1.5 px-3" data-testid="table-header-total">Total</TableHead>
-                              <TableHead className="w-[5%]" />
+                            <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
+                              <TableHead className="w-[40%] text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Description</TableHead>
+                              <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Qty</TableHead>
+                              <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Unit Price</TableHead>
+                              <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total</TableHead>
+                              <TableHead className="w-8 py-0" />
                             </TableRow>
                           </TableHeader>
                           <TableBody>
                             {costLines.map((line, index) => (
-                              <TableRow key={index} data-testid={`row-cost-line-${index}`}>
-                                <TableCell className="px-3 py-1.5">
-                                  <Input
-                                    value={line.description}
-                                    onChange={(e) => updateCostLine(index, "description", e.target.value)}
-                                    placeholder="Description"
-                                    className="h-7 text-xs"
-                                    data-testid={`input-description-${index}`}
-                                  />
+                              <TableRow key={index} className="h-9" data-testid={`row-cost-line-${index}`}>
+                                <TableCell className="px-2 py-1">
+                                  <Input value={line.description} onChange={(e) => updateCostLine(index, "description", e.target.value)} placeholder="Description" className="h-7 text-xs" data-testid={`input-description-${index}`} />
                                 </TableCell>
-                                <TableCell className="px-3 py-1.5">
-                                  <Input
-                                    type="number"
-                                    value={line.quantity}
-                                    onChange={(e) => updateCostLine(index, "quantity", parseFloat(e.target.value) || 0)}
-                                    min="0"
-                                    step="1"
-                                    className="h-7 text-xs"
-                                    data-testid={`input-quantity-${index}`}
-                                  />
+                                <TableCell className="px-2 py-1">
+                                  <Input type="number" value={line.quantity} onChange={(e) => updateCostLine(index, "quantity", parseFloat(e.target.value) || 0)} min="0" step="1" className="h-7 text-xs" data-testid={`input-quantity-${index}`} />
                                 </TableCell>
-                                <TableCell className="px-3 py-1.5">
-                                  <Input
-                                    type="number"
-                                    value={line.unitPrice}
-                                    onChange={(e) => updateCostLine(index, "unitPrice", parseFloat(e.target.value) || 0)}
-                                    min="0"
-                                    step="0.01"
-                                    className="h-7 text-xs"
-                                    data-testid={`input-unit-price-${index}`}
-                                  />
+                                <TableCell className="px-2 py-1">
+                                  <Input type="number" value={line.unitPrice} onChange={(e) => updateCostLine(index, "unitPrice", parseFloat(e.target.value) || 0)} min="0" step="0.01" className="h-7 text-xs" data-testid={`input-unit-price-${index}`} />
                                 </TableCell>
-                                <TableCell className="px-3 py-1.5 text-right">
-                                  <span className="text-xs font-medium tabular-nums" data-testid={`text-total-${index}`}>
-                                    {formatCurrency(line.totalPrice)}
-                                  </span>
+                                <TableCell className="px-2 py-1 text-right">
+                                  <span className="text-xs font-medium tabular-nums" data-testid={`text-total-${index}`}>{formatCurrency(line.totalPrice)}</span>
                                 </TableCell>
-                                <TableCell className="px-2 py-1.5">
-                                  <button
-                                    type="button"
-                                    onClick={() => deleteCostLine(index)}
-                                    className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2 text-muted-foreground"
-                                    data-testid={`button-delete-${index}`}
-                                  >
+                                <TableCell className="px-2 py-1">
+                                  <button type="button" onClick={() => deleteCostLine(index)} className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2 text-muted-foreground" data-testid={`button-delete-${index}`}>
                                     <Trash2 className="h-3.5 w-3.5" />
                                   </button>
                                 </TableCell>
@@ -894,56 +949,239 @@ export default function VariationDetail() {
                             ))}
                           </TableBody>
                         </Table>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Bills sub-section */}
+                  <div className="border-t border-border/50" data-testid="section-bills">
+                    <SubHeader
+                      dotColor="bg-orange-400/70"
+                      label={selectedBillIds.length > 0 ? `Bills · ${formatCurrency(calculateBillsTotal())}` : "Bills"}
+                      rightEl={
+                        <button
+                          type="button"
+                          onClick={() => { setModalBillIds([...selectedBillIds]); setBillsModalOpen(true); }}
+                          className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                          data-testid="button-import-bills"
+                        >
+                          <Plus className="w-3 h-3" />
+                          Import Bills
+                        </button>
+                      }
+                    />
+                    <div className="px-4 py-3">
+                      {selectedBillIds.length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-2">No bills selected.</p>
+                      ) : (
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="h-6 bg-muted/30">
+                              <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Bill No.</TableHead>
+                              <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Supplier</TableHead>
+                              <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
+                              <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2 w-28">Total</TableHead>
+                              <TableHead className="w-8 py-0" />
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {getSelectedBills().map((b: any) => (
+                              <TableRow key={b.id} className="h-9">
+                                <TableCell className="text-sm font-medium py-1 px-2">{b.billNumber}</TableCell>
+                                <TableCell className="text-sm text-muted-foreground py-1 px-2">{b.supplierName || "—"}</TableCell>
+                                <TableCell className="text-sm text-muted-foreground py-1 px-2">{b.billDate ? format(new Date(b.billDate), "d MMM yyyy") : "—"}</TableCell>
+                                <TableCell className="text-right text-sm font-medium py-1 px-2">{formatCurrency(b.total / 100)}</TableCell>
+                                <TableCell className="py-1 px-2 w-8">
+                                  <button type="button" onClick={() => setSelectedBillIds(prev => prev.filter(id => id !== b.id))} className="text-muted-foreground hover:text-destructive">
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Labour sub-section */}
+                  <div className="border-t border-border/50" data-testid="section-labour">
+                    <SubHeader
+                      dotColor="bg-indigo-400/70"
+                      label={selectedTimesheetIds.length > 0 ? `Labour · ${formatCurrency(calculateLabourTotal())}` : "Labour"}
+                      rightEl={
+                        <button
+                          type="button"
+                          onClick={() => { setModalTimesheetIds([...selectedTimesheetIds]); setLabourModalOpen(true); }}
+                          className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                          data-testid="button-import-labour"
+                        >
+                          <Plus className="w-3 h-3" />
+                          Import Labour
+                        </button>
+                      }
+                    />
+                    <div className="px-4 py-3">
+                      {selectedTimesheetIds.length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-2">No labour selected.</p>
+                      ) : (
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="h-6 bg-muted/30">
+                              <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
+                              <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Staff</TableHead>
+                              <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Hours</TableHead>
+                              <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2 w-28">Total</TableHead>
+                              <TableHead className="w-8 py-0" />
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {getSelectedTimesheets().map((t: any) => (
+                              <TableRow key={t.id} className="h-9">
+                                <TableCell className="text-sm text-muted-foreground py-1 px-2">{t.date ? format(new Date(t.date), "d MMM yyyy") : "—"}</TableCell>
+                                <TableCell className="text-sm font-medium py-1 px-2">{getUserName(t.userId)}</TableCell>
+                                <TableCell className="text-right text-sm tabular-nums py-1 px-2">{Number(t.duration).toFixed(1)}</TableCell>
+                                <TableCell className="text-right text-sm font-medium py-1 px-2">{formatCurrency((t.total || 0) / 100)}</TableCell>
+                                <TableCell className="py-1 px-2 w-8">
+                                  <button type="button" onClick={() => setSelectedTimesheetIds(prev => prev.filter(id => id !== t.id))} className="text-muted-foreground hover:text-destructive">
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      )}
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* ── Documentation Card ── */}
+                <div className="rounded-lg border border-border bg-card overflow-hidden" data-testid="section-documentation">
+
+                  {/* Closing Text sub-section */}
+                  <div>
+                    <SubHeader
+                      dotColor="bg-amber-400/70"
+                      label="Closing Text"
+                      collapsible
+                      collapsed={closingCollapsed}
+                      onToggle={() => setClosingCollapsed((v) => !v)}
+                    />
+                    {!closingCollapsed && (
+                      <div className="px-4 py-3">
+                        <FormField
+                          control={form.control}
+                          name="closingText"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormControl>
+                                <Textarea
+                                  placeholder="Enter closing text"
+                                  className="resize-none min-h-[80px] text-sm"
+                                  {...field}
+                                  data-testid="textarea-closing"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
                       </div>
                     )}
                   </div>
-                </div>
 
-                {/* Closing Text section */}
-                <div className="rounded-lg border border-border bg-card overflow-hidden">
-                  <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-                    <div className="w-1.5 h-1.5 rounded-full bg-sky-400/70 flex-shrink-0" />
-                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Closing Text</span>
-                  </div>
-                  <div className="p-4">
-                    <FormField
-                      control={form.control}
-                      name="closingText"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormControl>
-                            <Textarea
-                              placeholder="Enter closing text"
-                              className="resize-none min-h-[80px]"
-                              {...field}
-                              data-testid="textarea-closing"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
+                  {/* Terms & Conditions sub-section */}
+                  <div className="border-t border-border/50">
+                    <SubHeader
+                      dotColor="bg-slate-400/60"
+                      label="Terms & Conditions"
+                      collapsible
+                      collapsed={termsCollapsed}
+                      onToggle={() => setTermsCollapsed((v) => !v)}
                     />
+                    {!termsCollapsed && (
+                      <div className="px-4 py-3 space-y-2">
+                        {companySettings?.termsTemplates && companySettings.termsTemplates.length > 0 && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground flex-shrink-0">Load template:</span>
+                            <Select
+                              value={selectedTemplateId}
+                              onValueChange={(id) => {
+                                setSelectedTemplateId(id);
+                                const tpl = companySettings.termsTemplates!.find(t => t.id === id);
+                                if (tpl) form.setValue("termsAndConditions", tpl.content);
+                              }}
+                            >
+                              <SelectTrigger className="h-7 text-xs flex-1">
+                                <SelectValue placeholder="Choose a template..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {companySettings.termsTemplates.map(tpl => (
+                                  <SelectItem key={tpl.id} value={tpl.id}>{tpl.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                        <FormField
+                          control={form.control}
+                          name="termsAndConditions"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormControl>
+                                <Textarea
+                                  {...field}
+                                  rows={8}
+                                  placeholder={
+                                    companySettings?.termsTemplates && companySettings.termsTemplates.length > 0
+                                      ? "Select a template above, or type your terms and conditions..."
+                                      : companySettings?.termsAndConditions
+                                      ? "Load from company defaults or type custom terms..."
+                                      : "Type the terms and conditions for this variation..."
+                                  }
+                                  className="text-sm resize-y"
+                                  data-testid="textarea-terms-and-conditions"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        {companySettings?.termsAndConditions && !form.watch("termsAndConditions") && (
+                          <button
+                            type="button"
+                            onClick={() => form.setValue("termsAndConditions", companySettings.termsAndConditions!)}
+                            className="text-xs text-[#bba7db] hover:underline"
+                            data-testid="button-load-company-terms"
+                          >
+                            Load company default terms
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
-                </div>
 
-                {/* Attachments section */}
-                <div className="rounded-lg border border-border bg-card overflow-hidden">
-                  <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-                    <div className="w-1.5 h-1.5 rounded-full bg-slate-400/70 flex-shrink-0" />
-                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide" data-testid="text-attachments-title">Attachments</span>
-                  </div>
-                  <div className="p-4">
-                    <div className="text-center py-8 border rounded-md border-dashed" data-testid="attachments-stub">
-                      <p className="text-muted-foreground text-sm">Attachments coming soon</p>
+                  {/* Attachments sub-section */}
+                  <div className="border-t border-border/50">
+                    <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
+                      <div className="w-1.5 h-1.5 rounded-full bg-slate-400/70 flex-shrink-0" />
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide" data-testid="text-attachments-title">Attachments</span>
+                      <Paperclip className="h-3 w-3 text-muted-foreground/50 ml-0.5" />
+                    </div>
+                    <div className="px-4 py-4">
+                      <p className="text-sm text-muted-foreground text-center py-2" data-testid="attachments-stub">No attachments added.</p>
                     </div>
                   </div>
+
                 </div>
 
               </form>
             </Form>
           </div>
 
-          {/* Right column */}
+          {/* ── Right column ── */}
           <div className="col-span-1">
             <div className="sticky top-3 space-y-3">
 
@@ -953,7 +1191,23 @@ export default function VariationDetail() {
                   <div className="w-1.5 h-1.5 rounded-full bg-emerald-400/70 flex-shrink-0" />
                   <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Summary</span>
                 </div>
-                <div className="p-4 space-y-2.5">
+                <div className="p-4 space-y-2">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Cost Lines</span>
+                    <span className="font-medium tabular-nums">{formatCurrency(calculateCostLinesSubtotal())}</span>
+                  </div>
+                  {calculateBillsTotal() > 0 && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">Bills ({selectedBillIds.length})</span>
+                      <span className="font-medium tabular-nums">{formatCurrency(calculateBillsTotal())}</span>
+                    </div>
+                  )}
+                  {calculateLabourTotal() > 0 && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">Labour ({selectedTimesheetIds.length})</span>
+                      <span className="font-medium tabular-nums">{formatCurrency(calculateLabourTotal())}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-xs">
                     <span className="text-muted-foreground" data-testid="text-label-subtotal">Subtotal</span>
                     <span className="font-medium tabular-nums" data-testid="text-subtotal">{formatCurrency(calculateSubtotal())}</span>
@@ -962,7 +1216,7 @@ export default function VariationDetail() {
                     <span className="text-muted-foreground" data-testid="text-label-gst">GST (10%)</span>
                     <span className="font-medium tabular-nums" data-testid="text-gst">{formatCurrency(calculateGST())}</span>
                   </div>
-                  <div className="flex justify-between pt-2.5 border-t">
+                  <div className="flex justify-between pt-2 border-t">
                     <span className="text-sm font-semibold" data-testid="text-label-total">Total</span>
                     <span className="text-sm font-semibold tabular-nums text-[#bba7db]" data-testid="text-total">{formatCurrency(calculateTotal())}</span>
                   </div>
@@ -1008,53 +1262,181 @@ export default function VariationDetail() {
         </div>
       </div>
 
-      <Dialog open={approveDialogOpen} onOpenChange={setApproveDialogOpen}>
-        <DialogContent data-testid="dialog-approve-variation">
+      {/* ── Import Bills Modal ── */}
+      <Dialog open={billsModalOpen} onOpenChange={setBillsModalOpen}>
+        <DialogContent className="max-w-3xl" data-testid="dialog-bills">
           <DialogHeader>
-            <DialogTitle>Approve Variation</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to approve this variation?
-            </DialogDescription>
+            <DialogTitle>Import Bills</DialogTitle>
+            <DialogDescription>Select bills to include in this variation.</DialogDescription>
           </DialogHeader>
-          <DialogFooter>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              placeholder="Search by bill number or supplier..."
+              value={billsSearch}
+              onChange={(e) => setBillsSearch(e.target.value)}
+              className="pl-8 h-8 text-sm"
+            />
+          </div>
+          <div className="rounded-md border overflow-hidden">
+            <div className="max-h-[360px] overflow-y-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
+                    <TableHead className="w-8 py-0 px-2" />
+                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Bill No.</TableHead>
+                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Supplier</TableHead>
+                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
+                    <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredBills.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-8">No bills found for this project.</TableCell>
+                    </TableRow>
+                  ) : filteredBills.map((b: any) => {
+                    const isChecked = modalBillIds.includes(b.id);
+                    return (
+                      <TableRow
+                        key={b.id}
+                        className="h-9 hover-elevate cursor-pointer"
+                        onClick={() => setModalBillIds(prev => isChecked ? prev.filter(id => id !== b.id) : [...prev, b.id])}
+                      >
+                        <TableCell className="w-8 py-1 px-2">
+                          <div className={cn("w-4 h-4 rounded border flex items-center justify-center", isChecked ? "bg-primary border-primary" : "border-input")}>
+                            {isChecked && <Check className="h-3 w-3 text-primary-foreground" />}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-sm font-medium py-1 px-2">{b.billNumber}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground py-1 px-2">{b.supplierName || "—"}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground py-1 px-2">{b.billDate ? format(new Date(b.billDate), "d MMM yyyy") : "—"}</TableCell>
+                        <TableCell className="text-right text-sm font-medium py-1 px-2">{formatCurrency((b.total || 0) / 100)}</TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setBillsModalOpen(false)}>Cancel</Button>
             <Button
-              type="button"
-              variant="outline"
-              onClick={() => setApproveDialogOpen(false)}
-              data-testid="button-cancel-approve"
+              onClick={() => {
+                setSelectedBillIds([...modalBillIds]);
+                setBillsModalOpen(false);
+              }}
             >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="default"
-              onClick={() => approveMutation.mutate()}
-              disabled={approveMutation.isPending}
-              data-testid="button-confirm-approve"
-            >
-              {approveMutation.isPending ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Approving...
-                </>
-              ) : (
-                <>
-                  <Check className="mr-2 h-4 w-4" />
-                  Approve Variation
-                </>
-              )}
+              Add {modalBillIds.length > 0 ? `${modalBillIds.length} ` : ""}to Variation
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
+      {/* ── Import Labour Modal ── */}
+      <Dialog open={labourModalOpen} onOpenChange={setLabourModalOpen}>
+        <DialogContent className="max-w-3xl" data-testid="dialog-labour">
+          <DialogHeader>
+            <DialogTitle>Import Labour</DialogTitle>
+            <DialogDescription>Select approved timesheets to include in this variation.</DialogDescription>
+          </DialogHeader>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              placeholder="Search by staff name or date..."
+              value={labourSearch}
+              onChange={(e) => setLabourSearch(e.target.value)}
+              className="pl-8 h-8 text-sm"
+            />
+          </div>
+          <div className="rounded-md border overflow-hidden">
+            <div className="max-h-[360px] overflow-y-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
+                    <TableHead className="w-8 py-0 px-2" />
+                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Date</TableHead>
+                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Staff</TableHead>
+                    <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Status</TableHead>
+                    <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Hours</TableHead>
+                    <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredTimesheets.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center text-sm text-muted-foreground py-8">No timesheets found for this project.</TableCell>
+                    </TableRow>
+                  ) : filteredTimesheets.filter((t: any) => t.status === "approved" || t.status === "submitted").map((t: any) => {
+                    const isApproved = t.status === "approved";
+                    const isChecked = modalTimesheetIds.includes(t.id);
+                    return (
+                      <TableRow
+                        key={t.id}
+                        className={cn("h-9", isApproved ? "hover-elevate cursor-pointer" : "opacity-40 cursor-not-allowed")}
+                        onClick={() => {
+                          if (!isApproved) return;
+                          setModalTimesheetIds(prev => isChecked ? prev.filter(id => id !== t.id) : [...prev, t.id]);
+                        }}
+                      >
+                        <TableCell className="w-8 py-1 px-2">
+                          <div className={cn("w-4 h-4 rounded border flex items-center justify-center", isChecked && isApproved ? "bg-primary border-primary" : "border-input")}>
+                            {isChecked && isApproved && <Check className="h-3 w-3 text-primary-foreground" />}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-sm tabular-nums py-1 px-2">{t.date ? format(new Date(t.date), "d MMM yy") : "—"}</TableCell>
+                        <TableCell className="text-sm font-medium py-1 px-2">{getUserName(t.userId)}</TableCell>
+                        <TableCell className="py-1 px-2">
+                          {isApproved
+                            ? <span className="flex items-center gap-1 text-xs"><div className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />Approved</span>
+                            : <span className="flex items-center gap-1 text-xs"><div className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />Pending</span>}
+                        </TableCell>
+                        <TableCell className="text-right text-sm tabular-nums py-1 px-2">{Number(t.duration).toFixed(1)}</TableCell>
+                        <TableCell className="text-right text-sm font-medium py-1 px-2">{formatCurrency((t.total || 0) / 100)}</TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setLabourModalOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => {
+                setSelectedTimesheetIds([...modalTimesheetIds]);
+                setLabourModalOpen(false);
+              }}
+              disabled={modalTimesheetIds.length === 0}
+            >
+              Add {modalTimesheetIds.length > 0 ? `${modalTimesheetIds.length} ` : ""}to Variation
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Approve Dialog ── */}
+      <Dialog open={approveDialogOpen} onOpenChange={setApproveDialogOpen}>
+        <DialogContent data-testid="dialog-approve-variation">
+          <DialogHeader>
+            <DialogTitle>Approve Variation</DialogTitle>
+            <DialogDescription>Are you sure you want to approve this variation?</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setApproveDialogOpen(false)} data-testid="button-cancel-approve">Cancel</Button>
+            <Button type="button" variant="default" onClick={() => approveMutation.mutate()} disabled={approveMutation.isPending} data-testid="button-confirm-approve">
+              {approveMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Approving...</> : <><Check className="mr-2 h-4 w-4" />Approve Variation</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Reject Dialog ── */}
       <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
         <DialogContent data-testid="dialog-reject-variation">
           <DialogHeader>
             <DialogTitle>Reject Variation</DialogTitle>
-            <DialogDescription>
-              Please provide a reason for rejecting this variation.
-            </DialogDescription>
+            <DialogDescription>Please provide a reason for rejecting this variation.</DialogDescription>
           </DialogHeader>
           <Textarea
             value={rejectReason}
@@ -1064,39 +1446,14 @@ export default function VariationDetail() {
             data-testid="textarea-reject-reason"
           />
           <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setRejectDialogOpen(false);
-                setRejectReason("");
-              }}
-              data-testid="button-cancel-reject"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => rejectMutation.mutate(rejectReason)}
-              disabled={!rejectReason.trim() || rejectMutation.isPending}
-              data-testid="button-confirm-reject"
-            >
-              {rejectMutation.isPending ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Rejecting...
-                </>
-              ) : (
-                <>
-                  <X className="mr-2 h-4 w-4" />
-                  Reject Variation
-                </>
-              )}
+            <Button type="button" variant="outline" onClick={() => { setRejectDialogOpen(false); setRejectReason(""); }} data-testid="button-cancel-reject">Cancel</Button>
+            <Button type="button" variant="destructive" onClick={() => rejectMutation.mutate(rejectReason)} disabled={!rejectReason.trim() || rejectMutation.isPending} data-testid="button-confirm-reject">
+              {rejectMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Rejecting...</> : <><X className="mr-2 h-4 w-4" />Reject Variation</>}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
     </div>
   );
 }
