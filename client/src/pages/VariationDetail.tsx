@@ -138,6 +138,10 @@ export default function VariationDetail() {
   const [labourModalOpen, setLabourModalOpen] = useState(false);
   const [labourSearch, setLabourSearch] = useState("");
 
+  // Allowances modal state
+  const [allowancesModalOpen, setAllowancesModalOpen] = useState(false);
+  const [allowancesSearch, setAllowancesSearch] = useState("");
+
   // Documentation collapse state
   const [closingCollapsed, setClosingCollapsed] = useState(true);
   const [termsCollapsed, setTermsCollapsed] = useState(true);
@@ -204,6 +208,11 @@ export default function VariationDetail() {
 
   const { data: projectTimesheets = [] } = useQuery<any[]>({
     queryKey: [`/api/projects/${watchedProjectId}/timesheets`],
+    enabled: !!watchedProjectId,
+  });
+
+  const { data: projectAllowances = [] } = useQuery<any[]>({
+    queryKey: [`/api/projects/${watchedProjectId}/allowances`],
     enabled: !!watchedProjectId,
   });
 
@@ -301,10 +310,10 @@ export default function VariationDetail() {
 
   // ── Allowance line handlers ────────────────────────────────────────────────
 
-  const addAllowanceLine = () => {
+  const addAllowanceLine = (prefill?: { description?: string; amount?: number }) => {
     setAllowanceLines([
       ...allowanceLines,
-      { description: "", amount: 0, sortOrder: allowanceLines.length },
+      { description: prefill?.description ?? "", amount: prefill?.amount ?? 0, sortOrder: allowanceLines.length },
     ]);
   };
 
@@ -848,10 +857,9 @@ export default function VariationDetail() {
       </div>
 
       <div className="flex-1 overflow-auto">
-        <div className="max-w-5xl mx-auto px-3 py-3 grid grid-cols-3 gap-3">
-          <div className="col-span-2">
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
+        <div className="max-w-4xl mx-auto px-3 py-3">
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
 
                 {/* ── General Info ── */}
                 <div className="rounded-lg border border-border bg-card overflow-hidden">
@@ -1006,11 +1014,11 @@ export default function VariationDetail() {
                       ) : (
                         <Table>
                           <TableHeader>
-                            <TableRow className="h-6 bg-muted/30 hover:bg-muted/30">
-                              <TableHead className="w-[40%] text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Description</TableHead>
-                              <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Qty</TableHead>
-                              <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Unit Price</TableHead>
-                              <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total</TableHead>
+                            <TableRow className="h-6 bg-muted/30">
+                              <TableHead className="w-[45%] text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Description</TableHead>
+                              <TableHead className="w-20 text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Qty</TableHead>
+                              <TableHead className="w-28 text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Unit Price</TableHead>
+                              <TableHead className="w-28 text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Total</TableHead>
                               <TableHead className="w-8 py-0" />
                             </TableRow>
                           </TableHeader>
@@ -1018,16 +1026,16 @@ export default function VariationDetail() {
                             {costLines.map((line, index) => (
                               <TableRow key={index} className="h-9" data-testid={`row-cost-line-${index}`}>
                                 <TableCell className="px-2 py-1">
-                                  <Input value={line.description} onChange={(e) => updateCostLine(index, "description", e.target.value)} placeholder="Description" className="h-7 text-xs" data-testid={`input-description-${index}`} />
+                                  <Input value={line.description} onChange={(e) => updateCostLine(index, "description", e.target.value)} placeholder="Description" className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm" data-testid={`input-description-${index}`} />
                                 </TableCell>
                                 <TableCell className="px-2 py-1">
-                                  <Input type="number" value={line.quantity} onChange={(e) => updateCostLine(index, "quantity", parseFloat(e.target.value) || 0)} min="0" step="1" className="h-7 text-xs" data-testid={`input-quantity-${index}`} />
+                                  <Input type="number" value={line.quantity} onChange={(e) => updateCostLine(index, "quantity", parseFloat(e.target.value) || 0)} min="0" step="1" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm" data-testid={`input-quantity-${index}`} />
                                 </TableCell>
                                 <TableCell className="px-2 py-1">
-                                  <Input type="number" value={line.unitPrice} onChange={(e) => updateCostLine(index, "unitPrice", parseFloat(e.target.value) || 0)} min="0" step="0.01" className="h-7 text-xs" data-testid={`input-unit-price-${index}`} />
+                                  <Input type="number" value={line.unitPrice} onChange={(e) => updateCostLine(index, "unitPrice", parseFloat(e.target.value) || 0)} min="0" step="0.01" className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm" data-testid={`input-unit-price-${index}`} />
                                 </TableCell>
                                 <TableCell className="px-2 py-1 text-right">
-                                  <span className="text-xs font-medium tabular-nums" data-testid={`text-total-${index}`}>{formatCurrency(line.totalPrice)}</span>
+                                  <span className="text-sm font-medium tabular-nums" data-testid={`text-total-${index}`}>{formatCurrency(line.totalPrice)}</span>
                                 </TableCell>
                                 <TableCell className="px-2 py-1">
                                   <button type="button" onClick={() => deleteCostLine(index)} className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2 text-muted-foreground" data-testid={`button-delete-${index}`}>
@@ -1150,66 +1158,148 @@ export default function VariationDetail() {
                       dotColor="bg-teal-400/70"
                       label={allowanceLines.length > 0 ? `Allowances · ${formatCurrency(calculateAllowancesTotal())}` : "Allowances"}
                       rightEl={
-                        <button
-                          type="button"
-                          onClick={addAllowanceLine}
-                          className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                          data-testid="button-add-allowance"
-                        >
-                          <Plus className="w-3 h-3" />
-                          Add Allowance
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setAllowancesModalOpen(true)}
+                            className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                            data-testid="button-import-allowance"
+                          >
+                            <Plus className="w-3 h-3" />
+                            Import Allowance
+                          </button>
+                          <button
+                            type="button"
+                            onClick={addAllowanceLine}
+                            className="h-6 px-2 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
+                            data-testid="button-add-allowance"
+                          >
+                            <Plus className="w-3 h-3" />
+                            Add Manual
+                          </button>
+                        </div>
                       }
                     />
                     <div className="px-4 py-3">
                       {allowanceLines.length === 0 ? (
-                        <p className="text-sm text-muted-foreground text-center py-2">No allowance adjustments added.</p>
+                        <div className="py-1.5 flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setAllowancesModalOpen(true)}
+                            className="h-7 px-3 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center gap-1.5"
+                            data-testid="button-select-allowances-empty"
+                          >
+                            <Plus className="w-3 h-3" />
+                            Import from Project Allowances
+                          </button>
+                          <span className="text-xs text-muted-foreground/50">or add a manual adjustment above</span>
+                        </div>
                       ) : (
-                        <Table>
-                          <TableHeader>
-                            <TableRow className="h-6 bg-muted/30">
-                              <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Description</TableHead>
-                              <TableHead className="text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2 w-36">Adjustment ($)</TableHead>
-                              <TableHead className="w-8 py-0" />
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {allowanceLines.map((line, index) => (
-                              <TableRow key={index} className="h-9" data-testid={`row-allowance-${index}`}>
-                                <TableCell className="px-2 py-1">
-                                  <Input
-                                    value={line.description}
-                                    onChange={(e) => updateAllowanceLine(index, "description", e.target.value)}
-                                    placeholder="e.g. Kitchen allowance adjustment"
-                                    className="h-7 text-xs"
-                                    data-testid={`input-allowance-description-${index}`}
-                                  />
-                                </TableCell>
-                                <TableCell className="px-2 py-1">
-                                  <Input
-                                    type="number"
-                                    value={line.amount}
-                                    onChange={(e) => updateAllowanceLine(index, "amount", parseFloat(e.target.value) || 0)}
-                                    step="0.01"
-                                    className="h-7 text-xs text-right"
-                                    data-testid={`input-allowance-amount-${index}`}
-                                  />
-                                </TableCell>
-                                <TableCell className="px-2 py-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => deleteAllowanceLine(index)}
-                                    className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2 text-muted-foreground"
-                                    data-testid={`button-delete-allowance-${index}`}
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </button>
-                                </TableCell>
+                        <>
+                          <Table>
+                            <TableHeader>
+                              <TableRow className="h-6 bg-muted/30">
+                                <TableHead className="text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Description</TableHead>
+                                <TableHead className="w-36 text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Adjustment ($)</TableHead>
+                                <TableHead className="w-8 py-0" />
                               </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
+                            </TableHeader>
+                            <TableBody>
+                              {allowanceLines.map((line, index) => (
+                                <TableRow key={index} className="h-9" data-testid={`row-allowance-${index}`}>
+                                  <TableCell className="px-2 py-1">
+                                    <Input
+                                      value={line.description}
+                                      onChange={(e) => updateAllowanceLine(index, "description", e.target.value)}
+                                      placeholder="e.g. Kitchen allowance adjustment"
+                                      className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm"
+                                      data-testid={`input-allowance-description-${index}`}
+                                    />
+                                  </TableCell>
+                                  <TableCell className="px-2 py-1">
+                                    <Input
+                                      type="number"
+                                      value={line.amount}
+                                      onChange={(e) => updateAllowanceLine(index, "amount", parseFloat(e.target.value) || 0)}
+                                      step="0.01"
+                                      className="h-7 text-sm text-right border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm"
+                                      data-testid={`input-allowance-amount-${index}`}
+                                    />
+                                  </TableCell>
+                                  <TableCell className="px-2 py-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => deleteAllowanceLine(index)}
+                                      className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2 text-muted-foreground"
+                                      data-testid={`button-delete-allowance-${index}`}
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                          <div className="flex items-center justify-end gap-2 pt-2 border-t text-sm">
+                            <span className="text-muted-foreground">Total Adjustments:</span>
+                            <span className={cn("font-semibold tabular-nums", calculateAllowancesTotal() < 0 ? "text-red-500" : "")}>
+                              {formatCurrency(calculateAllowancesTotal())}
+                            </span>
+                          </div>
+                        </>
                       )}
+                    </div>
+                  </div>
+
+                  {/* ── Variation Summary panel ── */}
+                  <div className="border-t border-border/50" data-testid="summary-panel">
+                    <div className="bg-[#bba7db]/10 px-4 py-3 flex items-center justify-between gap-4 border-b border-border/50">
+                      <div className="flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[#bba7db]/80" />
+                        <span className="text-xs font-medium">Variation Summary</span>
+                      </div>
+                    </div>
+                    <div className="px-4 py-3">
+                      <div className="grid grid-cols-5 gap-6">
+                        {/* Left: Breakdown */}
+                        <div className="col-span-3 space-y-1.5">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Cost Lines</span>
+                            <span className="font-medium tabular-nums">{formatCurrency(calculateCostLinesSubtotal())}</span>
+                          </div>
+                          {calculateBillsTotal() > 0 && (
+                            <div className="flex justify-between text-sm">
+                              <span className="text-muted-foreground">Bills ({selectedBillIds.length})</span>
+                              <span className="font-medium tabular-nums">{formatCurrency(calculateBillsTotal())}</span>
+                            </div>
+                          )}
+                          {calculateLabourTotal() > 0 && (
+                            <div className="flex justify-between text-sm">
+                              <span className="text-muted-foreground">Labour ({selectedTimesheetIds.length})</span>
+                              <span className="font-medium tabular-nums">{formatCurrency(calculateLabourTotal())}</span>
+                            </div>
+                          )}
+                          {calculateAllowancesTotal() !== 0 && (
+                            <div className="flex justify-between text-sm">
+                              <span className="text-muted-foreground">Allowances ({allowanceLines.length})</span>
+                              <span className={cn("font-medium tabular-nums", calculateAllowancesTotal() < 0 ? "text-red-500" : "")}>{formatCurrency(calculateAllowancesTotal())}</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between text-sm pt-1 border-t border-border/50">
+                            <span className="text-muted-foreground" data-testid="text-label-subtotal">Subtotal</span>
+                            <span className="font-medium tabular-nums" data-testid="text-subtotal">{formatCurrency(calculateSubtotal())}</span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground" data-testid="text-label-gst">GST (10%)</span>
+                            <span className="font-medium tabular-nums" data-testid="text-gst">{formatCurrency(calculateGST())}</span>
+                          </div>
+                        </div>
+                        {/* Right: Total callout */}
+                        <div className="col-span-2 flex flex-col items-end justify-end gap-1">
+                          <span className="text-xs text-muted-foreground uppercase tracking-wide">Total</span>
+                          <span className="text-2xl font-bold tabular-nums text-[#bba7db]" data-testid="text-total">{formatCurrency(calculateTotal())}</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -1335,94 +1425,42 @@ export default function VariationDetail() {
 
                 </div>
 
+                {/* Schedule Impact card */}
+                {isEditMode && variation?.daysChanged && variation.daysChanged !== 0 && (
+                  <div className="rounded-lg border border-border bg-card overflow-hidden">
+                    <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
+                      <div className="w-1.5 h-1.5 rounded-full bg-orange-400/70 flex-shrink-0" />
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Schedule Impact</span>
+                    </div>
+                    <div className="p-4">
+                      <div className="flex items-center gap-2">
+                        <CalendarIcon className="w-3.5 h-3.5 text-muted-foreground" />
+                        <span className="text-sm">
+                          {variation.daysChanged > 0 ? "+" : ""}{variation.daysChanged} day{Math.abs(variation.daysChanged) !== 1 ? "s" : ""}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Deadline card */}
+                {isEditMode && variation?.approvalDeadline && (
+                  <div className="rounded-lg border border-border bg-card overflow-hidden">
+                    <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
+                      <div className="w-1.5 h-1.5 rounded-full bg-rose-400/70 flex-shrink-0" />
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Deadline</span>
+                    </div>
+                    <div className="p-4">
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-3.5 h-3.5 text-muted-foreground" />
+                        <span className="text-sm">{format(new Date(variation.approvalDeadline), "PPP")}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
               </form>
             </Form>
-          </div>
-
-          {/* ── Right column ── */}
-          <div className="col-span-1">
-            <div className="sticky top-3 space-y-3">
-
-              {/* Summary card */}
-              <div className="rounded-lg border border-border bg-card overflow-hidden">
-                <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400/70 flex-shrink-0" />
-                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Summary</span>
-                </div>
-                <div className="p-4 space-y-2">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">Cost Lines</span>
-                    <span className="font-medium tabular-nums">{formatCurrency(calculateCostLinesSubtotal())}</span>
-                  </div>
-                  {calculateBillsTotal() > 0 && (
-                    <div className="flex justify-between text-xs">
-                      <span className="text-muted-foreground">Bills ({selectedBillIds.length})</span>
-                      <span className="font-medium tabular-nums">{formatCurrency(calculateBillsTotal())}</span>
-                    </div>
-                  )}
-                  {calculateLabourTotal() > 0 && (
-                    <div className="flex justify-between text-xs">
-                      <span className="text-muted-foreground">Labour ({selectedTimesheetIds.length})</span>
-                      <span className="font-medium tabular-nums">{formatCurrency(calculateLabourTotal())}</span>
-                    </div>
-                  )}
-                  {calculateAllowancesTotal() !== 0 && (
-                    <div className="flex justify-between text-xs">
-                      <span className="text-muted-foreground">Allowances ({allowanceLines.length})</span>
-                      <span className={`font-medium tabular-nums ${calculateAllowancesTotal() < 0 ? "text-red-500" : ""}`}>{formatCurrency(calculateAllowancesTotal())}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground" data-testid="text-label-subtotal">Subtotal</span>
-                    <span className="font-medium tabular-nums" data-testid="text-subtotal">{formatCurrency(calculateSubtotal())}</span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground" data-testid="text-label-gst">GST (10%)</span>
-                    <span className="font-medium tabular-nums" data-testid="text-gst">{formatCurrency(calculateGST())}</span>
-                  </div>
-                  <div className="flex justify-between pt-2 border-t">
-                    <span className="text-sm font-semibold" data-testid="text-label-total">Total</span>
-                    <span className="text-sm font-semibold tabular-nums text-[#bba7db]" data-testid="text-total">{formatCurrency(calculateTotal())}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Schedule Impact card */}
-              {isEditMode && variation?.daysChanged && variation.daysChanged !== 0 && (
-                <div className="rounded-lg border border-border bg-card overflow-hidden">
-                  <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-                    <div className="w-1.5 h-1.5 rounded-full bg-orange-400/70 flex-shrink-0" />
-                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Schedule Impact</span>
-                  </div>
-                  <div className="p-4">
-                    <div className="flex items-center gap-2">
-                      <CalendarIcon className="w-3.5 h-3.5 text-muted-foreground" />
-                      <span className="text-sm">
-                        {variation.daysChanged > 0 ? "+" : ""}{variation.daysChanged} day{Math.abs(variation.daysChanged) !== 1 ? "s" : ""}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Deadline card */}
-              {isEditMode && variation?.approvalDeadline && (
-                <div className="rounded-lg border border-border bg-card overflow-hidden">
-                  <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-                    <div className="w-1.5 h-1.5 rounded-full bg-rose-400/70 flex-shrink-0" />
-                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Deadline</span>
-                  </div>
-                  <div className="p-4">
-                    <div className="flex items-center gap-2">
-                      <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-                      <span className="text-sm">{format(new Date(variation.approvalDeadline), "PPP")}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-            </div>
-          </div>
         </div>
       </div>
 
@@ -1576,6 +1614,97 @@ export default function VariationDetail() {
               Add {modalTimesheetIds.length > 0 ? `${modalTimesheetIds.length} ` : ""}to Variation
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Import Allowances Modal ── */}
+      <Dialog open={allowancesModalOpen} onOpenChange={setAllowancesModalOpen}>
+        <DialogContent className="max-w-2xl" data-testid="dialog-allowances">
+          <DialogHeader>
+            <DialogTitle>Import Project Allowances</DialogTitle>
+            <DialogDescription>
+              Select a finalized allowance (PC/PS item) to include the cost difference in this variation.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              placeholder="Search allowances..."
+              value={allowancesSearch}
+              onChange={(e) => setAllowancesSearch(e.target.value)}
+              className="pl-8 h-8 text-sm"
+            />
+          </div>
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {projectAllowances.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">
+                No allowance items (PC/PS) found for this project.
+              </p>
+            ) : (
+              projectAllowances
+                .filter((a: any) => {
+                  const name = a.item?.name || "";
+                  const desc = a.item?.description || "";
+                  const q = allowancesSearch.toLowerCase();
+                  return !q || name.toLowerCase().includes(q) || desc.toLowerCase().includes(q);
+                })
+                .map((a: any) => {
+                  const item = a.item;
+                  const isFinalized = item?.allowanceStatus === "finalized";
+                  const budgeted = (item?.priceIncTax || 0) * (item?.quantity || 1);
+                  const actual = (a.actualCost || 0) / 100;
+                  const variance = actual - budgeted;
+                  return (
+                    <div
+                      key={item.id}
+                      className={cn(
+                        "flex items-center gap-3 p-3 rounded-md border",
+                        isFinalized ? "hover-elevate cursor-pointer" : "opacity-40 cursor-not-allowed"
+                      )}
+                      onClick={() => {
+                        if (!isFinalized) return;
+                        addAllowanceLine({
+                          description: `${item.name} — allowance adjustment`,
+                          amount: variance,
+                        });
+                        setAllowancesModalOpen(false);
+                        setAllowancesSearch("");
+                      }}
+                      data-testid={`allowance-option-${item.id}`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium truncate">{item.name}</span>
+                          <Badge variant="outline" className="text-[10px] flex-shrink-0">{item.allowance}</Badge>
+                        </div>
+                        {item.description && (
+                          <p className="text-xs text-muted-foreground truncate mt-0.5">{item.description}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-4 flex-shrink-0 text-right">
+                        <div>
+                          <p className="text-xs text-muted-foreground">Budgeted</p>
+                          <p className="text-sm font-medium tabular-nums">{formatCurrency(budgeted)}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Actual</p>
+                          <p className="text-sm font-medium tabular-nums">{formatCurrency(actual)}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Variance</p>
+                          <p className={cn("text-sm font-semibold tabular-nums", variance < 0 ? "text-red-500" : variance > 0 ? "text-green-600" : "")}>
+                            {variance >= 0 ? "+" : ""}{formatCurrency(variance)}
+                          </p>
+                        </div>
+                        <Badge variant={isFinalized ? "default" : "secondary"} className="text-xs capitalize">
+                          {item.allowanceStatus || "pending"}
+                        </Badge>
+                      </div>
+                    </div>
+                  );
+                })
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 
