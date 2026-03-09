@@ -51,14 +51,16 @@ import {
   Bell,
   User as UserIcon,
   Tag,
+  Pin,
+  PinOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ProjectSwitcher } from "./ProjectSwitcher";
-
-type SectionId = "user" | "project" | "management" | "finance" | "allitems" | "system";
+import { ProjectIcon } from "./ProjectIcon";
+type SectionId = "user" | "project" | "management" | "finance" | "allitems" | "system" | "projects";
 
 interface NavItem {
   title: string;
@@ -164,8 +166,14 @@ const sections: Record<SectionId, { label: string; icon: React.ComponentType<{ c
   },
 };
 
-const sectionOrder: SectionId[] = ["project", "management", "finance", "allitems", "system"];
+const sectionOrder: SectionId[] = ["projects", "system"];
 const favoriteSections: SectionId[] = ["user", "project", "management", "finance"];
+
+const PROJECT_ALL_PAGES: NavItem[] = [
+  ...sections.project.items,
+  ...sections.management.items,
+  ...sections.finance.items,
+];
 
 const HOVER_DELAY_MS = 300;
 const LAST_SECTION_KEY = "sidebar_last_section";
@@ -395,15 +403,26 @@ export function SidebarNav() {
   const [location, navigate] = useLocation();
   const isMobile = useIsMobile();
   const [activeSection, setActiveSection] = useState<SectionId | null>(() => {
+    const pinned = (() => { try { return JSON.parse(localStorage.getItem("sidebar_pinned") ?? "false"); } catch { return false; } })();
+    if (pinned) return "projects";
     const saved = sessionStorage.getItem(LAST_SECTION_KEY);
     return (saved && sectionOrder.includes(saved as SectionId)) ? saved as SectionId : null;
   });
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isPinned, setIsPinned] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("sidebar_pinned") ?? "false"); } catch { return false; }
+  });
+  const [isDrawerOpen, setIsDrawerOpen] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("sidebar_pinned") ?? "false"); } catch { return false; }
+  });
   const [isFavoritesOpen, setIsFavoritesOpen] = useState(false);
   const [focusedItemIndex, setFocusedItemIndex] = useState<number>(-1);
+  const [expandedProjectIds, setExpandedProjectIds] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem("sidebar_expanded_projects") ?? "[]"); } catch { return []; }
+  });
   const drawerRef = useRef<HTMLDivElement>(null);
   const railRef = useRef<HTMLDivElement>(null);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const hoverOpenTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   const { currentProject, setCurrentProject } = useProject();
   const {
@@ -454,9 +473,12 @@ export function SidebarNav() {
         const urlProject = activeProjects.find(p => p.id === urlProjectId);
         if (urlProject) {
           setCurrentProject(urlProject);
+          setExpandedProjectIds(ids => ids.includes(urlProjectId) ? ids : [...ids, urlProjectId]);
           return;
         }
       }
+      // Auto-expand even if currentProject already matches
+      setExpandedProjectIds(ids => ids.includes(urlProjectId) ? ids : [...ids, urlProjectId]);
     }
     
     if (!currentProject) {
@@ -481,10 +503,23 @@ export function SidebarNav() {
   }, [activeSection]);
 
   useEffect(() => {
+    localStorage.setItem("sidebar_pinned", JSON.stringify(isPinned));
+    if (isPinned) {
+      if (!activeSection) setActiveSection("projects");
+      setIsDrawerOpen(true);
+    }
+  }, [isPinned]);
+
+  useEffect(() => {
+    localStorage.setItem("sidebar_expanded_projects", JSON.stringify(expandedProjectIds));
+  }, [expandedProjectIds]);
+
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!isDrawerOpen || !activeSection) return;
       
-      const items = dynamicSections[activeSection].items;
+      if (activeSection === "projects") return;
+      const items = dynamicSections[activeSection as Exclude<SectionId, "projects">].items;
       
       switch (e.key) {
         case "Escape":
@@ -561,12 +596,35 @@ export function SidebarNav() {
     if (hoverTimeoutRef.current) {
       clearTimeout(hoverTimeoutRef.current);
     }
+    if (hoverOpenTimeoutRef.current) {
+      clearTimeout(hoverOpenTimeoutRef.current);
+    }
+    if (!isDrawerOpen) {
+      hoverOpenTimeoutRef.current = setTimeout(() => {
+        if (!activeSection) setActiveSection("projects");
+        setIsDrawerOpen(true);
+        setIsFavoritesOpen(false);
+      }, 150);
+    }
+  };
+
+  const handleMouseLeaveRail = () => {
+    if (hoverOpenTimeoutRef.current) {
+      clearTimeout(hoverOpenTimeoutRef.current);
+    }
+    if (!isPinned) {
+      hoverTimeoutRef.current = setTimeout(() => {
+        setIsDrawerOpen(false);
+      }, HOVER_DELAY_MS);
+    }
   };
 
   const handleMouseLeaveDrawer = () => {
-    hoverTimeoutRef.current = setTimeout(() => {
-      setIsDrawerOpen(false);
-    }, HOVER_DELAY_MS);
+    if (!isPinned) {
+      hoverTimeoutRef.current = setTimeout(() => {
+        setIsDrawerOpen(false);
+      }, HOVER_DELAY_MS);
+    }
   };
 
   const handleMouseEnterDrawer = () => {
@@ -575,10 +633,14 @@ export function SidebarNav() {
     }
   };
 
+  const togglePin = useCallback(() => {
+    setIsPinned((p: boolean) => !p);
+  }, []);
+
   const handleNavClick = useCallback((url: string) => {
     navigate(url);
-    setIsDrawerOpen(false);
-  }, [navigate]);
+    if (!isPinned) setIsDrawerOpen(false);
+  }, [navigate, isPinned]);
 
   const closeDrawer = useCallback(() => {
     setIsDrawerOpen(false);
@@ -618,6 +680,7 @@ export function SidebarNav() {
         ref={railRef}
         className="flex flex-col h-full w-12 bg-background rounded-lg z-40"
         onMouseEnter={handleMouseEnterRail}
+        onMouseLeave={handleMouseLeaveRail}
       >
         {/* 3-Way Mode Selector */}
         <div className="flex flex-col items-center py-2 gap-0.5 border-b border-border/50 mx-1">
@@ -694,8 +757,11 @@ export function SidebarNav() {
         {/* Section Icons */}
         <div className="flex-1 flex flex-col py-1 gap-0.5">
           {sectionOrder.map((sectionId) => {
-            const section = dynamicSections[sectionId];
             const isActive = activeSection === sectionId;
+            const isProjects = sectionId === "projects";
+            const section = isProjects ? null : dynamicSections[sectionId as Exclude<SectionId, "projects">];
+            const Icon = isProjects ? FolderOpen : section!.icon;
+            const label = isProjects ? "Projects" : section!.label;
             
             return (
               <Tooltip key={sectionId} delayDuration={0}>
@@ -711,11 +777,11 @@ export function SidebarNav() {
                     )}
                     data-testid={`rail-${sectionId}`}
                   >
-                    <section.icon className="h-4 w-4" />
+                    <Icon className="h-4 w-4" />
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="right" sideOffset={8}>
-                  {section.label}
+                  {label}
                 </TooltipContent>
               </Tooltip>
             );
@@ -803,7 +869,9 @@ export function SidebarNav() {
             "bg-background shadow-xl z-30 transition-all duration-200 ease-out",
             isMobile 
               ? "fixed bottom-0 left-0 right-0 h-[70vh] rounded-t-xl border-t border-border"
-              : "absolute left-14 top-0 h-full w-48 rounded-lg border border-border translate-x-0"
+              : isPinned
+                ? "relative h-full w-48 flex-shrink-0 rounded-lg border border-border"
+                : "absolute left-14 top-0 h-full w-48 rounded-lg border border-border translate-x-0"
           )}
           onMouseLeave={isMobile ? undefined : handleMouseLeaveDrawer}
           onMouseEnter={isMobile ? undefined : handleMouseEnterDrawer}
@@ -819,9 +887,25 @@ export function SidebarNav() {
                 <div className="w-10 h-1 bg-muted-foreground/30 rounded-full mx-auto absolute top-2 left-1/2 -translate-x-1/2" />
               )}
               <span className={cn("font-semibold", isMobile ? "text-sm" : "text-xs")}>
-                {dynamicSections[activeSection].label}
+                {activeSection === "projects" ? "Projects" : dynamicSections[activeSection as Exclude<SectionId, "projects">]?.label ?? activeSection}
               </span>
               <div className="flex items-center gap-1">
+                {!isMobile && (
+                  <Tooltip delayDuration={0}>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={togglePin}
+                        data-testid="button-pin-sidebar"
+                      >
+                        {isPinned ? <PinOff className="h-3 w-3" /> : <Pin className="h-3 w-3" />}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">{isPinned ? "Unpin sidebar" : "Pin sidebar"}</TooltipContent>
+                  </Tooltip>
+                )}
                 <Tooltip delayDuration={0}>
                   <TooltipTrigger asChild>
                     <Button
@@ -838,7 +922,7 @@ export function SidebarNav() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={closeDrawer}
+                  onClick={() => { setIsPinned(false); closeDrawer(); }}
                   className={isMobile ? "h-8 w-8" : "h-6 w-6"}
                 >
                   <ChevronsLeft className={isMobile ? "h-4 w-4" : "h-3.5 w-3.5"} />
@@ -846,6 +930,67 @@ export function SidebarNav() {
               </div>
             </div>
             
+            {/* Projects tree — only shown when activeSection === "projects" */}
+            {activeSection === "projects" && (
+              <ScrollArea className="flex-1">
+                <div className="p-1.5 space-y-0.5">
+                  {activeProjects.map(project => {
+                    const isExpanded = expandedProjectIds.includes(project.id);
+                    const isCurrentProject = currentProject?.id === project.id;
+                    return (
+                      <div key={project.id}>
+                        <div className="flex items-center group/proj">
+                          <button
+                            onClick={() => { setCurrentProject(project); handleNavClick(`/projects/${project.id}`); }}
+                            className={cn(
+                              "flex items-center gap-1.5 flex-1 px-2 py-1.5 rounded-md text-xs hover-elevate active-elevate-2 transition-colors",
+                              isCurrentProject
+                                ? "text-primary font-medium bg-primary/10"
+                                : "text-muted-foreground hover:text-foreground"
+                            )}
+                          >
+                            <ProjectIcon icon={project.icon} color={project.color} className="h-3.5 w-3.5 flex-shrink-0" />
+                            <span className="flex-1 text-left truncate">{project.name}</span>
+                          </button>
+                          <button
+                            onClick={() => setExpandedProjectIds(ids =>
+                              isExpanded ? ids.filter(id => id !== project.id) : [...ids, project.id]
+                            )}
+                            className="p-1 text-muted-foreground hover:text-foreground opacity-0 group-hover/proj:opacity-100 transition-opacity"
+                          >
+                            {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                          </button>
+                        </div>
+                        {isExpanded && (
+                          <div className="ml-3 border-l border-border/50 pl-2 space-y-0.5 py-0.5">
+                            {PROJECT_ALL_PAGES.map(page => {
+                              const url = page.url === "" ? `/projects/${project.id}` : `/projects/${project.id}${page.url}`;
+                              const isActive = location === url || (url !== "/" && location.startsWith(url));
+                              return (
+                                <button
+                                  key={page.title}
+                                  onClick={() => handleNavClick(url)}
+                                  className={cn(
+                                    "flex items-center gap-1.5 w-full px-2 py-1 rounded-md text-xs hover-elevate active-elevate-2",
+                                    isActive
+                                      ? "bg-primary/10 text-primary font-medium"
+                                      : "text-muted-foreground hover:text-foreground"
+                                  )}
+                                >
+                                  <page.icon className="h-3 w-3 flex-shrink-0" />
+                                  <span className="truncate">{page.title}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </ScrollArea>
+            )}
+
             {/* Project Switcher for project-related sections */}
             {(activeSection === "project" || activeSection === "management" || activeSection === "finance") && (
               <div className="px-2 py-1.5 border-b border-border">
@@ -853,71 +998,73 @@ export function SidebarNav() {
               </div>
             )}
             
-            {/* Nav Items */}
-            <ScrollArea className="flex-1">
-              <div className={isMobile ? "p-2" : "p-1.5"}>
-                {dynamicSections[activeSection].items.map((item, index) => {
-                  const url = getItemUrl(activeSection, item);
-                  const isActive = location === url || 
-                    (url !== "/" && location.startsWith(url));
-                  const isFocused = focusedItemIndex === index;
-                  const showBadge = (item.title === "Inbox" || item.title === "Messages") && totalUnreadMessages > 0;
-                  const itemIsFavorite = favoriteSections.includes(activeSection) && isFavorite(activeSection, url);
-                  const projectIdForFav = (activeSection !== "user" && currentProject && !currentProject.isBusiness) 
-                    ? currentProject.id 
-                    : undefined;
-                  
-                  return (
-                    <div
-                      key={item.title}
-                      className="group flex items-center"
-                    >
-                      <button
-                        onClick={() => handleNavClick(url)}
-                        className={cn(
-                          "flex items-center flex-1 rounded-md transition-colors",
-                          "hover-elevate active-elevate-2",
-                          isMobile ? "gap-3 px-3 py-3 text-sm" : "gap-2 px-2 py-1.5 text-xs",
-                          isActive
-                            ? "bg-primary/10 text-primary font-medium"
-                            : "text-muted-foreground hover:text-foreground",
-                          isFocused && "ring-2 ring-primary/50 bg-muted/50"
-                        )}
-                        data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
+            {/* Nav Items — for all sections except "projects" */}
+            {activeSection !== "projects" && (
+              <ScrollArea className="flex-1">
+                <div className={isMobile ? "p-2" : "p-1.5"}>
+                  {dynamicSections[activeSection as Exclude<SectionId, "projects">].items.map((item, index) => {
+                    const url = getItemUrl(activeSection, item);
+                    const isActive = location === url || 
+                      (url !== "/" && location.startsWith(url));
+                    const isFocused = focusedItemIndex === index;
+                    const showBadge = (item.title === "Inbox" || item.title === "Messages") && totalUnreadMessages > 0;
+                    const itemIsFavorite = favoriteSections.includes(activeSection) && isFavorite(activeSection, url);
+                    const projectIdForFav = (activeSection !== "user" && currentProject && !currentProject.isBusiness) 
+                      ? currentProject.id 
+                      : undefined;
+                    
+                    return (
+                      <div
+                        key={item.title}
+                        className="group flex items-center"
                       >
-                        <item.icon className={isMobile ? "h-5 w-5 flex-shrink-0" : "h-3.5 w-3.5 flex-shrink-0"} />
-                        <span className="flex-1 text-left">{item.title}</span>
-                        {showBadge && (
-                          <Badge 
-                            variant="destructive" 
-                            className={isMobile ? "h-5 min-w-5 px-1.5 text-xs" : "h-4 min-w-4 px-1 text-[10px]"}
-                          >
-                            {totalUnreadMessages > 99 ? "99+" : totalUnreadMessages}
-                          </Badge>
-                        )}
-                      </button>
-                      {favoriteSections.includes(activeSection) && (
                         <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleFavorite(activeSection, item, getIconName(item), url, projectIdForFav);
-                          }}
+                          onClick={() => handleNavClick(url)}
                           className={cn(
-                            "p-1 rounded transition-opacity",
-                            itemIsFavorite 
-                              ? "text-yellow-500 opacity-100" 
-                              : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-yellow-500"
+                            "flex items-center flex-1 rounded-md transition-colors",
+                            "hover-elevate active-elevate-2",
+                            isMobile ? "gap-3 px-3 py-3 text-sm" : "gap-2 px-2 py-1.5 text-xs",
+                            isActive
+                              ? "bg-primary/10 text-primary font-medium"
+                              : "text-muted-foreground hover:text-foreground",
+                            isFocused && "ring-2 ring-primary/50 bg-muted/50"
                           )}
-                          data-testid={`favorite-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
+                          data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
                         >
-                          <Star className={cn("h-3 w-3", itemIsFavorite && "fill-current")} />
+                          <item.icon className={isMobile ? "h-5 w-5 flex-shrink-0" : "h-3.5 w-3.5 flex-shrink-0"} />
+                          <span className="flex-1 text-left">{item.title}</span>
+                          {showBadge && (
+                            <Badge 
+                              variant="destructive" 
+                              className={isMobile ? "h-5 min-w-5 px-1.5 text-xs" : "h-4 min-w-4 px-1 text-[10px]"}
+                            >
+                              {totalUnreadMessages > 99 ? "99+" : totalUnreadMessages}
+                            </Badge>
+                          )}
                         </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </ScrollArea>
+                        {favoriteSections.includes(activeSection) && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleFavorite(activeSection, item, getIconName(item), url, projectIdForFav);
+                            }}
+                            className={cn(
+                              "p-1 rounded transition-opacity",
+                              itemIsFavorite 
+                                ? "text-yellow-500 opacity-100" 
+                                : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-yellow-500"
+                            )}
+                            data-testid={`favorite-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
+                          >
+                            <Star className={cn("h-3 w-3", itemIsFavorite && "fill-current")} />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </ScrollArea>
+            )}
           </div>
         )}
         

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useLocation, useParams } from "wouter";
+import { useToolbarVisible } from "@/hooks/useToolbarVisible";
 import { useQuery } from "@tanstack/react-query";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { Home, CheckSquare, Calendar as CalendarIcon, Timer, FileText, MessageSquare, Settings as SettingsIcon, Bell, Activity } from "lucide-react";
@@ -133,9 +134,13 @@ export default function UserWorkspace() {
     );
   }
 
+  const { toolbarVisible } = useToolbarVisible();
+  const activeTabLabel = USER_TABS.find(t => t.id === activeTab)?.label ?? activeTab;
+
   return (
     <div className="flex flex-col h-full gap-1.5" data-testid="user-workspace-page">
       {/* User Info + Tabs in floating box */}
+      {toolbarVisible ? (
       <div className="surface-panel flex-shrink-0">
         {/* Row 1 - User Info */}
         <div className="h-10 flex items-center justify-between px-4 gap-4">
@@ -194,6 +199,13 @@ export default function UserWorkspace() {
         })}
         </div>
       </div>
+      ) : (
+        <div className="flex-shrink-0 px-4 py-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="font-medium text-foreground" data-testid="text-user-name">{getFullName(user.firstName, user.lastName)}</span>
+          <span>·</span>
+          <span>{activeTabLabel}</span>
+        </div>
+      )}
 
       {/* Content Area - widgets sit directly on page background */}
       <div className="flex-1 overflow-auto">

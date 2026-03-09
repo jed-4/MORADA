@@ -114,6 +114,11 @@ export default function Variations() {
   const [searchTerm, setSearchTerm] = useState("");
   const [columnConfig, setColumnConfig] = useState<{ id: string; visible: boolean; order: number }[]>(loadColumnConfig);
   const [columnPickerOpen, setColumnPickerOpen] = useState(false);
+  const [colWidths, setColWidths] = useState<Record<string, number>>(() =>
+    Object.fromEntries(ALL_COLUMNS.map(c => [c.id, c.defaultWidth]))
+  );
+  const colResizeRef = useRef<{ col: string; startX: number; startWidth: number } | null>(null);
+  const [resizingCol, setResizingCol] = useState<string | null>(null);
 
   const headerScrollRef = useRef<HTMLDivElement>(null);
   const bodyScrollRef = useRef<HTMLDivElement>(null);
@@ -122,6 +127,31 @@ export default function Variations() {
     if (headerScrollRef.current) {
       headerScrollRef.current.scrollLeft = e.currentTarget.scrollLeft;
     }
+  };
+
+  const startColResize = (colId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = colWidths[colId] ?? 100;
+    colResizeRef.current = { col: colId, startX, startWidth };
+    setResizingCol(colId);
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!colResizeRef.current) return;
+      const delta = ev.clientX - colResizeRef.current.startX;
+      const newWidth = Math.max(60, colResizeRef.current.startWidth + delta);
+      setColWidths(prev => ({ ...prev, [colResizeRef.current!.col]: newWidth }));
+    };
+
+    const onMouseUp = () => {
+      colResizeRef.current = null;
+      setResizingCol(null);
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
   };
 
   const queryParams: Record<string, string> = {};
@@ -267,26 +297,26 @@ export default function Variations() {
   const orderedColumns = [...columnConfig].sort((a, b) => a.order - b.order).filter(c => isColVisible(c.id));
   const totalWidth = orderedColumns.reduce((sum, col) => {
     const def = ALL_COLUMNS.find(d => d.id === col.id);
-    return sum + (def?.defaultWidth ?? 100);
+    return sum + (colWidths[col.id] ?? def?.defaultWidth ?? 100);
   }, 0);
 
   const renderCell = (col: { id: string }, variation: Variation & { isSeen?: boolean }) => {
     switch (col.id) {
       case "number":
         return (
-          <TableCell key="number" style={{ minWidth: 80, width: 80 }} className="text-xs font-medium px-2 py-1" data-testid={`cell-number-${variation.id}`}>
+          <TableCell key="number" style={{ width: colWidths["number"], minWidth: colWidths["number"] }} className="text-xs font-medium px-2 py-1" data-testid={`cell-number-${variation.id}`}>
             {variation.variationNumber}
           </TableCell>
         );
       case "name":
         return (
-          <TableCell key="name" style={{ minWidth: 200, width: 200 }} className="text-xs px-2 py-1" data-testid={`cell-name-${variation.id}`}>
+          <TableCell key="name" style={{ width: colWidths["name"], minWidth: colWidths["name"] }} className="text-xs px-2 py-1" data-testid={`cell-name-${variation.id}`}>
             <span className="line-clamp-1">{variation.name}</span>
           </TableCell>
         );
       case "project":
         return (
-          <TableCell key="project" style={{ minWidth: 150, width: 150 }} className="text-xs px-2 py-1" data-testid={`cell-project-${variation.id}`}>
+          <TableCell key="project" style={{ width: colWidths["project"], minWidth: colWidths["project"] }} className="text-xs px-2 py-1" data-testid={`cell-project-${variation.id}`}>
             <div className="flex items-center gap-1.5">
               <ProjectIcon
                 icon={getProject(variation.projectId)?.icon || "Briefcase"}
@@ -299,31 +329,31 @@ export default function Variations() {
         );
       case "status":
         return (
-          <TableCell key="status" style={{ minWidth: 110, width: 110 }} className="px-2 py-1" data-testid={`cell-status-${variation.id}`}>
+          <TableCell key="status" style={{ width: colWidths["status"], minWidth: colWidths["status"] }} className="px-2 py-1" data-testid={`cell-status-${variation.id}`}>
             <StatusChip status={variation.status} />
           </TableCell>
         );
       case "total":
         return (
-          <TableCell key="total" style={{ minWidth: 90, width: 90 }} className="text-xs font-medium text-right px-2 py-1" data-testid={`cell-total-${variation.id}`}>
+          <TableCell key="total" style={{ width: colWidths["total"], minWidth: colWidths["total"] }} className="text-xs font-medium text-right px-2 py-1" data-testid={`cell-total-${variation.id}`}>
             {formatCurrency(variation.totalAmount)}
           </TableCell>
         );
       case "paid":
         return (
-          <TableCell key="paid" style={{ minWidth: 90, width: 90 }} className="text-xs text-right px-2 py-1 text-muted-foreground" data-testid={`cell-paid-${variation.id}`}>
+          <TableCell key="paid" style={{ width: colWidths["paid"], minWidth: colWidths["paid"] }} className="text-xs text-right px-2 py-1 text-muted-foreground" data-testid={`cell-paid-${variation.id}`}>
             {variation.paidAmount > 0 ? formatCurrency(variation.paidAmount) : "-"}
           </TableCell>
         );
       case "balance":
         return (
-          <TableCell key="balance" style={{ minWidth: 100, width: 100 }} className={cn("text-xs font-medium text-right px-2 py-1", variation.balanceAmount > 0 ? "text-destructive" : "text-emerald-600 dark:text-emerald-400")} data-testid={`cell-balance-${variation.id}`}>
+          <TableCell key="balance" style={{ width: colWidths["balance"], minWidth: colWidths["balance"] }} className={cn("text-xs font-medium text-right px-2 py-1", variation.balanceAmount > 0 ? "text-destructive" : "text-emerald-600 dark:text-emerald-400")} data-testid={`cell-balance-${variation.id}`}>
             {formatCurrency(variation.balanceAmount)}
           </TableCell>
         );
       case "seen":
         return (
-          <TableCell key="seen" style={{ minWidth: 60, width: 60 }} className="px-2 py-1 text-center" data-testid={`cell-seen-${variation.id}`}>
+          <TableCell key="seen" style={{ width: colWidths["seen"], minWidth: colWidths["seen"] }} className="px-2 py-1 text-center" data-testid={`cell-seen-${variation.id}`}>
             <button
               type="button"
               onClick={(e) => {
@@ -341,14 +371,14 @@ export default function Variations() {
         );
       case "deadline":
         return (
-          <TableCell key="deadline" style={{ minWidth: 120, width: 120 }} className="text-xs text-muted-foreground px-2 py-1" data-testid={`cell-deadline-${variation.id}`}>
+          <TableCell key="deadline" style={{ width: colWidths["deadline"], minWidth: colWidths["deadline"] }} className="text-xs text-muted-foreground px-2 py-1" data-testid={`cell-deadline-${variation.id}`}>
             {formatDate(variation.approvalDeadline)}
           </TableCell>
         );
       case "relatedItems": {
         const links = invoiceLinkMap[variation.id] || [];
         return (
-          <TableCell key="relatedItems" style={{ minWidth: 150, width: 150 }} className="text-xs text-muted-foreground px-2 py-1" data-testid={`cell-related-${variation.id}`}>
+          <TableCell key="relatedItems" style={{ width: colWidths["relatedItems"], minWidth: colWidths["relatedItems"] }} className="text-xs text-muted-foreground px-2 py-1" data-testid={`cell-related-${variation.id}`}>
             {links.length > 0 ? links.join(", ") : "-"}
           </TableCell>
         );
@@ -614,7 +644,7 @@ export default function Variations() {
                       return (
                         <TableHead
                           key={col.id}
-                          style={{ minWidth: def.defaultWidth, width: def.defaultWidth }}
+                          style={{ width: colWidths[col.id], minWidth: colWidths[col.id], position: "relative" }}
                           className={cn(
                             "text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2",
                             isRight && "text-right",
@@ -623,6 +653,13 @@ export default function Variations() {
                           data-testid={`header-${col.id}`}
                         >
                           {def.label}
+                          <div
+                            className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize group/resize flex items-center justify-center z-10"
+                            onMouseDown={(e) => startColResize(col.id, e)}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <div className={`w-0.5 h-4 rounded-full transition-all ${resizingCol === col.id ? 'bg-primary' : 'bg-transparent group-hover/resize:bg-primary/60'}`} />
+                          </div>
                         </TableHead>
                       );
                     })}

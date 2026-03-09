@@ -893,6 +893,7 @@ export default function CustomizableProjectOverview() {
   return (
     <div className="flex flex-col h-full gap-1.5" data-testid="customizable-project-overview">
       {/* Header Panel - Rounded like Workspace */}
+      {toolbarVisible ? (
       <div className="surface-panel flex-shrink-0">
         {/* Row 1 - Title & Actions */}
         <div className="h-10 flex items-center justify-between px-4 gap-4">
@@ -926,7 +927,7 @@ export default function CustomizableProjectOverview() {
 
           {/* Right: Add Widget + Settings gear - only show on overview tab */}
           <div className="flex items-center gap-1.5">
-            {isOverviewTab && toolbarVisible && (
+            {isOverviewTab && (
               <>
                 <button
                   className="h-6 w-6 text-xs border rounded-md flex items-center justify-center hover-elevate active-elevate-2"
@@ -992,6 +993,13 @@ export default function CustomizableProjectOverview() {
         })}
         </div>
       </div>
+      ) : (
+        <div className="flex-shrink-0 px-4 py-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="font-medium text-foreground" data-testid="text-page-title">{currentProject.name}</span>
+          <span>·</span>
+          <span>{PROJECT_TABS.find(t => t.id === activeTab)?.label ?? activeTab}</span>
+        </div>
+      )}
 
       {/* Content Area - either tab content or widget dashboard */}
       {!isOverviewTab ? (

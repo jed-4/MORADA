@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useLocation } from "wouter";
+import { useToolbarVisible } from "@/hooks/useToolbarVisible";
 import { Home, FolderOpen, CheckSquare, Calendar as CalendarIcon, CreditCard, Timer, MessageSquare, ClipboardList, Users, FileText, HardDrive, GanttChart } from "lucide-react";
 import BusinessOverview from "@/components/BusinessOverview";
 import BusinessProjects from "./BusinessProjects";
@@ -35,6 +36,8 @@ export default function Business() {
   const [location, navigate] = useLocation();
   const { user } = useAuth();
   const businessLabel = (user as any)?.companyNickname || "Business";
+
+  const { toolbarVisible } = useToolbarVisible();
 
   const activeTab = useMemo(() => {
     // Sort tabs by path length (longest first) to match most specific path
@@ -84,6 +87,7 @@ export default function Business() {
   return (
     <div className="flex flex-col h-full gap-1.5" data-testid="business-page">
       {/* Header Panel - Rounded like Workspace */}
+      {toolbarVisible ? (
       <div className="surface-panel flex-shrink-0">
         {/* Row 1 - Title */}
         <div className="h-10 flex items-center justify-between px-4 gap-4">
@@ -122,6 +126,13 @@ export default function Business() {
           })}
         </div>
       </div>
+      ) : (
+        <div className="flex-shrink-0 px-4 py-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="font-medium text-foreground" data-testid="text-page-title">{businessLabel}</span>
+          <span>·</span>
+          <span>{BUSINESS_TABS.find(t => t.id === activeTab)?.label ?? activeTab}</span>
+        </div>
+      )}
 
       {/* Content Area */}
       <div className={`flex-1 min-h-0 ${activeTab === 'schedule' ? 'overflow-hidden' : 'overflow-auto'}`}>
