@@ -5,6 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -25,11 +31,37 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
+  Paperclip,
+  ImageIcon,
+  FileIcon,
 } from "lucide-react";
 import { type Rfq, type Project, type RfqQuote } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+
+// ── Attachment types ──────────────────────────────────────────────────────────
+
+interface Attachment {
+  name: string;
+  url: string;
+  size?: number;
+}
+
+function isImage(name: string) {
+  return /\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(name);
+}
+
+function isPdf(name: string) {
+  return /\.pdf$/i.test(name);
+}
+
+function formatBytes(bytes?: number) {
+  if (!bytes) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 // ── Status chips ──────────────────────────────────────────────────────────────
 
@@ -125,6 +157,12 @@ export default function RFQs() {
   const [quoteCache, setQuoteCache] = useState<Record<string, RfqQuote[]>>({});
   // In-flight fetches
   const [loadingQuotes, setLoadingQuotes] = useState<Set<string>>(new Set());
+  // Attachment preview modal
+  const [attachmentModal, setAttachmentModal] = useState<{
+    label: string;
+    attachments: Attachment[];
+  } | null>(null);
+  const [activeAttachment, setActiveAttachment] = useState<Attachment | null>(null);
 
   const queryParams: Record<string, string> = {};
   if (projectIdFromUrl) queryParams.projectId = projectIdFromUrl;
@@ -212,16 +250,17 @@ export default function RFQs() {
 
   // Child-row column widths (px) — header row is free-form flex
   const COL = {
-    toggle:   28,
-    indent:   116, // chevron + number cols combined for child indent
-    supplier: 220,
-    project:  140,
-    dueDate:  88,
-    sent:     88,
-    seen:     48,
-    status:   88,
-    amount:   96,
-    actions:  40,
+    toggle:      28,
+    indent:      116, // chevron + number cols combined for child indent
+    supplier:    220,
+    project:     140,
+    dueDate:     88,
+    sent:        88,
+    seen:        48,
+    attachments: 80,
+    status:      88,
+    amount:      96,
+    actions:     40,
   };
 
   const showProject = !projectIdFromUrl;
@@ -351,6 +390,7 @@ export default function RFQs() {
               <div style={{ width: COL.dueDate }} className={headerCellClass}>Due Date</div>
               <div style={{ width: COL.sent }} className={headerCellClass}>Sent</div>
               <div style={{ width: COL.seen }} className={cn(headerCellClass, "justify-center")}>Seen</div>
+              <div style={{ width: COL.attachments }} className={cn(headerCellClass, "justify-center")}>Files</div>
               <div style={{ width: COL.status }} className={headerCellClass}>Status</div>
               <div style={{ width: COL.amount }} className={headerCellClass}>Amount</div>
               <div style={{ width: COL.actions }} className={headerCellClass} />
@@ -503,6 +543,33 @@ export default function RFQs() {
                                   <EyeOff className="w-3 h-3 text-muted-foreground/25" />
                                 </span>
                               </div>
+                              {/* Attachments */}
+                              <div style={{ width: COL.attachments }} className="flex items-center justify-center flex-shrink-0">
+                                {(() => {
+                                  const files = (quote?.attachments as Attachment[] | undefined) ?? [];
+                                  if (files.length === 0) {
+                                    return <span className="text-muted-foreground/25"><Paperclip className="w-3 h-3" /></span>;
+                                  }
+                                  return (
+                                    <button
+                                      type="button"
+                                      className="flex items-center gap-0.5 px-1.5 py-0.5 rounded hover-elevate text-[#8b6bb1]"
+                                      title={`${files.length} file${files.length !== 1 ? "s" : ""}`}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setActiveAttachment(files[0]);
+                                        setAttachmentModal({
+                                          label: `${rfq.rfqNumber} — ${name}`,
+                                          attachments: files,
+                                        });
+                                      }}
+                                    >
+                                      <Paperclip className="w-3 h-3" />
+                                      <span className="text-[10px] font-semibold">{files.length}</span>
+                                    </button>
+                                  );
+                                })()}
+                              </div>
                               {/* Quote status */}
                               <div style={{ width: COL.status }} className="flex items-center flex-shrink-0 px-2">
                                 <QuoteStatusChip status={quote?.status ?? "pending"} />
@@ -532,6 +599,108 @@ export default function RFQs() {
           </div>
         )}
       </div>
+
+      {/* ── Attachment preview modal ── */}
+      <Dialog
+        open={!!attachmentModal}
+        onOpenChange={(open) => {
+          if (!open) {
+            setAttachmentModal(null);
+            setActiveAttachment(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-3xl w-full p-0 overflow-hidden flex flex-col gap-0" style={{ maxHeight: "80vh" }}>
+          <DialogHeader className="px-4 py-3 border-b border-border/50 flex-shrink-0">
+            <DialogTitle className="text-sm font-semibold flex items-center gap-2">
+              <Paperclip className="w-3.5 h-3.5 text-[#8b6bb1]" />
+              {attachmentModal?.label}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="flex flex-1 min-h-0">
+            {/* Left — file list */}
+            <div className="w-56 flex-shrink-0 border-r border-border/50 overflow-y-auto">
+              {attachmentModal?.attachments.map((file, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  className={cn(
+                    "w-full flex items-center gap-2 px-3 py-2.5 text-left border-b border-border/30 hover-elevate",
+                    activeAttachment?.url === file.url && "bg-[#bba7db]/10"
+                  )}
+                  onClick={() => setActiveAttachment(file)}
+                >
+                  {isImage(file.name)
+                    ? <ImageIcon className="w-3.5 h-3.5 text-sky-500 flex-shrink-0" />
+                    : isPdf(file.name)
+                    ? <FileText className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
+                    : <FileIcon className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />}
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-xs font-medium truncate">{file.name}</span>
+                    {file.size && (
+                      <span className="text-[10px] text-muted-foreground">{formatBytes(file.size)}</span>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {/* Right — preview pane */}
+            <div className="flex-1 min-w-0 bg-muted/20 flex flex-col items-center justify-center overflow-hidden">
+              {activeAttachment ? (
+                isImage(activeAttachment.name) ? (
+                  <img
+                    src={activeAttachment.url}
+                    alt={activeAttachment.name}
+                    className="max-w-full max-h-full object-contain p-4"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).style.display = "none";
+                      (e.currentTarget.nextSibling as HTMLElement | null)?.style?.removeProperty("display");
+                    }}
+                  />
+                ) : isPdf(activeAttachment.name) ? (
+                  <iframe
+                    src={activeAttachment.url}
+                    className="w-full h-full border-0"
+                    title={activeAttachment.name}
+                  />
+                ) : (
+                  <div className="flex flex-col items-center gap-3 text-muted-foreground p-8">
+                    <FileIcon className="w-10 h-10 opacity-30" />
+                    <p className="text-sm text-center">{activeAttachment.name}</p>
+                    <a
+                      href={activeAttachment.url}
+                      download={activeAttachment.name}
+                      className="flex items-center gap-1.5 text-xs text-[#8b6bb1] hover:underline"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      Download file
+                    </a>
+                  </div>
+                )
+              ) : (
+                <div className="text-xs text-muted-foreground">Select a file to preview</div>
+              )}
+              {/* Image load error fallback */}
+              {activeAttachment && isImage(activeAttachment.name) && (
+                <div className="hidden flex-col items-center gap-3 text-muted-foreground p-8">
+                  <ImageIcon className="w-10 h-10 opacity-30" />
+                  <p className="text-xs">Preview unavailable</p>
+                  <a
+                    href={activeAttachment.url}
+                    download={activeAttachment.name}
+                    className="flex items-center gap-1.5 text-xs text-[#8b6bb1] hover:underline"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Download file
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
