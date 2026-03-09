@@ -208,16 +208,15 @@ export default function RFQs() {
     setLocation(getNavigationPath(`/rfqs/${rfqId}`));
   };
 
-  // Column widths (px) — used to keep header and body aligned
+  // Child-row column widths (px) — header row is free-form flex
   const COL = {
     toggle:   28,
-    number:   100,
-    title:    220,
+    indent:   116, // chevron + number cols combined for child indent
+    supplier: 220,
     project:  140,
-    suppliers: 110,
     dueDate:  96,
     status:   96,
-    created:  96,
+    amount:   96,
     actions:  40,
   };
 
@@ -340,16 +339,14 @@ export default function RFQs() {
           )
         ) : (
           <div className="rounded-lg border border-border bg-card overflow-hidden h-full flex flex-col">
-            {/* Table header */}
+            {/* Table column header — labels match child rows */}
             <div className="flex items-center border-b border-border/50 flex-shrink-0 px-2">
-              <div style={{ width: COL.toggle }} className={headerCellClass} />
-              <div style={{ width: COL.number }} className={headerCellClass}>RFQ #</div>
-              <div style={{ width: COL.title }} className={headerCellClass}>Title</div>
+              <div style={{ width: COL.indent }} className={headerCellClass} />
+              <div style={{ width: COL.supplier }} className={headerCellClass}>Supplier</div>
               {showProject && <div style={{ width: COL.project }} className={headerCellClass}>Project</div>}
-              <div style={{ width: COL.suppliers }} className={headerCellClass}>Suppliers</div>
               <div style={{ width: COL.dueDate }} className={headerCellClass}>Due Date</div>
               <div style={{ width: COL.status }} className={headerCellClass}>Status</div>
-              <div style={{ width: COL.created }} className={headerCellClass}>Created</div>
+              <div style={{ width: COL.amount }} className={headerCellClass}>Amount</div>
               <div style={{ width: COL.actions }} className={headerCellClass} />
             </div>
 
@@ -373,7 +370,7 @@ export default function RFQs() {
 
                 return (
                   <div key={rfq.id} data-testid={`group-rfq-${rfq.id}`}>
-                    {/* RFQ header row */}
+                    {/* RFQ header row — name, number, created only */}
                     <div
                       className={cn(
                         "flex items-center px-2 h-9 cursor-pointer hover-elevate active-elevate-2 border-b border-border/30",
@@ -389,50 +386,17 @@ export default function RFQs() {
                           : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />}
                       </div>
                       {/* RFQ # */}
-                      <div style={{ width: COL.number }} className="flex items-center gap-1.5 flex-shrink-0 px-2">
+                      <div className="flex items-center gap-1.5 flex-shrink-0 px-2">
                         <FileText className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-                        <span className="text-xs font-semibold truncate">{rfq.rfqNumber}</span>
+                        <span className="text-xs font-semibold text-muted-foreground">{rfq.rfqNumber}</span>
                       </div>
-                      {/* Title */}
-                      <div style={{ width: COL.title }} className="flex items-center flex-shrink-0 px-2">
-                        <span className="text-xs truncate">{rfq.title}</span>
+                      {/* Title — stretches to fill */}
+                      <div className="flex items-center flex-1 min-w-0 px-2">
+                        <span className="text-xs font-medium truncate">{rfq.title}</span>
                       </div>
-                      {/* Project */}
-                      {showProject && (
-                        <div style={{ width: COL.project }} className="flex items-center gap-1.5 flex-shrink-0 px-2">
-                          {project && (
-                            <>
-                              <ProjectIcon
-                                icon={project.icon || "Briefcase"}
-                                color={project.color}
-                                className="w-3 h-3 flex-shrink-0"
-                              />
-                              <span className="text-xs truncate">{project.name}</span>
-                            </>
-                          )}
-                        </div>
-                      )}
-                      {/* Supplier count */}
-                      <div style={{ width: COL.suppliers }} className="flex items-center flex-shrink-0 px-2">
-                        <span className="text-xs text-muted-foreground">
-                          {rfq.supplierNames.length === 0
-                            ? <span className="text-muted-foreground/40">—</span>
-                            : `${rfq.supplierNames.length} supplier${rfq.supplierNames.length !== 1 ? "s" : ""}`}
-                        </span>
-                      </div>
-                      {/* Due date */}
-                      <div style={{ width: COL.dueDate }} className="flex items-center flex-shrink-0 px-2">
-                        <span className="text-xs text-muted-foreground">
-                          {formatDate(rfq.dueDate) ?? <span className="text-muted-foreground/40">—</span>}
-                        </span>
-                      </div>
-                      {/* Status */}
-                      <div style={{ width: COL.status }} className="flex items-center flex-shrink-0 px-2">
-                        <StatusChip status={rfq.status} />
-                      </div>
-                      {/* Created */}
-                      <div style={{ width: COL.created }} className="flex items-center flex-shrink-0 px-2">
-                        <span className="text-xs text-muted-foreground">
+                      {/* Created date — right-aligned before actions */}
+                      <div className="flex items-center flex-shrink-0 px-2">
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">
                           {format(new Date(rfq.createdAt), "d MMM yyyy")}
                         </span>
                       </div>
@@ -489,41 +453,46 @@ export default function RFQs() {
                               className="flex items-center px-2 h-8 bg-muted/10 border-b border-border/20 hover-elevate"
                               data-testid={`row-supplier-${rfq.id}-${idx}`}
                             >
-                              {/* Indent spacer (chevron col) */}
-                              <div style={{ width: COL.toggle }} className="flex-shrink-0" />
-                              {/* Empty RFQ # col — indent line */}
-                              <div style={{ width: COL.number }} className="flex items-center flex-shrink-0 px-2">
-                                <div className="w-px h-4 bg-border/60 mr-2" />
+                              {/* Indent — aligns with header chevron + RFQ# space */}
+                              <div style={{ width: COL.indent }} className="flex items-center flex-shrink-0 px-2">
+                                <div className="w-px h-4 bg-border/60 ml-2" />
                               </div>
-                              {/* Supplier name in title col */}
-                              <div style={{ width: COL.title }} className="flex items-center flex-shrink-0 px-2">
+                              {/* Supplier name */}
+                              <div style={{ width: COL.supplier }} className="flex items-center flex-shrink-0 px-2">
                                 <span className="text-xs text-foreground truncate font-medium">{name}</span>
                               </div>
-                              {/* Project col spacer */}
-                              {showProject && <div style={{ width: COL.project }} className="flex-shrink-0 px-2" />}
-                              {/* Suppliers col spacer */}
-                              <div style={{ width: COL.suppliers }} className="flex-shrink-0 px-2" />
-                              {/* Quote valid until (due date col) */}
+                              {/* Project */}
+                              {showProject && (
+                                <div style={{ width: COL.project }} className="flex items-center gap-1.5 flex-shrink-0 px-2">
+                                  {project && (
+                                    <>
+                                      <ProjectIcon
+                                        icon={project.icon || "Briefcase"}
+                                        color={project.color}
+                                        className="w-3 h-3 flex-shrink-0"
+                                      />
+                                      <span className="text-xs text-muted-foreground truncate">{project.name}</span>
+                                    </>
+                                  )}
+                                </div>
+                              )}
+                              {/* RFQ due date */}
                               <div style={{ width: COL.dueDate }} className="flex items-center flex-shrink-0 px-2">
                                 <span className="text-xs text-muted-foreground">
-                                  {quote?.validUntil
-                                    ? formatDate(quote.validUntil)
-                                    : <span className="text-muted-foreground/40">—</span>}
+                                  {formatDate(rfq.dueDate) ?? <span className="text-muted-foreground/40">—</span>}
                                 </span>
                               </div>
                               {/* Quote status */}
                               <div style={{ width: COL.status }} className="flex items-center flex-shrink-0 px-2">
                                 <QuoteStatusChip status={quote?.status ?? "pending"} />
                               </div>
-                              {/* Quote amount (created col) */}
-                              <div style={{ width: COL.created }} className="flex items-center flex-shrink-0 px-2">
+                              {/* Quote amount */}
+                              <div style={{ width: COL.amount }} className="flex items-center flex-shrink-0 px-2">
                                 <span className={cn(
                                   "text-xs tabular-nums font-medium",
                                   quote && quote.totalAmount > 0 ? "text-foreground" : "text-muted-foreground/40"
                                 )}>
-                                  {quote && quote.totalAmount > 0
-                                    ? formatCurrency(quote.totalAmount)
-                                    : "—"}
+                                  {quote && quote.totalAmount > 0 ? formatCurrency(quote.totalAmount) : "—"}
                                 </span>
                               </div>
                               {/* View link */}
