@@ -90,14 +90,14 @@ export default function Business() {
       {toolbarVisible ? (
       <div className="surface-panel flex-shrink-0">
         {/* Row 1 - Title */}
-        <div className="h-10 flex items-center justify-between px-4 gap-4">
+        <div className="h-8 flex items-center justify-between px-4 gap-4">
           <h2 className="text-sm font-semibold" data-testid="text-page-title">
             {businessLabel}
           </h2>
         </div>
 
         {/* Row 2 - Tabs - Underline Style */}
-        <div className="h-10 flex items-center px-4 gap-4 border-t border-border/50 overflow-x-auto">
+        <div className="h-8 flex items-center px-4 gap-4 border-t border-border/50 overflow-x-auto">
           {BUSINESS_TABS.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -127,10 +127,10 @@ export default function Business() {
         </div>
       </div>
       ) : (
-        <div className="flex-shrink-0 px-4 py-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-          <span className="font-medium text-foreground" data-testid="text-page-title">{businessLabel}</span>
+        <div className="flex-shrink-0 px-4 py-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="font-semibold text-foreground" data-testid="text-page-title">{businessLabel}</span>
           <span>·</span>
-          <span>{BUSINESS_TABS.find(t => t.id === activeTab)?.label ?? activeTab}</span>
+          <span className="font-medium text-foreground/70">{BUSINESS_TABS.find(t => t.id === activeTab)?.label ?? activeTab}</span>
         </div>
       )}
 

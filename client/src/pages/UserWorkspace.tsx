@@ -143,7 +143,7 @@ export default function UserWorkspace() {
       {toolbarVisible ? (
       <div className="surface-panel flex-shrink-0">
         {/* Row 1 - User Info */}
-        <div className="h-10 flex items-center justify-between px-4 gap-4">
+        <div className="h-8 flex items-center justify-between px-4 gap-4">
           <div className="flex items-center gap-2">
             <Avatar className="h-6 w-6" data-testid="avatar-user">
               <AvatarFallback className="text-xs bg-primary/20 text-primary">
@@ -168,7 +168,7 @@ export default function UserWorkspace() {
         </div>
 
         {/* Row 2 - Tabs - Underline Style */}
-        <div className="h-10 flex items-center px-4 gap-4 border-t border-border/50 overflow-x-auto">
+        <div className="h-8 flex items-center px-4 gap-4 border-t border-border/50 overflow-x-auto">
         {USER_TABS.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -200,10 +200,10 @@ export default function UserWorkspace() {
         </div>
       </div>
       ) : (
-        <div className="flex-shrink-0 px-4 py-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-          <span className="font-medium text-foreground" data-testid="text-user-name">{getFullName(user.firstName, user.lastName)}</span>
+        <div className="flex-shrink-0 px-4 py-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="font-semibold text-foreground" data-testid="text-user-name">{getFullName(user.firstName, user.lastName)}</span>
           <span>·</span>
-          <span>{activeTabLabel}</span>
+          <span className="font-medium text-foreground/70">{activeTabLabel}</span>
         </div>
       )}
 

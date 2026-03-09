@@ -51,8 +51,8 @@ import {
   Bell,
   User as UserIcon,
   Tag,
-  Pin,
-  PinOff,
+  PanelLeft,
+  PanelLeftClose,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -169,11 +169,6 @@ const sections: Record<SectionId, { label: string; icon: React.ComponentType<{ c
 const sectionOrder: SectionId[] = ["projects", "system"];
 const favoriteSections: SectionId[] = ["user", "project", "management", "finance"];
 
-const PROJECT_ALL_PAGES: NavItem[] = [
-  ...sections.project.items,
-  ...sections.management.items,
-  ...sections.finance.items,
-];
 
 const HOVER_DELAY_MS = 300;
 const LAST_SECTION_KEY = "sidebar_last_section";
@@ -416,9 +411,6 @@ export function SidebarNav() {
   });
   const [isFavoritesOpen, setIsFavoritesOpen] = useState(false);
   const [focusedItemIndex, setFocusedItemIndex] = useState<number>(-1);
-  const [expandedProjectIds, setExpandedProjectIds] = useState<string[]>(() => {
-    try { return JSON.parse(localStorage.getItem("sidebar_expanded_projects") ?? "[]"); } catch { return []; }
-  });
   const drawerRef = useRef<HTMLDivElement>(null);
   const railRef = useRef<HTMLDivElement>(null);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -473,12 +465,9 @@ export function SidebarNav() {
         const urlProject = activeProjects.find(p => p.id === urlProjectId);
         if (urlProject) {
           setCurrentProject(urlProject);
-          setExpandedProjectIds(ids => ids.includes(urlProjectId) ? ids : [...ids, urlProjectId]);
           return;
         }
       }
-      // Auto-expand even if currentProject already matches
-      setExpandedProjectIds(ids => ids.includes(urlProjectId) ? ids : [...ids, urlProjectId]);
     }
     
     if (!currentProject) {
@@ -510,9 +499,6 @@ export function SidebarNav() {
     }
   }, [isPinned]);
 
-  useEffect(() => {
-    localStorage.setItem("sidebar_expanded_projects", JSON.stringify(expandedProjectIds));
-  }, [expandedProjectIds]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -900,10 +886,10 @@ export function SidebarNav() {
                         onClick={togglePin}
                         data-testid="button-pin-sidebar"
                       >
-                        {isPinned ? <PinOff className="h-3 w-3" /> : <Pin className="h-3 w-3" />}
+                        {isPinned ? <PanelLeftClose className="h-3 w-3" /> : <PanelLeft className="h-3 w-3" />}
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent side="bottom">{isPinned ? "Unpin sidebar" : "Pin sidebar"}</TooltipContent>
+                    <TooltipContent side="bottom">{isPinned ? "Undock" : "Dock"}</TooltipContent>
                   </Tooltip>
                 )}
                 <Tooltip delayDuration={0}>
@@ -930,68 +916,70 @@ export function SidebarNav() {
               </div>
             </div>
             
-            {/* Projects tree — only shown when activeSection === "projects" */}
+            {/* Projects section — ProjectSwitcher + grouped section nav */}
             {activeSection === "projects" && (
-              <ScrollArea className="flex-1">
-                <div className="p-1.5 space-y-0.5">
-                  {activeProjects.map(project => {
-                    const isExpanded = expandedProjectIds.includes(project.id);
-                    const isCurrentProject = currentProject?.id === project.id;
-                    return (
-                      <div key={project.id}>
-                        <div className="flex items-center group/proj">
-                          <button
-                            onClick={() => { setCurrentProject(project); handleNavClick(`/projects/${project.id}`); }}
-                            className={cn(
-                              "flex items-center gap-1.5 flex-1 px-2 py-1.5 rounded-md text-xs hover-elevate active-elevate-2 transition-colors",
-                              isCurrentProject
-                                ? "text-primary font-medium bg-primary/10"
-                                : "text-muted-foreground hover:text-foreground"
-                            )}
-                          >
-                            <ProjectIcon icon={project.icon} color={project.color} className="h-3.5 w-3.5 flex-shrink-0" />
-                            <span className="flex-1 text-left truncate">{project.name}</span>
-                          </button>
-                          <button
-                            onClick={() => setExpandedProjectIds(ids =>
-                              isExpanded ? ids.filter(id => id !== project.id) : [...ids, project.id]
-                            )}
-                            className="p-1 text-muted-foreground hover:text-foreground opacity-0 group-hover/proj:opacity-100 transition-opacity"
-                          >
-                            {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                          </button>
-                        </div>
-                        {isExpanded && (
-                          <div className="ml-3 border-l border-border/50 pl-2 space-y-0.5 py-0.5">
-                            {PROJECT_ALL_PAGES.map(page => {
-                              const url = page.url === "" ? `/projects/${project.id}` : `/projects/${project.id}${page.url}`;
-                              const isActive = location === url || (url !== "/" && location.startsWith(url));
-                              return (
+              <>
+                <div className="px-2 py-1.5 border-b border-border flex-shrink-0">
+                  <ProjectSwitcher compact />
+                </div>
+                <ScrollArea className="flex-1">
+                  <div className={isMobile ? "p-2" : "p-1.5"}>
+                    {(["project", "management", "finance"] as const).map(sectionId => {
+                      const sec = dynamicSections[sectionId];
+                      return (
+                        <div key={sectionId}>
+                          <p className="text-[10px] uppercase tracking-wide text-muted-foreground px-2 pt-2 pb-0.5 select-none">
+                            {sec.label}
+                          </p>
+                          {sec.items.map((item, index) => {
+                            const url = getItemUrl(sectionId, item);
+                            const isActive = location === url || (url !== "/" && location.startsWith(url));
+                            const isFocused = focusedItemIndex === index;
+                            const itemIsFavorite = isFavorite(sectionId, url);
+                            const projectIdForFav = currentProject && !currentProject.isBusiness ? currentProject.id : undefined;
+                            return (
+                              <div key={item.title} className="group flex items-center">
                                 <button
-                                  key={page.title}
                                   onClick={() => handleNavClick(url)}
                                   className={cn(
-                                    "flex items-center gap-1.5 w-full px-2 py-1 rounded-md text-xs hover-elevate active-elevate-2",
+                                    "flex items-center flex-1 rounded-md transition-colors",
+                                    "hover-elevate active-elevate-2",
+                                    isMobile ? "gap-3 px-3 py-3 text-sm" : "gap-2 px-2 py-1.5 text-xs",
                                     isActive
                                       ? "bg-primary/10 text-primary font-medium"
-                                      : "text-muted-foreground hover:text-foreground"
+                                      : "text-muted-foreground hover:text-foreground",
+                                    isFocused && "ring-2 ring-primary/50 bg-muted/50"
                                   )}
                                 >
-                                  <page.icon className="h-3 w-3 flex-shrink-0" />
-                                  <span className="truncate">{page.title}</span>
+                                  <item.icon className={isMobile ? "h-5 w-5 flex-shrink-0" : "h-3.5 w-3.5 flex-shrink-0"} />
+                                  <span className="flex-1 text-left">{item.title}</span>
                                 </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </ScrollArea>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleFavorite(sectionId, item, getIconName(item), url, projectIdForFav);
+                                  }}
+                                  className={cn(
+                                    "p-1 rounded transition-opacity",
+                                    itemIsFavorite
+                                      ? "text-yellow-500 opacity-100"
+                                      : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-yellow-500"
+                                  )}
+                                >
+                                  <Star className={cn("h-3 w-3", itemIsFavorite && "fill-current")} />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </ScrollArea>
+              </>
             )}
 
-            {/* Project Switcher for project-related sections */}
+            {/* Project Switcher for standalone project-related sections */}
             {(activeSection === "project" || activeSection === "management" || activeSection === "finance") && (
               <div className="px-2 py-1.5 border-b border-border">
                 <ProjectSwitcher compact />

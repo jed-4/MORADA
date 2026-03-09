@@ -896,7 +896,7 @@ export default function CustomizableProjectOverview() {
       {toolbarVisible ? (
       <div className="surface-panel flex-shrink-0">
         {/* Row 1 - Title & Actions */}
-        <div className="h-10 flex items-center justify-between px-4 gap-4">
+        <div className="h-8 flex items-center justify-between px-4 gap-4">
           {/* Left: Project Name + Active chip */}
           <div className="flex items-center gap-2">
             <h2 className="text-sm font-semibold flex items-center gap-1.5" data-testid="text-page-title">
@@ -959,7 +959,7 @@ export default function CustomizableProjectOverview() {
         </div>
 
         {/* Row 2 - Navigation Tabs - Underline Style */}
-        <div className="h-10 flex items-center px-4 gap-4 border-t border-border/50 overflow-x-auto">
+        <div className="h-8 flex items-center px-4 gap-4 border-t border-border/50 overflow-x-auto">
         {PROJECT_TABS.map((tab) => {
           const Icon = tab.icon;
           const tabPath = tab.path ? `/projects/${currentProject.id}${tab.path}` : `/projects/${currentProject.id}`;
@@ -994,10 +994,10 @@ export default function CustomizableProjectOverview() {
         </div>
       </div>
       ) : (
-        <div className="flex-shrink-0 px-4 py-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-          <span className="font-medium text-foreground" data-testid="text-page-title">{currentProject.name}</span>
+        <div className="flex-shrink-0 px-4 py-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="font-semibold text-foreground" data-testid="text-page-title">{currentProject.name}</span>
           <span>·</span>
-          <span>{PROJECT_TABS.find(t => t.id === activeTab)?.label ?? activeTab}</span>
+          <span className="font-medium text-foreground/70">{PROJECT_TABS.find(t => t.id === activeTab)?.label ?? activeTab}</span>
         </div>
       )}
 
