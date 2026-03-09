@@ -239,7 +239,8 @@ export function ProjectSwitcher({ compact = false }: ProjectSwitcherProps) {
       if (project.isBusiness) {
         navigate('/business');
       } else {
-        navigate(`/projects/${project.id}`);
+        const suffix = location.match(/^\/projects\/[^/]+(\/[^?#]*)?/)?.[1] ?? "";
+        navigate(`/projects/${project.id}${suffix}`);
       }
     });
   };

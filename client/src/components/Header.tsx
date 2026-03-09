@@ -1,4 +1,4 @@
-import { Calendar, User, Settings, LogOut, Building2, Plus, FileText, CheckSquare, Folder, Palette, ChevronDown, Home, MessageSquare, Clock, Calculator, FileBarChart, FileSearch, HelpCircle, File, DollarSign, Receipt, CreditCard, BookOpen, Timer, PiggyBank, FolderOpen, Users, ClipboardList, Sun, Moon, Kanban, Search, ChevronLeft, ChevronRight, Star, GanttChart, HardDrive, Clipboard, LayoutDashboard, Check } from "lucide-react";
+import { Calendar, User, Settings, LogOut, Building2, Plus, FileText, CheckSquare, Folder, Palette, ChevronDown, Home, MessageSquare, Clock, Calculator, FileBarChart, FileSearch, HelpCircle, File, DollarSign, Receipt, CreditCard, BookOpen, Timer, PiggyBank, FolderOpen, Users, ClipboardList, Kanban, Search, ChevronLeft, ChevronRight, Star, GanttChart, HardDrive, Clipboard, LayoutDashboard, Check } from "lucide-react";
 import { useLocation } from "wouter";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -54,7 +54,7 @@ export default function Header() {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
-  const [isDark, setIsDark] = useState(false);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [isProjectSearchOpen, setIsProjectSearchOpen] = useState(false);
   const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
@@ -218,10 +218,6 @@ export default function Header() {
   // Prioritize: company nickname (Display Name) > company name > fallback
   const companyDisplayName = company?.nickname || company?.name || "BuildPro";
 
-  // Initialize dark mode state on mount
-  useEffect(() => {
-    setIsDark(document.documentElement.classList.contains('dark'));
-  }, []);
 
   // Keyboard shortcut for global search (Cmd+K / Ctrl+K)
   useEffect(() => {
@@ -280,10 +276,6 @@ export default function Header() {
     navigate('/selections');
   };
 
-  const toggleDarkMode = () => {
-    document.documentElement.classList.toggle('dark');
-    setIsDark(document.documentElement.classList.contains('dark'));
-  };
   
   return (
     <header className="flex items-center justify-between px-3 py-1.5 surface-panel sticky top-0 z-50 flex-shrink-0">
@@ -679,15 +671,7 @@ export default function Header() {
         <TimeClockWidget />
 
         {/* Dark Mode Toggle */}
-        <Button 
-          variant="ghost" 
-          size="icon" 
-          onClick={toggleDarkMode}
-          data-testid="button-dark-mode"
-          className="h-7 w-7"
-        >
-          {isDark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
-        </Button>
+        <ThemeToggle />
 
         {/* New Button with Dropdown */}
         <DropdownMenu>
