@@ -34,7 +34,7 @@ export interface CalendarEvent {
   projectName?: string | null;
   assigneeName?: string | null;
   assigneeId?: string | null;
-  type: "task" | "schedule" | "meeting" | "google-calendar";
+  type: "task" | "schedule" | "meeting" | "google-calendar" | "timesheet" | "site_diary";
   status?: string;
   isCompleted?: boolean;
   description?: string | null;
@@ -81,23 +81,25 @@ interface DraggableEventProps {
 
 function DraggableEvent({ event, index, onEventClick, onToggleComplete, showCompletionCheckbox, showResizeHandles = false, displayOptions }: DraggableEventProps) {
   const isGoogleCalendarEvent = event.type === "google-calendar";
+  const isLookbackEvent = event.type === "timesheet" || event.type === "site_diary";
+  const isReadOnlyEvent = isGoogleCalendarEvent || isLookbackEvent;
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: event.id,
     data: { event, type: 'move' },
-    disabled: isGoogleCalendarEvent, // Disable dragging for Google Calendar events
+    disabled: isReadOnlyEvent,
   });
 
   // Separate draggable hooks for resize handles
   const { attributes: topAttrs, listeners: topListeners, setNodeRef: setTopRef } = useDraggable({
     id: `${event.id}:resize-start`,
     data: { event, type: 'resize-start' },
-    disabled: isGoogleCalendarEvent || !showResizeHandles,
+    disabled: isReadOnlyEvent || !showResizeHandles,
   });
 
   const { attributes: bottomAttrs, listeners: bottomListeners, setNodeRef: setBottomRef } = useDraggable({
     id: `${event.id}:resize-end`,
     data: { event, type: 'resize-end' },
-    disabled: isGoogleCalendarEvent || !showResizeHandles,
+    disabled: isReadOnlyEvent || !showResizeHandles,
   });
 
   const isCompleted = event.status === "done" || event.status === "completed" || event.isCompleted;
@@ -111,18 +113,18 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
   return (
     <div
       ref={setNodeRef}
-      {...(!isGoogleCalendarEvent ? attributes : {})}
-      {...(!isGoogleCalendarEvent ? listeners : {})}
+      {...(!isReadOnlyEvent ? attributes : {})}
+      {...(!isReadOnlyEvent ? listeners : {})}
       key={`${event.id}-${index}`}
       data-testid={`event-${event.type}-${event.id}`}
       onClick={() => onEventClick?.(event)}
       className={cn(
         "group relative flex items-start gap-1.5 px-1.5 pt-0.5 pb-0.5 rounded text-[11px] mb-0.5 transition-all overflow-hidden shadow-sm",
         showResizeHandles && "h-full",
-        !isGoogleCalendarEvent && "touch-none",
-        !isGoogleCalendarEvent && !showResizeHandles && "cursor-move hover:shadow-md",
-        showResizeHandles && !isGoogleCalendarEvent && "cursor-move hover:shadow-md",
-        isGoogleCalendarEvent && "cursor-pointer hover:shadow-md",
+        !isReadOnlyEvent && "touch-none",
+        !isReadOnlyEvent && !showResizeHandles && "cursor-move hover:shadow-md",
+        showResizeHandles && !isReadOnlyEvent && "cursor-move hover:shadow-md",
+        isReadOnlyEvent && "cursor-pointer hover:shadow-md",
         isCompleted && "opacity-60",
         isDragging && "opacity-50 scale-[0.98] shadow-lg"
       )}
@@ -132,7 +134,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
       }}
     >
       {/* Top resize handle - Notion style, only interactive on hover */}
-      {showResizeHandles && !isGoogleCalendarEvent && (
+      {showResizeHandles && !isReadOnlyEvent && (
         <div
           ref={setTopRef}
           {...topAttrs}
@@ -227,7 +229,7 @@ function DraggableEvent({ event, index, onEventClick, onToggleComplete, showComp
       </div>
 
       {/* Bottom resize handle - Notion style, only interactive on hover */}
-      {showResizeHandles && !isGoogleCalendarEvent && (
+      {showResizeHandles && !isReadOnlyEvent && (
         <div
           ref={setBottomRef}
           {...bottomAttrs}

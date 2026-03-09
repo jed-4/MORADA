@@ -20,6 +20,9 @@ import {
   MoreHorizontal,
   ChevronLeft,
   ChevronRight,
+  History,
+  Clock,
+  BookOpen,
 } from "lucide-react";
 import { EnhancedCalendar, CalendarEvent } from "@/components/EnhancedCalendar";
 import { TaskDetailModal } from "@/components/TaskDetailModal";
@@ -96,6 +99,8 @@ export default function PersonalCalendar() {
 
   const [showParentItems, setShowParentItems] = useState(true);
   const [showChildItems, setShowChildItems] = useState(true);
+  const [showLookback, setShowLookback] = useState(false);
+  const [lookbackEvent, setLookbackEvent] = useState<CalendarEvent | null>(null);
 
   const dateRange = useMemo(() => {
     const bufferMonths = 1;
@@ -191,6 +196,22 @@ export default function PersonalCalendar() {
   const taskStatusCategory = fieldCategories.find((cat: any) => cat.key === "task.status");
   const statusOptions = taskStatusCategory?.options || [];
   const completedOption = statusOptions.find((opt: any) => opt.key === "done");
+
+  // Lookback: timesheets for current user
+  const { data: lookbackTimesheets = [] } = useQuery({
+    queryKey: ["/api/timesheets", "lookback", displayedUserId],
+    queryFn: () => apiRequest(`/api/timesheets?userId=${displayedUserId}`, "GET"),
+    enabled: showLookback && !!displayedUserId,
+    staleTime: 2 * 60 * 1000,
+  });
+
+  // Lookback: site diary entries for current user
+  const { data: lookbackDiaries = [] } = useQuery({
+    queryKey: ["/api/company/site-diary-entries", "lookback"],
+    queryFn: () => apiRequest("/api/company/site-diary-entries", "GET"),
+    enabled: showLookback && !!displayedUserId,
+    staleTime: 2 * 60 * 1000,
+  });
 
   // Create default view on first load
   const { data: views = [], isLoading: isLoadingViews } = useQuery({
@@ -457,7 +478,53 @@ export default function PersonalCalendar() {
         };
       });
 
-    const allEvents = [...taskEvents, ...scheduleEvents, ...googleCalendarEvents];
+    // Lookback: timesheets
+    const timesheetEvents: CalendarEvent[] = showLookback
+      ? (lookbackTimesheets as any[]).map((ts: any) => {
+          const project = projects.find((p: any) => p.id === ts.projectId);
+          const hours = parseFloat(ts.duration ?? "0");
+          return {
+            id: `ts-${ts.id}`,
+            title: `${project?.name ?? "Timesheet"} · ${hours % 1 === 0 ? hours : hours.toFixed(1)}h`,
+            startDate: new Date(ts.date),
+            endDate: new Date(ts.date),
+            startTime: ts.startTime ?? null,
+            endTime: ts.endTime ?? null,
+            color: "#f59e0b",
+            projectId: ts.projectId ?? null,
+            projectColor: "#f59e0b",
+            projectName: project?.name ?? null,
+            type: "timesheet" as const,
+            isCompleted: true,
+            description: ts.description ?? null,
+            resource: ts,
+          };
+        })
+      : [];
+
+    // Lookback: site diary entries (filtered to current user)
+    const diaryEvents: CalendarEvent[] = showLookback
+      ? (lookbackDiaries as any[])
+          .filter((d: any) => d.createdBy === displayedUserId)
+          .map((d: any) => {
+            const project = projects.find((p: any) => p.id === d.projectId);
+            return {
+              id: `diary-${d.id}`,
+              title: d.title,
+              startDate: new Date(d.entryDateTime),
+              endDate: new Date(d.entryDateTime),
+              color: "#14b8a6",
+              projectId: d.projectId ?? null,
+              projectColor: "#14b8a6",
+              projectName: project?.name ?? null,
+              type: "site_diary" as const,
+              isCompleted: true,
+              resource: d,
+            };
+          })
+      : [];
+
+    const allEvents = [...taskEvents, ...scheduleEvents, ...googleCalendarEvents, ...timesheetEvents, ...diaryEvents];
 
     // Apply filters
     let filtered = allEvents;
@@ -497,10 +564,10 @@ export default function PersonalCalendar() {
     }
 
     return filtered;
-  }, [userTasks, allScheduleItems, schedules, projects, completedOption, googleCalendarEvents, filters, displayedUserId, taskTemplates, companySettings?.brandColor, showParentItems, showChildItems]);
+  }, [userTasks, allScheduleItems, schedules, projects, completedOption, googleCalendarEvents, filters, displayedUserId, taskTemplates, companySettings?.brandColor, showParentItems, showChildItems, showLookback, lookbackTimesheets, lookbackDiaries]);
 
   const handleEventComplete = (eventId: string, completed: boolean) => {
-    if (eventId.startsWith('google-')) {
+    if (eventId.startsWith('google-') || eventId.startsWith('ts-') || eventId.startsWith('diary-')) {
       return;
     }
     const defaultOption = statusOptions.find((opt: any) => opt.key === "todo");
@@ -570,6 +637,10 @@ export default function PersonalCalendar() {
   };
 
   const handleEventClick = (event: CalendarEvent) => {
+    if (event.type === "timesheet" || event.type === "site_diary") {
+      setLookbackEvent(event);
+      return;
+    }
     setSelectedEvent(event);
     setDetailDialogOpen(true);
   };
@@ -1058,6 +1129,27 @@ export default function PersonalCalendar() {
               Clear All
             </button>
           )}
+
+          {/* Lookback Toggle */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                className={`h-6 w-auto px-2 text-xs border rounded-md active-elevate-2 flex items-center gap-1 transition-colors ${
+                  showLookback
+                    ? "bg-amber-500/15 border-amber-500/40 text-amber-700 dark:text-amber-400"
+                    : "hover-elevate text-muted-foreground"
+                }`}
+                onClick={() => setShowLookback(!showLookback)}
+                data-testid="button-toggle-lookback"
+              >
+                <History className="w-3 h-3" />
+                <span>Lookback</span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-xs">
+              Show your completed timesheets and site diaries
+            </TooltipContent>
+          </Tooltip>
         </div>
 
         {/* Right: Navigation & View Controls */}
@@ -1159,6 +1251,54 @@ export default function PersonalCalendar() {
         onOpenChange={(open) => !open && setEditingTask(null)}
         onDelete={(taskId) => deleteTaskMutation.mutate(taskId)}
       />
+
+      {/* Lookback Detail Dialog */}
+      <Dialog open={!!lookbackEvent} onOpenChange={(open) => !open && setLookbackEvent(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              {lookbackEvent?.type === "timesheet" ? (
+                <Clock className="h-4 w-4 text-amber-500" />
+              ) : (
+                <BookOpen className="h-4 w-4 text-teal-500" />
+              )}
+              {lookbackEvent?.type === "timesheet" ? "Timesheet" : "Site Diary"}
+            </DialogTitle>
+          </DialogHeader>
+          {lookbackEvent && (
+            <div className="space-y-3 text-sm">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-0.5">
+                  {lookbackEvent.type === "timesheet" ? "Project & Duration" : "Title"}
+                </p>
+                <p className="font-medium">{lookbackEvent.title}</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-0.5">Date</p>
+                <p>{format(lookbackEvent.startDate, "EEEE, d MMMM yyyy")}</p>
+              </div>
+              {lookbackEvent.type === "timesheet" && lookbackEvent.startTime && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-0.5">Time</p>
+                  <p>{lookbackEvent.startTime}{lookbackEvent.endTime ? ` – ${lookbackEvent.endTime}` : ""}</p>
+                </div>
+              )}
+              {lookbackEvent.projectName && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-0.5">Project</p>
+                  <p>{lookbackEvent.projectName}</p>
+                </div>
+              )}
+              {lookbackEvent.description && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-0.5">Notes</p>
+                  <p className="text-muted-foreground">{lookbackEvent.description}</p>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Create View Dialog */}
       <Dialog open={showCreateViewDialog} onOpenChange={setShowCreateViewDialog}>

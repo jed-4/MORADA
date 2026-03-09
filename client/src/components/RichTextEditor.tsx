@@ -57,7 +57,7 @@ export function RichTextEditor({
       },
       editorProps: {
         attributes: {
-          class: 'prose prose-sm max-w-none focus:outline-none',
+          class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none',
         },
       },
     },
@@ -179,7 +179,7 @@ export function RichTextEditor({
         <EditorContent
           editor={editor}
           className={cn(
-            "prose prose-sm max-w-none p-3 min-h-[120px]",
+            "prose prose-sm dark:prose-invert max-w-none p-3 min-h-[120px]",
             "focus-within:outline-none",
             "[&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-[100px] [&_.ProseMirror]:whitespace-pre-wrap",
             "[&_ul]:list-disc [&_ul]:ml-6",

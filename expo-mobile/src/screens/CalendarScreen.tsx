@@ -57,7 +57,7 @@ interface CalendarEvent {
   endDate?: string;
   startTime?: string | null;
   endTime?: string | null;
-  type: 'task' | 'schedule' | 'timesheet' | 'reminder';
+  type: 'task' | 'schedule' | 'timesheet' | 'reminder' | 'site_diary';
   color: string;
   status?: string;
   projectId?: string;
@@ -86,6 +86,7 @@ const EVENT_COLORS: Record<string, string> = {
   schedule: '#10b981',
   timesheet: '#f59e0b',
   reminder: '#a855f7',
+  site_diary: '#14b8a6',
 };
 
 function isSameDay(d1: Date, d2: Date): boolean {
@@ -141,6 +142,8 @@ export default function CalendarScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [showLookback, setShowLookback] = useState(false);
+  const [lookbackEvents, setLookbackEvents] = useState<CalendarEvent[]>([]);
 
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
@@ -246,8 +249,72 @@ export default function CalendarScreen({ navigation }: Props) {
     setRefreshing(false);
   }, [fetchData]);
 
+  const fetchLookbackData = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const [projectsData, timesheetsData, diariesData] = await Promise.all([
+        apiFetch<Project[]>('/api/projects').catch(() => [] as Project[]),
+        apiFetch<any[]>(`/api/timesheets?userId=${user.id}`).catch(() => []),
+        apiFetch<any[]>('/api/company/site-diary-entries').catch(() => []),
+      ]);
+      const projectMap: Record<string, string> = {};
+      (projectsData || []).forEach((p: Project) => { projectMap[p.id] = p.name; });
+
+      const lb: CalendarEvent[] = [];
+
+      (timesheetsData || []).forEach((ts: any) => {
+        const hours = parseFloat(ts.duration ?? '0');
+        const projectName = ts.projectId ? projectMap[ts.projectId] : undefined;
+        lb.push({
+          id: `ts-${ts.id}`,
+          title: `${projectName ?? 'Timesheet'} · ${hours % 1 === 0 ? hours : hours.toFixed(1)}h`,
+          date: ts.date.split('T')[0],
+          startTime: ts.startTime ?? null,
+          endTime: ts.endTime ?? null,
+          type: 'timesheet',
+          color: EVENT_COLORS.timesheet,
+          projectId: ts.projectId,
+          projectName,
+          raw: ts,
+        });
+      });
+
+      (diariesData || [])
+        .filter((d: any) => d.createdBy === user.id)
+        .forEach((d: any) => {
+          const projectName = d.projectId ? projectMap[d.projectId] : undefined;
+          lb.push({
+            id: `diary-${d.id}`,
+            title: d.title,
+            date: d.entryDateTime.split('T')[0],
+            type: 'site_diary',
+            color: EVENT_COLORS.site_diary,
+            projectId: d.projectId,
+            projectName,
+            raw: d,
+          });
+        });
+
+      setLookbackEvents(lb);
+    } catch (e) {
+      console.error('Failed to fetch lookback data:', e);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (showLookback) {
+      fetchLookbackData();
+    } else {
+      setLookbackEvents([]);
+    }
+  }, [showLookback, fetchLookbackData]);
+
+  const allDisplayEvents = useMemo(() => {
+    return showLookback ? [...events, ...lookbackEvents] : events;
+  }, [events, lookbackEvents, showLookback]);
+
   const getEventsForDate = useCallback((date: Date): CalendarEvent[] => {
-    return events.filter(event => {
+    return allDisplayEvents.filter(event => {
       const eventDate = new Date(event.date);
       eventDate.setHours(0, 0, 0, 0);
       const checkDate = new Date(date);
@@ -426,7 +493,7 @@ export default function CalendarScreen({ navigation }: Props) {
       </View>
       <View style={[styles.eventTypeBadge, { backgroundColor: event.color + '20' }]}>
         <Text style={[styles.eventTypeText, { color: event.color }]}>
-          {event.type === 'task' ? 'Task' : event.type === 'schedule' ? 'Schedule' : event.type === 'timesheet' ? 'Time' : 'Reminder'}
+          {event.type === 'task' ? 'Task' : event.type === 'schedule' ? 'Schedule' : event.type === 'timesheet' ? 'Time' : event.type === 'site_diary' ? 'Diary' : 'Reminder'}
         </Text>
       </View>
     </TouchableOpacity>
@@ -801,7 +868,7 @@ export default function CalendarScreen({ navigation }: Props) {
               </View>
               <View style={[styles.eventTypeBadge, { backgroundColor: event.color + '20' }]}>
                 <Text style={[styles.eventTypeText, { color: event.color }]}>
-                  {event.type === 'task' ? 'Task' : event.type === 'schedule' ? 'Schedule' : event.type === 'timesheet' ? 'Time' : 'Reminder'}
+                  {event.type === 'task' ? 'Task' : event.type === 'schedule' ? 'Schedule' : event.type === 'timesheet' ? 'Time' : event.type === 'site_diary' ? 'Diary' : 'Reminder'}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -823,28 +890,44 @@ export default function CalendarScreen({ navigation }: Props) {
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Calendar</Text>
-        {(viewMode === 'day' || viewMode === 'week') && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {/* Lookback toggle */}
           <TouchableOpacity
             style={[
               styles.displayModeToggle,
-              { backgroundColor: displayMode === 'timeline' ? colors.accent + '20' : colors.bg, borderColor: colors.border },
+              {
+                backgroundColor: showLookback ? '#f59e0b20' : colors.bg,
+                borderColor: showLookback ? '#f59e0b80' : colors.border,
+              },
             ]}
-            onPress={() => setDisplayMode(prev => prev === 'list' ? 'timeline' : 'list')}
+            onPress={() => setShowLookback(prev => !prev)}
             activeOpacity={0.7}
           >
-            <Ionicons
-              name={displayMode === 'timeline' ? 'list-outline' : 'time-outline'}
-              size={16}
-              color={displayMode === 'timeline' ? colors.accent : colors.secondary}
-            />
-            <Text style={[
-              styles.displayModeText,
-              { color: displayMode === 'timeline' ? colors.accent : colors.secondary },
-            ]}>
-              {displayMode === 'timeline' ? 'List' : 'Timeline'}
+            <Ionicons name="time-outline" size={16} color={showLookback ? '#f59e0b' : colors.secondary} />
+            <Text style={[styles.displayModeText, { color: showLookback ? '#f59e0b' : colors.secondary }]}>
+              Lookback
             </Text>
           </TouchableOpacity>
-        )}
+          {(viewMode === 'day' || viewMode === 'week') && (
+            <TouchableOpacity
+              style={[
+                styles.displayModeToggle,
+                { backgroundColor: displayMode === 'timeline' ? colors.accent + '20' : colors.bg, borderColor: colors.border },
+              ]}
+              onPress={() => setDisplayMode(prev => prev === 'list' ? 'timeline' : 'list')}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={displayMode === 'timeline' ? 'list-outline' : 'time-outline'}
+                size={16}
+                color={displayMode === 'timeline' ? colors.accent : colors.secondary}
+              />
+              <Text style={[styles.displayModeText, { color: displayMode === 'timeline' ? colors.accent : colors.secondary }]}>
+                {displayMode === 'timeline' ? 'List' : 'Timeline'}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       <View style={[styles.segmentedControl, { backgroundColor: colors.card, borderColor: colors.border }]}>
