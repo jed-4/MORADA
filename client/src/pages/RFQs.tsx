@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useParams } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -11,14 +11,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
   Plus,
   FileText,
   MoreHorizontal,
@@ -27,11 +19,17 @@ import {
   Send,
   ClipboardList,
   ArrowRight,
+  ChevronRight,
+  ChevronDown,
+  Loader2,
+  ExternalLink,
 } from "lucide-react";
-import { type Rfq, type Project } from "@shared/schema";
+import { type Rfq, type Project, type RfqQuote } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+
+// ── Status chips ──────────────────────────────────────────────────────────────
 
 const STATUS_OPTIONS = [
   { key: "all",      label: "All" },
@@ -64,12 +62,52 @@ function StatusChip({ status }: { status: string }) {
         "inline-flex items-center justify-center w-20 py-0.5 rounded text-[11px] font-medium border",
         STATUS_CHIP[status] ?? "bg-muted text-muted-foreground border-transparent"
       )}
-      data-testid={`badge-status-${status}`}
     >
       {STATUS_LABEL[status] ?? status}
     </span>
   );
 }
+
+const QUOTE_CHIP: Record<string, string> = {
+  pending:  "bg-amber-50  dark:bg-amber-950/60  text-amber-700  dark:text-amber-300  border-amber-200  dark:border-amber-800",
+  accepted: "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800",
+  declined: "bg-red-50    dark:bg-red-950/60    text-red-700    dark:text-red-300    border-red-200    dark:border-red-800",
+};
+
+const QUOTE_LABEL: Record<string, string> = {
+  pending: "Awaiting", accepted: "Accepted", declined: "Declined",
+};
+
+function QuoteStatusChip({ status }: { status: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center justify-center w-20 py-0.5 rounded text-[11px] font-medium border",
+        QUOTE_CHIP[status] ?? QUOTE_CHIP["pending"]
+      )}
+    >
+      {QUOTE_LABEL[status] ?? "Awaiting"}
+    </span>
+  );
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function formatCurrency(cents: number) {
+  return new Intl.NumberFormat("en-AU", {
+    style: "currency",
+    currency: "AUD",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(cents / 100);
+}
+
+function formatDate(date: Date | string | null | undefined) {
+  if (!date) return null;
+  return format(new Date(date), "d MMM yyyy");
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 export default function RFQs() {
   const [, setLocation] = useLocation();
@@ -78,6 +116,13 @@ export default function RFQs() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
+
+  // Expanded RFQ IDs
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  // Cached quotes keyed by rfqId
+  const [quoteCache, setQuoteCache] = useState<Record<string, RfqQuote[]>>({});
+  // In-flight fetches
+  const [loadingQuotes, setLoadingQuotes] = useState<Set<string>>(new Set());
 
   const queryParams: Record<string, string> = {};
   if (projectIdFromUrl) queryParams.projectId = projectIdFromUrl;
@@ -128,9 +173,57 @@ export default function RFQs() {
     });
   }, [rfqs, searchQuery, selectedStatus]);
 
-  const handleRowClick = (rfqId: string) => {
+  const fetchQuotes = useCallback(async (rfqId: string) => {
+    if (quoteCache[rfqId] !== undefined || loadingQuotes.has(rfqId)) return;
+    setLoadingQuotes(prev => new Set(prev).add(rfqId));
+    try {
+      const res = await fetch(`/api/rfqs/${rfqId}/quotes`, { credentials: "include" });
+      const quotes: RfqQuote[] = res.ok ? await res.json() : [];
+      setQuoteCache(prev => ({ ...prev, [rfqId]: quotes }));
+    } catch {
+      setQuoteCache(prev => ({ ...prev, [rfqId]: [] }));
+    } finally {
+      setLoadingQuotes(prev => {
+        const next = new Set(prev);
+        next.delete(rfqId);
+        return next;
+      });
+    }
+  }, [quoteCache, loadingQuotes]);
+
+  const toggleRow = useCallback((rfqId: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(rfqId)) {
+        next.delete(rfqId);
+      } else {
+        next.add(rfqId);
+        fetchQuotes(rfqId);
+      }
+      return next;
+    });
+  }, [fetchQuotes]);
+
+  const handleNavigate = (rfqId: string) => {
     setLocation(getNavigationPath(`/rfqs/${rfqId}`));
   };
+
+  // Column widths (px) — used to keep header and body aligned
+  const COL = {
+    toggle:   28,
+    number:   100,
+    title:    220,
+    project:  140,
+    suppliers: 110,
+    dueDate:  96,
+    status:   96,
+    created:  96,
+    actions:  40,
+  };
+
+  const showProject = !projectIdFromUrl;
+
+  const headerCellClass = "h-7 px-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wide flex items-center flex-shrink-0";
 
   return (
     <div className="flex flex-col h-full" data-testid="page-rfqs">
@@ -247,113 +340,211 @@ export default function RFQs() {
           )
         ) : (
           <div className="rounded-lg border border-border bg-card overflow-hidden h-full flex flex-col">
+            {/* Table header */}
+            <div className="flex items-center border-b border-border/50 flex-shrink-0 px-2">
+              <div style={{ width: COL.toggle }} className={headerCellClass} />
+              <div style={{ width: COL.number }} className={headerCellClass}>RFQ #</div>
+              <div style={{ width: COL.title }} className={headerCellClass}>Title</div>
+              {showProject && <div style={{ width: COL.project }} className={headerCellClass}>Project</div>}
+              <div style={{ width: COL.suppliers }} className={headerCellClass}>Suppliers</div>
+              <div style={{ width: COL.dueDate }} className={headerCellClass}>Due Date</div>
+              <div style={{ width: COL.status }} className={headerCellClass}>Status</div>
+              <div style={{ width: COL.created }} className={headerCellClass}>Created</div>
+              <div style={{ width: COL.actions }} className={headerCellClass} />
+            </div>
+
+            {/* Scrollable body */}
             <div className="overflow-auto flex-1">
-              <Table>
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent border-b border-border/50">
-                    <TableHead className="h-7 px-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">RFQ #</TableHead>
-                    <TableHead className="h-7 px-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Title</TableHead>
-                    {!projectIdFromUrl && <TableHead className="h-7 px-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Project</TableHead>}
-                    <TableHead className="h-7 px-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Suppliers</TableHead>
-                    <TableHead className="h-7 px-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Due Date</TableHead>
-                    <TableHead className="h-7 px-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Status</TableHead>
-                    <TableHead className="h-7 px-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Created</TableHead>
-                    <TableHead className="h-7 w-[40px]" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredRFQs.map((rfq) => {
-                    const project = getProject(rfq.projectId);
-                    return (
-                      <TableRow
-                        key={rfq.id}
-                        className="cursor-pointer h-9 hover-elevate active-elevate-2"
-                        onClick={() => handleRowClick(rfq.id)}
-                        data-testid={`row-rfq-${rfq.id}`}
-                      >
-                        <TableCell className="px-2 py-1">
-                          <div className="flex items-center gap-1.5">
-                            <FileText className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-                            <span className="text-xs font-semibold">{rfq.rfqNumber}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="px-2 py-1 max-w-[260px]">
-                          <span className="text-xs truncate block">{rfq.title}</span>
-                        </TableCell>
-                        {!projectIdFromUrl && (
-                          <TableCell className="px-2 py-1">
-                            {project && (
-                              <div className="flex items-center gap-1.5">
-                                <ProjectIcon
-                                  icon={project.icon || "Briefcase"}
-                                  color={project.color}
-                                  className="w-3 h-3 flex-shrink-0"
-                                />
-                                <span className="text-xs truncate">{project.name}</span>
-                              </div>
+              {filteredRFQs.map((rfq) => {
+                const project = getProject(rfq.projectId);
+                const isExpanded = expandedIds.has(rfq.id);
+                const isLoadingQ = loadingQuotes.has(rfq.id);
+                const quotes = quoteCache[rfq.id];
+
+                // Build per-supplier rows from supplierIds / supplierNames
+                // Match quotes to suppliers by supplierId or supplierName
+                const supplierRows = rfq.supplierNames.map((name, idx) => {
+                  const supplierId = rfq.supplierIds[idx] ?? null;
+                  const quote = quotes?.find(
+                    q => (supplierId && q.supplierId === supplierId) || q.supplierName === name
+                  ) ?? null;
+                  return { name, supplierId, quote };
+                });
+
+                return (
+                  <div key={rfq.id} data-testid={`group-rfq-${rfq.id}`}>
+                    {/* RFQ header row */}
+                    <div
+                      className={cn(
+                        "flex items-center px-2 h-9 cursor-pointer hover-elevate active-elevate-2 border-b border-border/30",
+                        isExpanded && "bg-muted/20"
+                      )}
+                      onClick={() => toggleRow(rfq.id)}
+                      data-testid={`row-rfq-${rfq.id}`}
+                    >
+                      {/* Chevron */}
+                      <div style={{ width: COL.toggle }} className="flex items-center justify-center flex-shrink-0">
+                        {isExpanded
+                          ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
+                          : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />}
+                      </div>
+                      {/* RFQ # */}
+                      <div style={{ width: COL.number }} className="flex items-center gap-1.5 flex-shrink-0 px-2">
+                        <FileText className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                        <span className="text-xs font-semibold truncate">{rfq.rfqNumber}</span>
+                      </div>
+                      {/* Title */}
+                      <div style={{ width: COL.title }} className="flex items-center flex-shrink-0 px-2">
+                        <span className="text-xs truncate">{rfq.title}</span>
+                      </div>
+                      {/* Project */}
+                      {showProject && (
+                        <div style={{ width: COL.project }} className="flex items-center gap-1.5 flex-shrink-0 px-2">
+                          {project && (
+                            <>
+                              <ProjectIcon
+                                icon={project.icon || "Briefcase"}
+                                color={project.color}
+                                className="w-3 h-3 flex-shrink-0"
+                              />
+                              <span className="text-xs truncate">{project.name}</span>
+                            </>
+                          )}
+                        </div>
+                      )}
+                      {/* Supplier count */}
+                      <div style={{ width: COL.suppliers }} className="flex items-center flex-shrink-0 px-2">
+                        <span className="text-xs text-muted-foreground">
+                          {rfq.supplierNames.length === 0
+                            ? <span className="text-muted-foreground/40">—</span>
+                            : `${rfq.supplierNames.length} supplier${rfq.supplierNames.length !== 1 ? "s" : ""}`}
+                        </span>
+                      </div>
+                      {/* Due date */}
+                      <div style={{ width: COL.dueDate }} className="flex items-center flex-shrink-0 px-2">
+                        <span className="text-xs text-muted-foreground">
+                          {formatDate(rfq.dueDate) ?? <span className="text-muted-foreground/40">—</span>}
+                        </span>
+                      </div>
+                      {/* Status */}
+                      <div style={{ width: COL.status }} className="flex items-center flex-shrink-0 px-2">
+                        <StatusChip status={rfq.status} />
+                      </div>
+                      {/* Created */}
+                      <div style={{ width: COL.created }} className="flex items-center flex-shrink-0 px-2">
+                        <span className="text-xs text-muted-foreground">
+                          {format(new Date(rfq.createdAt), "d MMM yyyy")}
+                        </span>
+                      </div>
+                      {/* Actions */}
+                      <div style={{ width: COL.actions }} className="flex items-center justify-center flex-shrink-0">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              className="p-1 rounded hover-elevate text-muted-foreground"
+                              data-testid={`button-rfq-actions-${rfq.id}`}
+                            >
+                              <MoreHorizontal className="w-3.5 h-3.5" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={(e) => { e.stopPropagation(); handleNavigate(rfq.id); }}
+                            >
+                              <FileText className="mr-2 h-4 w-4" />
+                              View Details
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={(e) => e.stopPropagation()}>
+                              <Download className="mr-2 h-4 w-4" />
+                              Download PDF
+                            </DropdownMenuItem>
+                            {rfq.status === "draft" && (
+                              <DropdownMenuItem onClick={(e) => e.stopPropagation()}>
+                                <Send className="mr-2 h-4 w-4" />
+                                Send RFQ
+                              </DropdownMenuItem>
                             )}
-                          </TableCell>
-                        )}
-                        <TableCell className="px-2 py-1 max-w-[180px]">
-                          <span className="text-xs text-muted-foreground truncate block">
-                            {rfq.supplierNames.length > 0
-                              ? rfq.supplierNames.join(", ")
-                              : <span className="text-muted-foreground/40">—</span>}
-                          </span>
-                        </TableCell>
-                        <TableCell className="px-2 py-1">
-                          <span className="text-xs text-muted-foreground">
-                            {rfq.dueDate ? format(new Date(rfq.dueDate), "d MMM yyyy") : <span className="text-muted-foreground/40">—</span>}
-                          </span>
-                        </TableCell>
-                        <TableCell className="px-2 py-1">
-                          <StatusChip status={rfq.status} />
-                        </TableCell>
-                        <TableCell className="px-2 py-1">
-                          <span className="text-xs text-muted-foreground">
-                            {format(new Date(rfq.createdAt), "d MMM yyyy")}
-                          </span>
-                        </TableCell>
-                        <TableCell className="px-2 py-1">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                              <button
-                                type="button"
-                                className="p-1 rounded hover-elevate text-muted-foreground"
-                                data-testid={`button-rfq-actions-${rfq.id}`}
-                              >
-                                <MoreHorizontal className="w-3.5 h-3.5" />
-                              </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={(e) => { e.stopPropagation(); handleRowClick(rfq.id); }}
-                              >
-                                <FileText className="mr-2 h-4 w-4" />
-                                View Details
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <Download className="mr-2 h-4 w-4" />
-                                Download PDF
-                              </DropdownMenuItem>
-                              {rfq.status === "draft" && (
-                                <DropdownMenuItem
-                                  onClick={(e) => e.stopPropagation()}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </div>
+
+                    {/* Expanded supplier rows */}
+                    {isExpanded && (
+                      <>
+                        {isLoadingQ ? (
+                          <div className="flex items-center gap-2 px-4 h-8 bg-muted/10 border-b border-border/20 text-xs text-muted-foreground">
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            Loading quotes…
+                          </div>
+                        ) : supplierRows.length === 0 ? (
+                          <div className="flex items-center px-4 h-8 bg-muted/10 border-b border-border/20 text-xs text-muted-foreground italic">
+                            No suppliers added to this RFQ
+                          </div>
+                        ) : (
+                          supplierRows.map(({ name, quote }, idx) => (
+                            <div
+                              key={idx}
+                              className="flex items-center px-2 h-8 bg-muted/10 border-b border-border/20 hover-elevate"
+                              data-testid={`row-supplier-${rfq.id}-${idx}`}
+                            >
+                              {/* Indent spacer (chevron col) */}
+                              <div style={{ width: COL.toggle }} className="flex-shrink-0" />
+                              {/* Empty RFQ # col — indent line */}
+                              <div style={{ width: COL.number }} className="flex items-center flex-shrink-0 px-2">
+                                <div className="w-px h-4 bg-border/60 mr-2" />
+                              </div>
+                              {/* Supplier name in title col */}
+                              <div style={{ width: COL.title }} className="flex items-center flex-shrink-0 px-2">
+                                <span className="text-xs text-foreground truncate font-medium">{name}</span>
+                              </div>
+                              {/* Project col spacer */}
+                              {showProject && <div style={{ width: COL.project }} className="flex-shrink-0 px-2" />}
+                              {/* Suppliers col spacer */}
+                              <div style={{ width: COL.suppliers }} className="flex-shrink-0 px-2" />
+                              {/* Quote valid until (due date col) */}
+                              <div style={{ width: COL.dueDate }} className="flex items-center flex-shrink-0 px-2">
+                                <span className="text-xs text-muted-foreground">
+                                  {quote?.validUntil
+                                    ? formatDate(quote.validUntil)
+                                    : <span className="text-muted-foreground/40">—</span>}
+                                </span>
+                              </div>
+                              {/* Quote status */}
+                              <div style={{ width: COL.status }} className="flex items-center flex-shrink-0 px-2">
+                                <QuoteStatusChip status={quote?.status ?? "pending"} />
+                              </div>
+                              {/* Quote amount (created col) */}
+                              <div style={{ width: COL.created }} className="flex items-center flex-shrink-0 px-2">
+                                <span className={cn(
+                                  "text-xs tabular-nums font-medium",
+                                  quote && quote.totalAmount > 0 ? "text-foreground" : "text-muted-foreground/40"
+                                )}>
+                                  {quote && quote.totalAmount > 0
+                                    ? formatCurrency(quote.totalAmount)
+                                    : "—"}
+                                </span>
+                              </div>
+                              {/* View link */}
+                              <div style={{ width: COL.actions }} className="flex items-center justify-center flex-shrink-0">
+                                <button
+                                  type="button"
+                                  className="p-1 rounded hover-elevate text-muted-foreground"
+                                  onClick={(e) => { e.stopPropagation(); handleNavigate(rfq.id); }}
+                                  title="Open RFQ"
                                 >
-                                  <Send className="mr-2 h-4 w-4" />
-                                  Send RFQ
-                                </DropdownMenuItem>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+                                  <ExternalLink className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
