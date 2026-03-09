@@ -1935,6 +1935,7 @@ export type Variation = typeof variations.$inferSelect;
 export const variationItems = pgTable("variation_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   variationId: varchar("variation_id").notNull().references(() => variations.id, { onDelete: "cascade" }),
+  name: text("name"), // Short item name shown in PDF/portal (e.g. "Decking Timber")
   description: text("description").notNull(),
   quantity: integer("quantity").notNull().default(1),
   unitPrice: integer("unit_price").notNull().default(0), // Client price per unit in cents (ex tax)
@@ -1947,6 +1948,7 @@ export const variationItems = pgTable("variation_items", {
   unitCostExTax: doublePrecision("unit_cost_ex_tax").notNull().default(0), // Builder cost per unit in dollars
   markupPercent: integer("markup_percent"), // Item-level markup % (null = 0%)
   costCode: text("cost_code"), // Free-text cost code label
+  showInPdf: boolean("show_in_pdf").notNull().default(true), // Whether this line appears in client PDF/portal
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -1956,12 +1958,14 @@ export const insertVariationItemSchema = createInsertSchema(variationItems).omit
   createdAt: true,
   updatedAt: true,
 }).extend({
+  name: z.string().optional().nullable(),
   quantity: z.number().default(1),
   unitPrice: z.number().default(0),
   totalPrice: z.number().default(0),
   sortOrder: z.number().default(0),
   unitCostExTax: z.number().default(0),
   markupPercent: z.number().optional().nullable(),
+  showInPdf: z.boolean().default(true),
 });
 
 export type InsertVariationItem = z.infer<typeof insertVariationItemSchema>;

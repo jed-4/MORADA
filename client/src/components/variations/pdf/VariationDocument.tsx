@@ -192,7 +192,9 @@ export function VariationDocument({
   const costItems = items.filter((i) => (i as any).itemType !== "allowance");
   const allowanceItems = items.filter((i) => (i as any).itemType === "allowance");
 
-  const typeGroups = costItems.reduce<Record<string, VariationItem[]>>((acc, item) => {
+  const visibleCostItems = costItems.filter((i) => (i as any).showInPdf !== false);
+
+  const typeGroups = visibleCostItems.reduce<Record<string, VariationItem[]>>((acc, item) => {
     const type = (item as any).type || "other";
     if (!acc[type]) acc[type] = [];
     acc[type].push(item);
@@ -307,7 +309,11 @@ export function VariationDocument({
                     const incTax = (item as any).taxable !== false ? exTax * 1.1 : exTax;
                     return (
                       <View key={item.id} style={[styles.tableRow, idx % 2 === 1 ? styles.tableRowAlt : {}]}>
-                        <Text style={[styles.tdText, { flex: 1 }]}>{item.description}</Text>
+                        <View style={{ flex: 1 }}>
+                          {(item as any).name ? <Text style={[styles.tdText, { fontWeight: "bold" }]}>{(item as any).name}</Text> : null}
+                          {item.description ? <Text style={[styles.tdText, { color: "#555", fontSize: 9 }]}>{item.description}</Text> : null}
+                          {!(item as any).name && !item.description ? <Text style={styles.tdText}>—</Text> : null}
+                        </View>
                         <Text style={[styles.tdText, styles.tdRight, { width: 50 }]}>
                           {qty} {(item as any).unitType || ""}
                         </Text>

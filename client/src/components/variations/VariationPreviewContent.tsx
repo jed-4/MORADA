@@ -237,7 +237,9 @@ export function VariationPreviewContent({
   const costItems = items.filter((i) => (i as any).itemType !== "allowance");
   const allowanceItems = items.filter((i) => (i as any).itemType === "allowance");
 
-  const typeGroups = costItems.reduce<Record<string, VariationItem[]>>((acc, item) => {
+  const visibleCostItems = costItems.filter((i) => (i as any).showInPdf !== false);
+
+  const typeGroups = visibleCostItems.reduce<Record<string, VariationItem[]>>((acc, item) => {
     const type = (item as any).type || "other";
     if (!acc[type]) acc[type] = [];
     acc[type].push(item);
@@ -451,7 +453,11 @@ export function VariationPreviewContent({
                             gridTemplateColumns: "1fr 80px 90px 70px 90px",
                           }}
                         >
-                          <span className="text-gray-800 truncate pr-2">{item.description}</span>
+                          <div className="pr-2 min-w-0">
+                            {(item as any).name && <span className="block text-gray-800 font-semibold truncate">{(item as any).name}</span>}
+                            {item.description && <span className="block text-gray-500 text-xs truncate">{item.description}</span>}
+                            {!(item as any).name && !item.description && <span className="text-gray-400">—</span>}
+                          </div>
                           <span className="text-right text-gray-600 text-xs tabular-nums">
                             {qty} {(item as any).unitType || ""}
                           </span>

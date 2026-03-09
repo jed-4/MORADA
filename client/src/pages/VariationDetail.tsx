@@ -25,6 +25,7 @@ import {
   Search,
   Paperclip,
   Eye,
+  EyeOff,
   Download,
   Mail,
   Upload,
@@ -95,6 +96,7 @@ type VariationFormData = z.infer<typeof variationFormSchema>;
 
 type CostLine = {
   id?: string;
+  name: string;
   description: string;
   type: string;
   unitType: string;
@@ -104,6 +106,7 @@ type CostLine = {
   markupPercent: number | null;
   taxable: boolean;
   sortOrder: number;
+  showInPdf: boolean;
 };
 
 type AllowanceLine = {
@@ -282,6 +285,7 @@ export default function VariationDetail() {
       setCostLines(
         costItems.map((item: any) => ({
           id: item.id,
+          name: item.name ?? "",
           description: item.description,
           type: item.type || "Material",
           unitType: item.unitType || "each",
@@ -291,6 +295,7 @@ export default function VariationDetail() {
           markupPercent: item.markupPercent ?? null,
           taxable: item.taxable,
           sortOrder: item.sortOrder,
+          showInPdf: item.showInPdf !== false,
         }))
       );
 
@@ -384,7 +389,7 @@ export default function VariationDetail() {
   const addCostLine = () => {
     setCostLines([
       ...costLines,
-      { description: "", type: "Material", unitType: "each", costCode: "", quantity: 1, unitCostExTax: 0, markupPercent: null, taxable: true, sortOrder: costLines.length },
+      { name: "", description: "", type: "Material", unitType: "each", costCode: "", quantity: 1, unitCostExTax: 0, markupPercent: null, taxable: true, sortOrder: costLines.length, showInPdf: true },
     ]);
   };
 
@@ -465,6 +470,7 @@ export default function VariationDetail() {
         const markupFactor = 1 + (item.markupPercent ?? 0) / 100;
         await apiRequest(`/api/variations/${newVariation.id}/items`, "POST", {
           variationId: newVariation.id,
+          name: item.name || null,
           description: item.description,
           type: item.type,
           unitType: item.unitType,
@@ -477,6 +483,7 @@ export default function VariationDetail() {
           taxable: item.taxable,
           sortOrder: i,
           itemType: "cost_line",
+          showInPdf: item.showInPdf,
         });
       }
 
@@ -559,6 +566,7 @@ export default function VariationDetail() {
         const markupFactor = 1 + (item.markupPercent ?? 0) / 100;
         const itemData = {
           variationId: effectiveVariationId,
+          name: item.name || null,
           description: item.description,
           type: item.type,
           unitType: item.unitType,
@@ -571,6 +579,7 @@ export default function VariationDetail() {
           taxable: item.taxable,
           sortOrder: i,
           itemType: "cost_line",
+          showInPdf: item.showInPdf,
         };
         if (item.id) {
           await apiRequest(`/api/variation-items/${item.id}`, "PATCH", itemData);
@@ -1262,6 +1271,7 @@ export default function VariationDetail() {
                             <thead>
                               <tr className="h-6 bg-muted/30">
                                 <th className="w-[72px] text-left text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Type</th>
+                                <th className="w-28 text-left text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Name</th>
                                 <th className="text-left text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Description</th>
                                 <th className="w-[72px] text-left text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Cost Code</th>
                                 <th className="w-14 text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Qty</th>
@@ -1270,6 +1280,7 @@ export default function VariationDetail() {
                                 <th className="w-16 text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Mkup %</th>
                                 <th className="w-24 text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Amt ex Tax</th>
                                 <th className="w-24 text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Amt inc Tax</th>
+                                <th className="w-16 text-center text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Visible</th>
                                 <th className="w-8" />
                               </tr>
                             </thead>
@@ -1284,7 +1295,7 @@ export default function VariationDetail() {
                                 const amtExTax = getCostLineAmountExTax(line);
                                 const amtIncTax = line.taxable ? amtExTax * 1.1 : amtExTax;
                                 return (
-                                  <tr key={index} className="h-9 border-b border-border/30 last:border-0" data-testid={`row-cost-line-${index}`}>
+                                  <tr key={index} className={cn("h-9 border-b border-border/30 last:border-0 transition-opacity", !line.showInPdf && "opacity-40")} data-testid={`row-cost-line-${index}`}>
                                     <td className="px-2 py-1">
                                       <Select
                                         value={line.type}
@@ -1304,7 +1315,10 @@ export default function VariationDetail() {
                                       </Select>
                                     </td>
                                     <td className="px-2 py-1">
-                                      <Input value={line.description} onChange={(e) => updateCostLine(index, "description", e.target.value)} placeholder="Description" className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm" data-testid={`input-description-${index}`} />
+                                      <Input value={line.name} onChange={(e) => updateCostLine(index, "name", e.target.value)} placeholder="Item name" className={cn("h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm font-medium", !line.showInPdf && "line-through")} data-testid={`input-name-${index}`} />
+                                    </td>
+                                    <td className="px-2 py-1">
+                                      <Input value={line.description} onChange={(e) => updateCostLine(index, "description", e.target.value)} placeholder="Client-facing notes" className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm text-muted-foreground" data-testid={`input-description-${index}`} />
                                     </td>
                                     <td className="px-2 py-1">
                                       <Input value={line.costCode} onChange={(e) => updateCostLine(index, "costCode", e.target.value)} placeholder="—" className="h-7 text-xs border-0 bg-transparent shadow-none focus-visible:ring-1 focus-visible:ring-ring px-1 rounded-sm text-muted-foreground" data-testid={`input-cost-code-${index}`} />
@@ -1326,6 +1340,17 @@ export default function VariationDetail() {
                                     </td>
                                     <td className="px-2 py-1 text-right">
                                       <span className="text-sm tabular-nums text-muted-foreground" data-testid={`text-amt-inc-tax-${index}`}>{formatCurrency(amtIncTax)}</span>
+                                    </td>
+                                    <td className="px-2 py-1 text-center">
+                                      <button
+                                        type="button"
+                                        onClick={() => updateCostLine(index, "showInPdf", !line.showInPdf)}
+                                        className={cn("h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2 mx-auto", line.showInPdf ? "text-muted-foreground" : "text-muted-foreground/40")}
+                                        title={line.showInPdf ? "Visible in PDF — click to hide" : "Hidden from PDF — click to show"}
+                                        data-testid={`button-toggle-visibility-${index}`}
+                                      >
+                                        {line.showInPdf ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                                      </button>
                                     </td>
                                     <td className="px-2 py-1">
                                       <button type="button" onClick={() => deleteCostLine(index)} className="h-6 w-6 flex items-center justify-center rounded-md hover-elevate active-elevate-2 text-muted-foreground" data-testid={`button-delete-${index}`}>

@@ -171,7 +171,6 @@ const invoiceFormSchema = z.object({
   dueDate: z.date().optional(),
   introductionText: z.string().optional(),
   closingText: z.string().optional(),
-  termsAndConditions: z.string().optional(),
   markupPercent: z.number().optional(),
 });
 
@@ -247,6 +246,7 @@ export default function ClientInvoiceDetail() {
   const [introCollapsed, setIntroCollapsed] = useState(true);
   const [closingCollapsed, setClosingCollapsed] = useState(true);
   const [termsCollapsed, setTermsCollapsed] = useState(true);
+  const [termsAndConditions, setTermsAndConditions] = useState<string>("");
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [invoiceNumberOverride, setInvoiceNumberOverride] = useState(false);
   const [variationsModalOpen, setVariationsModalOpen] = useState(false);
@@ -470,7 +470,6 @@ export default function ClientInvoiceDetail() {
       dueDate: undefined,
       introductionText: "",
       closingText: "",
-      termsAndConditions: "",
       markupPercent: undefined,
     },
   });
@@ -498,7 +497,6 @@ export default function ClientInvoiceDetail() {
         dueDate: invoice.dueDate ? new Date(invoice.dueDate) : undefined,
         introductionText: invoice.introductionText || "",
         closingText: invoice.closingText || "",
-        termsAndConditions: (invoice as any).termsAndConditions || "",
         markupPercent: invoice.markupPercent || undefined,
       });
       // Restore column config
@@ -508,6 +506,7 @@ export default function ClientInvoiceDetail() {
       if ((invoice as any).showAmountsIncTax !== undefined) {
         setShowAmountsIncTax((invoice as any).showAmountsIncTax);
       }
+      setTermsAndConditions((invoice as any).termsAndConditions || "");
       if ((invoice as any).lockedContractPrice) {
         setLockedContractPrice((invoice as any).lockedContractPrice);
       }
@@ -850,7 +849,7 @@ export default function ClientInvoiceDetail() {
     markupPercent: data.markupPercent,
     introductionText: data.introductionText,
     closingText: data.closingText,
-    termsAndConditions: data.termsAndConditions || null,
+    termsAndConditions: termsAndConditions || null,
     subtotal: Math.round(calculateSubtotal() * 100),
     markupAmount: Math.round(calculateMarkup() * 100),
     gstAmount: Math.round(calculateGST() * 100),
@@ -1261,6 +1260,53 @@ export default function ClientInvoiceDetail() {
     },
   });
 
+  const sendInvoiceEmailMutation = useMutation({
+    mutationFn: async () => {
+      let pdfBase64: string | undefined;
+      if (invoiceSendAttachPdf && effectiveInvoiceId) {
+        const subtotalCents = Math.round(amountExTax() * 100);
+        const gstCents = Math.round(amountTax() * 100);
+        const totalCents = Math.round(amountIncTax() * 100);
+        const paidCents = Math.round(paid * 100);
+        const blob = await pdf(
+          <InvoiceDocument
+            invoiceNumber={form.watch("invoiceNumber") || invoice?.invoiceNumber || "Invoice"}
+            issueDate={form.watch("invoiceDate") || invoice?.invoiceDate}
+            dueDate={form.watch("dueDate") || invoice?.dueDate}
+            company={companyInfo}
+            clientName={clientContact?.name}
+            projectName={currentProject?.name}
+            projectAddress={(currentProject as any)?.address || (clientContact as any)?.addressFormatted}
+            lineItems={buildInvoicePdfLineItems()}
+            subtotalCents={subtotalCents}
+            gstCents={gstCents}
+            totalCents={totalCents}
+            paidCents={paidCents}
+            balanceDueCents={totalCents - paidCents}
+            brandColor={companySettings?.brandColor || "#6d28d9"}
+          />
+        ).toBlob();
+        const arrayBuf = await blob.arrayBuffer();
+        pdfBase64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuf)));
+      }
+      const res = await apiRequest(`/api/client-invoices/${effectiveInvoiceId}/send-email`, "POST", {
+        to: invoiceSendTo,
+        subject: invoiceSendSubject,
+        body: invoiceSendBody,
+        pdfBase64,
+        pdfFilename: `invoice-${invoice?.invoiceNumber || "export"}.pdf`,
+      });
+      if (!res.ok) throw new Error("Failed to send email");
+    },
+    onSuccess: () => {
+      toast({ title: "Email sent successfully" });
+      setInvoiceSendModalOpen(false);
+    },
+    onError: () => {
+      toast({ title: "Failed to send email", variant: "destructive" });
+    },
+  });
+
   const onSubmit = (data: InvoiceFormData) => {
     if (isEditMode) updateMutation.mutate(data);
     else createMutation.mutate(data);
@@ -1379,53 +1425,6 @@ export default function ClientInvoiceDetail() {
     setInvoiceSendBody(`Hi ${clientContact?.name || ""},\n\nPlease find your invoice attached.\n\nKind regards,\n${user?.firstName || ""} ${user?.lastName || ""}`);
     setInvoiceSendModalOpen(true);
   };
-
-  const sendInvoiceEmailMutation = useMutation({
-    mutationFn: async () => {
-      let pdfBase64: string | undefined;
-      if (invoiceSendAttachPdf && effectiveInvoiceId) {
-        const subtotalCents = Math.round(amountExTax() * 100);
-        const gstCents = Math.round(amountTax() * 100);
-        const totalCents = Math.round(amountIncTax() * 100);
-        const paidCents = Math.round(paid * 100);
-        const blob = await pdf(
-          <InvoiceDocument
-            invoiceNumber={form.watch("invoiceNumber") || invoice?.invoiceNumber || "Invoice"}
-            issueDate={form.watch("invoiceDate") || invoice?.invoiceDate}
-            dueDate={form.watch("dueDate") || invoice?.dueDate}
-            company={companyInfo}
-            clientName={clientContact?.name}
-            projectName={currentProject?.name}
-            projectAddress={(currentProject as any)?.address || (clientContact as any)?.addressFormatted}
-            lineItems={buildInvoicePdfLineItems()}
-            subtotalCents={subtotalCents}
-            gstCents={gstCents}
-            totalCents={totalCents}
-            paidCents={paidCents}
-            balanceDueCents={totalCents - paidCents}
-            brandColor={companySettings?.brandColor || "#6d28d9"}
-          />
-        ).toBlob();
-        const arrayBuf = await blob.arrayBuffer();
-        pdfBase64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuf)));
-      }
-      const res = await apiRequest(`/api/client-invoices/${effectiveInvoiceId}/send-email`, "POST", {
-        to: invoiceSendTo,
-        subject: invoiceSendSubject,
-        body: invoiceSendBody,
-        pdfBase64,
-        pdfFilename: `invoice-${invoice?.invoiceNumber || "export"}.pdf`,
-      });
-      if (!res.ok) throw new Error("Failed to send email");
-    },
-    onSuccess: () => {
-      toast({ title: "Email sent successfully" });
-      setInvoiceSendModalOpen(false);
-    },
-    onError: () => {
-      toast({ title: "Failed to send email", variant: "destructive" });
-    },
-  });
 
   // ── render helpers ────────────────────────────────────────────────────────────
 
@@ -3316,7 +3315,7 @@ export default function ClientInvoiceDetail() {
                             onValueChange={(id) => {
                               setSelectedTemplateId(id);
                               const tpl = companySettings.termsTemplates!.find(t => t.id === id);
-                              if (tpl) form.setValue("termsAndConditions", tpl.content);
+                              if (tpl) setTermsAndConditions(tpl.content);
                             }}
                           >
                             <SelectTrigger className="h-7 text-xs flex-1">
@@ -3331,35 +3330,25 @@ export default function ClientInvoiceDetail() {
                         </div>
                       )}
                       {/* Editable T&C textarea */}
-                      <FormField
-                        control={form.control}
-                        name="termsAndConditions"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormControl>
-                              <Textarea
-                                {...field}
-                                rows={8}
-                                placeholder={
-                                  companySettings?.termsTemplates && companySettings.termsTemplates.length > 0
-                                    ? "Select a template above, or type your terms and conditions..."
-                                    : companySettings?.termsAndConditions
-                                    ? "Load from company defaults or type custom terms..."
-                                    : "Type the terms and conditions for this invoice..."
-                                }
-                                className="text-sm resize-y"
-                                data-testid="textarea-terms-and-conditions"
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
+                      <Textarea
+                        value={termsAndConditions}
+                        onChange={(e) => setTermsAndConditions(e.target.value)}
+                        rows={8}
+                        placeholder={
+                          companySettings?.termsTemplates && companySettings.termsTemplates.length > 0
+                            ? "Select a template above, or type your terms and conditions..."
+                            : companySettings?.termsAndConditions
+                            ? "Load from company defaults or type custom terms..."
+                            : "Type the terms and conditions for this invoice..."
+                        }
+                        className="text-sm resize-y"
+                        data-testid="textarea-terms-and-conditions"
                       />
                       {/* Load from company defaults */}
-                      {companySettings?.termsAndConditions && !form.watch("termsAndConditions") && (
+                      {companySettings?.termsAndConditions && !termsAndConditions && (
                         <button
                           type="button"
-                          onClick={() => form.setValue("termsAndConditions", companySettings.termsAndConditions!)}
+                          onClick={() => setTermsAndConditions(companySettings.termsAndConditions!)}
                           className="text-xs text-[#bba7db] hover:underline"
                           data-testid="button-load-company-terms"
                         >

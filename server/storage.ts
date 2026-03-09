@@ -12982,7 +12982,7 @@ export class DbStorage implements IStorage {
           billId: schema.variationBills.billId,
           createdAt: schema.variationBills.createdAt,
           billNumber: schema.bills.billNumber,
-          supplierName: schema.bills.supplierName,
+          supplierId: schema.bills.supplierId,
           billDate: schema.bills.billDate,
           total: schema.bills.total,
         })
