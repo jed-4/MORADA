@@ -139,7 +139,7 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
         id: `today-${task.id}`,
         text: `Complete "${task.title}" today`,
         type: "task",
-        priority: "medium",
+        priority: "low",
         taskId: task.id,
         link: task.projectId ? `/projects/${task.projectId}/tasks` : undefined,
       });
@@ -159,7 +159,7 @@ export default function PersonalAISummaryWidget({ widget, onUpdate, isConfigurin
         id: "schedule-today",
         text: `${scheduleItems.length} schedule item${scheduleItems.length > 1 ? 's' : ''} for today`,
         type: "schedule",
-        priority: "medium",
+        priority: "low",
       });
     }
 

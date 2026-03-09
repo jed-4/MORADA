@@ -1406,8 +1406,8 @@ export class MemStorage implements IStorage {
 
     // Add default options for Task Priority
     const priorityOptions = [
-      { key: "low", name: "Low", color: "#10B981", isDefault: false },
-      { key: "medium", name: "Medium", color: "#F59E0B", isDefault: true },
+      { key: "low", name: "Low", color: "#10B981", isDefault: true },
+      { key: "medium", name: "Medium", color: "#F59E0B", isDefault: false },
       { key: "high", name: "High", color: "#EF4444", isDefault: false },
       { key: "critical", name: "Critical", color: "#DC2626", isDefault: false },
     ];
@@ -5898,8 +5898,8 @@ export class DbStorage implements IStorage {
         ];
       case 'task.priority':
         return [
-          { id: 'opt-priority-low', categoryId, key: 'low', name: 'Low', color: '#10B981', isDefault: false, sortOrder: 0 },
-          { id: 'opt-priority-medium', categoryId, key: 'medium', name: 'Medium', color: '#F59E0B', isDefault: true, sortOrder: 1 },
+          { id: 'opt-priority-low', categoryId, key: 'low', name: 'Low', color: '#10B981', isDefault: true, sortOrder: 0 },
+          { id: 'opt-priority-medium', categoryId, key: 'medium', name: 'Medium', color: '#F59E0B', isDefault: false, sortOrder: 1 },
           { id: 'opt-priority-high', categoryId, key: 'high', name: 'High', color: '#EF4444', isDefault: false, sortOrder: 2 },
         ];
       case 'task.labels':
@@ -6085,8 +6085,8 @@ export class DbStorage implements IStorage {
         break;
       case 'task.priority':
         optionsToInsert = [
-          { id: 'opt-priority-low', categoryId: category.id, key: 'low', name: 'Low', color: '#10B981', isDefault: false, sortOrder: 0 },
-          { id: 'opt-priority-medium', categoryId: category.id, key: 'medium', name: 'Medium', color: '#F59E0B', isDefault: true, sortOrder: 1 },
+          { id: 'opt-priority-low', categoryId: category.id, key: 'low', name: 'Low', color: '#10B981', isDefault: true, sortOrder: 0 },
+          { id: 'opt-priority-medium', categoryId: category.id, key: 'medium', name: 'Medium', color: '#F59E0B', isDefault: false, sortOrder: 1 },
           { id: 'opt-priority-high', categoryId: category.id, key: 'high', name: 'High', color: '#EF4444', isDefault: false, sortOrder: 2 },
         ];
         break;
@@ -6238,8 +6238,8 @@ export class DbStorage implements IStorage {
       { id: 'opt-status-hold', categoryId: 'cat-task-status', key: 'on-hold', name: 'On Hold', color: '#EF4444', isDefault: false, isCompleted: false, sortOrder: 3 },
       
       // Task Priority Options
-      { id: 'opt-priority-low', categoryId: 'cat-task-priority', key: 'low', name: 'Low', color: '#10B981', isDefault: false, sortOrder: 0 },
-      { id: 'opt-priority-medium', categoryId: 'cat-task-priority', key: 'medium', name: 'Medium', color: '#F59E0B', isDefault: true, sortOrder: 1 },
+      { id: 'opt-priority-low', categoryId: 'cat-task-priority', key: 'low', name: 'Low', color: '#10B981', isDefault: true, sortOrder: 0 },
+      { id: 'opt-priority-medium', categoryId: 'cat-task-priority', key: 'medium', name: 'Medium', color: '#F59E0B', isDefault: false, sortOrder: 1 },
       { id: 'opt-priority-high', categoryId: 'cat-task-priority', key: 'high', name: 'High', color: '#EF4444', isDefault: false, sortOrder: 2 },
       
       // Trade Categories
@@ -6342,8 +6342,8 @@ export class DbStorage implements IStorage {
         break;
       case 'task.priority':
         optionsToInsert = [
-          { id: 'opt-priority-low', categoryId, key: 'low', name: 'Low', color: '#10B981', isDefault: false, sortOrder: 0 },
-          { id: 'opt-priority-medium', categoryId, key: 'medium', name: 'Medium', color: '#F59E0B', isDefault: true, sortOrder: 1 },
+          { id: 'opt-priority-low', categoryId, key: 'low', name: 'Low', color: '#10B981', isDefault: true, sortOrder: 0 },
+          { id: 'opt-priority-medium', categoryId, key: 'medium', name: 'Medium', color: '#F59E0B', isDefault: false, sortOrder: 1 },
           { id: 'opt-priority-high', categoryId, key: 'high', name: 'High', color: '#EF4444', isDefault: false, sortOrder: 2 },
         ];
         break;

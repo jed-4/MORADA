@@ -16322,7 +16322,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           endDate: endDate,
           type: item.type || "task",
           status: "not_started",
-          priority: "medium",
+          priority: "low",
           category: item.category || null,
           sortOrder: sortOrderOffset + i,
         });
@@ -17217,7 +17217,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           notes: templateItem.notes || null,
           type: templateItem.type || "task",
           status: "not_started",
-          priority: templateItem.priority || "medium",
+          priority: templateItem.priority || "low",
           startDate,
           endDate,
           duration,

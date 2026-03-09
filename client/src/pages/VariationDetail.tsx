@@ -175,9 +175,12 @@ export default function VariationDetail() {
     amtExTax: 96, amtIncTax: 96, visible: 52,
   });
   const colResizeRef = useRef<{ col: string; startX: number; startWidth: number } | null>(null);
+  const [resizingCol, setResizingCol] = useState<string | null>(null);
 
   const startColResize = (col: string, e: React.MouseEvent) => {
     e.preventDefault();
+    e.stopPropagation();
+    setResizingCol(col);
     colResizeRef.current = { col, startX: e.clientX, startWidth: colWidths[col] };
     const onMove = (ev: MouseEvent) => {
       if (!colResizeRef.current) return;
@@ -187,6 +190,7 @@ export default function VariationDetail() {
     };
     const onUp = () => {
       colResizeRef.current = null;
+      setResizingCol(null);
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
     };
@@ -1311,14 +1315,15 @@ export default function VariationDetail() {
                                   <th
                                     key={key}
                                     style={{ width: colWidths[key], position: "relative" }}
-                                    className={`text-${align} text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2 overflow-hidden`}
+                                    className={`text-${align} text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2`}
                                   >
                                     {label}
                                     <div
-                                      className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize group"
+                                      className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize group/resize flex items-center justify-center z-10"
                                       onMouseDown={(e) => startColResize(key, e)}
+                                      onClick={(e) => e.stopPropagation()}
                                     >
-                                      <div className="absolute inset-y-1 right-0 w-px bg-border/0 group-hover:bg-border/60 transition-colors" />
+                                      <div className={`w-0.5 h-4 rounded-full transition-all ${resizingCol === key ? 'bg-primary' : 'bg-transparent group-hover/resize:bg-primary/60'}`} />
                                     </div>
                                   </th>
                                 ))}

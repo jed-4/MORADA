@@ -2647,7 +2647,7 @@ export const checklistInstances = pgTable("checklist_instances", {
   name: text("name").notNull(),
   description: text("description"),
   status: text("status").notNull().default("active"), // "active" | "in_progress" | "completed" | "cancelled"
-  priority: text("priority").default("medium"), // "low" | "medium" | "high" | "urgent"
+  priority: text("priority").default("low"), // "low" | "medium" | "high" | "urgent"
   dueDate: timestamp("due_date"),
   assigneeId: varchar("assignee_id").references(() => users.id, { onDelete: "set null" }),
   assigneeName: text("assignee_name"),
@@ -2676,7 +2676,7 @@ export const insertChecklistInstanceSchema = createInsertSchema(checklistInstanc
   createdBy: z.string().optional(),
   createdByName: z.string().optional(),
   status: z.enum(["active", "in_progress", "completed", "cancelled"]).default("active"),
-  priority: z.enum(["low", "medium", "high", "urgent"]).default("medium"),
+  priority: z.enum(["low", "medium", "high", "urgent"]).default("low"),
   dueDate: z.coerce.date().optional().nullable(),
   assigneeId: z.string().nullish(),
   assigneeName: z.string().nullish(),
@@ -2694,7 +2694,7 @@ export const checklistInstanceGroups = pgTable("checklist_instance_groups", {
   name: text("name").notNull(), // Group name (e.g., "ITP013 - DILAPIDATION REPORT")
   order: integer("order").notNull().default(0),
   status: text("status").notNull().default("active"), // "active" | "in_progress" | "completed"
-  priority: text("priority").default("medium"), // "low" | "medium" | "high" | "urgent"
+  priority: text("priority").default("low"), // "low" | "medium" | "high" | "urgent"
   assigneeId: varchar("assignee_id").references(() => users.id, { onDelete: "set null" }),
   assigneeName: text("assignee_name"),
   linkedTaskId: varchar("linked_task_id"),
@@ -2713,7 +2713,7 @@ export const insertChecklistInstanceGroupSchema = createInsertSchema(checklistIn
   updatedAt: true,
 }).extend({
   status: z.enum(["active", "in_progress", "completed"]).default("active"),
-  priority: z.enum(["low", "medium", "high", "urgent"]).default("medium"),
+  priority: z.enum(["low", "medium", "high", "urgent"]).default("low"),
   assigneeId: z.string().nullish(),
   assigneeName: z.string().nullish(),
   linkedTaskId: z.string().nullish(),
@@ -3106,7 +3106,7 @@ export const scheduleItems = pgTable("schedule_items", {
   description: text("description"),
   type: text("type").notNull().default("task"), // "task" | "milestone" | "inspection" | "delivery" | "meeting"
   status: text("status").notNull().default("not_started"), // "not_started" | "in_progress" | "completed" | "on_hold" | "cancelled"
-  priority: text("priority").default("medium"), // "low" | "medium" | "high" | "urgent"
+  priority: text("priority").default("low"), // "low" | "medium" | "high" | "urgent"
   
   // Date and duration
   startDate: timestamp("start_date").notNull(),

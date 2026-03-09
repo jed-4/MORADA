@@ -45,7 +45,7 @@ const mockTasks: Task[] = [
     content: "Complete electrical rough-in for ground floor",
     assigneeName: "Sarah Williams",
     dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
-    priority: "medium",
+    priority: "low",
     status: "in-progress",
     tags: ["Electrical"],
     type: "task",
@@ -76,7 +76,7 @@ const mockTasks: Task[] = [
     content: "Structural frame inspection by building surveyor",
     assigneeName: "Tom Brown",
     dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14 days from now
-    priority: "medium",
+    priority: "low",
     status: "todo",
     tags: ["Inspection", "Structural"],
     type: "task",
