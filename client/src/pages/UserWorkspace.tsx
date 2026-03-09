@@ -124,6 +124,9 @@ export default function UserWorkspace() {
     return [firstName, lastName].filter(Boolean).join(" ") || "Unknown User";
   };
 
+  const { toolbarVisible } = useToolbarVisible();
+  const activeTabLabel = USER_TABS.find(t => t.id === activeTab)?.label ?? activeTab;
+
   // Wait for both user and isOwnPageDetermined before rendering content
   // This ensures isOwnPage is correctly calculated before components initialize their state
   if (!user || !isOwnPageDetermined) {
@@ -133,9 +136,6 @@ export default function UserWorkspace() {
       </div>
     );
   }
-
-  const { toolbarVisible } = useToolbarVisible();
-  const activeTabLabel = USER_TABS.find(t => t.id === activeTab)?.label ?? activeTab;
 
   return (
     <div className="flex flex-col h-full gap-1.5" data-testid="user-workspace-page">
