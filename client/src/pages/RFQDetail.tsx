@@ -806,10 +806,6 @@ export default function RFQDetail() {
 
           {/* Documentation Card — Terms & Conditions + Attachments */}
           <Card className="overflow-hidden">
-            <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
-              <span className="text-xs font-medium">Documentation</span>
-            </div>
 
             {/* Terms & Conditions — collapsible */}
             <div className="border-b border-border/50">

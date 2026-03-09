@@ -569,7 +569,7 @@ export function SidebarNav() {
   };
 
   const handleSectionClick = (sectionId: SectionId) => {
-    if (activeSection === sectionId && isDrawerOpen) {
+    if (activeSection === sectionId && isDrawerOpen && !isPinned) {
       setIsDrawerOpen(false);
       setActiveSection(null);
     } else {
@@ -638,19 +638,19 @@ export function SidebarNav() {
   const handleFavoritesClick = useCallback(() => {
     if (isFavoritesOpen) {
       setIsFavoritesOpen(false);
-      setIsDrawerOpen(false);
+      if (!isPinned) setIsDrawerOpen(false);
     } else {
       setActiveSection(null);
       setIsFavoritesOpen(true);
       setIsDrawerOpen(true);
     }
-  }, [isFavoritesOpen]);
+  }, [isFavoritesOpen, isPinned]);
 
   const handleFavoriteNavClick = useCallback((url: string) => {
     navigate(url);
-    setIsDrawerOpen(false);
+    if (!isPinned) setIsDrawerOpen(false);
     setIsFavoritesOpen(false);
-  }, [navigate]);
+  }, [navigate, isPinned]);
 
   const getIconName = (item: NavItem): string => {
     const iconStr = item.icon.toString();
@@ -1277,8 +1277,8 @@ export function SidebarNav() {
         </div>
       )}
 
-      {/* Backdrop when drawer is open */}
-      {isDrawerOpen && (
+      {/* Backdrop when drawer is open and not pinned */}
+      {isDrawerOpen && !isPinned && (
         <div
           className={cn(
             "fixed z-20",
