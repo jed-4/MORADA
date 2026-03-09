@@ -169,6 +169,31 @@ export default function VariationDetail() {
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
 
+  const [colWidths, setColWidths] = useState<Record<string, number>>({
+    type: 80, name: 112, description: 200, costCode: 72,
+    qty: 56, unit: 56, unitCost: 96, markup: 64,
+    amtExTax: 96, amtIncTax: 96, visible: 52,
+  });
+  const colResizeRef = useRef<{ col: string; startX: number; startWidth: number } | null>(null);
+
+  const startColResize = (col: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    colResizeRef.current = { col, startX: e.clientX, startWidth: colWidths[col] };
+    const onMove = (ev: MouseEvent) => {
+      if (!colResizeRef.current) return;
+      const delta = ev.clientX - colResizeRef.current.startX;
+      const next = Math.max(36, colResizeRef.current.startWidth + delta);
+      setColWidths(prev => ({ ...prev, [colResizeRef.current!.col]: next }));
+    };
+    const onUp = () => {
+      colResizeRef.current = null;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
+
   // T003: Preview / PDF / Send state
   const [previewOpen, setPreviewOpen] = useState(false);
   const [sendModalOpen, setSendModalOpen] = useState(false);
@@ -1267,21 +1292,37 @@ export default function VariationDetail() {
                         </div>
                       ) : (
                         <div>
-                          <table className="w-full text-sm border-collapse min-w-[1050px]">
+                          <table className="w-full text-sm border-collapse min-w-[1050px] table-fixed">
                             <thead>
-                              <tr className="h-6 bg-muted/30">
-                                <th className="w-[72px] text-left text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Type</th>
-                                <th className="w-28 text-left text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Name</th>
-                                <th className="text-left text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Description</th>
-                                <th className="w-[72px] text-left text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Cost Code</th>
-                                <th className="w-14 text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Qty</th>
-                                <th className="w-12 text-left text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Unit</th>
-                                <th className="w-24 text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Unit Cost</th>
-                                <th className="w-16 text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Mkup %</th>
-                                <th className="w-24 text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Amt ex Tax</th>
-                                <th className="w-24 text-right text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Amt inc Tax</th>
-                                <th className="w-16 text-center text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Visible</th>
-                                <th className="w-8" />
+                              <tr className="h-6 bg-muted/30 select-none">
+                                {([
+                                  { key: "type", label: "Type", align: "left" },
+                                  { key: "name", label: "Name", align: "left" },
+                                  { key: "description", label: "Description", align: "left" },
+                                  { key: "costCode", label: "Cost Code", align: "left" },
+                                  { key: "qty", label: "Qty", align: "right" },
+                                  { key: "unit", label: "Unit", align: "left" },
+                                  { key: "unitCost", label: "Unit Cost", align: "right" },
+                                  { key: "markup", label: "Mkup %", align: "right" },
+                                  { key: "amtExTax", label: "Amt ex Tax", align: "right" },
+                                  { key: "amtIncTax", label: "Amt inc Tax", align: "right" },
+                                  { key: "visible", label: "Visible", align: "center" },
+                                ] as const).map(({ key, label, align }) => (
+                                  <th
+                                    key={key}
+                                    style={{ width: colWidths[key], position: "relative" }}
+                                    className={`text-${align} text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2 overflow-hidden`}
+                                  >
+                                    {label}
+                                    <div
+                                      className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize group"
+                                      onMouseDown={(e) => startColResize(key, e)}
+                                    >
+                                      <div className="absolute inset-y-1 right-0 w-px bg-border/0 group-hover:bg-border/60 transition-colors" />
+                                    </div>
+                                  </th>
+                                ))}
+                                <th style={{ width: 32 }} />
                               </tr>
                             </thead>
                             <tbody>
