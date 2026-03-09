@@ -84,7 +84,7 @@ export default function RFQDetail() {
   const [editingItem, setEditingItem] = useState<RfqItem | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
   const [descOpen, setDescOpen] = useState(true);
-  const [termsOpen, setTermsOpen] = useState(false);
+  const [scopeOpen, setScopeOpen] = useState(false);
   const pdfUrlRef = useRef<string | null>(null);
 
   const [formData, setFormData] = useState({
@@ -668,68 +668,14 @@ export default function RFQDetail() {
               )}
             </div>
 
-            {/* Terms & Conditions — collapsible sub-section */}
-            <div className="border-t border-border/50">
-              <button
-                type="button"
-                onClick={() => setTermsOpen((o) => !o)}
-                className="h-7 w-full flex items-center gap-1.5 px-3 hover-elevate"
-              >
-                {termsOpen
-                  ? <ChevronDown className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-                  : <ChevronRight className="w-3 h-3 text-muted-foreground flex-shrink-0" />}
-                <span className="text-xs text-muted-foreground">Terms & Conditions</span>
-              </button>
-              {termsOpen && (
-                <div className="px-3 pb-3 space-y-2">
-                  <Select value={formData.termsTemplateId || "custom"} onValueChange={handleTermsTemplateChange}>
-                    <SelectTrigger className="h-7 text-xs">
-                      <SelectValue placeholder="Select template" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="custom">Custom</SelectItem>
-                      {rfqTemplates.filter(t => t.termsAndConditions).map((template) => (
-                        <SelectItem key={template.id} value={template.id}>
-                          {template.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Textarea
-                    value={formData.customTerms}
-                    onChange={(e) => handleFieldChange("customTerms", e.target.value)}
-                    placeholder="Terms and conditions to include in the RFQ..."
-                    className="min-h-[80px] text-sm"
-                    data-testid="input-terms"
-                  />
-                </div>
-              )}
-            </div>
           </Card>
 
-          {/* Scope of Work */}
-          <Card className="overflow-hidden">
-            <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
-              <span className="text-xs font-medium">Scope of Work</span>
-            </div>
-            <div className="p-3">
-              <Textarea
-                value={formData.scope}
-                onChange={(e) => handleFieldChange("scope", e.target.value)}
-                placeholder="Detailed scope including specifications, quantities, delivery requirements..."
-                className="min-h-[100px] text-sm"
-                data-testid="input-scope"
-              />
-            </div>
-          </Card>
-
-          {/* Line Items */}
+          {/* Scope & Items Card */}
           <Card className="overflow-hidden">
             <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
               <div className="flex items-center gap-2">
                 <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber-400/70" />
-                <span className="text-xs font-medium">Line Items</span>
+                <span className="text-xs font-medium">Scope & Items</span>
                 {items.length > 0 && (
                   <Badge variant="secondary" className="text-xs h-4 px-1.5">{items.length}</Badge>
                 )}
@@ -759,6 +705,33 @@ export default function RFQDetail() {
                 </Button>
               </div>
             </div>
+
+            {/* Scope of Work — collapsible */}
+            <div className="border-b border-border/50">
+              <button
+                type="button"
+                onClick={() => setScopeOpen((o) => !o)}
+                className="h-7 w-full flex items-center gap-1.5 px-3 hover-elevate"
+              >
+                {scopeOpen
+                  ? <ChevronDown className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                  : <ChevronRight className="w-3 h-3 text-muted-foreground flex-shrink-0" />}
+                <span className="text-xs text-muted-foreground">Scope of Work</span>
+              </button>
+              {scopeOpen && (
+                <div className="px-3 pb-3">
+                  <Textarea
+                    value={formData.scope}
+                    onChange={(e) => handleFieldChange("scope", e.target.value)}
+                    placeholder="Detailed scope including specifications, quantities, delivery requirements..."
+                    className="min-h-[100px] text-sm"
+                    data-testid="input-scope"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Line Items */}
             {items.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground text-sm">
                 No line items yet. Add items or import from the estimate.
@@ -829,6 +802,38 @@ export default function RFQDetail() {
                 </TableBody>
               </Table>
             )}
+          </Card>
+
+          {/* Terms & Conditions */}
+          <Card className="overflow-hidden">
+            <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
+              <div className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-blue-400/70" />
+                <span className="text-xs font-medium">Terms & Conditions</span>
+              </div>
+              <Select value={formData.termsTemplateId || "custom"} onValueChange={handleTermsTemplateChange}>
+                <SelectTrigger className="w-[160px] h-6 text-xs">
+                  <SelectValue placeholder="Select template" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="custom">Custom</SelectItem>
+                  {rfqTemplates.filter(t => t.termsAndConditions).map((template) => (
+                    <SelectItem key={template.id} value={template.id}>
+                      {template.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="p-3">
+              <Textarea
+                value={formData.customTerms}
+                onChange={(e) => handleFieldChange("customTerms", e.target.value)}
+                placeholder="Terms and conditions to include in the RFQ..."
+                className="min-h-[80px] text-sm"
+                data-testid="input-terms"
+              />
+            </div>
           </Card>
 
           {/* Attachments */}

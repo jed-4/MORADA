@@ -89,6 +89,7 @@ import {
   HardHat,
   Check,
   Flag,
+  Loader2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CasvaScheduleList } from "@/components/schedule/CasvaScheduleList";
@@ -583,6 +584,51 @@ export default function Schedule() {
         description: error.message,
         variant: "destructive",
       });
+    },
+  });
+
+  const createLinkedTaskMutation = useMutation({
+    mutationFn: async (scheduleItem: ScheduleItem) => {
+      const taskPayload: Record<string, unknown> = {
+        title: scheduleItem.name,
+        taskContextType: "project",
+        projectId: projectId,
+        type: "task",
+        content: "",
+      };
+      if (scheduleItem.startDate) taskPayload.startDate = scheduleItem.startDate;
+      if (scheduleItem.endDate) taskPayload.dueDate = scheduleItem.endDate;
+
+      const taskRes = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(taskPayload),
+      });
+      if (!taskRes.ok) {
+        const err = await taskRes.json().catch(() => ({}));
+        throw new Error((err as any).error || "Failed to create task");
+      }
+      const task = await taskRes.json();
+
+      const newIds = [...((scheduleItem.taskIds as string[]) || []), task.id];
+      const linkRes = await fetch(`/api/schedule-items/${scheduleItem.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ taskIds: newIds }),
+      });
+      if (!linkRes.ok) throw new Error("Task created but failed to link");
+      return { task, updatedItem: await linkRes.json() as ScheduleItem };
+    },
+    onSuccess: ({ task, updatedItem }) => {
+      setEditingItem(updatedItem);
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/tasks`] });
+      invalidateScheduleItems();
+      toast({ title: "Task created", description: `"${task.title}" linked to this schedule item.` });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to create task", description: error.message, variant: "destructive" });
     },
   });
 
@@ -2910,7 +2956,20 @@ export default function Schedule() {
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground">Tasks</span>
-                    <DropdownMenu>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-6 text-xs"
+                        disabled={createLinkedTaskMutation.isPending}
+                        onClick={() => createLinkedTaskMutation.mutate(editingItem)}
+                      >
+                        {createLinkedTaskMutation.isPending
+                          ? <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                          : <Plus className="w-3 h-3 mr-1" />}
+                        Create Task
+                      </Button>
+                      <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="outline" size="sm" className="h-6 text-xs">
                           <Plus className="w-3 h-3 mr-1" />
@@ -2938,6 +2997,7 @@ export default function Schedule() {
                         )}
                       </DropdownMenuContent>
                     </DropdownMenu>
+                    </div>
                   </div>
                   {((editingItem.taskIds as string[]) || []).length > 0 && (
                     <div className="space-y-1.5">
