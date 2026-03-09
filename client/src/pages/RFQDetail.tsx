@@ -55,6 +55,8 @@ import {
   CheckCircle2,
   AlertCircle,
   Search,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { RFQDocument } from "@/components/rfq/pdf/RFQDocument";
 import { SendRFQDialog } from "@/components/rfq/SendRFQDialog";
@@ -81,6 +83,8 @@ export default function RFQDetail() {
   const [showAddItemDialog, setShowAddItemDialog] = useState(false);
   const [editingItem, setEditingItem] = useState<RfqItem | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
+  const [descOpen, setDescOpen] = useState(true);
+  const [termsOpen, setTermsOpen] = useState(false);
   const pdfUrlRef = useRef<string | null>(null);
 
   const [formData, setFormData] = useState({
@@ -517,12 +521,15 @@ export default function RFQDetail() {
         {/* Main Content (Left) */}
         <div className="flex-1 overflow-auto p-3 space-y-2">
 
-          {/* Supplier & Date Card */}
+          {/* RFQ Info Card — suppliers/dates + collapsible description + collapsible T&C */}
           <Card className="overflow-hidden">
+            {/* Card header */}
             <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
               <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[#bba7db]/80" />
-              <span className="text-xs font-medium">Suppliers & Dates</span>
+              <span className="text-xs font-medium">RFQ Info</span>
             </div>
+
+            {/* Suppliers & Dates — always visible */}
             <div className="p-3">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 {/* Suppliers */}
@@ -635,22 +642,68 @@ export default function RFQDetail() {
                 </div>
               </div>
             </div>
-          </Card>
 
-          {/* Description */}
-          <Card className="overflow-hidden">
-            <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
-              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
-              <span className="text-xs font-medium">Description</span>
+            {/* Description — collapsible sub-section */}
+            <div className="border-t border-border/50">
+              <button
+                type="button"
+                onClick={() => setDescOpen((o) => !o)}
+                className="h-7 w-full flex items-center gap-1.5 px-3 hover-elevate"
+              >
+                {descOpen
+                  ? <ChevronDown className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                  : <ChevronRight className="w-3 h-3 text-muted-foreground flex-shrink-0" />}
+                <span className="text-xs text-muted-foreground">Description</span>
+              </button>
+              {descOpen && (
+                <div className="px-3 pb-3">
+                  <Textarea
+                    value={formData.description}
+                    onChange={(e) => handleFieldChange("description", e.target.value)}
+                    placeholder="Brief description of the request..."
+                    className="min-h-[60px] text-sm"
+                    data-testid="input-description"
+                  />
+                </div>
+              )}
             </div>
-            <div className="p-3">
-              <Textarea
-                value={formData.description}
-                onChange={(e) => handleFieldChange("description", e.target.value)}
-                placeholder="Brief description of the request..."
-                className="min-h-[60px] text-sm"
-                data-testid="input-description"
-              />
+
+            {/* Terms & Conditions — collapsible sub-section */}
+            <div className="border-t border-border/50">
+              <button
+                type="button"
+                onClick={() => setTermsOpen((o) => !o)}
+                className="h-7 w-full flex items-center gap-1.5 px-3 hover-elevate"
+              >
+                {termsOpen
+                  ? <ChevronDown className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                  : <ChevronRight className="w-3 h-3 text-muted-foreground flex-shrink-0" />}
+                <span className="text-xs text-muted-foreground">Terms & Conditions</span>
+              </button>
+              {termsOpen && (
+                <div className="px-3 pb-3 space-y-2">
+                  <Select value={formData.termsTemplateId || "custom"} onValueChange={handleTermsTemplateChange}>
+                    <SelectTrigger className="h-7 text-xs">
+                      <SelectValue placeholder="Select template" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="custom">Custom</SelectItem>
+                      {rfqTemplates.filter(t => t.termsAndConditions).map((template) => (
+                        <SelectItem key={template.id} value={template.id}>
+                          {template.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Textarea
+                    value={formData.customTerms}
+                    onChange={(e) => handleFieldChange("customTerms", e.target.value)}
+                    placeholder="Terms and conditions to include in the RFQ..."
+                    className="min-h-[80px] text-sm"
+                    data-testid="input-terms"
+                  />
+                </div>
+              )}
             </div>
           </Card>
 
@@ -812,38 +865,6 @@ export default function RFQDetail() {
                 ))}
               </div>
             )}
-          </Card>
-
-          {/* Terms & Conditions */}
-          <Card className="overflow-hidden">
-            <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
-              <div className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-blue-400/70" />
-                <span className="text-xs font-medium">Terms & Conditions</span>
-              </div>
-              <Select value={formData.termsTemplateId || "custom"} onValueChange={handleTermsTemplateChange}>
-                <SelectTrigger className="w-[160px] h-6 text-xs">
-                  <SelectValue placeholder="Select template" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="custom">Custom</SelectItem>
-                  {rfqTemplates.filter(t => t.termsAndConditions).map((template) => (
-                    <SelectItem key={template.id} value={template.id}>
-                      {template.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="p-3">
-              <Textarea
-                value={formData.customTerms}
-                onChange={(e) => handleFieldChange("customTerms", e.target.value)}
-                placeholder="Terms and conditions to include in the RFQ..."
-                className="min-h-[80px] text-sm"
-                data-testid="input-terms"
-              />
-            </div>
           </Card>
 
           {/* Quotes Received */}
