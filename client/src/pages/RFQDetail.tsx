@@ -9,7 +9,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -34,16 +33,15 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { 
+import {
   ArrowLeft,
-  FileText, 
-  Download, 
-  Send, 
+  FileText,
+  Download,
+  Send,
   Eye,
   EyeOff,
   Calendar as CalendarIcon,
   Building2,
-  Users,
   Save,
   Loader2,
   Plus,
@@ -73,7 +71,7 @@ export default function RFQDetail() {
   const { id } = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  
+
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -124,7 +122,7 @@ export default function RFQDetail() {
     enabled: !!id,
   });
 
-  const { data: quotes = [], isLoading: quotesLoading } = useQuery<RfqQuote[]>({
+  const { data: quotes = [] } = useQuery<RfqQuote[]>({
     queryKey: ["/api/rfqs", id, "quotes"],
     enabled: !!id,
   });
@@ -218,7 +216,7 @@ export default function RFQDetail() {
   const importItemsMutation = useMutation({
     mutationFn: async (estimateItemIds: string[]) => {
       const selectedItems = estimateItems.filter(ei => estimateItemIds.includes(ei.id));
-      const promises = selectedItems.map((ei, index) => 
+      const promises = selectedItems.map((ei, index) =>
         apiRequest("/api/rfq-items", "POST", {
           rfqId: id,
           estimateItemId: ei.id,
@@ -238,17 +236,6 @@ export default function RFQDetail() {
       setShowImportDialog(false);
       setSelectedEstimateItems([]);
       toast({ title: `${selectedEstimateItems.length} items imported` });
-    },
-  });
-
-  const updateItemMutation = useMutation({
-    mutationFn: async ({ itemId, data }: { itemId: string; data: Partial<RfqItem> }) => {
-      return await apiRequest(`/api/rfq-items/${itemId}`, "PATCH", data);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/rfq-items", id] });
-      setEditingItem(null);
-      toast({ title: "Item updated" });
     },
   });
 
@@ -370,17 +357,55 @@ export default function RFQDetail() {
   };
 
   const getStatusBadge = (status: string) => {
-    const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "outline"; className?: string }> = {
-      draft: { label: "Draft", variant: "secondary" },
-      sent: { label: "Sent", variant: "default", className: "bg-blue-500" },
-      confirmed: { label: "Confirmed", variant: "default", className: "bg-green-500" },
-      quoted: { label: "Quoted", variant: "default", className: "bg-amber-500" },
-      accepted: { label: "Accepted", variant: "default", className: "bg-green-600" },
-      declined: { label: "Declined", variant: "outline", className: "text-red-500 border-red-500" },
-      expired: { label: "Expired", variant: "outline", className: "text-muted-foreground" },
+    const configs: Record<string, { label: string; className: string }> = {
+      draft: {
+        label: "Draft",
+        className: "bg-muted text-muted-foreground border-border",
+      },
+      sent: {
+        label: "Sent",
+        className:
+          "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800",
+      },
+      pending: {
+        label: "Pending",
+        className:
+          "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800",
+      },
+      confirmed: {
+        label: "Confirmed",
+        className:
+          "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800",
+      },
+      quoted: {
+        label: "Quoted",
+        className:
+          "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800",
+      },
+      accepted: {
+        label: "Accepted",
+        className:
+          "bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-700",
+      },
+      declined: {
+        label: "Declined",
+        className:
+          "bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800",
+      },
+      expired: {
+        label: "Expired",
+        className: "bg-muted text-muted-foreground border-border",
+      },
     };
-    const config = statusMap[status] || { label: status, variant: "outline" };
-    return <Badge variant={config.variant} className={config.className}>{config.label}</Badge>;
+    const config = configs[status] || {
+      label: status,
+      className: "bg-muted text-muted-foreground border-border",
+    };
+    return (
+      <Badge variant="outline" className={cn("text-xs", config.className)}>
+        {config.label}
+      </Badge>
+    );
   };
 
   const goBack = () => {
@@ -411,7 +436,7 @@ export default function RFQDetail() {
   return (
     <div className="flex flex-col h-full">
       {/* Header Row */}
-      <div className="h-10 px-3 flex items-center justify-between border-b bg-background shrink-0">
+      <div className="h-9 px-3 flex items-center justify-between border-b bg-background shrink-0">
         <div className="flex items-center gap-3">
           <button
             onClick={goBack}
@@ -420,7 +445,7 @@ export default function RFQDetail() {
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Input
               value={formData.title}
               onChange={(e) => handleFieldChange("title", e.target.value)}
@@ -490,150 +515,173 @@ export default function RFQDetail() {
       {/* Content - Two Column Layout */}
       <div className="flex-1 overflow-hidden flex">
         {/* Main Content (Left) */}
-        <div className="flex-1 overflow-auto p-4 space-y-4">
-          {/* Supplier & Date Row */}
-          <Card className="p-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Suppliers */}
-              <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">Suppliers</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" className="w-full h-8 justify-start text-sm font-normal">
-                      <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
-                      {formData.supplierIds.length > 0 
-                        ? `${formData.supplierIds.length} selected`
-                        : "Select suppliers"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-64 p-2" align="start">
-                    <div className="relative mb-2">
-                      <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                      <Input
-                        value={supplierSearch}
-                        onChange={(e) => setSupplierSearch(e.target.value)}
-                        placeholder="Search suppliers..."
-                        className="h-7 pl-7 text-sm"
-                      />
-                    </div>
-                    <div className="space-y-1 max-h-[200px] overflow-y-auto">
-                      {suppliers.length === 0 ? (
-                        <p className="text-xs text-muted-foreground text-center py-4">
-                          No suppliers found. Add suppliers first.
-                        </p>
-                      ) : filteredSuppliers.length === 0 ? (
-                        <p className="text-xs text-muted-foreground text-center py-2">
-                          No suppliers match your search.
-                        </p>
-                      ) : (
-                        filteredSuppliers.map((supplier) => (
-                          <label
-                            key={supplier.id}
-                            className="flex items-center gap-2 p-2 rounded hover-elevate cursor-pointer"
+        <div className="flex-1 overflow-auto p-3 space-y-2">
+
+          {/* Supplier & Date Card */}
+          <Card className="overflow-hidden">
+            <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
+              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[#bba7db]/80" />
+              <span className="text-xs font-medium">Suppliers & Dates</span>
+            </div>
+            <div className="p-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {/* Suppliers */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Suppliers</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="w-full justify-start text-sm font-normal">
+                        <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
+                        {formData.supplierIds.length > 0
+                          ? `${formData.supplierIds.length} selected`
+                          : "Select suppliers"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-64 p-2" align="start">
+                      <div className="relative mb-2">
+                        <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                        <Input
+                          value={supplierSearch}
+                          onChange={(e) => setSupplierSearch(e.target.value)}
+                          placeholder="Search suppliers..."
+                          className="h-7 pl-7 text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1 max-h-[200px] overflow-y-auto">
+                        {suppliers.length === 0 ? (
+                          <p className="text-xs text-muted-foreground text-center py-4">
+                            No suppliers found. Add suppliers first.
+                          </p>
+                        ) : filteredSuppliers.length === 0 ? (
+                          <p className="text-xs text-muted-foreground text-center py-2">
+                            No suppliers match your search.
+                          </p>
+                        ) : (
+                          filteredSuppliers.map((supplier) => (
+                            <label
+                              key={supplier.id}
+                              className="flex items-center gap-2 p-2 rounded hover-elevate cursor-pointer"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={formData.supplierIds.includes(supplier.id)}
+                                onChange={() => toggleSupplier(supplier.id, supplier.name ?? "")}
+                                className="rounded"
+                              />
+                              <span className="text-sm">{supplier.name}</span>
+                            </label>
+                          ))
+                        )}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                  {formData.supplierNames.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {formData.supplierNames.map((name, i) => (
+                        <Badge key={i} variant="secondary" className="text-xs">
+                          {name}
+                          <button
+                            onClick={() => toggleSupplier(formData.supplierIds[i], name)}
+                            className="ml-1 hover:text-destructive"
                           >
-                            <input
-                              type="checkbox"
-                              checked={formData.supplierIds.includes(supplier.id)}
-                              onChange={() => toggleSupplier(supplier.id, supplier.name ?? "")}
-                              className="rounded"
-                            />
-                            <span className="text-sm">{supplier.name}</span>
-                          </label>
-                        ))
-                      )}
+                            <X className="w-3 h-3" />
+                          </button>
+                        </Badge>
+                      ))}
                     </div>
-                  </PopoverContent>
-                </Popover>
-                {formData.supplierNames.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    {formData.supplierNames.map((name, i) => (
-                      <Badge key={i} variant="secondary" className="text-xs">
-                        {name}
-                        <button
-                          onClick={() => toggleSupplier(formData.supplierIds[i], name)}
-                          className="ml-1 hover:text-destructive"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
 
-              {/* Due Date */}
-              <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">Response Due</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" className="w-full h-8 justify-start text-sm font-normal">
-                      <CalendarIcon className="w-4 h-4 mr-2 text-muted-foreground" />
-                      {formData.dueDate ? format(formData.dueDate, "MMM d, yyyy") : "Set due date"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      mode="single"
-                      selected={formData.dueDate || undefined}
-                      onSelect={(date) => handleFieldChange("dueDate", date)}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-              </div>
+                {/* Due Date */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Response Due</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="w-full justify-start text-sm font-normal">
+                        <CalendarIcon className="w-4 h-4 mr-2 text-muted-foreground" />
+                        {formData.dueDate ? format(formData.dueDate, "MMM d, yyyy") : "Set due date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={formData.dueDate || undefined}
+                        onSelect={(date) => handleFieldChange("dueDate", date)}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
 
-              {/* Deadline */}
-              <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">Work Deadline</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" className="w-full h-8 justify-start text-sm font-normal">
-                      <Clock className="w-4 h-4 mr-2 text-muted-foreground" />
-                      {formData.deadline ? format(formData.deadline, "MMM d, yyyy") : "Set deadline"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      mode="single"
-                      selected={formData.deadline || undefined}
-                      onSelect={(date) => handleFieldChange("deadline", date)}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
+                {/* Deadline */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Work Deadline</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="w-full justify-start text-sm font-normal">
+                        <Clock className="w-4 h-4 mr-2 text-muted-foreground" />
+                        {formData.deadline ? format(formData.deadline, "MMM d, yyyy") : "Set deadline"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={formData.deadline || undefined}
+                        onSelect={(date) => handleFieldChange("deadline", date)}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
               </div>
             </div>
           </Card>
 
           {/* Description */}
-          <Card className="p-4 space-y-2">
-            <Label className="text-xs text-muted-foreground">Description</Label>
-            <Textarea
-              value={formData.description}
-              onChange={(e) => handleFieldChange("description", e.target.value)}
-              placeholder="Brief description of the request..."
-              className="min-h-[60px] text-sm"
-              data-testid="input-description"
-            />
+          <Card className="overflow-hidden">
+            <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
+              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
+              <span className="text-xs font-medium">Description</span>
+            </div>
+            <div className="p-3">
+              <Textarea
+                value={formData.description}
+                onChange={(e) => handleFieldChange("description", e.target.value)}
+                placeholder="Brief description of the request..."
+                className="min-h-[60px] text-sm"
+                data-testid="input-description"
+              />
+            </div>
           </Card>
 
           {/* Scope of Work */}
-          <Card className="p-4 space-y-2">
-            <Label className="text-xs text-muted-foreground">Scope of Work</Label>
-            <Textarea
-              value={formData.scope}
-              onChange={(e) => handleFieldChange("scope", e.target.value)}
-              placeholder="Detailed scope including specifications, quantities, delivery requirements..."
-              className="min-h-[120px] text-sm"
-              data-testid="input-scope"
-            />
+          <Card className="overflow-hidden">
+            <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
+              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
+              <span className="text-xs font-medium">Scope of Work</span>
+            </div>
+            <div className="p-3">
+              <Textarea
+                value={formData.scope}
+                onChange={(e) => handleFieldChange("scope", e.target.value)}
+                placeholder="Detailed scope including specifications, quantities, delivery requirements..."
+                className="min-h-[100px] text-sm"
+                data-testid="input-scope"
+              />
+            </div>
           </Card>
 
           {/* Line Items */}
-          <Card className="p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs text-muted-foreground">Line Items ({items.length})</Label>
+          <Card className="overflow-hidden">
+            <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
               <div className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber-400/70" />
+                <span className="text-xs font-medium">Line Items</span>
+                {items.length > 0 && (
+                  <Badge variant="secondary" className="text-xs h-4 px-1.5">{items.length}</Badge>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5">
                 {estimateItems.length > 0 && (
                   <Button
                     size="sm"
@@ -643,7 +691,7 @@ export default function RFQDetail() {
                     data-testid="button-import-items"
                   >
                     <FileText className="w-3 h-3 mr-1" />
-                    Import from Estimate
+                    Import
                   </Button>
                 )}
                 <Button
@@ -654,7 +702,7 @@ export default function RFQDetail() {
                   data-testid="button-add-item"
                 >
                   <Plus className="w-3 h-3 mr-1" />
-                  Add Item
+                  Add
                 </Button>
               </div>
             </div>
@@ -731,24 +779,28 @@ export default function RFQDetail() {
           </Card>
 
           {/* Attachments */}
-          <Card className="p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs text-muted-foreground">
-                Attachments ({rfq.attachmentUrls?.length || 0})
-              </Label>
+          <Card className="overflow-hidden">
+            <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
+              <div className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-orange-400/70" />
+                <span className="text-xs font-medium">Attachments</span>
+                {(rfq.attachmentUrls?.length ?? 0) > 0 && (
+                  <Badge variant="secondary" className="text-xs h-4 px-1.5">{rfq.attachmentUrls!.length}</Badge>
+                )}
+              </div>
               <Button size="sm" variant="outline" className="h-6 text-xs" data-testid="button-add-attachment">
                 <Upload className="w-3 h-3 mr-1" />
                 Upload
               </Button>
             </div>
             {(!rfq.attachmentUrls || rfq.attachmentUrls.length === 0) ? (
-              <div className="border-2 border-dashed rounded-lg p-8 text-center text-muted-foreground text-sm">
-                <Paperclip className="w-8 h-8 mx-auto mb-2 opacity-50" />
+              <div className="border-2 border-dashed rounded-lg m-3 p-6 text-center text-muted-foreground text-sm">
+                <Paperclip className="w-6 h-6 mx-auto mb-2 opacity-50" />
                 <p>Drag files here or click Upload</p>
-                <p className="text-xs mt-1">Plans, specs, drawings</p>
+                <p className="text-xs mt-1 text-muted-foreground/60">Plans, specs, drawings</p>
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="p-3 space-y-1.5">
                 {rfq.attachmentFileNames?.map((name, i) => (
                   <div key={i} className="flex items-center gap-2 p-2 rounded bg-muted/30">
                     <Paperclip className="w-4 h-4 text-muted-foreground" />
@@ -762,12 +814,15 @@ export default function RFQDetail() {
             )}
           </Card>
 
-          {/* Terms */}
-          <Card className="p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs text-muted-foreground">Terms & Conditions</Label>
+          {/* Terms & Conditions */}
+          <Card className="overflow-hidden">
+            <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
+              <div className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-blue-400/70" />
+                <span className="text-xs font-medium">Terms & Conditions</span>
+              </div>
               <Select value={formData.termsTemplateId || "custom"} onValueChange={handleTermsTemplateChange}>
-                <SelectTrigger className="w-[180px] h-7 text-xs">
+                <SelectTrigger className="w-[160px] h-6 text-xs">
                   <SelectValue placeholder="Select template" />
                 </SelectTrigger>
                 <SelectContent>
@@ -780,41 +835,27 @@ export default function RFQDetail() {
                 </SelectContent>
               </Select>
             </div>
-            <Textarea
-              value={formData.customTerms}
-              onChange={(e) => handleFieldChange("customTerms", e.target.value)}
-              placeholder="Terms and conditions to include in the RFQ..."
-              className="min-h-[80px] text-sm"
-              data-testid="input-terms"
-            />
+            <div className="p-3">
+              <Textarea
+                value={formData.customTerms}
+                onChange={(e) => handleFieldChange("customTerms", e.target.value)}
+                placeholder="Terms and conditions to include in the RFQ..."
+                className="min-h-[80px] text-sm"
+                data-testid="input-terms"
+              />
+            </div>
           </Card>
 
-          {/* PDF Preview */}
-          {showPreview && (
-            <Card className="p-4 space-y-3">
-              <Label className="text-xs text-muted-foreground">PDF Preview</Label>
-              {isGenerating ? (
-                <div className="flex items-center justify-center h-[500px] bg-muted/20 rounded">
-                  <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-                </div>
-              ) : pdfUrl ? (
-                <iframe
-                  src={pdfUrl}
-                  className="w-full h-[500px] border rounded"
-                  title="RFQ PDF Preview"
-                />
-              ) : (
-                <div className="flex items-center justify-center h-[500px] bg-muted/20 rounded text-muted-foreground">
-                  Failed to generate preview
-                </div>
-              )}
-            </Card>
-          )}
-
-          {/* Quotes Tab */}
-          <Card className="p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs text-muted-foreground">Quotes Received ({quotes.length})</Label>
+          {/* Quotes Received */}
+          <Card className="overflow-hidden">
+            <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
+              <div className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-emerald-400/70" />
+                <span className="text-xs font-medium">Quotes Received</span>
+                {quotes.length > 0 && (
+                  <Badge variant="secondary" className="text-xs h-4 px-1.5">{quotes.length}</Badge>
+                )}
+              </div>
               <Button
                 size="sm"
                 variant="outline"
@@ -833,18 +874,42 @@ export default function RFQDetail() {
               <QuoteComparisonView rfqId={rfq.id} quotes={quotes} rfq={rfq} />
             )}
           </Card>
+
+          {/* PDF Preview */}
+          {showPreview && (
+            <Card className="overflow-hidden">
+              <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
+                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
+                <span className="text-xs font-medium">PDF Preview</span>
+              </div>
+              {isGenerating ? (
+                <div className="flex items-center justify-center h-[500px] bg-muted/20">
+                  <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                </div>
+              ) : pdfUrl ? (
+                <iframe
+                  src={pdfUrl}
+                  className="w-full h-[500px]"
+                  title="RFQ PDF Preview"
+                />
+              ) : (
+                <div className="flex items-center justify-center h-[500px] bg-muted/20 text-muted-foreground">
+                  Failed to generate preview
+                </div>
+              )}
+            </Card>
+          )}
         </div>
 
         {/* Sidebar (Right) */}
-        <div className="w-80 border-l overflow-auto p-4 space-y-4 bg-muted/10">
-          {/* External/Track Only Toggle */}
-          <Card className="p-3 space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <Label className="text-xs font-medium">Track Only Mode</Label>
-                <p className="text-[10px] text-muted-foreground">
-                  Track RFQ sent outside BuildPro
-                </p>
+        <div className="w-72 border-l overflow-auto p-3 space-y-2 bg-muted/10">
+
+          {/* Track Only Mode */}
+          <Card className="overflow-hidden">
+            <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
+              <div className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
+                <span className="text-xs font-medium">Track Only Mode</span>
               </div>
               <Switch
                 checked={formData.isExternal}
@@ -852,31 +917,36 @@ export default function RFQDetail() {
               />
             </div>
             {formData.isExternal && (
-              <Textarea
-                value={formData.externalNotes}
-                onChange={(e) => handleFieldChange("externalNotes", e.target.value)}
-                placeholder="Where was this RFQ sent? (email, phone, etc.)"
-                className="text-xs min-h-[60px]"
-              />
+              <div className="p-3">
+                <Textarea
+                  value={formData.externalNotes}
+                  onChange={(e) => handleFieldChange("externalNotes", e.target.value)}
+                  placeholder="Where was this RFQ sent? (email, phone, etc.)"
+                  className="text-xs min-h-[60px]"
+                />
+              </div>
+            )}
+            {!formData.isExternal && (
+              <p className="text-[10px] text-muted-foreground px-3 py-2">
+                Track RFQ sent outside BuildPro
+              </p>
             )}
           </Card>
 
-          {/* Follow-up Reminders */}
-          <Card className="p-3 space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <Label className="text-xs font-medium">Auto Follow-up</Label>
-                <p className="text-[10px] text-muted-foreground">
-                  Send reminder before due date
-                </p>
+          {/* Auto Follow-up */}
+          <Card className="overflow-hidden">
+            <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
+              <div className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber-400/70" />
+                <span className="text-xs font-medium">Auto Follow-up</span>
               </div>
               <Switch
                 checked={formData.followUpEnabled}
                 onCheckedChange={(checked) => handleFieldChange("followUpEnabled", checked)}
               />
             </div>
-            {formData.followUpEnabled && (
-              <div className="space-y-2">
+            {formData.followUpEnabled ? (
+              <div className="p-3 space-y-2">
                 <Label className="text-xs text-muted-foreground">Days before due date</Label>
                 <Select
                   value={formData.followUpDaysBefore.toString()}
@@ -893,46 +963,58 @@ export default function RFQDetail() {
                   </SelectContent>
                 </Select>
                 {rfq.followUpSentAt && (
-                  <p className="text-[10px] text-green-600 flex items-center gap-1">
+                  <p className="text-[10px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                     <CheckCircle2 className="w-3 h-3" />
                     Sent {format(new Date(rfq.followUpSentAt), "MMM d")}
                   </p>
                 )}
               </div>
+            ) : (
+              <p className="text-[10px] text-muted-foreground px-3 py-2">
+                Send reminder before due date
+              </p>
             )}
           </Card>
 
           {/* Internal Notes */}
-          <Card className="p-3 space-y-2">
-            <Label className="text-xs font-medium">Internal Notes</Label>
-            <p className="text-[10px] text-muted-foreground">
-              Only visible to your team
-            </p>
-            <Textarea
-              value={formData.internalNotes}
-              onChange={(e) => handleFieldChange("internalNotes", e.target.value)}
-              placeholder="Notes for your team..."
-              className="text-xs min-h-[100px]"
-              data-testid="input-internal-notes"
-            />
+          <Card className="overflow-hidden">
+            <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
+              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
+              <span className="text-xs font-medium">Internal Notes</span>
+            </div>
+            <div className="p-3">
+              <p className="text-[10px] text-muted-foreground mb-2">
+                Only visible to your team
+              </p>
+              <Textarea
+                value={formData.internalNotes}
+                onChange={(e) => handleFieldChange("internalNotes", e.target.value)}
+                placeholder="Notes for your team..."
+                className="text-xs min-h-[80px]"
+                data-testid="input-internal-notes"
+              />
+            </div>
           </Card>
 
           {/* Activity */}
-          <Card className="p-3 space-y-3">
-            <Label className="text-xs font-medium">Activity</Label>
-            <div className="space-y-3">
+          <Card className="overflow-hidden">
+            <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
+              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
+              <span className="text-xs font-medium">Activity</span>
+            </div>
+            <div className="p-3 space-y-3">
               <div className="flex items-start gap-2">
-                <CheckCircle2 className="w-4 h-4 text-muted-foreground mt-0.5" />
+                <CheckCircle2 className="w-3.5 h-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
                 <div>
                   <p className="text-xs">Created</p>
                   <p className="text-[10px] text-muted-foreground">
-                    {rfq.createdByName} - {formatDate(rfq.createdAt)}
+                    {rfq.createdByName} · {formatDate(rfq.createdAt)}
                   </p>
                 </div>
               </div>
               {rfq.sentAt && (
                 <div className="flex items-start gap-2">
-                  <Send className="w-4 h-4 text-muted-foreground mt-0.5" />
+                  <Send className="w-3.5 h-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
                   <div>
                     <p className="text-xs">Sent to suppliers</p>
                     <p className="text-[10px] text-muted-foreground">

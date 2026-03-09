@@ -31,18 +31,15 @@ import {
   FileText,
   MoreHorizontal,
   Search,
-  Filter,
   Download,
   Send,
-  Clock,
-  CheckCircle2,
-  XCircle,
   ClipboardList,
   ArrowRight,
 } from "lucide-react";
 import { type Rfq, type Project } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
 import { format } from "date-fns";
+import { cn } from "@/lib/utils";
 
 export default function RFQs() {
   const [, setLocation] = useLocation();
@@ -79,13 +76,11 @@ export default function RFQs() {
     return projects.find((p) => p.id === projectId);
   };
 
-  // Get current project for title display
   const currentProject = projectIdFromUrl ? getProject(projectIdFromUrl) : null;
-  const pageTitle = currentProject 
+  const pageTitle = currentProject
     ? `${currentProject.name} - Requests for Quote`
     : "Requests for Quote";
 
-  // Project-aware navigation helper
   const getNavigationPath = (path: string) => {
     return projectIdFromUrl ? `/projects/${projectIdFromUrl}${path}` : path;
   };
@@ -108,21 +103,45 @@ export default function RFQs() {
   }, [rfqs, searchQuery, statusFilter]);
 
   const getStatusBadge = (status: string) => {
-    const statusConfig = {
-      draft: { label: "Draft", variant: "secondary" as const, icon: FileText },
-      sent: { label: "Sent", variant: "default" as const, icon: Send },
-      pending: { label: "Pending", variant: "outline" as const, icon: Clock },
-      quoted: { label: "Quoted", variant: "default" as const, icon: CheckCircle2 },
-      accepted: { label: "Accepted", variant: "default" as const, icon: CheckCircle2 },
-      declined: { label: "Declined", variant: "destructive" as const, icon: XCircle },
+    const configs: Record<string, { label: string; className: string }> = {
+      draft: {
+        label: "Draft",
+        className: "bg-muted text-muted-foreground border-border",
+      },
+      sent: {
+        label: "Sent",
+        className:
+          "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800",
+      },
+      pending: {
+        label: "Pending",
+        className:
+          "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800",
+      },
+      quoted: {
+        label: "Quoted",
+        className:
+          "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800",
+      },
+      accepted: {
+        label: "Accepted",
+        className:
+          "bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-700",
+      },
+      declined: {
+        label: "Declined",
+        className:
+          "bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800",
+      },
     };
 
-    const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.draft;
-    const Icon = config.icon;
+    const config = configs[status] || {
+      label: status,
+      className: "bg-muted text-muted-foreground border-border",
+    };
 
     return (
-      <Badge variant={config.variant} className="gap-1">
-        <Icon className="h-3 w-3" />
+      <Badge variant="outline" className={cn("text-xs", config.className)}>
         {config.label}
       </Badge>
     );
@@ -134,7 +153,7 @@ export default function RFQs() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Row 1 - Title & Actions (36px) */}
+      {/* Row 1 - Title & Actions */}
       <div className="h-9 bg-background flex items-center justify-between px-2 gap-4 flex-shrink-0">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold" data-testid="text-page-title">
@@ -154,7 +173,7 @@ export default function RFQs() {
         </button>
       </div>
 
-      {/* Row 2 - Search & Filters (36px) */}
+      {/* Row 2 - Search & Filters */}
       <div className="h-9 bg-background flex items-center px-2 border-b border-border flex-shrink-0 gap-1.5">
         <div className="relative w-48">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
@@ -311,7 +330,6 @@ export default function RFQs() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-8 w-8"
                               data-testid={`button-rfq-actions-${rfq.id}`}
                             >
                               <MoreHorizontal className="h-4 w-4" />
@@ -330,7 +348,6 @@ export default function RFQs() {
                             <DropdownMenuItem
                               onClick={(e) => {
                                 e.stopPropagation();
-                                // TODO: Download PDF
                               }}
                             >
                               <Download className="mr-2 h-4 w-4" />
@@ -340,7 +357,6 @@ export default function RFQs() {
                               <DropdownMenuItem
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  // TODO: Send RFQ
                                 }}
                               >
                                 <Send className="mr-2 h-4 w-4" />
