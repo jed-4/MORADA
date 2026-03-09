@@ -23,6 +23,8 @@ import {
   ChevronDown,
   Loader2,
   ExternalLink,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { type Rfq, type Project, type RfqQuote } from "@shared/schema";
 import { ProjectIcon } from "@/components/ProjectIcon";
@@ -214,8 +216,10 @@ export default function RFQs() {
     indent:   116, // chevron + number cols combined for child indent
     supplier: 220,
     project:  140,
-    dueDate:  96,
-    status:   96,
+    dueDate:  88,
+    sent:     88,
+    seen:     48,
+    status:   88,
     amount:   96,
     actions:  40,
   };
@@ -345,6 +349,8 @@ export default function RFQs() {
               <div style={{ width: COL.supplier }} className={headerCellClass}>Supplier</div>
               {showProject && <div style={{ width: COL.project }} className={headerCellClass}>Project</div>}
               <div style={{ width: COL.dueDate }} className={headerCellClass}>Due Date</div>
+              <div style={{ width: COL.sent }} className={headerCellClass}>Sent</div>
+              <div style={{ width: COL.seen }} className={cn(headerCellClass, "justify-center")}>Seen</div>
               <div style={{ width: COL.status }} className={headerCellClass}>Status</div>
               <div style={{ width: COL.amount }} className={headerCellClass}>Amount</div>
               <div style={{ width: COL.actions }} className={headerCellClass} />
@@ -450,7 +456,8 @@ export default function RFQs() {
                           supplierRows.map(({ name, quote }, idx) => (
                             <div
                               key={idx}
-                              className="flex items-center px-2 h-8 bg-muted/10 border-b border-border/20 hover-elevate"
+                              className="flex items-center px-2 h-8 bg-muted/10 border-b border-border/20 cursor-pointer hover-elevate active-elevate-2"
+                              onClick={() => handleNavigate(rfq.id)}
                               data-testid={`row-supplier-${rfq.id}-${idx}`}
                             >
                               {/* Indent — aligns with header chevron + RFQ# space */}
@@ -482,6 +489,20 @@ export default function RFQs() {
                                   {formatDate(rfq.dueDate) ?? <span className="text-muted-foreground/40">—</span>}
                                 </span>
                               </div>
+                              {/* Sent date — when the RFQ was dispatched */}
+                              <div style={{ width: COL.sent }} className="flex items-center flex-shrink-0 px-2">
+                                <span className="text-xs text-muted-foreground">
+                                  {rfq.sentAt
+                                    ? formatDate(rfq.sentAt)
+                                    : <span className="text-muted-foreground/30">Not sent</span>}
+                                </span>
+                              </div>
+                              {/* Seen — placeholder for future email open tracking */}
+                              <div style={{ width: COL.seen }} className="flex items-center justify-center flex-shrink-0">
+                                <span title="Email open tracking — coming soon">
+                                  <EyeOff className="w-3 h-3 text-muted-foreground/25" />
+                                </span>
+                              </div>
                               {/* Quote status */}
                               <div style={{ width: COL.status }} className="flex items-center flex-shrink-0 px-2">
                                 <QuoteStatusChip status={quote?.status ?? "pending"} />
@@ -497,14 +518,7 @@ export default function RFQs() {
                               </div>
                               {/* View link */}
                               <div style={{ width: COL.actions }} className="flex items-center justify-center flex-shrink-0">
-                                <button
-                                  type="button"
-                                  className="p-1 rounded hover-elevate text-muted-foreground"
-                                  onClick={(e) => { e.stopPropagation(); handleNavigate(rfq.id); }}
-                                  title="Open RFQ"
-                                >
-                                  <ExternalLink className="w-3 h-3" />
-                                </button>
+                                <ExternalLink className="w-3 h-3 text-muted-foreground/40" />
                               </div>
                             </div>
                           ))
