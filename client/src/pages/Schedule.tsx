@@ -390,7 +390,13 @@ export default function Schedule() {
   });
 
   const { data: availableTasks = [] } = useQuery({
-    queryKey: [`/api/projects/${projectId}/tasks`],
+    queryKey: [`/api/tasks`, { projectId }],
+    queryFn: async () => {
+      const res = await fetch(`/api/tasks?projectId=${projectId}`, { credentials: "include" });
+      if (!res.ok) return [];
+      const all = await res.json() as any[];
+      return all.filter((t: any) => t.status !== "done" && t.status !== "completed");
+    },
     enabled: !!projectId && !!editingItem,
   });
 

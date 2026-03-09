@@ -57,6 +57,7 @@ import {
   Search,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
 } from "lucide-react";
 import { RFQDocument } from "@/components/rfq/pdf/RFQDocument";
 import { SendRFQDialog } from "@/components/rfq/SendRFQDialog";
@@ -84,7 +85,8 @@ export default function RFQDetail() {
   const [editingItem, setEditingItem] = useState<RfqItem | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
   const [descOpen, setDescOpen] = useState(true);
-  const [scopeOpen, setScopeOpen] = useState(false);
+  const [tcCollapsed, setTcCollapsed] = useState(false);
+  const [attachCollapsed, setAttachCollapsed] = useState(true);
   const pdfUrlRef = useRef<string | null>(null);
 
   const [formData, setFormData] = useState({
@@ -672,66 +674,63 @@ export default function RFQDetail() {
 
           {/* Scope & Items Card */}
           <Card className="overflow-hidden">
-            <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
-              <div className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber-400/70" />
-                <span className="text-xs font-medium">Scope & Items</span>
-                {items.length > 0 && (
-                  <Badge variant="secondary" className="text-xs h-4 px-1.5">{items.length}</Badge>
-                )}
+            <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
+              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-amber-400/70" />
+              <span className="text-xs font-medium">Scope & Items</span>
+            </div>
+
+            {/* Scope of Work — always visible */}
+            <div className="border-b border-border/50">
+              <div className="h-8 flex items-center px-3 gap-2 border-b border-border/30 bg-muted/20">
+                <span className="text-xs text-muted-foreground font-medium">Scope of Work</span>
               </div>
-              <div className="flex items-center gap-1.5">
-                {estimateItems.length > 0 && (
+              <div className="p-3">
+                <Textarea
+                  value={formData.scope}
+                  onChange={(e) => handleFieldChange("scope", e.target.value)}
+                  placeholder="Detailed scope including specifications, quantities, delivery requirements..."
+                  className="min-h-[80px] text-sm"
+                  data-testid="input-scope"
+                />
+              </div>
+            </div>
+
+            {/* Line Items — always visible */}
+            <div>
+              <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/30 bg-muted/20">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground font-medium">Line Items</span>
+                  {items.length > 0 && (
+                    <Badge variant="secondary" className="text-xs h-4 px-1.5">{items.length}</Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {estimateItems.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setShowImportDialog(true)}
+                      className="h-6 text-xs"
+                      data-testid="button-import-items"
+                    >
+                      <FileText className="w-3 h-3 mr-1" />
+                      Import
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => setShowImportDialog(true)}
+                    onClick={() => setShowAddItemDialog(true)}
                     className="h-6 text-xs"
-                    data-testid="button-import-items"
+                    data-testid="button-add-item"
                   >
-                    <FileText className="w-3 h-3 mr-1" />
-                    Import
+                    <Plus className="w-3 h-3 mr-1" />
+                    Add
                   </Button>
-                )}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setShowAddItemDialog(true)}
-                  className="h-6 text-xs"
-                  data-testid="button-add-item"
-                >
-                  <Plus className="w-3 h-3 mr-1" />
-                  Add
-                </Button>
-              </div>
-            </div>
-
-            {/* Scope of Work — collapsible */}
-            <div className="border-b border-border/50">
-              <button
-                type="button"
-                onClick={() => setScopeOpen((o) => !o)}
-                className="h-7 w-full flex items-center gap-1.5 px-3 hover-elevate"
-              >
-                {scopeOpen
-                  ? <ChevronDown className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-                  : <ChevronRight className="w-3 h-3 text-muted-foreground flex-shrink-0" />}
-                <span className="text-xs text-muted-foreground">Scope of Work</span>
-              </button>
-              {scopeOpen && (
-                <div className="px-3 pb-3">
-                  <Textarea
-                    value={formData.scope}
-                    onChange={(e) => handleFieldChange("scope", e.target.value)}
-                    placeholder="Detailed scope including specifications, quantities, delivery requirements..."
-                    className="min-h-[100px] text-sm"
-                    data-testid="input-scope"
-                  />
                 </div>
-              )}
-            </div>
+              </div>
 
-            {/* Line Items */}
+            {/* Line Items table */}
             {items.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground text-sm">
                 No line items yet. Add items or import from the estimate.
@@ -802,74 +801,117 @@ export default function RFQDetail() {
                 </TableBody>
               </Table>
             )}
+            </div>{/* end Line Items section */}
           </Card>
 
-          {/* Terms & Conditions */}
+          {/* Documentation Card — Terms & Conditions + Attachments */}
           <Card className="overflow-hidden">
-            <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
-              <div className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-blue-400/70" />
-                <span className="text-xs font-medium">Terms & Conditions</span>
-              </div>
-              <Select value={formData.termsTemplateId || "custom"} onValueChange={handleTermsTemplateChange}>
-                <SelectTrigger className="w-[160px] h-6 text-xs">
-                  <SelectValue placeholder="Select template" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="custom">Custom</SelectItem>
-                  {rfqTemplates.filter(t => t.termsAndConditions).map((template) => (
-                    <SelectItem key={template.id} value={template.id}>
-                      {template.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="h-8 flex items-center px-3 gap-2 border-b border-border/50 bg-muted/40">
+              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-slate-400/60" />
+              <span className="text-xs font-medium">Documentation</span>
             </div>
-            <div className="p-3">
-              <Textarea
-                value={formData.customTerms}
-                onChange={(e) => handleFieldChange("customTerms", e.target.value)}
-                placeholder="Terms and conditions to include in the RFQ..."
-                className="min-h-[80px] text-sm"
-                data-testid="input-terms"
-              />
-            </div>
-          </Card>
 
-          {/* Attachments */}
-          <Card className="overflow-hidden">
-            <div className="h-8 flex items-center justify-between px-3 gap-2 border-b border-border/50 bg-muted/40">
-              <div className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-orange-400/70" />
-                <span className="text-xs font-medium">Attachments</span>
-                {(rfq.attachmentUrls?.length ?? 0) > 0 && (
-                  <Badge variant="secondary" className="text-xs h-4 px-1.5">{rfq.attachmentUrls!.length}</Badge>
-                )}
+            {/* Terms & Conditions — collapsible */}
+            <div className="border-b border-border/50">
+              <div
+                className="h-8 flex items-center justify-between px-3 gap-2 cursor-pointer bg-muted/20 border-b border-border/30 hover-elevate"
+                onClick={() => setTcCollapsed((v) => !v)}
+              >
+                <div className="flex items-center gap-2">
+                  <div className="w-1 h-1 rounded-full flex-shrink-0 bg-blue-400/70" />
+                  <span className="text-xs font-medium">Terms & Conditions</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {!tcCollapsed && (
+                    <Select
+                      value={formData.termsTemplateId || "custom"}
+                      onValueChange={handleTermsTemplateChange}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <SelectTrigger className="w-[140px] h-6 text-xs">
+                        <SelectValue placeholder="Select template" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="custom">Custom</SelectItem>
+                        {rfqTemplates.filter(t => t.termsAndConditions).map((template) => (
+                          <SelectItem key={template.id} value={template.id}>
+                            {template.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  {tcCollapsed
+                    ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                    : <ChevronUp className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />}
+                </div>
               </div>
-              <Button size="sm" variant="outline" className="h-6 text-xs" data-testid="button-add-attachment">
-                <Upload className="w-3 h-3 mr-1" />
-                Upload
-              </Button>
+              {!tcCollapsed && (
+                <div className="p-3">
+                  <Textarea
+                    value={formData.customTerms}
+                    onChange={(e) => handleFieldChange("customTerms", e.target.value)}
+                    placeholder="Terms and conditions to include in the RFQ..."
+                    className="min-h-[80px] text-sm"
+                    data-testid="input-terms"
+                  />
+                </div>
+              )}
             </div>
-            {(!rfq.attachmentUrls || rfq.attachmentUrls.length === 0) ? (
-              <div className="border-2 border-dashed rounded-lg m-3 p-6 text-center text-muted-foreground text-sm">
-                <Paperclip className="w-6 h-6 mx-auto mb-2 opacity-50" />
-                <p>Drag files here or click Upload</p>
-                <p className="text-xs mt-1 text-muted-foreground/60">Plans, specs, drawings</p>
-              </div>
-            ) : (
-              <div className="p-3 space-y-1.5">
-                {rfq.attachmentFileNames?.map((name, i) => (
-                  <div key={i} className="flex items-center gap-2 p-2 rounded bg-muted/30">
-                    <Paperclip className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm flex-1">{name}</span>
-                    <Button size="icon" variant="ghost" className="h-6 w-6">
-                      <Download className="w-3 h-3" />
+
+            {/* Attachments — collapsible */}
+            <div>
+              <div
+                className="h-8 flex items-center justify-between px-3 gap-2 cursor-pointer bg-muted/20 border-b border-border/30 hover-elevate"
+                onClick={() => setAttachCollapsed((v) => !v)}
+              >
+                <div className="flex items-center gap-2">
+                  <div className="w-1 h-1 rounded-full flex-shrink-0 bg-orange-400/70" />
+                  <span className="text-xs font-medium">Attachments</span>
+                  {(rfq.attachmentUrls?.length ?? 0) > 0 && (
+                    <Badge variant="secondary" className="text-xs h-4 px-1.5">{rfq.attachmentUrls!.length}</Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {!attachCollapsed && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6 text-xs"
+                      data-testid="button-add-attachment"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Upload className="w-3 h-3 mr-1" />
+                      Upload
                     </Button>
-                  </div>
-                ))}
+                  )}
+                  {attachCollapsed
+                    ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                    : <ChevronUp className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />}
+                </div>
               </div>
-            )}
+              {!attachCollapsed && (
+                (!rfq.attachmentUrls || rfq.attachmentUrls.length === 0) ? (
+                  <div className="border-2 border-dashed rounded-lg m-3 p-6 text-center text-muted-foreground text-sm">
+                    <Paperclip className="w-6 h-6 mx-auto mb-2 opacity-50" />
+                    <p>Drag files here or click Upload</p>
+                    <p className="text-xs mt-1 text-muted-foreground/60">Plans, specs, drawings</p>
+                  </div>
+                ) : (
+                  <div className="p-3 space-y-1.5">
+                    {rfq.attachmentFileNames?.map((name, i) => (
+                      <div key={i} className="flex items-center gap-2 p-2 rounded bg-muted/30">
+                        <Paperclip className="w-4 h-4 text-muted-foreground" />
+                        <span className="text-sm flex-1">{name}</span>
+                        <Button size="icon" variant="ghost" className="h-6 w-6">
+                          <Download className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )
+              )}
+            </div>
           </Card>
 
           {/* Quotes Received */}
