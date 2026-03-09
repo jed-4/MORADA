@@ -37,6 +37,8 @@ export async function processReminders() {
           scheduledFor: new Date(),
           status: "pending",
           deliveryMethod: "in_app",
+          title: `Reminder: ${reminder.title}`,
+          body: reminder.description || undefined,
         });
         
         // Create in-app notification for the bell icon
@@ -86,7 +88,8 @@ export async function processReminders() {
               scheduledFor: new Date(),
               status: "delivered",
               deliveryMethod: "email",
-              deliveredAt: new Date(),
+              title: `Reminder: ${reminder.title}`,
+              body: reminder.description || undefined,
             });
           } catch (emailError) {
             console.error(`[ReminderProcessor] Failed to send email for reminder ${reminder.id}:`, emailError);
@@ -154,6 +157,8 @@ export async function processReminders() {
             scheduledFor: new Date(),
             status: "pending",
             deliveryMethod: "in_app",
+            title: businessReminder.title,
+            body: businessReminder.message || undefined,
           });
           
           if (deliverySettings.email !== false && user.email) {
@@ -172,7 +177,8 @@ export async function processReminders() {
                 scheduledFor: new Date(),
                 status: "delivered",
                 deliveryMethod: "email",
-                deliveredAt: new Date(),
+                title: businessReminder.title,
+                body: businessReminder.message || undefined,
               });
             } catch (emailError) {
               console.error(`[ReminderProcessor] Failed to send email for business reminder ${businessReminder.id} to ${user.email}:`, emailError);

@@ -5162,7 +5162,7 @@ export const reminderNotifications = pgTable("reminder_notifications", {
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   
   // Delivery status
-  deliveryMethod: text("delivery_method").notNull(), // "in_app" | "email" | "push"
+  deliveryMethod: text("delivery_method").notNull().default("in_app"), // "in_app" | "email" | "push"
   status: text("status").notNull().default("pending"), // "pending" | "sent" | "delivered" | "read" | "dismissed" | "snoozed"
   
   // Timestamps
