@@ -53,6 +53,7 @@ import {
   Tag,
   PanelLeft,
   PanelLeftClose,
+  Building2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -746,7 +747,7 @@ export function SidebarNav() {
             const isActive = activeSection === sectionId;
             const isProjects = sectionId === "projects";
             const section = isProjects ? null : dynamicSections[sectionId as Exclude<SectionId, "projects">];
-            const Icon = isProjects ? FolderOpen : section!.icon;
+            const Icon = isProjects ? Building2 : section!.icon;
             const label = isProjects ? "Projects" : section!.label;
             
             return (
