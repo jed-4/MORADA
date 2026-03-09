@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, lazy, Suspense } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { formatDistanceToNow, isPast } from "date-fns";
 import { useLocation } from "wouter";
@@ -6,8 +6,10 @@ import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
 import { 
   Bell, Clock, Check, AlarmClock, AlarmClockOff, 
   CheckSquare, ClipboardList, Timer, Wrench, MoreHorizontal,
-  UserPlus, Trash2, CheckCheck
+  UserPlus, Trash2, CheckCheck, ExternalLink
 } from "lucide-react";
+
+const TaskEditModal = lazy(() => import("@/components/TaskEditModal"));
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -58,8 +60,14 @@ export function NotificationBell() {
   const [, navigate] = useLocation();
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("notifications");
+  const [taskModalTaskId, setTaskModalTaskId] = useState<string | null>(null);
   const { user } = useAuth();
   const { effectiveTimezone } = useTimezone();
+
+  const handleOpenTask = useCallback((taskId: string) => {
+    setIsOpen(false);
+    setTaskModalTaskId(taskId);
+  }, []);
 
   const { data: unreadCount = { count: 0 } } = useQuery<{ count: number }>({
     queryKey: ["/api/notifications/unread-count"],
@@ -189,6 +197,7 @@ export function NotificationBell() {
   };
 
   return (
+    <>
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger asChild>
         <Button 
@@ -323,11 +332,13 @@ export function NotificationBell() {
                 const TypeIcon = REMINDER_TYPE_ICONS[reminder.reminderType || "custom"] || Bell;
                 const timeStatus = getReminderTimeStatus(reminder);
                 
+                const isTaskReminder = reminder.linkedItemType === "task" && !!reminder.linkedItemId;
                 return (
                   <div
                     key={reminder.id}
-                    className="flex items-start gap-2 p-2 hover:bg-muted/50 transition-colors"
+                    className={`flex items-start gap-2 p-2 hover:bg-muted/50 transition-colors ${isTaskReminder ? "cursor-pointer" : ""}`}
                     data-testid={`notification-item-${reminder.id}`}
+                    onClick={isTaskReminder ? () => handleOpenTask(reminder.linkedItemId!) : undefined}
                   >
                     <div className={`flex items-center justify-center w-8 h-8 rounded-lg flex-shrink-0 ${
                       timeStatus.isOverdue ? "bg-destructive/10" : 
@@ -341,7 +352,12 @@ export function NotificationBell() {
                     </div>
                     
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{reminder.title}</p>
+                      <div className="flex items-center gap-1">
+                        <p className="text-sm font-medium truncate">{reminder.title}</p>
+                        {isTaskReminder && (
+                          <ExternalLink className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                        )}
+                      </div>
                       <p className={`text-xs ${timeStatus.isOverdue ? "text-destructive" : "text-muted-foreground"}`}>
                         <Clock className="h-3 w-3 inline mr-1" />
                         {reminder.triggerAt && formatInTimezone(new Date(reminder.triggerAt), effectiveTimezone, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}
@@ -350,7 +366,7 @@ export function NotificationBell() {
                     </div>
 
                     <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
+                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                         <Button size="icon" variant="ghost" className="h-7 w-7 flex-shrink-0">
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
@@ -400,5 +416,16 @@ export function NotificationBell() {
         </Tabs>
       </PopoverContent>
     </Popover>
+
+    {taskModalTaskId && (
+      <Suspense fallback={null}>
+        <TaskEditModal
+          open={true}
+          onOpenChange={(open) => { if (!open) setTaskModalTaskId(null); }}
+          taskId={taskModalTaskId}
+        />
+      </Suspense>
+    )}
+    </>
   );
 }
