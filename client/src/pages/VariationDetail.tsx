@@ -1100,7 +1100,7 @@ export default function VariationDetail() {
       </div>
 
       <div className="flex-1 overflow-auto">
-        <div className="max-w-4xl mx-auto px-3 py-3">
+        <div className="max-w-6xl mx-auto px-3 py-3">
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
 
@@ -1267,7 +1267,7 @@ export default function VariationDetail() {
                         </div>
                       ) : (
                         <div>
-                          <table className="w-full text-sm border-collapse min-w-[700px]">
+                          <table className="w-full text-sm border-collapse min-w-[1050px]">
                             <thead>
                               <tr className="h-6 bg-muted/30">
                                 <th className="w-[72px] text-left text-[10px] uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Type</th>
