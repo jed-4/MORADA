@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useToolbarVisible } from "@/hooks/useToolbarVisible";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -187,6 +188,7 @@ const visibilityOptions: { value: VisibilityOption; label: string; description: 
 export default function CustomizableProjectOverview() {
   const { currentProject } = useProject();
   const { user } = useAuth();
+  const { toolbarVisible } = useToolbarVisible();
   const { toast } = useToast();
   const [widgets, setWidgets] = useState<Widget[]>([]);
   const [isAddingWidget, setIsAddingWidget] = useState(false);
@@ -924,7 +926,7 @@ export default function CustomizableProjectOverview() {
 
           {/* Right: Add Widget + Settings gear - only show on overview tab */}
           <div className="flex items-center gap-1.5">
-            {isOverviewTab && (
+            {isOverviewTab && toolbarVisible && (
               <>
                 <button
                   className="h-6 w-6 text-xs border rounded-md flex items-center justify-center hover-elevate active-elevate-2"

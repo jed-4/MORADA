@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useToolbarVisible } from "@/hooks/useToolbarVisible";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -184,6 +185,7 @@ function SortableWidget({
 export default function BusinessOverview() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { toolbarVisible } = useToolbarVisible();
   const [widgets, setWidgets] = useState<Widget[]>(DEFAULT_WIDGETS);
   const [activeViewId, setActiveViewId] = useState<string | null>(null);
   const [isAddingWidget, setIsAddingWidget] = useState(false);
@@ -496,7 +498,7 @@ export default function BusinessOverview() {
   return (
     <div className="flex flex-col h-full px-4 pt-2" data-testid="business-overview">
       {/* Toolbar row - matches user dashboard style */}
-      <div className="h-8 flex items-center justify-between mb-2 flex-shrink-0">
+      {toolbarVisible && <div className="h-8 flex items-center justify-between mb-2 flex-shrink-0">
         <div className="flex items-center gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -598,7 +600,7 @@ export default function BusinessOverview() {
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-      </div>
+      </div>}
 
       {/* Widget Grid with Theme Background - rounded corners */}
       <div 

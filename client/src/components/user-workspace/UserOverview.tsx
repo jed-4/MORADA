@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useToolbarVisible } from "@/hooks/useToolbarVisible";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -185,6 +186,7 @@ function SortableWidget({
 }
 
 export default function UserOverview({ user, isOwnPage, currentUserId }: UserOverviewProps) {
+  const { toolbarVisible } = useToolbarVisible();
   const [widgets, setWidgets] = useState<Widget[]>(DEFAULT_WIDGETS);
   const [savedViews, setSavedViews] = useState<DashboardView[]>([DEFAULT_VIEW]);
   const [activeViewId, setActiveViewId] = useState("overview");
@@ -418,7 +420,7 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
   return (
     <div className="flex flex-col h-full px-4 pt-2" data-testid="user-overview">
       {/* Toolbar row - sits on page background */}
-      <div className="h-8 flex items-center justify-between mb-2 flex-shrink-0">
+      {toolbarVisible && <div className="h-8 flex items-center justify-between mb-2 flex-shrink-0">
         <div className="flex items-center gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -523,7 +525,7 @@ export default function UserOverview({ user, isOwnPage, currentUserId }: UserOve
             </DropdownMenu>
           )}
         </div>
-      </div>
+      </div>}
 
       {/* Widgets Grid - sits directly on page background */}
       <div className="flex-1 overflow-auto">

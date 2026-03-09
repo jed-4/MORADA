@@ -20,11 +20,6 @@ import {
 } from "@/components/ui/table";
 import {
   Plus,
-  FileText,
-  CheckCircle,
-  XCircle,
-  Clock,
-  AlertCircle,
   Columns3,
   Search,
   ChevronUp,
@@ -46,6 +41,34 @@ const STATUS_OPTIONS = [
   { key: "approved", label: "Approved" },
   { key: "rejected", label: "Rejected" },
 ];
+
+const STATUS_CHIP: Record<string, string> = {
+  draft:    "bg-muted text-muted-foreground border-transparent",
+  sent:     "bg-blue-50   dark:bg-blue-950/60   text-blue-700   dark:text-blue-300   border-blue-200   dark:border-blue-800",
+  action:   "bg-red-50    dark:bg-red-950/60    text-red-700    dark:text-red-300    border-red-200    dark:border-red-800",
+  pending:  "bg-amber-50  dark:bg-amber-950/60  text-amber-700  dark:text-amber-300  border-amber-200  dark:border-amber-800",
+  approved: "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800",
+  rejected: "bg-red-50    dark:bg-red-950/60    text-red-700    dark:text-red-300    border-red-200    dark:border-red-800",
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  draft: "Draft", sent: "Sent", action: "Action",
+  pending: "Pending", approved: "Approved", rejected: "Rejected",
+};
+
+function StatusChip({ status }: { status: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center justify-center w-20 py-0.5 rounded text-[11px] font-medium border",
+        STATUS_CHIP[status] ?? "bg-muted text-muted-foreground border-transparent"
+      )}
+      data-testid={`badge-status-${status}`}
+    >
+      {STATUS_LABEL[status] ?? status}
+    </span>
+  );
+}
 
 const ALL_COLUMNS = [
   { id: "number", label: "Number", required: true, defaultWidth: 80 },
@@ -169,23 +192,6 @@ export default function Variations() {
     return format(new Date(date), "dd MMM yyyy");
   };
 
-  const getStatusBadge = (status: string, size: "sm" | "md" = "md") => {
-    const sizeClass = size === "sm" ? "h-4 px-1.5 text-[10px]" : "";
-    switch (status) {
-      case "draft":
-        return <Badge variant="secondary" className={sizeClass} data-testid="badge-status-draft"><FileText className={size === "sm" ? "w-2.5 h-2.5 mr-0.5" : "w-3 h-3 mr-1"} />Draft</Badge>;
-      case "action":
-        return <Badge variant="destructive" className={sizeClass} data-testid="badge-status-action"><AlertCircle className={size === "sm" ? "w-2.5 h-2.5 mr-0.5" : "w-3 h-3 mr-1"} />Action</Badge>;
-      case "pending":
-        return <Badge variant="default" className={sizeClass} data-testid="badge-status-pending"><Clock className={size === "sm" ? "w-2.5 h-2.5 mr-0.5" : "w-3 h-3 mr-1"} />Pending</Badge>;
-      case "approved":
-        return <Badge variant="outline" className={`border-green-500 text-green-700 ${sizeClass}`} data-testid="badge-status-approved"><CheckCircle className={size === "sm" ? "w-2.5 h-2.5 mr-0.5" : "w-3 h-3 mr-1"} />Approved</Badge>;
-      case "rejected":
-        return <Badge variant="outline" className={`border-red-500 text-red-700 ${sizeClass}`} data-testid="badge-status-rejected"><XCircle className={size === "sm" ? "w-2.5 h-2.5 mr-0.5" : "w-3 h-3 mr-1"} />Rejected</Badge>;
-      default:
-        return <Badge variant="outline" className={sizeClass} data-testid={`badge-status-${status}`}>{status}</Badge>;
-    }
-  };
 
   const handleRowClick = (variationId: string) => {
     if (projectIdFromUrl) {
@@ -294,7 +300,7 @@ export default function Variations() {
       case "status":
         return (
           <TableCell key="status" style={{ minWidth: 110, width: 110 }} className="px-2 py-1" data-testid={`cell-status-${variation.id}`}>
-            {getStatusBadge(variation.status, "sm")}
+            <StatusChip status={variation.status} />
           </TableCell>
         );
       case "total":
@@ -598,7 +604,7 @@ export default function Variations() {
               ref={headerScrollRef}
               className="overflow-x-hidden sticky top-9 z-10 border-b border-border bg-muted/30"
             >
-              <Table style={{ tableLayout: "fixed", minWidth: totalWidth }}>
+              <Table style={{ tableLayout: "fixed", width: totalWidth, minWidth: totalWidth }}>
                 <TableHeader>
                   <TableRow className="h-5 bg-muted/30 hover:bg-muted/30">
                     {orderedColumns.map((col) => {
@@ -631,7 +637,7 @@ export default function Variations() {
               onScroll={syncHeaderScroll}
               className="overflow-x-auto"
             >
-              <Table style={{ tableLayout: "fixed", minWidth: totalWidth }}>
+              <Table style={{ tableLayout: "fixed", width: totalWidth, minWidth: totalWidth }}>
                 <TableBody>
                   {variationsLoading ? (
                     <TableRow>

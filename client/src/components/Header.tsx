@@ -1,4 +1,4 @@
-import { Calendar, User, Settings, LogOut, Building2, Plus, FileText, CheckSquare, Folder, Palette, ChevronDown, Home, MessageSquare, Clock, Calculator, FileBarChart, FileSearch, HelpCircle, File, DollarSign, Receipt, CreditCard, BookOpen, Timer, PiggyBank, FolderOpen, Users, ClipboardList, Sun, Moon, Kanban, Search, ChevronLeft, ChevronRight, Star, GanttChart, HardDrive, Clipboard } from "lucide-react";
+import { Calendar, User, Settings, LogOut, Building2, Plus, FileText, CheckSquare, Folder, Palette, ChevronDown, Home, MessageSquare, Clock, Calculator, FileBarChart, FileSearch, HelpCircle, File, DollarSign, Receipt, CreditCard, BookOpen, Timer, PiggyBank, FolderOpen, Users, ClipboardList, Sun, Moon, Kanban, Search, ChevronLeft, ChevronRight, Star, GanttChart, HardDrive, Clipboard, LayoutDashboard, Check } from "lucide-react";
 import { useLocation } from "wouter";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -27,6 +27,7 @@ import { GlobalSearch } from "./GlobalSearch";
 import { useProject } from "@/contexts/ProjectContext";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { useToolbarVisible } from "@/hooks/useToolbarVisible";
 import type { Project, Company } from "@shared/schema";
 
 const SELECTED_PHASE_KEY = "selectedProjectPhase_v2";
@@ -80,6 +81,7 @@ export default function Header() {
   const { toast } = useToast();
   const { user, logout } = useAuth();
   const { currentProject, setCurrentProject } = useProject();
+  const { toolbarVisible, toggleToolbar } = useToolbarVisible();
 
   // Fetch company data
   const { data: company } = useQuery<Company>({
@@ -737,6 +739,12 @@ export default function Header() {
             <DropdownMenuItem onClick={() => navigate("/settings")} data-testid="menu-settings">
               <Settings className="h-4 w-4 mr-2" />
               Settings
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={toggleToolbar} data-testid="menu-toggle-toolbar">
+              <LayoutDashboard className="h-4 w-4 mr-2" />
+              <span className="flex-1">Show toolbar</span>
+              {toolbarVisible && <Check className="h-3.5 w-3.5 ml-2 text-muted-foreground" />}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleLogout} data-testid="menu-logout">
