@@ -257,6 +257,17 @@ export interface IStorage {
   deleteNoteTemplateField(id: string): Promise<boolean>;
   reorderNoteTemplateFields(templateId: string, fieldIds: string[]): Promise<NoteTemplateField[]>;
 
+  // Docs CRUD
+  getDocs(companyId: string, folderId?: string | null): Promise<schema.Doc[]>;
+  getDoc(id: string): Promise<schema.Doc | undefined>;
+  createDoc(data: schema.InsertDoc): Promise<schema.Doc>;
+  updateDoc(id: string, data: Partial<schema.InsertDoc>): Promise<schema.Doc | undefined>;
+  deleteDoc(id: string): Promise<void>;
+  getDocFolders(companyId: string): Promise<schema.DocFolder[]>;
+  createDocFolder(data: schema.InsertDocFolder): Promise<schema.DocFolder>;
+  updateDocFolder(id: string, data: Partial<schema.InsertDocFolder>): Promise<schema.DocFolder | undefined>;
+  deleteDocFolder(id: string): Promise<void>;
+
   // Projects CRUD
   getProjects(ownerId?: string): Promise<Project[]>;
   getProject(id: string): Promise<Project | undefined>;
@@ -19601,6 +19612,105 @@ export class DbStorage implements IStorage {
       return (result as any).rowCount > 0;
     } catch (error) {
       console.error("Database error in deleteTeam:", error);
+      throw error;
+    }
+  }
+
+  // ============================================================
+  // DOCS
+  // ============================================================
+
+  async getDocs(companyId: string, folderId?: string | null): Promise<schema.Doc[]> {
+    try {
+      const conditions = [eq(schema.docs.companyId, companyId)];
+      if (folderId !== undefined) {
+        conditions.push(folderId === null ? isNull(schema.docs.folderId) : eq(schema.docs.folderId, folderId));
+      }
+      return await db.select().from(schema.docs).where(and(...conditions)).orderBy(asc(schema.docs.updatedAt));
+    } catch (error) {
+      console.error("Database error in getDocs:", error);
+      throw error;
+    }
+  }
+
+  async getDoc(id: string): Promise<schema.Doc | undefined> {
+    try {
+      const [doc] = await db.select().from(schema.docs).where(eq(schema.docs.id, id));
+      return doc;
+    } catch (error) {
+      console.error("Database error in getDoc:", error);
+      throw error;
+    }
+  }
+
+  async createDoc(data: schema.InsertDoc): Promise<schema.Doc> {
+    try {
+      const [doc] = await db.insert(schema.docs).values(data).returning();
+      return doc;
+    } catch (error) {
+      console.error("Database error in createDoc:", error);
+      throw error;
+    }
+  }
+
+  async updateDoc(id: string, data: Partial<schema.InsertDoc>): Promise<schema.Doc | undefined> {
+    try {
+      const [doc] = await db.update(schema.docs)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(schema.docs.id, id))
+        .returning();
+      return doc;
+    } catch (error) {
+      console.error("Database error in updateDoc:", error);
+      throw error;
+    }
+  }
+
+  async deleteDoc(id: string): Promise<void> {
+    try {
+      await db.delete(schema.docs).where(eq(schema.docs.id, id));
+    } catch (error) {
+      console.error("Database error in deleteDoc:", error);
+      throw error;
+    }
+  }
+
+  async getDocFolders(companyId: string): Promise<schema.DocFolder[]> {
+    try {
+      return await db.select().from(schema.docFolders)
+        .where(eq(schema.docFolders.companyId, companyId))
+        .orderBy(asc(schema.docFolders.sortOrder), asc(schema.docFolders.name));
+    } catch (error) {
+      console.error("Database error in getDocFolders:", error);
+      throw error;
+    }
+  }
+
+  async createDocFolder(data: schema.InsertDocFolder): Promise<schema.DocFolder> {
+    try {
+      const [folder] = await db.insert(schema.docFolders).values(data).returning();
+      return folder;
+    } catch (error) {
+      console.error("Database error in createDocFolder:", error);
+      throw error;
+    }
+  }
+
+  async updateDocFolder(id: string, data: Partial<schema.InsertDocFolder>): Promise<schema.DocFolder | undefined> {
+    try {
+      const [folder] = await db.update(schema.docFolders).set(data).where(eq(schema.docFolders.id, id)).returning();
+      return folder;
+    } catch (error) {
+      console.error("Database error in updateDocFolder:", error);
+      throw error;
+    }
+  }
+
+  async deleteDocFolder(id: string): Promise<void> {
+    try {
+      await db.delete(schema.docFolders).where(eq(schema.docFolders.id, id));
+    } catch (error) {
+      console.error("Database error in deleteDocFolder:", error);
       throw error;
     }
   }

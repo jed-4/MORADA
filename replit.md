@@ -68,7 +68,9 @@ Preferred communication style: Simple, everyday language.
 - **Business Page Reorganization**: Unified navigation with a 2-row header and tab system.
 - **Timesheets System**: Global access, compact table design, configurable columns, tabbed views, rapid approval modal, and company-level date format setting. Includes a subcontractor workflow with PO generation and status tracking.
 - **User Workspace**: Customizable widget-based dashboard including personal widgets, resizing, drag-and-drop reordering, and saved views.
-- **Notes & Memos**: Dedicated business/project notes and personal quick-capture memos.
+- **Notes & Memos**: Dedicated business/project notes and personal quick-capture memos. Redesigned as a Notion-like split-panel interface: left panel (w-72) shows grouped/pinned notes list with search, sort, groups, archive toggle; right panel hosts inline block editor (NotionEditor) with auto-save (800ms debounce). New notes created immediately on click.
+- **Docs**: Company-level documentation hub (SOPs, procedures, guides) at `/docs`. Split-panel layout: left panel shows folders (collapsible, context menu for create/rename/delete) and unfiled docs; right panel hosts the same NotionEditor with auto-save. Tables: `doc_folders`, `docs`. API: `/api/docs`, `/api/doc-folders`. Accessible from the sidebar System section.
+- **NotionEditor**: Shared TipTap-based block editor component (`client/src/components/NotionEditor.tsx`). BubbleMenu on selection (Bold, Italic, Underline, Strike, H1-H3, clear format). FloatingMenu on empty paragraphs (block type picker). Slash command menu via "/" trigger. Extensions: StarterKit, Underline, TextStyle, TaskList, TaskItem. Props: content (HTML), onChange(html, text), placeholder, className, editable.
 - **Onboarding Flow**: Two-step process for user profile completion and company creation.
 - **Activity Feed Settings**: Company-level settings to toggle visibility of activity types in the ActivityWidget.
 - **Business Dashboard Views**: Database-backed views with company-wide access control and widget configuration persistence.

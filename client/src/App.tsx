@@ -13,6 +13,7 @@ import Dashboard from "@/pages/Dashboard";
 import Tasks from "@/pages/Tasks";
 import Calendar from "@/pages/Calendar";
 import Notes from "@/pages/Notes";
+import Docs from "@/pages/Docs";
 import Minutes from "@/pages/Minutes";
 import MinuteDetail from "@/pages/MinuteDetail";
 import Templates from "@/pages/Templates";
@@ -137,6 +138,7 @@ function Router() {
       <Route path="/calendar" component={Calendar} />
       <Route path="/messages" component={Messages} />
       <Route path="/notes" component={Notes} />
+      <Route path="/docs" component={Docs} />
       <Route path="/minutes" component={Minutes} />
       <Route path="/minutes/:id" component={MinuteDetail} />
       <Route path="/project-settings" component={ProjectSettings} />

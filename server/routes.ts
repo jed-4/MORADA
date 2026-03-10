@@ -590,6 +590,110 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ============================================================
+  // DOCS — company-level documents (SOPs, procedures, guides)
+  // ============================================================
+
+  app.get("/api/docs", requireAuth, async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+      const folderId = req.query.folderId !== undefined
+        ? (req.query.folderId === 'null' ? null : req.query.folderId as string)
+        : undefined;
+      const docs = await storage.getDocs(companyId, folderId);
+      res.json(docs);
+    } catch (error) {
+      console.error("[Docs] GET /api/docs error:", error);
+      res.status(500).json({ error: "Failed to fetch docs" });
+    }
+  });
+
+  app.get("/api/docs/:id", requireAuth, async (req, res) => {
+    try {
+      const doc = await storage.getDoc(req.params.id);
+      if (!doc) return res.status(404).json({ error: "Doc not found" });
+      res.json(doc);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch doc" });
+    }
+  });
+
+  app.post("/api/docs", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const doc = await storage.createDoc({
+        ...req.body,
+        companyId: user.companyId,
+        ownerId: user.id,
+        ownerName: user.name || user.username,
+      });
+      res.status(201).json(doc);
+    } catch (error) {
+      console.error("[Docs] POST /api/docs error:", error);
+      res.status(500).json({ error: "Failed to create doc" });
+    }
+  });
+
+  app.patch("/api/docs/:id", requireAuth, async (req, res) => {
+    try {
+      const doc = await storage.updateDoc(req.params.id, req.body);
+      if (!doc) return res.status(404).json({ error: "Doc not found" });
+      res.json(doc);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update doc" });
+    }
+  });
+
+  app.delete("/api/docs/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteDoc(req.params.id);
+      res.status(204).end();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete doc" });
+    }
+  });
+
+  app.get("/api/doc-folders", requireAuth, async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Unauthorized" });
+      const folders = await storage.getDocFolders(companyId);
+      res.json(folders);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch doc folders" });
+    }
+  });
+
+  app.post("/api/doc-folders", requireAuth, async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      const folder = await storage.createDocFolder({ ...req.body, companyId });
+      res.status(201).json(folder);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create doc folder" });
+    }
+  });
+
+  app.patch("/api/doc-folders/:id", requireAuth, async (req, res) => {
+    try {
+      const folder = await storage.updateDocFolder(req.params.id, req.body);
+      if (!folder) return res.status(404).json({ error: "Folder not found" });
+      res.json(folder);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update doc folder" });
+    }
+  });
+
+  app.delete("/api/doc-folders/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteDocFolder(req.params.id);
+      res.status(204).end();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete doc folder" });
+    }
+  });
+
   // User Personal Notes - scoped to specific user's private notes
   app.get("/api/users/:userId/notes", async (req, res) => {
     try {

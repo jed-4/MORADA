@@ -113,6 +113,7 @@ const projectItemsBase = [
 
 // System sections
 const systemItems = [
+  { title: "Docs", url: "/docs", icon: BookOpen },
   { title: "Templates", url: "/templates", icon: LayoutTemplate },
   { title: "Suppliers", url: "/suppliers", icon: Truck },
   { title: "Trades", url: "/trades", icon: HardHat },

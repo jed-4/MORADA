@@ -580,6 +580,34 @@ export const insertTaskSchema = insertNoteSchema.extend({
 export type InsertTask = z.infer<typeof insertTaskSchema>;
 export type Task = Note & { type: "task" };
 
+// Docs — company-level documents (SOPs, procedures, guides)
+export const docFolders = pgTable("doc_folders", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull(),
+  name: text("name").notNull(),
+  parentFolderId: varchar("parent_folder_id"),
+  sortOrder: integer("sort_order").default(0),
+});
+export const insertDocFolderSchema = createInsertSchema(docFolders).omit({ id: true });
+export type DocFolder = typeof docFolders.$inferSelect;
+export type InsertDocFolder = z.infer<typeof insertDocFolderSchema>;
+
+export const docs = pgTable("docs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull(),
+  folderId: varchar("folder_id").references(() => docFolders.id, { onDelete: "set null" }),
+  title: text("title").notNull().default("Untitled"),
+  contentHtml: text("content_html").default(""),
+  contentText: text("content_text").default(""),
+  ownerId: varchar("owner_id").references(() => users.id, { onDelete: "set null" }),
+  ownerName: text("owner_name"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+export const insertDocSchema = createInsertSchema(docs).omit({ id: true, createdAt: true, updatedAt: true });
+export type Doc = typeof docs.$inferSelect;
+export type InsertDoc = z.infer<typeof insertDocSchema>;
+
 // Custom Field Definitions (max 4 per system)
 export const customFieldDefs = pgTable("custom_field_defs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
