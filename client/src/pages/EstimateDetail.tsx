@@ -5063,7 +5063,7 @@ export default function EstimateDetail() {
       <div className="flex-1 min-h-0 mx-3 mt-2 mb-4 border border-border rounded-md overflow-hidden flex flex-col">
 
         {/* Toolbar row — does NOT scroll horizontally */}
-        <div className="h-9 flex items-center justify-between px-3 border-b border-border/50 gap-1.5 bg-background flex-shrink-0 z-[100]">
+        <div className="h-9 flex items-center justify-between px-3 border-b border-border/50 gap-1.5 bg-background flex-shrink-0">
               {/* Left: Controls + Filter Chips */}
               <div className="flex items-center gap-1.5 flex-1">
                 {/* Group Expand/Collapse - Icon only */}
