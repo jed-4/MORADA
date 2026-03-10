@@ -32,6 +32,7 @@ interface Task {
   dueDate?: string;
   projectId?: string;
   ownerId?: string;
+  assigneeId?: string;
   assigneeIds?: string[];
   assigneeNames?: string[];
   checklist?: { id: string; text: string; completed: boolean }[];
@@ -180,9 +181,7 @@ export default function TasksScreen({ navigation }: Props) {
       const filtered = (tasksData || []).filter(t => {
         if (t.type !== 'task') return false;
         const ids = t.assigneeIds || [];
-        const isAssigned = ids.includes(user?.id || '');
-        const isOwner = t.ownerId === user?.id;
-        return isAssigned || isOwner;
+        return ids.includes(user?.id || '') || t.assigneeId === user?.id;
       });
 
       setTasks(filtered);
