@@ -49,6 +49,9 @@ import {
   ChevronRight,
   Download,
   Loader2,
+  Newspaper,
+  Wind,
+  Droplets,
 } from "lucide-react";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isSameMonth, addMonths, subMonths, getDay, startOfWeek, endOfWeek } from "date-fns";
 import { useUpload } from "@/hooks/use-upload";
@@ -77,7 +80,7 @@ export default function SiteDiaryEntries() {
   const [searchTerm, setSearchTerm] = useState("");
   const [viewingEntry, setViewingEntry] = useState<SiteDiaryEntry | null>(null);
   const [editingEntry, setEditingEntry] = useState<SiteDiaryEntry | null>(null);
-  const [viewMode, setViewMode] = useState<"list" | "calendar">("list");
+  const [viewMode, setViewMode] = useState<"list" | "calendar" | "feed">("feed");
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const isProjectFromUrl = !!projectIdFromUrl;
@@ -345,6 +348,14 @@ export default function SiteDiaryEntries() {
             <CalendarIcon className="w-3 h-3" />
             <span>Calendar</span>
           </button>
+          <button
+            className={`h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 ${viewMode === "feed" ? "bg-[#bba7db] text-white border-[#bba7db]/20" : "hover-elevate active-elevate-2"}`}
+            onClick={() => setViewMode("feed")}
+            data-testid="button-feed-view"
+          >
+            <Newspaper className="w-3 h-3" />
+            <span>Feed</span>
+          </button>
 
           <div className="w-px h-4 bg-border mx-1" />
 
@@ -467,6 +478,14 @@ export default function SiteDiaryEntries() {
             onMonthChange={setCalendarMonth}
             onViewEntry={setViewingEntry}
           />
+        ) : viewMode === "feed" && filteredEntries.length > 0 ? (
+          <SiteDiaryFeedView
+            entries={filteredEntries}
+            projects={projects}
+            isStandalone={isStandalone}
+            onView={setViewingEntry}
+            onEdit={setEditingEntry}
+          />
         ) : filteredEntries.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 gap-4">
             <FileText className="h-12 w-12 text-muted-foreground" />
@@ -585,6 +604,252 @@ function SiteDiaryCalendarView({
         })}
       </div>
     </div>
+  );
+}
+
+function SiteDiaryFeedView({
+  entries,
+  projects,
+  isStandalone,
+  onView,
+  onEdit,
+}: {
+  entries: SiteDiaryEntry[];
+  projects: Project[];
+  isStandalone: boolean;
+  onView: (entry: SiteDiaryEntry) => void;
+  onEdit: (entry: SiteDiaryEntry) => void;
+}) {
+  const sorted = [...entries].sort(
+    (a, b) => new Date(b.entryDateTime).getTime() - new Date(a.entryDateTime).getTime()
+  );
+
+  const groups: { dateLabel: string; entries: SiteDiaryEntry[] }[] = [];
+  sorted.forEach((entry) => {
+    const label = format(new Date(entry.entryDateTime), "EEEE, MMMM d, yyyy");
+    const last = groups[groups.length - 1];
+    if (last && last.dateLabel === label) {
+      last.entries.push(entry);
+    } else {
+      groups.push({ dateLabel: label, entries: [entry] });
+    }
+  });
+
+  return (
+    <div className="max-w-2xl mx-auto py-4 px-2 space-y-6">
+      {groups.map((group) => (
+        <div key={group.dateLabel}>
+          {/* Date divider */}
+          <div className="flex items-center gap-3 mb-3">
+            <div className="flex-1 h-px bg-border" />
+            <span className="text-xs font-medium text-muted-foreground shrink-0 px-1">
+              {group.dateLabel}
+            </span>
+            <div className="flex-1 h-px bg-border" />
+          </div>
+
+          <div className="space-y-3">
+            {group.entries.map((entry) => (
+              <SiteDiaryFeedCard
+                key={entry.id}
+                entry={entry}
+                projectName={isStandalone ? projects.find(p => p.id === entry.projectId)?.name : undefined}
+                onView={() => onView(entry)}
+                onEdit={() => onEdit(entry)}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SiteDiaryFeedCard({
+  entry,
+  projectName,
+  onView,
+  onEdit,
+}: {
+  entry: SiteDiaryEntry;
+  projectName?: string;
+  onView: () => void;
+  onEdit: () => void;
+}) {
+  const { toast } = useToast();
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const fieldValues = entry.fieldValues as Record<string, any> || {};
+  const overallPhotos = (entry.overallPhotos as string[]) || [];
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest(`/api/site-diary-entries/${entry.id}`, "DELETE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", entry.projectId, "site-diary-entries"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/company/site-diary-entries"] });
+      toast({ title: "Entry deleted" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to delete entry", description: error?.message || "", variant: "destructive" });
+    },
+  });
+
+  const weather = entry.weather as Record<string, any> | null;
+
+  const displayFields = Object.entries(fieldValues)
+    .filter(([, v]) => {
+      if (v === null || v === undefined || v === "") return false;
+      if (Array.isArray(v) && v.length === 0) return false;
+      if (typeof v === "object" && "value" in v) return v.value === true;
+      return true;
+    })
+    .slice(0, 4);
+
+  const allPhotos = [
+    ...overallPhotos,
+    ...Object.values(fieldValues).filter(v => Array.isArray(v)).flat().filter(v => typeof v === "string" && (v.startsWith("http") || v.startsWith("/"))),
+  ].slice(0, 8);
+
+  return (
+    <>
+    <Card className="cursor-pointer" onClick={onView}>
+      <CardContent className="p-4 space-y-3">
+        {/* Header row */}
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-base leading-tight line-clamp-2">{entry.title}</h3>
+            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+              <Badge variant="default" className="text-[10px] px-1.5">{entry.templateName}</Badge>
+              {projectName && (
+                <Badge variant="outline" className="text-[10px] px-1.5">{projectName}</Badge>
+              )}
+              {entry.shareWithClient && (
+                <Badge variant="secondary" className="text-[10px] px-1.5">Shared</Badge>
+              )}
+            </div>
+          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" onClick={(e) => e.stopPropagation()}>
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onView(); }}>
+                <Eye className="h-4 w-4 mr-2" />View
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit(); }}>
+                <Edit className="h-4 w-4 mr-2" />Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-destructive"
+                onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(true); }}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        {/* Weather strip */}
+        {weather && (weather.condition || weather.temp) && (
+          <div className="flex items-center gap-3 text-xs text-muted-foreground py-1.5 px-3 rounded-md bg-muted/50">
+            <Cloud className="w-3.5 h-3.5 shrink-0" />
+            {weather.condition && <span>{weather.condition}</span>}
+            {weather.temp != null && (
+              <span className="flex items-center gap-1">
+                <Thermometer className="w-3 h-3" />{weather.temp}°C
+              </span>
+            )}
+            {weather.wind != null && (
+              <span className="flex items-center gap-1">
+                <Wind className="w-3 h-3" />{weather.wind} km/h
+              </span>
+            )}
+            {weather.humidity != null && (
+              <span className="flex items-center gap-1">
+                <Droplets className="w-3 h-3" />{weather.humidity}%
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Field values preview */}
+        {displayFields.length > 0 && (
+          <div className="space-y-1.5">
+            {displayFields.map(([key, val]) => {
+              let displayVal: string;
+              if (typeof val === "object" && "value" in val) {
+                displayVal = val.value === true ? (val.checkedByName ? `Yes — ${val.checkedByName}` : "Yes") : "No";
+              } else if (Array.isArray(val)) {
+                displayVal = val.join(", ");
+              } else {
+                displayVal = String(val);
+              }
+              const label = key.replace(/([A-Z])/g, " $1").replace(/_/g, " ").replace(/^\w/, c => c.toUpperCase());
+              return (
+                <div key={key} className="flex gap-2 text-xs">
+                  <span className="text-muted-foreground shrink-0 min-w-[80px]">{label}</span>
+                  <span className="line-clamp-2 text-foreground/80">{displayVal}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Photo strip */}
+        {allPhotos.length > 0 && (
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {allPhotos.map((url, i) => (
+              <img
+                key={i}
+                src={url}
+                alt=""
+                className="h-20 w-auto rounded-md object-cover shrink-0"
+                onClick={(e) => e.stopPropagation()}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="flex items-center gap-2 text-[11px] text-muted-foreground pt-1 border-t border-border">
+          {entry.createdByName && (
+            <span className="flex items-center gap-1">
+              <User className="w-3 h-3" />{entry.createdByName}
+            </span>
+          )}
+          <span className="flex items-center gap-1 ml-auto">
+            <Clock className="w-3 h-3" />
+            {format(new Date(entry.entryDateTime), "h:mm a")}
+          </span>
+        </div>
+      </CardContent>
+    </Card>
+
+    {showDeleteConfirm && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowDeleteConfirm(false)}>
+        <div className="bg-background border rounded-lg p-4 max-w-sm mx-4 shadow-lg" onClick={(e) => e.stopPropagation()}>
+          <h3 className="font-semibold text-sm mb-2">Delete Site Diary Entry</h3>
+          <p className="text-xs text-muted-foreground mb-4">
+            Are you sure you want to delete "{entry.title}"? This cannot be undone.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => setShowDeleteConfirm(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => { deleteMutation.mutate(); setShowDeleteConfirm(false); }}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+            </Button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 
@@ -1085,7 +1350,7 @@ function EntryFormFields({
     resolver: zodResolver(formSchema),
     defaultValues: {
       title: "",
-      entryDateTime: new Date().toISOString().split('T')[0],
+      entryDateTime: format(new Date(), 'yyyy-MM-dd'),
       ...templateFields.reduce((acc, field) => {
         if (field.type === 'checkbox') acc[field.id] = false;
         else if (field.type === 'file' || field.type === 'photo-gallery') acc[field.id] = [];
@@ -1491,8 +1756,8 @@ function EntryEditForm({
     defaultValues: {
       title: entry.title,
       entryDateTime: entry.entryDateTime
-        ? new Date(entry.entryDateTime).toISOString().split("T")[0]
-        : new Date().toISOString().split("T")[0],
+        ? format(new Date(entry.entryDateTime), 'yyyy-MM-dd')
+        : format(new Date(), 'yyyy-MM-dd'),
       ...templateFields.reduce((acc, field) => {
         acc[field.id] = getDefaultValue(field);
         return acc;
