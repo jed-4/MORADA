@@ -3035,6 +3035,8 @@ export const schedules = pgTable("schedules", {
   includeSaturday: boolean("include_saturday").notNull().default(false),
   includeSunday: boolean("include_sunday").notNull().default(false),
   clientVisibilityWeeks: integer("client_visibility_weeks").default(null),
+  businessAssignColor: text("business_assign_color"),
+  businessAssignStatus: text("business_assign_status"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

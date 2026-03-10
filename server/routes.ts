@@ -15542,14 +15542,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/schedules/:id/working-days", async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Not authenticated" });
-    const { includeSaturday, includeSunday, clientVisibilityWeeks } = req.body;
+    const { includeSaturday, includeSunday, clientVisibilityWeeks, businessAssignColor, businessAssignStatus } = req.body;
+    const setFields: any = { 
+      includeSaturday: includeSaturday ?? false, 
+      includeSunday: includeSunday ?? false,
+      clientVisibilityWeeks: clientVisibilityWeeks ?? null,
+      updatedAt: new Date(),
+    };
+    if (businessAssignColor !== undefined) setFields.businessAssignColor = businessAssignColor || null;
+    if (businessAssignStatus !== undefined) setFields.businessAssignStatus = businessAssignStatus || null;
     const [updated] = await db.update(schedules)
-      .set({ 
-        includeSaturday: includeSaturday ?? false, 
-        includeSunday: includeSunday ?? false,
-        clientVisibilityWeeks: clientVisibilityWeeks ?? null,
-        updatedAt: new Date() 
-      })
+      .set(setFields)
       .where(eq(schedules.id, req.params.id))
       .returning();
     res.json(updated);
@@ -15991,7 +15994,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
           updateData.assignedToName = company.nickname || company.name;
         }
         updateData.assignedToId = null;
-        updateData.assignedToColor = null;
+        // Apply schedule-level business auto-assign colour and status
+        if (originalItem?.scheduleId) {
+          const itemSchedule = await storage.getScheduleById(originalItem.scheduleId);
+          if (itemSchedule) {
+            updateData.assignedToColor = (itemSchedule as any).businessAssignColor || null;
+            if ((itemSchedule as any).businessAssignStatus && updateData.status === undefined) {
+              updateData.status = (itemSchedule as any).businessAssignStatus;
+            }
+          } else {
+            updateData.assignedToColor = null;
+          }
+        } else {
+          updateData.assignedToColor = null;
+        }
       }
       
       // Copy contact's scheduleColor and name to assignedTo fields when assignedToId changes

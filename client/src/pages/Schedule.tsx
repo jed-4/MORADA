@@ -901,12 +901,11 @@ export default function Schedule() {
   });
 
   const updateWorkingDaysMutation = useMutation({
-    mutationFn: async (data: { includeSaturday: boolean; includeSunday: boolean; clientVisibilityWeeks?: number | null }) => {
+    mutationFn: async (data: { includeSaturday?: boolean; includeSunday?: boolean; clientVisibilityWeeks?: number | null; businessAssignColor?: string | null; businessAssignStatus?: string | null }) => {
       return await apiRequest(`/api/schedules/${schedule?.id}/working-days`, "PATCH", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "schedule"] });
-      toast({ title: "Working days updated" });
     },
   });
 
@@ -3434,6 +3433,65 @@ export default function Schedule() {
                   className="h-8 w-24 text-sm"
                 />
                 <span className="text-xs text-muted-foreground">weeks ahead</span>
+              </div>
+            </div>
+
+            <div className="space-y-3 pt-3 border-t">
+              <Label className="text-sm font-medium">Business Auto-Assign</Label>
+              <p className="text-xs text-muted-foreground">
+                When a task is assigned to the business, automatically apply a Gantt bar colour and set a status.
+              </p>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm text-muted-foreground">Gantt bar colour</Label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={(schedule as any)?.businessAssignColor ?? '#9ca3af'}
+                      onChange={(e) => {
+                        updateWorkingDaysMutation.mutate({ businessAssignColor: e.target.value });
+                      }}
+                      className="w-8 h-8 rounded cursor-pointer border border-border bg-transparent p-0.5"
+                      title="Pick a colour for business-assigned tasks"
+                    />
+                    {(schedule as any)?.businessAssignColor && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-xs h-7 px-2 text-muted-foreground"
+                        onClick={() => updateWorkingDaysMutation.mutate({ businessAssignColor: null })}
+                      >
+                        Clear
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm text-muted-foreground">Auto status</Label>
+                  <Select
+                    value={(schedule as any)?.businessAssignStatus ?? ''}
+                    onValueChange={(val) => {
+                      updateWorkingDaysMutation.mutate({ businessAssignStatus: val || null });
+                    }}
+                  >
+                    <SelectTrigger className="w-[160px] h-8 text-sm">
+                      <SelectValue placeholder="None" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">None</SelectItem>
+                      {statusOptions.map((opt: any) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          <div className="flex items-center gap-2">
+                            {opt.color && (
+                              <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: opt.color }} />
+                            )}
+                            {opt.label}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
           </div>

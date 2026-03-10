@@ -62,7 +62,7 @@ import type { ScheduleItem, NonWorkingDay } from "@shared/schema";
 import { useWeekStartDay } from "@/hooks/useWeekStartDay";
 
 type ZoomLevel = 'day' | 'week' | 'month';
-const ROW_HEIGHT = 48;
+const ROW_HEIGHT = 32;
 
 interface GanttProps {
   onEditItem?: (item: ScheduleItem) => void;
@@ -2538,7 +2538,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                 <div
                   key={item.id}
                   ref={(el) => registerRowRef(item.id, el)}
-                  className={`h-12 flex items-center px-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer group border-b border-border ${nestHighlightId === item.id ? 'ring-2 ring-inset ring-primary bg-primary/10' : ''} ${rowDragItemId === item.id ? 'opacity-30' : ''}`}
+                  className={`h-8 flex items-center px-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer group border-b border-border ${nestHighlightId === item.id ? 'ring-2 ring-inset ring-primary bg-primary/10' : ''} ${rowDragItemId === item.id ? 'opacity-30' : ''}`}
                   onClick={(e) => handleRowClick(e, item)}
                   data-testid={`row-${isParent ? 'parent' : 'child'}-${item.id}`}
                 >
@@ -2670,35 +2670,34 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                         const percent = isParent && childItems.length > 0
                           ? Math.round(childItems.reduce((sum, c) => sum + (c.progressPercent ?? 0), 0) / childItems.length)
                           : (item.progressPercent || 0);
+                        const isReadOnly = isParent && childItems.length > 0;
                         return (
-                          <div key="completion" style={{ width: columnWidths.completion }} className="flex flex-col items-center justify-center gap-1 py-1 flex-shrink-0 px-1">
-                            <div className="flex items-center gap-1.5">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (isParent && childItems.length > 0) return;
-                                  const newPercent = percent === 100 ? 0 : 100;
-                                  updateProgressMutation.mutate({ id: item.id, progressPercent: newPercent });
-                                }}
-                                className={cn(
-                                  "w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors",
-                                  isParent && childItems.length > 0
-                                    ? "cursor-default opacity-60"
-                                    : "cursor-pointer",
-                                  percent === 100
-                                    ? "border-primary bg-primary text-primary-foreground"
-                                    : "border-muted-foreground/40 hover:border-muted-foreground/70"
-                                )}
-                                data-testid={`gantt-completion-toggle-${item.id}`}
-                              >
-                                {percent === 100 && <Check className="w-2.5 h-2.5" />}
-                              </button>
-                              <span className="inline-flex items-center justify-center rounded-md bg-muted-foreground/20 text-muted-foreground text-[10px] font-medium px-1.5 py-0.5 min-w-[32px]">
+                          <div
+                            key="completion"
+                            style={{ width: columnWidths.completion }}
+                            className="flex items-center px-2 flex-shrink-0"
+                          >
+                            <div
+                              className={cn(
+                                "w-full h-4 rounded bg-muted overflow-hidden relative select-none",
+                                isReadOnly ? "cursor-default" : "cursor-pointer"
+                              )}
+                              onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                if (isReadOnly) return;
+                                const newPercent = percent >= 100 ? 0 : 100;
+                                updateProgressMutation.mutate({ id: item.id, progressPercent: newPercent });
+                              }}
+                              data-testid={`gantt-completion-bar-${item.id}`}
+                              title={isReadOnly ? `${percent}% (average of sub-items)` : `${percent}% — double-click to toggle complete`}
+                            >
+                              <div
+                                className="h-full rounded transition-[width] bg-primary/70"
+                                style={{ width: `${percent}%` }}
+                              />
+                              <span className="absolute inset-0 flex items-center justify-center text-[10px] font-medium text-foreground/70 pointer-events-none">
                                 {percent}%
                               </span>
-                            </div>
-                            <div className="w-full h-1 rounded-full bg-muted overflow-hidden" style={{ maxWidth: '76px' }}>
-                              <div className="h-full rounded-full bg-primary/70 transition-[width]" style={{ width: `${percent}%` }} />
                             </div>
                           </div>
                         );
@@ -2752,8 +2751,13 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                                     const cachedAssignableUsers = queryClient.getQueryData<any[]>(["/api/users/assignable"]) || [];
                                     let optimisticName: string | null = null;
                                     let optimisticColor: string | null = null;
+                                    let optimisticStatus: string | undefined = undefined;
                                     if (newValue && newValue.startsWith("company:")) {
                                       optimisticName = (cachedUser as any)?.companyNickname || "The Business";
+                                      optimisticColor = (schedule as any)?.businessAssignColor || null;
+                                      if ((schedule as any)?.businessAssignStatus) {
+                                        optimisticStatus = (schedule as any).businessAssignStatus;
+                                      }
                                     } else if (newValue && newValue.startsWith("user:")) {
                                       const userId = newValue.replace("user:", "");
                                       const appUser = cachedAssignableUsers.find((u: any) => u.id === userId);
@@ -2773,6 +2777,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                                         assignedToId: resolvedId,
                                         assignedToName: optimisticName,
                                         assignedToColor: optimisticColor,
+                                        ...(optimisticStatus !== undefined ? { status: optimisticStatus } : {}),
                                       } : si)
                                     );
                                     try {
