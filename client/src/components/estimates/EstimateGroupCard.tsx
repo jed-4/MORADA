@@ -292,9 +292,9 @@ export const EstimateGroupCard: React.FC<EstimateGroupCardProps> = ({
                       </Badge>
                     ) : null;
                   })()}
-                  {groupTotals && groupTotals.clientAmountIncTax > 0 && (
+                  {groupTotals && groupTotals.builderCostExTax > 0 && (
                     <span className="text-xs font-semibold text-[#7c5bb0] ml-auto flex-shrink-0" data-testid={`group-total-badge-${group.id}`}>
-                      {formatCurrency(groupTotals.clientAmountIncTax)}
+                      {formatCurrency(groupTotals.builderCostExTax)}
                     </span>
                   )}
                 </div>
