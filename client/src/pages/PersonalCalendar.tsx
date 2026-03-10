@@ -763,6 +763,8 @@ export default function PersonalCalendar() {
             <h2 className="text-sm font-semibold" data-testid="text-page-title">
               {userName} Calendar
             </h2>
+            <div className="w-px h-4 bg-border" />
+            <span className="text-xs text-muted-foreground">Views</span>
             <div className="flex items-center gap-0.5" data-testid="tabs-calendar-views">
               {views.map((view: CalendarView) => (
                 <div key={view.id} className="relative group">
@@ -993,15 +995,15 @@ export default function PersonalCalendar() {
                   <div className="space-y-1.5">
                     {[
                       { value: 'task', label: 'Tasks' },
-                      { value: 'schedule-item', label: 'Schedule Items' },
+                      { value: 'schedule', label: 'Schedule Items' },
                       { value: 'google-calendar', label: 'Google Calendar' },
                     ].map((type) => {
                       const isGoogleOption = type.value === 'google-calendar';
-                      const isScheduleOption = type.value === 'schedule-item';
+                      const isScheduleOption = type.value === 'schedule';
                       const isCurrentlySelected = filters.eventTypes?.includes(type.value) || false;
                       const isNotConnected = isGoogleOption && !isGoogleCalendarConnected;
                       const cannotAddNew = isNotConnected && !isCurrentlySelected;
-                      const scheduleDisabled = isScheduleOption && filters.eventTypes !== undefined && !filters.eventTypes.includes('schedule-item');
+                      const scheduleDisabled = isScheduleOption && filters.eventTypes !== undefined && !filters.eventTypes.includes('schedule');
                       
                       return (
                         <div key={type.value}>
@@ -1129,7 +1131,10 @@ export default function PersonalCalendar() {
               Clear All
             </button>
           )}
+        </div>
 
+        {/* Right: Navigation & View Controls */}
+        <div className="flex items-center gap-1.5">
           {/* Lookback Toggle */}
           <Tooltip>
             <TooltipTrigger asChild>
@@ -1150,10 +1155,9 @@ export default function PersonalCalendar() {
               Show your completed timesheets and site diaries
             </TooltipContent>
           </Tooltip>
-        </div>
 
-        {/* Right: Navigation & View Controls */}
-        <div className="flex items-center gap-1.5">
+          <div className="w-px h-4 bg-border" />
+
           {/* Navigation: Previous, Today, Next */}
           <button
             className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
