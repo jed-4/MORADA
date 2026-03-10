@@ -994,20 +994,28 @@ export default function ScheduleScreen({ navigation, route }: Props) {
                       {dateHeaders.map((_, ci) => (
                         <View key={ci} style={[styles.ganttGridLine, { left: ci * DAY_COL_WIDTH, borderRightColor: colors.border }]} />
                       ))}
+                      {showBarStatus && (
+                        <View
+                          style={[styles.ganttStatusChip, {
+                            left: Math.max(2, barLeft - 68),
+                            backgroundColor: status.color + '22',
+                            borderColor: status.color + '77',
+                            maxWidth: Math.min(64, barLeft - 6),
+                          }]}
+                        >
+                          <Text style={[styles.ganttStatusChipText, { color: status.color }]} numberOfLines={1}>{status.name}</Text>
+                        </View>
+                      )}
                       <TouchableOpacity
                         style={[styles.ganttBar, { left: barLeft + 2, width: barWidth, backgroundColor: barColor }]}
                         onPress={() => openDetail(item)}
                         activeOpacity={0.7}
                       >
-                        {showBarStatus && barWidth >= 32 ? (
-                          <View style={[styles.ganttStatusChip, { backgroundColor: status.color + '33', borderColor: status.color + '88' }]}>
-                            <Text style={[styles.ganttStatusChipText, { color: status.color }]} numberOfLines={1}>{status.name}</Text>
-                          </View>
-                        ) : !showBarStatus && nameFits ? (
+                        {nameFits ? (
                           <Text style={styles.ganttBarText} numberOfLines={1}>{item.name}</Text>
                         ) : null}
                       </TouchableOpacity>
-                      {!showBarStatus && !nameFits && (
+                      {!nameFits && (
                         <Text
                           style={[styles.ganttBarOuterText, { left: barLeft + barWidth + 8, color: colors.text }]}
                           numberOfLines={1}
@@ -2014,7 +2022,7 @@ export default function ScheduleScreen({ navigation, route }: Props) {
                   }}
                 >
                   <Ionicons name={showNamesCol ? 'checkbox' : 'square-outline'} size={18} color={showNamesCol ? colors.accent : colors.secondary} />
-                  <Text style={[styles.ganttMenuLabel, { color: colors.text }]}>Show Labels</Text>
+                  <Text style={[styles.ganttMenuLabel, { color: colors.text }]}>Show Table</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.ganttMenuRow}
@@ -2133,7 +2141,7 @@ const styles = StyleSheet.create({
   ganttBar: { position: 'absolute', top: 6, height: GANTT_ROW_HEIGHT - 12, borderRadius: 4, justifyContent: 'center', paddingHorizontal: 4 },
   ganttBarText: { color: '#fff', fontSize: 9, fontWeight: '600' },
   ganttBarOuterText: { position: 'absolute', top: 0, height: GANTT_ROW_HEIGHT, lineHeight: GANTT_ROW_HEIGHT, fontSize: 10, fontWeight: '500', maxWidth: DAY_COL_WIDTH * 5 },
-  ganttStatusChip: { borderWidth: 1, borderRadius: 3, paddingHorizontal: 4, paddingVertical: 1, alignSelf: 'flex-start' },
+  ganttStatusChip: { position: 'absolute', top: 8, borderWidth: 1, borderRadius: 3, paddingHorizontal: 4, paddingVertical: 1 },
   ganttStatusChipText: { fontSize: 9, fontWeight: '600' },
 
   calModeToggle: { flexDirection: 'row', borderWidth: 1, borderRadius: 8, overflow: 'hidden', marginBottom: 4 },

@@ -289,6 +289,7 @@ export default function ProjectsScreen({ navigation }: Props) {
         onScroll={onPageScroll}
         onMomentumScrollEnd={onMomentumScrollEnd}
         scrollEventThrottle={16}
+        extraData={[projects, search]}
         getItemLayout={(_, index) => ({
           length: SCREEN_WIDTH,
           offset: SCREEN_WIDTH * index,
