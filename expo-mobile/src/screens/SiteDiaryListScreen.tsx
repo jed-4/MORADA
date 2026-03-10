@@ -123,6 +123,12 @@ function getSortedProjectItems(projects: Project[]): { id: string; label: string
   return items;
 }
 
+function localISOString(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
 function formatDayHeader(date: Date): string {
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -226,6 +232,10 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
   const [filterProjectId, setFilterProjectId] = useState<string | null>(null);
   const [showFilterPicker, setShowFilterPicker] = useState(false);
 
+  const [viewMode, setViewMode] = useState<'day' | 'feed'>('feed');
+  const [feedEntries, setFeedEntries] = useState<SiteDiaryEntry[]>([]);
+  const [feedLoading, setFeedLoading] = useState(false);
+
   const [showCalendar, setShowCalendar] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
   const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
@@ -240,7 +250,7 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
 
   const [formTitle, setFormTitle] = useState('');
   const [formProjectId, setFormProjectId] = useState('');
-  const [formDateTime, setFormDateTime] = useState(new Date().toISOString());
+  const [formDateTime, setFormDateTime] = useState(localISOString());
   const [formFieldValues, setFormFieldValues] = useState<Record<string, any>>({});
   const [formOverallPhotos, setFormOverallPhotos] = useState<string[]>([]);
   const [formVoiceNotes, setFormVoiceNotes] = useState<string[]>([]);
@@ -353,11 +363,24 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
     }
   }, [currentDate, user?.companyId, template]);
 
+  const fetchFeedData = useCallback(async () => {
+    setFeedLoading(true);
+    try {
+      const data = await apiFetch<SiteDiaryEntry[]>('/api/company/site-diary-entries').catch(() => []);
+      setFeedEntries(data || []);
+    } catch (e) {
+      console.error('Failed to fetch feed data:', e);
+    } finally {
+      setFeedLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     setLoading(true);
     fetchData();
     loadOfflineEntries();
-  }, [fetchData, loadOfflineEntries]);
+    fetchFeedData();
+  }, [fetchData, loadOfflineEntries, fetchFeedData]);
 
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener(state => {
@@ -475,10 +498,9 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchData();
-    await loadOfflineEntries();
+    await Promise.all([fetchData(), loadOfflineEntries(), fetchFeedData()]);
     setRefreshing(false);
-  }, [fetchData, loadOfflineEntries]);
+  }, [fetchData, loadOfflineEntries, fetchFeedData]);
 
   const activeProjects = projects.filter(p => p.isActive && !p.isArchived && !p.isBusiness);
 
@@ -551,7 +573,7 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
   const resetForm = () => {
     setFormTitle('');
     setFormProjectId('');
-    setFormDateTime(new Date().toISOString());
+    setFormDateTime(localISOString());
     setFormFieldValues({});
     setFormOverallPhotos([]);
     setFormVoiceNotes([]);
@@ -1218,6 +1240,35 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
   const pendingCount = offlineEntries.length;
   const filterProject = filterProjectId ? projectMap.get(filterProjectId) : null;
 
+  const allFeedEntries = [...feedEntries, ...offlineEntries];
+  const feedByDate = new Map<string, SiteDiaryEntry[]>();
+  allFeedEntries.forEach(entry => {
+    const dateKey = entry.entryDateTime ? entry.entryDateTime.substring(0, 10) : 'unknown';
+    if (!feedByDate.has(dateKey)) feedByDate.set(dateKey, []);
+    feedByDate.get(dateKey)!.push(entry);
+  });
+  const feedDateKeys = Array.from(feedByDate.keys()).sort((a, b) => b.localeCompare(a));
+  type FeedItem =
+    | { type: 'header'; dateKey: string }
+    | { type: 'entry'; entry: SiteDiaryEntry };
+  const feedItems: FeedItem[] = [];
+  feedDateKeys.forEach(dateKey => {
+    feedItems.push({ type: 'header', dateKey });
+    const dayEntries = (feedByDate.get(dateKey) || [])
+      .filter(e => {
+        if (searchQuery && !e.title?.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+        if (filterProjectId && e.projectId !== filterProjectId) return false;
+        return true;
+      })
+      .sort((a, b) => b.entryDateTime.localeCompare(a.entryDateTime));
+    dayEntries.forEach(entry => feedItems.push({ type: 'entry', entry }));
+  });
+  const filteredFeedItems = feedItems.filter((item, idx) => {
+    if (item.type === 'entry') return true;
+    const next = feedItems[idx + 1];
+    return next && next.type === 'entry';
+  });
+
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
@@ -1234,25 +1285,55 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
       </View>
 
       <View style={[styles.dayNav, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={() => goToDay(-1)} style={styles.navArrow}>
-          <Ionicons name="chevron-back" size={22} color={colors.accent} />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={openCalendar} style={styles.dayInfo}>
-          <View style={styles.dayInfoRow}>
-            <Text style={[styles.dayLabel, { color: colors.text }]}>
-              {isToday(currentDate) ? 'Today' : formatDayHeader(currentDate)}
-            </Text>
-            <Ionicons name="calendar-outline" size={16} color={colors.secondary} style={{ marginLeft: 6 }} />
-          </View>
-          {isToday(currentDate) && (
-            <Text style={[styles.dayDate, { color: colors.secondary }]}>
-              {formatDayHeader(currentDate)}
-            </Text>
+        {viewMode === 'day' ? (
+          <TouchableOpacity onPress={() => goToDay(-1)} style={styles.navArrow}>
+            <Ionicons name="chevron-back" size={22} color={colors.accent} />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.navArrow} />
+        )}
+        <View style={styles.dayInfo}>
+          {viewMode === 'day' ? (
+            <TouchableOpacity onPress={openCalendar} style={{ alignItems: 'center' }}>
+              <View style={styles.dayInfoRow}>
+                <Text style={[styles.dayLabel, { color: colors.text }]}>
+                  {isToday(currentDate) ? 'Today' : formatDayHeader(currentDate)}
+                </Text>
+                <Ionicons name="calendar-outline" size={16} color={colors.secondary} style={{ marginLeft: 6 }} />
+              </View>
+              {isToday(currentDate) && (
+                <Text style={[styles.dayDate, { color: colors.secondary }]}>
+                  {formatDayHeader(currentDate)}
+                </Text>
+              )}
+            </TouchableOpacity>
+          ) : (
+            <Text style={[styles.dayLabel, { color: colors.text }]}>All Entries</Text>
           )}
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => goToDay(1)} style={styles.navArrow}>
-          <Ionicons name="chevron-forward" size={22} color={colors.accent} />
-        </TouchableOpacity>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <View style={[styles.viewToggle, { backgroundColor: isDark ? '#1e293b' : '#f1f5f9', borderColor: colors.border }]}>
+            <TouchableOpacity
+              style={[styles.viewToggleBtn, viewMode === 'feed' && { backgroundColor: colors.accent }]}
+              onPress={() => setViewMode('feed')}
+            >
+              <Text style={[styles.viewToggleBtnText, { color: viewMode === 'feed' ? '#fff' : colors.secondary }]}>Feed</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.viewToggleBtn, viewMode === 'day' && { backgroundColor: colors.accent }]}
+              onPress={() => setViewMode('day')}
+            >
+              <Text style={[styles.viewToggleBtnText, { color: viewMode === 'day' ? '#fff' : colors.secondary }]}>Day</Text>
+            </TouchableOpacity>
+          </View>
+          {viewMode === 'day' ? (
+            <TouchableOpacity onPress={() => goToDay(1)} style={styles.navArrow}>
+              <Ionicons name="chevron-forward" size={22} color={colors.accent} />
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.navArrow} />
+          )}
+        </View>
       </View>
 
       <View style={[styles.searchRow, { borderBottomColor: colors.border }]}>
@@ -1305,6 +1386,103 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
         </View>
       )}
 
+      {viewMode === 'feed' ? (
+        feedLoading ? (
+          <View style={styles.center}>
+            <ActivityIndicator size="large" color={colors.accent} />
+          </View>
+        ) : (
+          <FlatList
+            style={styles.scrollView}
+            contentContainerStyle={[styles.scrollContent, filteredFeedItems.length === 0 && { flex: 1 }]}
+            data={filteredFeedItems}
+            keyExtractor={(item, idx) =>
+              item.type === 'header' ? `hdr-${item.dateKey}` : `entry-${(item as any).entry.id}-${idx}`
+            }
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
+            }
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <Ionicons name="book-outline" size={56} color={colors.muted} />
+                <Text style={[styles.emptyTitle, { color: colors.secondary }]}>
+                  {searchQuery || filterProjectId ? 'No matching entries' : 'No diary entries yet'}
+                </Text>
+                <Text style={[styles.emptyDesc, { color: colors.muted }]}>
+                  {searchQuery || filterProjectId
+                    ? 'Try adjusting your search or filter.'
+                    : 'Create your first site diary entry by tapping the + button.'}
+                </Text>
+              </View>
+            }
+            renderItem={({ item }) => {
+              if (item.type === 'header') {
+                const d = new Date(item.dateKey + 'T12:00:00');
+                return (
+                  <View style={[styles.feedDateHeader, { borderBottomColor: colors.border }]}>
+                    <Text style={[styles.feedDateHeaderText, { color: colors.accent }]}>
+                      {formatDayHeader(d)}
+                    </Text>
+                  </View>
+                );
+              }
+              const entry = item.entry;
+              return (
+                <TouchableOpacity
+                  style={[styles.entryCard, { backgroundColor: colors.card, borderColor: entry._isOffline ? '#f59e0b' : colors.border, marginHorizontal: 16 }]}
+                  activeOpacity={0.7}
+                  onPress={() => openDetailModal(entry)}
+                >
+                  <View style={styles.entryRow}>
+                    <View style={[styles.creatorAvatar, { backgroundColor: getAvatarColor(entry.createdByName) }]}>
+                      <Text style={styles.creatorAvatarText}>{getInitials(entry.createdByName)}</Text>
+                    </View>
+                    <View style={styles.entryContent}>
+                      <View style={styles.entryTop}>
+                        <Text style={[styles.entryTitle, { color: colors.text }]} numberOfLines={1}>
+                          {entry.title}
+                        </Text>
+                        {entry._isOffline && (
+                          <Ionicons name="cloud-offline" size={14} color="#f59e0b" style={{ marginRight: 4 }} />
+                        )}
+                        <Text style={[styles.entryTime, { color: colors.secondary }]}>
+                          {formatTime(entry.entryDateTime)}
+                        </Text>
+                      </View>
+                      <View style={styles.entryMeta}>
+                        {entry.projectId && (
+                          <Text style={[styles.creatorName, { color: colors.secondary }]} numberOfLines={1}>
+                            {getProjectLabel(entry.projectId)}
+                          </Text>
+                        )}
+                        {entry.createdByName && (
+                          <Text style={[styles.creatorName, { color: colors.muted }]} numberOfLines={1}>
+                            {entry.createdByName}
+                          </Text>
+                        )}
+                        {entry.weather?.condition && (
+                          <View style={styles.metaItem}>
+                            <Ionicons name={getWeatherIcon(entry.weather.condition) as any} size={13} color={colors.secondary} />
+                            <Text style={[styles.metaText, { color: colors.secondary }]}>
+                              {entry.weather.condition}{entry.weather.temp != null ? ` ${entry.weather.temp}\u00B0C` : ''}
+                            </Text>
+                          </View>
+                        )}
+                        {countPhotos(entry) > 0 && (
+                          <View style={styles.metaItem}>
+                            <Ionicons name="camera-outline" size={13} color={colors.secondary} />
+                            <Text style={[styles.metaText, { color: colors.secondary }]}>{countPhotos(entry)}</Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              );
+            }}
+          />
+        )
+      ) : (
       <Animated.View
         style={[styles.content, { transform: [{ translateX }] }]}
         {...panResponder.panHandlers}
@@ -1423,6 +1601,7 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
           </ScrollView>
         )}
       </Animated.View>
+      )}
 
       <Modal visible={showEntryModal} animationType="slide" presentationStyle="fullScreen">
         <KeyboardAvoidingView
@@ -2659,5 +2838,33 @@ const styles = StyleSheet.create({
   tpRowBadge: {
     fontSize: 11,
     fontWeight: '600',
+  },
+  viewToggle: {
+    flexDirection: 'row',
+    borderRadius: 8,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  viewToggleBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 7,
+  },
+  viewToggleBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  feedDateHeader: {
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    marginBottom: 4,
+  },
+  feedDateHeaderText: {
+    fontSize: 13,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
 });

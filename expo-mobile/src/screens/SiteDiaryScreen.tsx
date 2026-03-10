@@ -73,6 +73,12 @@ type Props = {
   route: RouteProp<any>;
 };
 
+function localISOString(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
 function formatDateTime(dateStr: string): string {
   const d = new Date(dateStr);
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -139,7 +145,7 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
   const [activeTemplate, setActiveTemplate] = useState<SiteDiaryTemplate | null>(null);
 
   const [formTitle, setFormTitle] = useState('');
-  const [formDateTime, setFormDateTime] = useState(new Date().toISOString());
+  const [formDateTime, setFormDateTime] = useState(localISOString());
   const [formFieldValues, setFormFieldValues] = useState<Record<string, any>>({});
   const [formOverallPhotos, setFormOverallPhotos] = useState<string[]>([]);
   const [formVoiceNotes, setFormVoiceNotes] = useState<string[]>([]);
@@ -295,7 +301,7 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
 
   const resetForm = () => {
     setFormTitle('');
-    setFormDateTime(new Date().toISOString());
+    setFormDateTime(localISOString());
     setFormFieldValues({});
     setFormOverallPhotos([]);
     setFormVoiceNotes([]);
