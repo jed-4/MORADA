@@ -174,7 +174,7 @@ export default function TasksScreen({ navigation }: Props) {
       const [tasksData, projectsData, statusData] = await Promise.all([
         apiFetch<Task[]>('/api/tasks').catch(() => []),
         apiFetch<Project[]>('/api/projects').catch(() => []),
-        apiFetch<{ options: {key: string; name: string; color: string | null; sortOrder: number}[] }>('/api/field-categories/by-key/task_status').catch(() => ({ options: [] })),
+        apiFetch<{ options: {key: string; name: string; color: string | null; sortOrder: number}[] }>('/api/field-categories/by-key/task.status').catch(() => ({ options: [] })),
       ]);
 
       const filtered = (tasksData || []).filter(t => {
