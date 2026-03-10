@@ -5059,13 +5059,11 @@ export default function EstimateDetail() {
 
       </div>{/* end header card */}
 
-      {/* Main Content - horizontal scroll only, vertical flows naturally */}
-      <div className="flex-1 overflow-auto min-h-0 px-3 pb-4 pt-2">
-        <div className="inline-block min-w-full">
-          <div className="border border-border rounded-md bg-background">
+      {/* Main Content — outer card stays fixed, only table content scrolls horizontally */}
+      <div className="flex-1 min-h-0 mx-3 mt-2 mb-4 border border-border rounded-md overflow-hidden flex flex-col">
 
-            {/* Toolbar row — sticky at top of table card */}
-            <div className="h-9 flex items-center justify-between px-3 border-b border-border/50 gap-1.5 bg-background sticky top-0 z-[100] rounded-t-md">
+        {/* Toolbar row — does NOT scroll horizontally */}
+        <div className="h-9 flex items-center justify-between px-3 border-b border-border/50 gap-1.5 bg-background flex-shrink-0 z-[100]">
               {/* Left: Controls + Filter Chips */}
               <div className="flex items-center gap-1.5 flex-1">
                 {/* Group Expand/Collapse - Icon only */}
@@ -5248,7 +5246,11 @@ export default function EstimateDetail() {
                   <span>New Item</span>
                 </button>
               </div>
-            </div>
+        </div>
+        {/* Scrollable content area — only this scrolls horizontally */}
+        <div className="flex-1 overflow-auto min-h-0">
+          <div className="inline-block min-w-full">
+            <div className="bg-background">
               {itemsLoading || groupsLoading ? (
                   <div className="animate-pulse space-y-3">
                     {[...Array(3)].map((_, i) => (
@@ -5360,7 +5362,7 @@ export default function EstimateDetail() {
                         <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
                           {/* CSS Grid Header */}
                           <div 
-                            className="bg-muted border-b border-border sticky top-9 z-[99] pl-px"
+                            className="bg-muted border-b border-border sticky top-0 z-[99] pl-px"
                             role="row"
                             style={{ 
                               display: 'grid', 
@@ -5470,7 +5472,8 @@ export default function EstimateDetail() {
                   </div>
                 </DndContext>
               )}
-          </div>{/* end table card */}
+            </div>{/* end table card */}
+          </div>
         </div>
       </div>
 
