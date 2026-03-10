@@ -914,7 +914,7 @@ export default function ScheduleScreen({ navigation, route }: Props) {
 
     return (
       <View style={styles.flex1}>
-        {/* Sticky header row with 3-dot menu */}
+        {/* Sticky date header */}
         <View style={[styles.ganttStickyHeader, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
           {showNamesCol && (
             <View style={[styles.ganttNamesCol, { height: headerHeight, justifyContent: 'center', borderRightColor: colors.border, borderRightWidth: 1 }]}>
@@ -930,42 +930,6 @@ export default function ScheduleScreen({ navigation, route }: Props) {
           >
             {headerDateRow}
           </ScrollView>
-          <View style={{ position: 'relative', zIndex: 100 }}>
-            <TouchableOpacity
-              style={[styles.ganttMenuBtn, { height: headerHeight, borderLeftColor: colors.border }]}
-              onPress={() => setShowGanttMenu(v => !v)}
-            >
-              <Ionicons name="ellipsis-vertical" size={18} color={colors.secondary} />
-            </TouchableOpacity>
-            {showGanttMenu && (
-              <View style={[styles.ganttMenuDropdown, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: '#000' }]}>
-                <TouchableOpacity
-                  style={styles.ganttMenuRow}
-                  onPress={() => {
-                    const next = !showNamesCol;
-                    setShowNamesCol(next);
-                    AsyncStorage.setItem('@buildpro/gantt_show_names', String(next));
-                    setShowGanttMenu(false);
-                  }}
-                >
-                  <Ionicons name={showNamesCol ? 'checkbox' : 'square-outline'} size={18} color={showNamesCol ? colors.accent : colors.secondary} />
-                  <Text style={[styles.ganttMenuLabel, { color: colors.text }]}>Show Labels</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.ganttMenuRow}
-                  onPress={() => {
-                    const next = !showBarStatus;
-                    setShowBarStatus(next);
-                    AsyncStorage.setItem('@buildpro/gantt_show_status', String(next));
-                    setShowGanttMenu(false);
-                  }}
-                >
-                  <Ionicons name={showBarStatus ? 'checkbox' : 'square-outline'} size={18} color={showBarStatus ? colors.accent : colors.secondary} />
-                  <Text style={[styles.ganttMenuLabel, { color: colors.text }]}>Show Status</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
         </View>
 
         {/* Scrollable body */}
@@ -2011,18 +1975,7 @@ export default function ScheduleScreen({ navigation, route }: Props) {
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-        <TouchableOpacity
-          style={[styles.projectChip, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-          onPress={() => setShowProjectPicker(true)}
-        >
-          <Ionicons name="business-outline" size={14} color={colors.accent} />
-          <Text style={[styles.projectChipText, { color: selectedProjectId ? colors.text : colors.secondary }]} numberOfLines={1}>
-            {getSelectedProjectLabel()}
-          </Text>
-          <Ionicons name="chevron-down" size={14} color={colors.secondary} />
-        </TouchableOpacity>
-
-        <View style={[styles.viewToggle, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+        <View style={[styles.viewToggle, { backgroundColor: colors.inputBg, borderColor: colors.border, flex: 1 }]}>
           {(['list', 'gantt', 'calendar'] as ViewMode[]).map(mode => (
             <TouchableOpacity
               key={mode}
@@ -2040,18 +1993,51 @@ export default function ScheduleScreen({ navigation, route }: Props) {
             </TouchableOpacity>
           ))}
         </View>
+
+        {viewMode === 'gantt' && (
+          <View style={{ position: 'relative', zIndex: 200 }}>
+            <TouchableOpacity
+              style={[styles.headerMenuBtn, { borderColor: colors.border }]}
+              onPress={() => setShowGanttMenu(v => !v)}
+            >
+              <Ionicons name="ellipsis-vertical" size={18} color={colors.secondary} />
+            </TouchableOpacity>
+            {showGanttMenu && (
+              <View style={[styles.ganttMenuDropdown, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: '#000' }]}>
+                <TouchableOpacity
+                  style={styles.ganttMenuRow}
+                  onPress={() => {
+                    const next = !showNamesCol;
+                    setShowNamesCol(next);
+                    AsyncStorage.setItem('@buildpro/gantt_show_names', String(next));
+                    setShowGanttMenu(false);
+                  }}
+                >
+                  <Ionicons name={showNamesCol ? 'checkbox' : 'square-outline'} size={18} color={showNamesCol ? colors.accent : colors.secondary} />
+                  <Text style={[styles.ganttMenuLabel, { color: colors.text }]}>Show Labels</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.ganttMenuRow}
+                  onPress={() => {
+                    const next = !showBarStatus;
+                    setShowBarStatus(next);
+                    AsyncStorage.setItem('@buildpro/gantt_show_status', String(next));
+                    setShowGanttMenu(false);
+                  }}
+                >
+                  <Ionicons name={showBarStatus ? 'checkbox' : 'square-outline'} size={18} color={showBarStatus ? colors.accent : colors.secondary} />
+                  <Text style={[styles.ganttMenuLabel, { color: colors.text }]}>Show Status</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        )}
       </View>
 
       {!selectedProjectId ? (
         <View style={[styles.flex1, styles.center]}>
           <Ionicons name="folder-open-outline" size={56} color={colors.secondary} />
-          <Text style={[styles.promptText, { color: colors.secondary }]}>Select a project to view its schedule</Text>
-          <TouchableOpacity
-            style={[styles.selectProjectBtn, { backgroundColor: colors.accent }]}
-            onPress={() => setShowProjectPicker(true)}
-          >
-            <Text style={styles.selectProjectBtnText}>Select Project</Text>
-          </TouchableOpacity>
+          <Text style={[styles.promptText, { color: colors.secondary }]}>Tap a project in the Projects tab to view its schedule here</Text>
         </View>
       ) : loading ? (
         <View style={[styles.flex1, styles.center]}>
@@ -2088,16 +2074,13 @@ const styles = StyleSheet.create({
   center: { justifyContent: 'center', alignItems: 'center' },
 
   header: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8, borderBottomWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  projectChip: { flex: 1, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7, gap: 6, minWidth: 0 },
-  projectChipText: { flex: 1, fontSize: 13, fontWeight: '500' },
+  headerMenuBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderRadius: 8 },
 
   viewToggle: { flexDirection: 'row', borderWidth: 1, borderRadius: 8, overflow: 'hidden' },
   viewToggleBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 8, gap: 4 },
   viewToggleText: { fontSize: 12, fontWeight: '600' },
 
-  promptText: { fontSize: 16, marginTop: 12, textAlign: 'center' },
-  selectProjectBtn: { marginTop: 16, paddingHorizontal: 24, paddingVertical: 10, borderRadius: 8 },
-  selectProjectBtnText: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  promptText: { fontSize: 15, marginTop: 12, textAlign: 'center', paddingHorizontal: 32 },
 
   listContent: { padding: 16, paddingBottom: 40 },
   groupSection: { marginBottom: 20 },
@@ -2131,8 +2114,7 @@ const styles = StyleSheet.create({
 
   ganttContainer: { flexDirection: 'row' },
   ganttStickyHeader: { flexDirection: 'row', borderBottomWidth: 1, alignItems: 'stretch' },
-  ganttMenuBtn: { width: 36, alignItems: 'center', justifyContent: 'center', borderLeftWidth: StyleSheet.hairlineWidth },
-  ganttMenuDropdown: { position: 'absolute', right: 0, top: 2, width: 170, borderWidth: 1, borderRadius: 8, paddingVertical: 4, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.18, shadowRadius: 8, elevation: 8, zIndex: 1000 },
+  ganttMenuDropdown: { position: 'absolute', right: 0, top: 40, width: 170, borderWidth: 1, borderRadius: 8, paddingVertical: 4, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.18, shadowRadius: 8, elevation: 8, zIndex: 1000 },
   ganttMenuRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 10 },
   ganttMenuLabel: { fontSize: 13, fontWeight: '500' },
   ganttNamesCol: { width: NAME_COL_WIDTH, zIndex: 1 },
