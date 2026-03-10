@@ -16871,13 +16871,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
               ? subtractWD2(predEnd, leadWD)
               : skipToWorkingDay(new Date(predEnd.getTime() + 86400000));
           }
-          if (item.startDate && item.endDate) {
-            const workDuration = countWD(new Date(item.startDate), new Date(item.endDate));
-            const newEnd = addWD(newStart, Math.max(0, workDuration - 1));
-            updateData.startDate = newStart.toISOString().split('T')[0];
-            updateData.endDate = newEnd.toISOString().split('T')[0];
-          } else {
-            updateData.startDate = newStart.toISOString().split('T')[0];
+          const isValidDate = (d: Date) => d instanceof Date && !isNaN(d.getTime());
+          if (isValidDate(newStart)) {
+            if (item.startDate && item.endDate) {
+              const workDuration = countWD(new Date(item.startDate), new Date(item.endDate));
+              const newEnd = addWD(newStart, Math.max(0, workDuration - 1));
+              updateData.startDate = newStart.toISOString();
+              if (isValidDate(newEnd)) updateData.endDate = newEnd.toISOString();
+            } else {
+              updateData.startDate = newStart.toISOString();
+            }
           }
         }
       }

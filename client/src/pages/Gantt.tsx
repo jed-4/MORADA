@@ -546,6 +546,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
     type: string;
     lag: number;
   } | null>(null);
+  const [lagInputStr, setLagInputStr] = useState<string>("0");
   const [scrollVersion, setScrollVersion] = useState(0);
   const lastCursorPosition = useRef<{ x: number; y: number } | null>(null);
   const dragHappened = useRef<boolean>(false);
@@ -1033,22 +1034,6 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
   const updateDependencyMutation = useMutation({
     mutationFn: async ({ itemId, predecessorId, type, lag }: { itemId: string; predecessorId: string; type?: string; lag?: number }) => {
       await apiRequest(`/api/schedule-items/${itemId}/dependencies/${predecessorId}`, "PATCH", { type, lag });
-      const depType = type || 'FS';
-      if (depType === 'FS' && lag !== undefined) {
-        const successor = scheduleItems.find(i => i.id === itemId);
-        const predecessor = scheduleItems.find(i => i.id === predecessorId);
-        if (successor && predecessor?.endDate) {
-          const plm = (d: any) => new Date((typeof d === 'string' ? d : (d as Date).toISOString()).substring(0, 10) + 'T00:00:00');
-          const predEnd = plm(predecessor.endDate);
-          const newStart = addWorkingDays(predEnd, lag + 1);
-          const workDuration = countWorkingDays(plm(successor.startDate), plm(successor.endDate));
-          const newEnd = addWorkingDays(newStart, Math.max(0, workDuration - 1));
-          await apiRequest(`/api/schedule-items/${itemId}`, "PATCH", {
-            startDate: newStart.toISOString().split('T')[0],
-            endDate: newEnd.toISOString().split('T')[0],
-          });
-        }
-      }
     },
     onSuccess: () => {
       invalidateScheduleItems();
@@ -3470,14 +3455,16 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                           onMouseLeave={() => setHoveredDependency(null)}
                           onClick={(e) => {
                             e.stopPropagation();
+                            const lagVal = dep.lag ?? 0;
                             setSelectedDependency({
                               itemId: item.id,
                               itemName: item.name,
                               predecessorId: dep.id,
                               predecessorName: predItem.name,
                               type: dep.type || 'FS',
-                              lag: dep.lag ?? 0,
+                              lag: lagVal,
                             });
+                            setLagInputStr(String(lagVal));
                           }}
                           data-testid={`dependency-line-${depKey}`}
                         />
@@ -3803,16 +3790,26 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                     variant="outline"
                     size="icon"
                     className="h-9 w-9 flex-shrink-0"
-                    onClick={() => setSelectedDependency({ ...selectedDependency, lag: (selectedDependency.lag ?? 0) - 1 })}
+                    onClick={() => {
+                      const next = (selectedDependency.lag ?? 0) - 1;
+                      setSelectedDependency({ ...selectedDependency, lag: next });
+                      setLagInputStr(String(next));
+                    }}
                     data-testid="button-lag-decrease"
                   >
                     <Minus className="w-3 h-3" />
                   </Button>
                   <Input
                     type="number"
-                    value={selectedDependency.lag ?? 0}
-                    onChange={(e) => setSelectedDependency({ ...selectedDependency, lag: parseInt(e.target.value) || 0 })}
-                    onBlur={(e) => setSelectedDependency({ ...selectedDependency, lag: parseInt(e.target.value) || 0 })}
+                    value={lagInputStr}
+                    onChange={(e) => setLagInputStr(e.target.value)}
+                    onFocus={(e) => e.target.select()}
+                    onBlur={(e) => {
+                      const parsed = parseInt(e.target.value);
+                      const safe = isNaN(parsed) ? 0 : parsed;
+                      setSelectedDependency({ ...selectedDependency, lag: safe });
+                      setLagInputStr(String(safe));
+                    }}
                     className="w-20 text-center"
                     data-testid="input-dependency-lag"
                   />
@@ -3820,7 +3817,11 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                     variant="outline"
                     size="icon"
                     className="h-9 w-9 flex-shrink-0"
-                    onClick={() => setSelectedDependency({ ...selectedDependency, lag: (selectedDependency.lag ?? 0) + 1 })}
+                    onClick={() => {
+                      const next = (selectedDependency.lag ?? 0) + 1;
+                      setSelectedDependency({ ...selectedDependency, lag: next });
+                      setLagInputStr(String(next));
+                    }}
                     data-testid="button-lag-increase"
                   >
                     <Plus className="w-3 h-3" />
@@ -3828,7 +3829,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                   <span className="text-sm text-muted-foreground">days</span>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Working days of gap after predecessor finishes (min 0)
+                  Working days gap after predecessor finishes (negative = lead time)
                 </p>
               </div>
 
@@ -3861,11 +3862,13 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                   <Button
                     size="sm"
                     onClick={() => {
+                      const parsedLag = parseInt(lagInputStr);
+                      const finalLag = isNaN(parsedLag) ? selectedDependency.lag : parsedLag;
                       updateDependencyMutation.mutate({
                         itemId: selectedDependency.itemId,
                         predecessorId: selectedDependency.predecessorId,
                         type: selectedDependency.type,
-                        lag: selectedDependency.lag,
+                        lag: finalLag,
                       });
                     }}
                     disabled={updateDependencyMutation.isPending}
