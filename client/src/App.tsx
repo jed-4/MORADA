@@ -90,6 +90,7 @@ import LandingPage from "@/pages/landing";
 import OnboardingPage from "@/pages/onboarding";
 import AcceptInvitation from "@/pages/AcceptInvitation";
 import AuthPage from "@/pages/AuthPage";
+import ResetPassword from "@/pages/ResetPassword";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation, Redirect } from "wouter";
@@ -117,6 +118,7 @@ function Router() {
     <Switch>
       {/* Public routes */}
       <Route path="/auth" component={AuthPage} />
+      <Route path="/reset-password" component={ResetPassword} />
       <Route path="/privacy" component={PrivacyPolicy} />
       <Route path="/portal/rfq/:token" component={RFQPortal} />
       <Route path="/portal/variation/:token" component={VariationPortal} />

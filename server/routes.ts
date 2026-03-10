@@ -5102,6 +5102,94 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     });
   });
+
+  // Forgot password — public, send reset email
+  app.post('/api/auth/forgot-password', async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email) return res.status(400).json({ message: 'Email is required' });
+
+      // Always respond generically so we don't reveal whether the email exists
+      res.json({ message: 'If an account with that email exists, a reset link has been sent.' });
+
+      const user = await storage.getUserByEmail(email.trim().toLowerCase());
+      if (!user || !user.email) return;
+
+      const crypto = require('crypto');
+      const plainToken = crypto.randomBytes(32).toString('hex');
+      const tokenHash = crypto.createHash('sha256').update(plainToken).digest('hex');
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+      await storage.createPasswordResetToken({ userId: user.id, token: tokenHash, expiresAt });
+
+      const baseUrl = process.env.NODE_ENV === 'production'
+        ? `https://${req.get('host')}`
+        : `${req.protocol}://${req.get('host')}`;
+      const resetUrl = `${baseUrl}/reset-password?token=${plainToken}&email=${encodeURIComponent(user.email)}`;
+
+      try {
+        const { sendEmail } = require('./utils/emailService');
+        await sendEmail({
+          to: user.email,
+          subject: 'Reset Your BuildPro Password',
+          html: `
+            <h2>Password Reset Request</h2>
+            <p>Hi ${user.firstName || 'there'},</p>
+            <p>We received a request to reset your BuildPro password.</p>
+            <p>Click the button below to choose a new password. This link expires in 1 hour.</p>
+            <p><a href="${resetUrl}" style="display:inline-block;padding:12px 24px;background-color:#9b7fc4;color:white;text-decoration:none;border-radius:6px;font-weight:600;">Reset Password</a></p>
+            <p>If you didn't request this, you can safely ignore this email — your password won't change.</p>
+            <p>Thanks,<br>The BuildPro Team</p>
+          `,
+          text: `Reset your BuildPro password by visiting: ${resetUrl}\n\nThis link expires in 1 hour. If you didn't request this, ignore this email.`,
+        });
+      } catch (emailErr) {
+        console.error('[forgot-password] Failed to send reset email:', emailErr);
+      }
+    } catch (error: any) {
+      console.error('[forgot-password] Error:', error);
+      // Response already sent above — don't send again
+    }
+  });
+
+  // Reset password — public, consume token and set new password
+  app.post('/api/auth/reset-password', async (req, res) => {
+    try {
+      const { email, token, newPassword } = req.body;
+      if (!email || !token || !newPassword) {
+        return res.status(400).json({ message: 'Email, token and new password are required' });
+      }
+      if (newPassword.length < 8) {
+        return res.status(400).json({ message: 'Password must be at least 8 characters' });
+      }
+
+      const crypto = require('crypto');
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+      const resetToken = await storage.getPasswordResetToken(tokenHash);
+      if (!resetToken) {
+        return res.status(400).json({ message: 'Invalid or expired reset link. Please request a new one.' });
+      }
+      if (new Date() > new Date(resetToken.expiresAt)) {
+        await storage.deletePasswordResetToken(resetToken.id);
+        return res.status(400).json({ message: 'This reset link has expired. Please request a new one.' });
+      }
+
+      // Verify the email matches the token's user
+      const user = await storage.getUser(resetToken.userId);
+      if (!user || user.email?.toLowerCase() !== email.trim().toLowerCase()) {
+        return res.status(400).json({ message: 'Invalid reset link.' });
+      }
+
+      await storage.changeUserPassword(user.id, newPassword);
+      await storage.deletePasswordResetToken(resetToken.id);
+
+      res.json({ message: 'Password updated successfully. You can now log in.' });
+    } catch (error: any) {
+      console.error('[reset-password] Error:', error);
+      res.status(500).json({ message: 'Failed to reset password. Please try again.' });
+    }
+  });
   
   // Get current authenticated user
   app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {

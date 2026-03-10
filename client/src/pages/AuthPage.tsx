@@ -10,7 +10,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { queryClient } from '@/lib/queryClient';
-import { Building2, Mail, Lock, User, Loader2 } from 'lucide-react';
+import { Building2, Mail, Lock, User, Loader2, CheckCircle2, ArrowLeft } from 'lucide-react';
 
 const loginSchema = z.object({
   email: z.string().email('Please enter a valid email'),
@@ -35,9 +35,27 @@ export default function AuthPage() {
   const [, setLocation] = useLocation();
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
+  const [forgotMode, setForgotMode] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotStatus, setForgotStatus] = useState<'idle' | 'loading' | 'sent'>('idle');
   
   const urlParams = new URLSearchParams(window.location.search);
   const errorParam = urlParams.get('error');
+
+  const handleForgotPassword = async () => {
+    if (!forgotEmail.trim()) return;
+    setForgotStatus('loading');
+    try {
+      await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail.trim() }),
+      });
+      setForgotStatus('sent');
+    } catch {
+      setForgotStatus('sent'); // Show success regardless to avoid leaking info
+    }
+  };
 
   const loginForm = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -152,57 +170,113 @@ export default function AuthPage() {
             
             <CardContent className="space-y-4">
               <TabsContent value="login" className="space-y-4 mt-0">
-                <Form {...loginForm}>
-                  <form onSubmit={loginForm.handleSubmit(handleLogin)} className="space-y-4">
-                    <FormField
-                      control={loginForm.control}
-                      name="email"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Email</FormLabel>
-                          <FormControl>
-                            <div className="relative">
-                              <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                              <Input
-                                {...field}
-                                type="email"
-                                placeholder="you@example.com"
-                                className="pl-10"
-                                data-testid="input-login-email"
-                              />
+                {forgotMode ? (
+                  <div className="space-y-4">
+                    <button
+                      onClick={() => { setForgotMode(false); setForgotStatus('idle'); setForgotEmail(''); }}
+                      className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <ArrowLeft className="h-3.5 w-3.5" /> Back to login
+                    </button>
+                    {forgotStatus === 'sent' ? (
+                      <div className="space-y-3 py-2 text-center">
+                        <CheckCircle2 className="h-10 w-10 text-green-500 mx-auto" />
+                        <p className="font-semibold text-sm">Check your email</p>
+                        <p className="text-sm text-muted-foreground">
+                          If an account exists for <span className="font-medium">{forgotEmail}</span>, we've sent a reset link. It expires in 1 hour.
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        <div>
+                          <p className="text-sm font-medium mb-1">Forgot your password?</p>
+                          <p className="text-sm text-muted-foreground">Enter your email and we'll send you a reset link.</p>
+                        </div>
+                        <div className="space-y-2">
+                          <div className="relative">
+                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <Input
+                              type="email"
+                              placeholder="you@example.com"
+                              className="pl-10"
+                              value={forgotEmail}
+                              onChange={(e) => setForgotEmail(e.target.value)}
+                              onKeyDown={(e) => e.key === 'Enter' && handleForgotPassword()}
+                            />
+                          </div>
+                          <Button
+                            className="w-full"
+                            onClick={handleForgotPassword}
+                            disabled={forgotStatus === 'loading' || !forgotEmail.trim()}
+                          >
+                            {forgotStatus === 'loading' ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Send Reset Link'}
+                          </Button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <Form {...loginForm}>
+                    <form onSubmit={loginForm.handleSubmit(handleLogin)} className="space-y-4">
+                      <FormField
+                        control={loginForm.control}
+                        name="email"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Email</FormLabel>
+                            <FormControl>
+                              <div className="relative">
+                                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                <Input
+                                  {...field}
+                                  type="email"
+                                  placeholder="you@example.com"
+                                  className="pl-10"
+                                  data-testid="input-login-email"
+                                />
+                              </div>
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={loginForm.control}
+                        name="password"
+                        render={({ field }) => (
+                          <FormItem>
+                            <div className="flex items-center justify-between">
+                              <FormLabel>Password</FormLabel>
+                              <button
+                                type="button"
+                                onClick={() => setForgotMode(true)}
+                                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                              >
+                                Forgot password?
+                              </button>
                             </div>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={loginForm.control}
-                      name="password"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Password</FormLabel>
-                          <FormControl>
-                            <div className="relative">
-                              <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                              <Input
-                                {...field}
-                                type="password"
-                                placeholder="Enter your password"
-                                className="pl-10"
-                                data-testid="input-login-password"
-                              />
-                            </div>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <Button type="submit" className="w-full" disabled={isLoading} data-testid="button-login">
-                      {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Login'}
-                    </Button>
-                  </form>
-                </Form>
+                            <FormControl>
+                              <div className="relative">
+                                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                <Input
+                                  {...field}
+                                  type="password"
+                                  placeholder="Enter your password"
+                                  className="pl-10"
+                                  data-testid="input-login-password"
+                                />
+                              </div>
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <Button type="submit" className="w-full" disabled={isLoading} data-testid="button-login">
+                        {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Login'}
+                      </Button>
+                    </form>
+                  </Form>
+                )}
               </TabsContent>
 
               <TabsContent value="register" className="space-y-4 mt-0">

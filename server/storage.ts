@@ -199,6 +199,8 @@ export interface IStorage {
   
   // Password Reset Token operations
   createPasswordResetToken(data: { userId: string; token: string; expiresAt: Date; requestedBy?: string }): Promise<void>;
+  getPasswordResetToken(tokenHash: string): Promise<PasswordResetToken | undefined>;
+  deletePasswordResetToken(id: string): Promise<void>;
   
   // Notes CRUD operations
   getNotes(projectId?: string | null, companyId?: string, userId?: string, includeArchived?: boolean): Promise<Note[]>;
@@ -1131,6 +1133,7 @@ export class MemStorage implements IStorage {
   private userInvitations: Map<string, UserInvitation>;
   private userColumnPreferences: Map<string, UserColumnPreferences>;
   private userViewPreferences: Map<string, UserViewPreferences>;
+  private passwordResetTokens: Map<string, PasswordResetToken>;
   private notes: Map<string, Note>;
   private noteGroups: Map<string, NoteGroup>;
   private customFieldDefs: Map<string, CustomFieldDef>;
@@ -1166,6 +1169,7 @@ export class MemStorage implements IStorage {
     this.userInvitations = new Map();
     this.userColumnPreferences = new Map();
     this.userViewPreferences = new Map();
+    this.passwordResetTokens = new Map();
     this.notes = new Map();
     this.noteGroups = new Map();
     this.customFieldDefs = new Map();
@@ -2638,8 +2642,22 @@ export class MemStorage implements IStorage {
   }
   
   async createPasswordResetToken(data: { userId: string; token: string; expiresAt: Date; requestedBy?: string }): Promise<void> {
-    // MemStorage doesn't persist tokens, just log for dev purposes
+    const id = `prt-${Date.now()}`;
+    this.passwordResetTokens.set(data.token, { id, ...data, usedAt: null, createdAt: new Date() } as any);
     console.log(`[MemStorage] Password reset token created for user ${data.userId}`);
+  }
+
+  async getPasswordResetToken(tokenHash: string): Promise<PasswordResetToken | undefined> {
+    return this.passwordResetTokens.get(tokenHash);
+  }
+
+  async deletePasswordResetToken(id: string): Promise<void> {
+    for (const [key, token] of this.passwordResetTokens.entries()) {
+      if ((token as any).id === id) {
+        this.passwordResetTokens.delete(key);
+        break;
+      }
+    }
   }
 
   // Notes CRUD operations
@@ -7789,6 +7807,25 @@ export class DbStorage implements IStorage {
       });
     } catch (error) {
       console.error("Database error in createPasswordResetToken:", error);
+      throw error;
+    }
+  }
+
+  async getPasswordResetToken(tokenHash: string): Promise<PasswordResetToken | undefined> {
+    try {
+      const [token] = await db.select().from(schema.passwordResetTokens).where(eq(schema.passwordResetTokens.token, tokenHash));
+      return token;
+    } catch (error) {
+      console.error("Database error in getPasswordResetToken:", error);
+      throw error;
+    }
+  }
+
+  async deletePasswordResetToken(id: string): Promise<void> {
+    try {
+      await db.delete(schema.passwordResetTokens).where(eq(schema.passwordResetTokens.id, id));
+    } catch (error) {
+      console.error("Database error in deletePasswordResetToken:", error);
       throw error;
     }
   }
