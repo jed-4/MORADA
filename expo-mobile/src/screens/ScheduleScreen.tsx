@@ -86,6 +86,7 @@ interface Project {
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
+  route?: { params?: { projectId?: string } };
 };
 
 type ViewMode = 'list' | 'gantt' | 'calendar';
@@ -232,7 +233,7 @@ const NAME_COL_WIDTH = 140;
 const GANTT_ROW_HEIGHT = 36;
 const HOUR_HEIGHT = 60;
 
-export default function ScheduleScreen({ navigation }: Props) {
+export default function ScheduleScreen({ navigation, route }: Props) {
   const { user } = useAuth();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -297,6 +298,7 @@ export default function ScheduleScreen({ navigation }: Props) {
   const [showAddStatusPicker, setShowAddStatusPicker] = useState(false);
 
   const ganttScrollRef = useRef<ScrollView>(null);
+  const ganttScrolledRef = useRef(false);
 
   const colors = isDark
     ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', inputBg: '#0f172a' }
@@ -331,6 +333,11 @@ export default function ScheduleScreen({ navigation }: Props) {
     }
   }, [fetchProjects, fetchItems, selectedProjectId]);
 
+  useEffect(() => {
+    const incoming = route?.params?.projectId;
+    if (incoming) setSelectedProjectId(incoming);
+  }, [route?.params?.projectId]);
+
   useEffect(() => { fetchData(); }, [fetchData]);
 
   useEffect(() => {
@@ -341,6 +348,11 @@ export default function ScheduleScreen({ navigation }: Props) {
       setItems([]);
     }
   }, [selectedProjectId, fetchItems]);
+
+  useEffect(() => {
+    if (viewMode !== 'gantt' || items.length === 0) return;
+    ganttScrolledRef.current = false;
+  }, [viewMode, selectedProjectId]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -602,6 +614,9 @@ export default function ScheduleScreen({ navigation }: Props) {
       { title: 'On Hold / Cancelled', data: [] },
     ];
 
+    const byDate = (a: ScheduleItem, b: ScheduleItem) =>
+      new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
+
     items.forEach(item => {
       if (item.status === 'in_progress') {
         groups[0].data.push(item);
@@ -618,6 +633,7 @@ export default function ScheduleScreen({ navigation }: Props) {
       }
     });
 
+    groups.forEach(g => g.data.sort(byDate));
     return groups.filter(g => g.data.length > 0);
   }, [items]);
 
@@ -864,7 +880,20 @@ export default function ScheduleScreen({ navigation }: Props) {
                 </TouchableOpacity>
               ))}
             </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={true} ref={ganttScrollRef}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={true}
+              ref={ganttScrollRef}
+              onLayout={() => {
+                if (ganttScrolledRef.current) return;
+                ganttScrolledRef.current = true;
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const todayOffset = Math.floor((today.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)) * DAY_COL_WIDTH;
+                const scrollX = Math.max(0, todayOffset - SCREEN_WIDTH / 3);
+                ganttScrollRef.current?.scrollTo({ x: scrollX, animated: false });
+              }}
+            >
               <View style={{ width: totalWidth }}>
                 {showMonthHeaders && (
                   <View style={[styles.ganttMonthRow, { borderBottomColor: colors.border }]}>
@@ -896,7 +925,7 @@ export default function ScheduleScreen({ navigation }: Props) {
                   const endDay = Math.max(startDay + 1, Math.ceil((new Date(item.endDate).getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)) + 1);
                   const barLeft = startDay * DAY_COL_WIDTH;
                   const barWidth = Math.max((endDay - startDay) * DAY_COL_WIDTH - 4, 8);
-                  const barColor = STATUS_COLORS[item.status] || '#3b82f6';
+                  const barColor = getItemColor(item);
 
                   return (
                     <View key={item.id} style={[styles.ganttBarRow, { backgroundColor: idx % 2 === 0 ? colors.bg : colors.card, borderBottomColor: colors.border }]}>

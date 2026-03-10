@@ -189,7 +189,7 @@ export default function ProjectDetailScreen({ navigation, route }: Props) {
         navigation.navigate('SiteDiary', { projectId, projectName: project.name });
         break;
       case 'schedule':
-        navigation.navigate('Schedule');
+        navigation.navigate('Schedule', { projectId });
         break;
       case 'checklists':
         navigation.navigate('Checklists', { projectId });
