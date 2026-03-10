@@ -183,6 +183,7 @@ export default function Schedule() {
   const [showBaselineDialog, setShowBaselineDialog] = useState(false);
   const [activeBaselineId, setActiveBaselineId] = useState<string | null>(null);
   const [baselineName, setBaselineName] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('schedule-visible-columns', JSON.stringify(visibleColumns));
@@ -2328,136 +2329,85 @@ export default function Schedule() {
               </p>
             </div>
 
-            {/* Type */}
-            <div className="space-y-2">
-              <Label htmlFor="item-type">Type</Label>
-              <Select
-                value={formData.type}
-                onValueChange={(value) => setFormData({ ...formData, type: value })}
-              >
-                <SelectTrigger id="item-type" data-testid="select-item-type">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="task">Task</SelectItem>
-                  <SelectItem value="milestone">Milestone</SelectItem>
-                  <SelectItem value="inspection">Inspection</SelectItem>
-                  <SelectItem value="delivery">Delivery</SelectItem>
-                  <SelectItem value="meeting">Meeting</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Status and Assignee Row (hidden for parent items with children) */}
+            {/* Type / Status / Assignee / Progress — compact 2×2 grid */}
             {(() => {
-              const isEditingParentWithChildren = editingItem && !editingItem.parentItemId && scheduleItems.some(i => i.parentItemId === editingItem.id);
-              if (isEditingParentWithChildren) return null;
+              const isParentWithChildren = !!(editingItem && !editingItem.parentItemId && scheduleItems.some(i => i.parentItemId === editingItem.id));
+              const showProgress = !!(editingItem || formData.status === "in_progress");
               return (
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="item-status">Status</Label>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                  <div className="space-y-1">
+                    <Label htmlFor="item-type" className="text-xs text-muted-foreground">Type</Label>
                     <Select
-                      value={formData.status}
-                      onValueChange={(value) => setFormData({ ...formData, status: value })}
+                      value={formData.type}
+                      onValueChange={(value) => setFormData({ ...formData, type: value })}
                     >
-                      <SelectTrigger id="item-status" data-testid="select-item-status">
+                      <SelectTrigger id="item-type" data-testid="select-item-type">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {statusOptions.map((option: any) => (
-                          <SelectItem key={option.id} value={option.key}>
-                            {option.name}
-                          </SelectItem>
-                        ))}
+                        <SelectItem value="task">Task</SelectItem>
+                        <SelectItem value="milestone">Milestone</SelectItem>
+                        <SelectItem value="inspection">Inspection</SelectItem>
+                        <SelectItem value="delivery">Delivery</SelectItem>
+                        <SelectItem value="meeting">Meeting</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="item-assignee">Assignee</Label>
-                    <ContactSelect
-                      value={formData.assignedToId || ""}
-                      onValueChange={(value) => setFormData({ ...formData, assignedToId: value || "" })}
-                      placeholder="None"
-                      allowBusiness={true}
-                      data-testid="select-item-assignee"
-                    />
-                  </div>
+                  {!isParentWithChildren && (
+                    <div className="space-y-1">
+                      <Label htmlFor="item-status" className="text-xs text-muted-foreground">Status</Label>
+                      <Select
+                        value={formData.status}
+                        onValueChange={(value) => setFormData({ ...formData, status: value })}
+                      >
+                        <SelectTrigger id="item-status" data-testid="select-item-status">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {statusOptions.map((option: any) => (
+                            <SelectItem key={option.id} value={option.key}>
+                              {option.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {!isParentWithChildren && (
+                    <div className="space-y-1">
+                      <Label htmlFor="item-assignee" className="text-xs text-muted-foreground">Assignee</Label>
+                      <ContactSelect
+                        value={formData.assignedToId || ""}
+                        onValueChange={(value) => setFormData({ ...formData, assignedToId: value || "" })}
+                        placeholder="None"
+                        allowBusiness={true}
+                        data-testid="select-item-assignee"
+                      />
+                    </div>
+                  )}
+
+                  {showProgress && !isParentWithChildren && (
+                    <div className="space-y-1">
+                      <Label htmlFor="item-progress" className="text-xs text-muted-foreground">Progress %</Label>
+                      <Input
+                        id="item-progress"
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={formData.progressPercent}
+                        onChange={(e) => {
+                          const value = e.target.value === '' ? 0 : Math.min(100, Math.max(0, parseInt(e.target.value, 10)));
+                          setFormData({ ...formData, progressPercent: isNaN(value) ? 0 : value });
+                        }}
+                        data-testid="input-item-progress"
+                      />
+                    </div>
+                  )}
                 </div>
               );
             })()}
-
-            {/* Progress */}
-            {(editingItem || formData.status === "in_progress") && (
-              <div className="space-y-2">
-                <Label htmlFor="item-progress">Progress (%)</Label>
-                <Input
-                  id="item-progress"
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={formData.progressPercent}
-                  onChange={(e) => {
-                    const value = e.target.value === '' ? 0 : Math.min(100, Math.max(0, parseInt(e.target.value, 10)));
-                    setFormData({ ...formData, progressPercent: isNaN(value) ? 0 : value });
-                  }}
-                  data-testid="input-item-progress"
-                />
-              </div>
-            )}
-
-            {/* Allow on weekends toggle */}
-            <div className="flex items-center justify-between py-2">
-              <div className="space-y-0.5">
-                <Label htmlFor="allow-weekends" className="text-sm">Allow on weekends</Label>
-                <p className="text-xs text-muted-foreground">Override schedule settings to allow this item on weekends</p>
-              </div>
-              <Switch
-                id="allow-weekends"
-                checked={formData.useWorkingDaysOverride === true}
-                onCheckedChange={(checked) => {
-                  setFormData({ ...formData, useWorkingDaysOverride: checked ? true : null });
-                }}
-              />
-            </div>
-
-            {/* Business Schedule Build Markers */}
-            {bspProject && editingItem && editingItem.id && (
-              <div className="space-y-2 pt-3 border-t">
-                <Label className="text-sm font-medium">Business Schedule Markers</Label>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      const isCurrent = bspProject.milestoneStartItemId === String(editingItem.id);
-                      setBspMilestoneMutation.mutate({ field: 'milestoneStartItemId', itemId: isCurrent ? null : String(editingItem.id) });
-                    }}
-                    className={bspProject.milestoneStartItemId === String(editingItem.id) ? "border-emerald-500 text-emerald-600 dark:text-emerald-400" : ""}
-                  >
-                    <Flag className="w-3.5 h-3.5 mr-1.5 text-emerald-500" />
-                    {bspProject.milestoneStartItemId === String(editingItem.id) ? "Clear Build Start" : "Set as Build Start"}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      const isCurrent = bspProject.milestoneEndItemId === String(editingItem.id);
-                      setBspMilestoneMutation.mutate({ field: 'milestoneEndItemId', itemId: isCurrent ? null : String(editingItem.id) });
-                    }}
-                    className={bspProject.milestoneEndItemId === String(editingItem.id) ? "border-rose-500 text-rose-600 dark:text-rose-400" : ""}
-                  >
-                    <Flag className="w-3.5 h-3.5 mr-1.5 text-rose-500" />
-                    {bspProject.milestoneEndItemId === String(editingItem.id) ? "Clear Build End" : "Set as Build End"}
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Mark this item as the Build Start or End date shown on the Business Schedule.
-                </p>
-              </div>
-            )}
 
             {/* Dependencies Section */}
             {(() => {
@@ -2690,7 +2640,6 @@ export default function Schedule() {
                             <span className="text-xs text-muted-foreground whitespace-nowrap">Lag:</span>
                             <Input
                               type="number"
-                              min="0"
                               value={dep.lag ?? ""}
                               onChange={(e) => {
                                 const val = e.target.value;
@@ -2897,196 +2846,266 @@ export default function Schedule() {
               </div>
             )}
 
-            {editingItem && (
-              <div className="space-y-3 pt-4 border-t">
-                <Label className="text-sm font-medium">Linked Items</Label>
-                
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">Checklists</span>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="sm" className="h-6 text-xs">
-                          <Plus className="w-3 h-3 mr-1" />
-                          Link Checklist
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="max-h-48 overflow-y-auto">
-                        {(availableChecklists as any[])
-                          .filter((cl: any) => !(editingItem.checklistIds as string[] || []).includes(cl.id))
-                          .map((cl: any) => (
-                            <DropdownMenuItem
-                              key={cl.id}
-                              onClick={() => {
-                                const newIds = [...(editingItem.checklistIds as string[] || []), cl.id];
-                                updateItemLinksMutation.mutate({ id: editingItem.id, checklistIds: newIds });
-                                setEditingItem({ ...editingItem, checklistIds: newIds });
-                              }}
-                            >
-                              {cl.name || cl.title}
-                            </DropdownMenuItem>
-                          ))}
-                        {(availableChecklists as any[]).filter((cl: any) => !(editingItem.checklistIds as string[] || []).includes(cl.id)).length === 0 && (
-                          <div className="px-2 py-1.5 text-xs text-muted-foreground">No checklists available</div>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                  {((editingItem.checklistIds as string[]) || []).length > 0 && (
-                    <div className="space-y-1">
-                      {((editingItem.checklistIds as string[]) || []).map((clId: string) => {
-                        const cl = (availableChecklists as any[]).find((c: any) => c.id === clId);
-                        return (
-                          <div key={clId} className="flex items-center justify-between py-0.5 px-2 rounded hover-elevate group">
-                            <span className="text-xs">{cl?.name || cl?.title || clId}</span>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-5 w-5 invisible group-hover:visible"
-                              onClick={() => {
-                                const newIds = ((editingItem.checklistIds as string[]) || []).filter(id => id !== clId);
-                                updateItemLinksMutation.mutate({ id: editingItem.id, checklistIds: newIds });
-                                setEditingItem({ ...editingItem, checklistIds: newIds });
-                              }}
-                            >
-                              <X className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
+            {/* Advanced section — Allow on weekends, Build markers, Linked Items */}
+              <div className="pt-3 border-t">
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 w-full text-left text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  onClick={() => setShowAdvanced(v => !v)}
+                >
+                  <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${showAdvanced ? 'rotate-180' : ''}`} />
+                  <span className="font-medium">Advanced</span>
+                </button>
 
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">Tasks</span>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-6 text-xs"
-                        disabled={createLinkedTaskMutation.isPending}
-                        onClick={() => createLinkedTaskMutation.mutate(editingItem)}
-                      >
-                        {createLinkedTaskMutation.isPending
-                          ? <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                          : <Plus className="w-3 h-3 mr-1" />}
-                        Create Task
-                      </Button>
-                      <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="sm" className="h-6 text-xs">
-                          <Plus className="w-3 h-3 mr-1" />
-                          Link Task
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="max-h-48 overflow-y-auto">
-                        {(availableTasks as any[])
-                          .filter((t: any) => !(editingItem.taskIds as string[] || []).includes(t.id))
-                          .map((t: any) => (
-                            <DropdownMenuItem
-                              key={t.id}
-                              onClick={() => {
-                                const newIds = [...(editingItem.taskIds as string[] || []), t.id];
-                                updateItemLinksMutation.mutate({ id: editingItem.id, taskIds: newIds });
-                                setEditingItem({ ...editingItem, taskIds: newIds });
-                                setTaskLinkOffsetsLocal(prev => [...prev, { taskId: t.id, offsetDays: 0, offsetFrom: "start" as const }]);
-                              }}
-                            >
-                              {t.title || t.name}
-                            </DropdownMenuItem>
-                          ))}
-                        {(availableTasks as any[]).filter((t: any) => !(editingItem.taskIds as string[] || []).includes(t.id)).length === 0 && (
-                          <div className="px-2 py-1.5 text-xs text-muted-foreground">No tasks available</div>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                {showAdvanced && (
+                  <div className="space-y-4 mt-3">
+                    {/* Allow on weekends */}
+                    <div className="flex items-center justify-between py-1">
+                      <div className="space-y-0.5">
+                        <Label htmlFor="allow-weekends" className="text-sm">Allow on weekends</Label>
+                        <p className="text-xs text-muted-foreground">Override schedule settings to allow this item on weekends</p>
+                      </div>
+                      <Switch
+                        id="allow-weekends"
+                        checked={formData.useWorkingDaysOverride === true}
+                        onCheckedChange={(checked) => {
+                          setFormData({ ...formData, useWorkingDaysOverride: checked ? true : null });
+                        }}
+                      />
                     </div>
-                  </div>
-                  {((editingItem.taskIds as string[]) || []).length > 0 && (
-                    <div className="space-y-1.5">
-                      {((editingItem.taskIds as string[]) || []).map((taskId: string) => {
-                        const task = (availableTasks as any[]).find((t: any) => t.id === taskId);
-                        const offset = taskLinkOffsetsLocal.find(o => o.taskId === taskId);
-                        return (
-                          <div key={taskId} className="space-y-1 py-1 px-2 rounded border bg-card">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs font-medium">{task?.title || task?.name || taskId}</span>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-5 w-5"
-                                onClick={() => {
-                                  const newIds = ((editingItem.taskIds as string[]) || []).filter(id => id !== taskId);
-                                  updateItemLinksMutation.mutate({ id: editingItem.id, taskIds: newIds });
-                                  setEditingItem({ ...editingItem, taskIds: newIds });
-                                  setTaskLinkOffsetsLocal(prev => prev.filter(o => o.taskId !== taskId));
-                                }}
-                              >
-                                <X className="h-3 w-3" />
-                              </Button>
+
+                    {/* Business Schedule Build Markers */}
+                    {bspProject && editingItem && editingItem.id && (
+                      <div className="space-y-2 pt-3 border-t">
+                        <Label className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Business Schedule Markers</Label>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const isCurrent = bspProject.milestoneStartItemId === String(editingItem.id);
+                              setBspMilestoneMutation.mutate({ field: 'milestoneStartItemId', itemId: isCurrent ? null : String(editingItem.id) });
+                            }}
+                            className={bspProject.milestoneStartItemId === String(editingItem.id) ? "border-emerald-500 text-emerald-600 dark:text-emerald-400" : ""}
+                          >
+                            <Flag className="w-3.5 h-3.5 mr-1.5 text-emerald-500" />
+                            {bspProject.milestoneStartItemId === String(editingItem.id) ? "Clear Build Start" : "Set as Build Start"}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const isCurrent = bspProject.milestoneEndItemId === String(editingItem.id);
+                              setBspMilestoneMutation.mutate({ field: 'milestoneEndItemId', itemId: isCurrent ? null : String(editingItem.id) });
+                            }}
+                            className={bspProject.milestoneEndItemId === String(editingItem.id) ? "border-rose-500 text-rose-600 dark:text-rose-400" : ""}
+                          >
+                            <Flag className="w-3.5 h-3.5 mr-1.5 text-rose-500" />
+                            {bspProject.milestoneEndItemId === String(editingItem.id) ? "Clear Build End" : "Set as Build End"}
+                          </Button>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Mark this item as the Build Start or End date shown on the Business Schedule.
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Linked Items */}
+                    {editingItem && (
+                      <div className="space-y-3 pt-3 border-t">
+                        <Label className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Linked Items</Label>
+
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-muted-foreground">Checklists</span>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="outline" size="sm" className="h-6 text-xs">
+                                  <Plus className="w-3 h-3 mr-1" />
+                                  Link Checklist
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="max-h-48 overflow-y-auto">
+                                {(availableChecklists as any[])
+                                  .filter((cl: any) => !(editingItem.checklistIds as string[] || []).includes(cl.id))
+                                  .map((cl: any) => (
+                                    <DropdownMenuItem
+                                      key={cl.id}
+                                      onClick={() => {
+                                        const newIds = [...(editingItem.checklistIds as string[] || []), cl.id];
+                                        updateItemLinksMutation.mutate({ id: editingItem.id, checklistIds: newIds });
+                                        setEditingItem({ ...editingItem, checklistIds: newIds });
+                                      }}
+                                    >
+                                      {cl.name || cl.title}
+                                    </DropdownMenuItem>
+                                  ))}
+                                {(availableChecklists as any[]).filter((cl: any) => !(editingItem.checklistIds as string[] || []).includes(cl.id)).length === 0 && (
+                                  <div className="px-2 py-1.5 text-xs text-muted-foreground">No checklists available</div>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                          {((editingItem.checklistIds as string[]) || []).length > 0 && (
+                            <div className="space-y-1">
+                              {((editingItem.checklistIds as string[]) || []).map((clId: string) => {
+                                const cl = (availableChecklists as any[]).find((c: any) => c.id === clId);
+                                return (
+                                  <div key={clId} className="flex items-center justify-between py-0.5 px-2 rounded hover-elevate group">
+                                    <span className="text-xs">{cl?.name || cl?.title || clId}</span>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-5 w-5 invisible group-hover:visible"
+                                      onClick={() => {
+                                        const newIds = ((editingItem.checklistIds as string[]) || []).filter(id => id !== clId);
+                                        updateItemLinksMutation.mutate({ id: editingItem.id, checklistIds: newIds });
+                                        setEditingItem({ ...editingItem, checklistIds: newIds });
+                                      }}
+                                    >
+                                      <X className="h-3 w-3" />
+                                    </Button>
+                                  </div>
+                                );
+                              })}
                             </div>
-                            <div className="flex items-center gap-2">
-                              <Input
-                                type="number"
-                                value={offset?.offsetDays ?? ""}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  const days = val === "" ? "" as any : parseInt(val);
-                                  setTaskLinkOffsetsLocal(prev => {
-                                    const existing = prev.find(o => o.taskId === taskId);
-                                    if (existing) {
-                                      return prev.map(o => o.taskId === taskId ? { ...o, offsetDays: days } : o);
-                                    }
-                                    return [...prev, { taskId, offsetDays: days, offsetFrom: "start" as const }];
-                                  });
-                                }}
-                                onBlur={(e) => {
-                                  const days = parseInt(e.target.value) || 0;
-                                  setTaskLinkOffsetsLocal(prev => {
-                                    const existing = prev.find(o => o.taskId === taskId);
-                                    if (existing) {
-                                      return prev.map(o => o.taskId === taskId ? { ...o, offsetDays: days } : o);
-                                    }
-                                    return [...prev, { taskId, offsetDays: days, offsetFrom: "start" as const }];
-                                  });
-                                }}
-                                className="h-6 w-16 text-xs"
-                                placeholder="0"
-                              />
-                              <span className="text-xs text-muted-foreground whitespace-nowrap">days from</span>
-                              <Select
-                                value={offset?.offsetFrom || "start"}
-                                onValueChange={(value: "start" | "end") => {
-                                  setTaskLinkOffsetsLocal(prev => {
-                                    const existing = prev.find(o => o.taskId === taskId);
-                                    if (existing) {
-                                      return prev.map(o => o.taskId === taskId ? { ...o, offsetFrom: value } : o);
-                                    }
-                                    return [...prev, { taskId, offsetDays: 0, offsetFrom: value }];
-                                  });
-                                }}
+                          )}
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-muted-foreground">Tasks</span>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-6 text-xs"
+                                disabled={createLinkedTaskMutation.isPending}
+                                onClick={() => createLinkedTaskMutation.mutate(editingItem)}
                               >
-                                <SelectTrigger className="h-6 w-20 text-xs">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="start">Start</SelectItem>
-                                  <SelectItem value="end">End</SelectItem>
-                                </SelectContent>
-                              </Select>
+                                {createLinkedTaskMutation.isPending
+                                  ? <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                  : <Plus className="w-3 h-3 mr-1" />}
+                                Create Task
+                              </Button>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="outline" size="sm" className="h-6 text-xs">
+                                    <Plus className="w-3 h-3 mr-1" />
+                                    Link Task
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="max-h-48 overflow-y-auto">
+                                  {(availableTasks as any[])
+                                    .filter((t: any) => !(editingItem.taskIds as string[] || []).includes(t.id))
+                                    .map((t: any) => (
+                                      <DropdownMenuItem
+                                        key={t.id}
+                                        onClick={() => {
+                                          const newIds = [...(editingItem.taskIds as string[] || []), t.id];
+                                          updateItemLinksMutation.mutate({ id: editingItem.id, taskIds: newIds });
+                                          setEditingItem({ ...editingItem, taskIds: newIds });
+                                          setTaskLinkOffsetsLocal(prev => [...prev, { taskId: t.id, offsetDays: 0, offsetFrom: "start" as const }]);
+                                        }}
+                                      >
+                                        {t.title || t.name}
+                                      </DropdownMenuItem>
+                                    ))}
+                                  {(availableTasks as any[]).filter((t: any) => !(editingItem.taskIds as string[] || []).includes(t.id)).length === 0 && (
+                                    <div className="px-2 py-1.5 text-xs text-muted-foreground">No tasks available</div>
+                                  )}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
+                          {((editingItem.taskIds as string[]) || []).length > 0 && (
+                            <div className="space-y-1.5">
+                              {((editingItem.taskIds as string[]) || []).map((taskId: string) => {
+                                const task = (availableTasks as any[]).find((t: any) => t.id === taskId);
+                                const offset = taskLinkOffsetsLocal.find(o => o.taskId === taskId);
+                                return (
+                                  <div key={taskId} className="space-y-1 py-1 px-2 rounded border bg-card">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-xs font-medium">{task?.title || task?.name || taskId}</span>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-5 w-5"
+                                        onClick={() => {
+                                          const newIds = ((editingItem.taskIds as string[]) || []).filter(id => id !== taskId);
+                                          updateItemLinksMutation.mutate({ id: editingItem.id, taskIds: newIds });
+                                          setEditingItem({ ...editingItem, taskIds: newIds });
+                                          setTaskLinkOffsetsLocal(prev => prev.filter(o => o.taskId !== taskId));
+                                        }}
+                                      >
+                                        <X className="h-3 w-3" />
+                                      </Button>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <Input
+                                        type="number"
+                                        value={offset?.offsetDays ?? ""}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          const days = val === "" ? "" as any : parseInt(val);
+                                          setTaskLinkOffsetsLocal(prev => {
+                                            const existing = prev.find(o => o.taskId === taskId);
+                                            if (existing) {
+                                              return prev.map(o => o.taskId === taskId ? { ...o, offsetDays: days } : o);
+                                            }
+                                            return [...prev, { taskId, offsetDays: days, offsetFrom: "start" as const }];
+                                          });
+                                        }}
+                                        onBlur={(e) => {
+                                          const days = parseInt(e.target.value) || 0;
+                                          setTaskLinkOffsetsLocal(prev => {
+                                            const existing = prev.find(o => o.taskId === taskId);
+                                            if (existing) {
+                                              return prev.map(o => o.taskId === taskId ? { ...o, offsetDays: days } : o);
+                                            }
+                                            return [...prev, { taskId, offsetDays: days, offsetFrom: "start" as const }];
+                                          });
+                                        }}
+                                        className="h-6 w-16 text-xs"
+                                        placeholder="0"
+                                      />
+                                      <span className="text-xs text-muted-foreground whitespace-nowrap">days from</span>
+                                      <Select
+                                        value={offset?.offsetFrom || "start"}
+                                        onValueChange={(value: "start" | "end") => {
+                                          setTaskLinkOffsetsLocal(prev => {
+                                            const existing = prev.find(o => o.taskId === taskId);
+                                            if (existing) {
+                                              return prev.map(o => o.taskId === taskId ? { ...o, offsetFrom: value } : o);
+                                            }
+                                            return [...prev, { taskId, offsetDays: 0, offsetFrom: value }];
+                                          });
+                                        }}
+                                      >
+                                        <SelectTrigger className="h-6 w-20 text-xs">
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="start">Start</SelectItem>
+                                          <SelectItem value="end">End</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-          <DialogFooter className="border-t pt-4 mt-4">
+            </div>
+            <DialogFooter className="border-t pt-4 mt-4">
             {editingItem && (
               <Button
                 variant="outline"
