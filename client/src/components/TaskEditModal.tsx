@@ -688,6 +688,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
             linkedItemId: newTask.id,
             taskId: newTask.id,
             projectId: projectId || undefined,
+            targetUserId: pendingReminder.targetUserId || undefined,
           });
           queryClient.invalidateQueries({ queryKey: ["/api/reminders"] });
           queryClient.invalidateQueries({ queryKey: ["/api/reminders/for-item", "task", newTask.id] });
@@ -2044,6 +2045,7 @@ export default function TaskEditModal({ task: propTask, taskId, open, onOpenChan
       linkedItemId={task?.id}
       linkedItemTitle={task?.title || form.getValues("title")}
       projectId={projectId || task?.projectId}
+      targetUserId={assigneeIds[0] || form.getValues("assigneeId") || task?.assigneeId || undefined}
       onPendingReminder={!task ? (data) => {
         setPendingReminder(data);
         toast({ title: "Reminder will be set when task is saved" });

@@ -39,6 +39,7 @@ export interface PendingReminderData {
   description?: string;
   triggerAt: string;
   priority: "low" | "normal" | "high";
+  targetUserId?: string;
 }
 
 interface SetReminderDialogProps {
@@ -48,6 +49,7 @@ interface SetReminderDialogProps {
   linkedItemId?: string;
   linkedItemTitle?: string;
   projectId?: string;
+  targetUserId?: string;
   onPendingReminder?: (data: PendingReminderData) => void;
 }
 
@@ -79,6 +81,7 @@ export function SetReminderDialog({
   linkedItemId,
   linkedItemTitle,
   projectId,
+  targetUserId,
   onPendingReminder,
 }: SetReminderDialogProps) {
   const { toast } = useToast();
@@ -117,6 +120,10 @@ export function SetReminderDialog({
 
       if (projectId) {
         payload.projectId = projectId;
+      }
+
+      if (targetUserId) {
+        payload.targetUserId = targetUserId;
       }
 
       return apiRequest("/api/reminders", "POST", payload);
@@ -164,6 +171,7 @@ export function SetReminderDialog({
         description: data.description,
         triggerAt: data.triggerAt,
         priority: data.priority,
+        targetUserId: targetUserId,
       });
       onOpenChange(false);
       form.reset();
