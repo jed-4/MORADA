@@ -421,12 +421,9 @@ function useGanttRowDrag(
 
           setSessionItemOrder(newOrder);
 
-          // Persist new sortOrder to DB for every item whose position changed
-          const oldIndexMap = new Map(sortableItemIds.map((id, idx) => [id, idx]));
+          // Persist sortOrder for ALL items so no stale zeros cause tiebreaks on refresh
           newOrder.forEach((id, newIdx) => {
-            if (oldIndexMap.get(id) !== newIdx) {
-              apiRequest(`/api/schedule-items/${id}`, "PATCH", { sortOrder: newIdx }).catch(() => {});
-            }
+            apiRequest(`/api/schedule-items/${id}`, "PATCH", { sortOrder: newIdx }).catch(() => {});
           });
         }
       }
@@ -1303,9 +1300,9 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
     if (day === 0 && !schedule?.includeSunday) return true;
     if (day === 6 && !schedule?.includeSaturday) return true;
     if (nonWorkingDays.length > 0) {
-      const dateStr = date.toISOString().slice(0, 10);
+      const dateStr = format(date, 'yyyy-MM-dd');
       if (nonWorkingDays.some(nwd => {
-        const nwdStr = new Date(nwd.date).toISOString().slice(0, 10);
+        const nwdStr = format(new Date(nwd.date), 'yyyy-MM-dd');
         return nwdStr === dateStr;
       })) return true;
     }

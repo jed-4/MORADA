@@ -66,7 +66,6 @@ import {
   Upload,
   Download,
   Settings,
-  Calendar as CalendarIcon,
   Search,
   Columns3,
   ChevronsDownUp,
@@ -76,13 +75,7 @@ import { format, addDays, differenceInDays } from "date-fns";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Calendar as BigCalendar, momentLocalizer, Views } from "react-big-calendar";
-import moment from "moment";
-import "react-big-calendar/lib/css/react-big-calendar.css";
-import "./schedule-calendar.css";
 import { CasvaScheduleList } from "@/components/schedule/CasvaScheduleList";
-
-const localizer = momentLocalizer(moment);
 
 interface TemplateItem {
   id: string;
@@ -370,10 +363,8 @@ export default function ScheduleTemplateDetail() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
 
-  const [activeView, setActiveView] = useState<"gantt" | "list" | "calendar">("gantt");
+  const [activeView, setActiveView] = useState<"gantt" | "list">("gantt");
   const [zoomLevel, setZoomLevel] = useState<"day" | "week" | "month">("day");
-  const [calendarView, setCalendarView] = useState<"month" | "week" | "day" | "agenda">("month");
-  const [calendarDate, setCalendarDate] = useState(new Date());
   const [showItemDialog, setShowItemDialog] = useState(false);
   const [editingItem, setEditingItem] = useState<TemplateItem | null>(null);
   const [showApplyDialog, setShowApplyDialog] = useState(false);
@@ -747,36 +738,6 @@ export default function ScheduleTemplateDetail() {
     });
   }, [items, refDate, searchQuery, filters.type]);
 
-  const calendarEvents = useMemo(() => {
-    return items.map(item => {
-      const startDay = item.relativeStartDay || 0;
-      const start = addDays(refDate, startDay);
-      const end = addDays(refDate, startDay + item.duration);
-      return {
-        id: item.id,
-        title: item.name,
-        start,
-        end,
-        resource: item,
-        allDay: true,
-      };
-    });
-  }, [items, refDate]);
-
-  const eventStyleGetter = (event: any) => {
-    const item = event.resource as TemplateItem;
-    const color = item.color || TYPE_COLORS[item.type] || TYPE_COLORS.task;
-    return {
-      style: {
-        backgroundColor: color,
-        borderRadius: '4px',
-        border: 'none',
-        color: 'white',
-        fontSize: '11px',
-      },
-    };
-  };
-
   if (isLoading) {
     return (
       <div className="h-full flex items-center justify-center">
@@ -876,14 +837,6 @@ export default function ScheduleTemplateDetail() {
               Gantt
             </button>
             <button
-              onClick={() => setActiveView('calendar')}
-              className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'calendar' ? 'bg-primary text-primary-foreground border-primary/20' : 'hover-elevate'} active-elevate-2`}
-              data-testid="button-view-calendar"
-            >
-              <CalendarIcon className="w-3 h-3 inline mr-0.5" />
-              Calendar
-            </button>
-            <button
               onClick={() => setActiveView('list')}
               className={`h-6 w-auto px-2 text-xs border rounded-md ${activeView === 'list' ? 'bg-primary text-primary-foreground border-primary/20' : 'hover-elevate'} active-elevate-2`}
               data-testid="button-view-list"
@@ -956,43 +909,6 @@ export default function ScheduleTemplateDetail() {
 
         {/* Right controls */}
         <div className="flex items-center gap-1.5">
-          {activeView === 'calendar' && (
-            <div className="flex items-center gap-0.5">
-              <button
-                onClick={() => {
-                  const d = new Date(calendarDate);
-                  calendarView === 'month' ? d.setMonth(d.getMonth() - 1) : d.setDate(d.getDate() - (calendarView === 'week' ? 7 : 1));
-                  setCalendarDate(d);
-                }}
-                className="h-6 w-6 flex items-center justify-center text-xs border rounded-md hover-elevate active-elevate-2"
-              >
-                <ChevronRight className="w-3 h-3 rotate-180" />
-              </button>
-              <button onClick={() => setCalendarDate(new Date())} className="h-6 w-auto px-2 text-xs border rounded-md hover-elevate active-elevate-2">
-                Today
-              </button>
-              <button
-                onClick={() => {
-                  const d = new Date(calendarDate);
-                  calendarView === 'month' ? d.setMonth(d.getMonth() + 1) : d.setDate(d.getDate() + (calendarView === 'week' ? 7 : 1));
-                  setCalendarDate(d);
-                }}
-                className="h-6 w-6 flex items-center justify-center text-xs border rounded-md hover-elevate active-elevate-2"
-              >
-                <ChevronRight className="w-3 h-3" />
-              </button>
-              {(['month', 'week', 'day', 'agenda'] as const).map(v => (
-                <button
-                  key={v}
-                  onClick={() => setCalendarView(v)}
-                  className={`h-6 w-auto px-2 text-xs border rounded-md ${calendarView === v ? 'bg-primary text-primary-foreground border-primary/20' : 'hover-elevate'} active-elevate-2`}
-                >
-                  {v.charAt(0).toUpperCase() + v.slice(1)}
-                </button>
-              ))}
-            </div>
-          )}
-
           {/* Reference date for converting relative days to calendar dates */}
           <div className="flex items-center gap-1">
             <span className="text-xs text-muted-foreground">Start:</span>
@@ -1063,7 +979,7 @@ export default function ScheduleTemplateDetail() {
       <div className="flex-1 overflow-auto">
         {items.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-4 text-muted-foreground">
-            <CalendarIcon className="h-12 w-12 opacity-50" />
+            <GanttChart className="h-12 w-12 opacity-50" />
             <p className="text-sm">No items in this template yet</p>
             <Button variant="outline" size="sm" onClick={handleAddItem} data-testid="button-add-first-item">
               <Plus className="h-4 w-4 mr-2" />
@@ -1101,35 +1017,6 @@ export default function ScheduleTemplateDetail() {
               locked={false}
               maxHeight="calc(100vh - 130px)"
             />
-          </div>
-        ) : activeView === "calendar" ? (
-          <div className="h-full flex flex-col">
-            <div className="flex items-center justify-center py-1.5">
-              <span className="text-sm font-medium">
-                {calendarDate.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' })}
-              </span>
-            </div>
-            <div className="flex-1 p-1" style={{ minHeight: '600px' }}>
-              <BigCalendar
-                localizer={localizer}
-                events={calendarEvents}
-                startAccessor="start"
-                endAccessor="end"
-                style={{ height: '100%' }}
-                eventPropGetter={eventStyleGetter}
-                onSelectEvent={(event) => {
-                  const templateItem = items.find(i => i.id === (event.resource as TemplateItem).id);
-                  if (templateItem) handleEditItem(templateItem);
-                }}
-                views={[Views.MONTH, Views.WEEK, Views.DAY, Views.AGENDA]}
-                view={calendarView}
-                onView={(v) => setCalendarView(v as "month" | "week" | "day" | "agenda")}
-                date={calendarDate}
-                onNavigate={(date) => setCalendarDate(date)}
-                popup
-                toolbar={false}
-              />
-            </div>
           </div>
         ) : (
           /* Gantt View */
