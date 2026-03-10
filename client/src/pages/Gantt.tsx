@@ -62,7 +62,7 @@ import type { ScheduleItem, NonWorkingDay } from "@shared/schema";
 import { useWeekStartDay } from "@/hooks/useWeekStartDay";
 
 type ZoomLevel = 'day' | 'week' | 'month';
-const ROW_HEIGHT = 32;
+const ROW_HEIGHT = 48;
 
 interface GanttProps {
   onEditItem?: (item: ScheduleItem) => void;
@@ -2379,7 +2379,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
         {/* Task Names Column (Resizable Panel) */}
         <div 
           style={{ width: leftPanelWidth ?? totalPanelWidth }} 
-          className="border-r flex flex-col bg-card flex-shrink-0 overflow-x-auto relative"
+          className="border-r flex flex-col bg-card flex-shrink-0 overflow-x-auto"
         >
           {/* Top row - Search bar (30px) - outside inner wrapper so it resizes with panel */}
           <div className="h-[30px] flex items-center px-2 border-b border-border gap-2 flex-shrink-0">
@@ -2482,70 +2482,47 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
             <div style={{ width: columnWidths.taskName }} className="px-1 flex-shrink-0">Task Name</div>
             
             {(() => {
-              let cumulativeOffset = columnWidths.taskName + 8; // Start after task name + padding
-              return (
-                <>
-                  {visibleColumns.status && (
-                    <>
-                      <div
-                        className="w-0.5 bg-border hover:bg-primary/50 cursor-col-resize absolute top-0 bottom-0 z-10"
-                        style={{ left: cumulativeOffset }}
-                        onMouseDown={(e) => handleColumnDividerMouseDown(e, 'taskName')}
-                        data-testid="divider-taskName"
-                      />
-                      <div style={{ width: columnWidths.status }} className="text-center flex-shrink-0">Status</div>
-                      {(() => { cumulativeOffset += columnWidths.status; return null; })()}
-                    </>
-                  )}
-                  
-                  {visibleColumns.notes && (
-                    <>
-                      <div
-                        className="w-0.5 bg-border hover:bg-primary/50 cursor-col-resize absolute top-0 bottom-0 z-10"
-                        style={{ left: cumulativeOffset }}
-                        onMouseDown={(e) => handleColumnDividerMouseDown(e, 'status')}
-                        data-testid="divider-status"
-                      />
-                      <div style={{ width: columnWidths.notes }} className="text-center flex-shrink-0"></div>
-                      {(() => { cumulativeOffset += columnWidths.notes; return null; })()}
-                    </>
-                  )}
-                  
-                  {visibleColumns.completion && (
-                    <>
-                      <div
-                        className="w-0.5 bg-border hover:bg-primary/50 cursor-col-resize absolute top-0 bottom-0 z-10"
-                        style={{ left: cumulativeOffset }}
-                        onMouseDown={(e) => handleColumnDividerMouseDown(e, 'notes')}
-                        data-testid="divider-notes"
-                      />
-                      <div style={{ width: columnWidths.completion }} className="text-center flex-shrink-0">Completion %</div>
-                      {(() => { cumulativeOffset += columnWidths.completion; return null; })()}
-                    </>
-                  )}
-                  
-                  {visibleColumns.assignee && (
-                    <>
-                      <div
-                        className="w-0.5 bg-border hover:bg-primary/50 cursor-col-resize absolute top-0 bottom-0 z-10"
-                        style={{ left: cumulativeOffset }}
-                        onMouseDown={(e) => handleColumnDividerMouseDown(e, 'completion')}
-                        data-testid="divider-completion"
-                      />
-                      <div style={{ width: columnWidths.assignee }} className="text-center flex-shrink-0">Assignee</div>
-                      {(() => { cumulativeOffset += columnWidths.assignee; return null; })()}
-                      <div
-                        className="w-0.5 bg-border hover:bg-primary/50 cursor-col-resize absolute top-0 bottom-0 z-10"
-                        style={{ left: cumulativeOffset }}
-                        onMouseDown={(e) => handleColumnDividerMouseDown(e, 'assignee')}
-                        data-testid="divider-assignee"
-                      />
-                    </>
-                  )}
-                  
-                  <div style={{ width: columnWidths.menu }} className="flex-shrink-0"></div>
-                </>
-              );
+              const colWidthMap: Record<string, number> = {
+                status: columnWidths.status, notes: columnWidths.notes,
+                completion: columnWidths.completion, assignee: columnWidths.assignee,
+              };
+              const colLabelMap: Record<string, string> = {
+                status: 'Status', notes: '', completion: 'Completion %', assignee: 'Assignee',
+              };
+              const orderedVisible = columnOrder.filter(id => visibleColumns[id as keyof typeof visibleColumns]);
+              let co = columnWidths.taskName + 8;
+              const els: React.ReactNode[] = [];
+              orderedVisible.forEach((colId, idx) => {
+                const prevColId = idx === 0 ? 'taskName' : orderedVisible[idx - 1];
+                const w = colWidthMap[colId] ?? 0;
+                els.push(
+                  <div
+                    key={`div-${colId}`}
+                    className="w-0.5 bg-border hover:bg-primary/50 cursor-col-resize absolute top-0 bottom-0 z-10"
+                    style={{ left: co }}
+                    onMouseDown={(e) => handleColumnDividerMouseDown(e, prevColId as keyof typeof columnWidths)}
+                    data-testid={`divider-${prevColId}`}
+                  />,
+                  <div key={`hdr-${colId}`} style={{ width: w }} className="text-center flex-shrink-0">
+                    {colLabelMap[colId] ?? colId}
+                  </div>
+                );
+                co += w;
+              });
+              if (orderedVisible.length > 0) {
+                const lastCol = orderedVisible[orderedVisible.length - 1];
+                els.push(
+                  <div
+                    key="div-final"
+                    className="w-0.5 bg-border hover:bg-primary/50 cursor-col-resize absolute top-0 bottom-0 z-10"
+                    style={{ left: co }}
+                    onMouseDown={(e) => handleColumnDividerMouseDown(e, lastCol as keyof typeof columnWidths)}
+                    data-testid={`divider-${lastCol}`}
+                  />
+                );
+              }
+              els.push(<div key="menu-hdr" style={{ width: columnWidths.menu }} className="flex-shrink-0" />);
+              return els;
             })()}
           </div>
           
@@ -2561,7 +2538,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                 <div
                   key={item.id}
                   ref={(el) => registerRowRef(item.id, el)}
-                  className={`h-8 flex items-center px-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer group border-b border-border ${nestHighlightId === item.id ? 'ring-2 ring-inset ring-primary bg-primary/10' : ''} ${rowDragItemId === item.id ? 'opacity-30' : ''}`}
+                  className={`h-12 flex items-center px-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer group border-b border-border ${nestHighlightId === item.id ? 'ring-2 ring-inset ring-primary bg-primary/10' : ''} ${rowDragItemId === item.id ? 'opacity-30' : ''}`}
                   onClick={(e) => handleRowClick(e, item)}
                   data-testid={`row-${isParent ? 'parent' : 'child'}-${item.id}`}
                 >
@@ -2621,92 +2598,81 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                       )}
                     </div>
 
-                    {/* Status column - clickable dropdown (hidden for parent items with children) */}
-                    {visibleColumns.status && (
-                      <div style={{ width: columnWidths.status }} className="flex items-center justify-center flex-shrink-0 px-1">
-                        {hasChildren ? null : item.status && statusOptions.length > 0 ? (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild onClick={(e) => { e.stopPropagation(); if (schedule?.status === 'locked') e.preventDefault(); }}>
-                              <button className={`${schedule?.status === 'locked' ? 'cursor-not-allowed opacity-70' : 'cursor-pointer hover-elevate'} rounded`} data-testid={`status-dropdown-${item.id}`}>
-                                {(() => {
-                                  const statusInfo = getStatusInfo(item.status);
+                    {/* Reorderable columns driven by columnOrder */}
+                    {columnOrder.filter(id => visibleColumns[id as keyof typeof visibleColumns]).map(colId => {
+                      if (colId === 'status') return (
+                        <div key="status" style={{ width: columnWidths.status }} className="flex items-center justify-center flex-shrink-0 px-1">
+                          {hasChildren ? null : item.status && statusOptions.length > 0 ? (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild onClick={(e) => { e.stopPropagation(); if (schedule?.status === 'locked') e.preventDefault(); }}>
+                                <button className={`${schedule?.status === 'locked' ? 'cursor-not-allowed opacity-70' : 'cursor-pointer hover-elevate'} rounded`} data-testid={`status-dropdown-${item.id}`}>
+                                  {(() => {
+                                    const statusInfo = getStatusInfo(item.status);
+                                    return (
+                                      <Badge 
+                                        className="text-xs px-1.5 h-5 border-0 min-w-[72px] justify-center"
+                                        style={{ backgroundColor: statusInfo.color, color: '#ffffff' }}
+                                      >
+                                        {statusInfo.name}
+                                      </Badge>
+                                    );
+                                  })()}
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="center" className="min-w-[140px]">
+                                {statusOptions.map((opt) => {
+                                  const optInfo = getStatusInfo(opt.key);
                                   return (
-                                    <Badge 
-                                      className="text-xs px-1.5 h-5 border-0 min-w-[72px] justify-center"
-                                      style={{
-                                        backgroundColor: statusInfo.color,
-                                        color: '#ffffff'
+                                    <DropdownMenuItem
+                                      key={opt.key}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (opt.key !== item.status) {
+                                          updateItemStatusMutation.mutate({ itemId: item.id, status: opt.key });
+                                        }
                                       }}
+                                      className={opt.key === item.status ? "bg-accent" : ""}
+                                      data-testid={`status-option-${opt.key}`}
                                     >
-                                      {statusInfo.name}
-                                    </Badge>
+                                      <div className="w-3 h-3 rounded-full mr-2 flex-shrink-0" style={{ backgroundColor: optInfo.color }} />
+                                      <span className="text-xs">{opt.name}</span>
+                                    </DropdownMenuItem>
                                   );
-                                })()}
-                              </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="center" className="min-w-[140px]">
-                              {statusOptions.map((opt) => {
-                                const optInfo = getStatusInfo(opt.key);
-                                return (
-                                  <DropdownMenuItem
-                                    key={opt.key}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (opt.key !== item.status) {
-                                        updateItemStatusMutation.mutate({ itemId: item.id, status: opt.key });
-                                      }
-                                    }}
-                                    className={opt.key === item.status ? "bg-accent" : ""}
-                                    data-testid={`status-option-${opt.key}`}
-                                  >
-                                    <div 
-                                      className="w-3 h-3 rounded-full mr-2 flex-shrink-0" 
-                                      style={{ backgroundColor: optInfo.color }} 
-                                    />
-                                    <span className="text-xs">{opt.name}</span>
-                                  </DropdownMenuItem>
-                                );
-                              })}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        ) : item.status ? (
-                          (() => {
-                            const statusInfo = getStatusInfo(item.status);
-                            return (
-                              <Badge 
-                                className="text-xs px-1.5 h-5 border-0 min-w-[72px] justify-center"
-                                style={{
-                                  backgroundColor: statusInfo.color,
-                                  color: '#ffffff'
-                                }}
-                              >
-                                {statusInfo.name}
-                              </Badge>
-                            );
-                          })()
-                        ) : null}
-                      </div>
-                    )}
+                                })}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          ) : item.status ? (
+                            (() => {
+                              const statusInfo = getStatusInfo(item.status);
+                              return (
+                                <Badge 
+                                  className="text-xs px-1.5 h-5 border-0 min-w-[72px] justify-center"
+                                  style={{ backgroundColor: statusInfo.color, color: '#ffffff' }}
+                                >
+                                  {statusInfo.name}
+                                </Badge>
+                              );
+                            })()
+                          ) : null}
+                        </div>
+                      );
 
-                    {/* Notes column */}
-                    {visibleColumns.notes && (
-                      <div style={{ width: columnWidths.notes }} className="flex items-center justify-center flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
-                        <ActivityNotesPopover 
-                          scheduleItemId={item.id} 
-                          externalNoteCount={noteCounts[item.id] || 0}
-                        />
-                      </div>
-                    )}
+                      if (colId === 'notes') return (
+                        <div key="notes" style={{ width: columnWidths.notes }} className="flex items-center justify-center flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
+                          <ActivityNotesPopover 
+                            scheduleItemId={item.id} 
+                            externalNoteCount={noteCounts[item.id] || 0}
+                          />
+                        </div>
+                      );
 
-                    {/* Completion column */}
-                    {visibleColumns.completion && (
-                      <div style={{ width: columnWidths.completion }} className="flex items-center justify-center gap-1.5 flex-shrink-0 px-1">
-                        {(() => {
-                          const percent = isParent && childItems.length > 0
-                            ? Math.round(childItems.reduce((sum, c) => sum + (c.progressPercent ?? 0), 0) / childItems.length)
-                            : (item.progressPercent || 0);
-                          return (
-                            <>
+                      if (colId === 'completion') {
+                        const percent = isParent && childItems.length > 0
+                          ? Math.round(childItems.reduce((sum, c) => sum + (c.progressPercent ?? 0), 0) / childItems.length)
+                          : (item.progressPercent || 0);
+                        return (
+                          <div key="completion" style={{ width: columnWidths.completion }} className="flex flex-col items-center justify-center gap-1 py-1 flex-shrink-0 px-1">
+                            <div className="flex items-center gap-1.5">
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -2728,104 +2694,108 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                                 {percent === 100 && <Check className="w-2.5 h-2.5" />}
                               </button>
                               <span className="inline-flex items-center justify-center rounded-md bg-muted-foreground/20 text-muted-foreground text-[10px] font-medium px-1.5 py-0.5 min-w-[32px]">
-                                {percent} %
+                                {percent}%
                               </span>
-                            </>
-                          );
-                        })()}
-                      </div>
-                    )}
+                            </div>
+                            <div className="w-full h-1 rounded-full bg-muted overflow-hidden" style={{ maxWidth: '76px' }}>
+                              <div className="h-full rounded-full bg-primary/70 transition-[width]" style={{ width: `${percent}%` }} />
+                            </div>
+                          </div>
+                        );
+                      }
 
-                    {/* Assignee column - clickable inline edit (hidden for parent items with children) */}
-                    {visibleColumns.assignee && (
-                      <div style={{ width: columnWidths.assignee }} className="flex items-center justify-center flex-shrink-0 px-1">
-                        {!hasChildren ? (
-                          <Popover 
-                            open={assigneePopoverItemId === item.id} 
-                            onOpenChange={(open) => {
-                              if (schedule?.status === 'locked') return;
-                              setAssigneePopoverItemId(open ? item.id : null);
-                            }}
-                          >
-                            <Tooltip delayDuration={500}>
-                              <TooltipTrigger asChild>
-                                <PopoverTrigger asChild>
-                                  <button 
-                                    className={`${schedule?.status === 'locked' ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'} rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all flex items-center justify-center w-full h-full`}
-                                    onClick={(e) => { e.stopPropagation(); if (schedule?.status === 'locked') e.preventDefault(); }}
-                                    data-testid={`assignee-trigger-${item.id}`}
-                                  >
-                                    {item.assignedToName ? (
-                                      <Avatar className="w-5 h-5">
-                                        <AvatarFallback className="text-[10px]">
-                                          {item.assignedToName.substring(0, 2).toUpperCase()}
-                                        </AvatarFallback>
-                                      </Avatar>
-                                    ) : (
-                                      <div className="w-5 h-5 rounded-full border border-dashed border-muted-foreground/40 flex items-center justify-center opacity-0 group-hover:opacity-60 transition-opacity">
-                                        <Plus className="w-3 h-3 text-muted-foreground/60" />
-                                      </div>
-                                    )}
-                                  </button>
-                                </PopoverTrigger>
-                              </TooltipTrigger>
-                              {item.assignedToName && !assigneePopoverItemId && (
-                                <TooltipContent side="bottom" className="bg-gray-900 text-gray-100 text-[10px] px-1.5 py-0.5 border-0">
-                                  {item.assignedToName}
-                                </TooltipContent>
-                              )}
-                            </Tooltip>
-                            <PopoverContent className="w-[280px] p-0" align="start" onClick={(e) => e.stopPropagation()}>
-                              <AssigneeSelect
-                                value={item.assignedToId || ""}
-                                onValueChange={async (newValue) => {
-                                  setAssigneePopoverItemId(null);
-                                  const cachedContacts = queryClient.getQueryData<any[]>(["/api/contacts"]) || [];
-                                  const cachedUser = queryClient.getQueryData<any>(["/api/auth/user"]);
-                                  const cachedAssignableUsers = queryClient.getQueryData<any[]>(["/api/users/assignable"]) || [];
-                                  let optimisticName: string | null = null;
-                                  let optimisticColor: string | null = null;
-                                  if (newValue && newValue.startsWith("company:")) {
-                                    optimisticName = (cachedUser as any)?.companyNickname || "The Business";
-                                  } else if (newValue && newValue.startsWith("user:")) {
-                                    const userId = newValue.replace("user:", "");
-                                    const appUser = cachedAssignableUsers.find((u: any) => u.id === userId);
-                                    optimisticName = appUser?.displayName || appUser?.name || appUser?.email || "Team member";
-                                  } else if (newValue) {
-                                    const contact = cachedContacts.find((c: any) => c.id === newValue);
-                                    if (contact) {
-                                      optimisticName = contact.company || contact.name || `${contact.firstName || ''} ${contact.lastName || ''}`.trim() || null;
-                                      optimisticColor = contact.scheduleColor || null;
+                      if (colId === 'assignee') return (
+                        <div key="assignee" style={{ width: columnWidths.assignee }} className="flex items-center justify-center flex-shrink-0 px-1">
+                          {!hasChildren ? (
+                            <Popover 
+                              open={assigneePopoverItemId === item.id} 
+                              onOpenChange={(open) => {
+                                if (schedule?.status === 'locked') return;
+                                setAssigneePopoverItemId(open ? item.id : null);
+                              }}
+                            >
+                              <Tooltip delayDuration={500}>
+                                <TooltipTrigger asChild>
+                                  <PopoverTrigger asChild>
+                                    <button 
+                                      className={`${schedule?.status === 'locked' ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'} rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all flex items-center justify-center w-full h-full`}
+                                      onClick={(e) => { e.stopPropagation(); if (schedule?.status === 'locked') e.preventDefault(); }}
+                                      data-testid={`assignee-trigger-${item.id}`}
+                                    >
+                                      {item.assignedToName ? (
+                                        <Avatar className="w-5 h-5">
+                                          <AvatarFallback className="text-[10px]">
+                                            {item.assignedToName.substring(0, 2).toUpperCase()}
+                                          </AvatarFallback>
+                                        </Avatar>
+                                      ) : (
+                                        <div className="w-5 h-5 rounded-full border border-dashed border-muted-foreground/40 flex items-center justify-center opacity-0 group-hover:opacity-60 transition-opacity">
+                                          <Plus className="w-3 h-3 text-muted-foreground/60" />
+                                        </div>
+                                      )}
+                                    </button>
+                                  </PopoverTrigger>
+                                </TooltipTrigger>
+                                {item.assignedToName && !assigneePopoverItemId && (
+                                  <TooltipContent side="bottom" className="bg-gray-900 text-gray-100 text-[10px] px-1.5 py-0.5 border-0">
+                                    {item.assignedToName}
+                                  </TooltipContent>
+                                )}
+                              </Tooltip>
+                              <PopoverContent className="w-[280px] p-0" align="start" onClick={(e) => e.stopPropagation()}>
+                                <AssigneeSelect
+                                  value={item.assignedToId || ""}
+                                  onValueChange={async (newValue) => {
+                                    setAssigneePopoverItemId(null);
+                                    const cachedContacts = queryClient.getQueryData<any[]>(["/api/contacts"]) || [];
+                                    const cachedUser = queryClient.getQueryData<any>(["/api/auth/user"]);
+                                    const cachedAssignableUsers = queryClient.getQueryData<any[]>(["/api/users/assignable"]) || [];
+                                    let optimisticName: string | null = null;
+                                    let optimisticColor: string | null = null;
+                                    if (newValue && newValue.startsWith("company:")) {
+                                      optimisticName = (cachedUser as any)?.companyNickname || "The Business";
+                                    } else if (newValue && newValue.startsWith("user:")) {
+                                      const userId = newValue.replace("user:", "");
+                                      const appUser = cachedAssignableUsers.find((u: any) => u.id === userId);
+                                      optimisticName = appUser?.displayName || appUser?.name || appUser?.email || "Team member";
+                                    } else if (newValue) {
+                                      const contact = cachedContacts.find((c: any) => c.id === newValue);
+                                      if (contact) {
+                                        optimisticName = contact.company || contact.name || `${contact.firstName || ''} ${contact.lastName || ''}`.trim() || null;
+                                        optimisticColor = contact.scheduleColor || null;
+                                      }
                                     }
-                                  }
-                                  const resolvedId = (newValue && (newValue.startsWith("company:") || newValue.startsWith("user:"))) ? null : (newValue || null);
-                                  queryClient.setQueryData<any[]>(
-                                    [itemsCacheKey],
-                                    (old) => old?.map((si: any) => si.id === item.id ? {
-                                      ...si,
-                                      assignedToId: resolvedId,
-                                      assignedToName: optimisticName,
-                                      assignedToColor: optimisticColor,
-                                    } : si)
-                                  );
-                                  try {
-                                    await apiRequest(`/api/schedule-items/${item.id}`, "PATCH", {
-                                      assignedToId: newValue || null,
-                                    });
-                                    invalidateScheduleItems();
-                                  } catch (error) {
-                                    invalidateScheduleItems();
-                                    toast({ title: "Failed to update assignee", variant: "destructive" });
-                                  }
-                                }}
-                                allowClear
-                                placeholder="Select assignee..."
-                              />
-                            </PopoverContent>
-                          </Popover>
-                        ) : null}
-                      </div>
-                    )}
+                                    const resolvedId = (newValue && (newValue.startsWith("company:") || newValue.startsWith("user:"))) ? null : (newValue || null);
+                                    queryClient.setQueryData<any[]>(
+                                      [itemsCacheKey],
+                                      (old) => old?.map((si: any) => si.id === item.id ? {
+                                        ...si,
+                                        assignedToId: resolvedId,
+                                        assignedToName: optimisticName,
+                                        assignedToColor: optimisticColor,
+                                      } : si)
+                                    );
+                                    try {
+                                      await apiRequest(`/api/schedule-items/${item.id}`, "PATCH", {
+                                        assignedToId: newValue || null,
+                                      });
+                                      invalidateScheduleItems();
+                                    } catch (error) {
+                                      invalidateScheduleItems();
+                                      toast({ title: "Failed to update assignee", variant: "destructive" });
+                                    }
+                                  }}
+                                  allowClear
+                                  placeholder="Select assignee..."
+                                />
+                              </PopoverContent>
+                            </Popover>
+                          ) : null}
+                        </div>
+                      );
+
+                      return null;
+                    })}
 
                     {/* Menu column */}
                     <div style={{ width: columnWidths.menu }} className="flex items-center justify-center flex-shrink-0 px-1 rounded hover:ring-1 hover:ring-border/50 hover:bg-accent/5 transition-all">
@@ -2928,20 +2898,21 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
           </div>
           </div>
 
-          {/* Panel resize divider */}
-          <div
-            className="absolute top-0 right-0 bottom-0 w-1 hover:bg-primary/50 cursor-col-resize z-20 bg-border/50"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              setResizingPanel({
-                startX: e.clientX,
-                startWidth: leftPanelWidth ?? totalPanelWidth,
-              });
-            }}
-            data-testid="divider-panel"
-          />
         </div>
+
+        {/* Panel resize divider - sibling so it isn't clipped by the panel's overflow-x-auto */}
+        <div
+          className="w-1 flex-shrink-0 cursor-col-resize hover:bg-primary/50 bg-border/50 z-20"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setResizingPanel({
+              startX: e.clientX,
+              startWidth: leftPanelWidth ?? totalPanelWidth,
+            });
+          }}
+          data-testid="divider-panel"
+        />
 
         {/* Timeline Scroll Container */}
         <div
