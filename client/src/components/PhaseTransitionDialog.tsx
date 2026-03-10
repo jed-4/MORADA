@@ -88,13 +88,12 @@ export default function PhaseTransitionDialog({
     mutationFn: async () => {
       const jobNumber = isCustomMode ? customJobNumber : previewJobNumber;
       
-      const response = await apiRequest(`/api/projects/${project.id}/transition-phase`, "POST", {
+      return await apiRequest(`/api/projects/${project.id}/transition-phase`, "POST", {
         fromPhase,
         toPhase,
         newStatusKey,
         jobNumber: needsJobNumber ? jobNumber : undefined,
       });
-      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });

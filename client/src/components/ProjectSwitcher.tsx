@@ -24,7 +24,7 @@ import { ProjectIcon } from "./ProjectIcon";
 import { Project } from "@shared/schema";
 
 const RECENT_PROJECTS_KEY = "recentProjectIds";
-const SELECTED_PHASE_KEY = "selectedProjectPhase_v2";
+const SELECTED_PHASE_KEY = "selectedProjectPhase_v3";
 const FAVORITE_PROJECTS_KEY = "sidebar_favorite_projects";
 const MAX_RECENT = 5;
 
@@ -37,10 +37,10 @@ interface FavoriteProject {
 
 const phases: { id: ProjectPhase; label: string }[] = [
   { id: "all", label: "All" },
-  { id: "post_construction", label: "Post-Con" },
-  { id: "construction", label: "Construction" },
-  { id: "pre_construction", label: "Pre-Con" },
   { id: "lead", label: "Lead" },
+  { id: "pre_construction", label: "Pre-Con" },
+  { id: "construction", label: "Construction" },
+  { id: "post_construction", label: "Post-Con" },
 ];
 
 interface ProjectSwitcherProps {
