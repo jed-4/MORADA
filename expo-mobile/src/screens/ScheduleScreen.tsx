@@ -18,6 +18,7 @@ import {
   Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest } from '../services/api';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -304,6 +305,7 @@ export default function ScheduleScreen({ navigation, route }: Props) {
   const isSyncingRef = useRef(false);
   const [showNamesCol, setShowNamesCol] = useState(true);
   const [showBarStatus, setShowBarStatus] = useState(false);
+  const [showGanttMenu, setShowGanttMenu] = useState(false);
 
   const colors = isDark
     ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', inputBg: '#0f172a' }
@@ -348,8 +350,31 @@ export default function ScheduleScreen({ navigation, route }: Props) {
 
   useEffect(() => {
     const incoming = route?.params?.projectId;
-    if (incoming) setSelectedProjectId(incoming);
-  }, [route?.params?.projectId]);
+    if (incoming) {
+      setSelectedProjectId(incoming);
+      return;
+    }
+    AsyncStorage.multiGet([
+      '@buildpro/schedule_view_mode',
+      '@buildpro/schedule_project_id',
+      '@buildpro/gantt_show_names',
+      '@buildpro/gantt_show_status',
+    ]).then(pairs => {
+      const [modeVal, projVal, namesVal, statusVal] = pairs.map(p => p[1]);
+      if (modeVal) setViewMode(modeVal as ViewMode);
+      if (projVal) setSelectedProjectId(projVal);
+      if (namesVal !== null) setShowNamesCol(namesVal === 'true');
+      if (statusVal !== null) setShowBarStatus(statusVal === 'true');
+    });
+  }, []);
+
+  useEffect(() => {
+    if (viewMode) AsyncStorage.setItem('@buildpro/schedule_view_mode', viewMode);
+  }, [viewMode]);
+
+  useEffect(() => {
+    if (selectedProjectId) AsyncStorage.setItem('@buildpro/schedule_project_id', selectedProjectId);
+  }, [selectedProjectId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -674,14 +699,26 @@ export default function ScheduleScreen({ navigation, route }: Props) {
     return dotColors;
   }, [getItemsForDate]);
 
+  const parseLocalMidnight = (d: string | null | undefined): Date => {
+    if (!d) return new Date();
+    const s = typeof d === 'string' ? d : (d as any).toISOString?.() ?? String(d);
+    return new Date(s.substring(0, 10) + 'T00:00:00');
+  };
+
   const ganttData = useCallback(() => {
+    const plm = (d: string | null | undefined) => {
+      if (!d) return new Date();
+      const s = typeof d === 'string' ? d : (d as any).toISOString?.() ?? String(d);
+      return new Date(s.substring(0, 10) + 'T00:00:00');
+    };
+
     if (items.length === 0) return { minDate: new Date(), maxDate: new Date(), days: 0, sortedItems: [] };
 
-    let minDate = new Date(items[0].startDate);
-    let maxDate = new Date(items[0].endDate);
+    let minDate = plm(items[0].startDate);
+    let maxDate = plm(items[0].endDate);
     items.forEach(item => {
-      const s = new Date(item.startDate);
-      const e = new Date(item.endDate);
+      const s = plm(item.startDate);
+      const e = plm(item.endDate);
       if (s < minDate) minDate = s;
       if (e > maxDate) maxDate = e;
     });
@@ -693,8 +730,8 @@ export default function ScheduleScreen({ navigation, route }: Props) {
 
     const days = Math.ceil((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
     const sortedItems = [...items].sort((a, b) => {
-      const sa = new Date(a.startDate).getTime();
-      const sb = new Date(b.startDate).getTime();
+      const sa = plm(a.startDate).getTime();
+      const sb = plm(b.startDate).getTime();
       if (sa !== sb) return sa - sb;
       return a.sortOrder - b.sortOrder;
     });
@@ -844,6 +881,7 @@ export default function ScheduleScreen({ navigation, route }: Props) {
     const headerHeight = showMonthHeaders ? 52 : 32;
     const weekendBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)';
     const barAreaHeight = sortedItems.length * GANTT_ROW_HEIGHT;
+    const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
     const headerDateRow = (
       <View style={{ width: totalWidth }}>
@@ -864,7 +902,7 @@ export default function ScheduleScreen({ navigation, route }: Props) {
               : dh.isWeekend ? weekendBg : colors.card;
             return (
               <View key={i} style={[styles.ganttDateCell, { backgroundColor: bg, borderRightColor: colors.border }]}>
-                <Text style={[styles.ganttDateText, { color: todayHighlight ? colors.accent : dh.isWeekend ? colors.secondary : colors.secondary, fontWeight: dh.isWeekend ? '400' : '500' }]}>
+                <Text style={[styles.ganttDateText, { color: todayHighlight ? colors.accent : colors.secondary, fontWeight: dh.isWeekend ? '400' : '500' }]}>
                   {dh.label}
                 </Text>
               </View>
@@ -876,7 +914,7 @@ export default function ScheduleScreen({ navigation, route }: Props) {
 
     return (
       <View style={styles.flex1}>
-        {/* Sticky header row */}
+        {/* Sticky header row with 3-dot menu */}
         <View style={[styles.ganttStickyHeader, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
           {showNamesCol && (
             <View style={[styles.ganttNamesCol, { height: headerHeight, justifyContent: 'center', borderRightColor: colors.border, borderRightWidth: 1 }]}>
@@ -892,6 +930,42 @@ export default function ScheduleScreen({ navigation, route }: Props) {
           >
             {headerDateRow}
           </ScrollView>
+          <View style={{ position: 'relative', zIndex: 100 }}>
+            <TouchableOpacity
+              style={[styles.ganttMenuBtn, { height: headerHeight, borderLeftColor: colors.border }]}
+              onPress={() => setShowGanttMenu(v => !v)}
+            >
+              <Ionicons name="ellipsis-vertical" size={18} color={colors.secondary} />
+            </TouchableOpacity>
+            {showGanttMenu && (
+              <View style={[styles.ganttMenuDropdown, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: '#000' }]}>
+                <TouchableOpacity
+                  style={styles.ganttMenuRow}
+                  onPress={() => {
+                    const next = !showNamesCol;
+                    setShowNamesCol(next);
+                    AsyncStorage.setItem('@buildpro/gantt_show_names', String(next));
+                    setShowGanttMenu(false);
+                  }}
+                >
+                  <Ionicons name={showNamesCol ? 'checkbox' : 'square-outline'} size={18} color={showNamesCol ? colors.accent : colors.secondary} />
+                  <Text style={[styles.ganttMenuLabel, { color: colors.text }]}>Show Labels</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.ganttMenuRow}
+                  onPress={() => {
+                    const next = !showBarStatus;
+                    setShowBarStatus(next);
+                    AsyncStorage.setItem('@buildpro/gantt_show_status', String(next));
+                    setShowGanttMenu(false);
+                  }}
+                >
+                  <Ionicons name={showBarStatus ? 'checkbox' : 'square-outline'} size={18} color={showBarStatus ? colors.accent : colors.secondary} />
+                  <Text style={[styles.ganttMenuLabel, { color: colors.text }]}>Show Status</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
         </View>
 
         {/* Scrollable body */}
@@ -915,11 +989,14 @@ export default function ScheduleScreen({ navigation, route }: Props) {
               showsHorizontalScrollIndicator
               ref={ganttScrollRef}
               scrollEventThrottle={16}
-              onScroll={(e) => syncGanttHeader(e.nativeEvent.contentOffset.x)}
+              onScroll={(e) => {
+                syncGanttHeader(e.nativeEvent.contentOffset.x);
+                if (showGanttMenu) setShowGanttMenu(false);
+              }}
               onLayout={() => {
                 if (ganttScrolledRef.current) return;
                 ganttScrolledRef.current = true;
-                const todayOffset = Math.floor((today.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)) * DAY_COL_WIDTH;
+                const todayOffset = Math.floor((today.getTime() - minDate.getTime()) / MS_PER_DAY) * DAY_COL_WIDTH;
                 const scrollX = Math.max(0, todayOffset - SCREEN_WIDTH / 3);
                 ganttScrollRef.current?.scrollTo({ x: scrollX, animated: false });
                 ganttHeaderScrollRef.current?.scrollTo({ x: scrollX, animated: false });
@@ -935,12 +1012,15 @@ export default function ScheduleScreen({ navigation, route }: Props) {
 
                 {/* Bar rows */}
                 {sortedItems.map((item, idx) => {
-                  const startDay = Math.max(0, Math.floor((new Date(item.startDate).getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)));
-                  const endDay = Math.max(startDay + 1, Math.ceil((new Date(item.endDate).getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+                  const itemStart = parseLocalMidnight(item.startDate);
+                  const itemEnd = parseLocalMidnight(item.endDate);
+                  const startDay = Math.max(0, Math.floor((itemStart.getTime() - minDate.getTime()) / MS_PER_DAY));
+                  const durationDays = Math.max(1, Math.round((itemEnd.getTime() - itemStart.getTime()) / MS_PER_DAY) + 1);
                   const barLeft = startDay * DAY_COL_WIDTH;
-                  const barWidth = Math.max((endDay - startDay) * DAY_COL_WIDTH - 4, 8);
+                  const barWidth = Math.max(durationDays * DAY_COL_WIDTH - 4, DAY_COL_WIDTH - 4);
                   const barColor = getItemColor(item);
                   const status = getStatusOption(item.status);
+                  const nameFits = (item.name.length * 7 + 16) <= barWidth;
 
                   return (
                     <View
@@ -955,12 +1035,22 @@ export default function ScheduleScreen({ navigation, route }: Props) {
                         onPress={() => openDetail(item)}
                         activeOpacity={0.7}
                       >
-                        {showBarStatus && barWidth > 60 ? (
-                          <Text style={styles.ganttBarText} numberOfLines={1}>{status.name}</Text>
-                        ) : barWidth > 50 ? (
+                        {showBarStatus && barWidth >= 32 ? (
+                          <View style={[styles.ganttStatusChip, { backgroundColor: status.color + '33', borderColor: status.color + '88' }]}>
+                            <Text style={[styles.ganttStatusChipText, { color: status.color }]} numberOfLines={1}>{status.name}</Text>
+                          </View>
+                        ) : !showBarStatus && nameFits ? (
                           <Text style={styles.ganttBarText} numberOfLines={1}>{item.name}</Text>
                         ) : null}
                       </TouchableOpacity>
+                      {!showBarStatus && !nameFits && (
+                        <Text
+                          style={[styles.ganttBarOuterText, { left: barLeft + barWidth + 8, color: colors.text }]}
+                          numberOfLines={1}
+                        >
+                          {item.name}
+                        </Text>
+                      )}
                     </View>
                   );
                 })}
@@ -969,7 +1059,8 @@ export default function ScheduleScreen({ navigation, route }: Props) {
                 {sortedItems.map((item, idx) => {
                   const deps = item.dependencies || [];
                   if (deps.length === 0) return null;
-                  const depStartDay = Math.max(0, Math.floor((new Date(item.startDate).getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)));
+                  const itemStart = parseLocalMidnight(item.startDate);
+                  const depStartDay = Math.max(0, Math.floor((itemStart.getTime() - minDate.getTime()) / MS_PER_DAY));
                   const depBarLeft = depStartDay * DAY_COL_WIDTH + 2;
                   const depRowTop = idx * GANTT_ROW_HEIGHT + GANTT_ROW_HEIGHT / 2;
 
@@ -977,7 +1068,8 @@ export default function ScheduleScreen({ navigation, route }: Props) {
                     const predIdx = sortedItems.findIndex(si => String(si.id) === String(dep.id));
                     if (predIdx < 0) return null;
                     const pred = sortedItems[predIdx];
-                    const predEndDay = Math.max(1, Math.ceil((new Date(pred.endDate).getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+                    const predEnd = parseLocalMidnight(pred.endDate);
+                    const predEndDay = Math.max(1, Math.round((predEnd.getTime() - minDate.getTime()) / MS_PER_DAY) + 1);
                     const predBarRight = predEndDay * DAY_COL_WIDTH - 2;
                     const predRowMid = predIdx * GANTT_ROW_HEIGHT + GANTT_ROW_HEIGHT / 2;
                     const lineColor = '#a78bfa';
@@ -1920,14 +2012,14 @@ export default function ScheduleScreen({ navigation, route }: Props) {
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
         <TouchableOpacity
-          style={[styles.projectPickerBtn, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
+          style={[styles.projectChip, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
           onPress={() => setShowProjectPicker(true)}
         >
-          <Ionicons name="business-outline" size={16} color={colors.accent} />
-          <Text style={[styles.projectPickerText, { color: selectedProjectId ? colors.text : colors.secondary }]} numberOfLines={1}>
+          <Ionicons name="business-outline" size={14} color={colors.accent} />
+          <Text style={[styles.projectChipText, { color: selectedProjectId ? colors.text : colors.secondary }]} numberOfLines={1}>
             {getSelectedProjectLabel()}
           </Text>
-          <Ionicons name="chevron-down" size={16} color={colors.secondary} />
+          <Ionicons name="chevron-down" size={14} color={colors.secondary} />
         </TouchableOpacity>
 
         <View style={[styles.viewToggle, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
@@ -1967,24 +2059,6 @@ export default function ScheduleScreen({ navigation, route }: Props) {
         </View>
       ) : (
         <>
-          {viewMode === 'gantt' && (
-            <View style={[styles.ganttToolbar, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-              <TouchableOpacity
-                style={[styles.ganttToolBtn, showNamesCol && { backgroundColor: colors.accent + '22' }]}
-                onPress={() => setShowNamesCol(v => !v)}
-              >
-                <Ionicons name={showNamesCol ? 'menu' : 'menu-outline'} size={16} color={showNamesCol ? colors.accent : colors.secondary} />
-                <Text style={[styles.ganttToolBtnText, { color: showNamesCol ? colors.accent : colors.secondary }]}>Labels</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.ganttToolBtn, showBarStatus && { backgroundColor: colors.accent + '22' }]}
-                onPress={() => setShowBarStatus(v => !v)}
-              >
-                <Ionicons name={showBarStatus ? 'flag' : 'flag-outline'} size={16} color={showBarStatus ? colors.accent : colors.secondary} />
-                <Text style={[styles.ganttToolBtnText, { color: showBarStatus ? colors.accent : colors.secondary }]}>Status</Text>
-              </TouchableOpacity>
-            </View>
-          )}
           {viewMode === 'list' && renderListView()}
           {viewMode === 'gantt' && renderGanttView()}
           {viewMode === 'calendar' && renderCalendarView()}
@@ -2013,9 +2087,9 @@ const styles = StyleSheet.create({
   flex1: { flex: 1 },
   center: { justifyContent: 'center', alignItems: 'center' },
 
-  header: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12, borderBottomWidth: 1 },
-  projectPickerBtn: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 10, gap: 8 },
-  projectPickerText: { flex: 1, fontSize: 14, fontWeight: '500' },
+  header: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8, borderBottomWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  projectChip: { flex: 1, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7, gap: 6, minWidth: 0 },
+  projectChipText: { flex: 1, fontSize: 13, fontWeight: '500' },
 
   viewToggle: { flexDirection: 'row', borderWidth: 1, borderRadius: 8, overflow: 'hidden' },
   viewToggleBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 8, gap: 4 },
@@ -2056,10 +2130,11 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 15, marginTop: 12 },
 
   ganttContainer: { flexDirection: 'row' },
-  ganttStickyHeader: { flexDirection: 'row', borderBottomWidth: 1 },
-  ganttToolbar: { flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 6, gap: 8, borderBottomWidth: StyleSheet.hairlineWidth },
-  ganttToolBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6 },
-  ganttToolBtnText: { fontSize: 12, fontWeight: '500' },
+  ganttStickyHeader: { flexDirection: 'row', borderBottomWidth: 1, alignItems: 'stretch' },
+  ganttMenuBtn: { width: 36, alignItems: 'center', justifyContent: 'center', borderLeftWidth: StyleSheet.hairlineWidth },
+  ganttMenuDropdown: { position: 'absolute', right: 0, top: 2, width: 170, borderWidth: 1, borderRadius: 8, paddingVertical: 4, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.18, shadowRadius: 8, elevation: 8, zIndex: 1000 },
+  ganttMenuRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 10 },
+  ganttMenuLabel: { fontSize: 13, fontWeight: '500' },
   ganttNamesCol: { width: NAME_COL_WIDTH, zIndex: 1 },
   ganttHeaderCell: { justifyContent: 'center', paddingHorizontal: 8, borderBottomWidth: 1 },
   ganttHeaderText: { fontSize: 11, fontWeight: '600' },
@@ -2075,6 +2150,9 @@ const styles = StyleSheet.create({
   ganttGridLine: { position: 'absolute', top: 0, bottom: 0, width: 0, borderRightWidth: StyleSheet.hairlineWidth },
   ganttBar: { position: 'absolute', top: 6, height: GANTT_ROW_HEIGHT - 12, borderRadius: 4, justifyContent: 'center', paddingHorizontal: 4 },
   ganttBarText: { color: '#fff', fontSize: 9, fontWeight: '600' },
+  ganttBarOuterText: { position: 'absolute', top: 0, height: GANTT_ROW_HEIGHT, lineHeight: GANTT_ROW_HEIGHT, fontSize: 10, fontWeight: '500', maxWidth: DAY_COL_WIDTH * 5 },
+  ganttStatusChip: { borderWidth: 1, borderRadius: 3, paddingHorizontal: 4, paddingVertical: 1, alignSelf: 'flex-start' },
+  ganttStatusChipText: { fontSize: 9, fontWeight: '600' },
 
   calModeToggle: { flexDirection: 'row', borderWidth: 1, borderRadius: 8, overflow: 'hidden', marginBottom: 4 },
   calModeBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 7 },

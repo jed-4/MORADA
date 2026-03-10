@@ -13,6 +13,7 @@ import {
   Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiFetch } from '../services/api';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
@@ -70,6 +71,18 @@ export default function ProjectsScreen({ navigation }: Props) {
 
   useEffect(() => {
     fetchProjects();
+    AsyncStorage.getItem('@buildpro/projects_active_tab').then(val => {
+      if (val !== null) {
+        const idx = parseInt(val, 10);
+        if (!isNaN(idx) && idx >= 0 && idx < phases.length) {
+          setActiveIndex(idx);
+          indicatorAnim.setValue(idx);
+          setTimeout(() => {
+            pagerRef.current?.scrollToIndex({ index: idx, animated: false });
+          }, 100);
+        }
+      }
+    });
   }, [fetchProjects]);
 
   const onRefresh = useCallback(async () => {
@@ -136,6 +149,7 @@ export default function ProjectsScreen({ navigation }: Props) {
 
   const onTabPress = (index: number) => {
     setActiveIndex(index);
+    AsyncStorage.setItem('@buildpro/projects_active_tab', String(index));
     pagerRef.current?.scrollToIndex({ index, animated: true });
     Animated.spring(indicatorAnim, {
       toValue: index,
@@ -154,6 +168,7 @@ export default function ProjectsScreen({ navigation }: Props) {
   const onMomentumScrollEnd = (e: any) => {
     const index = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
     setActiveIndex(index);
+    AsyncStorage.setItem('@buildpro/projects_active_tab', String(index));
   };
 
   const tabWidth = SCREEN_WIDTH / phases.length;
