@@ -1250,7 +1250,12 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
   const allFeedEntries = [...feedEntries, ...offlineEntries];
   const feedByDate = new Map<string, SiteDiaryEntry[]>();
   allFeedEntries.forEach(entry => {
-    const dateKey = entry.entryDateTime ? entry.entryDateTime.substring(0, 10) : 'unknown';
+    let dateKey = 'unknown';
+    if (entry.entryDateTime) {
+      const d = new Date(entry.entryDateTime);
+      const pad = (n: number) => String(n).padStart(2, '0');
+      dateKey = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    }
     if (!feedByDate.has(dateKey)) feedByDate.set(dateKey, []);
     feedByDate.get(dateKey)!.push(entry);
   });
