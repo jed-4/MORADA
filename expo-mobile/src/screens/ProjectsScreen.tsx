@@ -19,6 +19,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 interface Project {
   id: string;
   name: string;
+  jobNumber?: string;
   projectNumber?: string;
   clientName?: string;
   currentSystemPhase?: string;
@@ -33,9 +34,10 @@ type Props = {
 
 const phases = [
   { key: 'all', label: 'All' },
-  { key: 'lead', label: 'Leads' },
-  { key: 'pre_construction', label: 'Pre-Con' },
   { key: 'construction', label: 'Construction' },
+  { key: 'pre_construction', label: 'Pre-Con' },
+  { key: 'lead', label: 'Lead' },
+  { key: 'post_construction', label: 'Post-Con' },
 ];
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -107,11 +109,24 @@ export default function ProjectsScreen({ navigation }: Props) {
         p =>
           p.name?.toLowerCase().includes(q) ||
           p.clientName?.toLowerCase().includes(q) ||
+          p.jobNumber?.toLowerCase().includes(q) ||
           p.projectNumber?.toLowerCase().includes(q) ||
           p.address?.toLowerCase().includes(q)
       );
     }
-    return filtered;
+    return [...filtered].sort((a, b) => {
+      const jnA = a.jobNumber || a.projectNumber || '';
+      const jnB = b.jobNumber || b.projectNumber || '';
+      if (jnA && jnB) {
+        const cmp = jnA.localeCompare(jnB, undefined, { numeric: true });
+        if (cmp !== 0) return cmp;
+      } else if (jnA) {
+        return -1;
+      } else if (jnB) {
+        return 1;
+      }
+      return (a.name || '').localeCompare(b.name || '');
+    });
   };
 
   const getPhaseCount = (phaseKey: string) => {

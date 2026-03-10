@@ -196,7 +196,7 @@ function formatNoteDate(dateStr: string): string {
 }
 
 function getItemColor(item: ScheduleItem): string {
-  return item.color || item.assignedToColor || TYPE_COLORS[item.type] || '#3b82f6';
+  return item.color || item.assignedToColor || '#9ca3af';
 }
 
 function isFutureDate(dateStr: string): boolean {
@@ -602,41 +602,6 @@ export default function ScheduleScreen({ navigation, route }: Props) {
     return p.jobNumber ? `${p.jobNumber} - ${p.name}` : p.name;
   };
 
-  const groupedItems = useCallback(() => {
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-
-    const groups: { title: string; data: ScheduleItem[] }[] = [
-      { title: 'In Progress', data: [] },
-      { title: 'Not Started', data: [] },
-      { title: 'Upcoming', data: [] },
-      { title: 'Completed', data: [] },
-      { title: 'On Hold / Cancelled', data: [] },
-    ];
-
-    const byDate = (a: ScheduleItem, b: ScheduleItem) =>
-      new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
-
-    items.forEach(item => {
-      if (item.status === 'in_progress') {
-        groups[0].data.push(item);
-      } else if (item.status === 'not_started' && !isFutureDate(item.startDate)) {
-        groups[1].data.push(item);
-      } else if (item.status === 'not_started' && isFutureDate(item.startDate)) {
-        groups[2].data.push(item);
-      } else if (item.status === 'completed') {
-        groups[3].data.push(item);
-      } else if (item.status === 'on_hold' || item.status === 'cancelled') {
-        groups[4].data.push(item);
-      } else {
-        groups[1].data.push(item);
-      }
-    });
-
-    groups.forEach(g => g.data.sort(byDate));
-    return groups.filter(g => g.data.length > 0);
-  }, [items]);
-
   const getCalendarGrid = useCallback(() => {
     const firstDay = new Date(calendarYear, calendarMonth, 1);
     const lastDay = new Date(calendarYear, calendarMonth + 1, 0);
@@ -786,8 +751,10 @@ export default function ScheduleScreen({ navigation, route }: Props) {
   };
 
   const renderListView = () => {
-    const groups = groupedItems();
-    if (groups.length === 0) {
+    const sorted = [...items].sort((a, b) =>
+      new Date(a.startDate).getTime() - new Date(b.startDate).getTime()
+    );
+    if (sorted.length === 0) {
       return (
         <View style={styles.emptyState}>
           <Ionicons name="calendar-outline" size={48} color={colors.secondary} />
@@ -801,29 +768,9 @@ export default function ScheduleScreen({ navigation, route }: Props) {
         contentContainerStyle={styles.listContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
       >
-        {groups.map(group => (
-          <View key={group.title} style={styles.groupSection}>
-            <View style={styles.groupHeader}>
-              <View style={[styles.groupDot, { backgroundColor: getGroupColor(group.title) }]} />
-              <Text style={[styles.groupTitle, { color: colors.text }]}>{group.title}</Text>
-              <Text style={[styles.groupCount, { color: colors.secondary }]}>{group.data.length}</Text>
-            </View>
-            {group.data.map(renderItemCard)}
-          </View>
-        ))}
+        {sorted.map(renderItemCard)}
       </ScrollView>
     );
-  };
-
-  const getGroupColor = (title: string): string => {
-    switch (title) {
-      case 'In Progress': return STATUS_COLORS.in_progress;
-      case 'Not Started': return STATUS_COLORS.not_started;
-      case 'Upcoming': return '#6366f1';
-      case 'Completed': return STATUS_COLORS.completed;
-      case 'On Hold / Cancelled': return STATUS_COLORS.on_hold;
-      default: return '#94a3b8';
-    }
   };
 
   const renderGanttView = () => {
