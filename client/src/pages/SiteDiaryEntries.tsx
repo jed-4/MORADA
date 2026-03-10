@@ -1389,8 +1389,7 @@ function EntryFormFields({
         shareWithClient: false,
       };
 
-      const response = await apiRequest("/api/site-diary-entries", "POST", entryData);
-      return response.json();
+      return await apiRequest("/api/site-diary-entries", "POST", entryData);
     },
     onSuccess: () => {
       toast({ title: "Site diary entry created successfully" });
@@ -1800,12 +1799,11 @@ function EntryEditForm({
         }
       });
 
-      const response = await apiRequest(`/api/site-diary-entries/${entry.id}`, "PATCH", {
+      return await apiRequest(`/api/site-diary-entries/${entry.id}`, "PATCH", {
         title: data.title,
         entryDateTime: new Date(data.entryDateTime),
         fieldValues: newFieldValues,
       });
-      return response.json();
     },
     onSuccess: () => {
       toast({ title: "Entry updated successfully" });
