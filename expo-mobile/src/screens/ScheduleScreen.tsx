@@ -700,41 +700,42 @@ export default function ScheduleScreen({ navigation, route }: Props) {
   }, [weekStartDate]);
 
   const renderItemCard = (item: ScheduleItem) => {
-    const itemColor = getItemColor(item);
-    const typeColor = TYPE_COLORS[item.type] || '#3b82f6';
     const statusColor = STATUS_COLORS[item.status] || '#94a3b8';
-    const isHighPriority = item.priority === 'high' || item.priority === 'urgent';
+    const typeColor = TYPE_COLORS[item.type] || '#9ca3af';
 
     return (
       <TouchableOpacity
         key={item.id}
         style={[styles.itemCard, { backgroundColor: colors.card, borderColor: colors.border }]}
         onPress={() => openDetail(item)}
-        activeOpacity={0.7}
+        activeOpacity={0.75}
       >
-        <View style={[styles.itemColorBar, { backgroundColor: itemColor }]} />
         <View style={styles.itemContent}>
           <View style={styles.itemTopRow}>
-            <Text style={[styles.itemName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
-            {isHighPriority && (
-              <View style={[styles.priorityBadge, { backgroundColor: item.priority === 'urgent' ? '#ef4444' : '#f59e0b' }]}>
-                <Ionicons name="alert-circle" size={10} color="#fff" />
-                <Text style={styles.priorityText}>{item.priority === 'urgent' ? 'Urgent' : 'High'}</Text>
-              </View>
-            )}
-          </View>
-          <View style={styles.itemMetaRow}>
-            <View style={[styles.typeBadge, { backgroundColor: typeColor + '20' }]}>
-              <Text style={[styles.typeBadgeText, { color: typeColor }]}>{TYPE_LABELS[item.type] || item.type}</Text>
+            <View style={[styles.itemStatusPill, { borderColor: statusColor }]}>
+              <Text style={[styles.itemStatusPillText, { color: statusColor }]}>
+                {STATUS_LABELS[item.status] || item.status}
+              </Text>
             </View>
-            <Text style={[styles.itemDateText, { color: colors.secondary }]}>
+            <Ionicons name="chevron-forward" size={16} color={colors.secondary} />
+          </View>
+          <Text style={[styles.itemTitle, { color: colors.text }]} numberOfLines={2}>{item.name}</Text>
+          <View style={styles.itemMetaLine}>
+            <Ionicons name="calendar-outline" size={12} color={colors.secondary} />
+            <Text style={[styles.itemMetaText, { color: colors.secondary }]}>
               {formatDateRange(item.startDate, item.endDate)}
             </Text>
           </View>
+          <View style={styles.itemMetaLine}>
+            <Ionicons name="pricetag-outline" size={12} color={typeColor} />
+            <Text style={[styles.itemMetaText, { color: typeColor }]}>
+              {TYPE_LABELS[item.type] || item.type}
+            </Text>
+          </View>
           {item.assignedToName && (
-            <View style={styles.itemAssignRow}>
+            <View style={styles.itemMetaLine}>
               <Ionicons name="person-outline" size={12} color={colors.secondary} />
-              <Text style={[styles.itemAssignText, { color: colors.secondary }]}>{item.assignedToName}</Text>
+              <Text style={[styles.itemMetaText, { color: colors.secondary }]}>{item.assignedToName}</Text>
             </View>
           )}
           {item.progressPercent > 0 && (
@@ -762,13 +763,32 @@ export default function ScheduleScreen({ navigation, route }: Props) {
         </View>
       );
     }
+
+    const rows: JSX.Element[] = [];
+    let lastDateKey = '';
+    sorted.forEach(item => {
+      const d = new Date(item.startDate);
+      const dateKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      if (dateKey !== lastDateKey) {
+        lastDateKey = dateKey;
+        const label = `${DAY_NAMES[d.getDay()]} - ${MONTHS[d.getMonth()]} ${d.getDate()}`;
+        rows.push(
+          <View key={`div-${dateKey}`} style={styles.dateDivider}>
+            <Text style={[styles.dateDividerText, { color: colors.secondary }]}>{label}</Text>
+            <View style={[styles.dateDividerLine, { borderColor: colors.border }]} />
+          </View>
+        );
+      }
+      rows.push(renderItemCard(item));
+    });
+
     return (
       <ScrollView
         style={styles.flex1}
         contentContainerStyle={styles.listContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
       >
-        {sorted.map(renderItemCard)}
+        {rows}
       </ScrollView>
     );
   };
@@ -1938,23 +1958,25 @@ const styles = StyleSheet.create({
   groupTitle: { fontSize: 15, fontWeight: '700' },
   groupCount: { fontSize: 12, fontWeight: '500' },
 
-  itemCard: { flexDirection: 'row', borderWidth: 1, borderRadius: 10, marginBottom: 8, overflow: 'hidden' },
-  itemColorBar: { width: 4 },
-  itemContent: { flex: 1, padding: 12 },
-  itemTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  itemName: { fontSize: 14, fontWeight: '600', flex: 1 },
-  priorityBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, gap: 3 },
-  priorityText: { color: '#fff', fontSize: 10, fontWeight: '700' },
-  itemMetaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 8 },
-  typeBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4 },
-  typeBadgeText: { fontSize: 11, fontWeight: '600' },
-  itemDateText: { fontSize: 12 },
-  itemAssignRow: { flexDirection: 'row', alignItems: 'center', marginTop: 5, gap: 4 },
-  itemAssignText: { fontSize: 12 },
-  progressRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 8 },
+  itemCard: { borderWidth: 1, borderRadius: 12, marginBottom: 10 },
+  itemContent: { padding: 14 },
+  itemTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  itemStatusPill: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 },
+  itemStatusPillText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.3 },
+  itemTitle: { fontSize: 15, fontWeight: '700', marginBottom: 8 },
+  itemMetaLine: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 },
+  itemMetaText: { fontSize: 12 },
+  progressRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 8 },
   progressTrack: { flex: 1, height: 3, borderRadius: 2, overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: 2 },
   progressText: { fontSize: 11, fontWeight: '500', width: 32, textAlign: 'right' },
+
+  dateDivider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 6, marginBottom: 8 },
+  dateDividerText: { fontSize: 12, fontWeight: '600' },
+  dateDividerLine: { flex: 1, borderBottomWidth: 1 },
+
+  typeBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4 },
+  typeBadgeText: { fontSize: 11, fontWeight: '600' },
 
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 80 },
   emptyText: { fontSize: 15, marginTop: 12 },
