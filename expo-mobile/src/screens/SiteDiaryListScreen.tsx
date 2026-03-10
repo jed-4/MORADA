@@ -383,6 +383,13 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
   }, [fetchData, loadOfflineEntries, fetchFeedData]);
 
   useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      setCurrentDate(new Date());
+    });
+    return unsubscribe;
+  }, [navigation]);
+
+  useEffect(() => {
     const unsubscribe = NetInfo.addEventListener(state => {
       setNetworkOnline(!!(state.isConnected && state.isInternetReachable !== false));
     });
