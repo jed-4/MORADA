@@ -543,6 +543,27 @@ export default function Schedule() {
   });
 
   // Update schedule item
+  const applyTaskOffsets = async (
+    item: ScheduleItem,
+    offsets: Array<{ taskId: string; offsetDays: number; offsetFrom: "start" | "end" }>
+  ) => {
+    const validOffsets = offsets.filter(o => o.taskId && (o.offsetDays !== 0 || o.offsetFrom));
+    for (const o of validOffsets) {
+      const refDate = o.offsetFrom === "end" ? item.endDate : item.startDate;
+      if (!refDate) continue;
+      const base = new Date(refDate as any);
+      if (isNaN(base.getTime())) continue;
+      const due = new Date(base);
+      due.setDate(due.getDate() + o.offsetDays);
+      await fetch(`/api/tasks/${o.taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ dueDate: due.toISOString() }),
+      });
+    }
+  };
+
   const updateItemMutation = useMutation({
     mutationFn: async (data: any) => {
       if (!editingItem) throw new Error("No item selected");
@@ -555,7 +576,11 @@ export default function Schedule() {
       if (!response.ok) throw new Error("Failed to update item");
       return response.json() as Promise<ScheduleItem>;
     },
-    onSuccess: () => {
+    onSuccess: async (updatedItem) => {
+      if (taskLinkOffsetsLocal.length > 0) {
+        await applyTaskOffsets(updatedItem, taskLinkOffsetsLocal);
+        queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/tasks`] });
+      }
       invalidateScheduleItems();
       setShowItemDialog(false);
       setEditingItem(null);
@@ -3007,7 +3032,7 @@ export default function Schedule() {
                                           const newIds = [...(editingItem.taskIds as string[] || []), t.id];
                                           updateItemLinksMutation.mutate({ id: editingItem.id, taskIds: newIds });
                                           setEditingItem({ ...editingItem, taskIds: newIds });
-                                          setTaskLinkOffsetsLocal(prev => [...prev, { taskId: t.id, offsetDays: 0, offsetFrom: "start" as const }]);
+                                          setTaskLinkOffsetsLocal(prev => [...prev, { taskId: t.id, offsetDays: 0, offsetFrom: "end" as const }]);
                                         }}
                                       >
                                         {t.title || t.name}
@@ -3043,44 +3068,35 @@ export default function Schedule() {
                                         <X className="h-3 w-3" />
                                       </Button>
                                     </div>
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
                                       <Input
                                         type="number"
-                                        value={offset?.offsetDays ?? ""}
+                                        min="0"
+                                        value={Math.abs(offset?.offsetDays ?? 0)}
+                                        onFocus={(e) => e.target.select()}
                                         onChange={(e) => {
-                                          const val = e.target.value;
-                                          const days = val === "" ? "" as any : parseInt(val);
+                                          const absVal = Math.max(0, parseInt(e.target.value) || 0);
+                                          const currentDir = (offset?.offsetDays ?? 0) < 0 ? -1 : 1;
+                                          const days = currentDir * absVal;
                                           setTaskLinkOffsetsLocal(prev => {
                                             const existing = prev.find(o => o.taskId === taskId);
-                                            if (existing) {
-                                              return prev.map(o => o.taskId === taskId ? { ...o, offsetDays: days } : o);
-                                            }
-                                            return [...prev, { taskId, offsetDays: days, offsetFrom: "start" as const }];
+                                            if (existing) return prev.map(o => o.taskId === taskId ? { ...o, offsetDays: days } : o);
+                                            return [...prev, { taskId, offsetDays: days, offsetFrom: "end" as const }];
                                           });
                                         }}
-                                        onBlur={(e) => {
-                                          const days = parseInt(e.target.value) || 0;
-                                          setTaskLinkOffsetsLocal(prev => {
-                                            const existing = prev.find(o => o.taskId === taskId);
-                                            if (existing) {
-                                              return prev.map(o => o.taskId === taskId ? { ...o, offsetDays: days } : o);
-                                            }
-                                            return [...prev, { taskId, offsetDays: days, offsetFrom: "start" as const }];
-                                          });
-                                        }}
-                                        className="h-6 w-16 text-xs"
+                                        className="h-6 w-14 text-xs"
                                         placeholder="0"
                                       />
-                                      <span className="text-xs text-muted-foreground whitespace-nowrap">days from</span>
+                                      <span className="text-xs text-muted-foreground">days</span>
                                       <Select
-                                        value={offset?.offsetFrom || "start"}
-                                        onValueChange={(value: "start" | "end") => {
+                                        value={(offset?.offsetDays ?? 0) < 0 ? "before" : "after"}
+                                        onValueChange={(dir: "before" | "after") => {
+                                          const absVal = Math.abs(offset?.offsetDays ?? 0);
+                                          const days = dir === "before" ? -absVal : absVal;
                                           setTaskLinkOffsetsLocal(prev => {
                                             const existing = prev.find(o => o.taskId === taskId);
-                                            if (existing) {
-                                              return prev.map(o => o.taskId === taskId ? { ...o, offsetFrom: value } : o);
-                                            }
-                                            return [...prev, { taskId, offsetDays: 0, offsetFrom: value }];
+                                            if (existing) return prev.map(o => o.taskId === taskId ? { ...o, offsetDays: days } : o);
+                                            return [...prev, { taskId, offsetDays: days, offsetFrom: "end" as const }];
                                           });
                                         }}
                                       >
@@ -3088,8 +3104,26 @@ export default function Schedule() {
                                           <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent>
-                                          <SelectItem value="start">Start</SelectItem>
-                                          <SelectItem value="end">End</SelectItem>
+                                          <SelectItem value="before">before</SelectItem>
+                                          <SelectItem value="after">after</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                      <Select
+                                        value={offset?.offsetFrom || "end"}
+                                        onValueChange={(value: "start" | "end") => {
+                                          setTaskLinkOffsetsLocal(prev => {
+                                            const existing = prev.find(o => o.taskId === taskId);
+                                            if (existing) return prev.map(o => o.taskId === taskId ? { ...o, offsetFrom: value } : o);
+                                            return [...prev, { taskId, offsetDays: offset?.offsetDays ?? 0, offsetFrom: value }];
+                                          });
+                                        }}
+                                      >
+                                        <SelectTrigger className="h-6 w-24 text-xs">
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="start">start date</SelectItem>
+                                          <SelectItem value="end">end date</SelectItem>
                                         </SelectContent>
                                       </Select>
                                     </div>
