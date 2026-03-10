@@ -244,6 +244,7 @@ export default function ScheduleScreen({ navigation, route }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const [statusOptions, setStatusOptions] = useState<{ key: string; name: string; color: string }[]>([]);
 
   const [showProjectPicker, setShowProjectPicker] = useState(false);
   const [showDetailSheet, setShowDetailSheet] = useState(false);
@@ -324,7 +325,15 @@ export default function ScheduleScreen({ navigation, route }: Props) {
 
   const fetchData = useCallback(async () => {
     try {
-      await fetchProjects();
+      const [, statusData] = await Promise.all([
+        fetchProjects(),
+        apiFetch<{ options: { key: string; name: string; color: string | null }[] }>(
+          '/api/field-categories/by-key/schedule_item.status'
+        ).catch(() => null),
+      ]);
+      if (statusData?.options) {
+        setStatusOptions(statusData.options.map(o => ({ key: o.key, name: o.name, color: o.color || '#9ca3af' })));
+      }
       if (selectedProjectId) {
         await fetchItems(selectedProjectId);
       }
@@ -699,9 +708,13 @@ export default function ScheduleScreen({ navigation, route }: Props) {
     return days;
   }, [weekStartDate]);
 
+  const getStatusOption = (key: string) => {
+    const opt = statusOptions.find(s => s.key === key);
+    return opt || { name: key, color: '#9ca3af' };
+  };
+
   const renderItemCard = (item: ScheduleItem) => {
-    const statusColor = STATUS_COLORS[item.status] || '#94a3b8';
-    const typeColor = TYPE_COLORS[item.type] || '#9ca3af';
+    const status = getStatusOption(item.status);
 
     return (
       <TouchableOpacity
@@ -712,38 +725,21 @@ export default function ScheduleScreen({ navigation, route }: Props) {
       >
         <View style={styles.itemContent}>
           <View style={styles.itemTopRow}>
-            <View style={[styles.itemStatusPill, { borderColor: statusColor }]}>
-              <Text style={[styles.itemStatusPillText, { color: statusColor }]}>
-                {STATUS_LABELS[item.status] || item.status}
-              </Text>
+            <Text style={[styles.itemTitle, { color: colors.text }]} numberOfLines={2}>{item.name}</Text>
+            <View style={[styles.itemStatusPill, { borderColor: status.color }]}>
+              <Text style={[styles.itemStatusPillText, { color: status.color }]}>{status.name}</Text>
             </View>
-            <Ionicons name="chevron-forward" size={16} color={colors.secondary} />
           </View>
-          <Text style={[styles.itemTitle, { color: colors.text }]} numberOfLines={2}>{item.name}</Text>
           <View style={styles.itemMetaLine}>
             <Ionicons name="calendar-outline" size={12} color={colors.secondary} />
             <Text style={[styles.itemMetaText, { color: colors.secondary }]}>
               {formatDateRange(item.startDate, item.endDate)}
             </Text>
           </View>
-          <View style={styles.itemMetaLine}>
-            <Ionicons name="pricetag-outline" size={12} color={typeColor} />
-            <Text style={[styles.itemMetaText, { color: typeColor }]}>
-              {TYPE_LABELS[item.type] || item.type}
-            </Text>
-          </View>
           {item.assignedToName && (
             <View style={styles.itemMetaLine}>
               <Ionicons name="person-outline" size={12} color={colors.secondary} />
               <Text style={[styles.itemMetaText, { color: colors.secondary }]}>{item.assignedToName}</Text>
-            </View>
-          )}
-          {item.progressPercent > 0 && (
-            <View style={styles.progressRow}>
-              <View style={[styles.progressTrack, { backgroundColor: colors.border }]}>
-                <View style={[styles.progressFill, { width: `${Math.min(item.progressPercent, 100)}%`, backgroundColor: statusColor }]} />
-              </View>
-              <Text style={[styles.progressText, { color: colors.secondary }]}>{item.progressPercent}%</Text>
             </View>
           )}
         </View>
@@ -1960,10 +1956,10 @@ const styles = StyleSheet.create({
 
   itemCard: { borderWidth: 1, borderRadius: 12, marginBottom: 10 },
   itemContent: { padding: 14 },
-  itemTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
-  itemStatusPill: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 },
+  itemTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 8 },
+  itemStatusPill: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3, flexShrink: 0 },
   itemStatusPillText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.3 },
-  itemTitle: { fontSize: 15, fontWeight: '700', marginBottom: 8 },
+  itemTitle: { fontSize: 15, fontWeight: '700', flex: 1 },
   itemMetaLine: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 },
   itemMetaText: { fontSize: 12 },
   progressRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 8 },
