@@ -16731,10 +16731,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           return count;
         };
+        const subtractWD = (date: Date, days: number): Date => {
+          const result = new Date(date);
+          let removed = 0;
+          while (removed < days) {
+            result.setDate(result.getDate() - 1);
+            if (isWorkingDay(result)) removed++;
+          }
+          return result;
+        };
         const predEnd = new Date(predecessor.endDate);
-        const earliestStart = parsedLag > 0
-          ? addWD(predEnd, parsedLag + 1)
-          : skipToWorkingDay(new Date(predEnd.getTime() + 86400000));
+        let earliestStart: Date;
+        if (parsedLag > 0) {
+          earliestStart = addWD(predEnd, parsedLag + 1);
+        } else if (parsedLag === 0) {
+          earliestStart = skipToWorkingDay(new Date(predEnd.getTime() + 86400000));
+        } else {
+          // Negative lag: lead time — successor can start before predecessor ends.
+          // lag = diffDays - 1, so earliestStart = predEnd + (lag+1) calendar days.
+          // Use subtractWD to count back by |lag+1| working days from predEnd.
+          const leadWD = -(parsedLag + 1);
+          earliestStart = leadWD > 0
+            ? subtractWD(predEnd, leadWD)
+            : skipToWorkingDay(new Date(predEnd.getTime() + 86400000));
+        }
         const currentStart = item.startDate ? new Date(item.startDate) : null;
         if (!currentStart || currentStart < earliestStart) {
           if (item.startDate && item.endDate) {
@@ -16830,10 +16850,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
             return count;
           };
+          const subtractWD2 = (date: Date, days: number): Date => {
+            const result = new Date(date);
+            let removed = 0;
+            while (removed < days) {
+              result.setDate(result.getDate() - 1);
+              if (isWorkingDay(result)) removed++;
+            }
+            return result;
+          };
           const predEnd = new Date(predecessor.endDate);
-          const newStart = parsedLag > 0
-            ? addWD(predEnd, parsedLag + 1)
-            : skipToWorkingDay(new Date(predEnd.getTime() + 86400000));
+          let newStart: Date;
+          if (parsedLag > 0) {
+            newStart = addWD(predEnd, parsedLag + 1);
+          } else if (parsedLag === 0) {
+            newStart = skipToWorkingDay(new Date(predEnd.getTime() + 86400000));
+          } else {
+            const leadWD = -(parsedLag + 1);
+            newStart = leadWD > 0
+              ? subtractWD2(predEnd, leadWD)
+              : skipToWorkingDay(new Date(predEnd.getTime() + 86400000));
+          }
           if (item.startDate && item.endDate) {
             const workDuration = countWD(new Date(item.startDate), new Date(item.endDate));
             const newEnd = addWD(newStart, Math.max(0, workDuration - 1));

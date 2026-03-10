@@ -1575,7 +1575,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
         sStart.setHours(0, 0, 0, 0);
         const diffMs = sStart.getTime() - pEnd.getTime();
         const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
-        return Math.max(0, diffDays - 1);
+        return diffDays - 1;
       };
 
       const recalcLagForItem = (itemId: string | number, itemNewStart: Date, items: ScheduleItem[]) => {
@@ -1771,6 +1771,31 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
             });
 
             recalcLagForItem(drag.id, newStart, currentItems);
+
+            // Propagate start-date change to SS successors
+            const snapStartDelta = differenceInDays(newStart, drag.originalStart);
+            if (snapStartDelta !== 0) {
+              const snapDirSS = snapStartDelta > 0 ? 'forward' : 'backward';
+              const ssSuccessors = currentItems.filter(item =>
+                (item.dependencies as any[] || []).some((dep: any) =>
+                  String(dep.id) === String(drag.id) && dep.type === 'SS'
+                )
+              );
+              for (const succ of ssSuccessors) {
+                const succStart = parseLocalMidnight(succ.startDate as any);
+                const succEnd = parseLocalMidnight(succ.endDate as any);
+                const succWorkDuration = countWD(succStart, succEnd);
+                let newSuccStart = addDays(succStart, snapStartDelta);
+                newSuccStart = snap(newSuccStart, snapDirSS as 'forward' | 'backward');
+                const newSuccEnd = addWD(newSuccStart, succWorkDuration);
+                updateCacheOptimistically(succ.id, newSuccStart, newSuccEnd);
+                mutate.mutate({
+                  id: succ.id,
+                  startDate: format(newSuccStart, 'yyyy-MM-dd') as any,
+                  endDate: format(newSuccEnd, 'yyyy-MM-dd') as any,
+                });
+              }
+            }
           }
         }
       } else if (drag.type === 'resize-right') {
@@ -3451,7 +3476,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                               predecessorId: dep.id,
                               predecessorName: predItem.name,
                               type: dep.type || 'FS',
-                              lag: Math.max(0, dep.lag || 0),
+                              lag: dep.lag ?? 0,
                             });
                           }}
                           data-testid={`dependency-line-${depKey}`}
@@ -3778,17 +3803,16 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
                     variant="outline"
                     size="icon"
                     className="h-9 w-9 flex-shrink-0"
-                    onClick={() => setSelectedDependency({ ...selectedDependency, lag: Math.max(0, (selectedDependency.lag ?? 0) - 1) })}
+                    onClick={() => setSelectedDependency({ ...selectedDependency, lag: (selectedDependency.lag ?? 0) - 1 })}
                     data-testid="button-lag-decrease"
                   >
                     <Minus className="w-3 h-3" />
                   </Button>
                   <Input
                     type="number"
-                    min="0"
                     value={selectedDependency.lag ?? 0}
-                    onChange={(e) => setSelectedDependency({ ...selectedDependency, lag: Math.max(0, parseInt(e.target.value) || 0) })}
-                    onBlur={(e) => setSelectedDependency({ ...selectedDependency, lag: Math.max(0, parseInt(e.target.value) || 0) })}
+                    onChange={(e) => setSelectedDependency({ ...selectedDependency, lag: parseInt(e.target.value) || 0 })}
+                    onBlur={(e) => setSelectedDependency({ ...selectedDependency, lag: parseInt(e.target.value) || 0 })}
                     className="w-20 text-center"
                     data-testid="input-dependency-lag"
                   />
