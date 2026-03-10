@@ -158,6 +158,7 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'builderCost', label: 'Builder Cost', visible: true, widthPx: 100 },
   { id: 'builderCostIncTax', label: 'Builder Inc', visible: true, widthPx: 95 },
   { id: 'markup', label: 'Markup', visible: true, widthPx: 65 },
+  { id: 'markupDollarAmount', label: 'Markup $', visible: false, widthPx: 90 },
   { id: 'clientPriceExTax', label: 'Amount', visible: true, widthPx: 90 },
   { id: 'clientTax', label: 'Tax', visible: true, widthPx: 70 },
   { id: 'clientPriceIncTax', label: 'Amount Inc', visible: true, widthPx: 95 },
@@ -2685,6 +2686,11 @@ export default function EstimateDetail() {
             const pricingValues = calculatePricingValues(item);
             row.push(pricingValues.markupPercent?.toString() ?? '');
             break;
+          case 'markupDollarAmount': {
+            const pricingM = calculatePricingValues(item);
+            row.push((pricingM.clientPriceExTax - pricingM.builderCost).toFixed(2));
+            break;
+          }
           case 'clientPriceExTax':
             const pricing1 = calculatePricingValues(item);
             row.push(pricing1.clientPriceExTax.toFixed(2));
@@ -4483,6 +4489,13 @@ export default function EstimateDetail() {
           </div>
         );
       
+      case 'markupDollarAmount':
+        return (
+          <div className={cellBase} role="gridcell" data-testid={`cell-markupDollarAmount-${item.id}`}>
+            {formatCurrency(pricingValues.clientPriceExTax - pricingValues.builderCost)}
+          </div>
+        );
+      
       case 'clientPriceExTax':
         return (
           <div className={cellBase} role="gridcell" data-testid={`cell-clientPriceExTax-${item.id}`}>
@@ -4982,7 +4995,7 @@ export default function EstimateDetail() {
             </div>
             {((summary as any).lineItemMarkupAmount ?? 0) !== 0 && (
               <div className="flex items-baseline justify-between gap-4">
-                <span className="text-muted-foreground">Line Markup</span>
+                <span className="text-muted-foreground">Markup</span>
                 <span className="tabular-nums font-medium text-right" data-testid="text-line-item-markup">
                   {formatCurrency((summary as any).lineItemMarkupAmount ?? 0)}
                 </span>
@@ -4990,7 +5003,7 @@ export default function EstimateDetail() {
             )}
             <div className="flex items-baseline justify-between gap-4">
               <span className="text-muted-foreground flex items-baseline gap-1">
-                Global Markup
+                Builder Margin
                 {isEditingMarkup ? (
                   <Input
                     value={editingMarkup}
@@ -5009,7 +5022,7 @@ export default function EstimateDetail() {
                   <span
                     className="text-[#bba7db] underline underline-offset-2 decoration-dotted cursor-pointer hover:opacity-80 transition-opacity font-medium"
                     onClick={handleMarkupEdit}
-                    title="Click to edit global markup %"
+                    title="Click to edit builder margin %"
                     data-testid="text-markup-percentage"
                   >
                     {estimate?.projectMarkupPercent || 0}%<Pencil className="w-2.5 h-2.5 inline ml-0.5 mb-0.5 opacity-60" />
@@ -5362,7 +5375,7 @@ export default function EstimateDetail() {
                         <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
                           {/* CSS Grid Header */}
                           <div 
-                            className="bg-muted border-b border-border sticky top-0 z-[99] pl-px"
+                            className="bg-muted border-b border-border sticky top-0 z-[10] pl-px"
                             role="row"
                             style={{ 
                               display: 'grid', 
@@ -5485,7 +5498,7 @@ export default function EstimateDetail() {
         </div>
         {((summary as any)?.globalMarkupAmount ?? 0) !== 0 && (
           <div className="flex items-center gap-1.5">
-            <span className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Global Markup</span>
+            <span className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Builder Margin</span>
             <span className="tabular-nums font-medium">{formatCurrency((summary as any)?.globalMarkupAmount ?? 0)}</span>
           </div>
         )}
