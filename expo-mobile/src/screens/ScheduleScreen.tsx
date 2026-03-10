@@ -300,6 +300,10 @@ export default function ScheduleScreen({ navigation, route }: Props) {
 
   const ganttScrollRef = useRef<ScrollView>(null);
   const ganttScrolledRef = useRef(false);
+  const ganttHeaderScrollRef = useRef<ScrollView>(null);
+  const isSyncingRef = useRef(false);
+  const [showNamesCol, setShowNamesCol] = useState(true);
+  const [showBarStatus, setShowBarStatus] = useState(false);
 
   const colors = isDark
     ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', inputBg: '#0f172a' }
@@ -789,6 +793,13 @@ export default function ScheduleScreen({ navigation, route }: Props) {
     );
   };
 
+  const syncGanttHeader = (x: number) => {
+    if (isSyncingRef.current) return;
+    isSyncingRef.current = true;
+    ganttHeaderScrollRef.current?.scrollTo({ x, animated: false });
+    setTimeout(() => { isSyncingRef.current = false; }, 30);
+  };
+
   const renderGanttView = () => {
     const { minDate, days, sortedItems } = ganttData();
 
@@ -801,11 +812,17 @@ export default function ScheduleScreen({ navigation, route }: Props) {
       );
     }
 
-    const dateHeaders: { date: Date; label: string }[] = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayDayIndex = Math.floor((today.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24));
+    const todayX = todayDayIndex * DAY_COL_WIDTH + DAY_COL_WIDTH / 2 - 1;
+
+    const dateHeaders: { date: Date; label: string; isWeekend: boolean }[] = [];
     for (let i = 0; i < days; i++) {
       const d = new Date(minDate);
       d.setDate(d.getDate() + i);
-      dateHeaders.push({ date: d, label: `${d.getDate()}` });
+      const dow = d.getDay();
+      dateHeaders.push({ date: d, label: `${d.getDate()}`, isWeekend: dow === 0 || dow === 6 });
     }
 
     const showMonthHeaders = days > 14;
@@ -824,74 +841,112 @@ export default function ScheduleScreen({ navigation, route }: Props) {
     }
 
     const totalWidth = days * DAY_COL_WIDTH;
+    const headerHeight = showMonthHeaders ? 52 : 32;
+    const weekendBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)';
+    const barAreaHeight = sortedItems.length * GANTT_ROW_HEIGHT;
+
+    const headerDateRow = (
+      <View style={{ width: totalWidth }}>
+        {showMonthHeaders && (
+          <View style={[styles.ganttMonthRow, { borderBottomColor: colors.border }]}>
+            {monthBreaks.map((mb, i) => (
+              <View key={i} style={[styles.ganttMonthCell, { width: mb.count * DAY_COL_WIDTH, backgroundColor: colors.card, borderRightColor: colors.border }]}>
+                <Text style={[styles.ganttMonthText, { color: colors.text }]}>{mb.month}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+        <View style={[styles.ganttDateRow, { borderBottomColor: colors.border }]}>
+          {dateHeaders.map((dh, i) => {
+            const todayHighlight = isToday(dh.date);
+            const bg = todayHighlight
+              ? (isDark ? '#1e3a5f' : '#dbeafe')
+              : dh.isWeekend ? weekendBg : colors.card;
+            return (
+              <View key={i} style={[styles.ganttDateCell, { backgroundColor: bg, borderRightColor: colors.border }]}>
+                <Text style={[styles.ganttDateText, { color: todayHighlight ? colors.accent : dh.isWeekend ? colors.secondary : colors.secondary, fontWeight: dh.isWeekend ? '400' : '500' }]}>
+                  {dh.label}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+      </View>
+    );
 
     return (
       <View style={styles.flex1}>
-        <ScrollView style={styles.flex1}>
-          <View style={styles.ganttContainer}>
-            <View style={styles.ganttNamesCol}>
-              <View style={[styles.ganttHeaderCell, { backgroundColor: colors.card, borderBottomColor: colors.border, height: showMonthHeaders ? 52 : 32 }]}>
-                <Text style={[styles.ganttHeaderText, { color: colors.secondary }]}>Item</Text>
-              </View>
-              {sortedItems.map((item, idx) => (
-                <TouchableOpacity
-                  key={item.id}
-                  style={[styles.ganttNameRow, { backgroundColor: idx % 2 === 0 ? colors.bg : colors.card, borderBottomColor: colors.border }]}
-                  onPress={() => openDetail(item)}
-                >
-                  <Text style={[styles.ganttNameText, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
-                </TouchableOpacity>
-              ))}
+        {/* Sticky header row */}
+        <View style={[styles.ganttStickyHeader, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
+          {showNamesCol && (
+            <View style={[styles.ganttNamesCol, { height: headerHeight, justifyContent: 'center', borderRightColor: colors.border, borderRightWidth: 1 }]}>
+              <Text style={[styles.ganttHeaderText, { color: colors.secondary, paddingHorizontal: 8 }]}>Item</Text>
             </View>
+          )}
+          <ScrollView
+            horizontal
+            ref={ganttHeaderScrollRef}
+            scrollEnabled={false}
+            showsHorizontalScrollIndicator={false}
+            style={styles.flex1}
+          >
+            {headerDateRow}
+          </ScrollView>
+        </View>
+
+        {/* Scrollable body */}
+        <ScrollView style={styles.flex1} showsVerticalScrollIndicator>
+          <View style={styles.ganttContainer}>
+            {showNamesCol && (
+              <View style={[styles.ganttNamesCol, { borderRightColor: colors.border, borderRightWidth: 1 }]}>
+                {sortedItems.map((item, idx) => (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={[styles.ganttNameRow, { backgroundColor: idx % 2 === 0 ? colors.bg : colors.card, borderBottomColor: colors.border }]}
+                    onPress={() => openDetail(item)}
+                  >
+                    <Text style={[styles.ganttNameText, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
             <ScrollView
               horizontal
-              showsHorizontalScrollIndicator={true}
+              showsHorizontalScrollIndicator
               ref={ganttScrollRef}
+              scrollEventThrottle={16}
+              onScroll={(e) => syncGanttHeader(e.nativeEvent.contentOffset.x)}
               onLayout={() => {
                 if (ganttScrolledRef.current) return;
                 ganttScrolledRef.current = true;
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
                 const todayOffset = Math.floor((today.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)) * DAY_COL_WIDTH;
                 const scrollX = Math.max(0, todayOffset - SCREEN_WIDTH / 3);
                 ganttScrollRef.current?.scrollTo({ x: scrollX, animated: false });
+                ganttHeaderScrollRef.current?.scrollTo({ x: scrollX, animated: false });
               }}
             >
-              <View style={{ width: totalWidth }}>
-                {showMonthHeaders && (
-                  <View style={[styles.ganttMonthRow, { borderBottomColor: colors.border }]}>
-                    {monthBreaks.map((mb, i) => (
-                      <View key={i} style={[styles.ganttMonthCell, { width: mb.count * DAY_COL_WIDTH, backgroundColor: colors.card, borderRightColor: colors.border }]}>
-                        <Text style={[styles.ganttMonthText, { color: colors.text }]}>{mb.month}</Text>
-                      </View>
-                    ))}
-                  </View>
+              <View style={{ width: totalWidth, height: barAreaHeight, position: 'relative' }}>
+                {/* Weekend column shading */}
+                {dateHeaders.map((dh, ci) =>
+                  dh.isWeekend ? (
+                    <View key={`wk-${ci}`} style={{ position: 'absolute', left: ci * DAY_COL_WIDTH, top: 0, width: DAY_COL_WIDTH, height: barAreaHeight, backgroundColor: weekendBg }} />
+                  ) : null
                 )}
-                <View style={[styles.ganttDateRow, { borderBottomColor: colors.border }]}>
-                  {dateHeaders.map((dh, i) => {
-                    const todayHighlight = isToday(dh.date);
-                    return (
-                      <View
-                        key={i}
-                        style={[
-                          styles.ganttDateCell,
-                          { backgroundColor: todayHighlight ? (isDark ? '#1e3a5f' : '#dbeafe') : colors.card, borderRightColor: colors.border },
-                        ]}
-                      >
-                        <Text style={[styles.ganttDateText, { color: todayHighlight ? colors.accent : colors.secondary }]}>{dh.label}</Text>
-                      </View>
-                    );
-                  })}
-                </View>
+
+                {/* Bar rows */}
                 {sortedItems.map((item, idx) => {
                   const startDay = Math.max(0, Math.floor((new Date(item.startDate).getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)));
                   const endDay = Math.max(startDay + 1, Math.ceil((new Date(item.endDate).getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)) + 1);
                   const barLeft = startDay * DAY_COL_WIDTH;
                   const barWidth = Math.max((endDay - startDay) * DAY_COL_WIDTH - 4, 8);
                   const barColor = getItemColor(item);
+                  const status = getStatusOption(item.status);
 
                   return (
-                    <View key={item.id} style={[styles.ganttBarRow, { backgroundColor: idx % 2 === 0 ? colors.bg : colors.card, borderBottomColor: colors.border }]}>
+                    <View
+                      key={item.id}
+                      style={[styles.ganttBarRow, { position: 'absolute', left: 0, right: 0, top: idx * GANTT_ROW_HEIGHT, backgroundColor: idx % 2 === 0 ? 'transparent' : (isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)'), borderBottomColor: colors.border }]}
+                    >
                       {dateHeaders.map((_, ci) => (
                         <View key={ci} style={[styles.ganttGridLine, { left: ci * DAY_COL_WIDTH, borderRightColor: colors.border }]} />
                       ))}
@@ -900,21 +955,23 @@ export default function ScheduleScreen({ navigation, route }: Props) {
                         onPress={() => openDetail(item)}
                         activeOpacity={0.7}
                       >
-                        {barWidth > 50 && (
+                        {showBarStatus && barWidth > 60 ? (
+                          <Text style={styles.ganttBarText} numberOfLines={1}>{status.name}</Text>
+                        ) : barWidth > 50 ? (
                           <Text style={styles.ganttBarText} numberOfLines={1}>{item.name}</Text>
-                        )}
+                        ) : null}
                       </TouchableOpacity>
                     </View>
                   );
                 })}
 
+                {/* Dependency lines */}
                 {sortedItems.map((item, idx) => {
                   const deps = item.dependencies || [];
                   if (deps.length === 0) return null;
                   const depStartDay = Math.max(0, Math.floor((new Date(item.startDate).getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)));
                   const depBarLeft = depStartDay * DAY_COL_WIDTH + 2;
-                  const headerHeight = showMonthHeaders ? 52 : 32;
-                  const depRowTop = headerHeight + idx * GANTT_ROW_HEIGHT + GANTT_ROW_HEIGHT / 2;
+                  const depRowTop = idx * GANTT_ROW_HEIGHT + GANTT_ROW_HEIGHT / 2;
 
                   return deps.map(dep => {
                     const predIdx = sortedItems.findIndex(si => String(si.id) === String(dep.id));
@@ -922,8 +979,7 @@ export default function ScheduleScreen({ navigation, route }: Props) {
                     const pred = sortedItems[predIdx];
                     const predEndDay = Math.max(1, Math.ceil((new Date(pred.endDate).getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)) + 1);
                     const predBarRight = predEndDay * DAY_COL_WIDTH - 2;
-                    const predRowMid = headerHeight + predIdx * GANTT_ROW_HEIGHT + GANTT_ROW_HEIGHT / 2;
-
+                    const predRowMid = predIdx * GANTT_ROW_HEIGHT + GANTT_ROW_HEIGHT / 2;
                     const lineColor = '#a78bfa';
                     const cornerX = Math.min(predBarRight + 8, depBarLeft);
                     const hLineWidth = Math.abs(cornerX - predBarRight);
@@ -934,17 +990,21 @@ export default function ScheduleScreen({ navigation, route }: Props) {
                     return (
                       <View key={`dep-${item.id}-${dep.id}`} pointerEvents="none">
                         <View style={[styles.depLineH, { left: predBarRight, top: predRowMid - 1, width: hLineWidth, backgroundColor: lineColor }]} />
-                        {vHeight > 0 && (
-                          <View style={[styles.depLineV, { left: cornerX - 1, top: vTop, height: vHeight, backgroundColor: lineColor }]} />
-                        )}
-                        {hLineToDepWidth > 0 && (
-                          <View style={[styles.depLineH, { left: cornerX, top: depRowTop - 1, width: hLineToDepWidth, backgroundColor: lineColor }]} />
-                        )}
+                        {vHeight > 0 && <View style={[styles.depLineV, { left: cornerX - 1, top: vTop, height: vHeight, backgroundColor: lineColor }]} />}
+                        {hLineToDepWidth > 0 && <View style={[styles.depLineH, { left: cornerX, top: depRowTop - 1, width: hLineToDepWidth, backgroundColor: lineColor }]} />}
                         <View style={[styles.depArrow, { left: depBarLeft - 4, top: depRowTop - 3, borderLeftColor: lineColor }]} />
                       </View>
                     );
                   });
                 })}
+
+                {/* Today vertical line */}
+                {todayDayIndex >= 0 && todayDayIndex < days && (
+                  <View
+                    pointerEvents="none"
+                    style={{ position: 'absolute', left: todayX, top: 0, width: 2, height: barAreaHeight, backgroundColor: colors.accent, opacity: 0.6, zIndex: 10 }}
+                  />
+                )}
               </View>
             </ScrollView>
           </View>
@@ -1907,6 +1967,24 @@ export default function ScheduleScreen({ navigation, route }: Props) {
         </View>
       ) : (
         <>
+          {viewMode === 'gantt' && (
+            <View style={[styles.ganttToolbar, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+              <TouchableOpacity
+                style={[styles.ganttToolBtn, showNamesCol && { backgroundColor: colors.accent + '22' }]}
+                onPress={() => setShowNamesCol(v => !v)}
+              >
+                <Ionicons name={showNamesCol ? 'menu' : 'menu-outline'} size={16} color={showNamesCol ? colors.accent : colors.secondary} />
+                <Text style={[styles.ganttToolBtnText, { color: showNamesCol ? colors.accent : colors.secondary }]}>Labels</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.ganttToolBtn, showBarStatus && { backgroundColor: colors.accent + '22' }]}
+                onPress={() => setShowBarStatus(v => !v)}
+              >
+                <Ionicons name={showBarStatus ? 'flag' : 'flag-outline'} size={16} color={showBarStatus ? colors.accent : colors.secondary} />
+                <Text style={[styles.ganttToolBtnText, { color: showBarStatus ? colors.accent : colors.secondary }]}>Status</Text>
+              </TouchableOpacity>
+            </View>
+          )}
           {viewMode === 'list' && renderListView()}
           {viewMode === 'gantt' && renderGanttView()}
           {viewMode === 'calendar' && renderCalendarView()}
@@ -1978,6 +2056,10 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 15, marginTop: 12 },
 
   ganttContainer: { flexDirection: 'row' },
+  ganttStickyHeader: { flexDirection: 'row', borderBottomWidth: 1 },
+  ganttToolbar: { flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 6, gap: 8, borderBottomWidth: StyleSheet.hairlineWidth },
+  ganttToolBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6 },
+  ganttToolBtnText: { fontSize: 12, fontWeight: '500' },
   ganttNamesCol: { width: NAME_COL_WIDTH, zIndex: 1 },
   ganttHeaderCell: { justifyContent: 'center', paddingHorizontal: 8, borderBottomWidth: 1 },
   ganttHeaderText: { fontSize: 11, fontWeight: '600' },
