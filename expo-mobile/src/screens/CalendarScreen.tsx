@@ -137,7 +137,7 @@ export default function CalendarScreen({ navigation }: Props) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
-  const [viewMode, setViewMode] = useState<ViewMode>('day');
+  const [viewMode, setViewMode] = useState<ViewMode>('week');
   const [displayMode, setDisplayMode] = useState<DisplayMode>('list');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -771,48 +771,104 @@ export default function CalendarScreen({ navigation }: Props) {
       );
     }
 
+    const CAL_DAY_WIDTH = 118;
     return (
-      <View>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={{ flex: 1 }}
+        contentContainerStyle={{ flexDirection: 'row' }}
+      >
         {days.map((day, idx) => {
           const dayEvents = getEventsForDate(day);
           const currentDay = isToday(day);
-
           return (
-            <View key={idx} style={[styles.weekDaySection, { borderBottomColor: colors.border }]}>
-              <View style={styles.weekDayHeader}>
-                <View style={[
-                  styles.weekDayBadge,
-                  currentDay && { backgroundColor: colors.accent },
-                  !currentDay && { backgroundColor: colors.card },
-                ]}>
-                  <Text style={[
-                    styles.weekDayName,
-                    { color: currentDay ? '#ffffff' : colors.secondary },
-                  ]}>
-                    {DAY_NAMES[idx]}
-                  </Text>
-                  <Text style={[
-                    styles.weekDayNumber,
-                    { color: currentDay ? '#ffffff' : colors.text },
-                  ]}>
+            <View
+              key={idx}
+              style={{
+                width: CAL_DAY_WIDTH,
+                borderRightWidth: StyleSheet.hairlineWidth,
+                borderRightColor: colors.border,
+                backgroundColor: currentDay ? colors.accent + '08' : 'transparent',
+              }}
+            >
+              {/* Day header */}
+              <View style={{
+                alignItems: 'center',
+                paddingVertical: 10,
+                borderBottomWidth: 1,
+                borderBottomColor: colors.border,
+                backgroundColor: colors.card,
+              }}>
+                <Text style={{
+                  fontSize: 11,
+                  fontWeight: '600',
+                  letterSpacing: 0.4,
+                  textTransform: 'uppercase',
+                  color: currentDay ? colors.accent : colors.secondary,
+                }}>
+                  {DAY_NAMES[idx]}
+                </Text>
+                <View style={currentDay ? {
+                  width: 32, height: 32, borderRadius: 16,
+                  backgroundColor: colors.accent,
+                  alignItems: 'center', justifyContent: 'center', marginTop: 4,
+                } : {
+                  width: 32, height: 32,
+                  alignItems: 'center', justifyContent: 'center', marginTop: 4,
+                }}>
+                  <Text style={{
+                    fontSize: 17,
+                    fontWeight: '700',
+                    color: currentDay ? '#fff' : colors.text,
+                  }}>
                     {day.getDate()}
                   </Text>
                 </View>
-                <Text style={[styles.weekEventCount, { color: colors.muted }]}>
-                  {dayEvents.length > 0 ? `${dayEvents.length}` : ''}
-                </Text>
               </View>
-              {dayEvents.length === 0 ? (
-                <View style={styles.weekEmptyDay}>
-                  <Text style={[styles.weekEmptyText, { color: colors.muted }]}>No events</Text>
-                </View>
-              ) : (
-                dayEvents.map(event => renderEventItem(event, true))
-              )}
+              {/* Event cards */}
+              <View style={{ paddingHorizontal: 5, paddingTop: 7, paddingBottom: 12 }}>
+                {dayEvents.map(event => (
+                  <TouchableOpacity
+                    key={event.id}
+                    style={{
+                      backgroundColor: event.color + '22',
+                      borderWidth: 1,
+                      borderColor: event.color + '55',
+                      borderRadius: 6,
+                      padding: 7,
+                      marginBottom: 5,
+                    }}
+                    onPress={() => handleEventTap(event)}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={{
+                      fontSize: 11,
+                      fontWeight: '700',
+                      color: colors.text,
+                      lineHeight: 15,
+                    }} numberOfLines={3}>
+                      {event.title}
+                    </Text>
+                    <Text style={{
+                      fontSize: 10,
+                      color: event.color,
+                      marginTop: 3,
+                      fontWeight: '600',
+                    }} numberOfLines={1}>
+                      {event.type === 'task' ? 'Task'
+                        : event.type === 'schedule' ? 'Schedule'
+                        : event.type === 'timesheet' ? 'Timesheet'
+                        : event.type === 'site_diary' ? 'Diary'
+                        : 'Reminder'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
           );
         })}
-      </View>
+      </ScrollView>
     );
   };
 
@@ -971,7 +1027,7 @@ export default function CalendarScreen({ navigation }: Props) {
         style={[styles.swipeContainer, { transform: [{ translateX: swipeX }] }]}
         {...panResponder.panHandlers}
       >
-        {displayMode === 'timeline' && (viewMode === 'day' || viewMode === 'week') ? (
+        {viewMode === 'week' || (displayMode === 'timeline' && viewMode === 'day') ? (
           <View style={styles.timelineContainer}>
             {viewMode === 'day' && renderDayView()}
             {viewMode === 'week' && renderWeekView()}
@@ -986,7 +1042,6 @@ export default function CalendarScreen({ navigation }: Props) {
             showsVerticalScrollIndicator={false}
           >
             {viewMode === 'month' && renderMonthView()}
-            {viewMode === 'week' && renderWeekView()}
             {viewMode === 'day' && renderDayView()}
           </ScrollView>
         )}
