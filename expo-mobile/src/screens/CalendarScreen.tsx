@@ -381,11 +381,14 @@ export default function CalendarScreen({ navigation }: Props) {
         const defaultView = fetchedViews.find(v => v.isDefault) || fetchedViews[0];
         setSelectedViewId(defaultView.id);
         setActiveFilters(defaultView.filters || {});
-        const storedMode = defaultView.calendarMode as ViewMode;
-        const validModes: ViewMode[] = ['list', 'week', 'month'];
-        // Map legacy 'day' mode to 'list'
-        const rawMode = storedMode as string;
-        const resolved: ViewMode = rawMode === 'day' ? 'list' : (validModes.includes(rawMode as ViewMode) ? (rawMode as ViewMode) : 'week');
+        const rawMode = defaultView.calendarMode as string;
+        // Legacy 'day' mode and anything unrecognised defaults to 'week'
+        // 'All Events' always opens on week
+        const resolved: ViewMode =
+          defaultView.name === 'All Events' ? 'week' :
+          rawMode === 'month' ? 'month' :
+          rawMode === 'list' ? 'list' :
+          'week';
         setViewMode(resolved);
       }
     } catch (e) {
@@ -540,8 +543,11 @@ export default function CalendarScreen({ navigation }: Props) {
     setSelectedViewId(view.id);
     setActiveFilters(view.filters || {});
     const rawMode = view.calendarMode as string;
-    const validModes: ViewMode[] = ['list', 'week', 'month'];
-    const resolved: ViewMode = rawMode === 'day' ? 'list' : (validModes.includes(rawMode as ViewMode) ? (rawMode as ViewMode) : 'week');
+    const resolved: ViewMode =
+      view.name === 'All Events' ? 'week' :
+      rawMode === 'month' ? 'month' :
+      rawMode === 'list' ? 'list' :
+      'week';
     setViewMode(resolved);
     setShowViewsModal(false);
   };
