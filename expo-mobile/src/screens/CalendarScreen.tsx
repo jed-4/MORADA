@@ -166,6 +166,10 @@ function parseTimeToMinutes(timeStr: string | null | undefined): number | null {
   return parts[0] * 60 + (parts[1] || 0);
 }
 
+// Module-level flag — survives component remounts (tab switches, app background/foreground)
+// so we never attempt to auto-create the default view more than once per JS session.
+let defaultViewCreated = false;
+
 export default function CalendarScreen({ navigation }: Props) {
   const { user } = useAuth();
   const colorScheme = useColorScheme();
@@ -198,7 +202,6 @@ export default function CalendarScreen({ navigation }: Props) {
 
   const timelineScrollRef = useRef<ScrollView>(null);
   const swipeX = useRef(new Animated.Value(0)).current;
-  const defaultViewCreationRef = useRef(false);
 
   const colors = isDark
     ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569', timelineLine: '#334155', input: '#0f172a' }
@@ -364,8 +367,8 @@ export default function CalendarScreen({ navigation }: Props) {
 
       setViews(fetchedViews);
 
-      if (fetchedViews.length === 0 && !defaultViewCreationRef.current) {
-        defaultViewCreationRef.current = true;
+      if (fetchedViews.length === 0 && !defaultViewCreated) {
+        defaultViewCreated = true;
         try {
           const res = await apiRequest('/api/calendar-views', 'POST', {
             name: 'All Events',
@@ -399,6 +402,13 @@ export default function CalendarScreen({ navigation }: Props) {
   }, [user?.id]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // On first mount, clean up any duplicate views that may exist in the DB from previous bugs.
+  // Runs once per JS session (not per remount) — safe to call on every app launch.
+  useEffect(() => {
+    apiRequest('/api/calendar-views/cleanup-duplicates', 'POST', { calendarType: 'personal' })
+      .catch(() => {});
+  }, []);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);

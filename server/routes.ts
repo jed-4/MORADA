@@ -18236,25 +18236,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const views = await storage.getCalendarViews(
-        req.user!.userId!,
-        req.user!.companyId!,
-        calendarType
+        req.user!.id,
+        calendarType as "personal" | "business",
+        req.user!.companyId!
       );
 
-      // Find all default views with the same name
-      const defaultViews = views.filter(v => v.isDefault && v.name === "All Events");
-      
-      if (defaultViews.length <= 1) {
-        return res.json({ message: "No duplicates found", deleted: 0 });
+      // Group by name, keep the oldest (earliest createdAt) per name, delete the rest
+      const byName: Record<string, typeof views> = {};
+      for (const view of views) {
+        if (!byName[view.name]) byName[view.name] = [];
+        byName[view.name].push(view);
       }
 
-      // Keep the first one, delete the rest
-      const toDelete = defaultViews.slice(1);
       let deletedCount = 0;
-
-      for (const view of toDelete) {
-        const success = await storage.deleteCalendarView(view.id, req.user!.companyId!);
-        if (success) deletedCount++;
+      for (const group of Object.values(byName)) {
+        if (group.length <= 1) continue;
+        // Sort oldest first, keep first, delete rest
+        const sorted = group.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        const toDelete = sorted.slice(1);
+        for (const view of toDelete) {
+          const success = await storage.deleteCalendarView(view.id, req.user!.companyId!);
+          if (success) deletedCount++;
+        }
       }
 
       res.json({ message: "Duplicates cleaned up", deleted: deletedCount });
