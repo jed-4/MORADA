@@ -184,7 +184,7 @@ export default function CalendarScreen({ navigation }: Props) {
 
   const [views, setViews] = useState<SavedView[]>([]);
   const [selectedViewId, setSelectedViewId] = useState<string | null>(null);
-  const [activeFilters, setActiveFilters] = useState<{ eventTypes?: string[]; taskStatuses?: string[]; assignedToMe?: boolean }>({});
+  const [activeFilters, setActiveFilters] = useState<{ eventTypes?: string[]; taskStatuses?: string[]; excludedTaskStatuses?: string[]; assignedToMe?: boolean }>({});
 
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [showViewsModal, setShowViewsModal] = useState(false);
@@ -458,9 +458,17 @@ export default function CalendarScreen({ navigation }: Props) {
       events = events.filter(e => activeFilters.eventTypes!.includes(e.type));
     }
     if (activeFilters.taskStatuses && activeFilters.taskStatuses.length > 0) {
+      // Legacy inclusion model (saved views)
       events = events.filter(e => {
         if (e.type !== 'task') return true;
         return activeFilters.taskStatuses!.includes(e.status || 'todo');
+      });
+    }
+    if (activeFilters.excludedTaskStatuses && activeFilters.excludedTaskStatuses.length > 0) {
+      // Exclusion model — toggled-off statuses are hidden
+      events = events.filter(e => {
+        if (e.type !== 'task') return true;
+        return !activeFilters.excludedTaskStatuses!.includes(e.status || 'todo');
       });
     }
     return events;
@@ -674,7 +682,7 @@ export default function CalendarScreen({ navigation }: Props) {
     setShowFilterModal(false);
   };
 
-  const activeFilterCount = (activeFilters.eventTypes?.length || 0) + (activeFilters.taskStatuses?.length || 0) + (activeFilters.assignedToMe ? 1 : 0);
+  const activeFilterCount = (activeFilters.eventTypes?.length || 0) + (activeFilters.taskStatuses?.length || 0) + (activeFilters.excludedTaskStatuses?.length || 0) + (activeFilters.assignedToMe ? 1 : 0);
   const currentView = views.find(v => v.id === selectedViewId);
   const canSaveFilters = currentView && !currentView.isDefault;
 
@@ -1279,36 +1287,40 @@ export default function CalendarScreen({ navigation }: Props) {
               })}
             </View>
 
-            {/* Task Status filter */}
+            {/* Task Status filter — exclusion model: all on by default, tap to turn off */}
             {(!activeFilters.eventTypes || activeFilters.eventTypes.includes('task')) && taskStatusOptions.length > 0 && (
               <View style={{ marginTop: 16 }}>
                 <Text style={[styles.filterSectionLabel, { color: colors.secondary }]}>Task Status</Text>
                 <View style={{ gap: 4, marginTop: 6 }}>
                   {taskStatusOptions.map(opt => {
-                    const isSelected = activeFilters.taskStatuses?.includes(opt.value) ?? false;
+                    const isOff = activeFilters.excludedTaskStatuses?.includes(opt.value) ?? false;
                     return (
                       <TouchableOpacity
                         key={opt.value}
                         style={[
                           styles.filterRow,
                           { borderColor: colors.border },
-                          isSelected && { backgroundColor: opt.color + '15', borderColor: opt.color + '40' },
+                          !isOff && { backgroundColor: opt.color + '15', borderColor: opt.color + '40' },
+                          isOff && { opacity: 0.45 },
                         ]}
                         onPress={() => {
-                          const current = activeFilters.taskStatuses || [];
-                          const updated = isSelected
+                          const current = activeFilters.excludedTaskStatuses || [];
+                          const updated = isOff
                             ? current.filter(s => s !== opt.value)
                             : [...current, opt.value];
-                          setActiveFilters({ ...activeFilters, taskStatuses: updated.length > 0 ? updated : undefined });
+                          setActiveFilters({ ...activeFilters, excludedTaskStatuses: updated.length > 0 ? updated : undefined });
                         }}
                         activeOpacity={0.7}
                       >
-                        <View style={[styles.filterColorDot, { backgroundColor: opt.color }]} />
-                        <Text style={[styles.filterRowText, { color: isSelected ? colors.text : colors.secondary }]}>
+                        <View style={[styles.filterColorDot, { backgroundColor: isOff ? colors.muted : opt.color }]} />
+                        <Text style={[styles.filterRowText, { color: isOff ? colors.secondary : colors.text }]}>
                           {opt.label}
                         </Text>
-                        {isSelected && (
+                        {!isOff && (
                           <Ionicons name="checkmark-circle" size={18} color={opt.color} style={{ marginLeft: 'auto' }} />
+                        )}
+                        {isOff && (
+                          <Ionicons name="close-circle-outline" size={18} color={colors.muted} style={{ marginLeft: 'auto' }} />
                         )}
                       </TouchableOpacity>
                     );
