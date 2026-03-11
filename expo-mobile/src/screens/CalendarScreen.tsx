@@ -181,6 +181,7 @@ export default function CalendarScreen({ navigation }: Props) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [googleConnected, setGoogleConnected] = useState(false);
   const [taskStatusOptions, setTaskStatusOptions] = useState<TaskStatusOption[]>([]);
+  const [brandColor, setBrandColor] = useState<string | null>(null);
 
   const [views, setViews] = useState<SavedView[]>([]);
   const [selectedViewId, setSelectedViewId] = useState<string | null>(null);
@@ -244,7 +245,7 @@ export default function CalendarScreen({ navigation }: Props) {
     try {
       const dateRange = buildDateRange();
 
-      const [tasksData, projectsData, scheduleData, timesheetsData, diariesData, gcalStatus, viewsData, taskStatusCat] = await Promise.all([
+      const [tasksData, projectsData, scheduleData, timesheetsData, diariesData, gcalStatus, viewsData, taskStatusCat, companySettings] = await Promise.all([
         apiFetch<Task[]>('/api/tasks').catch(() => [] as Task[]),
         apiFetch<Project[]>('/api/projects').catch(() => [] as Project[]),
         apiFetch<ScheduleItem[]>(`/api/schedule-items/all?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`).catch(() => [] as ScheduleItem[]),
@@ -253,7 +254,11 @@ export default function CalendarScreen({ navigation }: Props) {
         apiFetch<{ connected: boolean }>('/api/google-calendar/status').catch(() => ({ connected: false })),
         apiFetch<SavedView[]>('/api/calendar-views?calendarType=personal').catch(() => [] as SavedView[]),
         apiFetch<any>('/api/field-categories/by-key/task.status').catch(() => null),
+        apiFetch<any>('/api/company-settings').catch(() => null),
       ]);
+
+      const resolvedBrandColor: string | null = companySettings?.brandColor || null;
+      setBrandColor(resolvedBrandColor);
 
       // Task status options from field settings
       if (taskStatusCat?.options && Array.isArray(taskStatusCat.options)) {
@@ -296,7 +301,7 @@ export default function CalendarScreen({ navigation }: Props) {
             title: task.title,
             date: task.dueDate,
             type: 'task',
-            color: proj?.color || EVENT_COLORS.task,
+            color: proj?.color || resolvedBrandColor || EVENT_COLORS.task,
             status: task.status,
             projectId: task.projectId,
             projectName: proj?.name,
@@ -308,6 +313,13 @@ export default function CalendarScreen({ navigation }: Props) {
 
       (scheduleData || []).forEach(item => {
         const proj = item.projectId ? projMap[item.projectId] : undefined;
+        const rawItem = item as any;
+        // Colour priority: custom override → assignee colour → project colour → fallback
+        const isValidHex = (c: any) => typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c);
+        const scheduleColor = (isValidHex(rawItem.color) ? rawItem.color : null)
+          || (isValidHex(rawItem.assignedToColor) ? rawItem.assignedToColor : null)
+          || proj?.color
+          || EVENT_COLORS.schedule;
         calEvents.push({
           id: `schedule-${item.id}`,
           title: item.name,
@@ -316,7 +328,7 @@ export default function CalendarScreen({ navigation }: Props) {
           startTime: item.startTime,
           endTime: item.endTime,
           type: 'schedule',
-          color: proj?.color || EVENT_COLORS.schedule,
+          color: scheduleColor,
           status: item.status,
           projectId: item.projectId,
           projectName: item.projectName || proj?.name,
@@ -738,6 +750,26 @@ export default function CalendarScreen({ navigation }: Props) {
     }
   };
 
+  const getTypeIcon = (type: string): React.ComponentProps<typeof Ionicons>['name'] => {
+    switch (type) {
+      case 'task': return 'checkmark-circle-outline';
+      case 'schedule': return 'construct-outline';
+      case 'timesheet': return 'time-outline';
+      case 'site_diary': return 'book-outline';
+      case 'google_cal': return 'logo-google';
+      default: return 'calendar-outline';
+    }
+  };
+
+  const formatDateRange = (startDate: string, endDate?: string): string | null => {
+    if (!endDate || endDate === startDate) return null;
+    const s = new Date(startDate + 'T12:00:00');
+    const e = new Date(endDate + 'T12:00:00');
+    const sStr = `${s.getDate()} ${MONTHS_SHORT[s.getMonth()]}`;
+    const eStr = `${e.getDate()} ${MONTHS_SHORT[e.getMonth()]}`;
+    return `${sStr} – ${eStr}`;
+  };
+
   const getPeriodLabel = (): string => {
     if (viewMode === 'month') {
       return `${MONTHS[currentMonth]} ${currentYear}`;
@@ -809,6 +841,8 @@ export default function CalendarScreen({ navigation }: Props) {
             );
           }
           const { event } = item as { type: 'event'; event: CalendarEvent; dateKey: string };
+          const statusOpt = event.type === 'task' ? taskStatusOptions.find(o => o.value === (event.status || 'todo')) : null;
+          const dateRange = event.type === 'schedule' ? formatDateRange(event.date, event.endDate) : null;
           return (
             <TouchableOpacity
               style={[styles.feedEventCard, { backgroundColor: colors.card, borderColor: colors.border }]}
@@ -821,12 +855,23 @@ export default function CalendarScreen({ navigation }: Props) {
                   <Text style={[styles.feedEventTitle, { color: colors.text }]} numberOfLines={2}>
                     {event.title}
                   </Text>
-                  <View style={[styles.feedEventBadge, { backgroundColor: event.color + '20' }]}>
+                  <View style={[styles.feedEventBadge, { backgroundColor: event.color + '20', flexDirection: 'row', alignItems: 'center', gap: 3 }]}>
+                    <Ionicons name={getTypeIcon(event.type)} size={11} color={event.color} />
                     <Text style={[styles.feedEventBadgeText, { color: event.color }]}>
                       {getEventTypeLabel(event.type)}
                     </Text>
                   </View>
                 </View>
+                {statusOpt && (
+                  <View style={{ flexDirection: 'row', marginTop: 4 }}>
+                    <View style={{ backgroundColor: statusOpt.color + '22', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
+                      <Text style={{ fontSize: 10, fontWeight: '600', color: statusOpt.color }}>{statusOpt.label}</Text>
+                    </View>
+                  </View>
+                )}
+                {dateRange && (
+                  <Text style={{ fontSize: 10, color: colors.secondary, marginTop: 3 }}>{dateRange}</Text>
+                )}
                 <View style={styles.feedEventMeta}>
                   {event.projectName && (
                     <Text style={[styles.feedEventProject, { color: colors.accent }]} numberOfLines={1}>
@@ -912,38 +957,38 @@ export default function CalendarScreen({ navigation }: Props) {
                 </View>
               </View>
               <View style={{ paddingHorizontal: 5, paddingTop: 7, paddingBottom: 80 }}>
-                {dayEvents.length === 0 ? null : dayEvents.map(event => (
-                  <TouchableOpacity
-                    key={event.id}
-                    style={{
-                      backgroundColor: event.color + '22',
-                      borderWidth: 1,
-                      borderColor: event.color + '55',
-                      borderRadius: 6,
-                      padding: 7,
-                      marginBottom: 5,
-                    }}
-                    onPress={() => handleEventTap(event)}
-                    activeOpacity={0.75}
-                  >
-                    <Text style={{
-                      fontSize: 11,
-                      fontWeight: '700',
-                      color: colors.text,
-                      lineHeight: 15,
-                    }} numberOfLines={3}>
-                      {event.title}
-                    </Text>
-                    <Text style={{
-                      fontSize: 10,
-                      color: event.color,
-                      marginTop: 3,
-                      fontWeight: '600',
-                    }} numberOfLines={1}>
-                      {getEventTypeLabel(event.type)}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                {dayEvents.length === 0 ? null : dayEvents.map(event => {
+                  const isSchedule = event.type === 'schedule';
+                  return (
+                    <TouchableOpacity
+                      key={event.id}
+                      style={{
+                        backgroundColor: isSchedule ? event.color + '55' : event.color + '22',
+                        borderWidth: 1,
+                        borderColor: isSchedule ? event.color + '99' : event.color + '55',
+                        borderRadius: 6,
+                        padding: 7,
+                        marginBottom: 5,
+                        position: 'relative',
+                      }}
+                      onPress={() => handleEventTap(event)}
+                      activeOpacity={0.75}
+                    >
+                      <View style={{ position: 'absolute', top: 5, right: 5 }}>
+                        <Ionicons name={getTypeIcon(event.type)} size={10} color={isSchedule ? '#fff' : event.color} style={{ opacity: 0.7 }} />
+                      </View>
+                      <Text style={{
+                        fontSize: 11,
+                        fontWeight: '700',
+                        color: isSchedule ? '#fff' : colors.text,
+                        lineHeight: 15,
+                        paddingRight: 12,
+                      }} numberOfLines={3}>
+                        {event.title}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             </View>
           );
@@ -1026,33 +1071,48 @@ export default function CalendarScreen({ navigation }: Props) {
             <Text style={[styles.emptySectionText, { color: colors.secondary }]}>No events on this day</Text>
           </View>
         ) : (
-          selectedEvents.map(event => (
-            <TouchableOpacity
-              key={event.id}
-              style={[styles.feedEventCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-              activeOpacity={0.7}
-              onPress={() => handleEventTap(event)}
-            >
-              <View style={[styles.feedEventColorBar, { backgroundColor: event.color }]} />
-              <View style={styles.feedEventContent}>
-                <View style={styles.feedEventTop}>
-                  <Text style={[styles.feedEventTitle, { color: colors.text }]} numberOfLines={2}>
-                    {event.title}
-                  </Text>
-                  <View style={[styles.feedEventBadge, { backgroundColor: event.color + '20' }]}>
-                    <Text style={[styles.feedEventBadgeText, { color: event.color }]}>
-                      {getEventTypeLabel(event.type)}
+          selectedEvents.map(event => {
+            const statusOpt = event.type === 'task' ? taskStatusOptions.find(o => o.value === (event.status || 'todo')) : null;
+            const dateRange = event.type === 'schedule' ? formatDateRange(event.date, event.endDate) : null;
+            return (
+              <TouchableOpacity
+                key={event.id}
+                style={[styles.feedEventCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                activeOpacity={0.7}
+                onPress={() => handleEventTap(event)}
+              >
+                <View style={[styles.feedEventColorBar, { backgroundColor: event.color }]} />
+                <View style={styles.feedEventContent}>
+                  <View style={styles.feedEventTop}>
+                    <Text style={[styles.feedEventTitle, { color: colors.text }]} numberOfLines={2}>
+                      {event.title}
                     </Text>
+                    <View style={[styles.feedEventBadge, { backgroundColor: event.color + '20', flexDirection: 'row', alignItems: 'center', gap: 3 }]}>
+                      <Ionicons name={getTypeIcon(event.type)} size={11} color={event.color} />
+                      <Text style={[styles.feedEventBadgeText, { color: event.color }]}>
+                        {getEventTypeLabel(event.type)}
+                      </Text>
+                    </View>
                   </View>
+                  {statusOpt && (
+                    <View style={{ flexDirection: 'row', marginTop: 4 }}>
+                      <View style={{ backgroundColor: statusOpt.color + '22', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
+                        <Text style={{ fontSize: 10, fontWeight: '600', color: statusOpt.color }}>{statusOpt.label}</Text>
+                      </View>
+                    </View>
+                  )}
+                  {dateRange && (
+                    <Text style={{ fontSize: 10, color: colors.secondary, marginTop: 3 }}>{dateRange}</Text>
+                  )}
+                  {event.projectName && (
+                    <Text style={[styles.feedEventProject, { color: colors.accent }]} numberOfLines={1}>
+                      {event.projectName}
+                    </Text>
+                  )}
                 </View>
-                {event.projectName && (
-                  <Text style={[styles.feedEventProject, { color: colors.accent }]} numberOfLines={1}>
-                    {event.projectName}
-                  </Text>
-                )}
-              </View>
-            </TouchableOpacity>
-          ))
+              </TouchableOpacity>
+            );
+          })
         )}
       </ScrollView>
     );
