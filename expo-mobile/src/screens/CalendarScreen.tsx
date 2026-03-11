@@ -407,12 +407,12 @@ export default function CalendarScreen({ navigation }: Props) {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // On first mount, clean up any duplicate views that may exist in the DB from previous bugs.
-  // Runs once per JS session (not per remount) — safe to call on every app launch.
+  // On first mount, clean up any duplicate views and then re-fetch so the UI reflects the cleaned list.
   useEffect(() => {
     apiRequest('/api/calendar-views/cleanup-duplicates', 'POST', { calendarType: 'personal' })
+      .then(() => fetchData())
       .catch(() => {});
-  }, []);
+  }, [fetchData]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -1003,7 +1003,7 @@ export default function CalendarScreen({ navigation }: Props) {
       );
     }
 
-    const CAL_DAY_WIDTH = 118;
+    const CAL_DAY_WIDTH = Math.floor(SCREEN_WIDTH / 3);
     return (
       <ScrollView
         horizontal
