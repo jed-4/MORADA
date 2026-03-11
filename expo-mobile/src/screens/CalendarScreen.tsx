@@ -197,7 +197,34 @@ export default function CalendarScreen({ navigation }: Props) {
   const [weekStartDate, setWeekStartDate] = useState<Date>(getMondayOfWeek(new Date()));
 
   const weekScrollRef = useRef<ScrollView>(null);
+  const weekScrollOffset = useRef(0);
   const CAL_DAY_WIDTH = Math.floor(SCREEN_WIDTH / 3);
+
+  // Stable base date: 60 days before today — initialised once
+  const weekBaseDate = useRef<Date>((() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 60);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  })());
+  const WEEK_TOTAL_DAYS = 180;
+
+  // All 180 days rendered in the infinite strip
+  const weekDays = useMemo(() => {
+    const base = weekBaseDate.current;
+    return Array.from({ length: WEEK_TOTAL_DAYS }, (_, i) => {
+      const d = new Date(base);
+      d.setDate(base.getDate() + i);
+      return d;
+    });
+  }, []);
+
+  // Index of today in the weekDays array
+  const todayWeekIndex = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return weekDays.findIndex(d => isSameDay(d, today));
+  }, [weekDays]);
 
   const colors = isDark
     ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569', input: '#0f172a' }
@@ -489,6 +516,12 @@ export default function CalendarScreen({ navigation }: Props) {
     return rows;
   }, [currentYear, currentMonth]);
 
+  const scrollWeekTo = (offsetX: number, animated = true) => {
+    const clamped = Math.max(0, Math.min(offsetX, (WEEK_TOTAL_DAYS - 1) * CAL_DAY_WIDTH));
+    weekScrollRef.current?.scrollTo({ x: clamped, animated });
+    weekScrollOffset.current = clamped;
+  };
+
   const navigatePeriod = (direction: number) => {
     if (viewMode === 'month') {
       let newMonth = currentMonth + direction;
@@ -498,25 +531,19 @@ export default function CalendarScreen({ navigation }: Props) {
       setCurrentMonth(newMonth);
       setCurrentYear(newYear);
     } else if (viewMode === 'week') {
-      const newStart = new Date(weekStartDate);
-      newStart.setDate(newStart.getDate() + direction * 7);
-      setWeekStartDate(newStart);
-      setTimeout(() => {
-        const todayInNewWeek = new Date(newStart);
-        todayInNewWeek.setDate(newStart.getDate() + 6);
-        const now = new Date();
-        const todayIdx = now >= newStart && now <= todayInNewWeek
-          ? Math.floor((now.getTime() - newStart.getTime()) / (1000 * 60 * 60 * 24))
-          : -1;
-        const x = todayIdx >= 0 ? Math.max(0, (todayIdx - 1) * CAL_DAY_WIDTH) : 0;
-        weekScrollRef.current?.scrollTo({ x, animated: false });
-      }, 0);
+      // Scroll 7 days forward or back
+      scrollWeekTo(weekScrollOffset.current + direction * 7 * CAL_DAY_WIDTH);
     }
   };
 
   const handleViewModeChange = (mode: ViewMode) => {
     if (mode === 'week') {
       setWeekStartDate(getMondayOfWeek(new Date()));
+      // Scroll to today when switching into week view
+      setTimeout(() => {
+        const x = Math.max(0, (todayWeekIndex - 1) * CAL_DAY_WIDTH);
+        scrollWeekTo(x, false);
+      }, 50);
     } else if (mode === 'month') {
       const now = new Date();
       setCurrentMonth(now.getMonth());
@@ -532,12 +559,28 @@ export default function CalendarScreen({ navigation }: Props) {
     setCurrentYear(now.getFullYear());
     setSelectedDate(now);
     setWeekStartDate(getMondayOfWeek(now));
-    setTimeout(() => {
-      const todayIdx = now.getDay() === 0 ? 6 : now.getDay() - 1;
-      const x = Math.max(0, (todayIdx - 1) * CAL_DAY_WIDTH);
-      weekScrollRef.current?.scrollTo({ x, animated: false });
-    }, 0);
+    if (viewMode === 'week') {
+      const x = Math.max(0, (todayWeekIndex - 1) * CAL_DAY_WIDTH);
+      scrollWeekTo(x);
+    }
   };
+
+  const handleWeekScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const offsetX = e.nativeEvent.contentOffset.x;
+    weekScrollOffset.current = offsetX;
+    // Update the period label based on the leftmost fully visible day
+    const leftIndex = Math.round(offsetX / CAL_DAY_WIDTH);
+    // Center column is leftIndex + 1
+    const centerIndex = Math.min(leftIndex + 1, weekDays.length - 1);
+    const centerDay = weekDays[centerIndex];
+    if (centerDay) {
+      const monday = getMondayOfWeek(centerDay);
+      setWeekStartDate(prev => {
+        if (prev.getTime() !== monday.getTime()) return monday;
+        return prev;
+      });
+    }
+  }, [weekDays, CAL_DAY_WIDTH]);
 
   const handleSelectView = (view: SavedView) => {
     setSelectedViewId(view.id);
@@ -787,31 +830,9 @@ export default function CalendarScreen({ navigation }: Props) {
     );
   };
 
-  // Week view — 3-column horizontal scroll, swipe between weeks
+  // Week view — infinite horizontal strip of days (180 days, centred on today)
   const renderWeekView = () => {
-    const days: Date[] = [];
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(weekStartDate);
-      d.setDate(d.getDate() + i);
-      days.push(d);
-    }
-
-    const todayIndex = days.findIndex(d => isToday(d));
-
-    const scrollToToday = () => {
-      const x = todayIndex >= 0 ? Math.max(0, (todayIndex - 1) * CAL_DAY_WIDTH) : 0;
-      weekScrollRef.current?.scrollTo({ x, animated: false });
-    };
-
-    const handleScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const offsetX = e.nativeEvent.contentOffset.x;
-      const maxOffset = 7 * CAL_DAY_WIDTH - SCREEN_WIDTH;
-      if (offsetX >= maxOffset - 10) {
-        navigatePeriod(1);
-      } else if (offsetX <= 0) {
-        navigatePeriod(-1);
-      }
-    };
+    const initialOffset = Math.max(0, (todayWeekIndex - 1) * CAL_DAY_WIDTH);
 
     return (
       <ScrollView
@@ -820,14 +841,16 @@ export default function CalendarScreen({ navigation }: Props) {
         showsHorizontalScrollIndicator={false}
         style={{ flex: 1 }}
         contentContainerStyle={{ flexDirection: 'row' }}
-        onLayout={scrollToToday}
-        onMomentumScrollEnd={handleScrollEnd}
-        scrollEventThrottle={16}
+        contentOffset={{ x: initialOffset, y: 0 }}
+        onScroll={handleWeekScroll}
+        scrollEventThrottle={32}
         decelerationRate="normal"
       >
-        {days.map((day, idx) => {
+        {weekDays.map((day, idx) => {
           const dayEvents = getEventsForDate(day);
           const currentDay = isToday(day);
+          // Day name from actual JS day-of-week (0=Sun → Mon offset)
+          const dowName = DAY_NAMES[(day.getDay() + 6) % 7];
           return (
             <View
               key={idx}
@@ -852,7 +875,7 @@ export default function CalendarScreen({ navigation }: Props) {
                   textTransform: 'uppercase',
                   color: currentDay ? colors.accent : colors.secondary,
                 }}>
-                  {DAY_NAMES[idx]}
+                  {dowName}
                 </Text>
                 <View style={currentDay ? {
                   width: 32, height: 32, borderRadius: 16,
