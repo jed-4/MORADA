@@ -70,6 +70,7 @@ interface CalendarEvent {
   status?: string;
   projectId?: string;
   projectName?: string;
+  assigneeId?: string;
   raw?: any;
 }
 
@@ -183,7 +184,7 @@ export default function CalendarScreen({ navigation }: Props) {
 
   const [views, setViews] = useState<SavedView[]>([]);
   const [selectedViewId, setSelectedViewId] = useState<string | null>(null);
-  const [activeFilters, setActiveFilters] = useState<{ eventTypes?: string[]; taskStatuses?: string[] }>({});
+  const [activeFilters, setActiveFilters] = useState<{ eventTypes?: string[]; taskStatuses?: string[]; assignedToMe?: boolean }>({});
 
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [showViewsModal, setShowViewsModal] = useState(false);
@@ -200,16 +201,16 @@ export default function CalendarScreen({ navigation }: Props) {
   const weekScrollOffset = useRef(0);
   const CAL_DAY_WIDTH = Math.floor(SCREEN_WIDTH / 3);
 
-  // Stable base date: 60 days before today — initialised once
+  // Stable base date: 14 days before today — ~2 weeks either side
   const weekBaseDate = useRef<Date>((() => {
     const d = new Date();
-    d.setDate(d.getDate() - 60);
+    d.setDate(d.getDate() - 14);
     d.setHours(0, 0, 0, 0);
     return d;
   })());
-  const WEEK_TOTAL_DAYS = 180;
+  const WEEK_TOTAL_DAYS = 30;
 
-  // All 180 days rendered in the infinite strip
+  // All days rendered in the scrollable strip (~2 weeks either side of today)
   const weekDays = useMemo(() => {
     const base = weekBaseDate.current;
     return Array.from({ length: WEEK_TOTAL_DAYS }, (_, i) => {
@@ -299,6 +300,7 @@ export default function CalendarScreen({ navigation }: Props) {
             status: task.status,
             projectId: task.projectId,
             projectName: proj?.name,
+            assigneeId: user.id,
             raw: task,
           });
         }
@@ -335,6 +337,7 @@ export default function CalendarScreen({ navigation }: Props) {
           color: EVENT_COLORS.timesheet,
           projectId: ts.projectId,
           projectName: proj?.name,
+          assigneeId: user.id,
           raw: ts,
         });
       });
@@ -351,6 +354,7 @@ export default function CalendarScreen({ navigation }: Props) {
             color: EVENT_COLORS.site_diary,
             projectId: d.projectId,
             projectName: proj?.name,
+            assigneeId: user.id,
             raw: d,
           });
         });
@@ -369,6 +373,7 @@ export default function CalendarScreen({ navigation }: Props) {
                 endDate: end,
                 type: 'google_cal',
                 color: EVENT_COLORS.google_cal,
+                assigneeId: user.id,
                 raw: ev,
               });
             }
@@ -445,6 +450,10 @@ export default function CalendarScreen({ navigation }: Props) {
 
   const filteredEvents = useMemo(() => {
     let events = allEvents;
+    if (activeFilters.assignedToMe) {
+      // Show only events explicitly tied to this user (not project-wide schedule items)
+      events = events.filter(e => !!e.assigneeId);
+    }
     if (activeFilters.eventTypes && activeFilters.eventTypes.length > 0) {
       events = events.filter(e => activeFilters.eventTypes!.includes(e.type));
     }
@@ -665,7 +674,7 @@ export default function CalendarScreen({ navigation }: Props) {
     setShowFilterModal(false);
   };
 
-  const activeFilterCount = (activeFilters.eventTypes?.length || 0) + (activeFilters.taskStatuses?.length || 0);
+  const activeFilterCount = (activeFilters.eventTypes?.length || 0) + (activeFilters.taskStatuses?.length || 0) + (activeFilters.assignedToMe ? 1 : 0);
   const currentView = views.find(v => v.id === selectedViewId);
   const canSaveFilters = currentView && !currentView.isDefault;
 
@@ -1215,6 +1224,28 @@ export default function CalendarScreen({ navigation }: Props) {
             Select types to show. Leave all off to show everything.
           </Text>
           <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 440 }}>
+            {/* Assigned to me toggle */}
+            <View style={{ marginTop: 12, gap: 4 }}>
+              <TouchableOpacity
+                style={[
+                  styles.filterRow,
+                  { borderColor: colors.border },
+                  activeFilters.assignedToMe && { backgroundColor: colors.accent + '15', borderColor: colors.accent + '40' },
+                ]}
+                onPress={() => setActiveFilters({ ...activeFilters, assignedToMe: activeFilters.assignedToMe ? undefined : true })}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.filterColorDot, { backgroundColor: colors.accent }]} />
+                <Ionicons name="person-outline" size={18} color={activeFilters.assignedToMe ? colors.accent : colors.secondary} />
+                <Text style={[styles.filterRowText, { color: activeFilters.assignedToMe ? colors.text : colors.secondary }]}>
+                  Assigned to me
+                </Text>
+                {activeFilters.assignedToMe && (
+                  <Ionicons name="checkmark-circle" size={18} color={colors.accent} style={{ marginLeft: 'auto' }} />
+                )}
+              </TouchableOpacity>
+            </View>
+
             <View style={{ marginTop: 12, gap: 4 }}>
               {EVENT_TYPE_OPTIONS.filter(opt => opt.value !== 'google_cal' || googleConnected).map(opt => {
                 const isSelected = activeFilters.eventTypes?.includes(opt.value) ?? false;
