@@ -91,7 +91,7 @@ type Props = {
 };
 
 type ViewMode = 'list' | 'gantt' | 'calendar';
-type CalendarMode = 'month' | 'week' | 'day';
+type CalendarMode = 'month' | 'week';
 
 const PHASE_ORDER: Record<string, number> = {
   construction: 0,
@@ -265,9 +265,8 @@ export default function ScheduleScreen({ navigation, route }: Props) {
   const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
   const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [calendarMode, setCalendarMode] = useState<CalendarMode>('month');
+  const [calendarMode, setCalendarMode] = useState<CalendarMode>('week');
   const [weekStartDate, setWeekStartDate] = useState<Date>(getMondayOfWeek(new Date()));
-  const [dayViewDate, setDayViewDate] = useState<Date>(new Date());
 
   const [checklistSteps, setChecklistSteps] = useState<ScheduleItemStep[]>([]);
   const [loadingSteps, setLoadingSteps] = useState(false);
@@ -1079,17 +1078,13 @@ export default function ScheduleScreen({ navigation, route }: Props) {
 
   const renderCalendarModeToggle = () => (
     <View style={[styles.calModeToggle, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
-      {(['month', 'week', 'day'] as CalendarMode[]).map(mode => (
+      {(['month', 'week'] as CalendarMode[]).map(mode => (
         <TouchableOpacity
           key={mode}
           style={[styles.calModeBtn, calendarMode === mode && { backgroundColor: colors.accent }]}
           onPress={() => {
             setCalendarMode(mode);
-            if (mode === 'week') {
-              setWeekStartDate(getMondayOfWeek(selectedDate));
-            } else if (mode === 'day') {
-              setDayViewDate(new Date(selectedDate));
-            }
+            if (mode === 'week') setWeekStartDate(getMondayOfWeek(selectedDate));
           }}
         >
           <Text style={[styles.calModeText, { color: calendarMode === mode ? '#fff' : colors.secondary }]}>
@@ -1192,207 +1187,121 @@ export default function ScheduleScreen({ navigation, route }: Props) {
 
   const renderWeekView = () => {
     const weekDays = getWeekDays();
-    const selectedDayItems = getItemsForDate(selectedDate);
-    const weekEndDate = new Date(weekStartDate);
-    weekEndDate.setDate(weekEndDate.getDate() + 6);
+    const weekEnd = new Date(weekStartDate);
+    weekEnd.setDate(weekEnd.getDate() + 6);
+    const startMonth = weekStartDate.getMonth();
+    const titleText = startMonth === weekEnd.getMonth()
+      ? `${MONTHS_FULL[startMonth]} ${weekStartDate.getFullYear()}`
+      : `${MONTHS[startMonth]} – ${MONTHS[weekEnd.getMonth()]} ${weekEnd.getFullYear()}`;
+
+    const CAL_DAY_WIDTH = 115;
 
     return (
-      <>
-        <View style={[styles.calendarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={styles.calendarNav}>
-            <TouchableOpacity onPress={() => {
-              const prev = new Date(weekStartDate);
-              prev.setDate(prev.getDate() - 7);
-              setWeekStartDate(prev);
-            }}>
-              <Ionicons name="chevron-back" size={24} color={colors.text} />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => {
-              const today = new Date();
-              setWeekStartDate(getMondayOfWeek(today));
-              setSelectedDate(today);
-            }}>
-              <Text style={[styles.calendarTitle, { color: colors.text }]}>
-                {weekStartDate.getDate()} {MONTHS[weekStartDate.getMonth()]} - {weekEndDate.getDate()} {MONTHS[weekEndDate.getMonth()]} {weekEndDate.getFullYear()}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => {
-              const next = new Date(weekStartDate);
-              next.setDate(next.getDate() + 7);
-              setWeekStartDate(next);
-            }}>
-              <Ionicons name="chevron-forward" size={24} color={colors.text} />
-            </TouchableOpacity>
-          </View>
+      <View style={styles.flex1}>
+        {/* Nav bar */}
+        <View style={[styles.calWeekNav, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+          <TouchableOpacity
+            style={styles.calNavArrow}
+            onPress={() => { const d = new Date(weekStartDate); d.setDate(d.getDate() - 7); setWeekStartDate(d); }}
+          >
+            <Ionicons name="chevron-back" size={22} color={colors.text} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setWeekStartDate(getMondayOfWeek(new Date()))}>
+            <Text style={[styles.calWeekNavTitle, { color: colors.accent }]}>{titleText}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.calNavArrow}
+            onPress={() => { const d = new Date(weekStartDate); d.setDate(d.getDate() + 7); setWeekStartDate(d); }}
+          >
+            <Ionicons name="chevron-forward" size={22} color={colors.text} />
+          </TouchableOpacity>
+        </View>
 
-          <View style={styles.weekRow}>
-            {weekDays.map((day, i) => {
-              const today = isToday(day);
-              const selected = isSameDay(day, selectedDate);
-              const dots = getDotsForDate(day);
-
-              return (
-                <TouchableOpacity
-                  key={i}
-                  style={[
-                    styles.weekDayCol,
-                    today && !selected && { backgroundColor: isDark ? '#1e3a5f' : '#dbeafe' },
-                    selected && { backgroundColor: colors.accent },
-                  ]}
-                  onPress={() => setSelectedDate(new Date(day))}
-                >
-                  <Text style={[
-                    styles.weekDayName,
-                    { color: selected ? '#fff' : colors.secondary },
-                    today && !selected && { color: colors.accent },
-                  ]}>
-                    {DAY_NAMES_MON[i]}
-                  </Text>
-                  <Text style={[
-                    styles.weekDayNum,
-                    { color: selected ? '#fff' : colors.text },
-                    today && !selected && { color: colors.accent, fontWeight: '700' },
-                  ]}>
-                    {day.getDate()}
-                  </Text>
-                  {dots.length > 0 && (
-                    <View style={styles.dotsRow}>
-                      {dots.map((color, di) => (
-                        <View key={di} style={[styles.dot, { backgroundColor: selected ? '#fff' : color }]} />
-                      ))}
+        {/* Scrollable week grid */}
+        <ScrollView
+          style={styles.flex1}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+        >
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View>
+              {/* Day header chips */}
+              <View style={[styles.calWeekHeaderRow, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
+                {weekDays.map((day, i) => {
+                  const today = isToday(day);
+                  return (
+                    <View
+                      key={i}
+                      style={[styles.calDayHeaderCol, { width: CAL_DAY_WIDTH, borderRightColor: colors.border },
+                        today && { backgroundColor: colors.accent + '14' }]}
+                    >
+                      <Text style={[styles.calDayName, { color: today ? colors.accent : colors.secondary }]}>
+                        {DAY_NAMES_MON[i]}
+                      </Text>
+                      <View style={today ? [styles.calTodayCircle, { backgroundColor: colors.accent }] : styles.calDayNumWrap}>
+                        <Text style={[styles.calDayNum, { color: today ? '#fff' : colors.text }]}>
+                          {day.getDate()}
+                        </Text>
+                      </View>
                     </View>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
+                  );
+                })}
+              </View>
 
-        <View style={styles.selectedDaySection}>
-          <Text style={[styles.selectedDayTitle, { color: colors.text }]}>
-            {DAY_NAMES_FULL[selectedDate.getDay()]}, {selectedDate.getDate()} {MONTHS_FULL[selectedDate.getMonth()]} {selectedDate.getFullYear()}
-          </Text>
-          {selectedDayItems.length === 0 ? (
-            <Text style={[styles.noDayItems, { color: colors.secondary }]}>No items scheduled for this day</Text>
-          ) : (
-            selectedDayItems.map(renderItemCard)
-          )}
-        </View>
-      </>
-    );
-  };
-
-  const renderDayView = () => {
-    const dayItems = getItemsForDate(dayViewDate);
-    const allDayItems = dayItems.filter(item => !item.startTime || !item.endTime);
-    const timedItems = dayItems.filter(item => item.startTime && item.endTime);
-
-    const startHour = 6;
-    const endHour = 20;
-    const hours: number[] = [];
-    for (let h = startHour; h <= endHour; h++) {
-      hours.push(h);
-    }
-
-    const formatHourLabel = (h: number): string => {
-      if (h === 0) return '12 AM';
-      if (h < 12) return `${h} AM`;
-      if (h === 12) return '12 PM';
-      return `${h - 12} PM`;
-    };
-
-    return (
-      <>
-        <View style={[styles.calendarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={styles.calendarNav}>
-            <TouchableOpacity onPress={() => {
-              const prev = new Date(dayViewDate);
-              prev.setDate(prev.getDate() - 1);
-              setDayViewDate(prev);
-              setSelectedDate(prev);
-            }}>
-              <Ionicons name="chevron-back" size={24} color={colors.text} />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => {
-              const today = new Date();
-              setDayViewDate(today);
-              setSelectedDate(today);
-            }}>
-              <Text style={[styles.calendarTitle, { color: colors.text }]}>
-                {DAY_NAMES_FULL[dayViewDate.getDay()]}, {dayViewDate.getDate()} {MONTHS_FULL[dayViewDate.getMonth()]} {dayViewDate.getFullYear()}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => {
-              const next = new Date(dayViewDate);
-              next.setDate(next.getDate() + 1);
-              setDayViewDate(next);
-              setSelectedDate(next);
-            }}>
-              <Ionicons name="chevron-forward" size={24} color={colors.text} />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {allDayItems.length > 0 && (
-          <View style={styles.allDaySection}>
-            <Text style={[styles.allDayLabel, { color: colors.secondary }]}>All Day</Text>
-            {allDayItems.map(item => (
-              <TouchableOpacity
-                key={item.id}
-                style={[styles.allDayItem, { backgroundColor: (getItemColor(item)) + '20', borderLeftColor: getItemColor(item) }]}
-                onPress={() => openDetail(item)}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.allDayItemText, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
-                <View style={[styles.typeBadge, { backgroundColor: (TYPE_COLORS[item.type] || '#3b82f6') + '20' }]}>
-                  <Text style={[styles.typeBadgeText, { color: TYPE_COLORS[item.type] || '#3b82f6' }]}>{TYPE_LABELS[item.type] || item.type}</Text>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-
-        <View style={[styles.timelineContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          {hours.map(h => (
-            <View key={h} style={[styles.hourRow, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.hourLabel, { color: colors.secondary }]}>{formatHourLabel(h)}</Text>
-              <View style={[styles.hourLine, { backgroundColor: colors.border }]} />
+              {/* Day content columns */}
+              <View style={{ flexDirection: 'row' }}>
+                {weekDays.map((day, i) => {
+                  const dayItems = getItemsForDate(day);
+                  const today = isToday(day);
+                  return (
+                    <View
+                      key={i}
+                      style={[styles.calDayCol, { width: CAL_DAY_WIDTH, borderRightColor: colors.border },
+                        today && { backgroundColor: colors.accent + '06' }]}
+                    >
+                      {dayItems.length === 0 ? (
+                        <View style={styles.calDayEmpty} />
+                      ) : (
+                        dayItems.map(item => {
+                          const itemColor = getItemColor(item);
+                          return (
+                            <TouchableOpacity
+                              key={item.id}
+                              style={[styles.calItemCard, { backgroundColor: itemColor + '22', borderColor: itemColor + '66' }]}
+                              onPress={() => openDetail(item)}
+                              activeOpacity={0.75}
+                            >
+                              <Text style={[styles.calItemName, { color: colors.text }]} numberOfLines={3}>{item.name}</Text>
+                              <Text style={[styles.calItemSub, { color: colors.secondary }]} numberOfLines={1}>
+                                {TYPE_LABELS[item.type] || item.type}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
             </View>
-          ))}
-
-          {timedItems.map(item => {
-            const itemStartHour = parseTimeToHour(item.startTime!);
-            const itemEndHour = parseTimeToHour(item.endTime!);
-            const clampedStart = Math.max(itemStartHour, startHour);
-            const clampedEnd = Math.min(itemEndHour, endHour + 1);
-            if (clampedEnd <= clampedStart) return null;
-
-            const top = (clampedStart - startHour) * HOUR_HEIGHT;
-            const height = Math.max((clampedEnd - clampedStart) * HOUR_HEIGHT - 2, 20);
-            const itemColor = getItemColor(item);
-
-            return (
-              <TouchableOpacity
-                key={item.id}
-                style={[styles.timeBlock, { top, height, backgroundColor: itemColor + '30', borderLeftColor: itemColor, left: 56 }]}
-                onPress={() => openDetail(item)}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.timeBlockName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
-                {height > 30 && (
-                  <Text style={[styles.timeBlockTime, { color: colors.secondary }]}>
-                    {item.startTime} - {item.endTime}
-                  </Text>
-                )}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </>
+          </ScrollView>
+          <View style={{ height: 40 }} />
+        </ScrollView>
+      </View>
     );
   };
 
   const renderCalendarView = () => {
+    if (calendarMode === 'week') {
+      return (
+        <View style={styles.flex1}>
+          <View style={{ paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+            {renderCalendarModeToggle()}
+          </View>
+          {renderWeekView()}
+        </View>
+      );
+    }
     return (
       <ScrollView
         style={styles.flex1}
@@ -1401,9 +1310,7 @@ export default function ScheduleScreen({ navigation, route }: Props) {
         <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
           {renderCalendarModeToggle()}
         </View>
-        {calendarMode === 'month' && renderMonthView()}
-        {calendarMode === 'week' && renderWeekView()}
-        {calendarMode === 'day' && renderDayView()}
+        {renderMonthView()}
         <View style={{ height: 40 }} />
       </ScrollView>
     );
@@ -2144,9 +2051,24 @@ const styles = StyleSheet.create({
   ganttStatusChip: { position: 'absolute', top: 8, borderWidth: 1, borderRadius: 3, paddingHorizontal: 4, paddingVertical: 1 },
   ganttStatusChipText: { fontSize: 9, fontWeight: '600' },
 
-  calModeToggle: { flexDirection: 'row', borderWidth: 1, borderRadius: 8, overflow: 'hidden', marginBottom: 4 },
+  calModeToggle: { flexDirection: 'row', borderWidth: 1, borderRadius: 8, overflow: 'hidden' },
   calModeBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 7 },
   calModeText: { fontSize: 12, fontWeight: '600' },
+
+  calWeekNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4, paddingVertical: 10, borderBottomWidth: 1 },
+  calNavArrow: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  calWeekNavTitle: { fontSize: 18, fontWeight: '700' },
+  calWeekHeaderRow: { flexDirection: 'row', borderBottomWidth: 1 },
+  calDayHeaderCol: { alignItems: 'center', paddingVertical: 10, paddingHorizontal: 4, borderRightWidth: StyleSheet.hairlineWidth },
+  calDayName: { fontSize: 11, fontWeight: '600', letterSpacing: 0.3, textTransform: 'uppercase' },
+  calTodayCircle: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
+  calDayNumWrap: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
+  calDayNum: { fontSize: 17, fontWeight: '600' },
+  calDayCol: { paddingTop: 8, paddingHorizontal: 5, paddingBottom: 12, minHeight: 280, borderRightWidth: StyleSheet.hairlineWidth },
+  calDayEmpty: { height: 40 },
+  calItemCard: { borderWidth: 1, borderRadius: 6, padding: 8, marginBottom: 6 },
+  calItemName: { fontSize: 12, fontWeight: '700', lineHeight: 16 },
+  calItemSub: { fontSize: 10, marginTop: 3 },
 
   calendarCard: { margin: 16, marginBottom: 8, borderWidth: 1, borderRadius: 12, padding: 12 },
   calendarNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
