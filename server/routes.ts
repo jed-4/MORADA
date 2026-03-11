@@ -2560,13 +2560,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (newSubStatus) {
             const statusCategory = await storage.getFieldCategoryWithOptions("project.status");
             if (statusCategory?.options) {
+              const optionsById = new Map<string, any>();
+              for (const opt of statusCategory.options) {
+                optionsById.set(opt.id, opt);
+              }
+
+              const derivePhaseFromKey = (key: string): string | null => {
+                const k = key.toLowerCase();
+                if (k === 'lead' || k.startsWith('lead_')) return 'lead';
+                if (k === 'pre_construction' || k === 'pre-construction' || k.startsWith('precon_') || k.startsWith('pre-con') || k.startsWith('awaiting_') || k === 'fdp' || k === 'fdp_review' || k === 'contract_preparation' || k === 'scheduling') return 'pre_construction';
+                if (k === 'construction' || k.startsWith('const_') || k.startsWith('construction_')) return 'construction';
+                if (k === 'post_construction' || k === 'post-construction' || k.startsWith('postcon_')) return 'post_construction';
+                return null;
+              };
+
+              const derivePhaseFromParentId = (parentId: string): string | null => {
+                const id = parentId.toLowerCase();
+                if (id.includes('lead')) return 'lead';
+                if (id.includes('pre-construction') || id.includes('pre_construction')) return 'pre_construction';
+                if (id.includes('post-construction') || id.includes('post_construction')) return 'post_construction';
+                if (id.includes('construction')) return 'construction';
+                return null;
+              };
+
               const statusOption = statusCategory.options.find(
                 opt => opt.key === newSubStatus
               );
-              const resolvedPhase = statusOption?.systemPhase
-                || (statusOption?.parentId
-                  ? statusCategory.options.find(p => p.id === statusOption.parentId)?.systemPhase
-                  : undefined);
+
+              let resolvedPhase: string | null | undefined = statusOption?.systemPhase;
+              if (!resolvedPhase && statusOption?.parentId) {
+                const parent = optionsById.get(statusOption.parentId);
+                if (parent?.systemPhase) {
+                  resolvedPhase = parent.systemPhase;
+                } else if (parent?.key) {
+                  resolvedPhase = derivePhaseFromKey(parent.key);
+                }
+                if (!resolvedPhase) {
+                  resolvedPhase = derivePhaseFromParentId(statusOption.parentId);
+                }
+              }
+              if (!resolvedPhase && statusOption?.key) {
+                resolvedPhase = derivePhaseFromKey(statusOption.key);
+              }
+
               if (resolvedPhase) {
                 updateData.currentSystemPhase = resolvedPhase;
                 console.log(`[PATCH /api/projects/:id] Auto-updating currentSystemPhase to: ${resolvedPhase}`);
@@ -2590,6 +2626,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (validPhases.includes(newProjectStatus)) {
             updateData.currentSystemPhase = newProjectStatus;
             console.log(`[PATCH /api/projects/:id] Syncing currentSystemPhase from projectStatus: ${newProjectStatus}`);
+          } else {
+            console.warn(`[PATCH /api/projects/:id] projectStatus "${newProjectStatus}" is not a recognized phase, currentSystemPhase not updated`);
           }
         } else if (newProjectStatus === null) {
           // projectStatus is being cleared - also clear currentSystemPhase
@@ -2806,19 +2844,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return null;
       };
       
-      // Helper to get systemPhase - check option, parent, or derive from key
+      const derivePhaseFromParentId = (parentId: string): string | null => {
+        const id = parentId.toLowerCase();
+        if (id.includes('lead')) return 'lead';
+        if (id.includes('pre-construction') || id.includes('pre_construction')) return 'pre_construction';
+        if (id.includes('post-construction') || id.includes('post_construction')) return 'post_construction';
+        if (id.includes('construction')) return 'construction';
+        return null;
+      };
+
       const getSystemPhase = (opt: any): string | null => {
         if (opt.systemPhase) return opt.systemPhase;
         if (opt.parentId) {
           const parent = optionsById.get(opt.parentId);
           if (parent?.systemPhase) return parent.systemPhase;
-          // Try deriving from parent's key
           if (parent?.key) {
             const derived = derivePhaseFromKey(parent.key);
             if (derived) return derived;
           }
+          const fromParentId = derivePhaseFromParentId(opt.parentId);
+          if (fromParentId) return fromParentId;
         }
-        // Try deriving from this option's key
         return derivePhaseFromKey(opt.key);
       };
       
@@ -2883,9 +2929,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
             noMappingCount++;
             console.log(`[fix-phases] No mapping for status "${project.projectSubStatus}" on project "${project.name}"`);
           }
+        } else if (project.projectStatus) {
+          const validPhases = ['lead', 'pre_construction', 'construction', 'post_construction', 'archive'];
+          if (validPhases.includes(project.projectStatus) && project.currentSystemPhase !== project.projectStatus) {
+            try {
+              await pool.query(
+                `UPDATE projects SET current_system_phase = $1 WHERE id = $2`,
+                [project.projectStatus, project.id]
+              );
+              updatedCount++;
+              console.log(`[fix-phases] Updated project "${project.name}" from ${project.currentSystemPhase} to ${project.projectStatus} (from projectStatus)`);
+            } catch (updateError: any) {
+              errors.push(`Failed to update project "${project.name}": ${updateError.message}`);
+              console.error(`[fix-phases] Error updating project "${project.name}":`, updateError);
+            }
+          } else {
+            skippedCount++;
+          }
         } else {
           noStatusCount++;
-          console.log(`[fix-phases] Project "${project.name}" has no projectSubStatus assigned`);
+          console.log(`[fix-phases] Project "${project.name}" has no projectSubStatus or projectStatus assigned`);
         }
       }
       
