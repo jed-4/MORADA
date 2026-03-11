@@ -21,6 +21,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest } from '../services/api';
+import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 interface Task {
@@ -201,6 +202,7 @@ export default function CalendarScreen({ navigation }: Props) {
   const [weekSelectedDay, setWeekSelectedDay] = useState<Date>(new Date());
 
   const timelineScrollRef = useRef<ScrollView>(null);
+  const weekScrollRef = useRef<ScrollView>(null);
   const swipeX = useRef(new Animated.Value(0)).current;
 
   const colors = isDark
@@ -405,7 +407,8 @@ export default function CalendarScreen({ navigation }: Props) {
     }
   }, [user?.id]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  // Re-fetch every time the Calendar tab gains focus so state never goes stale
+  useFocusEffect(useCallback(() => { fetchData(); }, [fetchData]));
 
   // On first mount, clean up any duplicate views and then re-fetch so the UI reflects the cleaned list.
   useEffect(() => {
@@ -1004,12 +1007,19 @@ export default function CalendarScreen({ navigation }: Props) {
     }
 
     const CAL_DAY_WIDTH = Math.floor(SCREEN_WIDTH / 3);
+    const todayIndex = days.findIndex(d => isToday(d));
+    const scrollToToday = () => {
+      const x = todayIndex >= 0 ? Math.max(0, (todayIndex - 1) * CAL_DAY_WIDTH) : 0;
+      weekScrollRef.current?.scrollTo({ x, animated: false });
+    };
     return (
       <ScrollView
+        ref={weekScrollRef}
         horizontal
         showsHorizontalScrollIndicator={false}
         style={{ flex: 1 }}
         contentContainerStyle={{ flexDirection: 'row' }}
+        onLayout={scrollToToday}
       >
         {days.map((day, idx) => {
           const dayEvents = getEventsForDate(day);
