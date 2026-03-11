@@ -14,13 +14,11 @@ import {
   KeyboardAvoidingView,
   Platform,
   FlatList,
-  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
 import NetInfo from '@react-native-community/netinfo';
 import { useAuth } from '../contexts/AuthContext';
-import { apiFetch, apiRequest, uploadPhoto, API_BASE_URL } from '../services/api';
+import { apiFetch, apiRequest, API_BASE_URL } from '../services/api';
 import { addToQueue, syncQueue, getQueueCount, isOnline, getQueue, clearFailedActions, addSyncListener } from '../services/offlineQueue';
 
 interface Timesheet {
@@ -168,7 +166,6 @@ export default function TimesheetsScreen() {
 
   const [clockInProjectId, setClockInProjectId] = useState('');
   const [clockInCostCodeId, setClockInCostCodeId] = useState('');
-  const [clockInPhotoUri, setClockInPhotoUri] = useState<string | null>(null);
   const [showProjectPicker, setShowProjectPicker] = useState(false);
   const [showClockInCostCodePicker, setShowClockInCostCodePicker] = useState(false);
   const [clockingIn, setClockingIn] = useState(false);
@@ -288,22 +285,6 @@ export default function TimesheetsScreen() {
     setRefreshing(false);
   }, [fetchData]);
 
-  const handleTakePhoto = async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission Required', 'Camera access is needed to take a site photo.');
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['images'],
-      quality: 0.7,
-      allowsEditing: false,
-    });
-    if (!result.canceled && result.assets[0]) {
-      setClockInPhotoUri(result.assets[0].uri);
-    }
-  };
-
   const handleClockIn = async () => {
     if (!clockInProjectId || !clockInCostCodeId) {
       Alert.alert('Missing Fields', 'Please select a project and cost code to clock in.');
@@ -316,42 +297,26 @@ export default function TimesheetsScreen() {
         await addToQueue({
           type: 'clock-in',
           payload: { projectId: clockInProjectId, costCodeId: clockInCostCodeId },
-          photoUri: clockInPhotoUri || undefined,
         });
         Alert.alert('Saved Offline', 'Your clock-in has been queued and will sync when you have a connection.');
         setClockInProjectId('');
         setClockInCostCodeId('');
-        setClockInPhotoUri(null);
         return;
       }
 
-      const res = await apiRequest('/api/timesheets/clock-in', 'POST', { projectId: clockInProjectId, costCodeId: clockInCostCodeId });
-      const timesheet = await res.json();
-
-      if (clockInPhotoUri && timesheet?.id) {
-        try {
-          const { objectPath } = await uploadPhoto(clockInPhotoUri);
-          const attachments = [{ type: 'photo', path: objectPath, name: `Site photo - ${new Date().toLocaleDateString()}`, uploadedAt: new Date().toISOString() }];
-          await apiRequest(`/api/timesheets/${timesheet.id}`, 'PATCH', { attachments });
-        } catch (photoErr) {
-          console.warn('Photo upload failed, timesheet still created:', photoErr);
-        }
-      }
+      await apiRequest('/api/timesheets/clock-in', 'POST', { projectId: clockInProjectId, costCodeId: clockInCostCodeId });
 
       await fetchData();
       setClockInProjectId('');
       setClockInCostCodeId('');
-      setClockInPhotoUri(null);
     } catch (e: any) {
       await addToQueue({
         type: 'clock-in',
         payload: { projectId: clockInProjectId, costCodeId: clockInCostCodeId },
-        photoUri: clockInPhotoUri || undefined,
       });
       Alert.alert('Saved Offline', 'Clock-in saved and will sync when connection is restored.');
       setClockInProjectId('');
       setClockInCostCodeId('');
-      setClockInPhotoUri(null);
     } finally {
       setClockingIn(false);
     }
@@ -734,30 +699,6 @@ export default function TimesheetsScreen() {
                   </Text>
                   <Ionicons name="chevron-down" size={18} color={colors.secondary} />
                 </TouchableOpacity>
-              ) : null}
-              {clockInProjectId && clockInCostCodeId ? (
-                <View style={styles.photoRow}>
-                  <TouchableOpacity
-                    style={[styles.photoButton, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-                    onPress={handleTakePhoto}
-                  >
-                    <Ionicons name="camera-outline" size={20} color={colors.accent} />
-                    <Text style={[styles.photoButtonText, { color: colors.text }]}>
-                      {clockInPhotoUri ? 'Retake Photo' : 'Site Photo (optional)'}
-                    </Text>
-                  </TouchableOpacity>
-                  {clockInPhotoUri ? (
-                    <View style={styles.photoPreviewContainer}>
-                      <Image source={{ uri: clockInPhotoUri }} style={styles.photoPreview} />
-                      <TouchableOpacity
-                        style={styles.photoRemove}
-                        onPress={() => setClockInPhotoUri(null)}
-                      >
-                        <Ionicons name="close-circle" size={22} color={colors.red} />
-                      </TouchableOpacity>
-                    </View>
-                  ) : null}
-                </View>
               ) : null}
               <TouchableOpacity
                 style={[styles.clockButton, { backgroundColor: (clockInProjectId && clockInCostCodeId) ? colors.green : colors.border, opacity: clockingIn ? 0.7 : 1 }]}
@@ -1207,41 +1148,6 @@ const styles = StyleSheet.create({
   clockButtonText: { color: '#fff', fontSize: 17, fontWeight: '600' },
   clockInRow: { flexDirection: 'row', alignItems: 'center', gap: 8, width: '100%', marginBottom: 10 },
   clockInLabel: { fontSize: 13 },
-  photoRow: {
-    width: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 10,
-  },
-  photoButton: {
-    flex: 1,
-    height: 44,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    paddingHorizontal: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  photoButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  photoPreviewContainer: {
-    position: 'relative',
-  },
-  photoPreview: {
-    width: 44,
-    height: 44,
-    borderRadius: 8,
-  },
-  photoRemove: {
-    position: 'absolute',
-    top: -6,
-    right: -6,
-  },
   projectSelector: {
     width: '100%',
     height: 44,

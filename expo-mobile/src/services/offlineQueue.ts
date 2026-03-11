@@ -69,22 +69,6 @@ const processAction = async (action: QueuedAction): Promise<boolean> => {
           costCodeId: action.payload.costCodeId,
         });
         if (!res.ok) throw new Error('Clock-in failed');
-        const timesheet = await res.json();
-
-        if (action.photoUri && timesheet?.id) {
-          try {
-            const { objectPath } = await uploadPhoto(action.photoUri);
-            const attachments = [{
-              type: 'photo',
-              path: objectPath,
-              name: `Site photo - ${new Date().toLocaleDateString()}`,
-              uploadedAt: new Date().toISOString(),
-            }];
-            await apiRequest(`/api/timesheets/${timesheet.id}`, 'PATCH', { attachments });
-          } catch {
-            // Photo failed but clock-in succeeded
-          }
-        }
         return true;
       }
       case 'clock-out': {
