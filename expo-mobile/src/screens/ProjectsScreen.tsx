@@ -53,6 +53,7 @@ export default function ProjectsScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const pagerRef = useRef<FlatList>(null);
   const indicatorAnim = useRef(new Animated.Value(0)).current;
+  const restoredIndexRef = useRef<number | null>(null);
 
   const colors = isDark
     ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', inputBg: '#1e293b' }
@@ -77,13 +78,21 @@ export default function ProjectsScreen({ navigation }: Props) {
         if (!isNaN(idx) && idx >= 0 && idx < phases.length) {
           setActiveIndex(idx);
           indicatorAnim.setValue(idx);
-          setTimeout(() => {
-            pagerRef.current?.scrollToIndex({ index: idx, animated: false });
-          }, 100);
+          restoredIndexRef.current = idx;
         }
       }
     });
   }, [fetchProjects]);
+
+  useEffect(() => {
+    if (!loading && restoredIndexRef.current !== null && restoredIndexRef.current > 0) {
+      const idx = restoredIndexRef.current;
+      restoredIndexRef.current = null;
+      setTimeout(() => {
+        pagerRef.current?.scrollToIndex({ index: idx, animated: false });
+      }, 50);
+    }
+  }, [loading]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
