@@ -92,3 +92,7 @@ args = "cd expo-mobile && npx expo start --tunnel --port 8081"
 
 [agent]
 integrations = ["javascript_log_in_with_replit:1.0.0", "javascript_database:1.0.0", "javascript_openai_ai_integrations:1.0.0", "google-calendar:1.0.0", "javascript_object_storage:2.0.0"]
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 20000
