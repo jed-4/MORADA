@@ -121,11 +121,15 @@ const SCHEDULE_STATUS_COLORS: Record<string, string> = {
   'in-progress':   '#3b82f6',
   'in_progress':   '#3b82f6',
   'completed':     '#22c55e',
+  'complete':      '#22c55e',
   'done':          '#22c55e',
   'on-hold':       '#f59e0b',
   'on_hold':       '#f59e0b',
   'delayed':       '#ef4444',
   'blocked':       '#ef4444',
+  'cancelled':     '#6b7280',
+  'booked':        '#8b5cf6',
+  'requested':     '#f59e0b',
 };
 
 const SCHEDULE_STATUS_LABELS: Record<string, string> = {
@@ -134,11 +138,15 @@ const SCHEDULE_STATUS_LABELS: Record<string, string> = {
   'in-progress':   'In Progress',
   'in_progress':   'In Progress',
   'completed':     'Completed',
+  'complete':      'Completed',
   'done':          'Done',
   'on-hold':       'On Hold',
   'on_hold':       'On Hold',
   'delayed':       'Delayed',
   'blocked':       'Blocked',
+  'cancelled':     'Cancelled',
+  'booked':        'Booked',
+  'requested':     'Requested',
 };
 
 const EVENT_TYPE_OPTIONS = [
