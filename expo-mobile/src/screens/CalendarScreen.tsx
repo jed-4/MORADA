@@ -903,7 +903,7 @@ export default function CalendarScreen({ navigation }: Props) {
           const taskStatusOpt = event.type === 'task' ? taskStatusOptions.find(o => o.value === (event.status || 'todo')) : null;
           const schedStatusColor = event.statusColor;
           const schedStatusLabel = event.status ? (SCHEDULE_STATUS_LABELS[event.status] || event.status) : null;
-          const barColor = event.type === 'schedule' ? (schedStatusColor || event.color) : event.color;
+          const barColor = event.color;
           const dateRange = event.type === 'schedule' ? formatDateRange(event.date, event.endDate) : null;
           return (
             <TouchableOpacity
@@ -1027,9 +1027,9 @@ export default function CalendarScreen({ navigation }: Props) {
                     <TouchableOpacity
                       key={event.id}
                       style={{
-                        backgroundColor: isSchedule ? weekCardColor + '55' : weekCardColor + '22',
+                        backgroundColor: isSchedule ? weekCardColor + 'aa' : weekCardColor + '22',
                         borderWidth: 1,
-                        borderColor: isSchedule ? weekCardColor + '99' : weekCardColor + '55',
+                        borderColor: isSchedule ? weekCardColor + 'dd' : weekCardColor + '55',
                         borderRadius: 6,
                         padding: 7,
                         marginBottom: 5,
