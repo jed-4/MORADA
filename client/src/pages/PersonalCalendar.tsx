@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { flushSync } from "react-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format, isWithinInterval, startOfWeek, startOfMonth, subMonths, addMonths, endOfWeek, endOfMonth } from "date-fns";
@@ -63,6 +63,10 @@ import { SiGoogle } from "react-icons/si";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 
+// Module-level flag — survives component remounts for the full browser session,
+// preventing duplicate "All Events" view creation on every navigation.
+let defaultPersonalViewCreated = false;
+
 // Helper function to normalize filter dates from API responses
 function normalizeFilterDates(filters: CalendarFiltersType): CalendarFiltersType {
   const normalized = { ...filters };
@@ -92,7 +96,6 @@ export default function PersonalCalendar() {
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
-  const defaultViewCreationAttempted = useRef(false);
   const [connectingGoogle, setConnectingGoogle] = useState(false);
 
   const displayedUserId = user?.id;
@@ -322,11 +325,11 @@ export default function PersonalCalendar() {
   }, [user]);
 
   useEffect(() => {
-    if (!user || isLoadingViews || defaultViewCreationAttempted.current) return;
+    if (!user || isLoadingViews || defaultPersonalViewCreated) return;
     if (createDefaultViewMutation.isPending) return;
     
     if (views.length === 0) {
-      defaultViewCreationAttempted.current = true;
+      defaultPersonalViewCreated = true;
       createDefaultViewMutation.mutate();
     }
   }, [user, isLoadingViews, views.length]);

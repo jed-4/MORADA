@@ -54,6 +54,10 @@ import {
 import { useLocation } from "wouter";
 import TaskEditModal from "@/components/TaskEditModal";
 
+// Module-level flag — survives component remounts for the full browser session,
+// preventing duplicate "All Events" view creation on every navigation.
+let defaultBusinessViewCreated = false;
+
 // Helper function to normalize filter dates from API responses
 function normalizeFilterDates(filters: CalendarFiltersType): CalendarFiltersType {
   const normalized = { ...filters };
@@ -92,7 +96,6 @@ export default function BusinessCalendar() {
   const [showScheduleItemDialog, setShowScheduleItemDialog] = useState(false);
   const [showParentItems, setShowParentItems] = useState(true);
   const [showChildItems, setShowChildItems] = useState(true);
-  const defaultViewCreationAttempted = useRef(false);
 
   const [displayOptions, setDisplayOptions] = useState<CalendarDisplayOptions>(() => {
     try {
@@ -193,11 +196,11 @@ export default function BusinessCalendar() {
   });
 
   useEffect(() => {
-    if (!user || isLoadingViews || defaultViewCreationAttempted.current) return;
+    if (!user || isLoadingViews || defaultBusinessViewCreated) return;
     if (createDefaultViewMutation.isPending) return;
     
     if (views.length === 0) {
-      defaultViewCreationAttempted.current = true;
+      defaultBusinessViewCreated = true;
       createDefaultViewMutation.mutate();
     }
   }, [user, isLoadingViews, views.length]);
