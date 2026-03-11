@@ -50,6 +50,7 @@ interface ScheduleItem {
   scheduleId: string;
   projectId?: string;
   projectName?: string;
+  projectColor?: string | null;
 }
 
 interface Project {
@@ -347,11 +348,10 @@ export default function CalendarScreen({ navigation }: Props) {
       });
 
       (scheduleData || []).forEach(item => {
-        const proj = item.projectId ? projMap[item.projectId] : undefined;
-        const rawItem = item as any;
-        // Use project colour (the icon colour set in project settings)
         const isValidHex = (c: any) => typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c);
-        const scheduleColor = (isValidHex(proj?.color) ? proj!.color : null)
+        // Use project colour (from project settings), falling back to brand colour or default
+        const scheduleColor = (isValidHex(item.projectColor) ? item.projectColor! : null)
+          || (isValidHex(resolvedBrandColor) ? resolvedBrandColor! : null)
           || EVENT_COLORS.schedule;
         const scheduleStatusColor = item.status
           ? (SCHEDULE_STATUS_COLORS[item.status] || EVENT_COLORS.schedule)
@@ -368,7 +368,7 @@ export default function CalendarScreen({ navigation }: Props) {
           statusColor: scheduleStatusColor,
           status: item.status,
           projectId: item.projectId,
-          projectName: item.projectName || proj?.name,
+          projectName: item.projectName,
           raw: item,
         });
       });

@@ -5411,7 +5411,13 @@ export class MemStorage implements IStorage {
       const project = this.projects.get(schedule.projectId);
       if (project?.companyId === companyId) {
         const scheduleItems = await this.getScheduleItems(schedule.id);
-        allItems.push(...scheduleItems);
+        const enriched = scheduleItems.map(item => ({
+          ...item,
+          projectId: schedule.projectId,
+          projectName: project.name,
+          projectColor: (project as any).color ?? null,
+        }));
+        allItems.push(...(enriched as any as ScheduleItem[]));
       }
     }
     
@@ -15141,7 +15147,12 @@ export class DbStorage implements IStorage {
         .innerJoin(schema.projects, eq(schema.schedules.projectId, schema.projects.id))
         .where(and(...conditions))
         .orderBy(schema.scheduleItems.startDate);
-      return items.map(row => row.schedule_items);
+      return items.map(row => ({
+        ...row.schedule_items,
+        projectId: row.schedules.projectId,
+        projectName: row.projects.name,
+        projectColor: (row.projects as any).color ?? null,
+      })) as any as ScheduleItem[];
     } catch (error) {
       console.error("Database error in getAllScheduleItems:", error);
       throw error;
