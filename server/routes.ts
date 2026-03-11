@@ -18249,11 +18249,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       let deletedCount = 0;
-      for (const group of Object.values(byName)) {
+      for (const [name, group] of Object.entries(byName)) {
         if (group.length <= 1) continue;
-        // Sort oldest first, keep first, delete rest
+        // Prefer the view with calendarMode='week' (better default); otherwise keep the oldest
+        const weekView = group.find(v => v.calendarMode === 'week');
         const sorted = group.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-        const toDelete = sorted.slice(1);
+        const keeper = weekView || sorted[0];
+        const toDelete = group.filter(v => v.id !== keeper.id);
         for (const view of toDelete) {
           const success = await storage.deleteCalendarView(view.id, req.user!.companyId!);
           if (success) deletedCount++;

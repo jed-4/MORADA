@@ -389,9 +389,13 @@ export default function CalendarScreen({ navigation }: Props) {
         const defaultView = fetchedViews.find(v => v.isDefault) || fetchedViews[0];
         setSelectedViewId(defaultView.id);
         setActiveFilters(defaultView.filters || {});
-        const mode = defaultView.calendarMode as ViewMode;
-        if (mode === 'week' || mode === 'day' || mode === 'month') {
-          setViewMode(mode);
+        const storedMode = defaultView.calendarMode as ViewMode;
+        // "All Events" should always open on the week grid — guard against stale 'month' in DB
+        const resolvedMode = (defaultView.name === 'All Events' && storedMode === 'month') ? 'week' : storedMode;
+        if (resolvedMode === 'week' || resolvedMode === 'day' || resolvedMode === 'month') {
+          setViewMode(resolvedMode);
+        } else {
+          setViewMode('week');
         }
       }
     } catch (e) {
@@ -595,9 +599,12 @@ export default function CalendarScreen({ navigation }: Props) {
   const handleSelectView = (view: SavedView) => {
     setSelectedViewId(view.id);
     setActiveFilters(view.filters || {});
-    const mode = view.calendarMode as ViewMode;
-    if (mode === 'week' || mode === 'day' || mode === 'month') {
-      handleViewModeChange(mode);
+    const storedMode = view.calendarMode as ViewMode;
+    const resolvedMode = (view.name === 'All Events' && storedMode === 'month') ? 'week' : storedMode;
+    if (resolvedMode === 'week' || resolvedMode === 'day' || resolvedMode === 'month') {
+      handleViewModeChange(resolvedMode);
+    } else {
+      handleViewModeChange('week');
     }
   };
 
