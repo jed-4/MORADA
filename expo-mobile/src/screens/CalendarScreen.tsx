@@ -185,7 +185,14 @@ export default function CalendarScreen({ navigation }: Props) {
 
   const [views, setViews] = useState<SavedView[]>([]);
   const [selectedViewId, setSelectedViewId] = useState<string | null>(null);
-  const [activeFilters, setActiveFilters] = useState<{ eventTypes?: string[]; taskStatuses?: string[]; excludedTaskStatuses?: string[]; assignedToMe?: boolean }>({});
+  const [activeFilters, setActiveFilters] = useState<{
+    eventTypes?: string[];
+    taskStatuses?: string[];
+    excludedTaskStatuses?: string[];
+    assignedToMe?: boolean;
+    scheduleAssignedToMe?: boolean;
+    scheduleAssignedToCompany?: boolean;
+  }>({});
 
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [showViewsModal, setShowViewsModal] = useState(false);
@@ -483,6 +490,21 @@ export default function CalendarScreen({ navigation }: Props) {
         return !activeFilters.excludedTaskStatuses!.includes(e.status || 'todo');
       });
     }
+    if (activeFilters.scheduleAssignedToMe || activeFilters.scheduleAssignedToCompany) {
+      events = events.filter(e => {
+        if (e.type !== 'schedule') return true;
+        const rawAssignedToId: string | null | undefined = e.raw?.assignedToId;
+        const rawAssignedToName: string | null | undefined = e.raw?.assignedToName;
+        const matchMe = activeFilters.scheduleAssignedToMe && (
+          rawAssignedToId === user!.id ||
+          (!!user?.firstName && !!rawAssignedToName &&
+            rawAssignedToName.toLowerCase().includes(user.firstName.toLowerCase()))
+        );
+        const matchCompany = activeFilters.scheduleAssignedToCompany &&
+          !!rawAssignedToId?.startsWith('company:');
+        return !!(matchMe || matchCompany);
+      });
+    }
     return events;
   }, [allEvents, activeFilters]);
 
@@ -694,7 +716,12 @@ export default function CalendarScreen({ navigation }: Props) {
     setShowFilterModal(false);
   };
 
-  const activeFilterCount = (activeFilters.eventTypes?.length || 0) + (activeFilters.taskStatuses?.length || 0) + (activeFilters.excludedTaskStatuses?.length || 0) + (activeFilters.assignedToMe ? 1 : 0);
+  const activeFilterCount = (activeFilters.eventTypes?.length || 0)
+    + (activeFilters.taskStatuses?.length || 0)
+    + (activeFilters.excludedTaskStatuses?.length || 0)
+    + (activeFilters.assignedToMe ? 1 : 0)
+    + (activeFilters.scheduleAssignedToMe ? 1 : 0)
+    + (activeFilters.scheduleAssignedToCompany ? 1 : 0);
   const currentView = views.find(v => v.id === selectedViewId);
   const canSaveFilters = currentView && !currentView.isDefault;
 
@@ -1313,6 +1340,43 @@ export default function CalendarScreen({ navigation }: Props) {
                 )}
               </TouchableOpacity>
             </View>
+
+            {/* Schedule assignment filters */}
+            {(!activeFilters.eventTypes || activeFilters.eventTypes.includes('schedule')) && (
+              <View style={{ marginTop: 16 }}>
+                <Text style={[styles.filterSectionLabel, { color: colors.secondary }]}>Schedule Items</Text>
+                <View style={{ gap: 4, marginTop: 6 }}>
+                  {([
+                    { key: 'scheduleAssignedToMe' as const, label: 'Assigned to me', icon: 'person-outline' as const },
+                    { key: 'scheduleAssignedToCompany' as const, label: 'Assigned to company', icon: 'business-outline' as const },
+                  ] as const).map(opt => {
+                    const isOn = !!activeFilters[opt.key];
+                    const scheduleColor = EVENT_COLORS.schedule;
+                    return (
+                      <TouchableOpacity
+                        key={opt.key}
+                        style={[
+                          styles.filterRow,
+                          { borderColor: colors.border },
+                          isOn && { backgroundColor: scheduleColor + '15', borderColor: scheduleColor + '40' },
+                        ]}
+                        onPress={() => setActiveFilters({ ...activeFilters, [opt.key]: isOn ? undefined : true })}
+                        activeOpacity={0.7}
+                      >
+                        <View style={[styles.filterColorDot, { backgroundColor: isOn ? scheduleColor : colors.muted }]} />
+                        <Ionicons name={opt.icon} size={18} color={isOn ? scheduleColor : colors.secondary} />
+                        <Text style={[styles.filterRowText, { color: isOn ? colors.text : colors.secondary }]}>
+                          {opt.label}
+                        </Text>
+                        {isOn && (
+                          <Ionicons name="checkmark-circle" size={18} color={scheduleColor} style={{ marginLeft: 'auto' }} />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
 
             <View style={{ marginTop: 12, gap: 4 }}>
               {EVENT_TYPE_OPTIONS.filter(opt => opt.value !== 'google_cal' || googleConnected).map(opt => {
