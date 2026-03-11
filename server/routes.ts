@@ -155,6 +155,24 @@ import multer from "multer";
 import { setupMessagingHandlers } from "./messaging/socket";
 import { initializeSocketManager, emitTaskCreated, emitTaskUpdated, emitTaskDeleted, emitNotification } from "./socketManager";
 
+async function fetchNonWorkingDaySet(companyId: string, scheduleId?: string): Promise<Set<string>> {
+  const rows = scheduleId
+    ? await db.select().from(nonWorkingDays)
+        .where(and(eq(nonWorkingDays.companyId, companyId), or(isNull(nonWorkingDays.scheduleId), eq(nonWorkingDays.scheduleId, scheduleId))))
+    : await db.select().from(nonWorkingDays)
+        .where(and(eq(nonWorkingDays.companyId, companyId), isNull(nonWorkingDays.scheduleId)));
+  const set = new Set<string>();
+  for (const row of rows) {
+    const d = new Date(row.date);
+    set.add(`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`);
+  }
+  return set;
+}
+
+function isHoliday(d: Date, holidays: Set<string>): boolean {
+  return holidays.has(`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`);
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Setup Replit Auth - see blueprint:javascript_log_in_with_replit
   await setupAuth(app);
@@ -16065,10 +16083,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const weekendOverride = createData.useWorkingDaysOverride === true;
           const inclSat = weekendOverride ? true : (schedule.includeSaturday ?? false);
           const inclSun = weekendOverride ? true : (schedule.includeSunday ?? false);
+          const project = await storage.getProject(schedule.projectId);
+          const holidays = project?.companyId ? await fetchNonWorkingDaySet(project.companyId, createData.scheduleId) : new Set<string>();
           const isWorkingDay = (d: Date): boolean => {
             const dow = d.getDay();
             if (dow === 0 && !inclSun) return false;
             if (dow === 6 && !inclSat) return false;
+            if (isHoliday(d, holidays)) return false;
             return true;
           };
           const skipToWorkingDay = (d: Date): Date => {
@@ -16490,10 +16511,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const existingItems = await storage.getScheduleItems(scheduleId);
       const sortOrderOffset = existingItems.length;
 
+      const bulkProject = await storage.getProject(schedule.projectId);
+      const bulkHolidays = bulkProject?.companyId ? await fetchNonWorkingDaySet(bulkProject.companyId, scheduleId) : new Set<string>();
       const isNonWorkingDayBulk = (date: Date): boolean => {
         const day = date.getDay();
         if (day === 0 && !schedule.includeSunday) return true;
         if (day === 6 && !schedule.includeSaturday) return true;
+        if (isHoliday(date, bulkHolidays)) return true;
         return false;
       };
 
@@ -16892,10 +16916,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const weekendOverride = item.useWorkingDaysOverride === true;
         const inclSat = weekendOverride ? true : (schedule?.includeSaturday ?? false);
         const inclSun = weekendOverride ? true : (schedule?.includeSunday ?? false);
+        const depProject = schedule ? await storage.getProject(schedule.projectId) : null;
+        const depHolidays = depProject?.companyId ? await fetchNonWorkingDaySet(depProject.companyId, item.scheduleId) : new Set<string>();
         const isWorkingDay = (d: Date): boolean => {
           const dow = d.getDay();
           if (dow === 0 && !inclSun) return false;
           if (dow === 6 && !inclSat) return false;
+          if (isHoliday(d, depHolidays)) return false;
           return true;
         };
         const addWD = (date: Date, days: number): Date => {
@@ -17011,10 +17038,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const weekendOverride = item.useWorkingDaysOverride === true;
           const inclSat = weekendOverride ? true : (schedule?.includeSaturday ?? false);
           const inclSun = weekendOverride ? true : (schedule?.includeSunday ?? false);
+          const patchDepProject = schedule ? await storage.getProject(schedule.projectId) : null;
+          const patchDepHolidays = patchDepProject?.companyId ? await fetchNonWorkingDaySet(patchDepProject.companyId, item.scheduleId) : new Set<string>();
           const isWorkingDay = (d: Date): boolean => {
             const dow = d.getDay();
             if (dow === 0 && !inclSun) return false;
             if (dow === 6 && !inclSat) return false;
+            if (isHoliday(d, patchDepHolidays)) return false;
             return true;
           };
           const addWD = (date: Date, days: number): Date => {
@@ -17431,10 +17461,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Company-level access is sufficient for applying templates
       // (project membership check removed as company ownership is already verified)
 
+      const tplHolidays = project.companyId ? await fetchNonWorkingDaySet(project.companyId, scheduleId) : new Set<string>();
       const isNonWorkingDay = (date: Date): boolean => {
         const day = date.getDay();
         if (day === 0 && !schedule.includeSunday) return true;
         if (day === 6 && !schedule.includeSaturday) return true;
+        if (isHoliday(date, tplHolidays)) return true;
         return false;
       };
 
