@@ -81,6 +81,7 @@ interface SavedView {
     eventTypes?: string[];
     projects?: string[];
     status?: string[];
+    taskStatuses?: string[];
   };
 }
 
@@ -114,6 +115,12 @@ const EVENT_TYPE_OPTIONS = [
   { value: 'timesheet', label: 'Timesheets', icon: 'time-outline' as const },
   { value: 'site_diary', label: 'Site Diary', icon: 'book-outline' as const },
   { value: 'google_cal', label: 'Google Calendar', icon: 'calendar-outline' as const },
+];
+
+const TASK_STATUS_OPTIONS = [
+  { value: 'todo', label: 'To Do', color: '#6b7280' },
+  { value: 'in-progress', label: 'In Progress', color: '#3b82f6' },
+  { value: 'done', label: 'Done', color: '#10b981' },
 ];
 
 function isSameDay(d1: Date, d2: Date): boolean {
@@ -175,7 +182,7 @@ export default function CalendarScreen({ navigation }: Props) {
 
   const [views, setViews] = useState<SavedView[]>([]);
   const [selectedViewId, setSelectedViewId] = useState<string | null>(null);
-  const [activeFilters, setActiveFilters] = useState<{ eventTypes?: string[] }>({});
+  const [activeFilters, setActiveFilters] = useState<{ eventTypes?: string[]; taskStatuses?: string[] }>({});
 
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [showCreateViewModal, setShowCreateViewModal] = useState(false);
@@ -349,7 +356,12 @@ export default function CalendarScreen({ navigation }: Props) {
 
       setAllEvents(calEvents);
 
-      const fetchedViews = viewsData || [];
+      const fetchedViews = (viewsData || []).filter(v => v.name && v.name.trim() !== '');
+
+      // Clean up any blank-named views from DB silently
+      const blankViews = (viewsData || []).filter(v => !v.name || v.name.trim() === '');
+      blankViews.forEach(v => apiRequest(`/api/calendar-views/${v.id}`, 'DELETE').catch(() => {}));
+
       setViews(fetchedViews);
 
       if (fetchedViews.length === 0 && !defaultViewCreationRef.current) {
@@ -395,10 +407,17 @@ export default function CalendarScreen({ navigation }: Props) {
   }, [fetchData]);
 
   const filteredEvents = useMemo(() => {
-    if (!activeFilters.eventTypes || activeFilters.eventTypes.length === 0) {
-      return allEvents;
+    let events = allEvents;
+    if (activeFilters.eventTypes && activeFilters.eventTypes.length > 0) {
+      events = events.filter(e => activeFilters.eventTypes!.includes(e.type));
     }
-    return allEvents.filter(e => activeFilters.eventTypes!.includes(e.type));
+    if (activeFilters.taskStatuses && activeFilters.taskStatuses.length > 0) {
+      events = events.filter(e => {
+        if (e.type !== 'task') return true;
+        return activeFilters.taskStatuses!.includes(e.status || 'todo');
+      });
+    }
+    return events;
   }, [allEvents, activeFilters]);
 
   const getEventsForDate = useCallback((date: Date): CalendarEvent[] => {
@@ -642,7 +661,7 @@ export default function CalendarScreen({ navigation }: Props) {
     setShowFilterModal(false);
   };
 
-  const activeFilterCount = (activeFilters.eventTypes?.length || 0);
+  const activeFilterCount = (activeFilters.eventTypes?.length || 0) + (activeFilters.taskStatuses?.length || 0);
   const currentView = views.find(v => v.id === selectedViewId);
   const canSaveFilters = currentView && !currentView.isDefault;
 
@@ -1292,6 +1311,7 @@ export default function CalendarScreen({ navigation }: Props) {
           <Text style={[styles.bottomSheetSubtitle, { color: colors.secondary }]}>
             Select types to show. Leave all off to show everything.
           </Text>
+          <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 420 }}>
 
           <View style={{ marginTop: 12, gap: 4 }}>
             {EVENT_TYPE_OPTIONS.filter(opt => opt.value !== 'google_cal' || googleConnected).map(opt => {
@@ -1325,6 +1345,46 @@ export default function CalendarScreen({ navigation }: Props) {
               );
             })}
           </View>
+
+          {/* Task Status filter — visible when tasks are shown */}
+          {(!activeFilters.eventTypes || activeFilters.eventTypes.includes('task')) && (
+            <View style={{ marginTop: 16 }}>
+              <Text style={[styles.filterSectionLabel, { color: colors.secondary }]}>Task Status</Text>
+              <View style={{ gap: 4, marginTop: 6 }}>
+                {TASK_STATUS_OPTIONS.map(opt => {
+                  const isSelected = activeFilters.taskStatuses?.includes(opt.value) ?? false;
+                  return (
+                    <TouchableOpacity
+                      key={opt.value}
+                      style={[
+                        styles.filterRow,
+                        { borderColor: colors.border },
+                        isSelected && { backgroundColor: opt.color + '15', borderColor: opt.color + '40' },
+                      ]}
+                      onPress={() => {
+                        const current = activeFilters.taskStatuses || [];
+                        const updated = isSelected
+                          ? current.filter(s => s !== opt.value)
+                          : [...current, opt.value];
+                        setActiveFilters({ ...activeFilters, taskStatuses: updated.length > 0 ? updated : undefined });
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[styles.filterColorDot, { backgroundColor: opt.color }]} />
+                      <Text style={[styles.filterRowText, { color: isSelected ? colors.text : colors.secondary }]}>
+                        {opt.label}
+                      </Text>
+                      {isSelected && (
+                        <Ionicons name="checkmark-circle" size={18} color={opt.color} style={{ marginLeft: 'auto' }} />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+
+          </ScrollView>
 
           <View style={styles.filterActions}>
             {activeFilterCount > 0 && (
@@ -1702,6 +1762,12 @@ const styles = StyleSheet.create({
   filterRowText: {
     fontSize: 15,
     fontWeight: '500',
+  },
+  filterSectionLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   filterActions: {
     flexDirection: 'row',
