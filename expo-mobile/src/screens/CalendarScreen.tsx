@@ -67,6 +67,7 @@ interface CalendarEvent {
   endTime?: string | null;
   type: 'task' | 'schedule' | 'timesheet' | 'site_diary' | 'google_cal';
   color: string;
+  statusColor?: string;
   status?: string;
   projectId?: string;
   projectName?: string;
@@ -111,6 +112,32 @@ const EVENT_COLORS: Record<string, string> = {
   timesheet: '#f59e0b',
   site_diary: '#14b8a6',
   google_cal: '#4285f4',
+};
+
+const SCHEDULE_STATUS_COLORS: Record<string, string> = {
+  'not-started':   '#94a3b8',
+  'not_started':   '#94a3b8',
+  'in-progress':   '#3b82f6',
+  'in_progress':   '#3b82f6',
+  'completed':     '#22c55e',
+  'done':          '#22c55e',
+  'on-hold':       '#f59e0b',
+  'on_hold':       '#f59e0b',
+  'delayed':       '#ef4444',
+  'blocked':       '#ef4444',
+};
+
+const SCHEDULE_STATUS_LABELS: Record<string, string> = {
+  'not-started':   'Not Started',
+  'not_started':   'Not Started',
+  'in-progress':   'In Progress',
+  'in_progress':   'In Progress',
+  'completed':     'Completed',
+  'done':          'Done',
+  'on-hold':       'On Hold',
+  'on_hold':       'On Hold',
+  'delayed':       'Delayed',
+  'blocked':       'Blocked',
 };
 
 const EVENT_TYPE_OPTIONS = [
@@ -194,6 +221,7 @@ export default function CalendarScreen({ navigation }: Props) {
     scheduleAssignedToCompany?: boolean;
   }>({});
 
+  const [showStatusChips, setShowStatusChips] = useState(true);
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [showViewsModal, setShowViewsModal] = useState(false);
   const [showCreateViewModal, setShowCreateViewModal] = useState(false);
@@ -327,6 +355,9 @@ export default function CalendarScreen({ navigation }: Props) {
           || (isValidHex(rawItem.assignedToColor) ? rawItem.assignedToColor : null)
           || proj?.color
           || EVENT_COLORS.schedule;
+        const scheduleStatusColor = item.status
+          ? (SCHEDULE_STATUS_COLORS[item.status] || EVENT_COLORS.schedule)
+          : EVENT_COLORS.schedule;
         calEvents.push({
           id: `schedule-${item.id}`,
           title: item.name,
@@ -336,6 +367,7 @@ export default function CalendarScreen({ navigation }: Props) {
           endTime: item.endTime,
           type: 'schedule',
           color: scheduleColor,
+          statusColor: scheduleStatusColor,
           status: item.status,
           projectId: item.projectId,
           projectName: item.projectName || proj?.name,
@@ -868,7 +900,10 @@ export default function CalendarScreen({ navigation }: Props) {
             );
           }
           const { event } = item as { type: 'event'; event: CalendarEvent; dateKey: string };
-          const statusOpt = event.type === 'task' ? taskStatusOptions.find(o => o.value === (event.status || 'todo')) : null;
+          const taskStatusOpt = event.type === 'task' ? taskStatusOptions.find(o => o.value === (event.status || 'todo')) : null;
+          const schedStatusColor = event.statusColor;
+          const schedStatusLabel = event.status ? (SCHEDULE_STATUS_LABELS[event.status] || event.status) : null;
+          const barColor = event.type === 'schedule' ? (schedStatusColor || event.color) : event.color;
           const dateRange = event.type === 'schedule' ? formatDateRange(event.date, event.endDate) : null;
           return (
             <TouchableOpacity
@@ -876,23 +911,24 @@ export default function CalendarScreen({ navigation }: Props) {
               activeOpacity={0.7}
               onPress={() => handleEventTap(event)}
             >
-              <View style={[styles.feedEventColorBar, { backgroundColor: event.color }]} />
+              <View style={[styles.feedEventColorBar, { backgroundColor: barColor }]} />
               <View style={styles.feedEventContent}>
                 <View style={styles.feedEventTop}>
                   <Text style={[styles.feedEventTitle, { color: colors.text }]} numberOfLines={2}>
                     {event.title}
                   </Text>
-                  <View style={[styles.feedEventBadge, { backgroundColor: event.color + '20', flexDirection: 'row', alignItems: 'center', gap: 3 }]}>
-                    <Ionicons name={getTypeIcon(event.type)} size={11} color={event.color} />
-                    <Text style={[styles.feedEventBadgeText, { color: event.color }]}>
-                      {getEventTypeLabel(event.type)}
-                    </Text>
-                  </View>
                 </View>
-                {statusOpt && (
+                {showStatusChips && taskStatusOpt && (
                   <View style={{ flexDirection: 'row', marginTop: 4 }}>
-                    <View style={{ backgroundColor: statusOpt.color + '22', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
-                      <Text style={{ fontSize: 10, fontWeight: '600', color: statusOpt.color }}>{statusOpt.label}</Text>
+                    <View style={{ backgroundColor: taskStatusOpt.color + '22', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
+                      <Text style={{ fontSize: 10, fontWeight: '600', color: taskStatusOpt.color }}>{taskStatusOpt.label}</Text>
+                    </View>
+                  </View>
+                )}
+                {showStatusChips && event.type === 'schedule' && schedStatusColor && schedStatusLabel && (
+                  <View style={{ flexDirection: 'row', marginTop: 4 }}>
+                    <View style={{ backgroundColor: schedStatusColor + '22', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
+                      <Text style={{ fontSize: 10, fontWeight: '600', color: schedStatusColor }}>{schedStatusLabel}</Text>
                     </View>
                   </View>
                 )}
@@ -986,13 +1022,14 @@ export default function CalendarScreen({ navigation }: Props) {
               <View style={{ paddingHorizontal: 5, paddingTop: 7, paddingBottom: 80 }}>
                 {dayEvents.length === 0 ? null : dayEvents.map(event => {
                   const isSchedule = event.type === 'schedule';
+                  const weekCardColor = isSchedule ? (event.statusColor || event.color) : event.color;
                   return (
                     <TouchableOpacity
                       key={event.id}
                       style={{
-                        backgroundColor: isSchedule ? event.color + '55' : event.color + '22',
+                        backgroundColor: isSchedule ? weekCardColor + '55' : weekCardColor + '22',
                         borderWidth: 1,
-                        borderColor: isSchedule ? event.color + '99' : event.color + '55',
+                        borderColor: isSchedule ? weekCardColor + '99' : weekCardColor + '55',
                         borderRadius: 6,
                         padding: 7,
                         marginBottom: 5,
@@ -1002,12 +1039,12 @@ export default function CalendarScreen({ navigation }: Props) {
                       activeOpacity={0.75}
                     >
                       <View style={{ position: 'absolute', top: 5, right: 5 }}>
-                        <Ionicons name={getTypeIcon(event.type)} size={10} color={isSchedule ? '#fff' : event.color} style={{ opacity: 0.7 }} />
+                        <Ionicons name={getTypeIcon(event.type)} size={10} color={weekCardColor} style={{ opacity: 0.8 }} />
                       </View>
                       <Text style={{
                         fontSize: 11,
                         fontWeight: '700',
-                        color: isSchedule ? '#fff' : colors.text,
+                        color: colors.text,
                         lineHeight: 15,
                         paddingRight: 12,
                       }} numberOfLines={3}>
@@ -1453,6 +1490,29 @@ export default function CalendarScreen({ navigation }: Props) {
               </View>
             )}
           </ScrollView>
+
+          {/* Display settings */}
+          <View style={{ paddingHorizontal: 16, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border, marginTop: 4 }}>
+            <Text style={[styles.filterSectionLabel, { color: colors.secondary, marginBottom: 6 }]}>Display</Text>
+            <TouchableOpacity
+              style={[
+                styles.filterRow,
+                { borderColor: colors.border },
+                showStatusChips && { backgroundColor: colors.accent + '15', borderColor: colors.accent + '40' },
+              ]}
+              onPress={() => setShowStatusChips(v => !v)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.filterColorDot, { backgroundColor: showStatusChips ? colors.accent : colors.muted }]} />
+              <Ionicons name="pricetag-outline" size={18} color={showStatusChips ? colors.accent : colors.secondary} />
+              <Text style={[styles.filterRowText, { color: showStatusChips ? colors.text : colors.secondary }]}>
+                Show status chips
+              </Text>
+              {showStatusChips && (
+                <Ionicons name="checkmark-circle" size={18} color={colors.accent} style={{ marginLeft: 'auto' }} />
+              )}
+            </TouchableOpacity>
+          </View>
 
           <View style={styles.filterActions}>
             {activeFilterCount > 0 && (
