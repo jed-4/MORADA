@@ -3659,9 +3659,7 @@ export const calendarViews = pgTable("calendar_views", {
   
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => ({
-  uniqueUserTypeName: uniqueIndex("calendar_views_user_type_name_unique").on(table.userId, table.calendarType, table.name),
-}));
+});
 
 export const insertCalendarViewSchema = createInsertSchema(calendarViews).omit({
   id: true,
