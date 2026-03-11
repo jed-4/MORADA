@@ -349,11 +349,9 @@ export default function CalendarScreen({ navigation }: Props) {
       (scheduleData || []).forEach(item => {
         const proj = item.projectId ? projMap[item.projectId] : undefined;
         const rawItem = item as any;
-        // Colour priority: custom override → assignee colour → project colour → fallback
+        // Use project colour (the icon colour set in project settings)
         const isValidHex = (c: any) => typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c);
-        const scheduleColor = (isValidHex(rawItem.color) ? rawItem.color : null)
-          || (isValidHex(rawItem.assignedToColor) ? rawItem.assignedToColor : null)
-          || proj?.color
+        const scheduleColor = (isValidHex(proj?.color) ? proj!.color : null)
           || EVENT_COLORS.schedule;
         const scheduleStatusColor = item.status
           ? (SCHEDULE_STATUS_COLORS[item.status] || EVENT_COLORS.schedule)
@@ -1022,7 +1020,7 @@ export default function CalendarScreen({ navigation }: Props) {
               <View style={{ paddingHorizontal: 5, paddingTop: 7, paddingBottom: 80 }}>
                 {dayEvents.length === 0 ? null : dayEvents.map(event => {
                   const isSchedule = event.type === 'schedule';
-                  const weekCardColor = isSchedule ? (event.statusColor || event.color) : event.color;
+                  const weekCardColor = event.color;
                   return (
                     <TouchableOpacity
                       key={event.id}
