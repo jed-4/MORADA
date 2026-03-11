@@ -5,6 +5,7 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   RefreshControl,
   ActivityIndicator,
   useColorScheme,
@@ -12,10 +13,14 @@ import {
   Dimensions,
   PanResponder,
   Animated,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
-import { apiFetch } from '../services/api';
+import { apiFetch, apiRequest } from '../services/api';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 interface Task {
@@ -48,6 +53,7 @@ interface ScheduleItem {
 interface Project {
   id: string;
   name: string;
+  color?: string;
 }
 
 interface CalendarEvent {
@@ -57,12 +63,25 @@ interface CalendarEvent {
   endDate?: string;
   startTime?: string | null;
   endTime?: string | null;
-  type: 'task' | 'schedule' | 'timesheet' | 'reminder' | 'site_diary';
+  type: 'task' | 'schedule' | 'timesheet' | 'site_diary' | 'google_cal';
   color: string;
   status?: string;
   projectId?: string;
   projectName?: string;
   raw?: any;
+}
+
+interface SavedView {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  calendarType: string;
+  calendarMode: string;
+  filters: {
+    eventTypes?: string[];
+    projects?: string[];
+    status?: string[];
+  };
 }
 
 type ViewMode = 'day' | 'week' | 'month';
@@ -85,9 +104,17 @@ const EVENT_COLORS: Record<string, string> = {
   task: '#3b82f6',
   schedule: '#10b981',
   timesheet: '#f59e0b',
-  reminder: '#a855f7',
   site_diary: '#14b8a6',
+  google_cal: '#4285f4',
 };
+
+const EVENT_TYPE_OPTIONS = [
+  { value: 'task', label: 'Tasks', icon: 'checkmark-circle-outline' as const },
+  { value: 'schedule', label: 'Schedule Items', icon: 'construct-outline' as const },
+  { value: 'timesheet', label: 'Timesheets', icon: 'time-outline' as const },
+  { value: 'site_diary', label: 'Site Diary', icon: 'book-outline' as const },
+  { value: 'google_cal', label: 'Google Calendar', icon: 'calendar-outline' as const },
+];
 
 function isSameDay(d1: Date, d2: Date): boolean {
   return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
@@ -141,9 +168,19 @@ export default function CalendarScreen({ navigation }: Props) {
   const [displayMode, setDisplayMode] = useState<DisplayMode>('list');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [showLookback, setShowLookback] = useState(false);
-  const [lookbackEvents, setLookbackEvents] = useState<CalendarEvent[]>([]);
+
+  const [allEvents, setAllEvents] = useState<CalendarEvent[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [googleConnected, setGoogleConnected] = useState(false);
+
+  const [views, setViews] = useState<SavedView[]>([]);
+  const [selectedViewId, setSelectedViewId] = useState<string | null>(null);
+  const [activeFilters, setActiveFilters] = useState<{ eventTypes?: string[] }>({});
+
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [showCreateViewModal, setShowCreateViewModal] = useState(false);
+  const [newViewName, setNewViewName] = useState('');
+  const [savingView, setSavingView] = useState(false);
 
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
@@ -154,10 +191,11 @@ export default function CalendarScreen({ navigation }: Props) {
 
   const timelineScrollRef = useRef<ScrollView>(null);
   const swipeX = useRef(new Animated.Value(0)).current;
+  const defaultViewCreationRef = useRef(false);
 
   const colors = isDark
-    ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569', timelineLine: '#334155' }
-    : { bg: '#f8fafc', card: '#ffffff', text: '#0f172a', secondary: '#64748b', border: '#e2e8f0', accent: '#9b7fc4', muted: '#cbd5e1', timelineLine: '#e2e8f0' };
+    ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569', timelineLine: '#334155', input: '#0f172a' }
+    : { bg: '#f8fafc', card: '#ffffff', text: '#0f172a', secondary: '#64748b', border: '#e2e8f0', accent: '#9b7fc4', muted: '#cbd5e1', timelineLine: '#e2e8f0', input: '#f8fafc' };
 
   const panResponder = useMemo(() =>
     PanResponder.create({
@@ -183,41 +221,62 @@ export default function CalendarScreen({ navigation }: Props) {
     }),
   [viewMode, currentMonth, currentYear, weekStartDate, dayViewDate]);
 
+  const buildDateRange = useCallback(() => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 2, 0);
+    const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return { startDate: fmt(start), endDate: fmt(end) };
+  }, []);
+
   const fetchData = useCallback(async () => {
+    if (!user?.id) return;
     try {
-      const [tasksData, projectsData, scheduleData] = await Promise.all([
-        apiFetch<Task[]>('/api/tasks').catch(() => []),
-        apiFetch<Project[]>('/api/projects').catch(() => []),
-        apiFetch<ScheduleItem[]>('/api/schedule-items/all').catch(() => []),
+      const dateRange = buildDateRange();
+
+      const [tasksData, projectsData, scheduleData, timesheetsData, diariesData, gcalStatus, viewsData] = await Promise.all([
+        apiFetch<Task[]>('/api/tasks').catch(() => [] as Task[]),
+        apiFetch<Project[]>('/api/projects').catch(() => [] as Project[]),
+        apiFetch<ScheduleItem[]>(`/api/schedule-items/all?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`).catch(() => [] as ScheduleItem[]),
+        apiFetch<any[]>(`/api/timesheets?userId=${user.id}`).catch(() => []),
+        apiFetch<any[]>('/api/company/site-diary-entries').catch(() => []),
+        apiFetch<{ connected: boolean }>('/api/google-calendar/status').catch(() => ({ connected: false })),
+        apiFetch<SavedView[]>('/api/calendar-views?calendarType=personal').catch(() => [] as SavedView[]),
       ]);
 
-      const projectMap: Record<string, string> = {};
-      (projectsData || []).forEach(p => { projectMap[p.id] = p.name; });
+      const projMap: Record<string, Project> = {};
+      (projectsData || []).forEach(p => { projMap[p.id] = p; });
+      setProjects(projectsData || []);
 
-      const myTasks = (tasksData || []).filter((t: any) => {
-        const ids = t.assigneeIds || [];
-        return ids.includes(user?.id) || t.ownerId === user?.id || t.assigneeId === user?.id;
-      });
+      const isGCalConnected = gcalStatus?.connected === true;
+      setGoogleConnected(isGCalConnected);
 
       const calEvents: CalendarEvent[] = [];
 
+      const myTasks = (tasksData || []).filter((t: any) => {
+        const ids = t.assigneeIds || [];
+        return ids.includes(user.id) || t.ownerId === user.id || t.assigneeId === user.id;
+      });
+
       myTasks.forEach(task => {
         if (task.dueDate) {
+          const proj = task.projectId ? projMap[task.projectId] : undefined;
           calEvents.push({
             id: `task-${task.id}`,
             title: task.title,
             date: task.dueDate,
             type: 'task',
-            color: EVENT_COLORS.task,
+            color: proj?.color || EVENT_COLORS.task,
             status: task.status,
             projectId: task.projectId,
-            projectName: task.projectId ? projectMap[task.projectId] : undefined,
+            projectName: proj?.name,
             raw: task,
           });
         }
       });
 
       (scheduleData || []).forEach(item => {
+        const proj = item.projectId ? projMap[item.projectId] : undefined;
         calEvents.push({
           id: `schedule-${item.id}`,
           title: item.name,
@@ -226,14 +285,100 @@ export default function CalendarScreen({ navigation }: Props) {
           startTime: item.startTime,
           endTime: item.endTime,
           type: 'schedule',
-          color: EVENT_COLORS.schedule,
+          color: proj?.color || EVENT_COLORS.schedule,
           status: item.status,
-          projectName: item.projectName || (item.projectId ? projectMap[item.projectId] : undefined),
+          projectId: item.projectId,
+          projectName: item.projectName || proj?.name,
           raw: item,
         });
       });
 
-      setEvents(calEvents);
+      (timesheetsData || []).forEach((ts: any) => {
+        const hours = parseFloat(ts.duration ?? '0');
+        const proj = ts.projectId ? projMap[ts.projectId] : undefined;
+        calEvents.push({
+          id: `ts-${ts.id}`,
+          title: `${proj?.name ?? 'Timesheet'} · ${hours % 1 === 0 ? hours : hours.toFixed(1)}h`,
+          date: (ts.date || '').split('T')[0],
+          startTime: ts.startTime ?? null,
+          endTime: ts.endTime ?? null,
+          type: 'timesheet',
+          color: EVENT_COLORS.timesheet,
+          projectId: ts.projectId,
+          projectName: proj?.name,
+          raw: ts,
+        });
+      });
+
+      (diariesData || [])
+        .filter((d: any) => d.createdBy === user.id)
+        .forEach((d: any) => {
+          const proj = d.projectId ? projMap[d.projectId] : undefined;
+          calEvents.push({
+            id: `diary-${d.id}`,
+            title: d.title,
+            date: (d.entryDateTime || '').split('T')[0],
+            type: 'site_diary',
+            color: EVENT_COLORS.site_diary,
+            projectId: d.projectId,
+            projectName: proj?.name,
+            raw: d,
+          });
+        });
+
+      if (isGCalConnected) {
+        try {
+          const gcalEvents = await apiFetch<any[]>('/api/google-calendar/events').catch(() => []);
+          (gcalEvents || []).forEach((ev: any) => {
+            const start = ev.start?.date || ev.start?.dateTime?.split('T')[0];
+            const end = ev.end?.date || ev.end?.dateTime?.split('T')[0];
+            if (start) {
+              calEvents.push({
+                id: `gcal-${ev.id}`,
+                title: ev.summary || 'Untitled',
+                date: start,
+                endDate: end,
+                type: 'google_cal',
+                color: EVENT_COLORS.google_cal,
+                raw: ev,
+              });
+            }
+          });
+        } catch {}
+      }
+
+      setAllEvents(calEvents);
+
+      const fetchedViews = viewsData || [];
+      setViews(fetchedViews);
+
+      if (fetchedViews.length === 0 && !defaultViewCreationRef.current) {
+        defaultViewCreationRef.current = true;
+        try {
+          const res = await apiRequest('/api/calendar-views', 'POST', {
+            name: 'All Events',
+            calendarType: 'personal',
+            filters: {},
+            calendarMode: 'week',
+            isDefault: true,
+          });
+          const newView: SavedView = await res.json();
+          if (newView?.id) {
+            setViews([newView]);
+            setSelectedViewId(newView.id);
+            setActiveFilters({});
+            setViewMode('week');
+          }
+        } catch {}
+      } else if (fetchedViews.length > 0 && !selectedViewId) {
+        const defaultView = fetchedViews.find(v => v.isDefault) || fetchedViews[0];
+        setSelectedViewId(defaultView.id);
+        setActiveFilters(defaultView.filters || {});
+        const mode = defaultView.calendarMode as ViewMode;
+        if (mode === 'week' || mode === 'day' || mode === 'month') {
+          setViewMode(mode);
+        }
+      }
     } catch (e) {
       console.error('Failed to fetch calendar data:', e);
     } finally {
@@ -249,72 +394,15 @@ export default function CalendarScreen({ navigation }: Props) {
     setRefreshing(false);
   }, [fetchData]);
 
-  const fetchLookbackData = useCallback(async () => {
-    if (!user?.id) return;
-    try {
-      const [projectsData, timesheetsData, diariesData] = await Promise.all([
-        apiFetch<Project[]>('/api/projects').catch(() => [] as Project[]),
-        apiFetch<any[]>(`/api/timesheets?userId=${user.id}`).catch(() => []),
-        apiFetch<any[]>('/api/company/site-diary-entries').catch(() => []),
-      ]);
-      const projectMap: Record<string, string> = {};
-      (projectsData || []).forEach((p: Project) => { projectMap[p.id] = p.name; });
-
-      const lb: CalendarEvent[] = [];
-
-      (timesheetsData || []).forEach((ts: any) => {
-        const hours = parseFloat(ts.duration ?? '0');
-        const projectName = ts.projectId ? projectMap[ts.projectId] : undefined;
-        lb.push({
-          id: `ts-${ts.id}`,
-          title: `${projectName ?? 'Timesheet'} · ${hours % 1 === 0 ? hours : hours.toFixed(1)}h`,
-          date: ts.date.split('T')[0],
-          startTime: ts.startTime ?? null,
-          endTime: ts.endTime ?? null,
-          type: 'timesheet',
-          color: EVENT_COLORS.timesheet,
-          projectId: ts.projectId,
-          projectName,
-          raw: ts,
-        });
-      });
-
-      (diariesData || [])
-        .filter((d: any) => d.createdBy === user.id)
-        .forEach((d: any) => {
-          const projectName = d.projectId ? projectMap[d.projectId] : undefined;
-          lb.push({
-            id: `diary-${d.id}`,
-            title: d.title,
-            date: d.entryDateTime.split('T')[0],
-            type: 'site_diary',
-            color: EVENT_COLORS.site_diary,
-            projectId: d.projectId,
-            projectName,
-            raw: d,
-          });
-        });
-
-      setLookbackEvents(lb);
-    } catch (e) {
-      console.error('Failed to fetch lookback data:', e);
+  const filteredEvents = useMemo(() => {
+    if (!activeFilters.eventTypes || activeFilters.eventTypes.length === 0) {
+      return allEvents;
     }
-  }, [user?.id]);
-
-  useEffect(() => {
-    if (showLookback) {
-      fetchLookbackData();
-    } else {
-      setLookbackEvents([]);
-    }
-  }, [showLookback, fetchLookbackData]);
-
-  const allDisplayEvents = useMemo(() => {
-    return showLookback ? [...events, ...lookbackEvents] : events;
-  }, [events, lookbackEvents, showLookback]);
+    return allEvents.filter(e => activeFilters.eventTypes!.includes(e.type));
+  }, [allEvents, activeFilters]);
 
   const getEventsForDate = useCallback((date: Date): CalendarEvent[] => {
-    return allDisplayEvents.filter(event => {
+    return filteredEvents.filter(event => {
       const eventDate = new Date(event.date);
       eventDate.setHours(0, 0, 0, 0);
       const checkDate = new Date(date);
@@ -327,7 +415,7 @@ export default function CalendarScreen({ navigation }: Props) {
       }
       return isSameDay(eventDate, checkDate);
     });
-  }, [events]);
+  }, [filteredEvents]);
 
   const getDotsForDate = useCallback((date: Date): string[] => {
     const dayEvents = getEventsForDate(date);
@@ -443,6 +531,20 @@ export default function CalendarScreen({ navigation }: Props) {
         ].filter(Boolean).join('\n'),
         [{ text: 'OK' }]
       );
+    } else if (event.type === 'timesheet' && event.raw) {
+      const ts = event.raw;
+      const hours = parseFloat(ts.duration ?? '0');
+      Alert.alert(
+        event.title,
+        [
+          event.projectName ? `Project: ${event.projectName}` : null,
+          `Hours: ${hours % 1 === 0 ? hours : hours.toFixed(1)}`,
+          ts.description ? `Notes: ${ts.description}` : null,
+        ].filter(Boolean).join('\n'),
+        [{ text: 'OK' }]
+      );
+    } else if (event.type === 'site_diary' && event.raw) {
+      Alert.alert(event.title, event.projectName ? `Project: ${event.projectName}` : '', [{ text: 'OK' }]);
     }
   };
 
@@ -458,6 +560,100 @@ export default function CalendarScreen({ navigation }: Props) {
     } else {
       const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
       return `${dayNames[dayViewDate.getDay()]}, ${dayViewDate.getDate()} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][dayViewDate.getMonth()]} ${dayViewDate.getFullYear()}`;
+    }
+  };
+
+  const handleSelectView = (view: SavedView) => {
+    setSelectedViewId(view.id);
+    setActiveFilters(view.filters || {});
+    const mode = view.calendarMode as ViewMode;
+    if (mode === 'week' || mode === 'day' || mode === 'month') {
+      handleViewModeChange(mode);
+    }
+  };
+
+  const handleDeleteView = (view: SavedView) => {
+    if (view.isDefault) return;
+    Alert.alert(
+      'Delete View',
+      `Delete "${view.name}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await apiRequest(`/api/calendar-views/${view.id}`, 'DELETE');
+              const updated = views.filter(v => v.id !== view.id);
+              setViews(updated);
+              if (selectedViewId === view.id) {
+                const fallback = updated.find(v => v.isDefault) || updated[0];
+                if (fallback) {
+                  setSelectedViewId(fallback.id);
+                  setActiveFilters(fallback.filters || {});
+                } else {
+                  setSelectedViewId(null);
+                  setActiveFilters({});
+                }
+              }
+            } catch {
+              Alert.alert('Error', 'Could not delete view.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleCreateView = async () => {
+    if (!newViewName.trim()) return;
+    setSavingView(true);
+    try {
+      const res = await apiRequest('/api/calendar-views', 'POST', {
+        name: newViewName.trim(),
+        calendarType: 'personal',
+        filters: activeFilters,
+        calendarMode: viewMode,
+        isDefault: false,
+      });
+      const newView: SavedView = await res.json();
+      if (newView?.id) {
+        setViews(prev => [...prev, newView]);
+        setSelectedViewId(newView.id);
+        setNewViewName('');
+        setShowCreateViewModal(false);
+      }
+    } catch {
+      Alert.alert('Error', 'Could not create view.');
+    } finally {
+      setSavingView(false);
+    }
+  };
+
+  const handleSaveFiltersToView = async () => {
+    if (!selectedViewId) return;
+    const currentView = views.find(v => v.id === selectedViewId);
+    if (!currentView || currentView.isDefault) return;
+    try {
+      await apiRequest(`/api/calendar-views/${selectedViewId}`, 'PATCH', { filters: activeFilters, calendarMode: viewMode });
+      setViews(prev => prev.map(v => v.id === selectedViewId ? { ...v, filters: activeFilters, calendarMode: viewMode } : v));
+    } catch {}
+    setShowFilterModal(false);
+  };
+
+  const activeFilterCount = (activeFilters.eventTypes?.length || 0);
+  const currentView = views.find(v => v.id === selectedViewId);
+  const canSaveFilters = currentView && !currentView.isDefault;
+
+  const getEventTypeLabel = (type: string) => {
+    switch (type) {
+      case 'task': return 'Task';
+      case 'schedule': return 'Schedule';
+      case 'timesheet': return 'Time';
+      case 'site_diary': return 'Diary';
+      case 'google_cal': return 'Google';
+      default: return type;
     }
   };
 
@@ -493,7 +689,7 @@ export default function CalendarScreen({ navigation }: Props) {
       </View>
       <View style={[styles.eventTypeBadge, { backgroundColor: event.color + '20' }]}>
         <Text style={[styles.eventTypeText, { color: event.color }]}>
-          {event.type === 'task' ? 'Task' : event.type === 'schedule' ? 'Schedule' : event.type === 'timesheet' ? 'Time' : event.type === 'site_diary' ? 'Diary' : 'Reminder'}
+          {getEventTypeLabel(event.type)}
         </Text>
       </View>
     </TouchableOpacity>
@@ -792,7 +988,6 @@ export default function CalendarScreen({ navigation }: Props) {
                 backgroundColor: currentDay ? colors.accent + '08' : 'transparent',
               }}
             >
-              {/* Day header */}
               <View style={{
                 alignItems: 'center',
                 paddingVertical: 10,
@@ -826,7 +1021,6 @@ export default function CalendarScreen({ navigation }: Props) {
                   </Text>
                 </View>
               </View>
-              {/* Event cards */}
               <View style={{ paddingHorizontal: 5, paddingTop: 7, paddingBottom: 12 }}>
                 {dayEvents.map(event => (
                   <TouchableOpacity
@@ -856,11 +1050,7 @@ export default function CalendarScreen({ navigation }: Props) {
                       marginTop: 3,
                       fontWeight: '600',
                     }} numberOfLines={1}>
-                      {event.type === 'task' ? 'Task'
-                        : event.type === 'schedule' ? 'Schedule'
-                        : event.type === 'timesheet' ? 'Timesheet'
-                        : event.type === 'site_diary' ? 'Diary'
-                        : 'Reminder'}
+                      {getEventTypeLabel(event.type)}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -924,7 +1114,7 @@ export default function CalendarScreen({ navigation }: Props) {
               </View>
               <View style={[styles.eventTypeBadge, { backgroundColor: event.color + '20' }]}>
                 <Text style={[styles.eventTypeText, { color: event.color }]}>
-                  {event.type === 'task' ? 'Task' : event.type === 'schedule' ? 'Schedule' : event.type === 'timesheet' ? 'Time' : event.type === 'site_diary' ? 'Diary' : 'Reminder'}
+                  {getEventTypeLabel(event.type)}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -944,26 +1134,28 @@ export default function CalendarScreen({ navigation }: Props) {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
+      {/* Header */}
       <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Calendar</Text>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>My Calendar</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          {/* Lookback toggle */}
+          {/* Filter button */}
           <TouchableOpacity
             style={[
               styles.displayModeToggle,
               {
-                backgroundColor: showLookback ? '#f59e0b20' : colors.bg,
-                borderColor: showLookback ? '#f59e0b80' : colors.border,
+                backgroundColor: activeFilterCount > 0 ? colors.accent + '20' : colors.bg,
+                borderColor: activeFilterCount > 0 ? colors.accent : colors.border,
               },
             ]}
-            onPress={() => setShowLookback(prev => !prev)}
+            onPress={() => setShowFilterModal(true)}
             activeOpacity={0.7}
           >
-            <Ionicons name="time-outline" size={16} color={showLookback ? '#f59e0b' : colors.secondary} />
-            <Text style={[styles.displayModeText, { color: showLookback ? '#f59e0b' : colors.secondary }]}>
-              Lookback
+            <Ionicons name="options-outline" size={16} color={activeFilterCount > 0 ? colors.accent : colors.secondary} />
+            <Text style={[styles.displayModeText, { color: activeFilterCount > 0 ? colors.accent : colors.secondary }]}>
+              Filter{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
             </Text>
           </TouchableOpacity>
+          {/* Timeline toggle */}
           {(viewMode === 'day' || viewMode === 'week') && (
             <TouchableOpacity
               style={[
@@ -986,6 +1178,41 @@ export default function CalendarScreen({ navigation }: Props) {
         </View>
       </View>
 
+      {/* Saved Views pills */}
+      <View style={[styles.viewsRow, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.viewsPillsContent}>
+          {views.map(view => (
+            <TouchableOpacity
+              key={view.id}
+              style={[
+                styles.viewPill,
+                selectedViewId === view.id
+                  ? { backgroundColor: colors.accent, borderColor: colors.accent }
+                  : { backgroundColor: colors.bg, borderColor: colors.border },
+              ]}
+              onPress={() => handleSelectView(view)}
+              onLongPress={() => handleDeleteView(view)}
+              activeOpacity={0.75}
+            >
+              <Text style={[
+                styles.viewPillText,
+                { color: selectedViewId === view.id ? '#fff' : colors.secondary },
+              ]}>
+                {view.name}
+              </Text>
+            </TouchableOpacity>
+          ))}
+          <TouchableOpacity
+            style={[styles.viewPillAdd, { borderColor: colors.border }]}
+            onPress={() => setShowCreateViewModal(true)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="add" size={16} color={colors.secondary} />
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
+
+      {/* Day/Week/Month segment */}
       <View style={[styles.segmentedControl, { backgroundColor: colors.card, borderColor: colors.border }]}>
         {(['day', 'week', 'month'] as ViewMode[]).map(mode => (
           <TouchableOpacity
@@ -1008,6 +1235,7 @@ export default function CalendarScreen({ navigation }: Props) {
         ))}
       </View>
 
+      {/* Period nav */}
       <View style={[styles.periodNav, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
         <TouchableOpacity onPress={() => navigatePeriod(-1)} style={styles.navButton} activeOpacity={0.6}>
           <Ionicons name="chevron-back" size={22} color={colors.text} />
@@ -1023,6 +1251,7 @@ export default function CalendarScreen({ navigation }: Props) {
         </TouchableOpacity>
       </View>
 
+      {/* Calendar content */}
       <Animated.View
         style={[styles.swipeContainer, { transform: [{ translateX: swipeX }] }]}
         {...panResponder.panHandlers}
@@ -1046,6 +1275,137 @@ export default function CalendarScreen({ navigation }: Props) {
           </ScrollView>
         )}
       </Animated.View>
+
+      {/* Filter Modal */}
+      <Modal
+        visible={showFilterModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowFilterModal(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setShowFilterModal(false)}>
+          <View style={styles.modalOverlay} />
+        </TouchableWithoutFeedback>
+        <View style={[styles.bottomSheet, { backgroundColor: colors.card }]}>
+          <View style={[styles.bottomSheetHandle, { backgroundColor: colors.border }]} />
+          <Text style={[styles.bottomSheetTitle, { color: colors.text }]}>Filter Events</Text>
+          <Text style={[styles.bottomSheetSubtitle, { color: colors.secondary }]}>
+            Select types to show. Leave all off to show everything.
+          </Text>
+
+          <View style={{ marginTop: 12, gap: 4 }}>
+            {EVENT_TYPE_OPTIONS.filter(opt => opt.value !== 'google_cal' || googleConnected).map(opt => {
+              const isSelected = activeFilters.eventTypes?.includes(opt.value) ?? false;
+              return (
+                <TouchableOpacity
+                  key={opt.value}
+                  style={[
+                    styles.filterRow,
+                    { borderColor: colors.border },
+                    isSelected && { backgroundColor: EVENT_COLORS[opt.value] + '15', borderColor: EVENT_COLORS[opt.value] + '40' },
+                  ]}
+                  onPress={() => {
+                    const current = activeFilters.eventTypes || [];
+                    const updated = isSelected
+                      ? current.filter(t => t !== opt.value)
+                      : [...current, opt.value];
+                    setActiveFilters({ ...activeFilters, eventTypes: updated.length > 0 ? updated : undefined });
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.filterColorDot, { backgroundColor: EVENT_COLORS[opt.value] }]} />
+                  <Ionicons name={opt.icon} size={18} color={isSelected ? EVENT_COLORS[opt.value] : colors.secondary} />
+                  <Text style={[styles.filterRowText, { color: isSelected ? colors.text : colors.secondary }]}>
+                    {opt.label}
+                  </Text>
+                  {isSelected && (
+                    <Ionicons name="checkmark-circle" size={18} color={EVENT_COLORS[opt.value]} style={{ marginLeft: 'auto' }} />
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <View style={styles.filterActions}>
+            {activeFilterCount > 0 && (
+              <TouchableOpacity
+                style={[styles.filterClearBtn, { borderColor: colors.border }]}
+                onPress={() => setActiveFilters({})}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.filterClearText, { color: colors.secondary }]}>Clear all</Text>
+              </TouchableOpacity>
+            )}
+            {canSaveFilters && (
+              <TouchableOpacity
+                style={[styles.filterSaveBtn, { backgroundColor: colors.accent }]}
+                onPress={handleSaveFiltersToView}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.filterSaveBtnText}>Save to view</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={[styles.filterDoneBtn, { backgroundColor: colors.accent }]}
+              onPress={() => setShowFilterModal(false)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.filterDoneBtnText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Create View Modal */}
+      <Modal
+        visible={showCreateViewModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCreateViewModal(false)}
+      >
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+          <TouchableWithoutFeedback onPress={() => setShowCreateViewModal(false)}>
+            <View style={styles.modalOverlay} />
+          </TouchableWithoutFeedback>
+          <View style={[styles.bottomSheet, { backgroundColor: colors.card }]}>
+            <View style={[styles.bottomSheetHandle, { backgroundColor: colors.border }]} />
+            <Text style={[styles.bottomSheetTitle, { color: colors.text }]}>Save View</Text>
+            <Text style={[styles.bottomSheetSubtitle, { color: colors.secondary }]}>
+              Save your current filters and view mode as a named view.
+            </Text>
+            <TextInput
+              style={[styles.viewNameInput, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
+              placeholder="View name (e.g. My Tasks)"
+              placeholderTextColor={colors.muted}
+              value={newViewName}
+              onChangeText={setNewViewName}
+              autoFocus
+              returnKeyType="done"
+              onSubmitEditing={handleCreateView}
+            />
+            <View style={styles.filterActions}>
+              <TouchableOpacity
+                style={[styles.filterClearBtn, { borderColor: colors.border }]}
+                onPress={() => { setShowCreateViewModal(false); setNewViewName(''); }}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.filterClearText, { color: colors.secondary }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.filterDoneBtn, { backgroundColor: newViewName.trim() ? colors.accent : colors.muted, flex: 1 }]}
+                onPress={handleCreateView}
+                disabled={!newViewName.trim() || savingView}
+                activeOpacity={0.8}
+              >
+                {savingView
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Text style={styles.filterDoneBtnText}>Save View</Text>
+                }
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -1075,6 +1435,31 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   displayModeText: { fontSize: 12, fontWeight: '500' },
+  viewsRow: {
+    borderBottomWidth: 1,
+    paddingVertical: 8,
+  },
+  viewsPillsContent: {
+    paddingHorizontal: 14,
+    gap: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  viewPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  viewPillText: { fontSize: 13, fontWeight: '500' },
+  viewPillAdd: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   segmentedControl: {
     flexDirection: 'row',
     marginHorizontal: 16,
@@ -1176,26 +1561,6 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   eventTypeText: { fontSize: 10, fontWeight: '600' },
-  weekDaySection: { marginBottom: 4, borderBottomWidth: 1, paddingBottom: 8 },
-  weekDayHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 6,
-    gap: 8,
-  },
-  weekDayBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 14,
-    gap: 6,
-  },
-  weekDayName: { fontSize: 12, fontWeight: '600' },
-  weekDayNumber: { fontSize: 16, fontWeight: '700' },
-  weekEventCount: { fontSize: 12 },
-  weekEmptyDay: { paddingVertical: 6, paddingLeft: 12 },
-  weekEmptyText: { fontSize: 12, fontStyle: 'italic' },
   weekTimelineHeader: {
     flexDirection: 'row',
     paddingHorizontal: 8,
@@ -1292,5 +1657,87 @@ const styles = StyleSheet.create({
   currentTimeBar: {
     flex: 1,
     height: 2,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  bottomSheet: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 36,
+    paddingTop: 12,
+  },
+  bottomSheetHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  bottomSheetTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  bottomSheetSubtitle: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  filterColorDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  filterRowText: {
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  filterActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 20,
+  },
+  filterClearBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterClearText: { fontSize: 14, fontWeight: '500' },
+  filterSaveBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  filterSaveBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  filterDoneBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterDoneBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  viewNameInput: {
+    marginTop: 16,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
   },
 });
