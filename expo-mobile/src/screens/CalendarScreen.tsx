@@ -228,6 +228,8 @@ export default function CalendarScreen({ navigation }: Props) {
     assignedToMe?: boolean;
     scheduleAssignedToMe?: boolean;
     scheduleAssignedToCompany?: boolean;
+    scheduleParentOnly?: boolean;
+    scheduleSubOnly?: boolean;
   }>({});
 
   const [showStatusChips, setShowStatusChips] = useState(true);
@@ -543,6 +545,15 @@ export default function CalendarScreen({ navigation }: Props) {
         return !!(matchMe || matchCompany);
       });
     }
+    const parentOnly = !!activeFilters.scheduleParentOnly;
+    const subOnly = !!activeFilters.scheduleSubOnly;
+    if (parentOnly !== subOnly) {
+      events = events.filter(e => {
+        if (e.type !== 'schedule') return true;
+        const hasParent = !!e.raw?.parentItemId;
+        return parentOnly ? !hasParent : hasParent;
+      });
+    }
     return events;
   }, [allEvents, activeFilters]);
 
@@ -759,7 +770,9 @@ export default function CalendarScreen({ navigation }: Props) {
     + (activeFilters.excludedTaskStatuses?.length || 0)
     + (activeFilters.assignedToMe ? 1 : 0)
     + (activeFilters.scheduleAssignedToMe ? 1 : 0)
-    + (activeFilters.scheduleAssignedToCompany ? 1 : 0);
+    + (activeFilters.scheduleAssignedToCompany ? 1 : 0)
+    + (activeFilters.scheduleParentOnly ? 1 : 0)
+    + (activeFilters.scheduleSubOnly ? 1 : 0);
   const currentView = views.find(v => v.id === selectedViewId);
   const canSaveFilters = currentView && !currentView.isDefault;
 
@@ -1417,6 +1430,36 @@ export default function CalendarScreen({ navigation }: Props) {
                       </TouchableOpacity>
                     );
                   })}
+                  {/* Parent / Sub item toggle row */}
+                  {(() => {
+                    const scheduleColor = EVENT_COLORS.schedule;
+                    const parentOn = !!activeFilters.scheduleParentOnly;
+                    const subOn = !!activeFilters.scheduleSubOnly;
+                    return (
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                        {([
+                          { key: 'scheduleParentOnly' as const, label: 'Parent', icon: 'git-branch-outline' as const, isOn: parentOn },
+                          { key: 'scheduleSubOnly' as const, label: 'Sub', icon: 'return-down-forward-outline' as const, isOn: subOn },
+                        ]).map(btn => (
+                          <TouchableOpacity
+                            key={btn.key}
+                            style={[
+                              styles.filterRow,
+                              { flex: 1, justifyContent: 'center', borderColor: colors.border },
+                              btn.isOn && { backgroundColor: scheduleColor + '15', borderColor: scheduleColor + '40' },
+                            ]}
+                            onPress={() => setActiveFilters({ ...activeFilters, [btn.key]: btn.isOn ? undefined : true })}
+                            activeOpacity={0.7}
+                          >
+                            <Ionicons name={btn.icon} size={16} color={btn.isOn ? scheduleColor : colors.secondary} />
+                            <Text style={[styles.filterRowText, { color: btn.isOn ? colors.text : colors.secondary }]}>
+                              {btn.label}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    );
+                  })()}
                 </View>
               </View>
             )}
