@@ -18,7 +18,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../contexts/AuthContext';
-import { apiRequest, uploadPhoto, API_BASE_URL } from '../services/api';
+import { apiRequest, uploadPhoto, API_BASE_URL, getSessionId } from '../services/api';
 
 type Props = {
   navigation: any;
@@ -631,7 +631,12 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
             </View>
           ) : block.src ? (
             <Image
-              source={{ uri: block.src }}
+              source={{
+                uri: block.src,
+                headers: block.src.startsWith('http')
+                  ? { 'X-Session-ID': getSessionId() || '' }
+                  : undefined,
+              }}
               style={styles.blockImage}
               resizeMode="cover"
             />
@@ -846,7 +851,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
 
       try {
         const { objectPath } = await uploadPhoto(imageUri);
-        const src = `${API_BASE_URL}/api/uploads/serve/${objectPath}`;
+        const src = `${API_BASE_URL}${objectPath}`;
         setBlocks((prev) =>
           prev.map((b) =>
             b.id === imageBlock.id ? { ...b, src, uploading: false } : b
