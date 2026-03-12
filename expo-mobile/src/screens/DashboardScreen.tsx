@@ -374,6 +374,8 @@ export default function DashboardScreen({ navigation }: Props) {
   const visibleSections = layoutPrefs.sections.filter(s => s.visible);
 
   const renderSectionHeader = (title: string, key: string, count?: number, onTitlePress?: () => void) => (
+    <View>
+      <View style={[styles.sectionDivider, { backgroundColor: colors.border }]} />
     <View style={styles.sectionHeader}>
       <TouchableOpacity
         style={{ flex: 1 }}
@@ -399,6 +401,7 @@ export default function DashboardScreen({ navigation }: Props) {
           color={colors.secondary}
         />
       </TouchableOpacity>
+    </View>
     </View>
   );
 
@@ -920,6 +923,10 @@ const styles = StyleSheet.create({
   },
   section: {
     marginTop: 16,
+  },
+  sectionDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginHorizontal: 16,
   },
   sectionHeader: {
     flexDirection: 'row',
