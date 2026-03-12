@@ -1,5 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
-import * as FileSystem from 'expo-file-system';
+import { uploadAsync, FileSystemUploadType } from 'expo-file-system/legacy';
 
 export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://buildpro4.replit.app';
 
@@ -77,9 +77,9 @@ export const uploadPhoto = async (localUri: string): Promise<{ uploadURL: string
   if (!presignRes.ok) throw new Error('Failed to get upload URL');
   const { uploadURL, objectPath } = await presignRes.json();
 
-  const uploadResult = await FileSystem.uploadAsync(uploadURL, localUri, {
+  const uploadResult = await uploadAsync(uploadURL, localUri, {
     httpMethod: 'PUT',
-    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+    uploadType: FileSystemUploadType.BINARY_CONTENT,
     headers: { 'Content-Type': 'image/jpeg' },
   });
   if (uploadResult.status < 200 || uploadResult.status >= 300) {
@@ -97,9 +97,9 @@ export const uploadFileFromUri = async (localUri: string, fileName: string, cont
   if (!presignRes.ok) throw new Error('Failed to get upload URL');
   const { uploadURL, objectPath } = await presignRes.json();
 
-  const uploadResult = await FileSystem.uploadAsync(uploadURL, localUri, {
+  const uploadResult = await uploadAsync(uploadURL, localUri, {
     httpMethod: 'PUT',
-    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+    uploadType: FileSystemUploadType.BINARY_CONTENT,
     headers: { 'Content-Type': contentType },
   });
   if (uploadResult.status < 200 || uploadResult.status >= 300) {
@@ -117,9 +117,9 @@ export const uploadAudio = async (localUri: string): Promise<{ uploadURL: string
   if (!presignRes.ok) throw new Error('Failed to get upload URL');
   const { uploadURL, objectPath } = await presignRes.json();
 
-  const uploadResult = await FileSystem.uploadAsync(uploadURL, localUri, {
+  const uploadResult = await uploadAsync(uploadURL, localUri, {
     httpMethod: 'PUT',
-    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+    uploadType: FileSystemUploadType.BINARY_CONTENT,
     headers: { 'Content-Type': 'audio/mp4' },
   });
   if (uploadResult.status < 200 || uploadResult.status >= 300) {
