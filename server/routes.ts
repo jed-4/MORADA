@@ -776,6 +776,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const assigneeIds = task.assigneeIds || [];
           return assigneeIds.includes(userId) || task.assigneeId === userId;
         });
+        
+        if (!isAdmin) {
+          const userAccess = await storage.getUserProjectAccess(userId);
+          const accessibleProjectIds = new Set(userAccess.map(a => a.projectId));
+          const allProjects = await storage.getProjects();
+          const ownedProjectIds = new Set(
+            allProjects.filter(p => p.ownerId === userId).map(p => p.id)
+          );
+          tasks = tasks.filter((task: any) =>
+            !task.projectId ||
+            accessibleProjectIds.has(task.projectId) ||
+            ownedProjectIds.has(task.projectId) ||
+            (task.assigneeIds || []).includes(userId) ||
+            task.assigneeId === userId
+          );
+        }
       }
       
       res.json(tasks);
@@ -16080,7 +16096,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         endDate: endDate as string | undefined
       } : undefined;
       
-      const items = await storage.getAllScheduleItems(user.companyId, dateRange);
+      let items = await storage.getAllScheduleItems(user.companyId, dateRange);
+      
+      const isAdmin = user.roleName?.toLowerCase()?.includes('admin') || 
+                      user.roleName?.toLowerCase()?.includes('owner') ||
+                      user.roleName?.toLowerCase()?.includes('general manager');
+      
+      if (!isAdmin) {
+        const userAccess = await storage.getUserProjectAccess(String(user.id));
+        const accessibleProjectIds = new Set(userAccess.map(a => a.projectId));
+        const allProjects = await storage.getProjects();
+        const ownedProjectIds = new Set(
+          allProjects.filter(p => p.ownerId === String(user.id)).map(p => p.id)
+        );
+        items = items.filter((item: any) =>
+          accessibleProjectIds.has(item.projectId) || ownedProjectIds.has(item.projectId)
+        );
+      }
+      
       res.json(items);
     } catch (error: any) {
       res.status(500).json({ 
