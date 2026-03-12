@@ -279,8 +279,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Handle "null" string to indicate business/company-wide notes
       const effectiveProjectId = projectId === "null" ? null : projectId as string | undefined;
       
-      // Pass userId to also include notes assigned to the current user
-      let notes = await storage.getNotes(effectiveProjectId, companyId, user?.id);
+      // When a scope filter is provided (e.g. scope=personal), personal notes are identified
+      // by ownerId (not assigneeId), so skip the userId filter here — the scope+ownerId
+      // filter below will restrict to the current user's notes correctly.
+      const notesUserId = scope ? undefined : user?.id;
+      let notes = await storage.getNotes(effectiveProjectId, companyId, notesUserId);
       
       // Filter by scope if provided (e.g., scope=personal for mobile personal notes)
       if (scope) {
