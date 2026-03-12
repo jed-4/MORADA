@@ -790,19 +790,17 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
 
   const handleImagePick = () => {
     Keyboard.dismiss();
-    setTimeout(() => {
-      Alert.alert('Add Photo', undefined, [
-        {
-          text: 'Choose from Library',
-          onPress: () => pickImage('library'),
-        },
-        {
-          text: 'Take Photo',
-          onPress: () => pickImage('camera'),
-        },
-        { text: 'Cancel', style: 'cancel' },
-      ]);
-    }, 300);
+    Alert.alert('Add Photo', undefined, [
+      {
+        text: 'Choose from Library',
+        onPress: () => pickImage('library'),
+      },
+      {
+        text: 'Take Photo',
+        onPress: () => pickImage('camera'),
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   };
 
   const pickImage = async (source: 'library' | 'camera') => {
@@ -1011,55 +1009,55 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
           />
         </ScrollView>
 
-        {keyboardVisible && (
-          <View style={[styles.toolbar, { backgroundColor: colors.toolbarBg, borderTopColor: colors.toolbarBorder }]}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.toolbarContent}>
-              {TOOLBAR_ITEMS.map((item) => {
-                const isActive = focusedBlock?.type === item.type;
-                return (
-                  <TouchableOpacity
-                    key={item.type}
-                    style={[
-                      styles.toolbarBtn,
-                      isActive && { backgroundColor: colors.accent + '22' },
-                    ]}
-                    onPress={() => {
-                      if (focusedBlockId) {
-                        updateBlockType(focusedBlockId, item.type);
-                      }
-                    }}
-                  >
-                    {item.type === 'h1' ? (
-                      <Text style={[styles.toolbarLabel, { color: isActive ? colors.activeBtn : colors.inactiveBtn, fontWeight: '700', fontSize: 16 }]}>H1</Text>
-                    ) : item.type === 'h2' ? (
-                      <Text style={[styles.toolbarLabel, { color: isActive ? colors.activeBtn : colors.inactiveBtn, fontWeight: '600', fontSize: 15 }]}>H2</Text>
-                    ) : item.type === 'numbered' ? (
-                      <Text style={[styles.toolbarLabel, { color: isActive ? colors.activeBtn : colors.inactiveBtn, fontWeight: '500' }]}>1.</Text>
-                    ) : item.type === 'bullet' ? (
-                      <Text style={[styles.toolbarLabel, { color: isActive ? colors.activeBtn : colors.inactiveBtn, fontSize: 20, lineHeight: 22 }]}>{'\u2022'}</Text>
-                    ) : item.type === 'divider' ? (
-                      <Ionicons name="remove-outline" size={20} color={isActive ? colors.activeBtn : colors.inactiveBtn} />
-                    ) : item.type === 'todo' ? (
-                      <Ionicons name="checkbox-outline" size={18} color={isActive ? colors.activeBtn : colors.inactiveBtn} />
-                    ) : (
-                      <Ionicons name="text-outline" size={18} color={isActive ? colors.activeBtn : colors.inactiveBtn} />
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-              <TouchableOpacity
-                style={styles.toolbarBtn}
-                onPress={handleImagePick}
-              >
-                <Ionicons name="image-outline" size={18} color={colors.inactiveBtn} />
-              </TouchableOpacity>
-              <View style={styles.toolbarSpacer} />
+        <View style={[styles.toolbar, { backgroundColor: colors.toolbarBg, borderTopColor: colors.toolbarBorder }]}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.toolbarContent}>
+            {keyboardVisible && TOOLBAR_ITEMS.map((item) => {
+              const isActive = focusedBlock?.type === item.type;
+              return (
+                <TouchableOpacity
+                  key={item.type}
+                  style={[
+                    styles.toolbarBtn,
+                    isActive && { backgroundColor: colors.accent + '22' },
+                  ]}
+                  onPress={() => {
+                    if (focusedBlockId) {
+                      updateBlockType(focusedBlockId, item.type);
+                    }
+                  }}
+                >
+                  {item.type === 'h1' ? (
+                    <Text style={[styles.toolbarLabel, { color: isActive ? colors.activeBtn : colors.inactiveBtn, fontWeight: '700', fontSize: 16 }]}>H1</Text>
+                  ) : item.type === 'h2' ? (
+                    <Text style={[styles.toolbarLabel, { color: isActive ? colors.activeBtn : colors.inactiveBtn, fontWeight: '600', fontSize: 15 }]}>H2</Text>
+                  ) : item.type === 'numbered' ? (
+                    <Text style={[styles.toolbarLabel, { color: isActive ? colors.activeBtn : colors.inactiveBtn, fontWeight: '500' }]}>1.</Text>
+                  ) : item.type === 'bullet' ? (
+                    <Text style={[styles.toolbarLabel, { color: isActive ? colors.activeBtn : colors.inactiveBtn, fontSize: 20, lineHeight: 22 }]}>{'\u2022'}</Text>
+                  ) : item.type === 'divider' ? (
+                    <Ionicons name="remove-outline" size={20} color={isActive ? colors.activeBtn : colors.inactiveBtn} />
+                  ) : item.type === 'todo' ? (
+                    <Ionicons name="checkbox-outline" size={18} color={isActive ? colors.activeBtn : colors.inactiveBtn} />
+                  ) : (
+                    <Ionicons name="text-outline" size={18} color={isActive ? colors.activeBtn : colors.inactiveBtn} />
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+            <TouchableOpacity
+              style={styles.toolbarBtn}
+              onPress={handleImagePick}
+            >
+              <Ionicons name="image-outline" size={18} color={colors.inactiveBtn} />
+            </TouchableOpacity>
+            <View style={styles.toolbarSpacer} />
+            {keyboardVisible && (
               <TouchableOpacity style={styles.toolbarBtn} onPress={() => Keyboard.dismiss()}>
                 <Ionicons name="chevron-down" size={20} color={colors.inactiveBtn} />
               </TouchableOpacity>
-            </ScrollView>
-          </View>
-        )}
+            )}
+          </ScrollView>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
