@@ -380,7 +380,7 @@ export default function DashboardScreen({ navigation }: Props) {
         onPress={onTitlePress || (() => toggleSection(key))}
         activeOpacity={0.7}
       >
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
+        <Text style={[styles.sectionTitle, { color: colors.secondary }]}>{title}</Text>
       </TouchableOpacity>
       <TouchableOpacity
         style={styles.sectionHeaderRight}
