@@ -35,6 +35,13 @@ module.exports = {
       "expo-secure-store",
       "expo-web-browser",
       "expo-font",
+      [
+        "expo-image-picker",
+        {
+          photosPermission: "BuildPro needs access to your photos to attach images to notes.",
+          cameraPermission: "BuildPro needs access to your camera to take photos for notes.",
+        },
+      ],
     ],
   },
 };

@@ -86,7 +86,6 @@ function blocksToHtml(blocks: Block[]): string {
       case 'image':
         if (block.src) {
           html += `<img src="${escapeHtml(block.src)}" alt="${escapeHtml(block.text || '')}" />`;
-          if (block.text) html += `<p><em>${escapeHtml(block.text)}</em></p>`;
         }
         break;
       default:
@@ -753,7 +752,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
 
       const result = source === 'library'
         ? await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ['images'],
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
             allowsEditing: true,
             quality: 0.8,
           })
