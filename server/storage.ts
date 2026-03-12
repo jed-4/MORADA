@@ -7857,9 +7857,15 @@ export class DbStorage implements IStorage {
         // Do NOT apply assignee filter here to prevent cross-project leakage
         baseConditions.push(eq(schema.notes.projectId, projectId));
       } else if (userId) {
-        // No project filter specified, but userId is provided
-        // Filter by assignee for user-specific views (dashboard widgets, personal notes)
-        baseConditions.push(eq(schema.notes.assigneeId, userId));
+        // No project filter specified, but userId is provided.
+        // Personal notes set ownerId (not assigneeId), so match either field
+        // to correctly surface both personal notes and assigned project notes.
+        baseConditions.push(
+          or(
+            eq(schema.notes.assigneeId, userId),
+            eq(schema.notes.ownerId, userId)
+          )
+        );
       }
       // If projectId is undefined and no userId, return all notes for company
       
