@@ -15,7 +15,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Bell, User, Calendar, Settings as SettingsIcon, Mail, CheckCircle2, Clock, Shield, Globe } from "lucide-react";
+import { Bell, User, Calendar, Settings as SettingsIcon, Mail, CheckCircle2, Clock, Shield, Globe, LayoutGrid } from "lucide-react";
+import { getWorkspacePreferences, setWorkspacePreferences } from "@/lib/workspacePreferences";
 
 const TIMEZONE_OPTIONS = [
   { value: "Australia/Sydney", label: "Sydney (AEDT/AEST)" },
@@ -79,6 +80,8 @@ export default function UserSettings() {
   const { user } = useAuth();
   const [activeSection, setActiveSection] = useState("notifications");
   
+  const [workspacePrefs, setWorkspacePrefs] = useState(getWorkspacePreferences);
+
   const [notifications, setNotifications] = useState(() => {
     const saved = localStorage.getItem('notificationPreferences');
     return saved ? JSON.parse(saved) : {
@@ -311,13 +314,27 @@ export default function UserSettings() {
             <Card className="border-2">
               <CardHeader className="pb-2">
                 <CardTitle className="text-base font-semibold flex items-center gap-2">
-                  <SettingsIcon className="h-4 w-4 text-muted-foreground" />
-                  Other Preferences
+                  <LayoutGrid className="h-4 w-4 text-muted-foreground" />
+                  Workspace Sections
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-sm text-muted-foreground py-8 text-center">
-                  Additional display preferences coming soon
+                <div className="flex items-center justify-between py-3">
+                  <div className="space-y-0.5">
+                    <Label className="text-sm font-medium">Default expanded</Label>
+                    <p className="text-xs text-muted-foreground">
+                      When enabled, all workspace sections (My Day and Task groups) will start expanded on page load
+                    </p>
+                  </div>
+                  <Switch
+                    checked={workspacePrefs.defaultExpanded}
+                    onCheckedChange={(checked) => {
+                      const updated = setWorkspacePreferences({ defaultExpanded: checked });
+                      setWorkspacePrefs(updated);
+                      toast({ title: "Preferences saved" });
+                    }}
+                    data-testid="switch-default-expanded"
+                  />
                 </div>
               </CardContent>
             </Card>

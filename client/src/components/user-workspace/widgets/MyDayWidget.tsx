@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { getWorkspacePreferences } from "@/lib/workspacePreferences";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -154,7 +155,8 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
     if (!initialized || JSON.stringify(editingSections) !== JSON.stringify(sections)) {
       setEditingSections(sections);
       const initial: Record<string, boolean> = {};
-      sections.forEach(s => { initial[s.id] = s.collapsed; });
+      const { defaultExpanded } = getWorkspacePreferences();
+      sections.forEach(s => { initial[s.id] = defaultExpanded ? false : s.collapsed; });
       setCollapsedState(initial);
       setInitialized(true);
     }

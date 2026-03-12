@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { getWorkspacePreferences } from "@/lib/workspacePreferences";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -63,6 +64,7 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [groupsInitialized, setGroupsInitialized] = useState(false);
 
   useEffect(() => {
     setEditingTitle(widget.title);
@@ -209,6 +211,25 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
 
     return Array.from(groups.entries()).map(([key, value]) => ({ key, ...value }));
   }, [filteredTasks, groupBy, projectMap, today]);
+
+  const [prevGroupBy, setPrevGroupBy] = useState(groupBy);
+  useEffect(() => {
+    if (groupBy !== prevGroupBy) {
+      setPrevGroupBy(groupBy);
+      setGroupsInitialized(false);
+      setCollapsedGroups(new Set());
+    }
+  }, [groupBy, prevGroupBy]);
+
+  useEffect(() => {
+    if (!groupsInitialized && groupBy !== 'none' && groupedTasks.length > 0) {
+      const { defaultExpanded } = getWorkspacePreferences();
+      if (!defaultExpanded) {
+        setCollapsedGroups(new Set(groupedTasks.map(g => g.key)));
+      }
+      setGroupsInitialized(true);
+    }
+  }, [groupedTasks, groupBy, groupsInitialized]);
 
   const getTaskDueInfo = (task: Task) => {
     if (!task.dueDate) return null;
