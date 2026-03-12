@@ -13,23 +13,27 @@ import {
   ActivityIndicator,
   Alert,
   Keyboard,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../contexts/AuthContext';
-import { apiRequest } from '../services/api';
+import { apiRequest, uploadPhoto, API_BASE_URL } from '../services/api';
 
 type Props = {
   navigation: any;
   route: any;
 };
 
-type BlockType = 'text' | 'h1' | 'h2' | 'bullet' | 'numbered' | 'todo' | 'divider';
+type BlockType = 'text' | 'h1' | 'h2' | 'bullet' | 'numbered' | 'todo' | 'divider' | 'image';
 
 interface Block {
   id: string;
   type: BlockType;
   text: string;
   checked?: boolean;
+  src?: string;
+  uploading?: boolean;
 }
 
 let blockCounter = 0;
@@ -79,6 +83,12 @@ function blocksToHtml(blocks: Block[]): string {
       case 'divider':
         html += '<hr>';
         break;
+      case 'image':
+        if (block.src) {
+          html += `<img src="${escapeHtml(block.src)}" alt="${escapeHtml(block.text || '')}" />`;
+          if (block.text) html += `<p><em>${escapeHtml(block.text)}</em></p>`;
+        }
+        break;
       default:
         html += `<p>${escapeHtml(block.text) || '<br>'}</p>`;
     }
@@ -113,10 +123,25 @@ function htmlToBlocks(html: string): Block[] {
 
   while (cursor < html.length) {
     const remaining = html.slice(cursor);
+
+    const imgMatch = remaining.match(/^[\s\n]*<img(\s[^>]*?)\s*\/?>/i);
+    if (imgMatch) {
+      const srcMatch = imgMatch[1].match(/src="([^"]*)"/i);
+      const altMatch = imgMatch[1].match(/alt="([^"]*)"/i);
+      blocks.push({
+        id: makeBlockId(),
+        type: 'image',
+        text: altMatch ? altMatch[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"') : '',
+        src: srcMatch ? srcMatch[1].replace(/&amp;/g, '&') : '',
+      });
+      cursor += remaining.indexOf(imgMatch[0]) + imgMatch[0].length;
+      continue;
+    }
+
     const openMatch = remaining.match(/^[\s\n]*<(h[1-3]|p|ul|ol|hr|blockquote)(\s[^>]*)?\s*\/?>/i);
 
     if (!openMatch) {
-      const nextTagIdx = remaining.search(/<(h[1-3]|p|ul|ol|hr|blockquote)[\s>\/]/i);
+      const nextTagIdx = remaining.search(/<(h[1-3]|p|ul|ol|hr|blockquote|img)[\s>\/]/i);
       if (nextTagIdx > 0) {
         const skipped = remaining.slice(0, nextTagIdx).trim();
         if (skipped && !skipped.match(/^[\s\n]*$/)) {
@@ -232,7 +257,10 @@ function stripTags(html: string): string {
 function blocksToPlainText(blocks: Block[]): string {
   return blocks
     .filter((b) => b.type !== 'divider')
-    .map((b) => b.text)
+    .map((b) => {
+      if (b.type === 'image') return b.text ? `[Image: ${b.text}]` : '[Image]';
+      return b.text;
+    })
     .join('\n');
 }
 
@@ -367,7 +395,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
     const currentBlocks = blocksRef.current;
     const currentSavedId = savedNoteIdRef.current;
 
-    if (!currentTitle.trim() && currentBlocks.every((b) => !b.text.trim() && b.type !== 'divider')) {
+    if (!currentTitle.trim() && currentBlocks.every((b) => !b.text.trim() && b.type !== 'divider' && b.type !== 'image')) {
       return;
     }
 
@@ -572,6 +600,47 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
       );
     }
 
+    if (block.type === 'image') {
+      return (
+        <View key={block.id} style={[styles.imageBlock, { borderColor: colors.border }]}>
+          {block.uploading ? (
+            <View style={[styles.imagePlaceholder, { backgroundColor: colors.border }]}>
+              <ActivityIndicator size="large" color={colors.accent} />
+              <Text style={[styles.uploadingText, { color: colors.secondary }]}>Uploading...</Text>
+            </View>
+          ) : block.src ? (
+            <Image
+              source={{ uri: block.src }}
+              style={styles.blockImage}
+              resizeMode="cover"
+            />
+          ) : null}
+          <View style={styles.imageCaptionRow}>
+            <TextInput
+              ref={(r) => { inputRefs.current[block.id] = r; }}
+              style={[styles.imageCaption, { color: colors.secondary }]}
+              placeholder="Add a caption..."
+              placeholderTextColor={colors.placeholder}
+              value={block.text}
+              onChangeText={(val) => {
+                setBlocks((prev) => prev.map((b) => (b.id === block.id ? { ...b, text: val } : b)));
+                scheduleSave();
+              }}
+              onFocus={() => setFocusedBlockId(block.id)}
+              multiline
+              scrollEnabled={false}
+            />
+            <TouchableOpacity
+              onPress={() => removeBlock(block.id)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="close-circle" size={18} color={colors.placeholder} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      );
+    }
+
     const blockStyle = getBlockStyle(block.type);
     const prefix =
       block.type === 'bullet'
@@ -649,6 +718,85 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
         inputRefs.current[newBlock.id]?.focus();
         setFocusedBlockId(newBlock.id);
       }, 50);
+    }
+  };
+
+  const handleImagePick = () => {
+    Alert.alert('Add Photo', undefined, [
+      {
+        text: 'Choose from Library',
+        onPress: () => pickImage('library'),
+      },
+      {
+        text: 'Take Photo',
+        onPress: () => pickImage('camera'),
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
+  const pickImage = async (source: 'library' | 'camera') => {
+    try {
+      if (source === 'library') {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission Required', 'Please allow access to your photo library in Settings.');
+          return;
+        }
+      } else {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission Required', 'Please allow camera access in Settings.');
+          return;
+        }
+      }
+
+      const result = source === 'library'
+        ? await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'],
+            allowsEditing: true,
+            quality: 0.8,
+          })
+        : await ImagePicker.launchCameraAsync({
+            allowsEditing: true,
+            quality: 0.8,
+          });
+
+      if (result.canceled || !result.assets?.[0]) return;
+
+      const imageUri = result.assets[0].uri;
+      const imageBlock: Block = {
+        id: makeBlockId(),
+        type: 'image',
+        text: '',
+        uploading: true,
+      };
+
+      const insertAfterIdx = focusedBlockId
+        ? blocksRef.current.findIndex((b) => b.id === focusedBlockId)
+        : blocksRef.current.length - 1;
+
+      setBlocks((prev) => {
+        const updated = [...prev];
+        updated.splice(insertAfterIdx + 1, 0, imageBlock);
+        return updated;
+      });
+
+      try {
+        const { objectPath } = await uploadPhoto(imageUri);
+        const src = `${API_BASE_URL}/api/uploads/serve/${objectPath}`;
+        setBlocks((prev) =>
+          prev.map((b) =>
+            b.id === imageBlock.id ? { ...b, src, uploading: false } : b
+          )
+        );
+        scheduleSave();
+      } catch {
+        Alert.alert('Upload Failed', 'Could not upload the photo. Please try again.');
+        setBlocks((prev) => prev.filter((b) => b.id !== imageBlock.id));
+      }
+    } catch {
+      Alert.alert('Error', 'Could not access photos.');
     }
   };
 
@@ -808,6 +956,12 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
                   </TouchableOpacity>
                 );
               })}
+              <TouchableOpacity
+                style={styles.toolbarBtn}
+                onPress={handleImagePick}
+              >
+                <Ionicons name="image-outline" size={18} color={colors.inactiveBtn} />
+              </TouchableOpacity>
               <View style={styles.toolbarSpacer} />
               <TouchableOpacity style={styles.toolbarBtn} onPress={() => Keyboard.dismiss()}>
                 <Ionicons name="chevron-down" size={20} color={colors.inactiveBtn} />
@@ -940,5 +1094,42 @@ const styles = StyleSheet.create({
   toolbarSpacer: {
     flex: 1,
     minWidth: 20,
+  },
+  imageBlock: {
+    marginVertical: 8,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+  },
+  imagePlaceholder: {
+    height: 200,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 8,
+    gap: 8,
+  },
+  uploadingText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  blockImage: {
+    width: '100%',
+    height: 250,
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+  },
+  imageCaptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    gap: 8,
+  },
+  imageCaption: {
+    flex: 1,
+    fontSize: 13,
+    fontStyle: 'italic',
+    padding: 0,
+    minHeight: 20,
   },
 });
