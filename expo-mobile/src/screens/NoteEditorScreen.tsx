@@ -789,17 +789,20 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
   };
 
   const handleImagePick = () => {
-    Alert.alert('Add Photo', undefined, [
-      {
-        text: 'Choose from Library',
-        onPress: () => pickImage('library'),
-      },
-      {
-        text: 'Take Photo',
-        onPress: () => pickImage('camera'),
-      },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    Keyboard.dismiss();
+    setTimeout(() => {
+      Alert.alert('Add Photo', undefined, [
+        {
+          text: 'Choose from Library',
+          onPress: () => pickImage('library'),
+        },
+        {
+          text: 'Take Photo',
+          onPress: () => pickImage('camera'),
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    }, 300);
   };
 
   const pickImage = async (source: 'library' | 'camera') => {
@@ -820,7 +823,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
 
       const result = source === 'library'
         ? await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            mediaTypes: ['images'] as any,
             allowsEditing: true,
             quality: 0.8,
           })
@@ -858,12 +861,12 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
           )
         );
         scheduleSave();
-      } catch {
-        Alert.alert('Upload Failed', 'Could not upload the photo. Please try again.');
+      } catch (uploadErr: any) {
+        Alert.alert('Upload Failed', uploadErr?.message || 'Could not upload the photo. Please try again.');
         setBlocks((prev) => prev.filter((b) => b.id !== imageBlock.id));
       }
-    } catch {
-      Alert.alert('Error', 'Could not access photos.');
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Could not access photos. Please check permissions in Settings.');
     }
   };
 
