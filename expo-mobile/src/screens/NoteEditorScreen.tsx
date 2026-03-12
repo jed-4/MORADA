@@ -658,6 +658,35 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
             if (savedNoteId) {
               Alert.alert('Note Options', undefined, [
                 {
+                  text: 'Pin / Unpin',
+                  onPress: async () => {
+                    try {
+                      const noteRes = await apiRequest(`/api/notes/${savedNoteId}`);
+                      if (noteRes.ok) {
+                        const n = await noteRes.json();
+                        const resp = await apiRequest(`/api/notes/${savedNoteId}`, 'PATCH', { pinned: !n.pinned });
+                        if (!resp.ok) {
+                          const err = await resp.json().catch(() => ({}));
+                          Alert.alert('Error', err.message || 'Failed to update pin status.');
+                        }
+                      }
+                    } catch {
+                      Alert.alert('Error', 'Failed to update note.');
+                    }
+                  },
+                },
+                {
+                  text: 'Archive',
+                  onPress: async () => {
+                    const response = await apiRequest(`/api/notes/${savedNoteId}/archive`, 'POST');
+                    if (response.ok) {
+                      navigation.goBack();
+                    } else {
+                      Alert.alert('Error', 'Failed to archive note.');
+                    }
+                  },
+                },
+                {
                   text: 'Delete',
                   style: 'destructive',
                   onPress: async () => {

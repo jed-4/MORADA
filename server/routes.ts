@@ -268,7 +268,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Notes API Routes
   app.get("/api/notes", async (req, res) => {
     try {
-      const { projectId } = req.query;
+      const { projectId, scope } = req.query;
       const user = req.user as any;
       const companyId = user?.companyId;
       
@@ -280,7 +280,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const effectiveProjectId = projectId === "null" ? null : projectId as string | undefined;
       
       // Pass userId to also include notes assigned to the current user
-      const notes = await storage.getNotes(effectiveProjectId, companyId, user?.id);
+      let notes = await storage.getNotes(effectiveProjectId, companyId, user?.id);
+      
+      // Filter by scope if provided (e.g., scope=personal for mobile personal notes)
+      if (scope) {
+        const scopeStr = scope as string;
+        notes = notes.filter(n => n.scope === scopeStr);
+        // For personal scope, also filter to notes owned by the current user
+        if (scopeStr === 'personal' && user?.id) {
+          notes = notes.filter(n => n.ownerId === user.id);
+        }
+      }
+      
       res.json(notes);
     } catch (error) {
       console.error("[Notes API] Error fetching notes:", error);

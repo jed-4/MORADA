@@ -209,15 +209,10 @@ export default function NotesListScreen({ navigation }: Props) {
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
     try {
-      const response = await apiRequest('/api/notes?projectId=null');
+      const response = await apiRequest('/api/notes?scope=personal');
       if (response.ok) {
         const data: NoteItem[] = await response.json();
-        const personalNotes = data.filter(
-          (n) =>
-            n.scope === 'personal' &&
-            n.ownerId === user?.id &&
-            !n.archivedAt
-        );
+        const personalNotes = data.filter((n) => !n.archivedAt);
         personalNotes.sort((a, b) => {
           if (a.pinned && !b.pinned) return -1;
           if (!a.pinned && b.pinned) return 1;
@@ -237,6 +232,22 @@ export default function NotesListScreen({ navigation }: Props) {
     useCallback(() => {
       fetchNotes();
     }, [fetchNotes])
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      navigation.setOptions({
+        headerRight: () => (
+          <TouchableOpacity onPress={handleCreateNote} style={{ paddingRight: 8 }} disabled={creating}>
+            {creating ? (
+              <ActivityIndicator size="small" color={colors.accent} />
+            ) : (
+              <Ionicons name="add-circle" size={26} color={colors.accent} />
+            )}
+          </TouchableOpacity>
+        ),
+      });
+    }, [navigation, creating, colors.accent])
   );
 
   const filteredNotes = search.trim()
@@ -386,17 +397,6 @@ export default function NotesListScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]}>
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Notes</Text>
-        <TouchableOpacity onPress={handleCreateNote} style={styles.addButton} disabled={creating}>
-          {creating ? (
-            <ActivityIndicator size="small" color={colors.accent} />
-          ) : (
-            <Ionicons name="add-circle" size={28} color={colors.accent} />
-          )}
-        </TouchableOpacity>
-      </View>
-
       <View style={styles.searchContainer}>
         <View style={[styles.searchBar, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
           <Ionicons name="search" size={18} color={colors.placeholder} />
@@ -454,21 +454,6 @@ export default function NotesListScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: '700',
-  },
-  addButton: {
-    padding: 4,
   },
   searchContainer: {
     paddingHorizontal: 16,
