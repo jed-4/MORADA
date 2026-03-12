@@ -18,6 +18,8 @@ import ScheduleScreen from '../screens/ScheduleScreen';
 import CalendarScreen from '../screens/CalendarScreen';
 import ChecklistsScreen from '../screens/ChecklistsScreen';
 import MoreScreen from '../screens/MoreScreen';
+import NotesListScreen from '../screens/NotesListScreen';
+import NoteEditorScreen from '../screens/NoteEditorScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -74,6 +76,8 @@ function MoreStack() {
       <Stack.Screen name="Checklists" component={ChecklistsScreen} options={{ headerShown: true, title: 'Checklists' }} />
       <Stack.Screen name="Tasks" component={TasksScreen} options={{ headerShown: true, title: 'My Tasks' }} />
       <Stack.Screen name="MyCalendar" component={CalendarScreen} options={{ headerShown: true, title: 'My Calendar' }} />
+      <Stack.Screen name="Notes" component={NotesListScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="NoteEditor" component={NoteEditorScreen} options={{ headerShown: false }} />
     </Stack.Navigator>
   );
 }
