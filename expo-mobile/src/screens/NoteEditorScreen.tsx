@@ -302,17 +302,20 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
   const [loadingNote, setLoadingNote] = useState(!!noteId);
   const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [visibility, setVisibility] = useState<'private' | 'team_only' | 'everyone'>('private');
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRefs = useRef<Record<string, TextInput | null>>({});
   const blocksRef = useRef(blocks);
   const titleRef = useRef(title);
   const savedNoteIdRef = useRef(savedNoteId);
+  const visibilityRef = useRef(visibility);
   const isCreatingRef = useRef(false);
 
   blocksRef.current = blocks;
   titleRef.current = title;
   savedNoteIdRef.current = savedNoteId;
+  visibilityRef.current = visibility;
 
   const colors = isDark
     ? {
@@ -372,6 +375,9 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
       if (response.ok) {
         const note = await response.json();
         setTitle(note.title === 'Untitled' ? '' : (note.title || ''));
+        if (note.visibility === 'team_only' || note.visibility === 'everyone' || note.visibility === 'private') {
+          setVisibility(note.visibility);
+        }
         if (note.contentHtml) {
           setBlocks(htmlToBlocks(note.contentHtml));
         } else if (note.content) {
@@ -448,6 +454,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
             contentText,
             type: 'note',
             scope: 'personal',
+            visibility: visibilityRef.current,
             category: 'General',
             priority: 'low',
           });
@@ -720,6 +727,47 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
     );
   };
 
+  const VISIBILITY_LABELS: Record<string, string> = {
+    private: 'Just Me (Private)',
+    team_only: 'My Team',
+    everyone: 'Everyone in Company',
+  };
+
+  const handleChangeVisibility = () => {
+    const current = visibilityRef.current;
+    Alert.alert(
+      'Who can see this note?',
+      `Currently: ${VISIBILITY_LABELS[current] || current}`,
+      [
+        {
+          text: 'Just Me (Private)',
+          onPress: () => applyVisibility('private'),
+        },
+        {
+          text: 'My Team',
+          onPress: () => applyVisibility('team_only'),
+        },
+        {
+          text: 'Everyone in Company',
+          onPress: () => applyVisibility('everyone'),
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  };
+
+  const applyVisibility = async (newVisibility: 'private' | 'team_only' | 'everyone') => {
+    setVisibility(newVisibility);
+    const currentSavedId = savedNoteIdRef.current;
+    if (currentSavedId) {
+      try {
+        await apiRequest(`/api/notes/${currentSavedId}`, 'PATCH', { visibility: newVisibility });
+      } catch {
+        // Non-critical — next auto-save will persist it
+      }
+    }
+  };
+
   const handleTapBelow = () => {
     const lastBlock = blocks[blocks.length - 1];
     if (lastBlock && lastBlock.type === 'text' && lastBlock.text === '') {
@@ -847,6 +895,23 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
           )}
         </View>
         <TouchableOpacity
+          onPress={handleChangeVisibility}
+          style={styles.visibilityBtn}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons
+            name={
+              visibility === 'private'
+                ? 'lock-closed-outline'
+                : visibility === 'everyone'
+                ? 'earth-outline'
+                : 'people-outline'
+            }
+            size={16}
+            color={visibility === 'private' ? colors.secondary : colors.accent}
+          />
+        </TouchableOpacity>
+        <TouchableOpacity
           onPress={() => {
             if (savedNoteId) {
               Alert.alert('Note Options', undefined, [
@@ -867,6 +932,10 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
                       Alert.alert('Error', 'Failed to update note.');
                     }
                   },
+                },
+                {
+                  text: `Visibility: ${VISIBILITY_LABELS[visibility] || visibility}`,
+                  onPress: handleChangeVisibility,
                 },
                 {
                   text: 'Archive',
@@ -1020,6 +1089,9 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   moreBtn: {
+    padding: 8,
+  },
+  visibilityBtn: {
     padding: 8,
   },
   editorContainer: {

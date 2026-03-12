@@ -271,6 +271,7 @@ export default function NotesListScreen({ navigation }: Props) {
         contentText: '',
         type: 'note',
         scope: 'personal',
+        visibility: 'private',
         category: 'General',
         priority: 'low',
       });
