@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,9 @@ import {
   Alert,
   RefreshControl,
   TextInput,
+  Animated,
+  PanResponder,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -57,6 +60,116 @@ function getPreviewText(note: NoteItem): string {
   return firstLine.length > 80 ? firstLine.slice(0, 80) + '...' : firstLine;
 }
 
+const SWIPE_THRESHOLD = 70;
+
+function SwipeableNoteRow({
+  note,
+  colors,
+  onPress,
+  onLongPress,
+  onDelete,
+  onArchive,
+}: {
+  note: NoteItem;
+  colors: any;
+  onPress: () => void;
+  onLongPress: () => void;
+  onDelete: () => void;
+  onArchive: () => void;
+}) {
+  const translateX = useRef(new Animated.Value(0)).current;
+  const isSwipedOpen = useRef(false);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        return Math.abs(gestureState.dx) > 10 && Math.abs(gestureState.dy) < 20;
+      },
+      onPanResponderMove: (_, gestureState) => {
+        if (gestureState.dx < 0) {
+          translateX.setValue(Math.max(gestureState.dx, -160));
+        } else if (isSwipedOpen.current) {
+          translateX.setValue(Math.min(0, -160 + gestureState.dx));
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dx < -SWIPE_THRESHOLD) {
+          Animated.spring(translateX, { toValue: -160, useNativeDriver: true, tension: 80, friction: 10 }).start();
+          isSwipedOpen.current = true;
+        } else {
+          Animated.spring(translateX, { toValue: 0, useNativeDriver: true, tension: 80, friction: 10 }).start();
+          isSwipedOpen.current = false;
+        }
+      },
+    })
+  ).current;
+
+  const closeSwipe = () => {
+    Animated.spring(translateX, { toValue: 0, useNativeDriver: true, tension: 80, friction: 10 }).start();
+    isSwipedOpen.current = false;
+  };
+
+  return (
+    <View style={[styles.swipeContainer, { borderBottomColor: colors.border }]}>
+      <View style={styles.swipeActions}>
+        <TouchableOpacity
+          style={[styles.swipeBtn, { backgroundColor: '#f59e0b' }]}
+          onPress={() => { closeSwipe(); onArchive(); }}
+        >
+          <Ionicons name="archive-outline" size={20} color="#fff" />
+          <Text style={styles.swipeBtnText}>Archive</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.swipeBtn, { backgroundColor: colors.danger }]}
+          onPress={() => { closeSwipe(); onDelete(); }}
+        >
+          <Ionicons name="trash-outline" size={20} color="#fff" />
+          <Text style={styles.swipeBtnText}>Delete</Text>
+        </TouchableOpacity>
+      </View>
+      <Animated.View
+        style={[styles.noteRowAnimated, { backgroundColor: colors.bg, transform: [{ translateX }] }]}
+        {...panResponder.panHandlers}
+      >
+        <TouchableOpacity
+          style={styles.noteRow}
+          activeOpacity={0.6}
+          onPress={() => {
+            if (isSwipedOpen.current) { closeSwipe(); return; }
+            onPress();
+          }}
+          onLongPress={onLongPress}
+        >
+          <View style={styles.noteContent}>
+            <View style={styles.noteTitleRow}>
+              {note.pinned && (
+                <Ionicons name="pin" size={14} color={colors.accent} style={styles.pinIcon} />
+              )}
+              <Text style={[styles.noteTitle, { color: colors.text }]} numberOfLines={1}>
+                {note.title || 'Untitled'}
+              </Text>
+            </View>
+            <Text style={[styles.notePreview, { color: colors.secondary }]} numberOfLines={1}>
+              {getPreviewText(note) || 'No content'}
+            </Text>
+          </View>
+          <View style={styles.noteMeta}>
+            <Text style={[styles.noteTime, { color: colors.placeholder }]}>
+              {timeAgo(note.updatedAt)}
+            </Text>
+            <TouchableOpacity
+              onPress={onLongPress}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="ellipsis-horizontal" size={18} color={colors.placeholder} />
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Animated.View>
+    </View>
+  );
+}
+
 export default function NotesListScreen({ navigation }: Props) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -66,6 +179,7 @@ export default function NotesListScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
+  const [creating, setCreating] = useState(false);
 
   const colors = isDark
     ? {
@@ -136,21 +250,57 @@ export default function NotesListScreen({ navigation }: Props) {
   const pinnedNotes = filteredNotes.filter((n) => n.pinned);
   const unpinnedNotes = filteredNotes.filter((n) => !n.pinned);
 
-  const handleCreateNote = () => {
-    navigation.navigate('NoteEditor', { noteId: null });
-  };
-
-  const handleDeleteNote = async (noteId: string) => {
+  const handleCreateNote = async () => {
+    if (creating) return;
+    setCreating(true);
     try {
-      const response = await apiRequest(`/api/notes/${noteId}`, 'DELETE');
-      if (response.ok || response.status === 204) {
-        setNotes((prev) => prev.filter((n) => n.id !== noteId));
+      const response = await apiRequest('/api/notes', 'POST', {
+        title: 'Untitled',
+        content: '',
+        contentHtml: '<p><br></p>',
+        contentText: '',
+        type: 'note',
+        scope: 'personal',
+        category: 'General',
+        priority: 'low',
+      });
+      if (response.ok) {
+        const newNote = await response.json();
+        navigation.navigate('NoteEditor', { noteId: newNote.id });
       } else {
-        Alert.alert('Error', 'Failed to delete note.');
+        Alert.alert('Error', 'Failed to create note.');
       }
     } catch {
-      Alert.alert('Error', 'Failed to delete note.');
+      Alert.alert('Error', 'Failed to create note.');
+    } finally {
+      setCreating(false);
     }
+  };
+
+  const handleDeleteNote = async (noteId: string, title: string) => {
+    Alert.alert(
+      'Delete Note',
+      `Are you sure you want to delete "${title || 'Untitled'}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const response = await apiRequest(`/api/notes/${noteId}`, 'DELETE');
+              if (response.ok || response.status === 204) {
+                setNotes((prev) => prev.filter((n) => n.id !== noteId));
+              } else {
+                Alert.alert('Error', 'Failed to delete note.');
+              }
+            } catch {
+              Alert.alert('Error', 'Failed to delete note.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleArchiveNote = async (noteId: string) => {
@@ -182,17 +332,6 @@ export default function NotesListScreen({ navigation }: Props) {
     }
   };
 
-  const confirmDelete = (noteId: string, title: string) => {
-    Alert.alert(
-      'Delete Note',
-      `Are you sure you want to delete "${title || 'Untitled'}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => handleDeleteNote(noteId) },
-      ]
-    );
-  };
-
   const showNoteActions = (note: NoteItem) => {
     Alert.alert(
       note.title || 'Untitled',
@@ -209,7 +348,7 @@ export default function NotesListScreen({ navigation }: Props) {
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: () => confirmDelete(note.id, note.title),
+          onPress: () => handleDeleteNote(note.id, note.title),
         },
         { text: 'Cancel', style: 'cancel' },
       ]
@@ -217,37 +356,14 @@ export default function NotesListScreen({ navigation }: Props) {
   };
 
   const renderNoteItem = ({ item }: { item: NoteItem }) => (
-    <TouchableOpacity
-      style={[styles.noteRow, { borderBottomColor: colors.border }]}
-      activeOpacity={0.6}
+    <SwipeableNoteRow
+      note={item}
+      colors={colors}
       onPress={() => navigation.navigate('NoteEditor', { noteId: item.id })}
       onLongPress={() => showNoteActions(item)}
-    >
-      <View style={styles.noteContent}>
-        <View style={styles.noteTitleRow}>
-          {item.pinned && (
-            <Ionicons name="pin" size={14} color={colors.accent} style={styles.pinIcon} />
-          )}
-          <Text style={[styles.noteTitle, { color: colors.text }]} numberOfLines={1}>
-            {item.title || 'Untitled'}
-          </Text>
-        </View>
-        <Text style={[styles.notePreview, { color: colors.secondary }]} numberOfLines={1}>
-          {getPreviewText(item) || 'No content'}
-        </Text>
-      </View>
-      <View style={styles.noteMeta}>
-        <Text style={[styles.noteTime, { color: colors.placeholder }]}>
-          {timeAgo(item.updatedAt)}
-        </Text>
-        <TouchableOpacity
-          onPress={() => showNoteActions(item)}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Ionicons name="ellipsis-horizontal" size={18} color={colors.placeholder} />
-        </TouchableOpacity>
-      </View>
-    </TouchableOpacity>
+      onDelete={() => handleDeleteNote(item.id, item.title)}
+      onArchive={() => handleArchiveNote(item.id)}
+    />
   );
 
   const renderSectionHeader = (title: string) => (
@@ -272,8 +388,12 @@ export default function NotesListScreen({ navigation }: Props) {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]}>
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Notes</Text>
-        <TouchableOpacity onPress={handleCreateNote} style={styles.addButton}>
-          <Ionicons name="add-circle" size={28} color={colors.accent} />
+        <TouchableOpacity onPress={handleCreateNote} style={styles.addButton} disabled={creating}>
+          {creating ? (
+            <ActivityIndicator size="small" color={colors.accent} />
+          ) : (
+            <Ionicons name="add-circle" size={28} color={colors.accent} />
+          )}
         </TouchableOpacity>
       </View>
 
@@ -398,12 +518,38 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
+  swipeContainer: {
+    overflow: 'hidden',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  swipeActions: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    width: 160,
+  },
+  swipeBtn: {
+    width: 80,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 2,
+  },
+  swipeBtnText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  noteRowAnimated: {
+    width: '100%',
+  },
   noteRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   noteContent: {
     flex: 1,

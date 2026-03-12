@@ -329,7 +329,7 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
       const response = await apiRequest(`/api/notes/${id}`);
       if (response.ok) {
         const note = await response.json();
-        setTitle(note.title || '');
+        setTitle(note.title === 'Untitled' ? '' : (note.title || ''));
         if (note.contentHtml) {
           setBlocks(htmlToBlocks(note.contentHtml));
         } else if (note.content) {
