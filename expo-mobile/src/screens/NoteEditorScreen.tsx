@@ -377,8 +377,9 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
     }
 
     const contentHtml = blocksToHtml(currentBlocks);
-    const content = blocksToPlainText(currentBlocks) || currentTitle;
-    const contentText = blocksToPlainText(currentBlocks);
+    const plainBody = blocksToPlainText(currentBlocks);
+    const content = [currentTitle, plainBody].filter(Boolean).join('\n');
+    const contentText = plainBody;
 
     setSaveStatus('saving');
 
@@ -543,14 +544,16 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
   const renderBlock = (block: Block, index: number) => {
     if (block.type === 'divider') {
       return (
-        <TouchableOpacity
-          key={block.id}
-          style={styles.dividerRow}
-          onLongPress={() => removeBlock(block.id)}
-          activeOpacity={0.6}
-        >
+        <View key={block.id} style={styles.dividerRow}>
           <View style={[styles.dividerLine, { backgroundColor: colors.dividerColor }]} />
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.dividerDelete}
+            onPress={() => removeBlock(block.id)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="close-circle" size={16} color={colors.placeholder} />
+          </TouchableOpacity>
+        </View>
       );
     }
 
@@ -864,12 +867,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: 12,
-    justifyContent: 'center',
   },
   dividerLine: {
     height: 1,
-    width: '100%',
+    flex: 1,
+  },
+  dividerDelete: {
+    marginLeft: 8,
+    opacity: 0.6,
   },
   bottomPadding: {
     height: 200,

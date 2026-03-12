@@ -13,7 +13,6 @@ import {
   TextInput,
   Animated,
   PanResponder,
-  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
