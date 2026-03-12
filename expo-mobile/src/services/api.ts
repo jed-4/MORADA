@@ -1,4 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
+import * as FileSystem from 'expo-file-system';
 
 export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://buildpro4.replit.app';
 
@@ -70,21 +71,20 @@ export const apiFetch = async <T>(path: string): Promise<T> => {
 
 export const uploadPhoto = async (localUri: string): Promise<{ uploadURL: string; objectPath: string }> => {
   const presignRes = await apiRequest('/api/uploads/request-url', 'POST', {
-    name: `timesheet-photo-${Date.now()}.jpg`,
+    name: `photo-${Date.now()}.jpg`,
     contentType: 'image/jpeg',
   });
   if (!presignRes.ok) throw new Error('Failed to get upload URL');
   const { uploadURL, objectPath } = await presignRes.json();
 
-  const photoResponse = await fetch(localUri);
-  const blob = await photoResponse.blob();
-
-  const uploadRes = await fetch(uploadURL, {
-    method: 'PUT',
+  const uploadResult = await FileSystem.uploadAsync(uploadURL, localUri, {
+    httpMethod: 'PUT',
+    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
     headers: { 'Content-Type': 'image/jpeg' },
-    body: blob,
   });
-  if (!uploadRes.ok) throw new Error('Failed to upload photo');
+  if (uploadResult.status < 200 || uploadResult.status >= 300) {
+    throw new Error(`Failed to upload photo: ${uploadResult.status}`);
+  }
 
   return { uploadURL, objectPath };
 };
@@ -97,15 +97,14 @@ export const uploadFileFromUri = async (localUri: string, fileName: string, cont
   if (!presignRes.ok) throw new Error('Failed to get upload URL');
   const { uploadURL, objectPath } = await presignRes.json();
 
-  const fileResponse = await fetch(localUri);
-  const blob = await fileResponse.blob();
-
-  const uploadRes = await fetch(uploadURL, {
-    method: 'PUT',
+  const uploadResult = await FileSystem.uploadAsync(uploadURL, localUri, {
+    httpMethod: 'PUT',
+    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
     headers: { 'Content-Type': contentType },
-    body: blob,
   });
-  if (!uploadRes.ok) throw new Error('Failed to upload file');
+  if (uploadResult.status < 200 || uploadResult.status >= 300) {
+    throw new Error(`Failed to upload file: ${uploadResult.status}`);
+  }
 
   return { uploadURL, objectPath };
 };
@@ -118,15 +117,14 @@ export const uploadAudio = async (localUri: string): Promise<{ uploadURL: string
   if (!presignRes.ok) throw new Error('Failed to get upload URL');
   const { uploadURL, objectPath } = await presignRes.json();
 
-  const audioResponse = await fetch(localUri);
-  const blob = await audioResponse.blob();
-
-  const uploadRes = await fetch(uploadURL, {
-    method: 'PUT',
+  const uploadResult = await FileSystem.uploadAsync(uploadURL, localUri, {
+    httpMethod: 'PUT',
+    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
     headers: { 'Content-Type': 'audio/mp4' },
-    body: blob,
   });
-  if (!uploadRes.ok) throw new Error('Failed to upload audio');
+  if (uploadResult.status < 200 || uploadResult.status >= 300) {
+    throw new Error(`Failed to upload audio: ${uploadResult.status}`);
+  }
 
   return { uploadURL, objectPath };
 };
