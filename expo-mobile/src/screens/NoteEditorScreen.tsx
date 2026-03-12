@@ -788,20 +788,8 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
     }
   };
 
-  const handleImagePick = () => {
-    Keyboard.dismiss();
-    Alert.alert('Add Photo', undefined, [
-      {
-        text: 'Choose from Library',
-        onPress: () => pickImage('library'),
-      },
-      {
-        text: 'Take Photo',
-        onPress: () => pickImage('camera'),
-      },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-  };
+  const handleImagePick = () => pickImage('library');
+  const handleCameraPick = () => pickImage('camera');
 
   const pickImage = async (source: 'library' | 'camera') => {
     try {
@@ -1049,6 +1037,12 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
               onPress={handleImagePick}
             >
               <Ionicons name="image-outline" size={18} color={colors.inactiveBtn} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.toolbarBtn}
+              onPress={handleCameraPick}
+            >
+              <Ionicons name="camera-outline" size={18} color={colors.inactiveBtn} />
             </TouchableOpacity>
             <View style={styles.toolbarSpacer} />
             {keyboardVisible && (
