@@ -432,8 +432,48 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
     scheduleSave();
   };
 
-  const updateBlockText = (blockId: string, text: string) => {
-    setBlocks((prev) => prev.map((b) => (b.id === blockId ? { ...b, text } : b)));
+  const updateBlockText = (blockId: string, newText: string) => {
+    const normalized = newText.replace(/\r\n/g, '\n');
+    const nlIdx = normalized.indexOf('\n');
+    if (nlIdx !== -1) {
+      const lines = normalized.split('\n');
+      const firstLine = lines[0];
+      const remainingLines = lines.slice(1);
+      const block = blocksRef.current.find((b) => b.id === blockId);
+      if (!block) return;
+
+      const isListType = block.type === 'bullet' || block.type === 'numbered' || block.type === 'todo';
+      if (isListType && firstLine === '' && remainingLines.length === 1 && remainingLines[0] === '') {
+        setBlocks((prev) => prev.map((b) => (b.id === blockId ? { ...b, type: 'text' as BlockType, text: '' } : b)));
+        scheduleSave();
+        return;
+      }
+
+      const nextType: BlockType = isListType ? block.type : 'text';
+      const newBlocks: Block[] = remainingLines.map((line) => {
+        const nb: Block = { id: makeBlockId(), type: nextType, text: line };
+        if (nextType === 'todo') nb.checked = false;
+        return nb;
+      });
+      const lastNewBlock = newBlocks[newBlocks.length - 1];
+
+      setBlocks((prev) => {
+        const idx = prev.findIndex((b) => b.id === blockId);
+        const updated = prev.map((b) => (b.id === blockId ? { ...b, text: firstLine } : b));
+        updated.splice(idx + 1, 0, ...newBlocks);
+        return updated;
+      });
+      setTimeout(() => {
+        if (lastNewBlock) {
+          inputRefs.current[lastNewBlock.id]?.focus();
+          setFocusedBlockId(lastNewBlock.id);
+        }
+      }, 50);
+      scheduleSave();
+      return;
+    }
+
+    setBlocks((prev) => prev.map((b) => (b.id === blockId ? { ...b, text: normalized } : b)));
     scheduleSave();
   };
 
@@ -450,21 +490,6 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
     setBlocks((prev) =>
       prev.map((b) => (b.id === blockId ? { ...b, checked: !b.checked } : b))
     );
-    scheduleSave();
-  };
-
-  const insertBlockAfter = (afterId: string, type: BlockType = 'text') => {
-    const newBlock: Block = { id: makeBlockId(), type, text: '' };
-    setBlocks((prev) => {
-      const idx = prev.findIndex((b) => b.id === afterId);
-      const updated = [...prev];
-      updated.splice(idx + 1, 0, newBlock);
-      return updated;
-    });
-    setTimeout(() => {
-      inputRefs.current[newBlock.id]?.focus();
-      setFocusedBlockId(newBlock.id);
-    }, 100);
     scheduleSave();
   };
 
@@ -500,16 +525,6 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
       return updated;
     });
     scheduleSave();
-  };
-
-  const handleBlockSubmit = (blockId: string) => {
-    const block = blocksRef.current.find((b) => b.id === blockId);
-    if (!block) return;
-    const nextType: BlockType =
-      block.type === 'bullet' || block.type === 'numbered' || block.type === 'todo'
-        ? block.type
-        : 'text';
-    insertBlockAfter(blockId, nextType);
   };
 
   const handleBlockKeyPress = (blockId: string, key: string) => {
@@ -605,7 +620,6 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
           ]}
           value={block.text}
           onChangeText={(val) => updateBlockText(block.id, val)}
-          onSubmitEditing={() => handleBlockSubmit(block.id)}
           onKeyPress={({ nativeEvent }) => handleBlockKeyPress(block.id, nativeEvent.key)}
           onFocus={() => setFocusedBlockId(block.id)}
           placeholder={
@@ -616,12 +630,27 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
               : ''
           }
           placeholderTextColor={colors.placeholder}
-          multiline={false}
+          multiline
+          scrollEnabled={false}
           blurOnSubmit={false}
-          returnKeyType="next"
         />
       </View>
     );
+  };
+
+  const handleTapBelow = () => {
+    const lastBlock = blocks[blocks.length - 1];
+    if (lastBlock && lastBlock.type === 'text' && lastBlock.text === '') {
+      inputRefs.current[lastBlock.id]?.focus();
+      setFocusedBlockId(lastBlock.id);
+    } else {
+      const newBlock = defaultBlock();
+      setBlocks((prev) => [...prev, newBlock]);
+      setTimeout(() => {
+        inputRefs.current[newBlock.id]?.focus();
+        setFocusedBlockId(newBlock.id);
+      }, 50);
+    }
   };
 
   const focusedBlock = blocks.find((b) => b.id === focusedBlockId);
@@ -737,7 +766,11 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
             }}
           />
           {blocks.map((block, index) => renderBlock(block, index))}
-          <View style={styles.bottomPadding} />
+          <TouchableOpacity
+            style={styles.tapBelowZone}
+            activeOpacity={1}
+            onPress={handleTapBelow}
+          />
         </ScrollView>
 
         {keyboardVisible && (
@@ -831,6 +864,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 20,
     paddingTop: 16,
+    flexGrow: 1,
   },
   titleInput: {
     fontSize: 28,
@@ -879,8 +913,9 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     opacity: 0.6,
   },
-  bottomPadding: {
-    height: 200,
+  tapBelowZone: {
+    minHeight: 300,
+    flex: 1,
   },
   toolbar: {
     borderTopWidth: 1,
