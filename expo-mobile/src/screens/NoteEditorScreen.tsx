@@ -632,7 +632,6 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
           placeholderTextColor={colors.placeholder}
           multiline
           scrollEnabled={false}
-          blurOnSubmit={false}
         />
       </View>
     );
