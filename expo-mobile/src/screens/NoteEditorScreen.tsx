@@ -86,6 +86,7 @@ function blocksToHtml(blocks: Block[]): string {
       case 'image':
         if (block.src) {
           html += `<img src="${escapeHtml(block.src)}" alt="${escapeHtml(block.text || '')}" />`;
+          if (block.text) html += `<p data-image-caption="true"><em>${escapeHtml(block.text)}</em></p>`;
         }
         break;
       default:
@@ -127,13 +128,27 @@ function htmlToBlocks(html: string): Block[] {
     if (imgMatch) {
       const srcMatch = imgMatch[1].match(/src="([^"]*)"/i);
       const altMatch = imgMatch[1].match(/alt="([^"]*)"/i);
+      let caption = altMatch ? altMatch[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"') : '';
+      let advanceTo = remaining.indexOf(imgMatch[0]) + imgMatch[0].length;
+      const afterImg = remaining.slice(advanceTo);
+      const captionMatch = afterImg.match(/^[\s\n]*<p[^>]*data-image-caption="true"[^>]*><em>([\s\S]*?)<\/em><\/p>/i);
+      if (captionMatch) {
+        caption = stripTags(captionMatch[1]);
+        advanceTo += afterImg.indexOf(captionMatch[0]) + captionMatch[0].length;
+      } else if (!caption) {
+        const fallbackCaption = afterImg.match(/^[\s\n]*<p[^>]*><em>([\s\S]*?)<\/em><\/p>/i);
+        if (fallbackCaption) {
+          caption = stripTags(fallbackCaption[1]);
+          advanceTo += afterImg.indexOf(fallbackCaption[0]) + fallbackCaption[0].length;
+        }
+      }
       blocks.push({
         id: makeBlockId(),
         type: 'image',
-        text: altMatch ? altMatch[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"') : '',
+        text: caption,
         src: srcMatch ? srcMatch[1].replace(/&amp;/g, '&') : '',
       });
-      cursor += remaining.indexOf(imgMatch[0]) + imgMatch[0].length;
+      cursor += advanceTo;
       continue;
     }
 
