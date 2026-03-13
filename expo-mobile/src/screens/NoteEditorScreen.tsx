@@ -302,6 +302,12 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
   const [loadingNote, setLoadingNote] = useState(!!noteId);
   const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [collapsedBlocks, setCollapsedBlocks] = useState<Record<string, boolean>>({});
+
+  const toggleBlockCollapsed = (blockId: string) => {
+    setCollapsedBlocks(prev => ({ ...prev, [blockId]: !prev[blockId] }));
+  };
+
   const [visibility, setVisibility] = useState<'private' | 'team_only' | 'everyone'>('private');
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -622,6 +628,31 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
     }
 
     if (block.type === 'image') {
+      const isCollapsed = !!collapsedBlocks[block.id];
+      const displayName = block.text?.trim()
+        || (block.src ? block.src.split('/').pop()?.split('?')[0] || 'Image' : 'Uploading...');
+
+      if (isCollapsed) {
+        return (
+          <View key={block.id} style={[styles.imageBlockCollapsed, { borderColor: colors.border, backgroundColor: colors.toolbarBg }]}>
+            <Ionicons name="image-outline" size={16} color={colors.accent} />
+            <Text style={[styles.imageCollapsedName, { color: colors.text }]} numberOfLines={1}>{displayName}</Text>
+            <TouchableOpacity
+              onPress={() => toggleBlockCollapsed(block.id)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="chevron-down" size={16} color={colors.secondary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => removeBlock(block.id)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="close-circle" size={16} color={colors.placeholder} />
+            </TouchableOpacity>
+          </View>
+        );
+      }
+
       return (
         <View key={block.id} style={[styles.imageBlock, { borderColor: colors.border }]}>
           {block.uploading ? (
@@ -656,6 +687,12 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
               multiline
               scrollEnabled={false}
             />
+            <TouchableOpacity
+              onPress={() => toggleBlockCollapsed(block.id)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="chevron-up" size={16} color={colors.secondary} />
+            </TouchableOpacity>
             <TouchableOpacity
               onPress={() => removeBlock(block.id)}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -889,6 +926,13 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
           )}
         </View>
         <TouchableOpacity
+          onPress={handleImagePick}
+          style={styles.attachBtn}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="image-outline" size={20} color={colors.secondary} />
+        </TouchableOpacity>
+        <TouchableOpacity
           onPress={handleChangeVisibility}
           style={styles.visibilityBtn}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -997,9 +1041,10 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
           />
         </ScrollView>
 
+        {keyboardVisible && (
         <View style={[styles.toolbar, { backgroundColor: colors.toolbarBg, borderTopColor: colors.toolbarBorder }]}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.toolbarContent}>
-            {keyboardVisible && TOOLBAR_ITEMS.map((item) => {
+            {TOOLBAR_ITEMS.map((item) => {
               const isActive = focusedBlock?.type === item.type;
               return (
                 <TouchableOpacity
@@ -1045,13 +1090,12 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
               <Ionicons name="camera-outline" size={18} color={colors.inactiveBtn} />
             </TouchableOpacity>
             <View style={styles.toolbarSpacer} />
-            {keyboardVisible && (
-              <TouchableOpacity style={styles.toolbarBtn} onPress={() => Keyboard.dismiss()}>
-                <Ionicons name="chevron-down" size={20} color={colors.inactiveBtn} />
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity style={styles.toolbarBtn} onPress={() => Keyboard.dismiss()}>
+              <Ionicons name="chevron-down" size={20} color={colors.inactiveBtn} />
+            </TouchableOpacity>
           </ScrollView>
         </View>
+        )}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -1182,11 +1226,30 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 20,
   },
+  attachBtn: {
+    padding: 8,
+  },
   imageBlock: {
     marginVertical: 8,
     borderRadius: 8,
     borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
+  },
+  imageBlockCollapsed: {
+    marginVertical: 4,
+    marginHorizontal: 0,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  imageCollapsedName: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '500',
   },
   imagePlaceholder: {
     height: 200,
