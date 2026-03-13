@@ -635,16 +635,21 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
       if (isCollapsed) {
         return (
           <View key={block.id} style={[styles.imageBlockCollapsed, { borderColor: colors.border, backgroundColor: colors.toolbarBg }]}>
-            <Ionicons name="image-outline" size={16} color={colors.accent} />
-            <Text style={[styles.imageCollapsedName, { color: colors.text }]} numberOfLines={1}>{displayName}</Text>
             <TouchableOpacity
               onPress={() => toggleBlockCollapsed(block.id)}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Ionicons name="chevron-down" size={16} color={colors.secondary} />
+              <Ionicons name="chevron-forward" size={16} color={colors.secondary} />
             </TouchableOpacity>
+            <Ionicons name="image-outline" size={16} color={colors.accent} />
+            <Text style={[styles.imageCollapsedName, { color: colors.text }]} numberOfLines={1}>{displayName}</Text>
             <TouchableOpacity
-              onPress={() => removeBlock(block.id)}
+              onPress={() => {
+                Alert.alert('Remove Image', 'Remove this image from the note?', [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Remove', style: 'destructive', onPress: () => removeBlock(block.id) },
+                ]);
+              }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <Ionicons name="close-circle" size={16} color={colors.placeholder} />
@@ -694,7 +699,12 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
               <Ionicons name="chevron-up" size={16} color={colors.secondary} />
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={() => removeBlock(block.id)}
+              onPress={() => {
+                Alert.alert('Remove Image', 'Remove this image from the note?', [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Remove', style: 'destructive', onPress: () => removeBlock(block.id) },
+                ]);
+              }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <Ionicons name="close-circle" size={18} color={colors.placeholder} />
@@ -1041,61 +1051,10 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
           />
         </ScrollView>
 
-        {keyboardVisible && (
-        <View style={[styles.toolbar, { backgroundColor: colors.toolbarBg, borderTopColor: colors.toolbarBorder }]}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.toolbarContent}>
-            {TOOLBAR_ITEMS.map((item) => {
-              const isActive = focusedBlock?.type === item.type;
-              return (
-                <TouchableOpacity
-                  key={item.type}
-                  style={[
-                    styles.toolbarBtn,
-                    isActive && { backgroundColor: colors.accent + '22' },
-                  ]}
-                  onPress={() => {
-                    if (focusedBlockId) {
-                      updateBlockType(focusedBlockId, item.type);
-                    }
-                  }}
-                >
-                  {item.type === 'h1' ? (
-                    <Text style={[styles.toolbarLabel, { color: isActive ? colors.activeBtn : colors.inactiveBtn, fontWeight: '700', fontSize: 16 }]}>H1</Text>
-                  ) : item.type === 'h2' ? (
-                    <Text style={[styles.toolbarLabel, { color: isActive ? colors.activeBtn : colors.inactiveBtn, fontWeight: '600', fontSize: 15 }]}>H2</Text>
-                  ) : item.type === 'numbered' ? (
-                    <Text style={[styles.toolbarLabel, { color: isActive ? colors.activeBtn : colors.inactiveBtn, fontWeight: '500' }]}>1.</Text>
-                  ) : item.type === 'bullet' ? (
-                    <Text style={[styles.toolbarLabel, { color: isActive ? colors.activeBtn : colors.inactiveBtn, fontSize: 20, lineHeight: 22 }]}>{'\u2022'}</Text>
-                  ) : item.type === 'divider' ? (
-                    <Ionicons name="remove-outline" size={20} color={isActive ? colors.activeBtn : colors.inactiveBtn} />
-                  ) : item.type === 'todo' ? (
-                    <Ionicons name="checkbox-outline" size={18} color={isActive ? colors.activeBtn : colors.inactiveBtn} />
-                  ) : (
-                    <Ionicons name="text-outline" size={18} color={isActive ? colors.activeBtn : colors.inactiveBtn} />
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-            <TouchableOpacity
-              style={styles.toolbarBtn}
-              onPress={handleImagePick}
-            >
-              <Ionicons name="image-outline" size={18} color={colors.inactiveBtn} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.toolbarBtn}
-              onPress={handleCameraPick}
-            >
-              <Ionicons name="camera-outline" size={18} color={colors.inactiveBtn} />
-            </TouchableOpacity>
-            <View style={styles.toolbarSpacer} />
-            <TouchableOpacity style={styles.toolbarBtn} onPress={() => Keyboard.dismiss()}>
-              <Ionicons name="chevron-down" size={20} color={colors.inactiveBtn} />
-            </TouchableOpacity>
-          </ScrollView>
-        </View>
-        )}
+        <View style={[styles.toolbar, { backgroundColor: colors.toolbarBg, borderTopColor: colors.toolbarBorder }, !keyboardVisible && styles.toolbarHidden]}>
+          <ScrollView
+            horizontal
+            showsHorizont
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -1228,6 +1187,11 @@ const styles = StyleSheet.create({
   },
   attachBtn: {
     padding: 8,
+  },
+  toolbarHidden: {
+    height: 0,
+    overflow: 'hidden',
+    borderTopWidth: 0,
   },
   imageBlock: {
     marginVertical: 8,
