@@ -866,20 +866,6 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
         }
       }
 
-      const result = source === 'library'
-        ? await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ['images'] as any,
-            allowsEditing: true,
-            quality: 0.8,
-          })
-        : await ImagePicker.launchCameraAsync({
-            allowsEditing: true,
-            quality: 0.8,
-          });
-
-      if (result.canceled || !result.assets?.[0]) return;
-
-      const imageUri = result.assets[0].uri;
       const imageBlock: Block = {
         id: makeBlockId(),
         type: 'image',
@@ -896,6 +882,24 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
         updated.splice(insertAfterIdx + 1, 0, imageBlock);
         return updated;
       });
+
+      const result = source === 'library'
+        ? await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            quality: 0.8,
+          })
+        : await ImagePicker.launchCameraAsync({
+            allowsEditing: true,
+            quality: 0.8,
+          });
+
+      if (result.canceled || !result.assets?.[0]) {
+        setBlocks((prev) => prev.filter((b) => b.id !== imageBlock.id));
+        return;
+      }
+
+      const imageUri = result.assets[0].uri;
 
       try {
         const { objectPath } = await uploadPhoto(imageUri);
