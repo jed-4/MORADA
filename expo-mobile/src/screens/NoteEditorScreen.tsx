@@ -838,6 +838,18 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
   const handleImagePick = () => pickImage('library');
   const handleCameraPick = () => pickImage('camera');
 
+  const handleImageToolbar = () => {
+    Alert.alert(
+      'Add Photo',
+      undefined,
+      [
+        { text: 'Choose from Library', onPress: () => pickImage('library') },
+        { text: 'Take Photo', onPress: () => pickImage('camera') },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  };
+
   const pickImage = async (source: 'library' | 'camera') => {
     try {
       if (source === 'library') {
@@ -1054,7 +1066,40 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
         <View style={[styles.toolbar, { backgroundColor: colors.toolbarBg, borderTopColor: colors.toolbarBorder }, !keyboardVisible && styles.toolbarHidden]}>
           <ScrollView
             horizontal
-            showsHorizont
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.toolbarContent}
+            keyboardShouldPersistTaps="always"
+          >
+            {TOOLBAR_ITEMS.map((item) => {
+              const isActive = focusedBlock?.type === item.type;
+              return (
+                <TouchableOpacity
+                  key={item.type}
+                  style={[
+                    styles.toolbarBtn,
+                    { backgroundColor: isActive ? colors.activeBtn + '33' : 'transparent' },
+                  ]}
+                  onPress={() => {
+                    if (focusedBlockId) {
+                      updateBlockType(focusedBlockId, item.type);
+                    }
+                  }}
+                >
+                  <Text style={[styles.toolbarLabel, { color: isActive ? colors.activeBtn : colors.inactiveBtn }]}>
+                    {item.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+            <View style={styles.toolbarDivider} />
+            <TouchableOpacity
+              style={styles.toolbarBtn}
+              onPress={handleImageToolbar}
+            >
+              <Ionicons name="image-outline" size={20} color={colors.inactiveBtn} />
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -1187,6 +1232,13 @@ const styles = StyleSheet.create({
   },
   attachBtn: {
     padding: 8,
+  },
+  toolbarDivider: {
+    width: StyleSheet.hairlineWidth,
+    alignSelf: 'stretch',
+    marginHorizontal: 6,
+    backgroundColor: '#94a3b8',
+    opacity: 0.4,
   },
   toolbarHidden: {
     height: 0,
