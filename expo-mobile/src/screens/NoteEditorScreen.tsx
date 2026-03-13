@@ -873,9 +873,10 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
         uploading: true,
       };
 
-      const insertAfterIdx = focusedBlockId
+      const focusedIdx = focusedBlockId
         ? blocksRef.current.findIndex((b) => b.id === focusedBlockId)
-        : blocksRef.current.length - 1;
+        : -1;
+      const insertAfterIdx = focusedIdx >= 0 ? focusedIdx : blocksRef.current.length - 1;
 
       setBlocks((prev) => {
         const updated = [...prev];
