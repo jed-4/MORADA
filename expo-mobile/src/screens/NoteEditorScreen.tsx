@@ -910,12 +910,14 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
           )
         );
         scheduleSave();
-      } catch (uploadErr: any) {
-        Alert.alert('Upload Failed', uploadErr?.message || 'Could not upload the photo. Please try again.');
+      } catch (uploadErr: unknown) {
+        const uploadMsg = uploadErr instanceof Error ? uploadErr.message : undefined;
+        Alert.alert('Upload Failed', uploadMsg || 'Could not upload the photo. Please try again.');
         setBlocks((prev) => prev.filter((b) => b.id !== imageBlock.id));
       }
-    } catch (err: any) {
-      Alert.alert('Error', err?.message || 'Could not access photos. Please check permissions in Settings.');
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : undefined;
+      Alert.alert('Error', errMsg || 'Could not access photos. Please check permissions in Settings.');
     }
   };
 
