@@ -102,6 +102,22 @@ function generateTimeOptions() {
 
 const TIME_OPTIONS = generateTimeOptions();
 
+const BREAK_OPTIONS: { value: string; label: string }[] = [
+  { value: '0', label: 'None' },
+  { value: '0.25', label: '15 min' },
+  { value: '0.5', label: '30 min' },
+  { value: '0.75', label: '45 min' },
+  { value: '1', label: '1 hr' },
+  { value: '1.25', label: '1 hr 15 min' },
+  { value: '1.5', label: '1 hr 30 min' },
+  { value: '1.75', label: '1 hr 45 min' },
+  { value: '2', label: '2 hrs' },
+  { value: '2.5', label: '2 hrs 30 min' },
+  { value: '3', label: '3 hrs' },
+  { value: '3.5', label: '3 hrs 30 min' },
+  { value: '4', label: '4 hrs' },
+];
+
 const PHASE_ORDER: Record<string, number> = {
   construction: 0,
   pre_construction: 1,
@@ -184,15 +200,14 @@ export default function TimesheetsScreen() {
   const [formDate, setFormDate] = useState(new Date().toISOString().split('T')[0]);
   const [formStartTime, setFormStartTime] = useState('07:00');
   const [formEndTime, setFormEndTime] = useState('15:30');
-  const [formBreakDuration, setFormBreakDuration] = useState('0.5');
+  const [formBreakDuration, setFormBreakDuration] = useState('0');
   const [formHourlyRate, setFormHourlyRate] = useState('');
   const [formCostCodeId, setFormCostCodeId] = useState('');
   const [formDescription, setFormDescription] = useState('');
-  const [timeEntryMode, setTimeEntryMode] = useState<'time' | 'duration'>('time');
-  const [formDuration, setFormDuration] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const [showTimePicker, setShowTimePicker] = useState<'start' | 'end' | null>(null);
+  const [showBreakPicker, setShowBreakPicker] = useState(false);
   const [showFormProjectPicker, setShowFormProjectPicker] = useState(false);
   const [showCostCodePicker, setShowCostCodePicker] = useState(false);
 
@@ -353,12 +368,10 @@ export default function TimesheetsScreen() {
     setFormDate(new Date().toISOString().split('T')[0]);
     setFormStartTime('07:00');
     setFormEndTime('15:30');
-    setFormBreakDuration('0.5');
+    setFormBreakDuration('0');
     setFormHourlyRate('');
     setFormCostCodeId('');
     setFormDescription('');
-    setTimeEntryMode('time');
-    setFormDuration('');
     setIsEditMode(false);
     setEditingId(null);
   };
@@ -376,11 +389,9 @@ export default function TimesheetsScreen() {
     setFormDate(new Date(ts.date).toISOString().split('T')[0]);
     setFormStartTime(ts.startTime || '07:00');
     setFormEndTime(ts.endTime || '15:30');
-    setFormBreakDuration(ts.breakDuration || '0.5');
+    setFormBreakDuration(ts.breakDuration || '0');
     setFormHourlyRate(ts.hourlyRate || '');
     setFormDescription(ts.description || '');
-    setFormDuration(ts.duration || '');
-    setTimeEntryMode(ts.startTime ? 'time' : 'duration');
 
     try {
       const existingCostCodes = await apiFetch<any[]>(`/api/timesheets/${ts.id}/cost-codes`);
@@ -408,15 +419,13 @@ export default function TimesheetsScreen() {
 
     setSubmitting(true);
     try {
-      const duration = timeEntryMode === 'time'
-        ? calculateDuration(formStartTime, formEndTime, formBreakDuration)
-        : formDuration;
+      const duration = calculateDuration(formStartTime, formEndTime, formBreakDuration);
 
       const body: any = {
         projectId: formProjectId,
         date: new Date(formDate).toISOString(),
-        startTime: timeEntryMode === 'time' ? formStartTime : null,
-        endTime: timeEntryMode === 'time' ? formEndTime : null,
+        startTime: formStartTime,
+        endTime: formEndTime,
         duration,
         breakDuration: formBreakDuration,
         hourlyRate: formHourlyRate,
@@ -469,16 +478,14 @@ export default function TimesheetsScreen() {
       await fetchData();
     } catch (e: any) {
       if (!isEditMode) {
-        const duration = timeEntryMode === 'time'
-          ? calculateDuration(formStartTime, formEndTime, formBreakDuration)
-          : formDuration;
+        const duration = calculateDuration(formStartTime, formEndTime, formBreakDuration);
         await addToQueue({
           type: 'log-hours',
           payload: {
             projectId: formProjectId,
             date: new Date(formDate).toISOString(),
-            startTime: timeEntryMode === 'time' ? formStartTime : null,
-            endTime: timeEntryMode === 'time' ? formEndTime : null,
+            startTime: formStartTime,
+            endTime: formEndTime,
             duration,
             breakDuration: formBreakDuration,
             hourlyRate: formHourlyRate,
@@ -906,80 +913,56 @@ export default function TimesheetsScreen() {
                 <Ionicons name="chevron-down" size={16} color={colors.secondary} />
               </TouchableOpacity>
 
-              {/* Date */}
-              <Text style={[styles.formLabel, { color: colors.secondary }]}>Date</Text>
-              <TextInput
-                style={[styles.formInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-                value={formDate}
-                onChangeText={setFormDate}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor={colors.secondary}
-              />
-
-              {/* Time Entry Mode Toggle */}
-              <View style={styles.modeToggle}>
-                <TouchableOpacity
-                  style={[styles.modeButton, timeEntryMode === 'time' && { backgroundColor: colors.accent }]}
-                  onPress={() => setTimeEntryMode('time')}
-                >
-                  <Text style={[styles.modeButtonText, { color: timeEntryMode === 'time' ? '#fff' : colors.secondary }]}>Start/End Time</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.modeButton, timeEntryMode === 'duration' && { backgroundColor: colors.accent }]}
-                  onPress={() => setTimeEntryMode('duration')}
-                >
-                  <Text style={[styles.modeButtonText, { color: timeEntryMode === 'duration' ? '#fff' : colors.secondary }]}>Total Hours</Text>
-                </TouchableOpacity>
+              {/* Date + Break row */}
+              <View style={styles.dateBreakRow}>
+                <View style={styles.dateCol}>
+                  <Text style={[styles.formLabel, { color: colors.secondary }]}>Date</Text>
+                  <TextInput
+                    style={[styles.formInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
+                    value={formDate}
+                    onChangeText={setFormDate}
+                    placeholder="YYYY-MM-DD"
+                    placeholderTextColor={colors.secondary}
+                  />
+                </View>
+                <View style={styles.breakCol}>
+                  <Text style={[styles.formLabel, { color: colors.secondary }]}>Break</Text>
+                  <TouchableOpacity
+                    style={[styles.formPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
+                    onPress={() => setShowBreakPicker(true)}
+                  >
+                    <Text style={[styles.formPickerText, { color: colors.text }]}>
+                      {BREAK_OPTIONS.find(o => o.value === formBreakDuration)?.label ?? 'None'}
+                    </Text>
+                    <Ionicons name="chevron-down" size={16} color={colors.secondary} />
+                  </TouchableOpacity>
+                </View>
               </View>
 
-              {timeEntryMode === 'time' ? (
-                <>
-                  <View style={styles.timeRow}>
-                    <View style={styles.timeCol}>
-                      <Text style={[styles.formLabel, { color: colors.secondary }]}>Start</Text>
-                      <TouchableOpacity
-                        style={[styles.formPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-                        onPress={() => setShowTimePicker('start')}
-                      >
-                        <Text style={[styles.formPickerText, { color: colors.text }]}>{formatTime12h(formStartTime)}</Text>
-                      </TouchableOpacity>
-                    </View>
-                    <View style={styles.timeCol}>
-                      <Text style={[styles.formLabel, { color: colors.secondary }]}>End</Text>
-                      <TouchableOpacity
-                        style={[styles.formPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-                        onPress={() => setShowTimePicker('end')}
-                      >
-                        <Text style={[styles.formPickerText, { color: colors.text }]}>{formatTime12h(formEndTime)}</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                  <Text style={[styles.formLabel, { color: colors.secondary }]}>Break (hours)</Text>
-                  <TextInput
-                    style={[styles.formInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-                    value={formBreakDuration}
-                    onChangeText={setFormBreakDuration}
-                    keyboardType="decimal-pad"
-                    placeholder="0.5"
-                    placeholderTextColor={colors.secondary}
-                  />
-                  <Text style={[styles.calcDuration, { color: colors.accent }]}>
-                    Calculated: {calculateDuration(formStartTime, formEndTime, formBreakDuration)} hours
-                  </Text>
-                </>
-              ) : (
-                <>
-                  <Text style={[styles.formLabel, { color: colors.secondary }]}>Total Hours</Text>
-                  <TextInput
-                    style={[styles.formInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-                    value={formDuration}
-                    onChangeText={setFormDuration}
-                    keyboardType="decimal-pad"
-                    placeholder="8.0"
-                    placeholderTextColor={colors.secondary}
-                  />
-                </>
-              )}
+              {/* Start / End time */}
+              <View style={styles.timeRow}>
+                <View style={styles.timeCol}>
+                  <Text style={[styles.formLabel, { color: colors.secondary }]}>Start</Text>
+                  <TouchableOpacity
+                    style={[styles.formPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
+                    onPress={() => setShowTimePicker('start')}
+                  >
+                    <Text style={[styles.formPickerText, { color: colors.text }]}>{formatTime12h(formStartTime)}</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.timeCol}>
+                  <Text style={[styles.formLabel, { color: colors.secondary }]}>End</Text>
+                  <TouchableOpacity
+                    style={[styles.formPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
+                    onPress={() => setShowTimePicker('end')}
+                  >
+                    <Text style={[styles.formPickerText, { color: colors.text }]}>{formatTime12h(formEndTime)}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+              <Text style={[styles.calcDuration, { color: colors.accent }]}>
+                Calculated: {calculateDuration(formStartTime, formEndTime, formBreakDuration)} hours
+              </Text>
 
               {/* Cost Code */}
               <Text style={[styles.formLabel, { color: colors.secondary }]}>Cost Code</Text>
@@ -992,17 +975,6 @@ export default function TimesheetsScreen() {
                 </Text>
                 <Ionicons name="chevron-down" size={16} color={colors.secondary} />
               </TouchableOpacity>
-
-              {/* Hourly Rate */}
-              <Text style={[styles.formLabel, { color: colors.secondary }]}>Hourly Rate ($)</Text>
-              <TextInput
-                style={[styles.formInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-                value={formHourlyRate}
-                onChangeText={setFormHourlyRate}
-                keyboardType="decimal-pad"
-                placeholder="0.00"
-                placeholderTextColor={colors.secondary}
-              />
 
               {/* Description */}
               <Text style={[styles.formLabel, { color: colors.secondary }]}>Description</Text>
@@ -1055,6 +1027,16 @@ export default function TimesheetsScreen() {
         getSortedProjectItems(projects),
         formProjectId,
         setFormProjectId,
+      )}
+
+      {/* Break Picker */}
+      {renderPickerModal(
+        showBreakPicker,
+        () => setShowBreakPicker(false),
+        'Break Duration',
+        BREAK_OPTIONS.map(o => ({ id: o.value, label: o.label })),
+        formBreakDuration,
+        setFormBreakDuration,
       )}
 
       {/* Cost Code Picker */}
@@ -1288,21 +1270,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   formPickerText: { fontSize: 15 },
-  modeToggle: {
-    flexDirection: 'row',
-    marginTop: 14,
-    borderRadius: 8,
-    overflow: 'hidden',
-    gap: 0,
-  },
-  modeButton: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: 'center',
-    backgroundColor: 'transparent',
-    borderRadius: 8,
-  },
-  modeButtonText: { fontSize: 13, fontWeight: '500' },
+  dateBreakRow: { flexDirection: 'row', gap: 12 },
+  dateCol: { flex: 3 },
+  breakCol: { flex: 2 },
   timeRow: { flexDirection: 'row', gap: 12 },
   timeCol: { flex: 1 },
   calcDuration: { fontSize: 13, fontWeight: '500', marginTop: 8 },
