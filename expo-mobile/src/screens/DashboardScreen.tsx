@@ -143,7 +143,7 @@ export default function DashboardScreen({ navigation }: Props) {
 
   const colors = isDark
     ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569', cardHover: '#253449' }
-    : { bg: '#f8fafc', card: '#ffffff', text: '#0f172a', secondary: '#64748b', border: '#e2e8f0', accent: '#9b7fc4', muted: '#cbd5e1', cardHover: '#f1f5f9' };
+    : { bg: '#ffffff', card: '#f1f5f9', text: '#0f172a', secondary: '#64748b', border: '#e2e8f0', accent: '#9b7fc4', muted: '#cbd5e1', cardHover: '#e8edf2' };
 
   const fetchData = useCallback(async () => {
     try {
@@ -409,7 +409,7 @@ export default function DashboardScreen({ navigation }: Props) {
                   return (
                     <TouchableOpacity
                       key={ts.id}
-                      style={[styles.timesheetCard, { backgroundColor: colors.card, borderColor: colors.border, width: cardWidth }]}
+                      style={[styles.timesheetCard, { backgroundColor: colors.card, width: cardWidth }]}
                       onPress={() => navigation.navigate('Timesheets')}
                       activeOpacity={0.7}
                     >
@@ -746,7 +746,6 @@ const styles = StyleSheet.create({
   timesheetCard: {
     flexDirection: 'row',
     borderRadius: 10,
-    borderWidth: 1,
     overflow: 'hidden',
   },
   timesheetColorSquare: {
