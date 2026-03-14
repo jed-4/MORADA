@@ -376,6 +376,17 @@ export default function DashboardScreen({ navigation }: Props) {
         <View style={[styles.sectionDivider, { backgroundColor: colors.border }]} />
 
         <View style={styles.section}>
+          <Text style={[styles.todayDay, { color: colors.text }]}>
+            {new Date().toLocaleDateString('en-AU', { weekday: 'long' })}
+          </Text>
+          <Text style={[styles.todayDate, { color: colors.secondary }]}>
+            {new Date().toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })}
+          </Text>
+        </View>
+
+        <View style={[styles.sectionDivider, { backgroundColor: colors.border }]} />
+
+        <View style={styles.section}>
           <TouchableOpacity
             style={styles.sectionHeaderRow}
             onPress={() => setTimesheetsCollapsed(v => !v)}
@@ -509,7 +520,6 @@ export default function DashboardScreen({ navigation }: Props) {
                     onPress={() => navigation.navigate('Calendar')}
                     activeOpacity={0.7}
                   >
-                    <Text style={[styles.scheduleDate, { color: scheduleColor }]}>{formatDateLabel(item.startDate)}</Text>
                     <Text style={[styles.scheduleName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
                     {item.projectName && (
                       <Text style={[styles.scheduleProject, { color: colors.secondary }]} numberOfLines={1}>{item.projectName}</Text>
@@ -697,6 +707,15 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: '700',
+  },
+  todayDay: {
+    fontSize: 22,
+    fontWeight: '700',
+  },
+  todayDate: {
+    fontSize: 14,
+    fontWeight: '400',
+    marginTop: 2,
   },
   sectionLink: {
     fontSize: 13,
