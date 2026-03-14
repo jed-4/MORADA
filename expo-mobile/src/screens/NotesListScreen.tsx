@@ -13,6 +13,7 @@ import {
   TextInput,
   Animated,
   PanResponder,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -179,6 +180,10 @@ export default function NotesListScreen({ navigation }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
   const [creating, setCreating] = useState(false);
+  const [templateModalVisible, setTemplateModalVisible] = useState(false);
+  const [templates, setTemplates] = useState<{ id: string; name: string; description?: string; defaultTitle?: string; contentHtml?: string; contentText?: string }[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const [templateFetchError, setTemplateFetchError] = useState(false);
 
   const colors = isDark
     ? {
@@ -233,11 +238,69 @@ export default function NotesListScreen({ navigation }: Props) {
     }, [fetchNotes])
   );
 
+  const handlePlusTap = () => {
+    Alert.alert('New Note', 'How would you like to create a note?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'From Template', onPress: () => openTemplatePicker() },
+      { text: 'Blank Note', onPress: () => handleCreateNote() },
+    ]);
+  };
+
+  const openTemplatePicker = async () => {
+    setLoadingTemplates(true);
+    setTemplateFetchError(false);
+    setTemplateModalVisible(true);
+    try {
+      const response = await apiRequest('/api/note-templates?activeOnly=true');
+      if (response.ok) {
+        const data = await response.json();
+        setTemplates(data);
+      } else {
+        setTemplates([]);
+        setTemplateFetchError(true);
+      }
+    } catch {
+      setTemplates([]);
+      setTemplateFetchError(true);
+    } finally {
+      setLoadingTemplates(false);
+    }
+  };
+
+  const handleCreateFromTemplate = async (template: { defaultTitle?: string; contentHtml?: string; contentText?: string }) => {
+    if (creating) return;
+    setCreating(true);
+    setTemplateModalVisible(false);
+    try {
+      const response = await apiRequest('/api/notes', 'POST', {
+        title: template.defaultTitle || 'Untitled',
+        content: template.contentText || '',
+        contentHtml: template.contentHtml || '<p><br></p>',
+        contentText: template.contentText || '',
+        type: 'note',
+        scope: 'personal',
+        visibility: 'private',
+        category: 'General',
+        priority: 'low',
+      });
+      if (response.ok) {
+        const newNote = await response.json();
+        navigation.navigate('NoteEditor', { noteId: newNote.id });
+      } else {
+        Alert.alert('Error', 'Failed to create note from template.');
+      }
+    } catch {
+      Alert.alert('Error', 'Failed to create note from template.');
+    } finally {
+      setCreating(false);
+    }
+  };
+
   useFocusEffect(
     useCallback(() => {
       navigation.setOptions({
         headerRight: () => (
-          <TouchableOpacity onPress={handleCreateNote} style={{ paddingRight: 8 }} disabled={creating}>
+          <TouchableOpacity onPress={handlePlusTap} style={{ paddingRight: 8 }} disabled={creating}>
             {creating ? (
               <ActivityIndicator size="small" color={colors.accent} />
             ) : (
@@ -447,6 +510,65 @@ export default function NotesListScreen({ navigation }: Props) {
           contentContainerStyle={styles.listContent}
         />
       )}
+
+      <Modal
+        visible={templateModalVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setTemplateModalVisible(false)}
+      >
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]}>
+          <View style={[styles.templateHeader, { borderBottomColor: colors.border }]}>
+            <Text style={[styles.templateTitle, { color: colors.text }]}>Choose Template</Text>
+            <TouchableOpacity onPress={() => setTemplateModalVisible(false)}>
+              <Ionicons name="close" size={24} color={colors.secondary} />
+            </TouchableOpacity>
+          </View>
+          {loadingTemplates ? (
+            <View style={styles.centerContainer}>
+              <ActivityIndicator size="large" color={colors.accent} />
+            </View>
+          ) : templates.length === 0 ? (
+            <View style={styles.centerContainer}>
+              <Ionicons name={templateFetchError ? 'cloud-offline-outline' : 'document-text-outline'} size={48} color={colors.placeholder} />
+              <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                {templateFetchError ? 'Failed to load templates' : 'No templates'}
+              </Text>
+              <Text style={[styles.emptySubtitle, { color: colors.secondary }]}>
+                {templateFetchError ? 'Check your connection and try again.' : 'Create templates on the web to use them here.'}
+              </Text>
+              {templateFetchError && (
+                <TouchableOpacity onPress={openTemplatePicker} style={{ marginTop: 12 }}>
+                  <Text style={{ color: colors.accent, fontSize: 15, fontWeight: '600' }}>Retry</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ) : (
+            <FlatList
+              data={templates}
+              keyExtractor={(t) => t.id}
+              contentContainerStyle={{ paddingBottom: 40 }}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[styles.templateRow, { borderBottomColor: colors.border }]}
+                  onPress={() => handleCreateFromTemplate(item)}
+                >
+                  <Ionicons name="document-text" size={22} color={colors.accent} style={{ marginRight: 12 }} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.templateName, { color: colors.text }]}>{item.name}</Text>
+                    {item.description ? (
+                      <Text style={[styles.templateDesc, { color: colors.secondary }]} numberOfLines={1}>
+                        {item.description}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={colors.secondary} />
+                </TouchableOpacity>
+              )}
+            />
+          )}
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -563,5 +685,32 @@ const styles = StyleSheet.create({
   },
   noteTime: {
     fontSize: 12,
+  },
+  templateHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  templateTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  templateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  templateName: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  templateDesc: {
+    fontSize: 13,
+    marginTop: 2,
   },
 });

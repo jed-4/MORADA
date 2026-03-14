@@ -67,6 +67,7 @@ import {
   Eye,
   EyeOff,
   Check,
+  LayoutTemplate,
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -211,6 +212,8 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [propertiesOpen, setPropertiesOpen] = useState(false);
   const [editVisibility, setEditVisibility] = useState<string>("team_only");
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
+  const [templateSearch, setTemplateSearch] = useState("");
 
   const { toast } = useToast();
   useProject(); // keeps ProjectContext in sync
@@ -257,6 +260,34 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
       return res.json();
     },
   });
+
+  interface NoteTemplate {
+    id: string;
+    name: string;
+    description?: string;
+    defaultTitle?: string;
+    contentHtml?: string;
+    contentText?: string;
+    isActive?: boolean;
+  }
+
+  const { data: noteTemplates = [] } = useQuery<NoteTemplate[]>({
+    queryKey: ["/api/note-templates", { activeOnly: "true" }],
+    queryFn: async () => {
+      const res = await fetch("/api/note-templates?activeOnly=true", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: templateDialogOpen,
+  });
+
+  const filteredTemplates = templateSearch.trim()
+    ? noteTemplates.filter(
+        (t) =>
+          t.name.toLowerCase().includes(templateSearch.toLowerCase()) ||
+          (t.description || "").toLowerCase().includes(templateSearch.toLowerCase()),
+      )
+    : noteTemplates;
 
   const currentUserName = currentUser
     ? `${currentUser.firstName || ""} ${currentUser.lastName || ""}`.trim() ||
@@ -521,6 +552,26 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
     } as any);
   };
 
+  const handleCreateFromTemplate = (template: NoteTemplate) => {
+    if (isCreatingRef.current) return;
+    isCreatingRef.current = true;
+    setTemplateDialogOpen(false);
+    setTemplateSearch("");
+    createNoteMutation.mutate({
+      title: template.defaultTitle || "Untitled",
+      content: template.contentText || "",
+      contentHtml: template.contentHtml || "",
+      contentText: template.contentText || "",
+      author: currentUserName,
+      ownerId: currentUser?.id,
+      ownerName: currentUserName,
+      visibility: "team_only",
+      projectId: effectiveProjectId,
+      category: "General",
+      customFields: {},
+    } as any);
+  };
+
   const handleTogglePin = (note: Note) => {
     if (!note.pinned) {
       const pinCount = notes.filter((n) => n.pinned).length;
@@ -562,6 +613,14 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
             onClick={() => setIsCreateGroupOpen(true)}
           >
             <FolderPlus className="h-4 w-4" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            title="From Template"
+            onClick={() => setTemplateDialogOpen(true)}
+          >
+            <LayoutTemplate className="h-4 w-4" />
           </Button>
           <Button
             size="icon"
@@ -984,6 +1043,45 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={templateDialogOpen} onOpenChange={(open) => { setTemplateDialogOpen(open); if (!open) setTemplateSearch(""); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create from Template</DialogTitle>
+          </DialogHeader>
+          <div className="relative mb-3">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search templates..."
+              value={templateSearch}
+              onChange={(e) => setTemplateSearch(e.target.value)}
+              className="pl-8"
+            />
+          </div>
+          <div className="max-h-72 overflow-y-auto -mx-1 px-1">
+            {filteredTemplates.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">
+                {noteTemplates.length === 0 ? "No templates available" : "No matching templates"}
+              </p>
+            ) : (
+              <div className="space-y-1">
+                {filteredTemplates.map((t) => (
+                  <button
+                    key={t.id}
+                    className="w-full text-left rounded-md px-3 py-2.5 hover-elevate"
+                    onClick={() => handleCreateFromTemplate(t)}
+                  >
+                    <div className="text-sm font-medium">{t.name}</div>
+                    {t.description && (
+                      <div className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{t.description}</div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
