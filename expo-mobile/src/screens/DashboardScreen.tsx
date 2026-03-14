@@ -152,14 +152,15 @@ export default function DashboardScreen({ navigation }: Props) {
       const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + mondayOffset);
       const weekStartISO = weekStart.toISOString().split('T')[0];
 
+      const userId = user?.id || '';
       const [projectsData, tasksData, notifData, unreadData, timesheetData, recentTsList, weeklyTsList, scheduleData] = await Promise.all([
         apiFetch<Project[]>('/api/projects').catch(() => []),
         apiFetch<Task[]>('/api/tasks').catch(() => []),
         apiFetch<Notification[]>('/api/notifications?limit=20').catch(() => []),
         apiFetch<{ count: number }>('/api/notifications/unread-count').catch(() => ({ count: 0 })),
         apiFetch<ActiveTimesheet | null>('/api/timesheets/active').catch(() => null),
-        apiFetch<TimesheetEntry[]>('/api/timesheets').catch(() => []),
-        apiFetch<TimesheetEntry[]>(`/api/timesheets?startDate=${weekStartISO}&userId=${user?.id || ''}`).catch(() => []),
+        apiFetch<TimesheetEntry[]>(`/api/timesheets?userId=${userId}`).catch(() => []),
+        apiFetch<TimesheetEntry[]>(`/api/timesheets?startDate=${weekStartISO}&userId=${userId}`).catch(() => []),
         apiFetch<ScheduleItem[]>('/api/schedule-items/user-assigned').catch(() => []),
       ]);
       setProjects(projectsData || []);
@@ -172,11 +173,10 @@ export default function DashboardScreen({ navigation }: Props) {
       setUnreadCount(unreadData?.count || 0);
       setActiveTimesheet(timesheetData || null);
 
-      const myRecentTimesheets = (recentTsList || [])
-        .filter((ts) => ts.userId === user?.id)
+      const sortedTimesheets = (recentTsList || [])
         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
         .slice(0, 3);
-      setRecentTimesheets(myRecentTimesheets);
+      setRecentTimesheets(sortedTimesheets);
 
       setWeeklyTimesheets(weeklyTsList || []);
 
@@ -311,6 +311,7 @@ export default function DashboardScreen({ navigation }: Props) {
                   setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
                 }).catch(() => {});
               }
+              navigation.navigate('Timesheets');
             }}
             style={styles.headerIconBtn}
           >
@@ -502,8 +503,10 @@ export default function DashboardScreen({ navigation }: Props) {
                 onPress={() => {
                   if (notif.type === 'task_assigned' || notif.type === 'task_completed') {
                     navigation.navigate('More', { screen: 'Tasks' });
+                  } else if (notif.type === 'reminder') {
+                    navigation.navigate('Calendar');
                   } else {
-                    navigation.navigate('More', { screen: 'MoreHome' });
+                    navigation.navigate('Timesheets');
                   }
                 }}
                 activeOpacity={0.7}
