@@ -795,6 +795,8 @@ const styles = StyleSheet.create({
   taskColorBar: {
     width: 46,
     alignSelf: 'stretch',
+    borderTopRightRadius: 10,
+    borderBottomRightRadius: 10,
   },
   taskCardTitle: {
     fontSize: 13,
