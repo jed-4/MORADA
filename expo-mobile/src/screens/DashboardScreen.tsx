@@ -132,7 +132,6 @@ export default function DashboardScreen({ navigation }: Props) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [activeTimesheet, setActiveTimesheet] = useState<ActiveTimesheet | null>(null);
   const [recentTimesheets, setRecentTimesheets] = useState<TimesheetEntry[]>([]);
-  const [weeklyTimesheets, setWeeklyTimesheets] = useState<TimesheetEntry[]>([]);
   const [scheduleItems, setScheduleItems] = useState<ScheduleItem[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -148,21 +147,14 @@ export default function DashboardScreen({ navigation }: Props) {
 
   const fetchData = useCallback(async () => {
     try {
-      const now = new Date();
-      const dayOfWeek = now.getDay();
-      const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-      const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + mondayOffset);
-      const weekStartISO = weekStart.toISOString().split('T')[0];
-
       const userId = user?.id || '';
-      const [projectsData, tasksData, notifData, unreadData, timesheetData, recentTsList, weeklyTsList, scheduleData] = await Promise.all([
+      const [projectsData, tasksData, notifData, unreadData, timesheetData, recentTsList, scheduleData] = await Promise.all([
         apiFetch<Project[]>('/api/projects').catch(() => []),
         apiFetch<Task[]>('/api/tasks').catch(() => []),
         apiFetch<Notification[]>('/api/notifications?limit=20').catch(() => []),
         apiFetch<{ count: number }>('/api/notifications/unread-count').catch(() => ({ count: 0 })),
         apiFetch<ActiveTimesheet | null>('/api/timesheets/active').catch(() => null),
         apiFetch<TimesheetEntry[]>(`/api/timesheets?userId=${userId}`).catch(() => []),
-        apiFetch<TimesheetEntry[]>(`/api/timesheets?startDate=${weekStartISO}&userId=${userId}`).catch(() => []),
         apiFetch<ScheduleItem[]>('/api/schedule-items/user-assigned').catch(() => []),
       ]);
       setProjects(projectsData || []);
@@ -179,8 +171,6 @@ export default function DashboardScreen({ navigation }: Props) {
         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
         .slice(0, 3);
       setRecentTimesheets(sortedTimesheets);
-
-      setWeeklyTimesheets(weeklyTsList || []);
 
       setScheduleItems(scheduleData || []);
     } catch {
@@ -249,17 +239,6 @@ export default function DashboardScreen({ navigation }: Props) {
     return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
   }).slice(0, 5);
 
-  const activeProjects = projects.filter(p => p.currentSystemPhase !== 'completed').length;
-  const todayTaskCount = todayTasks.length;
-  const hoursThisWeek = (() => {
-    let total = 0;
-    weeklyTimesheets.forEach(ts => {
-      total += parseFloat(ts.duration) || 0;
-    });
-    return total;
-  })();
-  const activeTimesheetCount = activeTimesheet ? 1 : 0;
-
   const recentActivity = notifications.slice(0, 3);
 
   const upcomingSchedule = scheduleItems
@@ -309,15 +288,8 @@ export default function DashboardScreen({ navigation }: Props) {
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
         <TouchableOpacity style={styles.headerLeft} onPress={() => setShowUserMenu(v => !v)} activeOpacity={0.7}>
-          <View style={[styles.avatarCircle, { backgroundColor: colors.accent }]}>
-            <Text style={styles.avatarText}>
-              {(firstName[0] || '').toUpperCase()}{(lastName[0] || '').toUpperCase()}
-            </Text>
-          </View>
-          <View style={styles.headerNameWrap}>
-            <Text style={[styles.userName, { color: colors.text }]} numberOfLines={1}>{fullDisplayName}</Text>
-            <Ionicons name="chevron-down" size={14} color={colors.secondary} style={{ marginLeft: 4 }} />
-          </View>
+          <Text style={[styles.userName, { color: colors.text }]} numberOfLines={1}>{fullDisplayName}</Text>
+          <Ionicons name="chevron-down" size={14} color={colors.secondary} style={{ marginLeft: 4 }} />
         </TouchableOpacity>
         <View style={styles.headerRight}>
           <TouchableOpacity
@@ -384,26 +356,6 @@ export default function DashboardScreen({ navigation }: Props) {
         contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
       >
-        <View style={styles.statRow}>
-          {(() => {
-            const tileSize = Math.floor((Dimensions.get('window').width - 32 - 30) / 4);
-            return [
-              { label: 'Active Projects', value: activeProjects, icon: 'briefcase-outline' as keyof typeof Ionicons.glyphMap, color: '#3b82f6' },
-              { label: "Today's Tasks", value: todayTaskCount, icon: 'checkbox-outline' as keyof typeof Ionicons.glyphMap, color: '#f59e0b' },
-              { label: 'Hours (Week)', value: hoursThisWeek.toFixed(1), icon: 'time-outline' as keyof typeof Ionicons.glyphMap, color: '#10b981' },
-              { label: 'Active Timer', value: activeTimesheetCount, icon: 'timer-outline' as keyof typeof Ionicons.glyphMap, color: '#8b5cf6' },
-            ].map((stat, i) => (
-              <View key={i} style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border, width: tileSize, height: tileSize }]}>
-                <View style={[styles.statIconBg, { backgroundColor: stat.color + '15' }]}>
-                  <Ionicons name={stat.icon} size={18} color={stat.color} />
-                </View>
-                <Text style={[styles.statValue, { color: colors.text }]}>{stat.value}</Text>
-                <Text style={[styles.statLabel, { color: colors.secondary }]} numberOfLines={2}>{stat.label}</Text>
-              </View>
-            ));
-          })()}
-        </View>
-
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -664,24 +616,6 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: 12,
   },
-  headerNameWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  avatarCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  avatarText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '700',
-  },
   userName: {
     fontSize: 18,
     fontWeight: '700',
@@ -744,36 +678,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingTop: 16,
     paddingHorizontal: 16,
-  },
-  statRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 20,
-  },
-  statCard: {
-    borderRadius: 10,
-    borderWidth: 1,
-    padding: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statIconBg: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  statLabel: {
-    fontSize: 10,
-    fontWeight: '500',
-    marginTop: 2,
-    textAlign: 'center',
   },
   section: {
     marginBottom: 20,
