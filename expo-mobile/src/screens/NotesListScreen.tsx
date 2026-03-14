@@ -247,7 +247,7 @@ export default function NotesListScreen({ navigation }: Props) {
           Alert.alert('New Note', 'How would you like to create a note?', [
             { text: 'Cancel', style: 'cancel' },
             { text: 'From Template', onPress: () => { setTemplates(data); setTemplateModalVisible(true); } },
-            { text: 'Blank Note', onPress: () => handleCreateNote() },
+            { text: 'New Note', onPress: () => handleCreateNote() },
           ]);
           return;
         }
@@ -283,10 +283,17 @@ export default function NotesListScreen({ navigation }: Props) {
     setCreating(true);
     setTemplateModalVisible(false);
     try {
+      let html = template.contentHtml || '';
+      if (!html && template.contentText) {
+        html = template.contentText
+          .split('\n')
+          .map((line: string) => `<p>${line || '<br>'}</p>`)
+          .join('');
+      }
       const response = await apiRequest('/api/notes', 'POST', {
         title: template.defaultTitle || '',
         content: template.contentText || '',
-        contentHtml: template.contentHtml || '<p><br></p>',
+        contentHtml: html || '<p><br></p>',
         contentText: template.contentText || '',
         type: 'note',
         scope: 'personal',

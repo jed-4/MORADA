@@ -557,10 +557,17 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
     isCreatingRef.current = true;
     setTemplateDialogOpen(false);
     setTemplateSearch("");
+    let html = template.contentHtml || "";
+    if (!html && template.contentText) {
+      html = template.contentText
+        .split("\n")
+        .map((line) => `<p>${line || "<br>"}</p>`)
+        .join("");
+    }
     const payload: Partial<InsertNote> = {
       title: template.defaultTitle || "Untitled",
       content: template.contentText || "",
-      contentHtml: template.contentHtml || "",
+      contentHtml: html,
       contentText: template.contentText || "",
       author: currentUserName,
       ownerId: currentUser?.id,
@@ -615,12 +622,12 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
             <FolderPlus className="h-4 w-4" />
           </Button>
           <Button
-            size="icon"
-            variant="ghost"
-            title="From Template"
+            size="sm"
+            variant="outline"
             onClick={() => setTemplateDialogOpen(true)}
           >
-            <LayoutTemplate className="h-4 w-4" />
+            <LayoutTemplate className="h-3.5 w-3.5 mr-1" />
+            Template
           </Button>
           <Button
             size="icon"
