@@ -505,7 +505,7 @@ export default function DashboardScreen({ navigation }: Props) {
                   return (
                   <TouchableOpacity
                     key={item.id}
-                    style={[styles.scheduleCard, { backgroundColor: scheduleColor + '30', borderColor: scheduleColor + '60' }]}
+                    style={[styles.scheduleCard, { backgroundColor: scheduleColor + '18', borderColor: scheduleColor + '45' }]}
                     onPress={() => navigation.navigate('Calendar')}
                     activeOpacity={0.7}
                   >
