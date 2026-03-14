@@ -376,11 +376,8 @@ export default function DashboardScreen({ navigation }: Props) {
         <View style={[styles.sectionDivider, { backgroundColor: colors.border }]} />
 
         <View style={styles.section}>
-          <Text style={[styles.todayDay, { color: colors.text }]}>
-            {new Date().toLocaleDateString('en-AU', { weekday: 'long' })}
-          </Text>
-          <Text style={[styles.todayDate, { color: colors.secondary }]}>
-            {new Date().toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })}
+          <Text style={[styles.sectionTitle, { color: colors.secondary }]}>
+            {new Date().toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' })}
           </Text>
         </View>
 
@@ -502,31 +499,53 @@ export default function DashboardScreen({ navigation }: Props) {
             </TouchableOpacity>
           </View>
           {(() => {
-            const today = new Date().toISOString();
-            const testItems = [
-              { id: '_test1', name: 'Site Inspection', startDate: today, endDate: today, projectName: 'Smith Residence', projectId: 'proj-a' },
-              { id: '_test2', name: 'Client Meeting', startDate: today, endDate: today, projectName: 'CBD Office', projectId: 'proj-b' },
-              { id: '_test3', name: 'Concrete Pour', startDate: today, endDate: today, projectName: 'Warehouse Build', projectId: 'proj-c' },
+            const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+            const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999);
+            const tomorrowStart = new Date(todayStart); tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+            const tomorrowEnd = new Date(tomorrowStart); tomorrowEnd.setHours(23, 59, 59, 999);
+
+            const testToday = [
+              { id: '_test1', name: 'Site Inspection', startDate: todayStart.toISOString(), endDate: todayEnd.toISOString(), projectName: 'Smith Residence', projectId: 'proj-a' },
+              { id: '_test2', name: 'Client Meeting', startDate: todayStart.toISOString(), endDate: todayEnd.toISOString(), projectName: 'CBD Office', projectId: 'proj-b' },
             ];
-            const displaySchedule = [...testItems, ...upcomingSchedule];
+            const testTomorrow = [
+              { id: '_test3', name: 'Concrete Pour', startDate: tomorrowStart.toISOString(), endDate: tomorrowEnd.toISOString(), projectName: 'Warehouse Build', projectId: 'proj-c' },
+              { id: '_test4', name: 'Frame Inspection', startDate: tomorrowStart.toISOString(), endDate: tomorrowEnd.toISOString(), projectName: 'Smith Residence', projectId: 'proj-a' },
+            ];
+
+            const realToday = scheduleItems.filter(i => new Date(i.startDate) >= todayStart && new Date(i.startDate) <= todayEnd);
+            const realTomorrow = scheduleItems.filter(i => new Date(i.startDate) >= tomorrowStart && new Date(i.startDate) <= tomorrowEnd);
+
+            const todayItems = [...testToday, ...realToday];
+            const tomorrowItems = [...testTomorrow, ...realTomorrow];
+
+            const renderCard = (item: typeof todayItems[0], isTomorrow: boolean) => {
+              const scheduleColor = getProjectColor(item.projectId);
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  style={[styles.scheduleCard, { backgroundColor: scheduleColor + '18', borderColor: scheduleColor + '45' }]}
+                  onPress={() => navigation.navigate('Calendar')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.scheduleName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
+                  {item.projectName && (
+                    <Text style={[styles.scheduleProject, { color: colors.secondary }]} numberOfLines={1}>{item.projectName}</Text>
+                  )}
+                  {isTomorrow && (
+                    <Text style={[styles.scheduleTomorrow, { color: colors.muted }]}>Tomorrow</Text>
+                  )}
+                </TouchableOpacity>
+              );
+            };
+
             return (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scheduleScroll}>
-                {displaySchedule.map(item => {
-                  const scheduleColor = getProjectColor(item.projectId);
-                  return (
-                  <TouchableOpacity
-                    key={item.id}
-                    style={[styles.scheduleCard, { backgroundColor: scheduleColor + '18', borderColor: scheduleColor + '45' }]}
-                    onPress={() => navigation.navigate('Calendar')}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.scheduleName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
-                    {item.projectName && (
-                      <Text style={[styles.scheduleProject, { color: colors.secondary }]} numberOfLines={1}>{item.projectName}</Text>
-                    )}
-                  </TouchableOpacity>
-                  );
-                })}
+                {todayItems.map(item => renderCard(item, false))}
+                {tomorrowItems.length > 0 && (
+                  <View style={[styles.scheduleVerticalDivider, { backgroundColor: colors.border }]} />
+                )}
+                {tomorrowItems.map(item => renderCard(item, true))}
               </ScrollView>
             );
           })()}
@@ -864,6 +883,17 @@ const styles = StyleSheet.create({
   },
   scheduleProject: {
     fontSize: 10,
+  },
+  scheduleTomorrow: {
+    fontSize: 9,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  scheduleVerticalDivider: {
+    width: 1,
+    height: 63,
+    alignSelf: 'center',
+    marginHorizontal: 4,
   },
   activityRow: {
     flexDirection: 'row',
