@@ -409,11 +409,10 @@ export default function DashboardScreen({ navigation }: Props) {
                   return (
                     <TouchableOpacity
                       key={ts.id}
-                      style={[styles.timesheetCard, { backgroundColor: colors.card, width: cardWidth, borderWidth: 1, borderColor: projectColor }]}
+                      style={[styles.timesheetCard, { backgroundColor: projectColor + '30', width: cardWidth }]}
                       onPress={() => navigation.navigate('Timesheets')}
                       activeOpacity={0.7}
                     >
-                      <View style={[styles.timesheetColorSquare, { backgroundColor: projectColor }]} />
                       <View style={styles.timesheetCardContent}>
                         <View style={styles.timesheetCardRow}>
                           <Text style={[styles.timesheetCardProject, { color: colors.text }]} numberOfLines={1}>
@@ -747,11 +746,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     borderRadius: 10,
     overflow: 'hidden',
-  },
-  timesheetColorSquare: {
-    width: 56,
-    borderTopRightRadius: 10,
-    borderBottomRightRadius: 10,
   },
   timesheetCardContent: {
     flex: 1,
