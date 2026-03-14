@@ -602,7 +602,7 @@ export default function DashboardScreen({ navigation }: Props) {
       <View style={[styles.clockBtnWrap, { backgroundColor: colors.bg }]}>
         {activeTimesheet ? (
           <TouchableOpacity
-            style={[styles.clockBtn, { backgroundColor: '#ef4444' }]}
+            style={[styles.clockBtn, { backgroundColor: '#ef4444', borderColor: '#ef444480' }]}
             onPress={handleClockOut}
             activeOpacity={0.8}
             disabled={clockingOut}
@@ -618,12 +618,12 @@ export default function DashboardScreen({ navigation }: Props) {
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
-            style={[styles.clockBtn, { backgroundColor: colors.accent }]}
+            style={[styles.clockBtn, { backgroundColor: colors.accent + '30', borderColor: colors.accent + '50' }]}
             onPress={() => navigation.navigate('Timesheets')}
             activeOpacity={0.8}
           >
-            <Ionicons name="play-circle-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
-            <Text style={styles.clockBtnText}>Clock In</Text>
+            <Ionicons name="play-circle-outline" size={20} color={colors.accent} style={{ marginRight: 8 }} />
+            <Text style={[styles.clockBtnText, { color: colors.accent }]}>Clock In</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -948,7 +948,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 14,
-    borderRadius: 50,
+    borderRadius: 10,
+    borderWidth: 1,
   },
   clockBtnText: {
     color: '#ffffff',
