@@ -276,6 +276,7 @@ export default function NotionEditor({
           className={cn(
             '[&_.ProseMirror]:outline-none',
             '[&_.ProseMirror]:min-h-[200px]',
+            '[&_.ProseMirror]:break-words',
             '[&_.ProseMirror_h1]:text-2xl [&_.ProseMirror_h1]:font-bold [&_.ProseMirror_h1]:mt-6 [&_.ProseMirror_h1]:mb-2',
             '[&_.ProseMirror_h2]:text-xl [&_.ProseMirror_h2]:font-semibold [&_.ProseMirror_h2]:mt-5 [&_.ProseMirror_h2]:mb-1.5',
             '[&_.ProseMirror_h3]:text-lg [&_.ProseMirror_h3]:font-semibold [&_.ProseMirror_h3]:mt-4 [&_.ProseMirror_h3]:mb-1',
