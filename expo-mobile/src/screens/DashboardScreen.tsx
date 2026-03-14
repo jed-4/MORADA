@@ -131,6 +131,7 @@ export default function DashboardScreen({ navigation }: Props) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [activeTimesheet, setActiveTimesheet] = useState<ActiveTimesheet | null>(null);
   const [recentTimesheets, setRecentTimesheets] = useState<TimesheetEntry[]>([]);
+  const [weeklyTimesheets, setWeeklyTimesheets] = useState<TimesheetEntry[]>([]);
   const [scheduleItems, setScheduleItems] = useState<ScheduleItem[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -145,13 +146,20 @@ export default function DashboardScreen({ navigation }: Props) {
 
   const fetchData = useCallback(async () => {
     try {
-      const [projectsData, tasksData, notifData, unreadData, timesheetData, timesheetsList, scheduleData] = await Promise.all([
+      const now = new Date();
+      const dayOfWeek = now.getDay();
+      const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + mondayOffset);
+      const weekStartISO = weekStart.toISOString().split('T')[0];
+
+      const [projectsData, tasksData, notifData, unreadData, timesheetData, recentTsList, weeklyTsList, scheduleData] = await Promise.all([
         apiFetch<Project[]>('/api/projects').catch(() => []),
         apiFetch<Task[]>('/api/tasks').catch(() => []),
         apiFetch<Notification[]>('/api/notifications?limit=20').catch(() => []),
         apiFetch<{ count: number }>('/api/notifications/unread-count').catch(() => ({ count: 0 })),
         apiFetch<ActiveTimesheet | null>('/api/timesheets/active').catch(() => null),
         apiFetch<TimesheetEntry[]>('/api/timesheets').catch(() => []),
+        apiFetch<TimesheetEntry[]>(`/api/timesheets?startDate=${weekStartISO}&userId=${user?.id || ''}`).catch(() => []),
         apiFetch<ScheduleItem[]>('/api/schedule-items/user-assigned').catch(() => []),
       ]);
       setProjects(projectsData || []);
@@ -164,11 +172,13 @@ export default function DashboardScreen({ navigation }: Props) {
       setUnreadCount(unreadData?.count || 0);
       setActiveTimesheet(timesheetData || null);
 
-      const myTimesheets = (timesheetsList || [])
+      const myRecentTimesheets = (recentTsList || [])
         .filter((ts) => ts.userId === user?.id)
         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
         .slice(0, 3);
-      setRecentTimesheets(myTimesheets);
+      setRecentTimesheets(myRecentTimesheets);
+
+      setWeeklyTimesheets(weeklyTsList || []);
 
       setScheduleItems(scheduleData || []);
     } catch {
@@ -240,17 +250,9 @@ export default function DashboardScreen({ navigation }: Props) {
   const activeProjects = projects.filter(p => p.currentSystemPhase !== 'completed').length;
   const todayTaskCount = todayTasks.length;
   const hoursThisWeek = (() => {
-    const now = new Date();
-    const dayOfWeek = now.getDay();
-    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-    const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + mondayOffset);
-    weekStart.setHours(0, 0, 0, 0);
     let total = 0;
-    recentTimesheets.forEach(ts => {
-      const tsDate = new Date(ts.date);
-      if (tsDate >= weekStart && tsDate <= now) {
-        total += parseFloat(ts.duration) || 0;
-      }
+    weeklyTimesheets.forEach(ts => {
+      total += parseFloat(ts.duration) || 0;
     });
     return total;
   })();
@@ -494,7 +496,18 @@ export default function DashboardScreen({ navigation }: Props) {
             </View>
           ) : (
             recentActivity.map(notif => (
-              <View key={notif.id} style={[styles.activityRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <TouchableOpacity
+                key={notif.id}
+                style={[styles.activityRow, { backgroundColor: colors.card, borderColor: colors.border }, !notif.isRead && { borderLeftWidth: 3, borderLeftColor: colors.accent }]}
+                onPress={() => {
+                  if (notif.type === 'task_assigned' || notif.type === 'task_completed') {
+                    navigation.navigate('More', { screen: 'Tasks' });
+                  } else {
+                    navigation.navigate('More', { screen: 'MoreHome' });
+                  }
+                }}
+                activeOpacity={0.7}
+              >
                 <View style={[styles.activityIcon, { backgroundColor: colors.accent + '15' }]}>
                   <Ionicons name={getNotifIcon(notif.type)} size={16} color={colors.accent} />
                 </View>
@@ -505,7 +518,7 @@ export default function DashboardScreen({ navigation }: Props) {
                   )}
                 </View>
                 <Text style={[styles.activityTime, { color: colors.muted }]}>{formatTimeAgo(notif.createdAt)}</Text>
-              </View>
+              </TouchableOpacity>
             ))
           )}
         </View>
