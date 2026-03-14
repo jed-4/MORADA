@@ -718,7 +718,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   section: {
-    marginBottom: 6,
+    marginBottom: 14,
   },
   sectionHeaderRow: {
     flexDirection: 'row',
@@ -763,7 +763,7 @@ const styles = StyleSheet.create({
   },
   categoryScroll: {
     marginTop: 4,
-    marginBottom: 6,
+    marginBottom: 14,
   },
   categoryRow: {
     paddingRight: 16,
