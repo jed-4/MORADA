@@ -9,6 +9,10 @@ import {
   useColorScheme,
   ActivityIndicator,
   Dimensions,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
@@ -82,6 +86,12 @@ interface TimesheetEntry {
   projectName?: string;
 }
 
+interface CostCode {
+  id: string;
+  code: string;
+  description?: string | null;
+}
+
 type Props = {
   navigation: NativeStackNavigationProp<any>;
 };
@@ -140,6 +150,12 @@ export default function DashboardScreen({ navigation }: Props) {
   const [clockingOut, setClockingOut] = useState(false);
   const clockTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [, setTick] = useState(0);
+  const [showClockInModal, setShowClockInModal] = useState(false);
+  const [clockInProjectId, setClockInProjectId] = useState('');
+  const [clockInCostCodeId, setClockInCostCodeId] = useState('');
+  const [clockInDescription, setClockInDescription] = useState('');
+  const [costCodes, setCostCodes] = useState<CostCode[]>([]);
+  const [clockingIn, setClockingIn] = useState(false);
 
   const colors = isDark
     ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569', cardHover: '#253449' }
@@ -225,6 +241,35 @@ export default function DashboardScreen({ navigation }: Props) {
       setClockingOut(false);
     }
   }, [activeTimesheet, clockingOut, fetchData]);
+
+  const openClockInModal = useCallback(async () => {
+    setClockInProjectId(projects[0]?.id || '');
+    setClockInCostCodeId('');
+    setClockInDescription('');
+    const codes = await apiFetch<CostCode[]>('/api/cost-codes').catch(() => []);
+    setCostCodes(codes);
+    setShowClockInModal(true);
+  }, [projects]);
+
+  const handleClockIn = useCallback(async () => {
+    if (!clockInProjectId || clockingIn) return;
+    setClockingIn(true);
+    try {
+      const res = await apiRequest('/api/timesheets/clock-in', 'POST', {
+        projectId: clockInProjectId,
+        ...(clockInCostCodeId ? { costCodeId: clockInCostCodeId } : {}),
+        ...(clockInDescription.trim() ? { notes: clockInDescription.trim() } : {}),
+      });
+      if (res.ok) {
+        setShowClockInModal(false);
+        await fetchData();
+      }
+    } catch {
+      console.error('Clock in failed');
+    } finally {
+      setClockingIn(false);
+    }
+  }, [clockInProjectId, clockInCostCodeId, clockInDescription, clockingIn, fetchData]);
 
   const firstName = user?.firstName || user?.fullName?.split(' ')[0] || '';
   const lastName = user?.lastName || (user?.fullName?.split(' ').slice(1).join(' ')) || '';
@@ -619,14 +664,107 @@ export default function DashboardScreen({ navigation }: Props) {
         ) : (
           <TouchableOpacity
             style={[styles.clockBtn, { backgroundColor: colors.accent + '30', borderColor: colors.accent + '50' }]}
-            onPress={() => navigation.navigate('Timesheets')}
+            onPress={openClockInModal}
             activeOpacity={0.8}
           >
-            <Ionicons name="play-circle-outline" size={20} color={colors.accent} style={{ marginRight: 8 }} />
+            <Ionicons name="play-circle-outline" size={18} color={colors.accent} style={{ marginRight: 6 }} />
             <Text style={[styles.clockBtnText, { color: colors.accent }]}>Clock In</Text>
           </TouchableOpacity>
         )}
       </View>
+
+      <Modal
+        visible={showClockInModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowClockInModal(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setShowClockInModal(false)} />
+          <View style={[styles.modalSheet, { backgroundColor: colors.bg, borderColor: colors.border }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Clock In</Text>
+              <TouchableOpacity onPress={() => setShowClockInModal(false)} activeOpacity={0.7}>
+                <Ionicons name="close" size={22} color={colors.secondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled">
+              <Text style={[styles.modalLabel, { color: colors.secondary }]}>Project</Text>
+              {projects.map(p => (
+                <TouchableOpacity
+                  key={p.id}
+                  style={[styles.modalPickerRow, { borderColor: colors.border, backgroundColor: clockInProjectId === p.id ? colors.accent + '20' : colors.card }]}
+                  onPress={() => setClockInProjectId(p.id)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.modalPickerText, { color: colors.text }]} numberOfLines={1}>{p.name}</Text>
+                  {clockInProjectId === p.id && <Ionicons name="checkmark" size={16} color={colors.accent} />}
+                </TouchableOpacity>
+              ))}
+
+              <Text style={[styles.modalLabel, { color: colors.secondary, marginTop: 16 }]}>Cost Code</Text>
+              <TouchableOpacity
+                style={[styles.modalPickerRow, { borderColor: colors.border, backgroundColor: clockInCostCodeId === '' ? colors.accent + '20' : colors.card }]}
+                onPress={() => setClockInCostCodeId('')}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.modalPickerText, { color: colors.secondary }]}>None</Text>
+                {clockInCostCodeId === '' && <Ionicons name="checkmark" size={16} color={colors.accent} />}
+              </TouchableOpacity>
+              {costCodes.map(cc => (
+                <TouchableOpacity
+                  key={cc.id}
+                  style={[styles.modalPickerRow, { borderColor: colors.border, backgroundColor: clockInCostCodeId === cc.id ? colors.accent + '20' : colors.card }]}
+                  onPress={() => setClockInCostCodeId(cc.id)}
+                  activeOpacity={0.7}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.modalPickerText, { color: colors.text }]}>{cc.code}</Text>
+                    {cc.description ? <Text style={[styles.modalPickerSub, { color: colors.secondary }]} numberOfLines={1}>{cc.description}</Text> : null}
+                  </View>
+                  {clockInCostCodeId === cc.id && <Ionicons name="checkmark" size={16} color={colors.accent} />}
+                </TouchableOpacity>
+              ))}
+
+              <Text style={[styles.modalLabel, { color: colors.secondary, marginTop: 16 }]}>Description</Text>
+              <TextInput
+                style={[styles.modalTextInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.card }]}
+                placeholder="Optional notes..."
+                placeholderTextColor={colors.secondary}
+                value={clockInDescription}
+                onChangeText={setClockInDescription}
+                multiline
+                numberOfLines={3}
+              />
+            </ScrollView>
+
+            <View style={[styles.modalFooter, { borderTopColor: colors.border }]}>
+              <TouchableOpacity
+                style={[styles.modalCancelBtn, { borderColor: colors.border }]}
+                onPress={() => setShowClockInModal(false)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.modalCancelText, { color: colors.secondary }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalConfirmBtn, { backgroundColor: colors.accent + '30', borderColor: colors.accent + '50', opacity: clockInProjectId ? 1 : 0.5 }]}
+                onPress={handleClockIn}
+                activeOpacity={0.8}
+                disabled={!clockInProjectId || clockingIn}
+              >
+                {clockingIn
+                  ? <ActivityIndicator size="small" color={colors.accent} />
+                  : <Text style={[styles.modalConfirmText, { color: colors.accent }]}>Clock In</Text>
+                }
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -646,7 +784,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 56,
     paddingBottom: 14,
-    borderBottomWidth: 1,
+    borderBottomWidth: 0,
   },
   headerLeft: {
     flexDirection: 'row',
@@ -947,13 +1085,110 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
+    height: 38,
     borderRadius: 10,
     borderWidth: 1,
   },
   clockBtnText: {
     color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  modalSheet: {
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    borderWidth: 1,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+  },
+  modalTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  modalBody: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+  },
+  modalLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  modalPickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 6,
+  },
+  modalPickerText: {
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
+  },
+  modalPickerSub: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  modalTextInput: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    marginBottom: 16,
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderTopWidth: 1,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    height: 38,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCancelText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  modalConfirmBtn: {
+    flex: 2,
+    height: 38,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalConfirmText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
 });
