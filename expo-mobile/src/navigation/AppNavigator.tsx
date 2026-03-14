@@ -1,8 +1,10 @@
+import { useState, useRef } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { useColorScheme } from 'react-native';
+import MorePanel from '../components/MorePanel';
 
 import { useAuth } from '../contexts/AuthContext';
 import LoginScreen from '../screens/LoginScreen';
@@ -85,40 +87,62 @@ function MoreStack() {
 function MainTabs() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const [moreVisible, setMoreVisible] = useState(false);
+  const tabNavRef = useRef<any>(null);
 
   const colors = isDark
     ? { bg: '#0f172a', card: '#1e293b', border: '#334155', active: '#b196d2', inactive: '#64748b' }
     : { bg: '#f8fafc', card: '#ffffff', border: '#e2e8f0', active: '#9b7fc4', inactive: '#94a3b8' };
 
   return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        tabBarIcon: ({ focused, color, size }) => {
-          let iconName: keyof typeof Ionicons.glyphMap = 'home';
-          if (route.name === 'Workspace') iconName = focused ? 'home' : 'home-outline';
-          else if (route.name === 'Projects') iconName = focused ? 'briefcase' : 'briefcase-outline';
-          else if (route.name === 'Calendar') iconName = focused ? 'calendar' : 'calendar-outline';
-          else if (route.name === 'Timesheets') iconName = focused ? 'time' : 'time-outline';
-          else if (route.name === 'More') iconName = focused ? 'grid' : 'grid-outline';
-          return <Ionicons name={iconName} size={size} color={color} />;
-        },
-        tabBarActiveTintColor: colors.active,
-        tabBarInactiveTintColor: colors.inactive,
-        tabBarStyle: {
-          backgroundColor: colors.card,
-          borderTopColor: colors.border,
-          borderTopWidth: 1,
-        },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '500' },
-        headerShown: false,
-      })}
-    >
-      <Tab.Screen name="Workspace" component={DashboardScreen} />
-      <Tab.Screen name="Projects" component={ProjectsStack} />
-      <Tab.Screen name="Calendar" component={CalendarScreen} />
-      <Tab.Screen name="Timesheets" component={TimesheetsScreen} />
-      <Tab.Screen name="More" component={MoreStack} />
-    </Tab.Navigator>
+    <>
+      <Tab.Navigator
+        screenOptions={({ route }) => ({
+          tabBarIcon: ({ focused, color, size }) => {
+            let iconName: keyof typeof Ionicons.glyphMap = 'home';
+            if (route.name === 'Workspace') iconName = focused ? 'home' : 'home-outline';
+            else if (route.name === 'Projects') iconName = focused ? 'briefcase' : 'briefcase-outline';
+            else if (route.name === 'Calendar') iconName = focused ? 'calendar' : 'calendar-outline';
+            else if (route.name === 'Timesheets') iconName = focused ? 'time' : 'time-outline';
+            else if (route.name === 'More') iconName = moreVisible ? 'grid' : 'grid-outline';
+            return <Ionicons name={iconName} size={size} color={color} />;
+          },
+          tabBarActiveTintColor: colors.active,
+          tabBarInactiveTintColor: colors.inactive,
+          tabBarStyle: {
+            backgroundColor: colors.card,
+            borderTopColor: colors.border,
+            borderTopWidth: 1,
+          },
+          tabBarLabelStyle: { fontSize: 11, fontWeight: '500' },
+          headerShown: false,
+        })}
+      >
+        <Tab.Screen name="Workspace" component={DashboardScreen} />
+        <Tab.Screen name="Projects" component={ProjectsStack} />
+        <Tab.Screen name="Calendar" component={CalendarScreen} />
+        <Tab.Screen name="Timesheets" component={TimesheetsScreen} />
+        <Tab.Screen
+          name="More"
+          component={MoreStack}
+          listeners={({ navigation }) => {
+            tabNavRef.current = navigation;
+            return {
+              tabPress: (e) => {
+                e.preventDefault();
+                setMoreVisible((v) => !v);
+              },
+            };
+          }}
+        />
+      </Tab.Navigator>
+
+      <MorePanel
+        visible={moreVisible}
+        onClose={() => setMoreVisible(false)}
+        navigationRef={tabNavRef}
+      />
+    </>
   );
 }
 
