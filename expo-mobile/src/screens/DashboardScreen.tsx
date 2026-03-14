@@ -143,7 +143,7 @@ export default function DashboardScreen({ navigation }: Props) {
 
   const colors = isDark
     ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569', cardHover: '#253449' }
-    : { bg: '#ffffff', card: '#f1f5f9', text: '#0f172a', secondary: '#64748b', border: '#e2e8f0', accent: '#9b7fc4', muted: '#cbd5e1', cardHover: '#e8edf2' };
+    : { bg: '#ffffff', card: '#f5f5f4', text: '#1c1917', secondary: '#78716c', border: '#e7e5e4', accent: '#9b7fc4', muted: '#d6d3d1', cardHover: '#eeede9' };
 
   const fetchData = useCallback(async () => {
     try {
