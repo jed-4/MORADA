@@ -381,16 +381,12 @@ export default function DashboardScreen({ navigation }: Props) {
             onPress={() => setTimesheetsCollapsed(v => !v)}
             activeOpacity={0.7}
           >
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Timesheets</Text>
+            <Text style={[styles.sectionTitle, { color: colors.secondary }]}>Timesheets</Text>
             <View style={styles.sectionHeaderRight}>
-              <TouchableOpacity onPress={() => navigation.navigate('Timesheets')} activeOpacity={0.7} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Text style={[styles.sectionLink, { color: colors.accent }]}>View All</Text>
-              </TouchableOpacity>
               <Ionicons
                 name={timesheetsCollapsed ? 'chevron-forward' : 'chevron-down'}
                 size={18}
                 color={colors.secondary}
-                style={{ marginLeft: 8 }}
               />
             </View>
           </TouchableOpacity>
@@ -409,7 +405,7 @@ export default function DashboardScreen({ navigation }: Props) {
                 {recentTimesheets.map(ts => {
                   const projectColor = getProjectColor(ts.projectId);
                   const costCodeName = ts.costCodeSplits?.[0]?.costCodeName || '';
-                  const cardWidth = Dimensions.get('window').width * 0.72 - 16;
+                  const cardWidth = Dimensions.get('window').width * 0.864 - 16;
                   return (
                     <TouchableOpacity
                       key={ts.id}
@@ -735,7 +731,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   sectionDivider: {
-    height: StyleSheet.hairlineWidth,
+    height: 1,
     marginHorizontal: -16,
     marginBottom: 16,
   },
@@ -755,12 +751,13 @@ const styles = StyleSheet.create({
   },
   timesheetColorSquare: {
     width: 56,
-    borderRadius: 0,
+    borderTopRightRadius: 10,
+    borderBottomRightRadius: 10,
   },
   timesheetCardContent: {
     flex: 1,
-    padding: 12,
-    gap: 6,
+    padding: 9,
+    gap: 3,
   },
   timesheetCardRow: {
     flexDirection: 'row',
