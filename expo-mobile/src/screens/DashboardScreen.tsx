@@ -569,7 +569,7 @@ export default function DashboardScreen({ navigation }: Props) {
             recentActivity.map(notif => (
               <TouchableOpacity
                 key={notif.id}
-                style={[styles.activityRow, { backgroundColor: colors.card, borderColor: colors.border }, !notif.isRead && { borderLeftWidth: 3, borderLeftColor: colors.accent }]}
+                style={[styles.activityRow, { borderColor: '#d6d3d1' }]}
                 onPress={() => {
                   if (notif.type === 'task_assigned' || notif.type === 'task_completed') {
                     navigation.navigate('More', { screen: 'Tasks' });
@@ -581,8 +581,8 @@ export default function DashboardScreen({ navigation }: Props) {
                 }}
                 activeOpacity={0.7}
               >
-                <View style={[styles.activityIcon, { backgroundColor: colors.accent + '15' }]}>
-                  <Ionicons name={getNotifIcon(notif.type)} size={16} color={colors.accent} />
+                <View style={[styles.activityIcon, { backgroundColor: notif.isRead ? colors.accent + '30' : colors.accent }]}>
+                  <Ionicons name={getNotifIcon(notif.type)} size={15} color={notif.isRead ? colors.accent : '#ffffff'} />
                 </View>
                 <View style={styles.activityContent}>
                   <Text style={[styles.activityTitle, { color: colors.text }]} numberOfLines={1}>{notif.title}</Text>
@@ -905,20 +905,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 10,
     borderWidth: 1,
-    padding: 12,
+    overflow: 'hidden',
+    height: 38,
     marginBottom: 8,
   },
   activityIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
+    width: 38,
+    alignSelf: 'stretch',
+    borderTopRightRadius: 10,
+    borderBottomRightRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 10,
   },
   activityContent: {
     flex: 1,
-    marginRight: 8,
+    paddingHorizontal: 10,
+    marginRight: 4,
   },
   activityTitle: {
     fontSize: 13,
