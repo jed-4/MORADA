@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   useColorScheme,
   ActivityIndicator,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
@@ -136,6 +137,7 @@ export default function DashboardScreen({ navigation }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [timesheetsCollapsed, setTimesheetsCollapsed] = useState(false);
   const [clockingOut, setClockingOut] = useState(false);
   const clockTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [, setTick] = useState(0);
@@ -275,10 +277,25 @@ export default function DashboardScreen({ navigation }: Props) {
     }
   };
 
-  const getTimesheetColor = (index: number): string => {
-    const palette = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444'];
-    return palette[index % palette.length];
+  const PROJECT_PALETTE = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#f43f5e', '#84cc16'];
+
+  const getProjectColor = (projectId?: string): string => {
+    if (!projectId) return PROJECT_PALETTE[0];
+    let hash = 0;
+    for (let i = 0; i < projectId.length; i++) {
+      hash = projectId.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return PROJECT_PALETTE[Math.abs(hash) % PROJECT_PALETTE.length];
   };
+
+  const mentionCount = notifications.filter(n => n.type === 'mention' && !n.isRead).length;
+
+  const categoryTiles: Array<{ key: string; icon: keyof typeof Ionicons.glyphMap; label: string; count: number }> = [
+    { key: 'messages', icon: 'chatbubble-outline', label: 'Messages', count: 0 },
+    { key: 'activity', icon: 'pulse-outline', label: 'Activity', count: notifications.length },
+    { key: 'mentions', icon: 'at-outline', label: 'Mentions', count: mentionCount },
+    { key: 'assigned', icon: 'person-outline', label: 'Assigned', count: tasks.filter(t => !isComplete(t.status)).length },
+  ];
 
   if (loading) {
     return (
@@ -376,48 +393,95 @@ export default function DashboardScreen({ navigation }: Props) {
           ))}
         </View>
 
-        <View style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Timesheets</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Timesheets')} activeOpacity={0.7}>
-              <Text style={[styles.sectionLink, { color: colors.accent }]}>View All</Text>
-            </TouchableOpacity>
-          </View>
-          {recentTimesheets.length === 0 ? (
-            <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Ionicons name="time-outline" size={24} color={colors.muted} />
-              <Text style={[styles.emptyText, { color: colors.secondary }]}>No recent timesheets</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.categoryRow}
+          style={styles.categoryScroll}
+        >
+          {categoryTiles.map(tile => (
+            <View key={tile.key} style={[styles.categoryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Ionicons name={tile.icon} size={22} color={colors.secondary} />
+              <Text style={[styles.categoryLabel, { color: colors.text }]}>{tile.label}</Text>
+              <Text style={[styles.categoryCount, { color: colors.secondary }]}>
+                {tile.count > 0 ? `${tile.count}` : '-'}
+              </Text>
             </View>
-          ) : (
-            recentTimesheets.map((ts, idx) => {
-              const costCodeName = ts.costCodeSplits?.[0]?.costCodeName || '';
-              return (
-                <TouchableOpacity
-                  key={ts.id}
-                  style={[styles.timesheetRow, { backgroundColor: colors.card, borderColor: colors.border }]}
-                  onPress={() => navigation.navigate('Timesheets')}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.timesheetRowContent}>
-                    <Text style={[styles.timesheetProject, { color: colors.text }]} numberOfLines={1}>
-                      {ts.projectName || 'No project'}
-                    </Text>
-                    <View style={styles.timesheetMeta}>
-                      {costCodeName ? (
-                        <Text style={[styles.timesheetDetail, { color: colors.secondary }]} numberOfLines={1}>{costCodeName}</Text>
-                      ) : null}
-                      <Text style={[styles.timesheetDetail, { color: colors.secondary }]}>{formatDateShort(ts.date)}</Text>
-                    </View>
-                  </View>
-                  <View style={styles.timesheetRight}>
-                    <Text style={[styles.timesheetHours, { color: colors.text }]}>{parseFloat(ts.duration).toFixed(1)}h</Text>
-                    <View style={[styles.timesheetIndicator, { backgroundColor: getTimesheetColor(idx) }]} />
-                  </View>
-                </TouchableOpacity>
-              );
-            })
+          ))}
+        </ScrollView>
+
+        <View style={[styles.sectionDivider, { backgroundColor: colors.border }]} />
+
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={styles.sectionHeaderRow}
+            onPress={() => setTimesheetsCollapsed(v => !v)}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Timesheets</Text>
+            <View style={styles.sectionHeaderRight}>
+              <TouchableOpacity onPress={() => navigation.navigate('Timesheets')} activeOpacity={0.7} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Text style={[styles.sectionLink, { color: colors.accent }]}>View All</Text>
+              </TouchableOpacity>
+              <Ionicons
+                name={timesheetsCollapsed ? 'chevron-forward' : 'chevron-down'}
+                size={18}
+                color={colors.secondary}
+                style={{ marginLeft: 8 }}
+              />
+            </View>
+          </TouchableOpacity>
+          {!timesheetsCollapsed && (
+            recentTimesheets.length === 0 ? (
+              <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Ionicons name="time-outline" size={24} color={colors.muted} />
+                <Text style={[styles.emptyText, { color: colors.secondary }]}>No recent timesheets</Text>
+              </View>
+            ) : (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.timesheetScroll}
+              >
+                {recentTimesheets.map(ts => {
+                  const projectColor = getProjectColor(ts.projectId);
+                  const costCodeName = ts.costCodeSplits?.[0]?.costCodeName || '';
+                  const cardWidth = Dimensions.get('window').width * 0.72 - 16;
+                  return (
+                    <TouchableOpacity
+                      key={ts.id}
+                      style={[styles.timesheetCard, { backgroundColor: colors.card, borderColor: colors.border, width: cardWidth }]}
+                      onPress={() => navigation.navigate('Timesheets')}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[styles.timesheetColorSquare, { backgroundColor: projectColor }]} />
+                      <View style={styles.timesheetCardContent}>
+                        <View style={styles.timesheetCardRow}>
+                          <Text style={[styles.timesheetCardProject, { color: colors.text }]} numberOfLines={1}>
+                            {ts.projectName || 'No project'}
+                          </Text>
+                          <Text style={[styles.timesheetCardDate, { color: colors.secondary }]}>
+                            {formatDateShort(ts.date)}
+                          </Text>
+                        </View>
+                        <View style={styles.timesheetCardRow}>
+                          <Text style={[styles.timesheetCardCostCode, { color: colors.secondary }]} numberOfLines={1}>
+                            {costCodeName || '—'}
+                          </Text>
+                          <Text style={[styles.timesheetCardHours, { color: colors.text }]}>
+                            {parseFloat(ts.duration).toFixed(1)}h
+                          </Text>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )
           )}
         </View>
+
+        <View style={[styles.sectionDivider, { backgroundColor: colors.border }]} />
 
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
@@ -454,6 +518,8 @@ export default function DashboardScreen({ navigation }: Props) {
           )}
         </View>
 
+        <View style={[styles.sectionDivider, { backgroundColor: colors.border }]} />
+
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Schedule</Text>
@@ -485,6 +551,8 @@ export default function DashboardScreen({ navigation }: Props) {
             </ScrollView>
           )}
         </View>
+
+        <View style={[styles.sectionDivider, { backgroundColor: colors.border }]} />
 
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
@@ -727,44 +795,81 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
   },
-  timesheetRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  categoryScroll: {
+    marginBottom: 16,
+    marginHorizontal: -16,
+  },
+  categoryRow: {
+    paddingHorizontal: 16,
+    gap: 10,
+  },
+  categoryCard: {
     borderRadius: 10,
     borderWidth: 1,
-    padding: 12,
-    marginBottom: 8,
+    padding: 14,
+    alignItems: 'center',
+    width: 80,
+    gap: 4,
   },
-  timesheetRowContent: {
-    flex: 1,
-    marginRight: 12,
-  },
-  timesheetProject: {
-    fontSize: 14,
+  categoryLabel: {
+    fontSize: 11,
     fontWeight: '600',
-    marginBottom: 2,
+    textAlign: 'center',
   },
-  timesheetMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  timesheetDetail: {
-    fontSize: 12,
-  },
-  timesheetRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  timesheetHours: {
-    fontSize: 15,
+  categoryCount: {
+    fontSize: 13,
     fontWeight: '700',
   },
-  timesheetIndicator: {
-    width: 4,
-    height: 28,
-    borderRadius: 2,
+  sectionDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginHorizontal: -16,
+    marginBottom: 16,
+  },
+  sectionHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  timesheetScroll: {
+    gap: 10,
+    paddingBottom: 4,
+  },
+  timesheetCard: {
+    flexDirection: 'row',
+    borderRadius: 10,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  timesheetColorSquare: {
+    width: 56,
+    borderRadius: 0,
+  },
+  timesheetCardContent: {
+    flex: 1,
+    padding: 12,
+    gap: 6,
+  },
+  timesheetCardRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
+  },
+  timesheetCardProject: {
+    fontSize: 13,
+    fontWeight: '700',
+    flex: 1,
+  },
+  timesheetCardDate: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  timesheetCardCostCode: {
+    fontSize: 12,
+    flex: 1,
+  },
+  timesheetCardHours: {
+    fontSize: 14,
+    fontWeight: '700',
   },
   taskRow: {
     flexDirection: 'row',
