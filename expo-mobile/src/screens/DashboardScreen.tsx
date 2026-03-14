@@ -392,7 +392,7 @@ export default function DashboardScreen({ navigation }: Props) {
             onPress={() => setTimesheetsCollapsed(v => !v)}
             activeOpacity={0.7}
           >
-            <Text style={[styles.sectionTitle, { color: colors.secondary }]}>Timesheets</Text>
+            <Text style={[styles.todayText, { color: colors.secondary }]}>Timesheets</Text>
             <View style={styles.sectionHeaderRight}>
               <Ionicons
                 name={timesheetsCollapsed ? 'chevron-forward' : 'chevron-down'}
@@ -454,7 +454,7 @@ export default function DashboardScreen({ navigation }: Props) {
 
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Today's Tasks</Text>
+            <Text style={[styles.todayText, { color: colors.secondary }]}>Today's Tasks</Text>
             <Text style={[styles.sectionCount, { color: colors.secondary }]}>{todayTasks.filter(t => isComplete(t.status)).length}/{todayTasks.length}</Text>
           </View>
           {todayTasks.length === 0 ? (
@@ -496,7 +496,7 @@ export default function DashboardScreen({ navigation }: Props) {
 
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Schedule</Text>
+            <Text style={[styles.todayText, { color: colors.secondary }]}>Schedule</Text>
             <TouchableOpacity onPress={() => navigation.navigate('Calendar')} activeOpacity={0.7}>
               <Text style={[styles.sectionLink, { color: colors.accent }]}>Calendar</Text>
             </TouchableOpacity>
@@ -558,7 +558,7 @@ export default function DashboardScreen({ navigation }: Props) {
 
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Recent Activity</Text>
+            <Text style={[styles.todayText, { color: colors.secondary }]}>Recent Activity</Text>
           </View>
           {recentActivity.length === 0 ? (
             <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
