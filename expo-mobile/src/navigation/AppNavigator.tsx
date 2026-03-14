@@ -10,6 +10,7 @@ import { useAuth } from '../contexts/AuthContext';
 import LoginScreen from '../screens/LoginScreen';
 import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 import DashboardScreen from '../screens/DashboardScreen';
+import BusinessDashboardScreen from '../screens/BusinessDashboardScreen';
 import ProjectsScreen from '../screens/ProjectsScreen';
 import ProjectDetailScreen from '../screens/ProjectDetailScreen';
 import TasksScreen from '../screens/TasksScreen';
@@ -25,6 +26,27 @@ import NoteEditorScreen from '../screens/NoteEditorScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
+
+function WorkspaceStack() {
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+
+  return (
+    <Stack.Navigator
+      screenOptions={{
+        headerShown: false,
+        headerStyle: { backgroundColor: isDark ? '#1e293b' : '#ffffff' },
+        headerTintColor: isDark ? '#f1f5f9' : '#0f172a',
+        headerTitleStyle: { fontWeight: '600' },
+        headerShadowVisible: false,
+        headerBackButtonDisplayMode: 'minimal',
+      }}
+    >
+      <Stack.Screen name="WorkspaceHome" component={DashboardScreen} />
+      <Stack.Screen name="BusinessDashboard" component={BusinessDashboardScreen} />
+    </Stack.Navigator>
+  );
+}
 
 function ProjectsStack() {
   const colorScheme = useColorScheme();
@@ -118,7 +140,7 @@ function MainTabs() {
           headerShown: false,
         })}
       >
-        <Tab.Screen name="Workspace" component={DashboardScreen} />
+        <Tab.Screen name="Workspace" component={WorkspaceStack} />
         <Tab.Screen name="Projects" component={ProjectsStack} />
         <Tab.Screen name="Calendar" component={CalendarScreen} />
         <Tab.Screen name="Timesheets" component={TimesheetsScreen} />

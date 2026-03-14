@@ -354,6 +354,14 @@ export default function DashboardScreen({ navigation }: Props) {
         <View style={[styles.userMenuDropdown, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <TouchableOpacity
             style={[styles.userMenuItem, { borderBottomColor: colors.border }]}
+            onPress={() => { setShowUserMenu(false); navigation.navigate('BusinessDashboard'); }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="business-outline" size={18} color={colors.secondary} />
+            <Text style={[styles.userMenuText, { color: colors.text }]}>Business Dashboard</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.userMenuItem, { borderBottomColor: colors.border }]}
             onPress={() => { setShowUserMenu(false); }}
             activeOpacity={0.7}
           >
@@ -377,20 +385,23 @@ export default function DashboardScreen({ navigation }: Props) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
       >
         <View style={styles.statRow}>
-          {[
-            { label: 'Active Projects', value: activeProjects, icon: 'briefcase-outline' as keyof typeof Ionicons.glyphMap, color: '#3b82f6' },
-            { label: "Today's Tasks", value: todayTaskCount, icon: 'checkbox-outline' as keyof typeof Ionicons.glyphMap, color: '#f59e0b' },
-            { label: 'Hours (Week)', value: hoursThisWeek.toFixed(1), icon: 'time-outline' as keyof typeof Ionicons.glyphMap, color: '#10b981' },
-            { label: 'Active Timer', value: activeTimesheetCount, icon: 'timer-outline' as keyof typeof Ionicons.glyphMap, color: '#8b5cf6' },
-          ].map((stat, i) => (
-            <View key={i} style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <View style={[styles.statIconBg, { backgroundColor: stat.color + '15' }]}>
-                <Ionicons name={stat.icon} size={18} color={stat.color} />
+          {(() => {
+            const tileSize = Math.floor((Dimensions.get('window').width - 32 - 30) / 4);
+            return [
+              { label: 'Active Projects', value: activeProjects, icon: 'briefcase-outline' as keyof typeof Ionicons.glyphMap, color: '#3b82f6' },
+              { label: "Today's Tasks", value: todayTaskCount, icon: 'checkbox-outline' as keyof typeof Ionicons.glyphMap, color: '#f59e0b' },
+              { label: 'Hours (Week)', value: hoursThisWeek.toFixed(1), icon: 'time-outline' as keyof typeof Ionicons.glyphMap, color: '#10b981' },
+              { label: 'Active Timer', value: activeTimesheetCount, icon: 'timer-outline' as keyof typeof Ionicons.glyphMap, color: '#8b5cf6' },
+            ].map((stat, i) => (
+              <View key={i} style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border, width: tileSize, height: tileSize }]}>
+                <View style={[styles.statIconBg, { backgroundColor: stat.color + '15' }]}>
+                  <Ionicons name={stat.icon} size={18} color={stat.color} />
+                </View>
+                <Text style={[styles.statValue, { color: colors.text }]}>{stat.value}</Text>
+                <Text style={[styles.statLabel, { color: colors.secondary }]} numberOfLines={2}>{stat.label}</Text>
               </View>
-              <Text style={[styles.statValue, { color: colors.text }]}>{stat.value}</Text>
-              <Text style={[styles.statLabel, { color: colors.secondary }]} numberOfLines={1}>{stat.label}</Text>
-            </View>
-          ))}
+            ));
+          })()}
         </View>
 
         <ScrollView
@@ -404,7 +415,7 @@ export default function DashboardScreen({ navigation }: Props) {
               <Ionicons name={tile.icon} size={22} color={colors.secondary} />
               <Text style={[styles.categoryLabel, { color: colors.text }]}>{tile.label}</Text>
               <Text style={[styles.categoryCount, { color: colors.secondary }]}>
-                {tile.count > 0 ? `${tile.count}` : '-'}
+                {tile.count > 0 ? `${tile.count} new` : '—'}
               </Text>
             </View>
           ))}
@@ -503,15 +514,16 @@ export default function DashboardScreen({ navigation }: Props) {
                   onPress={() => toggleTaskComplete(task.id, task.status)}
                   activeOpacity={0.7}
                 >
-                  <View style={[styles.checkbox, done && styles.checkboxDone, { borderColor: done ? colors.accent : colors.muted, backgroundColor: done ? colors.accent : 'transparent' }]}>
-                    {done && <Ionicons name="checkmark" size={14} color="#ffffff" />}
-                  </View>
+                  <View style={[styles.taskColorSquare, { backgroundColor: getProjectColor(task.projectId) }]} />
                   <Text
                     style={[styles.taskTitle, { color: done ? colors.muted : colors.text }, done && styles.taskTitleDone]}
                     numberOfLines={1}
                   >
                     {task.title}
                   </Text>
+                  <View style={[styles.checkbox, done && styles.checkboxDone, { borderColor: done ? colors.accent : colors.muted, backgroundColor: done ? colors.accent : 'transparent' }]}>
+                    {done && <Ionicons name="checkmark" size={14} color="#ffffff" />}
+                  </View>
                 </TouchableOpacity>
               );
             })
@@ -542,7 +554,7 @@ export default function DashboardScreen({ navigation }: Props) {
                   activeOpacity={0.7}
                 >
                   <Text style={[styles.scheduleDate, { color: colors.accent }]}>{formatDateLabel(item.startDate)}</Text>
-                  <Text style={[styles.scheduleName, { color: colors.text }]} numberOfLines={2}>{item.name}</Text>
+                  <Text style={[styles.scheduleName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
                   {item.projectName && (
                     <Text style={[styles.scheduleProject, { color: colors.secondary }]} numberOfLines={1}>{item.projectName}</Text>
                   )}
@@ -739,11 +751,11 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   statCard: {
-    flex: 1,
     borderRadius: 10,
     borderWidth: 1,
-    padding: 12,
+    padding: 10,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   statIconBg: {
     width: 32,
@@ -796,8 +808,8 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   categoryScroll: {
-    marginBottom: 16,
-    marginHorizontal: -16,
+    marginTop: 4,
+    marginBottom: 8,
   },
   categoryRow: {
     paddingHorizontal: 16,
@@ -806,19 +818,17 @@ const styles = StyleSheet.create({
   categoryCard: {
     borderRadius: 10,
     borderWidth: 1,
-    padding: 14,
-    alignItems: 'center',
-    width: 80,
-    gap: 4,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    width: 100,
+    gap: 6,
   },
   categoryLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    textAlign: 'center',
+    fontSize: 13,
+    fontWeight: '500',
   },
   categoryCount: {
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 12,
   },
   sectionDivider: {
     height: StyleSheet.hairlineWidth,
@@ -878,6 +888,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 12,
     marginBottom: 8,
+    gap: 10,
+  },
+  taskColorSquare: {
+    width: 39,
+    height: 39,
+    borderRadius: 6,
+    flexShrink: 0,
   },
   checkbox: {
     width: 24,
@@ -903,21 +920,21 @@ const styles = StyleSheet.create({
   scheduleCard: {
     borderRadius: 10,
     borderWidth: 1,
-    padding: 14,
-    width: 150,
+    padding: 10,
+    width: 97,
+    height: 63,
+    justifyContent: 'space-between',
   },
   scheduleDate: {
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '600',
-    marginBottom: 6,
   },
   scheduleName: {
-    fontSize: 14,
+    fontSize: 11,
     fontWeight: '600',
-    marginBottom: 4,
   },
   scheduleProject: {
-    fontSize: 11,
+    fontSize: 10,
   },
   activityRow: {
     flexDirection: 'row',
