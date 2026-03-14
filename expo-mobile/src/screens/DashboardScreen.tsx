@@ -493,27 +493,30 @@ export default function DashboardScreen({ navigation }: Props) {
           {(() => {
             const today = new Date().toISOString();
             const testItems = [
-              { id: '_test1', name: 'Site Inspection', startDate: today, endDate: today, projectName: 'Smith Residence' },
-              { id: '_test2', name: 'Client Meeting', startDate: today, endDate: today, projectName: 'CBD Office' },
-              { id: '_test3', name: 'Concrete Pour', startDate: today, endDate: today, projectName: 'Warehouse Build' },
+              { id: '_test1', name: 'Site Inspection', startDate: today, endDate: today, projectName: 'Smith Residence', projectId: 'proj-a' },
+              { id: '_test2', name: 'Client Meeting', startDate: today, endDate: today, projectName: 'CBD Office', projectId: 'proj-b' },
+              { id: '_test3', name: 'Concrete Pour', startDate: today, endDate: today, projectName: 'Warehouse Build', projectId: 'proj-c' },
             ];
             const displaySchedule = [...testItems, ...upcomingSchedule];
             return (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scheduleScroll}>
-                {displaySchedule.map(item => (
+                {displaySchedule.map(item => {
+                  const scheduleColor = getProjectColor(item.projectId);
+                  return (
                   <TouchableOpacity
                     key={item.id}
-                    style={[styles.scheduleCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                    style={[styles.scheduleCard, { backgroundColor: scheduleColor + '30', borderColor: scheduleColor + '60' }]}
                     onPress={() => navigation.navigate('Calendar')}
                     activeOpacity={0.7}
                   >
-                    <Text style={[styles.scheduleDate, { color: colors.accent }]}>{formatDateLabel(item.startDate)}</Text>
+                    <Text style={[styles.scheduleDate, { color: scheduleColor }]}>{formatDateLabel(item.startDate)}</Text>
                     <Text style={[styles.scheduleName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
                     {item.projectName && (
                       <Text style={[styles.scheduleProject, { color: colors.secondary }]} numberOfLines={1}>{item.projectName}</Text>
                     )}
                   </TouchableOpacity>
-                ))}
+                  );
+                })}
               </ScrollView>
             );
           })()}
