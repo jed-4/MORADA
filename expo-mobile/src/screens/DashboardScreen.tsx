@@ -452,28 +452,32 @@ export default function DashboardScreen({ navigation }: Props) {
               <Text style={[styles.emptyText, { color: colors.secondary }]}>No tasks due today</Text>
             </View>
           ) : (
-            todayTasks.map(task => {
-              const done = isComplete(task.status);
-              return (
-                <TouchableOpacity
-                  key={task.id}
-                  style={[styles.taskRow, { backgroundColor: colors.card, borderColor: colors.border }]}
-                  onPress={() => toggleTaskComplete(task.id, task.status)}
-                  activeOpacity={0.7}
-                >
-                  <View style={[styles.taskColorSquare, { backgroundColor: getProjectColor(task.projectId) }]} />
-                  <Text
-                    style={[styles.taskTitle, { color: done ? colors.muted : colors.text }, done && styles.taskTitleDone]}
-                    numberOfLines={1}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.taskScroll}>
+              {todayTasks.slice(0, 5).map(task => {
+                const projectColor = getProjectColor(task.projectId);
+                const done = isComplete(task.status);
+                const taskCardWidth = Dimensions.get('window').width * 0.72 - 16;
+                return (
+                  <TouchableOpacity
+                    key={task.id}
+                    style={[styles.taskCard, { backgroundColor: colors.card, width: taskCardWidth }]}
+                    onPress={() => toggleTaskComplete(task.id, task.status)}
+                    activeOpacity={0.7}
                   >
-                    {task.title}
-                  </Text>
-                  <View style={[styles.checkbox, done && styles.checkboxDone, { borderColor: done ? colors.accent : colors.muted, backgroundColor: done ? colors.accent : 'transparent' }]}>
-                    {done && <Ionicons name="checkmark" size={14} color="#ffffff" />}
-                  </View>
-                </TouchableOpacity>
-              );
-            })
+                    <View style={[styles.taskColorBar, { backgroundColor: projectColor }]} />
+                    <Text
+                      style={[styles.taskCardTitle, { color: done ? colors.muted : colors.text }, done && styles.taskTitleDone]}
+                      numberOfLines={1}
+                    >
+                      {task.title}
+                    </Text>
+                    <View style={[styles.checkbox, { borderColor: done ? colors.accent : colors.muted, backgroundColor: done ? colors.accent : 'transparent', marginRight: 10 }]}>
+                      {done && <Ionicons name="checkmark" size={14} color="#ffffff" />}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
           )}
         </View>
 
@@ -775,20 +779,28 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
-  taskRow: {
+  taskScroll: {
+    gap: 10,
+    paddingBottom: 4,
+  },
+  taskCard: {
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: 10,
-    borderWidth: 1,
-    padding: 12,
-    marginBottom: 8,
-    gap: 10,
+    overflow: 'hidden',
+    height: 46,
   },
-  taskColorSquare: {
-    width: 39,
-    height: 39,
-    borderRadius: 6,
-    flexShrink: 0,
+  taskColorBar: {
+    width: 40,
+    alignSelf: 'stretch',
+    borderTopRightRadius: 10,
+    borderBottomRightRadius: 10,
+  },
+  taskCardTitle: {
+    fontSize: 13,
+    fontWeight: '500',
+    flex: 1,
+    paddingHorizontal: 10,
   },
   checkbox: {
     width: 24,
@@ -800,11 +812,6 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   checkboxDone: {},
-  taskTitle: {
-    fontSize: 14,
-    fontWeight: '500',
-    flex: 1,
-  },
   taskTitleDone: {
     textDecorationLine: 'line-through',
   },
