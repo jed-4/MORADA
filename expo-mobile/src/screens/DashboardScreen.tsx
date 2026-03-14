@@ -490,29 +490,33 @@ export default function DashboardScreen({ navigation }: Props) {
               <Text style={[styles.sectionLink, { color: colors.accent }]}>Calendar</Text>
             </TouchableOpacity>
           </View>
-          {upcomingSchedule.length === 0 ? (
-            <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Ionicons name="calendar-outline" size={24} color={colors.muted} />
-              <Text style={[styles.emptyText, { color: colors.secondary }]}>No upcoming schedule items</Text>
-            </View>
-          ) : (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scheduleScroll}>
-              {upcomingSchedule.map(item => (
-                <TouchableOpacity
-                  key={item.id}
-                  style={[styles.scheduleCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-                  onPress={() => navigation.navigate('Calendar')}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.scheduleDate, { color: colors.accent }]}>{formatDateLabel(item.startDate)}</Text>
-                  <Text style={[styles.scheduleName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
-                  {item.projectName && (
-                    <Text style={[styles.scheduleProject, { color: colors.secondary }]} numberOfLines={1}>{item.projectName}</Text>
-                  )}
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          )}
+          {(() => {
+            const today = new Date().toISOString();
+            const testItems = [
+              { id: '_test1', name: 'Site Inspection', startDate: today, endDate: today, projectName: 'Smith Residence' },
+              { id: '_test2', name: 'Client Meeting', startDate: today, endDate: today, projectName: 'CBD Office' },
+              { id: '_test3', name: 'Concrete Pour', startDate: today, endDate: today, projectName: 'Warehouse Build' },
+            ];
+            const displaySchedule = [...testItems, ...upcomingSchedule];
+            return (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scheduleScroll}>
+                {displaySchedule.map(item => (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={[styles.scheduleCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                    onPress={() => navigation.navigate('Calendar')}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.scheduleDate, { color: colors.accent }]}>{formatDateLabel(item.startDate)}</Text>
+                    <Text style={[styles.scheduleName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
+                    {item.projectName && (
+                      <Text style={[styles.scheduleProject, { color: colors.secondary }]} numberOfLines={1}>{item.projectName}</Text>
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            );
+          })()}
         </View>
 
         <View style={[styles.sectionDivider, { backgroundColor: colors.border }]} />
