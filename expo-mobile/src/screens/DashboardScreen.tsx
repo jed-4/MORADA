@@ -734,6 +734,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 6,
+    marginTop: -14,
   },
   todayText: {
     fontSize: 13,
