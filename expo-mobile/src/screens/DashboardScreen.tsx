@@ -376,10 +376,10 @@ export default function DashboardScreen({ navigation }: Props) {
         <View style={[styles.sectionDivider, { backgroundColor: colors.border }]} />
 
         <View style={[styles.section, styles.todayRow]}>
-          <Text style={[styles.sectionTitle, { color: colors.secondary }]}>
+          <Text style={[styles.todayText, { color: colors.secondary }]}>
             {new Date().toLocaleDateString('en-AU', { weekday: 'long' })}
           </Text>
-          <Text style={[styles.sectionTitle, { color: colors.secondary }]}>
+          <Text style={[styles.todayText, { color: colors.secondary }]}>
             {new Date().toLocaleDateString('en-AU', { day: 'numeric', month: 'long' })}
           </Text>
         </View>
@@ -734,6 +734,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  todayText: {
+    fontSize: 13,
+    fontWeight: '500',
   },
   sectionLink: {
     fontSize: 13,
