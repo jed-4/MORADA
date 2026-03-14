@@ -790,10 +790,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#d6d3d1',
     overflow: 'hidden',
-    height: 46,
+    height: 38,
   },
   taskColorBar: {
-    width: 46,
+    width: 38,
     alignSelf: 'stretch',
     borderTopRightRadius: 10,
     borderBottomRightRadius: 10,
