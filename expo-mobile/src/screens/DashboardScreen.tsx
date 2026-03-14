@@ -716,7 +716,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   categoryRow: {
-    paddingHorizontal: 16,
+    paddingRight: 16,
     gap: 10,
   },
   categoryCard: {
