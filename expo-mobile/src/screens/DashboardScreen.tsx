@@ -286,7 +286,7 @@ export default function DashboardScreen({ navigation }: Props) {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+      <View style={[styles.header, { backgroundColor: colors.accent + '30', borderBottomColor: colors.accent + '50' }]}>
         <TouchableOpacity style={styles.headerLeft} onPress={() => setShowUserMenu(v => !v)} activeOpacity={0.7}>
           <Text style={[styles.userName, { color: colors.text }]} numberOfLines={1}>{fullDisplayName}</Text>
           <Ionicons name="chevron-down" size={14} color={colors.secondary} style={{ marginLeft: 4 }} />
