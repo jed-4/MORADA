@@ -409,7 +409,7 @@ export default function DashboardScreen({ navigation }: Props) {
                   return (
                     <TouchableOpacity
                       key={ts.id}
-                      style={[styles.timesheetCard, { backgroundColor: colors.card, width: cardWidth }]}
+                      style={[styles.timesheetCard, { backgroundColor: colors.card, width: cardWidth, borderWidth: 1, borderColor: projectColor }]}
                       onPress={() => navigation.navigate('Timesheets')}
                       activeOpacity={0.7}
                     >
