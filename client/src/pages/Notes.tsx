@@ -557,7 +557,7 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
     isCreatingRef.current = true;
     setTemplateDialogOpen(false);
     setTemplateSearch("");
-    createNoteMutation.mutate({
+    const payload: Partial<InsertNote> = {
       title: template.defaultTitle || "Untitled",
       content: template.contentText || "",
       contentHtml: template.contentHtml || "",
@@ -566,10 +566,10 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
       ownerId: currentUser?.id,
       ownerName: currentUserName,
       visibility: "team_only",
-      projectId: effectiveProjectId,
+      projectId: effectiveProjectId ?? undefined,
       category: "General",
-      customFields: {},
-    } as any);
+    };
+    createNoteMutation.mutate(payload);
   };
 
   const handleTogglePin = (note: Note) => {
@@ -934,14 +934,24 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
             <p className="text-sm text-muted-foreground">
               Select a note to view, or create a new one
             </p>
-            <Button
-              size="sm"
-              onClick={handleNewNote}
-              disabled={createNoteMutation.isPending}
-            >
-              <Plus className="h-4 w-4 mr-1" />
-              New Note
-            </Button>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                size="sm"
+                onClick={handleNewNote}
+                disabled={createNoteMutation.isPending}
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                New Note
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setTemplateDialogOpen(true)}
+              >
+                <LayoutTemplate className="h-4 w-4 mr-1" />
+                From Template
+              </Button>
+            </div>
           </div>
         )}
       </div>
@@ -1066,16 +1076,24 @@ export default function Notes({ projectId: propProjectId }: NotesProps = {}) {
             ) : (
               <div className="space-y-1">
                 {filteredTemplates.map((t) => (
-                  <button
+                  <div
                     key={t.id}
-                    className="w-full text-left rounded-md px-3 py-2.5 hover-elevate"
-                    onClick={() => handleCreateFromTemplate(t)}
+                    className="flex items-center gap-2 rounded-md px-3 py-2.5 hover-elevate"
                   >
-                    <div className="text-sm font-medium">{t.name}</div>
-                    {t.description && (
-                      <div className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{t.description}</div>
-                    )}
-                  </button>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium">{t.name}</div>
+                      {t.description && (
+                        <div className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{t.description}</div>
+                      )}
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleCreateFromTemplate(t)}
+                    >
+                      Use
+                    </Button>
+                  </div>
                 ))}
               </div>
             )}

@@ -238,12 +238,23 @@ export default function NotesListScreen({ navigation }: Props) {
     }, [fetchNotes])
   );
 
-  const handlePlusTap = () => {
-    Alert.alert('New Note', 'How would you like to create a note?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'From Template', onPress: () => openTemplatePicker() },
-      { text: 'Blank Note', onPress: () => handleCreateNote() },
-    ]);
+  const handlePlusTap = async () => {
+    try {
+      const response = await apiRequest('/api/note-templates?activeOnly=true');
+      if (response.ok) {
+        const data = await response.json();
+        if (data.length > 0) {
+          Alert.alert('New Note', 'How would you like to create a note?', [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'From Template', onPress: () => { setTemplates(data); setTemplateModalVisible(true); } },
+            { text: 'Blank Note', onPress: () => handleCreateNote() },
+          ]);
+          return;
+        }
+      }
+    } catch {
+    }
+    handleCreateNote();
   };
 
   const openTemplatePicker = async () => {
@@ -273,7 +284,7 @@ export default function NotesListScreen({ navigation }: Props) {
     setTemplateModalVisible(false);
     try {
       const response = await apiRequest('/api/notes', 'POST', {
-        title: template.defaultTitle || 'Untitled',
+        title: template.defaultTitle || '',
         content: template.contentText || '',
         contentHtml: template.contentHtml || '<p><br></p>',
         contentText: template.contentText || '',
