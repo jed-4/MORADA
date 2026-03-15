@@ -24,6 +24,7 @@ interface Project {
   currentSystemPhase?: string;
   projectSubStatus?: string;
   address?: string;
+  color?: string;
   createdAt?: string;
 }
 
@@ -92,14 +93,9 @@ export default function ProjectsScreen({ navigation }: Props) {
     }
   };
 
-  const PROJECT_PALETTE = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#f43f5e', '#84cc16'];
-  const getProjectColor = (projectId: string): string => {
-    let hash = 0;
-    for (let i = 0; i < projectId.length; i++) {
-      hash = projectId.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    return PROJECT_PALETTE[Math.abs(hash) % PROJECT_PALETTE.length];
-  };
+  const GREY = '#94a3b8';
+  const getProjectColor = (project: Project): string => project.color || GREY;
+  const mutedColor = (hex: string): string => hex + '45';
 
   const getPhaseCount = (phaseKey: string) => {
     if (phaseKey === 'all') return projects.length;
@@ -132,7 +128,7 @@ export default function ProjectsScreen({ navigation }: Props) {
   };
 
   const renderProjectCard = ({ item }: { item: Project }) => {
-    const projectColor = getProjectColor(item.id);
+    const projectColor = getProjectColor(item);
 
     return (
       <TouchableOpacity
@@ -140,7 +136,7 @@ export default function ProjectsScreen({ navigation }: Props) {
         onPress={() => navigation.navigate('ProjectDetail', { projectId: item.id, projectName: item.name })}
         activeOpacity={0.7}
       >
-        <View style={[styles.colorSquare, { backgroundColor: projectColor }]} />
+        <View style={[styles.colorSquare, { backgroundColor: mutedColor(projectColor) }]} />
         <View style={styles.cardBody}>
           {item.projectNumber && (
             <Text style={[styles.cardNumber, { color: colors.secondary }]} numberOfLines={1}>#{item.projectNumber}</Text>
@@ -315,6 +311,8 @@ const styles = StyleSheet.create({
   colorSquare: {
     width: 50,
     alignSelf: 'stretch',
+    borderTopLeftRadius: 9,
+    borderBottomLeftRadius: 9,
   },
   cardBody: {
     flex: 1,
