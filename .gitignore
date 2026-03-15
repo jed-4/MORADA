@@ -5,3 +5,7 @@ vite.config.ts.*
 *.tar.gz
 dist
 .expo/
+
+# Expo env files
+expo-mobile/.env
+expo-mobile/.env.local
