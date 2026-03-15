@@ -274,7 +274,7 @@ export default function CalendarScreen({ navigation }: Props) {
   const timeGridScrollRef = useRef<ScrollView>(null);
   const weekScrollRef = useRef<ScrollView>(null);
   const weekScrollOffset = useRef(0);
-  const CAL_DAY_WIDTH = Math.floor(SCREEN_WIDTH / 3);
+
 
   const weekBaseDate = useRef<Date>((() => {
     const d = new Date();
@@ -647,7 +647,7 @@ export default function CalendarScreen({ navigation }: Props) {
   }, [currentYear, currentMonth]);
 
   const scrollWeekTo = (offsetX: number, animated = true) => {
-    const clamped = Math.max(0, Math.min(offsetX, (WEEK_TOTAL_DAYS - 1) * CAL_DAY_WIDTH));
+    const clamped = Math.max(0, Math.min(offsetX, (WEEK_TOTAL_DAYS - 1) * GRID_COL_WIDTH));
     weekScrollRef.current?.scrollTo({ x: clamped, animated });
     weekScrollOffset.current = clamped;
   };
@@ -661,7 +661,7 @@ export default function CalendarScreen({ navigation }: Props) {
       setCurrentMonth(newMonth);
       setCurrentYear(newYear);
     } else if (viewMode === 'week') {
-      scrollWeekTo(weekScrollOffset.current + direction * 3 * CAL_DAY_WIDTH);
+      scrollWeekTo(weekScrollOffset.current + direction * 3 * GRID_COL_WIDTH);
     }
   };
 
@@ -669,7 +669,7 @@ export default function CalendarScreen({ navigation }: Props) {
     if (mode === 'week') {
       setWeekStartDate(getMondayOfWeek(new Date()));
       setTimeout(() => {
-        const x = Math.max(0, (todayWeekIndex - 1) * CAL_DAY_WIDTH);
+        const x = Math.max(0, (todayWeekIndex - 1) * GRID_COL_WIDTH);
         scrollWeekTo(x, false);
         timeGridScrollRef.current?.scrollTo({ y: 7 * HOUR_HEIGHT, animated: false });
       }, 50);
@@ -689,7 +689,7 @@ export default function CalendarScreen({ navigation }: Props) {
     setSelectedDate(now);
     setWeekStartDate(getMondayOfWeek(now));
     if (viewMode === 'week') {
-      const x = Math.max(0, (todayWeekIndex - 1) * CAL_DAY_WIDTH);
+      const x = Math.max(0, (todayWeekIndex - 1) * GRID_COL_WIDTH);
       scrollWeekTo(x);
     }
   };
@@ -697,7 +697,7 @@ export default function CalendarScreen({ navigation }: Props) {
   const handleWeekScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetX = e.nativeEvent.contentOffset.x;
     weekScrollOffset.current = offsetX;
-    const leftIndex = Math.round(offsetX / CAL_DAY_WIDTH);
+    const leftIndex = Math.round(offsetX / GRID_COL_WIDTH);
     const centerIndex = Math.min(leftIndex + 1, weekDays.length - 1);
     const centerDay = weekDays[centerIndex];
     if (centerDay) {
@@ -707,7 +707,7 @@ export default function CalendarScreen({ navigation }: Props) {
         return prev;
       });
     }
-  }, [weekDays, CAL_DAY_WIDTH]);
+  }, [weekDays, GRID_COL_WIDTH]);
 
   const handleSelectView = (view: SavedView) => {
     setSelectedViewId(view.id);
