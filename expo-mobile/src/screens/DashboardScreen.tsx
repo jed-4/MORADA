@@ -849,7 +849,7 @@ export default function DashboardScreen({ navigation }: Props) {
                   </TouchableOpacity>
                   {showCostCodePicker && (
                     <ScrollView style={[styles.inlineList, { borderColor: colors.border, backgroundColor: colors.card }]} nestedScrollEnabled>
-                      {costCodes.map(cc => {
+                      {[...costCodes].sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true })).map(cc => {
                         const label = `${cc.code} - ${cc.title}`;
                         const selected = clockInCostCodeId === cc.id;
                         return (
