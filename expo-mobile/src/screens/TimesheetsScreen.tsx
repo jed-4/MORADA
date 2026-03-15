@@ -306,6 +306,7 @@ export default function TimesheetsScreen() {
       return;
     }
     setClockingIn(true);
+    let networkError = false;
     try {
       const online = await isOnline();
       if (!online) {
@@ -319,19 +320,36 @@ export default function TimesheetsScreen() {
         return;
       }
 
-      await apiRequest('/api/timesheets/clock-in', 'POST', { projectId: clockInProjectId, costCodeId: clockInCostCodeId });
+      let res: Response;
+      try {
+        res = await apiRequest('/api/timesheets/clock-in', 'POST', { projectId: clockInProjectId, costCodeId: clockInCostCodeId });
+      } catch {
+        networkError = true;
+        throw new Error('Network error');
+      }
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        const msg = (errData as any).error || (errData as any).message || `Server error (${res.status})`;
+        throw new Error(msg);
+      }
 
       await fetchData();
       setClockInProjectId('');
       setClockInCostCodeId('');
-    } catch (e: any) {
-      await addToQueue({
-        type: 'clock-in',
-        payload: { projectId: clockInProjectId, costCodeId: clockInCostCodeId },
-      });
-      Alert.alert('Saved Offline', 'Clock-in saved and will sync when connection is restored.');
-      setClockInProjectId('');
-      setClockInCostCodeId('');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'An unknown error occurred';
+      if (networkError) {
+        await addToQueue({
+          type: 'clock-in',
+          payload: { projectId: clockInProjectId, costCodeId: clockInCostCodeId },
+        });
+        Alert.alert('Saved Offline', 'Clock-in saved and will sync when connection is restored.');
+        setClockInProjectId('');
+        setClockInCostCodeId('');
+      } else {
+        Alert.alert('Clock-in Failed', msg);
+      }
     } finally {
       setClockingIn(false);
     }
@@ -340,6 +358,7 @@ export default function TimesheetsScreen() {
   const handleClockOut = async () => {
     if (!activeTimesheet) return;
     setClockingOut(true);
+    let networkError = false;
     try {
       const online = await isOnline();
       if (!online) {
@@ -350,14 +369,33 @@ export default function TimesheetsScreen() {
         Alert.alert('Saved Offline', 'Your clock-out has been queued and will sync when you have a connection.');
         return;
       }
-      await apiRequest('/api/timesheets/clock-out', 'POST', { timesheetId: activeTimesheet.id });
+
+      let res: Response;
+      try {
+        res = await apiRequest('/api/timesheets/clock-out', 'POST', { timesheetId: activeTimesheet.id });
+      } catch {
+        networkError = true;
+        throw new Error('Network error');
+      }
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        const msg = (errData as any).error || (errData as any).message || `Server error (${res.status})`;
+        throw new Error(msg);
+      }
+
       await fetchData();
-    } catch (e: any) {
-      await addToQueue({
-        type: 'clock-out',
-        payload: { timesheetId: activeTimesheet.id },
-      });
-      Alert.alert('Saved Offline', 'Clock-out saved and will sync when connection is restored.');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'An unknown error occurred';
+      if (networkError) {
+        await addToQueue({
+          type: 'clock-out',
+          payload: { timesheetId: activeTimesheet.id },
+        });
+        Alert.alert('Saved Offline', 'Clock-out saved and will sync when connection is restored.');
+      } else {
+        Alert.alert('Clock-out Failed', msg);
+      }
     } finally {
       setClockingOut(false);
     }
