@@ -305,7 +305,6 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     borderColor: '#d6d3d1',
-    overflow: 'hidden',
     height: 50,
   },
   colorSquare: {
