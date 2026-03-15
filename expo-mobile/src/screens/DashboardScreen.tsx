@@ -802,32 +802,70 @@ export default function DashboardScreen({ navigation }: Props) {
               </TouchableOpacity>
             </View>
 
-            <View style={styles.modalBody}>
+            <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled">
               <Text style={[styles.modalLabel, { color: colors.secondary }]}>Project</Text>
               <TouchableOpacity
-                style={[styles.modalSelector, { backgroundColor: colors.card, borderColor: colors.border }]}
-                onPress={() => setShowProjectPicker(true)}
+                style={[styles.modalSelector, { backgroundColor: colors.card, borderColor: showProjectPicker ? colors.accent : colors.border }]}
+                onPress={() => { setShowProjectPicker(v => !v); setShowCostCodePicker(false); }}
                 activeOpacity={0.7}
               >
                 <Text style={[styles.modalSelectorText, { color: clockInProjectId ? colors.text : colors.secondary }]} numberOfLines={1}>
                   {clockInProjectId ? getProjectName(clockInProjectId) : 'Select a project...'}
                 </Text>
-                <Ionicons name="chevron-down" size={16} color={colors.secondary} />
+                <Ionicons name={showProjectPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
               </TouchableOpacity>
+              {showProjectPicker && (
+                <ScrollView style={[styles.inlineList, { borderColor: colors.border, backgroundColor: colors.card }]} nestedScrollEnabled>
+                  {projects.map(p => {
+                    const label = p.projectNumber ? `${p.projectNumber} - ${p.name}` : p.name;
+                    const selected = clockInProjectId === p.id;
+                    return (
+                      <TouchableOpacity
+                        key={p.id}
+                        style={[styles.inlineListItem, { borderBottomColor: colors.border, backgroundColor: selected ? colors.accent + '20' : 'transparent' }]}
+                        onPress={() => { setClockInProjectId(p.id); setClockInCostCodeId(''); setShowProjectPicker(false); }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.inlineListText, { color: colors.text, fontWeight: selected ? '600' : '400' }]} numberOfLines={1}>{label}</Text>
+                        {selected && <Ionicons name="checkmark" size={16} color={colors.accent} />}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              )}
 
               {clockInProjectId ? (
                 <>
                   <Text style={[styles.modalLabel, { color: colors.secondary, marginTop: 14 }]}>Cost Code</Text>
                   <TouchableOpacity
-                    style={[styles.modalSelector, { backgroundColor: colors.card, borderColor: colors.border }]}
-                    onPress={() => setShowCostCodePicker(true)}
+                    style={[styles.modalSelector, { backgroundColor: colors.card, borderColor: showCostCodePicker ? colors.accent : colors.border }]}
+                    onPress={() => { setShowCostCodePicker(v => !v); setShowProjectPicker(false); }}
                     activeOpacity={0.7}
                   >
                     <Text style={[styles.modalSelectorText, { color: clockInCostCodeId ? colors.text : colors.secondary }]} numberOfLines={1}>
                       {clockInCostCodeId ? getCostCodeLabel(clockInCostCodeId) : 'Select cost code...'}
                     </Text>
-                    <Ionicons name="chevron-down" size={16} color={colors.secondary} />
+                    <Ionicons name={showCostCodePicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
                   </TouchableOpacity>
+                  {showCostCodePicker && (
+                    <ScrollView style={[styles.inlineList, { borderColor: colors.border, backgroundColor: colors.card }]} nestedScrollEnabled>
+                      {costCodes.map(cc => {
+                        const label = `${cc.code} - ${cc.title}`;
+                        const selected = clockInCostCodeId === cc.id;
+                        return (
+                          <TouchableOpacity
+                            key={cc.id}
+                            style={[styles.inlineListItem, { borderBottomColor: colors.border, backgroundColor: selected ? colors.accent + '20' : 'transparent' }]}
+                            onPress={() => { setClockInCostCodeId(cc.id); setShowCostCodePicker(false); }}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={[styles.inlineListText, { color: colors.text, fontWeight: selected ? '600' : '400' }]} numberOfLines={1}>{label}</Text>
+                            {selected && <Ionicons name="checkmark" size={16} color={colors.accent} />}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+                  )}
                 </>
               ) : null}
 
@@ -841,7 +879,7 @@ export default function DashboardScreen({ navigation }: Props) {
                 multiline
                 numberOfLines={3}
               />
-            </View>
+            </ScrollView>
 
             <View style={[styles.modalFooter, { borderTopColor: colors.border }]}>
               <TouchableOpacity
@@ -867,23 +905,6 @@ export default function DashboardScreen({ navigation }: Props) {
         </KeyboardAvoidingView>
       </Modal>
 
-      {renderPickerModal(
-        showProjectPicker,
-        () => setShowProjectPicker(false),
-        'Select Project',
-        projects.map(p => ({ id: p.id, label: p.projectNumber ? `${p.projectNumber} - ${p.name}` : p.name })),
-        clockInProjectId,
-        (id) => { setClockInProjectId(id); setClockInCostCodeId(''); },
-      )}
-
-      {renderPickerModal(
-        showCostCodePicker,
-        () => setShowCostCodePicker(false),
-        'Select Cost Code',
-        costCodes.map(cc => ({ id: cc.id, label: `${cc.code} - ${cc.title}` })),
-        clockInCostCodeId,
-        setClockInCostCodeId,
-      )}
     </View>
   );
 }
@@ -1261,6 +1282,25 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   modalSelectorText: {
+    fontSize: 14,
+    flex: 1,
+    marginRight: 8,
+  },
+  inlineList: {
+    borderWidth: 1,
+    borderRadius: 8,
+    marginTop: 4,
+    maxHeight: 200,
+  },
+  inlineListItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  inlineListText: {
     fontSize: 14,
     flex: 1,
     marginRight: 8,
