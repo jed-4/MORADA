@@ -51,6 +51,7 @@ interface ScheduleItem {
   projectId?: string;
   projectName?: string;
   projectColor?: string | null;
+  parentItemId?: string | null;
 }
 
 interface Project {
@@ -148,6 +149,38 @@ const SCHEDULE_STATUS_LABELS: Record<string, string> = {
   'booked':        'Booked',
   'requested':     'Requested',
 };
+
+const DEFAULT_PROJECT_COLOR = '#3b82f6';
+
+const PROJECT_PALETTE = [
+  '#6366f1', '#8b5cf6', '#ec4899', '#f43f5e',
+  '#f97316', '#eab308', '#10b981', '#14b8a6',
+  '#06b6d4', '#3b82f6', '#a855f7', '#84cc16',
+];
+
+function hashProjectColor(projectId: string): string {
+  let h = 5381;
+  for (let i = 0; i < projectId.length; i++) {
+    h = (h * 33) ^ projectId.charCodeAt(i);
+  }
+  return PROJECT_PALETTE[Math.abs(h) % PROJECT_PALETTE.length];
+}
+
+function getProjectEventColor(
+  projectId: string | undefined,
+  customColor: string | null | undefined,
+  fallbackColor: string,
+): string {
+  const isValidHex = (c: string | null | undefined): c is string =>
+    typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c);
+  if (isValidHex(customColor) && customColor.toLowerCase() !== DEFAULT_PROJECT_COLOR) {
+    return customColor;
+  }
+  if (projectId) {
+    return hashProjectColor(projectId);
+  }
+  return fallbackColor;
+}
 
 const EVENT_TYPE_OPTIONS = [
   { value: 'task', label: 'Tasks', icon: 'checkmark-circle-outline' as const },
@@ -379,7 +412,7 @@ export default function CalendarScreen({ navigation }: Props) {
             title: task.title,
             date: task.dueDate,
             type: 'task',
-            color: proj?.color || resolvedBrandColor || EVENT_COLORS.task,
+            color: getProjectEventColor(task.projectId, proj?.color, EVENT_COLORS.task),
             status: task.status,
             projectId: task.projectId,
             projectName: proj?.name,
@@ -390,10 +423,7 @@ export default function CalendarScreen({ navigation }: Props) {
       });
 
       (scheduleData || []).forEach(item => {
-        const isValidHex = (c: any) => typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c);
-        const scheduleColor = (isValidHex(item.projectColor) ? item.projectColor! : null)
-          || (isValidHex(resolvedBrandColor) ? resolvedBrandColor! : null)
-          || EVENT_COLORS.schedule;
+        const scheduleColor = getProjectEventColor(item.projectId, item.projectColor, EVENT_COLORS.schedule);
         const scheduleStatusColor = item.status
           ? (SCHEDULE_STATUS_COLORS[item.status] || EVENT_COLORS.schedule)
           : EVENT_COLORS.schedule;
