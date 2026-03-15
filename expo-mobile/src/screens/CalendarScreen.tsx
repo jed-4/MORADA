@@ -1008,8 +1008,8 @@ export default function CalendarScreen({ navigation }: Props) {
   };
 
   const renderWeekView = () => {
-    const initialOffset = Math.max(0, (todayWeekIndex - 1) * CAL_DAY_WIDTH);
-    const totalContentWidth = WEEK_TOTAL_DAYS * CAL_DAY_WIDTH + TIME_LABEL_WIDTH;
+    const initialOffset = Math.max(0, (todayWeekIndex - 1) * GRID_COL_WIDTH);
+    const totalContentWidth = WEEK_TOTAL_DAYS * GRID_COL_WIDTH + TIME_LABEL_WIDTH;
 
     const hourLabels = Array.from({ length: 24 }, (_, i) => {
       if (i === 0) return '12 AM';
@@ -1047,43 +1047,22 @@ export default function CalendarScreen({ navigation }: Props) {
                   <View
                     key={idx}
                     style={{
-                      width: CAL_DAY_WIDTH,
+                      width: GRID_COL_WIDTH,
                       alignItems: 'center',
-                      paddingVertical: 8,
+                      justifyContent: 'center',
+                      paddingVertical: 10,
                       borderLeftWidth: StyleSheet.hairlineWidth,
                       borderLeftColor: colors.border,
+                      backgroundColor: currentDay ? colors.accent + '10' : 'transparent',
                     }}
                   >
                     <Text style={{
-                      fontSize: 11,
+                      fontSize: 13,
                       fontWeight: '600',
-                      color: currentDay ? colors.accent : colors.secondary,
+                      color: currentDay ? colors.accent : colors.text,
                     }}>
-                      {dowName}
+                      {dowName} {day.getDate()}
                     </Text>
-                    <View style={currentDay ? {
-                      width: 26,
-                      height: 26,
-                      borderRadius: 13,
-                      backgroundColor: colors.accent,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      marginTop: 2,
-                    } : {
-                      width: 26,
-                      height: 26,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      marginTop: 2,
-                    }}>
-                      <Text style={{
-                        fontSize: 14,
-                        fontWeight: '700',
-                        color: currentDay ? '#fff' : colors.text,
-                      }}>
-                        {day.getDate()}
-                      </Text>
-                    </View>
                   </View>
                 );
               })}
@@ -1112,7 +1091,7 @@ export default function CalendarScreen({ navigation }: Props) {
                     <View
                       key={dayIdx}
                       style={{
-                        width: CAL_DAY_WIDTH,
+                        width: GRID_COL_WIDTH,
                         borderLeftWidth: StyleSheet.hairlineWidth,
                         borderLeftColor: colors.border,
                         paddingHorizontal: 2,
@@ -1124,9 +1103,9 @@ export default function CalendarScreen({ navigation }: Props) {
                         <TouchableOpacity
                           key={event.id}
                           style={{
-                            height: 20,
+                            height: 22,
                             backgroundColor: isDark ? '#3a3a3a' : '#e8e8e8',
-                            borderRadius: 4,
+                            borderRadius: 5,
                             paddingHorizontal: 4,
                             justifyContent: 'center',
                           }}
@@ -1134,7 +1113,7 @@ export default function CalendarScreen({ navigation }: Props) {
                           activeOpacity={0.75}
                         >
                           <Text
-                            style={{ fontSize: 10, fontWeight: '600', color: colors.text }}
+                            style={{ fontSize: 12, fontWeight: '600', color: colors.text }}
                             numberOfLines={1}
                           >
                             {event.title}
@@ -1211,13 +1190,13 @@ export default function CalendarScreen({ navigation }: Props) {
                   laneAssignment.forEach(v => { v.totalLanes = totalLanes; });
 
                   const colPad = 2;
-                  const usableWidth = CAL_DAY_WIDTH - colPad * 2;
+                  const usableWidth = GRID_COL_WIDTH - colPad * 2;
 
                   return (
                     <View
                       key={dayIdx}
                       style={{
-                        width: CAL_DAY_WIDTH,
+                        width: GRID_COL_WIDTH,
                         height: TOTAL_GRID_HEIGHT,
                         borderLeftWidth: StyleSheet.hairlineWidth,
                         borderLeftColor: colors.border,
@@ -1442,23 +1421,36 @@ export default function CalendarScreen({ navigation }: Props) {
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <View style={[styles.header, { backgroundColor: colors.accent + '30' }]}>
         <View style={styles.headerLeft}>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>My Calendar</Text>
-          <Text style={[styles.headerMonthLabel, { color: colors.secondary }]}>
-            {viewMode === 'month' ? `${MONTHS[currentMonth]} ${currentYear}` : headerMonth}
-          </Text>
+          <Ionicons name="menu" size={22} color={colors.secondary + '80'} style={{ marginRight: 10 }} />
+          <View>
+            <Text style={[styles.headerTitle, { color: colors.text }]}>My Calendar</Text>
+            <Text style={[styles.headerMonthLabel, { color: colors.secondary }]}>
+              {viewMode === 'month' ? `${MONTHS[currentMonth]} ${currentYear}` : headerMonth}
+            </Text>
+          </View>
         </View>
 
         <View style={styles.headerRight}>
-          {viewMode !== 'list' && (
-            <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
-              <TouchableOpacity onPress={() => navigatePeriod(-1)} style={styles.navArrowBtn} activeOpacity={0.6}>
-                <Ionicons name="chevron-back" size={18} color={colors.secondary} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => navigatePeriod(1)} style={styles.navArrowBtn} activeOpacity={0.6}>
-                <Ionicons name="chevron-forward" size={18} color={colors.secondary} />
-              </TouchableOpacity>
-            </View>
-          )}
+          <TouchableOpacity
+            style={{
+              paddingHorizontal: 12,
+              paddingVertical: 6,
+              borderRadius: 14,
+              backgroundColor: colors.card,
+              borderWidth: StyleSheet.hairlineWidth,
+              borderColor: colors.border,
+            }}
+            onPress={() => {
+              const modes: ViewMode[] = ['list', 'week', 'month'];
+              const nextIdx = (modes.indexOf(viewMode) + 1) % modes.length;
+              handleViewModeChange(modes[nextIdx]);
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={{ fontSize: 12, fontWeight: '600', color: colors.secondary }}>
+              {viewMode === 'list' ? 'List' : viewMode === 'week' ? 'Week' : 'Month'}
+            </Text>
+          </TouchableOpacity>
           <TouchableOpacity
             onPress={goToToday}
             style={[styles.todayBadge, { backgroundColor: colors.accent }]}
@@ -1481,31 +1473,6 @@ export default function CalendarScreen({ navigation }: Props) {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.chipRow}
         >
-          {(['list', 'week', 'month'] as ViewMode[]).map(mode => {
-            const isActive = viewMode === mode;
-            const modeLabel = mode === 'list' ? 'List' : mode === 'week' ? 'Week' : 'Month';
-            return (
-              <TouchableOpacity
-                key={mode}
-                style={[
-                  styles.chip,
-                  {
-                    backgroundColor: isActive ? colors.accent + '30' : colors.card,
-                    borderColor: isActive ? colors.accent + '60' : colors.border,
-                  },
-                ]}
-                onPress={() => handleViewModeChange(mode)}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.chipLabel, { color: isActive ? colors.accent : colors.secondary }]}>
-                  {modeLabel}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-
-          <View style={{ width: 1, height: 24, backgroundColor: colors.border, alignSelf: 'center' }} />
-
           {viewMode === 'week' && (
             <TouchableOpacity
               style={[
