@@ -151,11 +151,17 @@ const SCHEDULE_STATUS_LABELS: Record<string, string> = {
 
 const EVENT_TYPE_OPTIONS = [
   { value: 'task', label: 'Tasks', icon: 'checkmark-circle-outline' as const },
-  { value: 'schedule', label: 'Schedule Items', icon: 'construct-outline' as const },
+  { value: 'schedule', label: 'Schedule', icon: 'construct-outline' as const },
   { value: 'timesheet', label: 'Timesheets', icon: 'time-outline' as const },
   { value: 'site_diary', label: 'Site Diary', icon: 'book-outline' as const },
-  { value: 'google_cal', label: 'Google Calendar', icon: 'calendar-outline' as const },
+  { value: 'google_cal', label: 'Google', icon: 'calendar-outline' as const },
 ];
+
+const HOUR_HEIGHT = 60;
+const TIME_LABEL_WIDTH = 44;
+const GRID_COL_WIDTH = Math.floor((SCREEN_WIDTH - TIME_LABEL_WIDTH) / 3);
+const TOTAL_GRID_HEIGHT = 24 * HOUR_HEIGHT;
+const MIN_EVENT_HEIGHT = 22;
 
 function isSameDay(d1: Date, d2: Date): boolean {
   return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
@@ -182,6 +188,15 @@ function formatTime(timeStr: string | null | undefined): string {
   return `${displayH}:${(m || 0).toString().padStart(2, '0')} ${period}`;
 }
 
+function formatTimeShort(timeStr: string | null | undefined): string {
+  if (!timeStr) return '';
+  const [h, m] = timeStr.split(':').map(Number);
+  const period = h >= 12 ? 'PM' : 'AM';
+  const displayH = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  if (m === 0) return `${displayH} ${period}`;
+  return `${displayH}:${(m || 0).toString().padStart(2, '0')} ${period}`;
+}
+
 function formatDateShort(dateStr: string): string {
   const d = new Date(dateStr);
   return `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}`;
@@ -200,7 +215,18 @@ function formatDayHeader(date: Date): string {
   return `${days[date.getDay()]}, ${date.getDate()} ${MONTHS_SHORT[date.getMonth()]} ${date.getFullYear()}`;
 }
 
-// Module-level guards — survive component remounts (tab switches, app background/foreground)
+function timeToMinutes(timeStr: string): number {
+  const parts = timeStr.split(':').map(Number);
+  return (parts[0] || 0) * 60 + (parts[1] || 0);
+}
+
+function getEventDurationMinutes(startTime: string, endTime: string | null | undefined): number {
+  if (!endTime) return 60;
+  const start = timeToMinutes(startTime);
+  const end = timeToMinutes(endTime);
+  return Math.max(end - start, 15);
+}
+
 let defaultViewCreated = false;
 let cleanupRan = false;
 
@@ -238,17 +264,18 @@ export default function CalendarScreen({ navigation }: Props) {
   const [showCreateViewModal, setShowCreateViewModal] = useState(false);
   const [newViewName, setNewViewName] = useState('');
   const [savingView, setSavingView] = useState(false);
+  const [showAllDay, setShowAllDay] = useState(true);
 
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [weekStartDate, setWeekStartDate] = useState<Date>(getMondayOfWeek(new Date()));
 
+  const timeGridScrollRef = useRef<ScrollView>(null);
   const weekScrollRef = useRef<ScrollView>(null);
   const weekScrollOffset = useRef(0);
   const CAL_DAY_WIDTH = Math.floor(SCREEN_WIDTH / 3);
 
-  // Stable base date: 14 days before today — ~2 weeks either side
   const weekBaseDate = useRef<Date>((() => {
     const d = new Date();
     d.setDate(d.getDate() - 14);
@@ -257,7 +284,6 @@ export default function CalendarScreen({ navigation }: Props) {
   })());
   const WEEK_TOTAL_DAYS = 30;
 
-  // All days rendered in the scrollable strip (~2 weeks either side of today)
   const weekDays = useMemo(() => {
     const base = weekBaseDate.current;
     return Array.from({ length: WEEK_TOTAL_DAYS }, (_, i) => {
@@ -267,7 +293,6 @@ export default function CalendarScreen({ navigation }: Props) {
     });
   }, []);
 
-  // Index of today in the weekDays array
   const todayWeekIndex = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -276,7 +301,7 @@ export default function CalendarScreen({ navigation }: Props) {
 
   const colors = isDark
     ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569', input: '#0f172a' }
-    : { bg: '#f8fafc', card: '#ffffff', text: '#0f172a', secondary: '#64748b', border: '#e2e8f0', accent: '#9b7fc4', muted: '#cbd5e1', input: '#f8fafc' };
+    : { bg: '#ffffff', card: '#f5f5f4', text: '#1c1917', secondary: '#78716c', border: '#e7e5e4', accent: '#9b7fc4', muted: '#d6d3d1', input: '#f8fafc' };
 
   const buildDateRange = useCallback(() => {
     const now = new Date();
@@ -306,7 +331,6 @@ export default function CalendarScreen({ navigation }: Props) {
       const resolvedBrandColor: string | null = companySettings?.brandColor || null;
       setBrandColor(resolvedBrandColor);
 
-      // Task status options from field settings
       if (taskStatusCat?.options && Array.isArray(taskStatusCat.options)) {
         setTaskStatusOptions(
           taskStatusCat.options.map((o: any) => ({
@@ -359,7 +383,6 @@ export default function CalendarScreen({ navigation }: Props) {
 
       (scheduleData || []).forEach(item => {
         const isValidHex = (c: any) => typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c);
-        // Use project colour (from project settings), falling back to brand colour or default
         const scheduleColor = (isValidHex(item.projectColor) ? item.projectColor! : null)
           || (isValidHex(resolvedBrandColor) ? resolvedBrandColor! : null)
           || EVENT_COLORS.schedule;
@@ -422,14 +445,29 @@ export default function CalendarScreen({ navigation }: Props) {
         try {
           const gcalEvents = await apiFetch<any[]>('/api/google-calendar/events').catch(() => []);
           (gcalEvents || []).forEach((ev: any) => {
-            const start = ev.start?.date || ev.start?.dateTime?.split('T')[0];
-            const end = ev.end?.date || ev.end?.dateTime?.split('T')[0];
+            const isAllDay = !!ev.start?.date;
+            const start = isAllDay ? ev.start.date : ev.start?.dateTime?.split('T')[0];
+            const end = isAllDay
+              ? ev.end?.date
+              : ev.end?.dateTime?.split('T')[0];
+            let gcStartTime: string | null = null;
+            let gcEndTime: string | null = null;
+            if (!isAllDay && ev.start?.dateTime) {
+              const dtStart = new Date(ev.start.dateTime);
+              gcStartTime = `${String(dtStart.getHours()).padStart(2, '0')}:${String(dtStart.getMinutes()).padStart(2, '0')}`;
+            }
+            if (!isAllDay && ev.end?.dateTime) {
+              const dtEnd = new Date(ev.end.dateTime);
+              gcEndTime = `${String(dtEnd.getHours()).padStart(2, '0')}:${String(dtEnd.getMinutes()).padStart(2, '0')}`;
+            }
             if (start) {
               calEvents.push({
                 id: `gcal-${ev.id}`,
                 title: ev.summary || 'Untitled',
                 date: start,
                 endDate: end,
+                startTime: gcStartTime,
+                endTime: gcEndTime,
                 type: 'google_cal',
                 color: EVENT_COLORS.google_cal,
                 assigneeId: user.id,
@@ -444,7 +482,6 @@ export default function CalendarScreen({ navigation }: Props) {
 
       const fetchedViews = (viewsData || []).filter(v => v.name && v.name.trim() !== '');
 
-      // Clean up blank-named views silently
       const blankViews = (viewsData || []).filter(v => !v.name || v.name.trim() === '');
       blankViews.forEach(v => apiRequest(`/api/calendar-views/${v.id}`, 'DELETE').catch(() => {}));
 
@@ -473,8 +510,6 @@ export default function CalendarScreen({ navigation }: Props) {
         setSelectedViewId(defaultView.id);
         setActiveFilters(defaultView.filters || {});
         const rawMode = defaultView.calendarMode as string;
-        // Legacy 'day' mode and anything unrecognised defaults to 'week'
-        // 'All Events' always opens on week
         const resolved: ViewMode =
           defaultView.name === 'All Events' ? 'week' :
           rawMode === 'month' ? 'month' :
@@ -489,10 +524,8 @@ export default function CalendarScreen({ navigation }: Props) {
     }
   }, [user?.id]);
 
-  // Re-fetch every time the Calendar tab gains focus
   useFocusEffect(useCallback(() => { fetchData(); }, [fetchData]));
 
-  // Run cleanup exactly once per JS session on mount
   useEffect(() => {
     if (cleanupRan) return;
     cleanupRan = true;
@@ -510,21 +543,18 @@ export default function CalendarScreen({ navigation }: Props) {
   const filteredEvents = useMemo(() => {
     let events = allEvents;
     if (activeFilters.assignedToMe) {
-      // Show only events explicitly tied to this user (not project-wide schedule items)
       events = events.filter(e => !!e.assigneeId);
     }
     if (activeFilters.eventTypes && activeFilters.eventTypes.length > 0) {
       events = events.filter(e => activeFilters.eventTypes!.includes(e.type));
     }
     if (activeFilters.taskStatuses && activeFilters.taskStatuses.length > 0) {
-      // Legacy inclusion model (saved views)
       events = events.filter(e => {
         if (e.type !== 'task') return true;
         return activeFilters.taskStatuses!.includes(e.status || 'todo');
       });
     }
     if (activeFilters.excludedTaskStatuses && activeFilters.excludedTaskStatuses.length > 0) {
-      // Exclusion model — toggled-off statuses are hidden
       events = events.filter(e => {
         if (e.type !== 'task') return true;
         return !activeFilters.excludedTaskStatuses!.includes(e.status || 'todo');
@@ -535,9 +565,9 @@ export default function CalendarScreen({ navigation }: Props) {
         if (e.type !== 'schedule') return true;
         const rawAssignedToId: string | null | undefined = e.raw?.assignedToId;
         const rawAssignedToName: string | null | undefined = e.raw?.assignedToName;
-        const matchMe = activeFilters.scheduleAssignedToMe && (
-          rawAssignedToId === user!.id ||
-          (!!user?.firstName && !!rawAssignedToName &&
+        const matchMe = activeFilters.scheduleAssignedToMe && user?.id && (
+          rawAssignedToId === user.id ||
+          (!!user.firstName && !!rawAssignedToName &&
             rawAssignedToName.toLowerCase().includes(user.firstName.toLowerCase()))
         );
         const matchCompany = activeFilters.scheduleAssignedToCompany &&
@@ -631,18 +661,17 @@ export default function CalendarScreen({ navigation }: Props) {
       setCurrentMonth(newMonth);
       setCurrentYear(newYear);
     } else if (viewMode === 'week') {
-      // Scroll 7 days forward or back
-      scrollWeekTo(weekScrollOffset.current + direction * 7 * CAL_DAY_WIDTH);
+      scrollWeekTo(weekScrollOffset.current + direction * 3 * CAL_DAY_WIDTH);
     }
   };
 
   const handleViewModeChange = (mode: ViewMode) => {
     if (mode === 'week') {
       setWeekStartDate(getMondayOfWeek(new Date()));
-      // Scroll to today when switching into week view
       setTimeout(() => {
         const x = Math.max(0, (todayWeekIndex - 1) * CAL_DAY_WIDTH);
         scrollWeekTo(x, false);
+        timeGridScrollRef.current?.scrollTo({ y: 7 * HOUR_HEIGHT, animated: false });
       }, 50);
     } else if (mode === 'month') {
       const now = new Date();
@@ -668,9 +697,7 @@ export default function CalendarScreen({ navigation }: Props) {
   const handleWeekScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetX = e.nativeEvent.contentOffset.x;
     weekScrollOffset.current = offsetX;
-    // Update the period label based on the leftmost fully visible day
     const leftIndex = Math.round(offsetX / CAL_DAY_WIDTH);
-    // Center column is leftIndex + 1
     const centerIndex = Math.min(leftIndex + 1, weekDays.length - 1);
     const centerDay = weekDays[centerIndex];
     if (centerDay) {
@@ -756,8 +783,8 @@ export default function CalendarScreen({ navigation }: Props) {
 
   const handleSaveFiltersToView = async () => {
     if (!selectedViewId) return;
-    const currentView = views.find(v => v.id === selectedViewId);
-    if (!currentView || currentView.isDefault) return;
+    const cv = views.find(v => v.id === selectedViewId);
+    if (!cv || cv.isDefault) return;
     try {
       await apiRequest(`/api/calendar-views/${selectedViewId}`, 'PATCH', { filters: activeFilters, calendarMode: viewMode });
       setViews(prev => prev.map(v => v.id === selectedViewId ? { ...v, filters: activeFilters, calendarMode: viewMode } : v));
@@ -863,7 +890,13 @@ export default function CalendarScreen({ navigation }: Props) {
     }
   };
 
-  // Feed list view — date-grouped, modelled on site diary feed
+  const isEventAllDay = (event: CalendarEvent): boolean => {
+    if (event.type === 'task' || event.type === 'site_diary') return true;
+    if (event.type === 'google_cal' && !event.startTime) return true;
+    if (!event.startTime) return true;
+    return false;
+  };
+
   const renderFeedView = () => {
     const now = new Date();
     now.setHours(0, 0, 0, 0);
@@ -974,109 +1007,302 @@ export default function CalendarScreen({ navigation }: Props) {
     );
   };
 
-  // Week view — infinite horizontal strip of days (180 days, centred on today)
   const renderWeekView = () => {
     const initialOffset = Math.max(0, (todayWeekIndex - 1) * CAL_DAY_WIDTH);
+    const totalContentWidth = WEEK_TOTAL_DAYS * CAL_DAY_WIDTH + TIME_LABEL_WIDTH;
+
+    const hourLabels = Array.from({ length: 24 }, (_, i) => {
+      if (i === 0) return '12 AM';
+      if (i < 12) return `${i} AM`;
+      if (i === 12) return '12 PM';
+      return `${i - 12} PM`;
+    });
 
     return (
-      <ScrollView
-        ref={weekScrollRef}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={{ flex: 1 }}
-        contentContainerStyle={{ flexDirection: 'row' }}
-        contentOffset={{ x: initialOffset, y: 0 }}
-        onScroll={handleWeekScroll}
-        scrollEventThrottle={32}
-        decelerationRate="normal"
-      >
-        {weekDays.map((day, idx) => {
-          const dayEvents = getEventsForDate(day);
-          const currentDay = isToday(day);
-          // Day name from actual JS day-of-week (0=Sun → Mon offset)
-          const dowName = DAY_NAMES[(day.getDay() + 6) % 7];
-          return (
-            <View
-              key={idx}
-              style={{
-                width: CAL_DAY_WIDTH,
-                borderRightWidth: StyleSheet.hairlineWidth,
-                borderRightColor: colors.border,
-                backgroundColor: currentDay ? colors.accent + '08' : 'transparent',
-              }}
-            >
+      <View style={{ flex: 1 }}>
+        <ScrollView
+          ref={weekScrollRef}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ flex: 1 }}
+          contentOffset={{ x: initialOffset, y: 0 }}
+          onScroll={handleWeekScroll}
+          scrollEventThrottle={32}
+          decelerationRate="normal"
+          nestedScrollEnabled
+          contentContainerStyle={{ flexGrow: 1 }}
+        >
+          <View style={{ width: totalContentWidth, flex: 1 }}>
+            <View style={{
+              flexDirection: 'row',
+              backgroundColor: colors.card,
+              borderBottomWidth: StyleSheet.hairlineWidth,
+              borderBottomColor: colors.border,
+            }}>
+              <View style={{ width: TIME_LABEL_WIDTH }} />
+              {weekDays.map((day, idx) => {
+                const currentDay = isToday(day);
+                const dowName = DAY_NAMES[(day.getDay() + 6) % 7];
+                return (
+                  <View
+                    key={idx}
+                    style={{
+                      width: CAL_DAY_WIDTH,
+                      alignItems: 'center',
+                      paddingVertical: 8,
+                      borderLeftWidth: StyleSheet.hairlineWidth,
+                      borderLeftColor: colors.border,
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: 11,
+                      fontWeight: '600',
+                      color: currentDay ? colors.accent : colors.secondary,
+                    }}>
+                      {dowName}
+                    </Text>
+                    <View style={currentDay ? {
+                      width: 26,
+                      height: 26,
+                      borderRadius: 13,
+                      backgroundColor: colors.accent,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginTop: 2,
+                    } : {
+                      width: 26,
+                      height: 26,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginTop: 2,
+                    }}>
+                      <Text style={{
+                        fontSize: 14,
+                        fontWeight: '700',
+                        color: currentDay ? '#fff' : colors.text,
+                      }}>
+                        {day.getDate()}
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+
+            {showAllDay && (
               <View style={{
-                alignItems: 'center',
-                paddingVertical: 10,
-                borderBottomWidth: 1,
+                flexDirection: 'row',
+                borderBottomWidth: StyleSheet.hairlineWidth,
                 borderBottomColor: colors.border,
                 backgroundColor: colors.card,
+                minHeight: 28,
               }}>
-                <Text style={{
-                  fontSize: 11,
-                  fontWeight: '600',
-                  letterSpacing: 0.4,
-                  textTransform: 'uppercase',
-                  color: currentDay ? colors.accent : colors.secondary,
+                <View style={{
+                  width: TIME_LABEL_WIDTH,
+                  justifyContent: 'center',
+                  alignItems: 'flex-end',
+                  paddingRight: 6,
                 }}>
-                  {dowName}
-                </Text>
-                <View style={currentDay ? {
-                  width: 32, height: 32, borderRadius: 16,
-                  backgroundColor: colors.accent,
-                  alignItems: 'center', justifyContent: 'center', marginTop: 4,
-                } : {
-                  width: 32, height: 32,
-                  alignItems: 'center', justifyContent: 'center', marginTop: 4,
-                }}>
-                  <Text style={{
-                    fontSize: 17,
-                    fontWeight: '700',
-                    color: currentDay ? '#fff' : colors.text,
-                  }}>
-                    {day.getDate()}
-                  </Text>
+                  <Text style={{ fontSize: 9, color: colors.secondary, fontWeight: '500' }}>ALL</Text>
+                  <Text style={{ fontSize: 9, color: colors.secondary, fontWeight: '500' }}>DAY</Text>
                 </View>
-              </View>
-              <View style={{ paddingHorizontal: 5, paddingTop: 7, paddingBottom: 80 }}>
-                {dayEvents.length === 0 ? null : dayEvents.map(event => {
-                  const isSchedule = event.type === 'schedule';
-                  const weekCardColor = event.color;
+                {weekDays.map((day, dayIdx) => {
+                  const allDayEvents = getEventsForDate(day).filter(e => isEventAllDay(e));
                   return (
-                    <TouchableOpacity
-                      key={event.id}
+                    <View
+                      key={dayIdx}
                       style={{
-                        backgroundColor: isSchedule ? weekCardColor + 'aa' : weekCardColor + '22',
-                        borderWidth: 1,
-                        borderColor: isSchedule ? weekCardColor + 'dd' : weekCardColor + '55',
-                        borderRadius: 6,
-                        padding: 7,
-                        marginBottom: 5,
-                        position: 'relative',
+                        width: CAL_DAY_WIDTH,
+                        borderLeftWidth: StyleSheet.hairlineWidth,
+                        borderLeftColor: colors.border,
+                        paddingHorizontal: 2,
+                        paddingVertical: 3,
+                        gap: 2,
                       }}
-                      onPress={() => handleEventTap(event)}
-                      activeOpacity={0.75}
                     >
-                      <View style={{ position: 'absolute', top: 5, right: 5 }}>
-                        <Ionicons name={getTypeIcon(event.type)} size={10} color={weekCardColor} style={{ opacity: 0.8 }} />
-                      </View>
-                      <Text style={{
-                        fontSize: 11,
-                        fontWeight: '700',
-                        color: colors.text,
-                        lineHeight: 15,
-                        paddingRight: 12,
-                      }} numberOfLines={3}>
-                        {event.title}
-                      </Text>
-                    </TouchableOpacity>
+                      {allDayEvents.slice(0, 3).map(event => (
+                        <TouchableOpacity
+                          key={event.id}
+                          style={{
+                            height: 20,
+                            backgroundColor: isDark ? '#3a3a3a' : '#e8e8e8',
+                            borderRadius: 4,
+                            paddingHorizontal: 4,
+                            justifyContent: 'center',
+                          }}
+                          onPress={() => handleEventTap(event)}
+                          activeOpacity={0.75}
+                        >
+                          <Text
+                            style={{ fontSize: 10, fontWeight: '600', color: colors.text }}
+                            numberOfLines={1}
+                          >
+                            {event.title}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                      {allDayEvents.length > 3 && (
+                        <Text style={{ fontSize: 9, color: colors.secondary, textAlign: 'center' }}>
+                          +{allDayEvents.length - 3}
+                        </Text>
+                      )}
+                    </View>
                   );
                 })}
               </View>
-            </View>
-          );
-        })}
-      </ScrollView>
+            )}
+
+            <ScrollView
+              ref={timeGridScrollRef}
+              style={{ flex: 1 }}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ height: TOTAL_GRID_HEIGHT }}
+              onLayout={() => {
+                setTimeout(() => {
+                  timeGridScrollRef.current?.scrollTo({ y: 7 * HOUR_HEIGHT, animated: false });
+                }, 100);
+              }}
+            >
+              <View style={{ flexDirection: 'row', height: TOTAL_GRID_HEIGHT }}>
+                <View style={{ width: TIME_LABEL_WIDTH }}>
+                  {hourLabels.map((label, i) => (
+                    <View key={i} style={{ height: HOUR_HEIGHT, justifyContent: 'flex-start' }}>
+                      <Text style={{
+                        fontSize: 10,
+                        color: colors.secondary,
+                        textAlign: 'right',
+                        paddingRight: 6,
+                        marginTop: -6,
+                      }}>
+                        {i > 0 ? label : ''}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+
+                {weekDays.map((day, dayIdx) => {
+                  const currentDay = isToday(day);
+                  const dayEvents = getEventsForDate(day).filter(e => !isEventAllDay(e) && e.startTime);
+
+                  const layoutEvents = dayEvents.map(event => {
+                    const startMin = timeToMinutes(event.startTime!);
+                    const durationMin = getEventDurationMinutes(event.startTime!, event.endTime);
+                    return { event, startMin, endMin: startMin + durationMin };
+                  }).sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin);
+
+                  const lanes: number[][] = [];
+                  const laneAssignment = new Map<string, { lane: number; totalLanes: number }>();
+                  for (const le of layoutEvents) {
+                    let placed = false;
+                    for (let i = 0; i < lanes.length; i++) {
+                      if (lanes[i][lanes[i].length - 1] <= le.startMin) {
+                        lanes[i].push(le.endMin);
+                        laneAssignment.set(le.event.id, { lane: i, totalLanes: 0 });
+                        placed = true;
+                        break;
+                      }
+                    }
+                    if (!placed) {
+                      lanes.push([le.endMin]);
+                      laneAssignment.set(le.event.id, { lane: lanes.length - 1, totalLanes: 0 });
+                    }
+                  }
+                  const totalLanes = Math.max(lanes.length, 1);
+                  laneAssignment.forEach(v => { v.totalLanes = totalLanes; });
+
+                  const colPad = 2;
+                  const usableWidth = CAL_DAY_WIDTH - colPad * 2;
+
+                  return (
+                    <View
+                      key={dayIdx}
+                      style={{
+                        width: CAL_DAY_WIDTH,
+                        height: TOTAL_GRID_HEIGHT,
+                        borderLeftWidth: StyleSheet.hairlineWidth,
+                        borderLeftColor: colors.border,
+                        backgroundColor: currentDay ? colors.accent + '06' : 'transparent',
+                      }}
+                    >
+                      {hourLabels.map((_, hourIdx) => (
+                        <View
+                          key={hourIdx}
+                          style={{
+                            position: 'absolute',
+                            top: hourIdx * HOUR_HEIGHT,
+                            left: 0,
+                            right: 0,
+                            height: StyleSheet.hairlineWidth,
+                            backgroundColor: colors.border,
+                          }}
+                        />
+                      ))}
+
+                      {layoutEvents.map(({ event, startMin, endMin }) => {
+                        const top = (startMin / 60) * HOUR_HEIGHT;
+                        const height = Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT, MIN_EVENT_HEIGHT);
+                        const eventColor = event.color || '#94a3b8';
+                        const la = laneAssignment.get(event.id);
+                        const lane = la?.lane ?? 0;
+                        const tl = la?.totalLanes ?? 1;
+                        const laneWidth = usableWidth / tl;
+                        const left = colPad + lane * laneWidth;
+
+                        return (
+                          <TouchableOpacity
+                            key={event.id}
+                            style={{
+                              position: 'absolute',
+                              top,
+                              left,
+                              width: laneWidth - 1,
+                              height,
+                              backgroundColor: eventColor + '45',
+                              borderRadius: 5,
+                              borderLeftWidth: 3,
+                              borderLeftColor: eventColor,
+                              paddingHorizontal: 4,
+                              paddingVertical: 2,
+                              overflow: 'hidden',
+                            }}
+                            onPress={() => handleEventTap(event)}
+                            activeOpacity={0.75}
+                          >
+                            <Text
+                              style={{
+                                fontSize: 11,
+                                fontWeight: '600',
+                                color: colors.text,
+                                lineHeight: 14,
+                              }}
+                              numberOfLines={height >= 36 ? 2 : 1}
+                            >
+                              {event.title}
+                            </Text>
+                            {height >= 36 && event.startTime && (
+                              <Text
+                                style={{
+                                  fontSize: 9,
+                                  color: colors.secondary,
+                                  marginTop: 1,
+                                }}
+                                numberOfLines={1}
+                              >
+                                {formatTimeShort(event.startTime)}
+                                {event.endTime ? ` – ${formatTimeShort(event.endTime)}` : ''}
+                              </Text>
+                            )}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  );
+                })}
+              </View>
+            </ScrollView>
+          </View>
+        </ScrollView>
+      </View>
     );
   };
 
@@ -1209,101 +1435,146 @@ export default function CalendarScreen({ navigation }: Props) {
     );
   }
 
-  const activeViewName = currentView?.name || 'Views';
-  const truncatedViewName = activeViewName.length > 12 ? activeViewName.slice(0, 11) + '…' : activeViewName;
+  const todayDate = new Date();
+  const headerMonth = `${MONTHS[weekStartDate.getMonth()]} ${weekStartDate.getFullYear()}`;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      {/* Minimal header — filter only */}
-      <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-        <View style={{ flex: 1 }} />
-        <TouchableOpacity
-          style={[
-            styles.filterBtn,
-            {
-              backgroundColor: activeFilterCount > 0 ? colors.accent + '20' : colors.bg,
-              borderColor: activeFilterCount > 0 ? colors.accent : colors.border,
-            },
-          ]}
-          onPress={() => setShowFilterModal(true)}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="options-outline" size={16} color={activeFilterCount > 0 ? colors.accent : colors.secondary} />
-          <Text style={[styles.filterBtnText, { color: activeFilterCount > 0 ? colors.accent : colors.secondary }]}>
-            Filter{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+      <View style={[styles.header, { backgroundColor: colors.accent + '30' }]}>
+        <View style={styles.headerLeft}>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>My Calendar</Text>
+          <Text style={[styles.headerMonthLabel, { color: colors.secondary }]}>
+            {viewMode === 'month' ? `${MONTHS[currentMonth]} ${currentYear}` : headerMonth}
           </Text>
-        </TouchableOpacity>
-      </View>
+        </View>
 
-      {/* Segment control: List | Week | Month */}
-      <View style={[styles.segmentedControl, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        {(['list', 'week', 'month'] as ViewMode[]).map(mode => (
+        <View style={styles.headerRight}>
+          {viewMode !== 'list' && (
+            <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+              <TouchableOpacity onPress={() => navigatePeriod(-1)} style={styles.navArrowBtn} activeOpacity={0.6}>
+                <Ionicons name="chevron-back" size={18} color={colors.secondary} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => navigatePeriod(1)} style={styles.navArrowBtn} activeOpacity={0.6}>
+                <Ionicons name="chevron-forward" size={18} color={colors.secondary} />
+              </TouchableOpacity>
+            </View>
+          )}
           <TouchableOpacity
-            key={mode}
-            style={[
-              styles.segmentButton,
-              viewMode === mode && { backgroundColor: colors.accent },
-            ]}
-            onPress={() => handleViewModeChange(mode)}
+            onPress={goToToday}
+            style={[styles.todayBadge, { backgroundColor: colors.accent }]}
             activeOpacity={0.7}
           >
-            <Text style={[
-              styles.segmentText,
-              { color: viewMode === mode ? '#ffffff' : colors.secondary },
-              viewMode === mode && { fontWeight: '600' },
-            ]}>
-              {mode.charAt(0).toUpperCase() + mode.slice(1)}
-            </Text>
+            <Text style={styles.todayBadgeText}>{todayDate.getDate()}</Text>
           </TouchableOpacity>
-        ))}
+        </View>
       </View>
 
-      {/* Period nav: [Views] [←] [label] [→] [Today] */}
-      <View style={[styles.periodNav, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-        <TouchableOpacity
-          style={[styles.viewsButton, { borderColor: colors.accent }]}
-          onPress={() => setShowViewsModal(true)}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="layers-outline" size={13} color={colors.accent} style={{ marginRight: 4 }} />
-          <Text style={[styles.viewsButtonText, { color: colors.accent }]} numberOfLines={1}>
-            {truncatedViewName}
-          </Text>
-        </TouchableOpacity>
-
-        {viewMode !== 'list' && (
-          <TouchableOpacity onPress={() => navigatePeriod(-1)} style={styles.navButton} activeOpacity={0.6}>
-            <Ionicons name="chevron-back" size={20} color={colors.text} />
-          </TouchableOpacity>
-        )}
-
-        {viewMode !== 'list' ? (
-          <View style={styles.periodLabelContainer}>
-            <Text style={[styles.periodLabel, { color: colors.text }]}>{getPeriodLabel()}</Text>
-          </View>
-        ) : (
-          <View style={{ flex: 1 }} />
-        )}
-
-        {viewMode !== 'list' && (
-          <TouchableOpacity onPress={() => navigatePeriod(1)} style={styles.navButton} activeOpacity={0.6}>
-            <Ionicons name="chevron-forward" size={20} color={colors.text} />
-          </TouchableOpacity>
-        )}
-
-        <TouchableOpacity onPress={goToToday} style={[styles.todayButton, { borderColor: colors.accent }]} activeOpacity={0.6}>
-          <Text style={[styles.todayButtonText, { color: colors.accent }]}>Today</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Calendar content */}
       <View style={{ flex: 1 }}>
         {viewMode === 'list' && renderFeedView()}
         {viewMode === 'week' && renderWeekView()}
         {viewMode === 'month' && renderMonthView()}
       </View>
 
-      {/* Views bottom-sheet modal */}
+      <View style={[styles.chipBar, { backgroundColor: colors.bg, borderTopColor: colors.border }]}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chipRow}
+        >
+          {(['list', 'week', 'month'] as ViewMode[]).map(mode => {
+            const isActive = viewMode === mode;
+            const modeLabel = mode === 'list' ? 'List' : mode === 'week' ? 'Week' : 'Month';
+            return (
+              <TouchableOpacity
+                key={mode}
+                style={[
+                  styles.chip,
+                  {
+                    backgroundColor: isActive ? colors.accent + '30' : colors.card,
+                    borderColor: isActive ? colors.accent + '60' : colors.border,
+                  },
+                ]}
+                onPress={() => handleViewModeChange(mode)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.chipLabel, { color: isActive ? colors.accent : colors.secondary }]}>
+                  {modeLabel}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+
+          <View style={{ width: 1, height: 24, backgroundColor: colors.border, alignSelf: 'center' }} />
+
+          {viewMode === 'week' && (
+            <TouchableOpacity
+              style={[
+                styles.chip,
+                {
+                  backgroundColor: showAllDay ? colors.accent + '30' : colors.card,
+                  borderColor: showAllDay ? colors.accent + '60' : colors.border,
+                },
+              ]}
+              onPress={() => setShowAllDay(v => !v)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.chipLabel, { color: showAllDay ? colors.accent : colors.secondary }]}>
+                All Day
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {EVENT_TYPE_OPTIONS.filter(opt => opt.value !== 'google_cal' || googleConnected).map(opt => {
+            const isSelected = activeFilters.eventTypes?.includes(opt.value) ?? false;
+            return (
+              <TouchableOpacity
+                key={opt.value}
+                style={[
+                  styles.chip,
+                  {
+                    backgroundColor: isSelected ? EVENT_COLORS[opt.value] + '25' : colors.card,
+                    borderColor: isSelected ? EVENT_COLORS[opt.value] + '60' : colors.border,
+                  },
+                ]}
+                onPress={() => {
+                  const current = activeFilters.eventTypes || [];
+                  const updated = isSelected
+                    ? current.filter(t => t !== opt.value)
+                    : [...current, opt.value];
+                  setActiveFilters({ ...activeFilters, eventTypes: updated.length > 0 ? updated : undefined });
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.chipLabel, { color: isSelected ? EVENT_COLORS[opt.value] : colors.secondary }]}>
+                  {opt.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+
+          <TouchableOpacity
+            style={[
+              styles.chip,
+              {
+                backgroundColor: activeFilterCount > 0 ? colors.accent + '25' : colors.card,
+                borderColor: activeFilterCount > 0 ? colors.accent + '60' : colors.border,
+              },
+            ]}
+            onPress={() => setShowFilterModal(true)}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name="options-outline"
+              size={14}
+              color={activeFilterCount > 0 ? colors.accent : colors.secondary}
+            />
+            <Text style={[styles.chipLabel, { color: activeFilterCount > 0 ? colors.accent : colors.secondary }]}>
+              Filter{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
+
       <Modal
         visible={showViewsModal}
         transparent
@@ -1358,7 +1629,6 @@ export default function CalendarScreen({ navigation }: Props) {
         </View>
       </Modal>
 
-      {/* Filter Modal */}
       <Modal
         visible={showFilterModal}
         transparent
@@ -1375,7 +1645,6 @@ export default function CalendarScreen({ navigation }: Props) {
             Select types to show. Leave all off to show everything.
           </Text>
           <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 440 }}>
-            {/* Assigned to me toggle */}
             <View style={{ marginTop: 12, gap: 4 }}>
               <TouchableOpacity
                 style={[
@@ -1397,7 +1666,6 @@ export default function CalendarScreen({ navigation }: Props) {
               </TouchableOpacity>
             </View>
 
-            {/* Schedule assignment filters */}
             {(!activeFilters.eventTypes || activeFilters.eventTypes.includes('schedule')) && (
               <View style={{ marginTop: 16 }}>
                 <Text style={[styles.filterSectionLabel, { color: colors.secondary }]}>Schedule Items</Text>
@@ -1430,7 +1698,6 @@ export default function CalendarScreen({ navigation }: Props) {
                       </TouchableOpacity>
                     );
                   })}
-                  {/* Parent / Sub item toggle row */}
                   {(() => {
                     const scheduleColor = EVENT_COLORS.schedule;
                     const parentOn = !!activeFilters.scheduleParentOnly;
@@ -1497,7 +1764,6 @@ export default function CalendarScreen({ navigation }: Props) {
               })}
             </View>
 
-            {/* Task Status filter — exclusion model: all on by default, tap to turn off */}
             {(!activeFilters.eventTypes || activeFilters.eventTypes.includes('task')) && taskStatusOptions.length > 0 && (
               <View style={{ marginTop: 16 }}>
                 <Text style={[styles.filterSectionLabel, { color: colors.secondary }]}>Task Status</Text>
@@ -1540,7 +1806,6 @@ export default function CalendarScreen({ navigation }: Props) {
             )}
           </ScrollView>
 
-          {/* Display settings */}
           <View style={{ paddingHorizontal: 16, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border, marginTop: 4 }}>
             <Text style={[styles.filterSectionLabel, { color: colors.secondary, marginBottom: 6 }]}>Display</Text>
             <TouchableOpacity
@@ -1593,7 +1858,6 @@ export default function CalendarScreen({ navigation }: Props) {
         </View>
       </Modal>
 
-      {/* Create View Modal */}
       <Modal
         visible={showCreateViewModal}
         transparent
@@ -1650,70 +1914,72 @@ export default function CalendarScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   center: { justifyContent: 'center', alignItems: 'center' },
+
   header: {
-    paddingTop: 60,
-    paddingBottom: 10,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
     flexDirection: 'row',
     alignItems: 'flex-end',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 56,
+    paddingBottom: 14,
   },
-  filterBtn: {
+  headerLeft: {
+    gap: 2,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  headerMonthLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 14,
-    borderWidth: 1,
+    gap: 10,
   },
-  filterBtnText: { fontSize: 12, fontWeight: '500' },
-  segmentedControl: {
-    flexDirection: 'row',
-    marginHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 4,
-    borderRadius: 10,
-    borderWidth: 1,
-    overflow: 'hidden',
+  navArrowBtn: {
+    padding: 4,
   },
-  segmentButton: {
-    flex: 1,
-    paddingVertical: 8,
+  todayBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: 5,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  segmentText: { fontSize: 13 },
-  periodNav: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
+  todayBadgeText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+
+  chipBar: {
+    borderTopWidth: StyleSheet.hairlineWidth,
     paddingVertical: 8,
-    borderBottomWidth: 1,
-    gap: 4,
+    paddingBottom: Platform.OS === 'ios' ? 28 : 8,
   },
-  viewsButton: {
+  chipRow: {
+    paddingHorizontal: 16,
+    gap: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 14,
-    borderWidth: 1,
-    maxWidth: 120,
   },
-  viewsButtonText: { fontSize: 12, fontWeight: '600' },
-  navButton: { padding: 5 },
-  periodLabelContainer: { flex: 1, alignItems: 'center' },
-  periodLabel: { fontSize: 14, fontWeight: '600' },
-  todayButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 14,
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 14,
+    height: 36,
+    borderRadius: 10,
     borderWidth: 1,
   },
-  todayButtonText: { fontSize: 12, fontWeight: '600' },
-  // Feed
+  chipLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
   feedDateHeader: {
     paddingHorizontal: 16,
     paddingVertical: 10,
@@ -1744,7 +2010,7 @@ const styles = StyleSheet.create({
   feedEventMeta: { flexDirection: 'row', gap: 10, marginTop: 4 },
   feedEventProject: { fontSize: 12 },
   feedEventTime: { fontSize: 12 },
-  // Empty state
+
   emptyState: {
     flex: 1,
     alignItems: 'center',
@@ -1755,7 +2021,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { fontSize: 16, fontWeight: '600' },
   emptyDesc: { fontSize: 13, textAlign: 'center', lineHeight: 18 },
-  // Month
+
   dayNamesRow: { flexDirection: 'row', marginBottom: 4 },
   dayNameCell: { alignItems: 'center', paddingVertical: 6 },
   dayNameText: { fontSize: 12, fontWeight: '600' },
@@ -1797,7 +2063,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   emptySectionText: { fontSize: 14 },
-  // Views modal rows
+
   viewRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1821,7 +2087,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   newViewBtnText: { fontSize: 15, fontWeight: '500' },
-  // Modals
+
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.4)',
