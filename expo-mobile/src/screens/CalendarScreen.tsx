@@ -591,6 +591,25 @@ export default function CalendarScreen({ navigation }: Props) {
     return events;
   }, [allEvents, activeFilters]);
 
+  const anyAllDayEvents = useMemo(
+    () => allEvents.some(e => {
+      if (e.type === 'task' || e.type === 'site_diary') return true;
+      if (e.type === 'google_cal' && !e.startTime) return true;
+      return false;
+    }),
+    [allEvents],
+  );
+
+  useEffect(() => {
+    if (!anyAllDayEvents) return;
+    const offset = weekScrollOffset.current;
+    const timer = setTimeout(() => {
+      dayHeaderScrollRef.current?.scrollTo({ x: offset, animated: false });
+      allDayScrollRef.current?.scrollTo({ x: offset, animated: false });
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [anyAllDayEvents]);
+
   const getEventsForDate = useCallback((date: Date): CalendarEvent[] => {
     return filteredEvents.filter(event => {
       const eventDate = new Date(event.date);
@@ -1024,10 +1043,6 @@ export default function CalendarScreen({ navigation }: Props) {
       return `${i - 12} PM`;
     });
 
-    const anyAllDayEvents = weekDays.some(day =>
-      getEventsForDate(day).some(e => isEventAllDay(e))
-    );
-
     const syncHorizontal = (x: number) => {
       dayHeaderScrollRef.current?.scrollTo({ x, animated: false });
       allDayScrollRef.current?.scrollTo({ x, animated: false });
@@ -1083,12 +1098,19 @@ export default function CalendarScreen({ navigation }: Props) {
 
         {/* ── Row 2: All-day strip (fixed "ALL DAY" label + synced event chips) ── */}
         {anyAllDayEvents && (
-          <View style={{
-            flexDirection: 'row',
-            borderBottomWidth: StyleSheet.hairlineWidth,
-            borderBottomColor: colors.border,
-            backgroundColor: colors.card,
-          }}>
+          <View
+            onLayout={() => {
+              setTimeout(() => {
+                allDayScrollRef.current?.scrollTo({ x: weekScrollOffset.current, animated: false });
+              }, 0);
+            }}
+            style={{
+              flexDirection: 'row',
+              borderBottomWidth: StyleSheet.hairlineWidth,
+              borderBottomColor: colors.border,
+              backgroundColor: colors.card,
+            }}
+          >
             <View style={{
               width: TIME_LABEL_WIDTH,
               justifyContent: 'center',
