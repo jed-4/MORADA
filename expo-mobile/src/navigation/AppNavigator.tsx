@@ -62,7 +62,7 @@ function ProjectsStack() {
         headerBackButtonDisplayMode: 'minimal',
       }}
     >
-      <Stack.Screen name="ProjectsList" component={ProjectsScreen} options={{ title: 'Projects' }} />
+      <Stack.Screen name="ProjectsList" component={ProjectsScreen} options={{ headerShown: false }} />
       <Stack.Screen
         name="ProjectDetail"
         component={ProjectDetailScreen}

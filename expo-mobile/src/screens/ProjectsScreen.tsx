@@ -135,7 +135,14 @@ export default function ProjectsScreen({ navigation }: Props) {
         activeOpacity={0.7}
       >
         <View style={[styles.colorBar, { backgroundColor: phaseColor }]} />
-        <Text style={[styles.cardName, { color: colors.text }]} numberOfLines={1}>{displayName}</Text>
+        <View style={styles.cardBody}>
+          <Text style={[styles.cardName, { color: colors.text }]} numberOfLines={1}>{displayName}</Text>
+          {(item.clientName || item.address) && (
+            <Text style={[styles.cardSub, { color: colors.secondary }]} numberOfLines={1}>
+              {item.clientName || item.address}
+            </Text>
+          )}
+        </View>
         <Text style={[styles.cardStatus, { color: colors.secondary }]} numberOfLines={1}>
           {getPhaseLabel(item.currentSystemPhase)}
         </Text>
@@ -296,19 +303,24 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#d6d3d1',
     overflow: 'hidden',
-    height: 38,
+    height: 62,
   },
   colorBar: {
-    width: 38,
+    width: 10,
     alignSelf: 'stretch',
-    borderTopRightRadius: 10,
-    borderBottomRightRadius: 10,
+  },
+  cardBody: {
+    flex: 1,
+    paddingHorizontal: 12,
+    justifyContent: 'center',
+    gap: 3,
   },
   cardName: {
     fontSize: 13,
-    fontWeight: '500',
-    flex: 1,
-    paddingHorizontal: 10,
+    fontWeight: '600',
+  },
+  cardSub: {
+    fontSize: 11,
   },
   cardStatus: {
     fontSize: 11,
@@ -332,7 +344,7 @@ const styles = StyleSheet.create({
     gap: 5,
     paddingHorizontal: 14,
     height: 40,
-    borderRadius: 20,
+    borderRadius: 10,
     borderWidth: 1,
   },
   chipLabel: {
