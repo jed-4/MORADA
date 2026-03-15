@@ -10,7 +10,6 @@ import {
   ActivityIndicator,
   useColorScheme,
   ScrollView,
-  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { apiFetch } from '../services/api';
@@ -51,8 +50,8 @@ export default function ProjectsScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
 
   const colors = isDark
-    ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', inputBg: '#1e293b', chipActive: '#b196d2', chipInactive: '#1e293b', chipBorder: '#334155' }
-    : { bg: '#f8fafc', card: '#ffffff', text: '#0f172a', secondary: '#64748b', border: '#e2e8f0', accent: '#9b7fc4', inputBg: '#f1f5f9', chipActive: '#9b7fc4', chipInactive: '#f1f5f9', chipBorder: '#e2e8f0' };
+    ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569', inputBg: '#1e293b' }
+    : { bg: '#ffffff', card: '#f5f5f4', text: '#1c1917', secondary: '#78716c', border: '#e7e5e4', accent: '#9b7fc4', muted: '#d6d3d1', inputBg: '#f5f5f4' };
 
   const fetchProjects = useCallback(async () => {
     try {
@@ -93,13 +92,6 @@ export default function ProjectsScreen({ navigation }: Props) {
     }
   };
 
-  const getAvatarText = (project: Project) => {
-    if (project.projectNumber) return project.projectNumber.slice(0, 3);
-    const words = project.name.trim().split(/\s+/);
-    if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-    return (words[0][0] + words[1][0]).toUpperCase();
-  };
-
   const getPhaseCount = (phaseKey: string) => {
     if (phaseKey === 'all') return projects.length;
     return projects.filter(p => p.currentSystemPhase === phaseKey).length;
@@ -132,29 +124,21 @@ export default function ProjectsScreen({ navigation }: Props) {
 
   const renderProjectCard = ({ item }: { item: Project }) => {
     const phaseColor = getPhaseColor(item.currentSystemPhase);
+    const displayName = item.projectNumber
+      ? `#${item.projectNumber}  ${item.name}`
+      : item.name;
+
     return (
       <TouchableOpacity
-        style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
+        style={[styles.card, { backgroundColor: colors.card }]}
         onPress={() => navigation.navigate('ProjectDetail', { projectId: item.id, projectName: item.name })}
         activeOpacity={0.7}
       >
-        <View style={[styles.avatar, { backgroundColor: phaseColor + '22', borderColor: phaseColor + '55' }]}>
-          <Text style={[styles.avatarText, { color: phaseColor }]}>{getAvatarText(item)}</Text>
-        </View>
-
-        <View style={styles.cardContent}>
-          {item.projectNumber && (
-            <Text style={[styles.projectNumber, { color: colors.accent }]}>#{item.projectNumber}</Text>
-          )}
-          <Text style={[styles.projectName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
-          {item.clientName && (
-            <Text style={[styles.projectClient, { color: colors.secondary }]} numberOfLines={1}>{item.clientName}</Text>
-          )}
-        </View>
-
-        <View style={[styles.statusBadge, { backgroundColor: phaseColor + '18', borderColor: phaseColor + '44' }]}>
-          <Text style={[styles.statusText, { color: phaseColor }]}>{getPhaseLabel(item.currentSystemPhase)}</Text>
-        </View>
+        <View style={[styles.colorBar, { backgroundColor: phaseColor }]} />
+        <Text style={[styles.cardName, { color: colors.text }]} numberOfLines={1}>{displayName}</Text>
+        <Text style={[styles.cardStatus, { color: colors.secondary }]} numberOfLines={1}>
+          {getPhaseLabel(item.currentSystemPhase)}
+        </Text>
       </TouchableOpacity>
     );
   };
@@ -171,7 +155,8 @@ export default function ProjectsScreen({ navigation }: Props) {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+      {/* Header — matches Dashboard header exactly */}
+      <View style={[styles.header, { backgroundColor: colors.accent + '30' }]}>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Projects</Text>
         <TouchableOpacity
           style={styles.searchIconBtn}
@@ -182,6 +167,7 @@ export default function ProjectsScreen({ navigation }: Props) {
         </TouchableOpacity>
       </View>
 
+      {/* Expandable search */}
       {searchVisible && (
         <View style={[styles.searchBar, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
           <Ionicons name="search" size={16} color={colors.secondary} />
@@ -201,38 +187,7 @@ export default function ProjectsScreen({ navigation }: Props) {
         </View>
       )}
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.chipRow}
-      >
-        {phases.map(phase => {
-          const isActive = activePhase === phase.key;
-          const count = getPhaseCount(phase.key);
-          return (
-            <TouchableOpacity
-              key={phase.key}
-              style={[
-                styles.chip,
-                {
-                  backgroundColor: isActive ? colors.chipActive : colors.chipInactive,
-                  borderColor: isActive ? colors.chipActive : colors.chipBorder,
-                },
-              ]}
-              onPress={() => setActivePhase(phase.key)}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.chipLabel, { color: isActive ? '#ffffff' : colors.secondary }]}>
-                {phase.label}
-              </Text>
-              <View style={[styles.chipCount, { backgroundColor: isActive ? 'rgba(255,255,255,0.25)' : colors.border }]}>
-                <Text style={[styles.chipCountText, { color: isActive ? '#ffffff' : colors.secondary }]}>{count}</Text>
-              </View>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
-
+      {/* Project list */}
       <FlatList
         data={filteredProjects}
         keyExtractor={item => item.id}
@@ -248,6 +203,43 @@ export default function ProjectsScreen({ navigation }: Props) {
           </View>
         }
       />
+
+      {/* Filter chips — fixed at the bottom */}
+      <View style={[styles.chipBar, { backgroundColor: colors.bg, borderTopColor: colors.border }]}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chipRow}
+        >
+          {phases.map(phase => {
+            const isActive = activePhase === phase.key;
+            const count = getPhaseCount(phase.key);
+            return (
+              <TouchableOpacity
+                key={phase.key}
+                style={[
+                  styles.chip,
+                  {
+                    backgroundColor: isActive ? colors.accent + '30' : colors.card,
+                    borderColor: isActive ? colors.accent + '60' : colors.border,
+                  },
+                ]}
+                onPress={() => setActivePhase(phase.key)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.chipLabel, { color: isActive ? colors.accent : colors.secondary }]}>
+                  {phase.label}
+                </Text>
+                {count > 0 && (
+                  <Text style={[styles.chipCount, { color: isActive ? colors.accent : colors.muted }]}>
+                    {count}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
     </View>
   );
 }
@@ -260,18 +252,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 18,
-    paddingTop: 16,
+    paddingHorizontal: 16,
+    paddingTop: 56,
     paddingBottom: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: 0,
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 18,
     fontWeight: '700',
-    letterSpacing: -0.3,
   },
   searchIconBtn: {
-    padding: 4,
+    padding: 8,
   },
 
   searchBar: {
@@ -279,7 +270,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     marginHorizontal: 16,
-    marginTop: 10,
+    marginTop: 8,
+    marginBottom: 4,
     paddingHorizontal: 12,
     height: 40,
     borderRadius: 10,
@@ -290,18 +282,56 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
+  list: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 12,
+    gap: 6,
+  },
+
+  card: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#d6d3d1',
+    overflow: 'hidden',
+    height: 38,
+  },
+  colorBar: {
+    width: 38,
+    alignSelf: 'stretch',
+    borderTopRightRadius: 10,
+    borderBottomRightRadius: 10,
+  },
+  cardName: {
+    fontSize: 13,
+    fontWeight: '500',
+    flex: 1,
+    paddingHorizontal: 10,
+  },
+  cardStatus: {
+    fontSize: 11,
+    fontWeight: '500',
+    paddingRight: 12,
+  },
+
+  chipBar: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 8,
+  },
   chipRow: {
     paddingHorizontal: 16,
-    paddingVertical: 12,
     gap: 8,
     flexDirection: 'row',
+    alignItems: 'center',
   },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    gap: 5,
+    paddingHorizontal: 14,
+    height: 40,
     borderRadius: 20,
     borderWidth: 1,
   },
@@ -310,70 +340,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   chipCount: {
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 4,
-  },
-  chipCountText: {
-    fontSize: 10,
-    fontWeight: '700',
-  },
-
-  list: {
-    paddingHorizontal: 16,
-    paddingBottom: 24,
-    gap: 8,
-  },
-  card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-  },
-  avatar: {
-    width: 54,
-    height: 54,
-    borderRadius: 10,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  avatarText: {
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: -0.3,
-  },
-  cardContent: {
-    flex: 1,
-    gap: 2,
-  },
-  projectNumber: {
     fontSize: 11,
-    fontWeight: '600',
-  },
-  projectName: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  projectClient: {
-    fontSize: 12,
-  },
-  statusBadge: {
-    borderRadius: 20,
-    borderWidth: 1,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    flexShrink: 0,
-  },
-  statusText: {
-    fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '700',
   },
 
   emptyContainer: { alignItems: 'center', paddingVertical: 60 },
