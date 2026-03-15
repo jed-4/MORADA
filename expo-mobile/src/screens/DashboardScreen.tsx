@@ -13,6 +13,7 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  FlatList,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
@@ -89,7 +90,7 @@ interface TimesheetEntry {
 interface CostCode {
   id: string;
   code: string;
-  description?: string | null;
+  title: string;
 }
 
 type Props = {
@@ -156,6 +157,8 @@ export default function DashboardScreen({ navigation }: Props) {
   const [clockInDescription, setClockInDescription] = useState('');
   const [costCodes, setCostCodes] = useState<CostCode[]>([]);
   const [clockingIn, setClockingIn] = useState(false);
+  const [showProjectPicker, setShowProjectPicker] = useState(false);
+  const [showCostCodePicker, setShowCostCodePicker] = useState(false);
 
   const colors = isDark
     ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569', cardHover: '#253449' }
@@ -285,6 +288,54 @@ export default function DashboardScreen({ navigation }: Props) {
   }).slice(0, 5);
 
   const recentActivity = notifications.slice(0, 3);
+
+  const getProjectName = (pid: string) => {
+    const p = projects.find(pr => pr.id === pid);
+    if (!p) return 'Unknown';
+    return p.projectNumber ? `${p.projectNumber} - ${p.name}` : p.name;
+  };
+
+  const getCostCodeLabel = (ccId: string) => {
+    const cc = costCodes.find(c => c.id === ccId);
+    return cc ? `${cc.code} - ${cc.title}` : 'Unknown';
+  };
+
+  const renderPickerModal = (
+    visible: boolean,
+    onClose: () => void,
+    title: string,
+    items: { id: string; label: string }[],
+    selectedId: string,
+    onSelect: (id: string) => void,
+  ) => (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.pickerOverlay}>
+        <View style={[styles.pickerContainer, { backgroundColor: colors.card }]}>
+          <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
+            <Text style={[styles.pickerTitle, { color: colors.text }]}>{title}</Text>
+            <TouchableOpacity onPress={onClose} activeOpacity={0.7}>
+              <Ionicons name="close" size={22} color={colors.secondary} />
+            </TouchableOpacity>
+          </View>
+          <FlatList
+            data={items}
+            keyExtractor={item => item.id}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={[styles.pickerItem, { borderBottomColor: colors.border }]}
+                onPress={() => { onSelect(item.id); onClose(); }}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.pickerItemText, { color: colors.text }]}>{item.label}</Text>
+                {selectedId === item.id && <Ionicons name="checkmark" size={18} color={colors.accent} />}
+              </TouchableOpacity>
+            )}
+            ListEmptyComponent={<Text style={[styles.pickerEmpty, { color: colors.secondary }]}>No options available</Text>}
+          />
+        </View>
+      </View>
+    </Modal>
+  );
 
   const upcomingSchedule = scheduleItems
     .filter(item => new Date(item.endDate) >= new Date())
@@ -692,45 +743,36 @@ export default function DashboardScreen({ navigation }: Props) {
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled">
+            <View style={styles.modalBody}>
               <Text style={[styles.modalLabel, { color: colors.secondary }]}>Project</Text>
-              {projects.map(p => (
-                <TouchableOpacity
-                  key={p.id}
-                  style={[styles.modalPickerRow, { borderColor: colors.border, backgroundColor: clockInProjectId === p.id ? colors.accent + '20' : colors.card }]}
-                  onPress={() => setClockInProjectId(p.id)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.modalPickerText, { color: colors.text }]} numberOfLines={1}>{p.name}</Text>
-                  {clockInProjectId === p.id && <Ionicons name="checkmark" size={16} color={colors.accent} />}
-                </TouchableOpacity>
-              ))}
-
-              <Text style={[styles.modalLabel, { color: colors.secondary, marginTop: 16 }]}>Cost Code</Text>
               <TouchableOpacity
-                style={[styles.modalPickerRow, { borderColor: colors.border, backgroundColor: clockInCostCodeId === '' ? colors.accent + '20' : colors.card }]}
-                onPress={() => setClockInCostCodeId('')}
+                style={[styles.modalSelector, { backgroundColor: colors.card, borderColor: colors.border }]}
+                onPress={() => setShowProjectPicker(true)}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.modalPickerText, { color: colors.secondary }]}>None</Text>
-                {clockInCostCodeId === '' && <Ionicons name="checkmark" size={16} color={colors.accent} />}
+                <Text style={[styles.modalSelectorText, { color: clockInProjectId ? colors.text : colors.secondary }]} numberOfLines={1}>
+                  {clockInProjectId ? getProjectName(clockInProjectId) : 'Select a project...'}
+                </Text>
+                <Ionicons name="chevron-down" size={16} color={colors.secondary} />
               </TouchableOpacity>
-              {costCodes.map(cc => (
-                <TouchableOpacity
-                  key={cc.id}
-                  style={[styles.modalPickerRow, { borderColor: colors.border, backgroundColor: clockInCostCodeId === cc.id ? colors.accent + '20' : colors.card }]}
-                  onPress={() => setClockInCostCodeId(cc.id)}
-                  activeOpacity={0.7}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.modalPickerText, { color: colors.text }]}>{cc.code}</Text>
-                    {cc.description ? <Text style={[styles.modalPickerSub, { color: colors.secondary }]} numberOfLines={1}>{cc.description}</Text> : null}
-                  </View>
-                  {clockInCostCodeId === cc.id && <Ionicons name="checkmark" size={16} color={colors.accent} />}
-                </TouchableOpacity>
-              ))}
 
-              <Text style={[styles.modalLabel, { color: colors.secondary, marginTop: 16 }]}>Description</Text>
+              {clockInProjectId ? (
+                <>
+                  <Text style={[styles.modalLabel, { color: colors.secondary, marginTop: 14 }]}>Cost Code</Text>
+                  <TouchableOpacity
+                    style={[styles.modalSelector, { backgroundColor: colors.card, borderColor: colors.border }]}
+                    onPress={() => setShowCostCodePicker(true)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.modalSelectorText, { color: clockInCostCodeId ? colors.text : colors.secondary }]} numberOfLines={1}>
+                      {clockInCostCodeId ? getCostCodeLabel(clockInCostCodeId) : 'Select cost code...'}
+                    </Text>
+                    <Ionicons name="chevron-down" size={16} color={colors.secondary} />
+                  </TouchableOpacity>
+                </>
+              ) : null}
+
+              <Text style={[styles.modalLabel, { color: colors.secondary, marginTop: 14 }]}>Description</Text>
               <TextInput
                 style={[styles.modalTextInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.card }]}
                 placeholder="Optional notes..."
@@ -740,7 +782,7 @@ export default function DashboardScreen({ navigation }: Props) {
                 multiline
                 numberOfLines={3}
               />
-            </ScrollView>
+            </View>
 
             <View style={[styles.modalFooter, { borderTopColor: colors.border }]}>
               <TouchableOpacity
@@ -765,6 +807,24 @@ export default function DashboardScreen({ navigation }: Props) {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {renderPickerModal(
+        showProjectPicker,
+        () => setShowProjectPicker(false),
+        'Select Project',
+        projects.map(p => ({ id: p.id, label: p.projectNumber ? `${p.projectNumber} - ${p.name}` : p.name })),
+        clockInProjectId,
+        (id) => { setClockInProjectId(id); setClockInCostCodeId(''); },
+      )}
+
+      {renderPickerModal(
+        showCostCodePicker,
+        () => setShowCostCodePicker(false),
+        'Select Cost Code',
+        costCodes.map(cc => ({ id: cc.id, label: `${cc.code} - ${cc.title}` })),
+        clockInCostCodeId,
+        setClockInCostCodeId,
+      )}
     </View>
   );
 }
@@ -1122,7 +1182,8 @@ const styles = StyleSheet.create({
   },
   modalBody: {
     paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingTop: 14,
+    paddingBottom: 4,
   },
   modalLabel: {
     fontSize: 12,
@@ -1131,24 +1192,19 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  modalPickerRow: {
+  modalSelector: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    height: 42,
     borderRadius: 8,
     borderWidth: 1,
-    marginBottom: 6,
   },
-  modalPickerText: {
+  modalSelectorText: {
     fontSize: 14,
-    fontWeight: '500',
     flex: 1,
-  },
-  modalPickerSub: {
-    fontSize: 12,
-    marginTop: 2,
+    marginRight: 8,
   },
   modalTextInput: {
     borderWidth: 1,
@@ -1156,9 +1212,49 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
-    marginBottom: 16,
-    minHeight: 80,
+    marginBottom: 4,
+    minHeight: 72,
     textAlignVertical: 'top',
+  },
+  pickerOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  pickerContainer: {
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    maxHeight: '70%',
+  },
+  pickerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+  },
+  pickerTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  pickerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  pickerItemText: {
+    fontSize: 14,
+    flex: 1,
+    marginRight: 8,
+  },
+  pickerEmpty: {
+    padding: 20,
+    textAlign: 'center',
+    fontSize: 14,
   },
   modalFooter: {
     flexDirection: 'row',
