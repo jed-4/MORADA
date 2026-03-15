@@ -1033,41 +1033,6 @@ export default function CalendarScreen({ navigation }: Props) {
           contentContainerStyle={{ flexGrow: 1 }}
         >
           <View style={{ width: totalContentWidth, flex: 1 }}>
-            <View style={{
-              flexDirection: 'row',
-              backgroundColor: colors.card,
-              borderBottomWidth: StyleSheet.hairlineWidth,
-              borderBottomColor: colors.border,
-            }}>
-              <View style={{ width: TIME_LABEL_WIDTH }} />
-              {weekDays.map((day, idx) => {
-                const currentDay = isToday(day);
-                const dowName = DAY_NAMES[(day.getDay() + 6) % 7];
-                return (
-                  <View
-                    key={idx}
-                    style={{
-                      width: GRID_COL_WIDTH,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      paddingVertical: 10,
-                      borderLeftWidth: StyleSheet.hairlineWidth,
-                      borderLeftColor: colors.border,
-                      backgroundColor: currentDay ? colors.accent + '10' : 'transparent',
-                    }}
-                  >
-                    <Text style={{
-                      fontSize: 13,
-                      fontWeight: '600',
-                      color: currentDay ? colors.accent : colors.text,
-                    }}>
-                      {dowName} {day.getDate()}
-                    </Text>
-                  </View>
-                );
-              })}
-            </View>
-
             {showAllDay && (
               <View style={{
                 flexDirection: 'row',
@@ -1130,6 +1095,41 @@ export default function CalendarScreen({ navigation }: Props) {
                 })}
               </View>
             )}
+
+            <View style={{
+              flexDirection: 'row',
+              backgroundColor: colors.card,
+              borderBottomWidth: StyleSheet.hairlineWidth,
+              borderBottomColor: colors.border,
+            }}>
+              <View style={{ width: TIME_LABEL_WIDTH }} />
+              {weekDays.map((day, idx) => {
+                const currentDay = isToday(day);
+                const dowName = DAY_NAMES[(day.getDay() + 6) % 7];
+                return (
+                  <View
+                    key={idx}
+                    style={{
+                      width: GRID_COL_WIDTH,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      paddingVertical: 10,
+                      borderLeftWidth: StyleSheet.hairlineWidth,
+                      borderLeftColor: colors.border,
+                      backgroundColor: currentDay ? colors.accent + '10' : 'transparent',
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: 13,
+                      fontWeight: '600',
+                      color: currentDay ? colors.accent : colors.text,
+                    }}>
+                      {dowName} {day.getDate()}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
 
             <ScrollView
               ref={timeGridScrollRef}
@@ -1249,10 +1249,10 @@ export default function CalendarScreen({ navigation }: Props) {
                           >
                             <Text
                               style={{
-                                fontSize: 11,
+                                fontSize: 12,
                                 fontWeight: '600',
                                 color: colors.text,
-                                lineHeight: 14,
+                                lineHeight: 15,
                               }}
                               numberOfLines={height >= 36 ? 2 : 1}
                             >
