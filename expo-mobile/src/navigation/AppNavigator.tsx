@@ -99,7 +99,7 @@ function MoreStack() {
       <Stack.Screen name="Schedule" component={ScheduleScreen} options={{ headerShown: true, title: 'Schedule' }} />
       <Stack.Screen name="Checklists" component={ChecklistsScreen} options={{ headerShown: true, title: 'Checklists' }} />
       <Stack.Screen name="Tasks" component={TasksScreen} options={{ headerShown: true, title: 'My Tasks' }} />
-      <Stack.Screen name="MyCalendar" component={CalendarScreen} options={{ headerShown: true, title: 'My Calendar' }} />
+      <Stack.Screen name="MyCalendar" component={CalendarScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Notes" component={NotesListScreen} options={{ headerShown: true, title: 'Notes' }} />
       <Stack.Screen name="NoteEditor" component={NoteEditorScreen} options={{ headerShown: false }} />
     </Stack.Navigator>
