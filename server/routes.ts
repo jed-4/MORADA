@@ -197,8 +197,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const path = req.path;
     
     // PUBLIC ENDPOINTS - Always allow these
-    // Auth endpoints (register, login, logout, get user)
-    if (path.startsWith('/auth/')) {
+    // Auth endpoints (register, login, logout) - but NOT /auth/user which needs auth injection
+    if (path.startsWith('/auth/') && path !== '/auth/user') {
       return next();
     }
     
