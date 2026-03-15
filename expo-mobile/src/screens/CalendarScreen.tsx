@@ -278,11 +278,11 @@ export default function CalendarScreen({ navigation }: Props) {
 
   const weekBaseDate = useRef<Date>((() => {
     const d = new Date();
-    d.setDate(d.getDate() - 14);
+    d.setDate(d.getDate() - 30);
     d.setHours(0, 0, 0, 0);
     return d;
   })());
-  const WEEK_TOTAL_DAYS = 30;
+  const WEEK_TOTAL_DAYS = 120;
 
   const weekDays = useMemo(() => {
     const base = weekBaseDate.current;
@@ -1033,6 +1033,41 @@ export default function CalendarScreen({ navigation }: Props) {
           contentContainerStyle={{ flexGrow: 1 }}
         >
           <View style={{ width: totalContentWidth, flex: 1 }}>
+            <View style={{
+              flexDirection: 'row',
+              backgroundColor: colors.card,
+              borderBottomWidth: showAllDay ? 0 : StyleSheet.hairlineWidth,
+              borderBottomColor: colors.border,
+            }}>
+              <View style={{ width: TIME_LABEL_WIDTH }} />
+              {weekDays.map((day, idx) => {
+                const currentDay = isToday(day);
+                const dowName = DAY_NAMES[(day.getDay() + 6) % 7];
+                return (
+                  <View
+                    key={idx}
+                    style={{
+                      width: GRID_COL_WIDTH,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      paddingVertical: 10,
+                      borderLeftWidth: StyleSheet.hairlineWidth,
+                      borderLeftColor: colors.border,
+                      backgroundColor: currentDay ? colors.accent + '10' : 'transparent',
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: 13,
+                      fontWeight: '600',
+                      color: currentDay ? colors.accent : colors.text,
+                    }}>
+                      {dowName} {day.getDate()}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+
             {showAllDay && (
               <View style={{
                 flexDirection: 'row',
@@ -1095,41 +1130,6 @@ export default function CalendarScreen({ navigation }: Props) {
                 })}
               </View>
             )}
-
-            <View style={{
-              flexDirection: 'row',
-              backgroundColor: colors.card,
-              borderBottomWidth: StyleSheet.hairlineWidth,
-              borderBottomColor: colors.border,
-            }}>
-              <View style={{ width: TIME_LABEL_WIDTH }} />
-              {weekDays.map((day, idx) => {
-                const currentDay = isToday(day);
-                const dowName = DAY_NAMES[(day.getDay() + 6) % 7];
-                return (
-                  <View
-                    key={idx}
-                    style={{
-                      width: GRID_COL_WIDTH,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      paddingVertical: 10,
-                      borderLeftWidth: StyleSheet.hairlineWidth,
-                      borderLeftColor: colors.border,
-                      backgroundColor: currentDay ? colors.accent + '10' : 'transparent',
-                    }}
-                  >
-                    <Text style={{
-                      fontSize: 13,
-                      fontWeight: '600',
-                      color: currentDay ? colors.accent : colors.text,
-                    }}>
-                      {dowName} {day.getDate()}
-                    </Text>
-                  </View>
-                );
-              })}
-            </View>
 
             <ScrollView
               ref={timeGridScrollRef}
@@ -1884,14 +1884,17 @@ const styles = StyleSheet.create({
 
   header: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingTop: 56,
     paddingBottom: 14,
   },
   headerLeft: {
-    gap: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
   },
   headerTitle: {
     fontSize: 18,
