@@ -44,6 +44,7 @@ export default function ProjectsScreen({ navigation }: Props) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const [projects, setProjects] = useState<Project[]>([]);
+  const [statusLabels, setStatusLabels] = useState<Record<string, string>>({});
   const [search, setSearch] = useState('');
   const [searchVisible, setSearchVisible] = useState(false);
   const [activePhase, setActivePhase] = useState('all');
@@ -65,7 +66,25 @@ export default function ProjectsScreen({ navigation }: Props) {
     }
   }, []);
 
-  useEffect(() => { fetchProjects(); }, [fetchProjects]);
+  const fetchStatusLabels = useCallback(async () => {
+    try {
+      const cat = await apiFetch<{ options: { key: string; name: string }[] }>(
+        '/api/field-categories/by-key/project.status'
+      );
+      if (cat?.options) {
+        const map: Record<string, string> = {};
+        for (const opt of cat.options) { map[opt.key] = opt.name; }
+        setStatusLabels(map);
+      }
+    } catch {
+      // silently ignore — raw key shown as fallback
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchProjects();
+    fetchStatusLabels();
+  }, [fetchProjects, fetchStatusLabels]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -73,33 +92,13 @@ export default function ProjectsScreen({ navigation }: Props) {
     setRefreshing(false);
   }, [fetchProjects]);
 
-  const getPhaseColor = (phase?: string) => {
-    switch (phase) {
-      case 'lead': return '#f59e0b';
-      case 'pre_construction': return '#8b5cf6';
-      case 'construction': return '#22c55e';
-      case 'completed': return '#6b7280';
-      default: return '#94a3b8';
-    }
-  };
-
-  const getPhaseLabel = (phase?: string) => {
-    switch (phase) {
-      case 'lead': return 'Lead';
-      case 'pre_construction': return 'Pre-Con';
-      case 'construction': return 'Construction';
-      case 'completed': return 'Completed';
-      default: return 'Other';
-    }
-  };
-
   const GREY = '#94a3b8';
   const getProjectColor = (project: Project): string => project.color || GREY;
   const mutedColor = (hex: string): string => hex + '45';
 
-  const getPhaseCount = (phaseKey: string) => {
-    if (phaseKey === 'all') return projects.length;
-    return projects.filter(p => p.currentSystemPhase === phaseKey).length;
+  const getSubStatusLabel = (key?: string): string => {
+    if (!key) return '';
+    return statusLabels[key] ?? key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   };
 
   const getFilteredProjects = () => {
@@ -147,7 +146,7 @@ export default function ProjectsScreen({ navigation }: Props) {
           )}
         </View>
         <Text style={[styles.cardStatus, { color: colors.secondary }]} numberOfLines={1}>
-          {getPhaseLabel(item.currentSystemPhase)}
+          {getSubStatusLabel(item.projectSubStatus)}
         </Text>
       </TouchableOpacity>
     );
@@ -223,7 +222,6 @@ export default function ProjectsScreen({ navigation }: Props) {
         >
           {phases.map(phase => {
             const isActive = activePhase === phase.key;
-            const count = getPhaseCount(phase.key);
             return (
               <TouchableOpacity
                 key={phase.key}
@@ -240,11 +238,6 @@ export default function ProjectsScreen({ navigation }: Props) {
                 <Text style={[styles.chipLabel, { color: isActive ? colors.accent : colors.secondary }]}>
                   {phase.label}
                 </Text>
-                {count > 0 && (
-                  <Text style={[styles.chipCount, { color: isActive ? colors.accent : colors.muted }]}>
-                    {count}
-                  </Text>
-                )}
               </TouchableOpacity>
             );
           })}
@@ -362,11 +355,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-  chipCount: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-
   emptyContainer: { alignItems: 'center', paddingVertical: 60 },
   emptyText: { fontSize: 14, textAlign: 'center', marginTop: 12 },
 });
