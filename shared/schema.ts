@@ -1040,7 +1040,12 @@ export const companySettings = pgTable("company_settings", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-export const insertCompanySettingsSchema = createInsertSchema(companySettings).omit({
+export const insertCompanySettingsSchema = createInsertSchema(companySettings, {
+  // Accept both number and string for numeric Postgres columns (frontend sends numbers)
+  taxRate: z.coerce.string(),
+  timesheetReminderThresholdHours: z.coerce.string(),
+  timesheetDefaultBreak: z.coerce.string(),
+}).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
