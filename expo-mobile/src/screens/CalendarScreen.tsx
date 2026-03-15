@@ -274,7 +274,6 @@ export default function CalendarScreen({ navigation }: Props) {
 
   const timeGridScrollRef = useRef<ScrollView>(null);
   const weekScrollRef = useRef<ScrollView>(null);
-  const weekScrollOffset = useRef(0);
   const timeLabelScrollRef = useRef<ScrollView>(null);
   const dayHeaderScrollRef = useRef<ScrollView>(null);
   const allDayScrollRef = useRef<ScrollView>(null);
@@ -302,6 +301,10 @@ export default function CalendarScreen({ navigation }: Props) {
     today.setHours(0, 0, 0, 0);
     return weekDays.findIndex(d => isSameDay(d, today));
   }, [weekDays]);
+
+  // Initialise to the real starting offset so secondary refs sync correctly
+  // even before the first onScroll event fires from weekScrollRef.
+  const weekScrollOffset = useRef(Math.max(0, (todayWeekIndex - 1) * GRID_COL_WIDTH));
 
   const colors = isDark
     ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569', input: '#0f172a' }
@@ -600,11 +603,21 @@ export default function CalendarScreen({ navigation }: Props) {
     [allEvents],
   );
 
+  // Sync all secondary horizontal refs to the initial offset on mount.
+  useEffect(() => {
+    const offset = weekScrollOffset.current;
+    const timer = setTimeout(() => {
+      dayHeaderScrollRef.current?.scrollTo({ x: offset, animated: false });
+      allDayScrollRef.current?.scrollTo({ x: offset, animated: false });
+    }, 80);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Re-sync when the all-day row first appears (events load after mount).
   useEffect(() => {
     if (!anyAllDayEvents) return;
     const offset = weekScrollOffset.current;
     const timer = setTimeout(() => {
-      dayHeaderScrollRef.current?.scrollTo({ x: offset, animated: false });
       allDayScrollRef.current?.scrollTo({ x: offset, animated: false });
     }, 50);
     return () => clearTimeout(timer);
