@@ -14940,7 +14940,7 @@ export class DbStorage implements IStorage {
     }
   }
 
-  async clockOut(timesheetId: string, userId: string): Promise<Timesheet | undefined> {
+  async clockOut(timesheetId: string, userId: string, breakDurationMinutes: number = 0): Promise<Timesheet | undefined> {
     try {
       const timesheet = await this.getTimesheet(timesheetId);
       if (!timesheet) {
@@ -14959,18 +14959,21 @@ export class DbStorage implements IStorage {
       const now = new Date();
       const endTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
       
-      // Calculate duration in hours
+      // Calculate duration in hours, subtract break
       let duration = 0;
       if (timesheet.clockInTime) {
         const diffMs = now.getTime() - new Date(timesheet.clockInTime).getTime();
         duration = diffMs / (1000 * 60 * 60); // Convert to hours
       }
+      const breakHours = breakDurationMinutes / 60;
+      const netDuration = Math.max(0, duration - breakHours);
 
       const result = await db.update(schema.timesheets)
         .set({
           endTime,
           actualEndTime: endTime,
-          duration: duration.toFixed(2),
+          duration: netDuration.toFixed(2),
+          breakDuration: breakHours.toFixed(2),
           isActive: false,
           updatedAt: now,
         })

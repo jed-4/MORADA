@@ -15436,11 +15436,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!user?.id) {
         return res.status(401).json({ error: "User not found in database" });
       }
-      const { timesheetId } = req.body;
+      const { timesheetId, breakDuration } = req.body;
       if (!timesheetId) {
         return res.status(400).json({ error: "timesheetId is required" });
       }
-      const timesheet = await storage.clockOut(timesheetId, user.id);
+      const breakMins = typeof breakDuration === 'number' && breakDuration >= 0 ? breakDuration : 0;
+      const timesheet = await storage.clockOut(timesheetId, user.id, breakMins);
       if (!timesheet) {
         return res.status(404).json({ error: "Timesheet not found" });
       }

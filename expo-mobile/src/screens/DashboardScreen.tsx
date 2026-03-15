@@ -14,6 +14,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   FlatList,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
@@ -159,6 +160,8 @@ export default function DashboardScreen({ navigation }: Props) {
   const [clockingIn, setClockingIn] = useState(false);
   const [showProjectPicker, setShowProjectPicker] = useState(false);
   const [showCostCodePicker, setShowCostCodePicker] = useState(false);
+  const [showBreakModal, setShowBreakModal] = useState(false);
+  const [selectedBreakMinutes, setSelectedBreakMinutes] = useState(0);
 
   const colors = isDark
     ? { bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', secondary: '#94a3b8', border: '#334155', accent: '#b196d2', muted: '#475569', cardHover: '#253449' }
@@ -229,17 +232,24 @@ export default function DashboardScreen({ navigation }: Props) {
     }
   }, []);
 
-  const handleClockOut = useCallback(async () => {
+  const handleClockOut = useCallback(async (breakMinutes: number = 0) => {
     if (!activeTimesheet || clockingOut) return;
     setClockingOut(true);
+    setShowBreakModal(false);
     try {
-      const res = await apiRequest('/api/timesheets/clock-out', 'POST', { timesheetId: activeTimesheet.id });
+      const res = await apiRequest('/api/timesheets/clock-out', 'POST', {
+        timesheetId: activeTimesheet.id,
+        breakDuration: breakMinutes,
+      });
       if (res.ok) {
         setActiveTimesheet(null);
         await fetchData();
+      } else {
+        const body = await res.json().catch(() => ({}));
+        Alert.alert('Clock Out Failed', body.error || 'Please try again.');
       }
     } catch {
-      console.error('Clock out failed');
+      Alert.alert('Clock Out Failed', 'Please check your connection and try again.');
     } finally {
       setClockingOut(false);
     }
@@ -266,9 +276,12 @@ export default function DashboardScreen({ navigation }: Props) {
       if (res.ok) {
         setShowClockInModal(false);
         await fetchData();
+      } else {
+        const body = await res.json().catch(() => ({}));
+        Alert.alert('Clock In Failed', body.error || 'Please try again.');
       }
     } catch {
-      console.error('Clock in failed');
+      Alert.alert('Clock In Failed', 'Please check your connection and try again.');
     } finally {
       setClockingIn(false);
     }
@@ -409,12 +422,6 @@ export default function DashboardScreen({ navigation }: Props) {
               </View>
             )}
           </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setShowUserMenu(v => !v)}
-            style={styles.headerIconBtn}
-          >
-            <Ionicons name="settings-outline" size={20} color={colors.text} />
-          </TouchableOpacity>
         </View>
       </View>
 
@@ -426,15 +433,15 @@ export default function DashboardScreen({ navigation }: Props) {
             activeOpacity={0.7}
           >
             <Ionicons name="business-outline" size={18} color={colors.secondary} />
-            <Text style={[styles.userMenuText, { color: colors.text }]}>Business Dashboard</Text>
+            <Text style={[styles.userMenuText, { color: colors.text }]}>Company Dashboard</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.userMenuItem, { borderBottomColor: colors.border }]}
-            onPress={() => { setShowUserMenu(false); }}
+            onPress={() => { setShowUserMenu(false); navigation.navigate('More'); }}
             activeOpacity={0.7}
           >
-            <Ionicons name="person-outline" size={18} color={colors.secondary} />
-            <Text style={[styles.userMenuText, { color: colors.text }]}>Account</Text>
+            <Ionicons name="settings-outline" size={18} color={colors.secondary} />
+            <Text style={[styles.userMenuText, { color: colors.text }]}>Settings</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.userMenuItem}
@@ -699,7 +706,7 @@ export default function DashboardScreen({ navigation }: Props) {
         {activeTimesheet ? (
           <TouchableOpacity
             style={[styles.clockBtn, { backgroundColor: '#ef4444', borderColor: '#ef444480' }]}
-            onPress={handleClockOut}
+            onPress={() => { setSelectedBreakMinutes(0); setShowBreakModal(true); }}
             activeOpacity={0.8}
             disabled={clockingOut}
           >
@@ -707,7 +714,7 @@ export default function DashboardScreen({ navigation }: Props) {
               <ActivityIndicator size="small" color="#fff" />
             ) : (
               <>
-                <Ionicons name="stop-circle-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
+                <Ionicons name="stop-circle-outline" size={18} color="#fff" style={{ marginRight: 6 }} />
                 <Text style={styles.clockBtnText}>Clock Out — {formatTimeSince(activeTimesheet.clockInTime)}</Text>
               </>
             )}
@@ -723,6 +730,58 @@ export default function DashboardScreen({ navigation }: Props) {
           </TouchableOpacity>
         )}
       </View>
+
+      <Modal
+        visible={showBreakModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowBreakModal(false)}
+      >
+        <View style={styles.pickerOverlay}>
+          <View style={[styles.pickerContainer, { backgroundColor: colors.card }]}>
+            <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.pickerTitle, { color: colors.text }]}>Break Duration</Text>
+              <TouchableOpacity onPress={() => setShowBreakModal(false)} activeOpacity={0.7}>
+                <Ionicons name="close" size={22} color={colors.secondary} />
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={[0, 15, 30, 45, 60, 75, 90, 120]}
+              keyExtractor={item => String(item)}
+              renderItem={({ item }) => {
+                const label = item === 0 ? 'No Break' : item < 60 ? `${item} min` : item === 60 ? '1 hr' : `${Math.floor(item / 60)} hr ${item % 60 > 0 ? `${item % 60} min` : ''}`.trim();
+                const selected = selectedBreakMinutes === item;
+                return (
+                  <TouchableOpacity
+                    style={[styles.pickerItem, { borderBottomColor: colors.border, backgroundColor: selected ? colors.accent + '20' : 'transparent' }]}
+                    onPress={() => setSelectedBreakMinutes(item)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.pickerItemText, { color: colors.text, fontWeight: selected ? '600' : '400' }]}>{label}</Text>
+                    {selected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
+                  </TouchableOpacity>
+                );
+              }}
+            />
+            <View style={[styles.modalFooter, { borderTopColor: colors.border }]}>
+              <TouchableOpacity
+                style={[styles.modalCancelBtn, { borderColor: colors.border }]}
+                onPress={() => setShowBreakModal(false)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.modalCancelText, { color: colors.secondary }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalConfirmBtn, { backgroundColor: '#ef4444' + '30', borderColor: '#ef444480' }]}
+                onPress={() => handleClockOut(selectedBreakMinutes)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.modalConfirmText, { color: '#ef4444' }]}>Clock Out</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={showClockInModal}
