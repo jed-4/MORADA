@@ -303,8 +303,7 @@ const styles = StyleSheet.create({
   colorSquare: {
     width: 50,
     alignSelf: 'stretch',
-    borderTopLeftRadius: 9,
-    borderBottomLeftRadius: 9,
+    borderRadius: 9,
   },
   cardBody: {
     flex: 1,
