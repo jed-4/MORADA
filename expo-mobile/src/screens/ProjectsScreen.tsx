@@ -92,6 +92,15 @@ export default function ProjectsScreen({ navigation }: Props) {
     }
   };
 
+  const PROJECT_PALETTE = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#f43f5e', '#84cc16'];
+  const getProjectColor = (projectId: string): string => {
+    let hash = 0;
+    for (let i = 0; i < projectId.length; i++) {
+      hash = projectId.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return PROJECT_PALETTE[Math.abs(hash) % PROJECT_PALETTE.length];
+  };
+
   const getPhaseCount = (phaseKey: string) => {
     if (phaseKey === 'all') return projects.length;
     return projects.filter(p => p.currentSystemPhase === phaseKey).length;
@@ -123,10 +132,7 @@ export default function ProjectsScreen({ navigation }: Props) {
   };
 
   const renderProjectCard = ({ item }: { item: Project }) => {
-    const phaseColor = getPhaseColor(item.currentSystemPhase);
-    const displayName = item.projectNumber
-      ? `#${item.projectNumber}  ${item.name}`
-      : item.name;
+    const projectColor = getProjectColor(item.id);
 
     return (
       <TouchableOpacity
@@ -134,13 +140,14 @@ export default function ProjectsScreen({ navigation }: Props) {
         onPress={() => navigation.navigate('ProjectDetail', { projectId: item.id, projectName: item.name })}
         activeOpacity={0.7}
       >
-        <View style={[styles.colorBar, { backgroundColor: phaseColor }]} />
+        <View style={[styles.colorSquare, { backgroundColor: projectColor }]} />
         <View style={styles.cardBody}>
-          <Text style={[styles.cardName, { color: colors.text }]} numberOfLines={1}>{displayName}</Text>
-          {(item.clientName || item.address) && (
-            <Text style={[styles.cardSub, { color: colors.secondary }]} numberOfLines={1}>
-              {item.clientName || item.address}
-            </Text>
+          {item.projectNumber && (
+            <Text style={[styles.cardNumber, { color: colors.secondary }]} numberOfLines={1}>#{item.projectNumber}</Text>
+          )}
+          <Text style={[styles.cardName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
+          {item.clientName && (
+            <Text style={[styles.cardSub, { color: colors.secondary }]} numberOfLines={1}>{item.clientName}</Text>
           )}
         </View>
         <Text style={[styles.cardStatus, { color: colors.secondary }]} numberOfLines={1}>
@@ -298,22 +305,27 @@ const styles = StyleSheet.create({
 
   card: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'stretch',
     borderRadius: 10,
     borderWidth: 1,
     borderColor: '#d6d3d1',
     overflow: 'hidden',
-    height: 62,
+    height: 50,
   },
-  colorBar: {
-    width: 10,
+  colorSquare: {
+    width: 50,
     alignSelf: 'stretch',
   },
   cardBody: {
     flex: 1,
     paddingHorizontal: 12,
-    justifyContent: 'center',
-    gap: 3,
+    paddingVertical: 8,
+    justifyContent: 'flex-start',
+    gap: 1,
+  },
+  cardNumber: {
+    fontSize: 10,
+    fontWeight: '500',
   },
   cardName: {
     fontSize: 13,
@@ -326,6 +338,8 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '500',
     paddingRight: 12,
+    paddingTop: 8,
+    alignSelf: 'flex-start',
   },
 
   chipBar: {
