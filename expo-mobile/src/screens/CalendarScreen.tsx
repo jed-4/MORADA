@@ -162,6 +162,7 @@ const TIME_LABEL_WIDTH = 44;
 const GRID_COL_WIDTH = Math.floor((SCREEN_WIDTH - TIME_LABEL_WIDTH) / 3);
 const TOTAL_GRID_HEIGHT = 24 * HOUR_HEIGHT;
 const MIN_EVENT_HEIGHT = 22;
+const DAY_HEADER_HEIGHT = 38;
 
 function isSameDay(d1: Date, d2: Date): boolean {
   return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
@@ -264,7 +265,7 @@ export default function CalendarScreen({ navigation }: Props) {
   const [showCreateViewModal, setShowCreateViewModal] = useState(false);
   const [newViewName, setNewViewName] = useState('');
   const [savingView, setSavingView] = useState(false);
-  const [showAllDay, setShowAllDay] = useState(true);
+  const [allDayExpanded, setAllDayExpanded] = useState(false);
 
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
@@ -274,6 +275,9 @@ export default function CalendarScreen({ navigation }: Props) {
   const timeGridScrollRef = useRef<ScrollView>(null);
   const weekScrollRef = useRef<ScrollView>(null);
   const weekScrollOffset = useRef(0);
+  const timeLabelScrollRef = useRef<ScrollView>(null);
+  const dayHeaderScrollRef = useRef<ScrollView>(null);
+  const allDayScrollRef = useRef<ScrollView>(null);
 
 
   const weekBaseDate = useRef<Date>((() => {
@@ -649,6 +653,8 @@ export default function CalendarScreen({ navigation }: Props) {
   const scrollWeekTo = (offsetX: number, animated = true) => {
     const clamped = Math.max(0, Math.min(offsetX, (WEEK_TOTAL_DAYS - 1) * GRID_COL_WIDTH));
     weekScrollRef.current?.scrollTo({ x: clamped, animated });
+    dayHeaderScrollRef.current?.scrollTo({ x: clamped, animated: false });
+    allDayScrollRef.current?.scrollTo({ x: clamped, animated: false });
     weekScrollOffset.current = clamped;
   };
 
@@ -1009,7 +1015,7 @@ export default function CalendarScreen({ navigation }: Props) {
 
   const renderWeekView = () => {
     const initialOffset = Math.max(0, (todayWeekIndex - 1) * GRID_COL_WIDTH);
-    const totalContentWidth = WEEK_TOTAL_DAYS * GRID_COL_WIDTH + TIME_LABEL_WIDTH;
+    const dayColsWidth = WEEK_TOTAL_DAYS * GRID_COL_WIDTH;
 
     const hourLabels = Array.from({ length: 24 }, (_, i) => {
       if (i === 0) return '12 AM';
@@ -1018,28 +1024,34 @@ export default function CalendarScreen({ navigation }: Props) {
       return `${i - 12} PM`;
     });
 
+    const anyAllDayEvents = weekDays.some(day =>
+      getEventsForDate(day).some(e => isEventAllDay(e))
+    );
+
+    const syncHorizontal = (x: number) => {
+      dayHeaderScrollRef.current?.scrollTo({ x, animated: false });
+      allDayScrollRef.current?.scrollTo({ x, animated: false });
+    };
+
     return (
       <View style={{ flex: 1 }}>
-        <ScrollView
-          ref={weekScrollRef}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={{ flex: 1 }}
-          contentOffset={{ x: initialOffset, y: 0 }}
-          onScroll={handleWeekScroll}
-          scrollEventThrottle={32}
-          decelerationRate="normal"
-          nestedScrollEnabled
-          contentContainerStyle={{ flexGrow: 1 }}
-        >
-          <View style={{ width: totalContentWidth, flex: 1 }}>
-            <View style={{
-              flexDirection: 'row',
-              backgroundColor: colors.card,
-              borderBottomWidth: showAllDay ? 0 : StyleSheet.hairlineWidth,
-              borderBottomColor: colors.border,
-            }}>
-              <View style={{ width: TIME_LABEL_WIDTH }} />
+        {/* ── Row 1: Day headers (accent tint, fixed left spacer + synced day columns) ── */}
+        <View style={{
+          flexDirection: 'row',
+          height: DAY_HEADER_HEIGHT,
+          backgroundColor: colors.accent + '30',
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: colors.border + '60',
+        }}>
+          <View style={{ width: TIME_LABEL_WIDTH }} />
+          <ScrollView
+            ref={dayHeaderScrollRef}
+            horizontal
+            scrollEnabled={false}
+            showsHorizontalScrollIndicator={false}
+            style={{ flex: 1 }}
+          >
+            <View style={{ flexDirection: 'row', width: dayColsWidth }}>
               {weekDays.map((day, idx) => {
                 const currentDay = isToday(day);
                 const dowName = DAY_NAMES[(day.getDay() + 6) % 7];
@@ -1050,10 +1062,9 @@ export default function CalendarScreen({ navigation }: Props) {
                       width: GRID_COL_WIDTH,
                       alignItems: 'center',
                       justifyContent: 'center',
-                      paddingVertical: 10,
                       borderLeftWidth: StyleSheet.hairlineWidth,
-                      borderLeftColor: colors.border,
-                      backgroundColor: currentDay ? colors.accent + '10' : 'transparent',
+                      borderLeftColor: colors.border + '60',
+                      backgroundColor: currentDay ? colors.accent + '20' : 'transparent',
                     }}
                   >
                     <Text style={{
@@ -1067,26 +1078,38 @@ export default function CalendarScreen({ navigation }: Props) {
                 );
               })}
             </View>
+          </ScrollView>
+        </View>
 
-            {showAllDay && (
-              <View style={{
-                flexDirection: 'row',
-                borderBottomWidth: StyleSheet.hairlineWidth,
-                borderBottomColor: colors.border,
-                backgroundColor: colors.card,
-                minHeight: 28,
-              }}>
-                <View style={{
-                  width: TIME_LABEL_WIDTH,
-                  justifyContent: 'center',
-                  alignItems: 'flex-end',
-                  paddingRight: 6,
-                }}>
-                  <Text style={{ fontSize: 9, color: colors.secondary, fontWeight: '500' }}>ALL</Text>
-                  <Text style={{ fontSize: 9, color: colors.secondary, fontWeight: '500' }}>DAY</Text>
-                </View>
+        {/* ── Row 2: All-day strip (fixed "ALL DAY" label + synced event chips) ── */}
+        {anyAllDayEvents && (
+          <View style={{
+            flexDirection: 'row',
+            borderBottomWidth: StyleSheet.hairlineWidth,
+            borderBottomColor: colors.border,
+            backgroundColor: colors.card,
+          }}>
+            <View style={{
+              width: TIME_LABEL_WIDTH,
+              justifyContent: 'center',
+              alignItems: 'flex-end',
+              paddingRight: 6,
+              paddingVertical: 3,
+            }}>
+              <Text style={{ fontSize: 9, color: colors.secondary, fontWeight: '500' }}>ALL</Text>
+              <Text style={{ fontSize: 9, color: colors.secondary, fontWeight: '500' }}>DAY</Text>
+            </View>
+            <ScrollView
+              ref={allDayScrollRef}
+              horizontal
+              scrollEnabled={false}
+              showsHorizontalScrollIndicator={false}
+              style={{ flex: 1 }}
+            >
+              <View style={{ flexDirection: 'row', width: dayColsWidth }}>
                 {weekDays.map((day, dayIdx) => {
-                  const allDayEvents = getEventsForDate(day).filter(e => isEventAllDay(e));
+                  const allEvents = getEventsForDate(day).filter(e => isEventAllDay(e));
+                  const visibleEvents = allDayExpanded ? allEvents : allEvents.slice(0, 3);
                   return (
                     <View
                       key={dayIdx}
@@ -1099,7 +1122,7 @@ export default function CalendarScreen({ navigation }: Props) {
                         gap: 2,
                       }}
                     >
-                      {allDayEvents.slice(0, 3).map(event => (
+                      {visibleEvents.map(event => (
                         <TouchableOpacity
                           key={event.id}
                           style={{
@@ -1120,167 +1143,203 @@ export default function CalendarScreen({ navigation }: Props) {
                           </Text>
                         </TouchableOpacity>
                       ))}
-                      {allDayEvents.length > 3 && (
+                      {!allDayExpanded && allEvents.length > 3 && (
                         <Text style={{ fontSize: 9, color: colors.secondary, textAlign: 'center' }}>
-                          +{allDayEvents.length - 3}
+                          +{allEvents.length - 3} more
                         </Text>
                       )}
                     </View>
                   );
                 })}
               </View>
-            )}
-
-            <ScrollView
-              ref={timeGridScrollRef}
-              style={{ flex: 1 }}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ height: TOTAL_GRID_HEIGHT }}
-              onLayout={() => {
-                setTimeout(() => {
-                  timeGridScrollRef.current?.scrollTo({ y: 7 * HOUR_HEIGHT, animated: false });
-                }, 100);
-              }}
-            >
-              <View style={{ flexDirection: 'row', height: TOTAL_GRID_HEIGHT }}>
-                <View style={{ width: TIME_LABEL_WIDTH }}>
-                  {hourLabels.map((label, i) => (
-                    <View key={i} style={{ height: HOUR_HEIGHT, justifyContent: 'flex-start' }}>
-                      <Text style={{
-                        fontSize: 10,
-                        color: colors.secondary,
-                        textAlign: 'right',
-                        paddingRight: 6,
-                        marginTop: -6,
-                      }}>
-                        {i > 0 ? label : ''}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-
-                {weekDays.map((day, dayIdx) => {
-                  const currentDay = isToday(day);
-                  const dayEvents = getEventsForDate(day).filter(e => !isEventAllDay(e) && e.startTime);
-
-                  const layoutEvents = dayEvents.map(event => {
-                    const startMin = timeToMinutes(event.startTime!);
-                    const durationMin = getEventDurationMinutes(event.startTime!, event.endTime);
-                    return { event, startMin, endMin: startMin + durationMin };
-                  }).sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin);
-
-                  const lanes: number[][] = [];
-                  const laneAssignment = new Map<string, { lane: number; totalLanes: number }>();
-                  for (const le of layoutEvents) {
-                    let placed = false;
-                    for (let i = 0; i < lanes.length; i++) {
-                      if (lanes[i][lanes[i].length - 1] <= le.startMin) {
-                        lanes[i].push(le.endMin);
-                        laneAssignment.set(le.event.id, { lane: i, totalLanes: 0 });
-                        placed = true;
-                        break;
-                      }
-                    }
-                    if (!placed) {
-                      lanes.push([le.endMin]);
-                      laneAssignment.set(le.event.id, { lane: lanes.length - 1, totalLanes: 0 });
-                    }
-                  }
-                  const totalLanes = Math.max(lanes.length, 1);
-                  laneAssignment.forEach(v => { v.totalLanes = totalLanes; });
-
-                  const colPad = 2;
-                  const usableWidth = GRID_COL_WIDTH - colPad * 2;
-
-                  return (
-                    <View
-                      key={dayIdx}
-                      style={{
-                        width: GRID_COL_WIDTH,
-                        height: TOTAL_GRID_HEIGHT,
-                        borderLeftWidth: StyleSheet.hairlineWidth,
-                        borderLeftColor: colors.border,
-                        backgroundColor: currentDay ? colors.accent + '06' : 'transparent',
-                      }}
-                    >
-                      {hourLabels.map((_, hourIdx) => (
-                        <View
-                          key={hourIdx}
-                          style={{
-                            position: 'absolute',
-                            top: hourIdx * HOUR_HEIGHT,
-                            left: 0,
-                            right: 0,
-                            height: StyleSheet.hairlineWidth,
-                            backgroundColor: colors.border,
-                          }}
-                        />
-                      ))}
-
-                      {layoutEvents.map(({ event, startMin, endMin }) => {
-                        const top = (startMin / 60) * HOUR_HEIGHT;
-                        const height = Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT, MIN_EVENT_HEIGHT);
-                        const eventColor = event.color || '#94a3b8';
-                        const la = laneAssignment.get(event.id);
-                        const lane = la?.lane ?? 0;
-                        const tl = la?.totalLanes ?? 1;
-                        const laneWidth = usableWidth / tl;
-                        const left = colPad + lane * laneWidth;
-
-                        return (
-                          <TouchableOpacity
-                            key={event.id}
-                            style={{
-                              position: 'absolute',
-                              top,
-                              left,
-                              width: laneWidth - 1,
-                              height,
-                              backgroundColor: eventColor + '45',
-                              borderRadius: 5,
-                              borderLeftWidth: 3,
-                              borderLeftColor: eventColor,
-                              paddingHorizontal: 4,
-                              paddingVertical: 2,
-                              overflow: 'hidden',
-                            }}
-                            onPress={() => handleEventTap(event)}
-                            activeOpacity={0.75}
-                          >
-                            <Text
-                              style={{
-                                fontSize: 12,
-                                fontWeight: '600',
-                                color: colors.text,
-                                lineHeight: 15,
-                              }}
-                              numberOfLines={height >= 36 ? 2 : 1}
-                            >
-                              {event.title}
-                            </Text>
-                            {height >= 36 && event.startTime && (
-                              <Text
-                                style={{
-                                  fontSize: 9,
-                                  color: colors.secondary,
-                                  marginTop: 1,
-                                }}
-                                numberOfLines={1}
-                              >
-                                {formatTimeShort(event.startTime)}
-                                {event.endTime ? ` – ${formatTimeShort(event.endTime)}` : ''}
-                              </Text>
-                            )}
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                  );
-                })}
-              </View>
             </ScrollView>
           </View>
-        </ScrollView>
+        )}
+
+        {/* ── Row 3: Time grid (pinned hour labels + horizontal scroll with day columns) ── */}
+        <View style={{ flex: 1, flexDirection: 'row' }}>
+          {/* Pinned time-label column */}
+          <ScrollView
+            ref={timeLabelScrollRef}
+            scrollEnabled={false}
+            showsVerticalScrollIndicator={false}
+            style={{ width: TIME_LABEL_WIDTH, backgroundColor: colors.bg }}
+          >
+            {hourLabels.map((label, i) => (
+              <View key={i} style={{ height: HOUR_HEIGHT, justifyContent: 'flex-start' }}>
+                <Text style={{
+                  fontSize: 10,
+                  color: colors.secondary,
+                  textAlign: 'right',
+                  paddingRight: 6,
+                  marginTop: -6,
+                }}>
+                  {i > 0 ? label : ''}
+                </Text>
+              </View>
+            ))}
+          </ScrollView>
+
+          {/* Horizontal scroll — only day event columns, no time label inside */}
+          <ScrollView
+            ref={weekScrollRef}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ flex: 1 }}
+            contentOffset={{ x: initialOffset, y: 0 }}
+            onScroll={(e) => {
+              syncHorizontal(e.nativeEvent.contentOffset.x);
+              handleWeekScroll(e);
+            }}
+            scrollEventThrottle={32}
+            decelerationRate="normal"
+            nestedScrollEnabled
+          >
+            <View style={{ width: dayColsWidth, flex: 1 }}>
+              <ScrollView
+                ref={timeGridScrollRef}
+                style={{ flex: 1 }}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ height: TOTAL_GRID_HEIGHT }}
+                onLayout={() => {
+                  setTimeout(() => {
+                    const y = 7 * HOUR_HEIGHT;
+                    timeGridScrollRef.current?.scrollTo({ y, animated: false });
+                    timeLabelScrollRef.current?.scrollTo({ y, animated: false });
+                  }, 100);
+                }}
+                onScroll={(e) => {
+                  timeLabelScrollRef.current?.scrollTo({
+                    y: e.nativeEvent.contentOffset.y,
+                    animated: false,
+                  });
+                }}
+                scrollEventThrottle={16}
+              >
+                <View style={{ flexDirection: 'row', height: TOTAL_GRID_HEIGHT }}>
+                  {weekDays.map((day, dayIdx) => {
+                    const currentDay = isToday(day);
+                    const dayEvents = getEventsForDate(day).filter(e => !isEventAllDay(e) && e.startTime);
+
+                    const layoutEvents = dayEvents.map(event => {
+                      const startMin = timeToMinutes(event.startTime!);
+                      const durationMin = getEventDurationMinutes(event.startTime!, event.endTime);
+                      return { event, startMin, endMin: startMin + durationMin };
+                    }).sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin);
+
+                    const lanes: number[][] = [];
+                    const laneAssignment = new Map<string, { lane: number; totalLanes: number }>();
+                    for (const le of layoutEvents) {
+                      let placed = false;
+                      for (let i = 0; i < lanes.length; i++) {
+                        if (lanes[i][lanes[i].length - 1] <= le.startMin) {
+                          lanes[i].push(le.endMin);
+                          laneAssignment.set(le.event.id, { lane: i, totalLanes: 0 });
+                          placed = true;
+                          break;
+                        }
+                      }
+                      if (!placed) {
+                        lanes.push([le.endMin]);
+                        laneAssignment.set(le.event.id, { lane: lanes.length - 1, totalLanes: 0 });
+                      }
+                    }
+                    const totalLanes = Math.max(lanes.length, 1);
+                    laneAssignment.forEach(v => { v.totalLanes = totalLanes; });
+
+                    const colPad = 2;
+                    const usableWidth = GRID_COL_WIDTH - colPad * 2;
+
+                    return (
+                      <View
+                        key={dayIdx}
+                        style={{
+                          width: GRID_COL_WIDTH,
+                          height: TOTAL_GRID_HEIGHT,
+                          borderLeftWidth: StyleSheet.hairlineWidth,
+                          borderLeftColor: colors.border,
+                          backgroundColor: currentDay ? colors.accent + '06' : 'transparent',
+                        }}
+                      >
+                        {hourLabels.map((_, hourIdx) => (
+                          <View
+                            key={hourIdx}
+                            style={{
+                              position: 'absolute',
+                              top: hourIdx * HOUR_HEIGHT,
+                              left: 0,
+                              right: 0,
+                              height: StyleSheet.hairlineWidth,
+                              backgroundColor: colors.border,
+                            }}
+                          />
+                        ))}
+
+                        {layoutEvents.map(({ event, startMin, endMin }) => {
+                          const top = (startMin / 60) * HOUR_HEIGHT;
+                          const height = Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT, MIN_EVENT_HEIGHT);
+                          const eventColor = event.color || '#94a3b8';
+                          const la = laneAssignment.get(event.id);
+                          const lane = la?.lane ?? 0;
+                          const tl = la?.totalLanes ?? 1;
+                          const laneWidth = usableWidth / tl;
+                          const left = colPad + lane * laneWidth;
+
+                          return (
+                            <TouchableOpacity
+                              key={event.id}
+                              style={{
+                                position: 'absolute',
+                                top,
+                                left,
+                                width: laneWidth - 1,
+                                height,
+                                backgroundColor: eventColor + '45',
+                                borderRadius: 5,
+                                borderLeftWidth: 3,
+                                borderLeftColor: eventColor,
+                                paddingHorizontal: 4,
+                                paddingVertical: 2,
+                                overflow: 'hidden',
+                              }}
+                              onPress={() => handleEventTap(event)}
+                              activeOpacity={0.75}
+                            >
+                              <Text
+                                style={{
+                                  fontSize: 12,
+                                  fontWeight: '600',
+                                  color: colors.text,
+                                  lineHeight: 15,
+                                }}
+                                numberOfLines={height >= 36 ? 2 : 1}
+                              >
+                                {event.title}
+                              </Text>
+                              {height >= 36 && event.startTime && (
+                                <Text
+                                  style={{
+                                    fontSize: 9,
+                                    color: colors.secondary,
+                                    marginTop: 1,
+                                  }}
+                                  numberOfLines={1}
+                                >
+                                  {formatTimeShort(event.startTime)}
+                                  {event.endTime ? ` – ${formatTimeShort(event.endTime)}` : ''}
+                                </Text>
+                              )}
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    );
+                  })}
+                </View>
+              </ScrollView>
+            </View>
+          </ScrollView>
+        </View>
       </View>
     );
   };
@@ -1478,14 +1537,14 @@ export default function CalendarScreen({ navigation }: Props) {
               style={[
                 styles.chip,
                 {
-                  backgroundColor: showAllDay ? colors.accent + '30' : colors.card,
-                  borderColor: showAllDay ? colors.accent + '60' : colors.border,
+                  backgroundColor: allDayExpanded ? colors.accent + '30' : colors.card,
+                  borderColor: allDayExpanded ? colors.accent + '60' : colors.border,
                 },
               ]}
-              onPress={() => setShowAllDay(v => !v)}
+              onPress={() => setAllDayExpanded(v => !v)}
               activeOpacity={0.7}
             >
-              <Text style={[styles.chipLabel, { color: showAllDay ? colors.accent : colors.secondary }]}>
+              <Text style={[styles.chipLabel, { color: allDayExpanded ? colors.accent : colors.secondary }]}>
                 All Day
               </Text>
             </TouchableOpacity>
