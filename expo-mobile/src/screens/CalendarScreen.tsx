@@ -170,11 +170,15 @@ function getProjectEventColor(
   projectId: string | undefined,
   customColor: string | null | undefined,
   fallbackColor: string,
+  brandColor?: string | null,
 ): string {
   const isValidHex = (c: string | null | undefined): c is string =>
     typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c);
   if (isValidHex(customColor) && customColor.toLowerCase() !== DEFAULT_PROJECT_COLOR) {
     return customColor;
+  }
+  if (isValidHex(brandColor)) {
+    return brandColor;
   }
   if (projectId) {
     return hashProjectColor(projectId);
@@ -412,7 +416,7 @@ export default function CalendarScreen({ navigation }: Props) {
             title: task.title,
             date: task.dueDate,
             type: 'task',
-            color: getProjectEventColor(task.projectId, proj?.color, EVENT_COLORS.task),
+            color: getProjectEventColor(task.projectId, proj?.color, EVENT_COLORS.task, resolvedBrandColor),
             status: task.status,
             projectId: task.projectId,
             projectName: proj?.name,
@@ -423,7 +427,7 @@ export default function CalendarScreen({ navigation }: Props) {
       });
 
       (scheduleData || []).forEach(item => {
-        const scheduleColor = getProjectEventColor(item.projectId, item.projectColor, EVENT_COLORS.schedule);
+        const scheduleColor = getProjectEventColor(item.projectId, item.projectColor, EVENT_COLORS.schedule, resolvedBrandColor);
         const scheduleStatusColor = item.status
           ? (SCHEDULE_STATUS_COLORS[item.status] || EVENT_COLORS.schedule)
           : EVENT_COLORS.schedule;
