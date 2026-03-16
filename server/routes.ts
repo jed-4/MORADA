@@ -16138,6 +16138,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Must be before /:id to avoid route conflict
+  app.get("/api/schedule-items/user-assigned", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const { startDate, endDate } = req.query;
+      const dateRange = (startDate || endDate) ? {
+        startDate: startDate as string | undefined,
+        endDate: endDate as string | undefined
+      } : undefined;
+      let items = await storage.getAllScheduleItems(user.companyId, dateRange);
+      const isAdmin = user.roleName?.toLowerCase()?.includes('admin') ||
+                      user.roleName?.toLowerCase()?.includes('owner') ||
+                      user.roleName?.toLowerCase()?.includes('general manager');
+      if (!isAdmin) {
+        items = items.filter((item: any) => item.assignedToId === String(user.id));
+      }
+      res.json(items);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to fetch user-assigned schedule items", details: error.message });
+    }
+  });
+
   app.get("/api/schedule-items/:id", async (req, res) => {
     try {
       const item = await storage.getScheduleItem(req.params.id);
