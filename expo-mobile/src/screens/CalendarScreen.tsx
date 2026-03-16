@@ -1227,16 +1227,19 @@ export default function CalendarScreen({ navigation }: Props) {
                           key={event.id}
                           style={{
                             height: 22,
-                            backgroundColor: isDark ? '#3a3a3a' : '#e8e8e8',
+                            backgroundColor: (event.color || '#94a3b8') + '45',
                             borderRadius: 5,
+                            borderLeftWidth: 3,
+                            borderLeftColor: event.color || '#94a3b8',
                             paddingHorizontal: 4,
                             justifyContent: 'center',
+                            overflow: 'hidden',
                           }}
                           onPress={() => handleEventTap(event)}
                           activeOpacity={0.75}
                         >
                           <Text
-                            style={{ fontSize: 12, fontWeight: '600', color: colors.text }}
+                            style={{ fontSize: 12, fontWeight: '600', color: event.color || colors.text }}
                             numberOfLines={1}
                           >
                             {event.title}
