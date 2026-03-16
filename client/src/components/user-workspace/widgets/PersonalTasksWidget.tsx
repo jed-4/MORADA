@@ -30,6 +30,7 @@ import { format, isToday, isTomorrow, isBefore, startOfDay, addDays, addWeeks, a
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
+import { generateNotionColors } from "@/lib/taskColors";
 
 type FilterType = 'all' | 'overdue' | 'today' | 'tomorrow' | 'next-3-days' | 'this-week' | 'next-week' | 'next-2-weeks' | 'this-month' | 'no-date' | 'high-priority';
 type GroupByType = 'none' | 'project' | 'dueDate' | 'priority';
@@ -507,14 +508,18 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                           {dueInfo.label}
                         </span>
                       )}
-                      {project && (
-                        <span 
-                          className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground w-20 text-center truncate"
-                          title={project.name}
-                        >
-                          {project.name}
-                        </span>
-                      )}
+                      {project && (() => {
+                        const nc = generateNotionColors(project.color);
+                        return (
+                          <span
+                            className="text-[9px] px-1.5 py-0.5 rounded w-20 text-center truncate"
+                            style={{ backgroundColor: nc.pastelBg, color: nc.darkText }}
+                            title={project.name}
+                          >
+                            {project.name}
+                          </span>
+                        );
+                      })()}
                       {(task.scope === 'business' || (!task.scope && !task.projectId)) && (
                         <span 
                           className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary w-20 text-center truncate"
@@ -592,14 +597,18 @@ export default function PersonalTasksWidget({ widget, onUpdate, isConfiguring, o
                               {dueInfo.label}
                             </span>
                           )}
-                          {groupBy !== 'project' && project && (
-                            <span 
-                              className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground w-20 text-center truncate"
-                              title={project.name}
-                            >
-                              {project.name}
-                            </span>
-                          )}
+                          {groupBy !== 'project' && project && (() => {
+                            const nc = generateNotionColors(project.color);
+                            return (
+                              <span
+                                className="text-[9px] px-1.5 py-0.5 rounded w-20 text-center truncate"
+                                style={{ backgroundColor: nc.pastelBg, color: nc.darkText }}
+                                title={project.name}
+                              >
+                                {project.name}
+                              </span>
+                            );
+                          })()}
                           {groupBy !== 'project' && (task.scope === 'business' || (!task.scope && !task.projectId)) && (
                             <span 
                               className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary w-20 text-center truncate"

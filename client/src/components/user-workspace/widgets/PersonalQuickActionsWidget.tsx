@@ -70,15 +70,6 @@ export default function PersonalQuickActionsWidget({ widget, onUpdate, isConfigu
 
   const actions = [
     {
-      id: 'clock',
-      label: isClockedIn ? 'Clock Out' : 'Clock In',
-      icon: isClockedIn ? Square : Play,
-      color: isClockedIn ? 'text-red-600' : 'text-green-600',
-      bgColor: isClockedIn ? 'bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30' : 'bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30',
-      onClick: () => isClockedIn ? clockOutMutation.mutate() : clockInMutation.mutate(),
-      loading: clockInMutation.isPending || clockOutMutation.isPending,
-    },
-    {
       id: 'log-time',
       label: 'Log Time',
       icon: Timer,
@@ -112,6 +103,15 @@ export default function PersonalQuickActionsWidget({ widget, onUpdate, isConfigu
       bgColor: 'bg-teal-50 dark:bg-teal-900/20 hover:bg-teal-100 dark:hover:bg-teal-900/30',
       onClick: () => userId && setLocation(`/users/${userId}/calendar`),
       disabled: !userId,
+    },
+    {
+      id: 'clock',
+      label: isClockedIn ? 'Clock Out' : 'Clock In',
+      icon: isClockedIn ? Square : Play,
+      color: isClockedIn ? 'text-red-600' : 'text-green-600',
+      bgColor: isClockedIn ? 'bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30' : 'bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30',
+      onClick: () => isClockedIn ? clockOutMutation.mutate() : clockInMutation.mutate(),
+      loading: clockInMutation.isPending || clockOutMutation.isPending,
     },
   ];
 
