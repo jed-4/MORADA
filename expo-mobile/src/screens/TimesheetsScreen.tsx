@@ -428,7 +428,8 @@ export default function TimesheetsScreen() {
     setIsEditMode(true);
     setEditingId(ts.id);
     setFormProjectId(ts.projectId);
-    setFormDate(new Date(ts.date).toISOString().split('T')[0]);
+    // Use local date (not UTC) so Australian timezone doesn't shift the date back a day
+    setFormDate(toLocalDateStr(new Date(ts.date)));
     setFormStartTime(ts.startTime || '07:00');
     setFormEndTime(ts.endTime || '15:30');
     setFormBreakDuration(ts.breakDuration || '0');
@@ -871,11 +872,19 @@ export default function TimesheetsScreen() {
                   <Text style={[styles.detailLabel, { color: colors.secondary }]}>Project</Text>
                   <Text style={[styles.detailValue, { color: colors.text }]}>{getProjectName(selectedTimesheet.projectId)}</Text>
                 </View>
+                {selectedTimesheet.clockInTime && (
+                  <View style={styles.detailSection}>
+                    <Text style={[styles.detailLabel, { color: colors.secondary }]}>Clocked In</Text>
+                    <Text style={[styles.detailValue, { color: colors.text }]}>
+                      {formatTime12h(new Date(selectedTimesheet.clockInTime).toTimeString().slice(0, 5))}
+                    </Text>
+                  </View>
+                )}
                 {selectedTimesheet.startTime && selectedTimesheet.endTime && (
                   <View style={styles.detailSection}>
-                    <Text style={[styles.detailLabel, { color: colors.secondary }]}>Time</Text>
+                    <Text style={[styles.detailLabel, { color: colors.secondary }]}>Start / End</Text>
                     <Text style={[styles.detailValue, { color: colors.text }]}>
-                      {formatTime12h(selectedTimesheet.startTime)} - {formatTime12h(selectedTimesheet.endTime)}
+                      {formatTime12h(selectedTimesheet.startTime)} – {formatTime12h(selectedTimesheet.endTime)}
                     </Text>
                   </View>
                 )}
@@ -905,7 +914,7 @@ export default function TimesheetsScreen() {
                 )}
 
                 <View style={styles.detailActions}>
-                  {selectedTimesheet.status === 'draft' && (
+                  {(selectedTimesheet.status === 'draft' || selectedTimesheet.status === 'submitted') && (
                     <>
                       <TouchableOpacity
                         style={[styles.detailButton, { backgroundColor: colors.accent }]}
@@ -946,6 +955,30 @@ export default function TimesheetsScreen() {
               </TouchableOpacity>
             </View>
             <ScrollView style={styles.formScroll} contentContainerStyle={styles.formContent}>
+              {/* Clock-in info banner (read-only, shown when editing a clocked-in timesheet) */}
+              {isEditMode && (() => {
+                const editingTs = timesheets.find(ts => ts.id === editingId);
+                const hasClock = editingTs?.clockInTime || (editingTs?.startTime && editingTs?.endTime);
+                if (!hasClock) return null;
+                return (
+                  <View style={[styles.clockInfoBanner, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+                    <Ionicons name="time-outline" size={16} color={colors.secondary} />
+                    <View style={{ flex: 1, marginLeft: 8 }}>
+                      {editingTs?.clockInTime && (
+                        <Text style={[styles.clockInfoText, { color: colors.secondary }]}>
+                          Clocked in at {formatTime12h(new Date(editingTs.clockInTime).toTimeString().slice(0, 5))}
+                        </Text>
+                      )}
+                      {editingTs?.startTime && editingTs?.endTime && (
+                        <Text style={[styles.clockInfoText, { color: colors.secondary }]}>
+                          Recorded: {formatTime12h(editingTs.startTime)} – {formatTime12h(editingTs.endTime)}
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                );
+              })()}
+
               {/* Project */}
               <Text style={[styles.formLabel, { color: colors.secondary }]}>Project</Text>
               <TouchableOpacity
@@ -1281,6 +1314,17 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   detailButtonText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+
+  clockInfoBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 4,
+    marginTop: 8,
+  },
+  clockInfoText: { fontSize: 13, lineHeight: 20 },
 
   logSheetContainer: {
     borderTopLeftRadius: 16,
