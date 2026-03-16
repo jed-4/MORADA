@@ -494,36 +494,26 @@ export default function CalendarScreen({ navigation }: Props) {
       if (isGCalConnected) {
         try {
           const gcalEvents = await apiFetch<any[]>('/api/google-calendar/events').catch(() => []);
+          const pad = (n: number) => String(n).padStart(2, '0');
+          const toLocalDateStr = (d: Date) =>
+            `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
           (gcalEvents || []).forEach((ev: any) => {
-            const isAllDay = !!ev.start?.date;
-            const start = isAllDay ? ev.start.date : ev.start?.dateTime?.split('T')[0];
-            const end = isAllDay
-              ? ev.end?.date
-              : ev.end?.dateTime?.split('T')[0];
-            let gcStartTime: string | null = null;
-            let gcEndTime: string | null = null;
-            if (!isAllDay && ev.start?.dateTime) {
-              const dtStart = new Date(ev.start.dateTime);
-              gcStartTime = `${String(dtStart.getHours()).padStart(2, '0')}:${String(dtStart.getMinutes()).padStart(2, '0')}`;
-            }
-            if (!isAllDay && ev.end?.dateTime) {
-              const dtEnd = new Date(ev.end.dateTime);
-              gcEndTime = `${String(dtEnd.getHours()).padStart(2, '0')}:${String(dtEnd.getMinutes()).padStart(2, '0')}`;
-            }
-            if (start) {
-              calEvents.push({
-                id: `gcal-${ev.id}`,
-                title: ev.summary || 'Untitled',
-                date: start,
-                endDate: end,
-                startTime: gcStartTime,
-                endTime: gcEndTime,
-                type: 'google_cal',
-                color: EVENT_COLORS.google_cal,
-                assigneeId: user.id,
-                raw: ev,
-              });
-            }
+            // Server returns processed format: ev.startDate (ISO), ev.startTime ("HH:MM"), etc.
+            const startDate = ev.startDate ? new Date(ev.startDate) : null;
+            const endDate = ev.endDate ? new Date(ev.endDate) : null;
+            if (!startDate) return;
+            calEvents.push({
+              id: `gcal-${ev.id}`,
+              title: ev.title || 'Untitled',
+              date: toLocalDateStr(startDate),
+              endDate: endDate ? toLocalDateStr(endDate) : undefined,
+              startTime: ev.startTime || null,
+              endTime: ev.endTime || null,
+              type: 'google_cal',
+              color: EVENT_COLORS.google_cal,
+              assigneeId: user.id,
+              raw: ev,
+            });
           });
         } catch {}
       }
