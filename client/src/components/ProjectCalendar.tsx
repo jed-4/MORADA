@@ -4,14 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import { useState } from "react";
 
-// todo: remove mock functionality
-const mockEvents = [
-  { date: 15, title: "Foundation Inspection", type: "inspection", time: "10:00 AM" },
-  { date: 18, title: "Electrical Rough-in", type: "work", time: "8:00 AM" },
-  { date: 22, title: "Plumbing Install", type: "work", time: "9:00 AM" },
-  { date: 25, title: "Frame Inspection", type: "inspection", time: "2:00 PM" },
-];
-
 export default function ProjectCalendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
   
@@ -32,7 +24,7 @@ export default function ProjectCalendar() {
   
   // Days of the month
   for (let day = 1; day <= daysInMonth; day++) {
-    const dayEvents = mockEvents.filter(event => event.date === day);
+    const dayEvents: { date: number; title: string; type: string; time: string }[] = [];
     days.push(
       <div key={day} className="h-20 p-1 border border-border hover-elevate">
         <div className="h-full">

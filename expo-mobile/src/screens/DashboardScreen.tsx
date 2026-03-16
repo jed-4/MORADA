@@ -610,20 +610,11 @@ export default function DashboardScreen({ navigation }: Props) {
             const tomorrowStart = new Date(todayStart); tomorrowStart.setDate(tomorrowStart.getDate() + 1);
             const tomorrowEnd = new Date(tomorrowStart); tomorrowEnd.setHours(23, 59, 59, 999);
 
-            const testToday = [
-              { id: '_test1', name: 'Site Inspection', startDate: todayStart.toISOString(), endDate: todayEnd.toISOString(), projectName: 'Smith Residence', projectId: 'proj-a' },
-              { id: '_test2', name: 'Client Meeting', startDate: todayStart.toISOString(), endDate: todayEnd.toISOString(), projectName: 'CBD Office', projectId: 'proj-b' },
-            ];
-            const testTomorrow = [
-              { id: '_test3', name: 'Concrete Pour', startDate: tomorrowStart.toISOString(), endDate: tomorrowEnd.toISOString(), projectName: 'Warehouse Build', projectId: 'proj-c' },
-              { id: '_test4', name: 'Frame Inspection', startDate: tomorrowStart.toISOString(), endDate: tomorrowEnd.toISOString(), projectName: 'Smith Residence', projectId: 'proj-a' },
-            ];
-
             const realToday = scheduleItems.filter(i => new Date(i.startDate) >= todayStart && new Date(i.startDate) <= todayEnd);
             const realTomorrow = scheduleItems.filter(i => new Date(i.startDate) >= tomorrowStart && new Date(i.startDate) <= tomorrowEnd);
 
-            const todayItems = [...testToday, ...realToday];
-            const tomorrowItems = [...testTomorrow, ...realTomorrow];
+            const todayItems = realToday;
+            const tomorrowItems = realTomorrow;
 
             const renderCard = (item: typeof todayItems[0], isTomorrow: boolean) => {
               const scheduleColor = getProjectColor(item.projectId);
