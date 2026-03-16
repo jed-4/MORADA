@@ -31,6 +31,8 @@ interface Task {
   status?: string;
   priority?: string;
   dueDate?: string;
+  startTime?: string | null;
+  endTime?: string | null;
   projectId?: string;
   assigneeIds?: string[];
   ownerId?: string;
@@ -415,6 +417,8 @@ export default function CalendarScreen({ navigation }: Props) {
             id: `task-${task.id}`,
             title: task.title,
             date: task.dueDate,
+            startTime: task.startTime ?? null,
+            endTime: task.endTime ?? null,
             type: 'task',
             color: getProjectEventColor(task.projectId, proj?.color, EVENT_COLORS.task, resolvedBrandColor),
             status: task.status,
@@ -964,7 +968,7 @@ export default function CalendarScreen({ navigation }: Props) {
   };
 
   const isEventAllDay = (event: CalendarEvent): boolean => {
-    if (event.type === 'task' || event.type === 'site_diary') return true;
+    if (event.type === 'site_diary') return true;
     if (event.type === 'google_cal' && !event.startTime) return true;
     if (!event.startTime) return true;
     return false;
