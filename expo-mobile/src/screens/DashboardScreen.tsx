@@ -369,6 +369,8 @@ export default function DashboardScreen({ navigation }: Props) {
 
   const getProjectColor = (projectId?: string): string => {
     if (!projectId) return PROJECT_PALETTE[0];
+    const project = projects.find(p => p.id === projectId);
+    if (project?.color) return project.color;
     let hash = 0;
     for (let i = 0; i < projectId.length; i++) {
       hash = projectId.charCodeAt(i) + ((hash << 5) - hash);
@@ -584,7 +586,7 @@ export default function DashboardScreen({ navigation }: Props) {
                           onPress={() => toggleTaskComplete(task.id, task.status)}
                           activeOpacity={0.7}
                         >
-                          <View style={[styles.taskColorBar, { backgroundColor: projectColor }]} />
+                          <View style={[styles.taskColorBar, { backgroundColor: projectColor + '45' }]} />
                           <Text
                             style={[styles.taskCardTitle, { color: done ? colors.muted : colors.text }, done && styles.taskTitleDone]}
                             numberOfLines={1}
@@ -702,7 +704,7 @@ export default function DashboardScreen({ navigation }: Props) {
         <View style={{ height: 90 }} />
       </ScrollView>
 
-      <View style={[styles.clockBtnWrap, { backgroundColor: colors.bg }]}>
+      <View style={[styles.clockBtnWrap, { backgroundColor: colors.bg, borderTopColor: colors.border }]}>
         {activeTimesheet ? (
           <TouchableOpacity
             style={[styles.clockBtn, { backgroundColor: '#ef4444', borderColor: '#ef444480' }]}
@@ -1219,7 +1221,13 @@ const styles = StyleSheet.create({
     right: 0,
     paddingHorizontal: 16,
     paddingBottom: 10,
-    paddingTop: 8,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 4,
   },
   clockBtn: {
     flexDirection: 'row',
