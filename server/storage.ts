@@ -740,7 +740,7 @@ export interface IStorage {
   deleteSiteDiaryEntry(id: string): Promise<boolean>;
 
   // Checklist Templates CRUD
-  getChecklistTemplates(): Promise<ChecklistTemplate[]>;
+  getChecklistTemplates(roleId?: string): Promise<ChecklistTemplate[]>;
   getChecklistTemplate(id: string): Promise<ChecklistTemplate | undefined>;
   createChecklistTemplate(template: InsertChecklistTemplate): Promise<ChecklistTemplate>;
   updateChecklistTemplate(id: string, template: Partial<InsertChecklistTemplate>): Promise<ChecklistTemplate | undefined>;
@@ -13753,12 +13753,20 @@ export class DbStorage implements IStorage {
   }
 
   // Checklist Templates CRUD
-  async getChecklistTemplates(): Promise<ChecklistTemplate[]> {
+  async getChecklistTemplates(roleId?: string): Promise<ChecklistTemplate[]> {
     try {
-      return await db.select()
+      const rows = await db.select()
         .from(schema.checklistTemplates)
         .where(eq(schema.checklistTemplates.isArchived, false))
         .orderBy(desc(schema.checklistTemplates.createdAt));
+
+      if (!roleId) return rows;
+
+      return rows.filter(t => {
+        const roles = t.visibleToRoles as string[] | null;
+        if (!roles || roles.length === 0) return true;
+        return roles.includes(roleId);
+      });
     } catch (error) {
       console.error("Database error in getChecklistTemplates:", error);
       throw error;

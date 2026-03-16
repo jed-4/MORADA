@@ -3,7 +3,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { insertChecklistTemplateSchema, FieldCategoryWithOptions, ChecklistTemplate } from "@shared/schema";
+import { insertChecklistTemplateSchema, FieldCategoryWithOptions, ChecklistTemplate, UserRole } from "@shared/schema";
 import { z } from "zod";
 import { useEffect, useMemo } from "react";
 import {
@@ -31,12 +31,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Loader2, Lock } from "lucide-react";
 
 type FormData = {
   name: string;
   description?: string;
   type: string;
+  visibleToRoles: string[];
 };
 
 export function ChecklistTemplateFormDialog({
@@ -57,7 +59,11 @@ export function ChecklistTemplateFormDialog({
 
   const { data: checklistTypesCategory, isLoading: isLoadingTypes } = useQuery<FieldCategoryWithOptions>({
     queryKey: ["/api/field-categories/by-key/checklist.type"],
-    staleTime: 60000, // Cache for 60 seconds
+    staleTime: 60000,
+  });
+
+  const { data: allRoles = [] } = useQuery<UserRole[]>({
+    queryKey: ["/api/roles"],
   });
 
   const checklistTypes = useMemo(() => 
@@ -82,6 +88,7 @@ export function ChecklistTemplateFormDialog({
         ? z.enum(validTypeKeys as [string, ...string[]])
         : z.string().min(1, "Type is required"),
       description: z.string().optional(),
+      visibleToRoles: z.array(z.string()).default([]),
     }),
     [validTypeKeys]
   );
@@ -92,6 +99,7 @@ export function ChecklistTemplateFormDialog({
       name: template?.name || "",
       description: template?.description || "",
       type: template?.type || "",
+      visibleToRoles: (template?.visibleToRoles as string[]) || [],
     },
   });
 
@@ -109,12 +117,14 @@ export function ChecklistTemplateFormDialog({
         name: template?.name || "",
         description: template?.description || "",
         type: template?.type || defaultType || "",
+        visibleToRoles: (template?.visibleToRoles as string[]) || [],
       });
     } else {
       form.reset({
         name: "",
         description: "",
         type: defaultType || "",
+        visibleToRoles: [],
       });
     }
   }, [open, template, form, defaultType]);
@@ -125,6 +135,7 @@ export function ChecklistTemplateFormDialog({
         name: data.name,
         description: data.description,
         type: data.type,
+        visibleToRoles: data.visibleToRoles,
       });
       return result;
     },
@@ -154,6 +165,7 @@ export function ChecklistTemplateFormDialog({
         name: data.name,
         description: data.description,
         type: data.type,
+        visibleToRoles: data.visibleToRoles,
       });
       return result;
     },
@@ -201,7 +213,7 @@ export function ChecklistTemplateFormDialog({
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
             <FormField
               control={form.control}
               name="name"
@@ -263,6 +275,52 @@ export function ChecklistTemplateFormDialog({
               )}
             />
 
+            {/* Visible To Roles */}
+            <FormField
+              control={form.control}
+              name="visibleToRoles"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-muted-foreground" />
+                    Visible To Roles
+                  </FormLabel>
+                  <div className="text-xs text-muted-foreground mb-2">
+                    Leave empty to show this checklist group to all roles. Select specific roles to restrict visibility.
+                  </div>
+                  {allRoles.length === 0 ? (
+                    <div className="text-xs text-muted-foreground italic">No roles configured</div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-1.5 max-h-36 overflow-y-auto pr-1" data-testid="roles-checklist">
+                      {allRoles.map((role) => {
+                        const checked = field.value.includes(role.id);
+                        return (
+                          <label
+                            key={role.id}
+                            className="flex items-center gap-2 text-xs cursor-pointer p-1.5 rounded hover-elevate"
+                            data-testid={`role-checkbox-${role.id}`}
+                          >
+                            <Checkbox
+                              checked={checked}
+                              onCheckedChange={(c) => {
+                                if (c) {
+                                  field.onChange([...field.value, role.id]);
+                                } else {
+                                  field.onChange(field.value.filter((id: string) => id !== role.id));
+                                }
+                              }}
+                            />
+                            <span className="truncate">{role.name}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
             <div className="flex justify-end gap-2">
               <Button
                 type="button"
@@ -277,7 +335,7 @@ export function ChecklistTemplateFormDialog({
                 disabled={isPending || isLoadingTypes}
                 data-testid="button-save-template"
               >
-                {isPending ? "Saving..." : isEditMode ? "Save Changes" : "Create Checklist Group"}
+                {isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving...</> : isEditMode ? "Save Changes" : "Create Checklist Group"}
               </Button>
             </div>
           </form>

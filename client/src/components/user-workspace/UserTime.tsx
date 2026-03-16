@@ -1,15 +1,19 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Clock, Calendar, Timer, Play, Square, ChevronLeft, ChevronRight } from "lucide-react";
+import { Clock, Calendar, Timer, ChevronLeft, ChevronRight, X, Briefcase, Tag, FileText, AlarmClock } from "lucide-react";
 import { format, startOfWeek, endOfWeek, eachDayOfInterval, addWeeks, subWeeks, isToday, isSameDay } from "date-fns";
-import type { User, Timesheet, Project } from "@shared/schema";
+import type { User, Timesheet, Project, CostCode } from "@shared/schema";
 import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
 import { useWeekStartDay } from "@/hooks/useWeekStartDay";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface UserTimeProps {
   user: User;
@@ -21,7 +25,8 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
   const weekStartDay = useWeekStartDay();
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: weekStartDay }));
   const { effectiveTimezone } = useTimezone();
-  
+  const [selectedTimesheet, setSelectedTimesheet] = useState<any | null>(null);
+
   const { data: timesheets = [], isLoading } = useQuery<Timesheet[]>({
     queryKey: ["/api/timesheets", { userId: user.id }],
     queryFn: async () => {
@@ -35,6 +40,10 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
 
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
+  });
+
+  const { data: costCodes = [] } = useQuery<CostCode[]>({
+    queryKey: ["/api/cost-codes"],
   });
 
   const weekEnd = endOfWeek(weekStart, { weekStartsOn: weekStartDay });
@@ -62,7 +71,14 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
 
   const getProjectName = (projectId: string | null) => {
     if (!projectId) return 'Business';
-    return projects.find(p => p.id === projectId)?.name || 'Unknown Project';
+    const project = projects.find(p => p.id === projectId);
+    return project?.name || 'Unknown Project';
+  };
+
+  const getCostCodeName = (ts: any) => {
+    const codeId = ts.costCodeId || ts.costCodeSplits?.[0]?.costCodeId;
+    if (!codeId) return null;
+    return costCodes.find(cc => cc.id === codeId)?.name || null;
   };
 
   const getStatusColor = (status: string) => {
@@ -194,33 +210,135 @@ export default function UserTime({ user, isOwnPage }: UserTimeProps) {
                   <tr>
                     <th className="text-left p-2 font-medium">Date</th>
                     <th className="text-left p-2 font-medium">Project</th>
+                    <th className="text-left p-2 font-medium">Cost Code</th>
                     <th className="text-left p-2 font-medium">Duration</th>
                     <th className="text-left p-2 font-medium">Description</th>
                     <th className="text-left p-2 font-medium">Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {timesheets.slice(0, 50).map((ts) => (
-                    <tr key={ts.id} className="border-b border-border/50 hover:bg-muted/30">
-                      <td className="p-2">{formatInTimezone(new Date(ts.date), effectiveTimezone, { year: 'numeric', month: 'short', day: 'numeric' })}</td>
-                      <td className="p-2">{getProjectName(ts.projectId)}</td>
-                      <td className="p-2 font-medium">{parseFloat(String(ts.duration || 0)).toFixed(1)}h</td>
-                      <td className="p-2 max-w-[200px] truncate text-muted-foreground">
-                        {ts.description || '-'}
-                      </td>
-                      <td className="p-2">
-                        <Badge variant="outline" className={`text-[10px] ${getStatusColor(ts.status)}`}>
-                          {ts.status}
-                        </Badge>
-                      </td>
-                    </tr>
-                  ))}
+                  {timesheets.slice(0, 50).map((ts: any) => {
+                    const costCodeName = getCostCodeName(ts);
+                    return (
+                      <tr
+                        key={ts.id}
+                        className="border-b border-border/50 hover:bg-muted/30 cursor-pointer"
+                        onClick={() => setSelectedTimesheet(ts)}
+                        data-testid={`row-timesheet-${ts.id}`}
+                      >
+                        <td className="p-2">{formatInTimezone(new Date(ts.date), effectiveTimezone, { year: 'numeric', month: 'short', day: 'numeric' })}</td>
+                        <td className="p-2">{getProjectName(ts.projectId)}</td>
+                        <td className="p-2 text-muted-foreground">{costCodeName || <span className="text-muted-foreground/50">—</span>}</td>
+                        <td className="p-2 font-medium">{parseFloat(String(ts.duration || 0)).toFixed(1)}h</td>
+                        <td className="p-2 max-w-[160px] truncate text-muted-foreground">
+                          {ts.description || '—'}
+                        </td>
+                        <td className="p-2">
+                          <Badge variant="outline" className={`text-[10px] ${getStatusColor(ts.status)}`}>
+                            {ts.status}
+                          </Badge>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}
           </ScrollArea>
         )}
       </div>
+
+      {/* Timesheet Detail Modal */}
+      <Dialog open={!!selectedTimesheet} onOpenChange={(open) => { if (!open) setSelectedTimesheet(null); }}>
+        <DialogContent className="max-w-md" data-testid="modal-timesheet-detail">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-sm">
+              <Timer className="w-4 h-4" />
+              Timesheet Entry
+            </DialogTitle>
+          </DialogHeader>
+          {selectedTimesheet && (
+            <div className="space-y-3 text-sm">
+              {/* Date */}
+              <div className="flex items-start gap-3 p-3 bg-muted/40 rounded-md">
+                <Calendar className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+                <div>
+                  <div className="text-xs text-muted-foreground mb-0.5">Date</div>
+                  <div className="font-medium">
+                    {formatInTimezone(new Date(selectedTimesheet.date), effectiveTimezone, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Time & Duration */}
+              <div className="flex items-start gap-3 p-3 bg-muted/40 rounded-md">
+                <AlarmClock className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <div className="text-xs text-muted-foreground mb-0.5">Time & Duration</div>
+                  <div className="font-medium">
+                    {parseFloat(String(selectedTimesheet.duration || 0)).toFixed(2)} hours
+                  </div>
+                  {(selectedTimesheet.startTime || selectedTimesheet.endTime) && (
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      {selectedTimesheet.startTime || '—'} → {selectedTimesheet.endTime || '—'}
+                      {selectedTimesheet.breakDuration && parseFloat(String(selectedTimesheet.breakDuration)) > 0 && (
+                        <span> (break: {parseFloat(String(selectedTimesheet.breakDuration)).toFixed(2)}h)</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Project */}
+              <div className="flex items-start gap-3 p-3 bg-muted/40 rounded-md">
+                <Briefcase className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+                <div>
+                  <div className="text-xs text-muted-foreground mb-0.5">Project</div>
+                  <div className="font-medium">{getProjectName(selectedTimesheet.projectId)}</div>
+                </div>
+              </div>
+
+              {/* Cost Code */}
+              {getCostCodeName(selectedTimesheet) && (
+                <div className="flex items-start gap-3 p-3 bg-muted/40 rounded-md">
+                  <Tag className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+                  <div>
+                    <div className="text-xs text-muted-foreground mb-0.5">Cost Code</div>
+                    <div className="font-medium">{getCostCodeName(selectedTimesheet)}</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Description */}
+              {selectedTimesheet.description && (
+                <div className="flex items-start gap-3 p-3 bg-muted/40 rounded-md">
+                  <FileText className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+                  <div>
+                    <div className="text-xs text-muted-foreground mb-0.5">Description</div>
+                    <div>{selectedTimesheet.description}</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Status */}
+              <div className="flex items-center justify-between pt-1">
+                <span className="text-xs text-muted-foreground">Status</span>
+                <Badge variant="outline" className={`text-[10px] ${getStatusColor(selectedTimesheet.status)}`}>
+                  {selectedTimesheet.status}
+                </Badge>
+              </div>
+
+              {/* Rejection reason */}
+              {selectedTimesheet.status === 'rejected' && selectedTimesheet.rejectionReason && (
+                <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-md text-xs text-red-700 dark:text-red-400">
+                  <span className="font-medium">Rejection reason: </span>
+                  {selectedTimesheet.rejectionReason}
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

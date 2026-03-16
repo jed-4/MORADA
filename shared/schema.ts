@@ -2612,6 +2612,7 @@ export const checklistTemplates = pgTable("checklist_templates", {
   createdBy: varchar("created_by").references(() => users.id),
   createdByName: text("created_by_name"),
   isArchived: boolean("is_archived").notNull().default(false),
+  visibleToRoles: json("visible_to_roles").default([]), // Array of role IDs; empty = visible to all
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -2622,6 +2623,7 @@ export const insertChecklistTemplateSchema = createInsertSchema(checklistTemplat
   updatedAt: true,
 }).extend({
   type: z.enum(["Task", "Job", "Estimation", "Lead"]),
+  visibleToRoles: z.array(z.string()).default([]),
 });
 
 export type InsertChecklistTemplate = z.infer<typeof insertChecklistTemplateSchema>;

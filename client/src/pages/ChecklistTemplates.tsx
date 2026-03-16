@@ -8,6 +8,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { 
   type ChecklistTemplate,
+  type UserRole,
 } from "@shared/schema";
 import {
   DropdownMenu,
@@ -25,6 +26,7 @@ import {
   Upload,
   Download,
   Edit3,
+  Lock,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ChecklistTemplateFormDialog } from "@/components/checklist/ChecklistTemplateFormDialog";
@@ -33,6 +35,7 @@ import { ImportChecklistDialog } from "@/components/checklist/ImportChecklistDia
 export default function ChecklistTemplates() {
   const [, setLocation] = useLocation();
   const [isAddingTemplate, setIsAddingTemplate] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<ChecklistTemplate | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [isImportOpen, setIsImportOpen] = useState(false);
   const { toast } = useToast();
@@ -43,6 +46,10 @@ export default function ChecklistTemplates() {
 
   const { data: templates = [], isLoading } = useQuery<ChecklistTemplate[]>({
     queryKey: ["/api/checklist-templates"],
+  });
+
+  const { data: allRoles = [] } = useQuery<UserRole[]>({
+    queryKey: ["/api/roles"],
   });
 
   const deleteMutation = useMutation({
@@ -135,6 +142,12 @@ export default function ChecklistTemplates() {
       template.type.toLowerCase().includes(searchTerm.toLowerCase())
     )
     .sort((a, b) => a.name.localeCompare(b.name));
+
+  const getRoleNames = (roleIds: string[] | null | unknown) => {
+    const ids = Array.isArray(roleIds) ? roleIds as string[] : [];
+    if (ids.length === 0) return [];
+    return ids.map(id => allRoles.find(r => r.id === id)?.name || id);
+  };
 
   const getTypeColor = (type: string) => {
     switch (type) {
@@ -257,7 +270,7 @@ export default function ChecklistTemplates() {
                   </div>
                   
                   {/* Metadata */}
-                  <div className="flex items-center gap-2 flex-shrink-0">
+                  <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
                     {/* Type badge */}
                     <Badge 
                       variant="secondary" 
@@ -266,6 +279,18 @@ export default function ChecklistTemplates() {
                     >
                       {template.type}
                     </Badge>
+
+                    {/* Role restriction indicator */}
+                    {Array.isArray(template.visibleToRoles) && (template.visibleToRoles as string[]).length > 0 && (
+                      <div
+                        className="flex items-center gap-1 text-[10px] text-muted-foreground"
+                        title={`Visible to: ${getRoleNames(template.visibleToRoles).join(', ')}`}
+                        data-testid={`badge-roles-${template.id}`}
+                      >
+                        <Lock className="w-3 h-3" />
+                        <span>{(template.visibleToRoles as string[]).length} role{(template.visibleToRoles as string[]).length !== 1 ? 's' : ''}</span>
+                      </div>
+                    )}
                     
                     {/* Date */}
                     <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
@@ -293,10 +318,20 @@ export default function ChecklistTemplates() {
                             e.stopPropagation();
                             setLocation(`/checklist-templates/${template.id}`);
                           }}
-                          data-testid={`button-edit-${template.id}`}
+                          data-testid={`button-open-${template.id}`}
                         >
                           <Edit3 className="h-4 w-4 mr-2" />
-                          Edit
+                          Open
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingTemplate(template);
+                          }}
+                          data-testid={`button-edit-${template.id}`}
+                        >
+                          <Lock className="h-4 w-4 mr-2" />
+                          Edit / Set Roles
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={(e) => {
@@ -334,6 +369,14 @@ export default function ChecklistTemplates() {
         open={isAddingTemplate}
         onOpenChange={setIsAddingTemplate}
         onTemplateCreated={handleTemplateCreated}
+      />
+
+      {/* Edit Template Dialog */}
+      <ChecklistTemplateFormDialog
+        open={!!editingTemplate}
+        onOpenChange={(open) => { if (!open) setEditingTemplate(null); }}
+        template={editingTemplate}
+        onTemplateUpdated={() => setEditingTemplate(null)}
       />
 
       {/* Import Dialog */}

@@ -13886,7 +13886,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Checklist Template routes
   app.get("/api/checklist-templates", async (req, res) => {
     try {
-      const templates = await storage.getChecklistTemplates();
+      const { filterByRole } = req.query;
+      let roleId: string | undefined;
+      if (filterByRole === "true" && req.user) {
+        const dbUser = (req.user as any).dbUser;
+        roleId = dbUser?.roleId || undefined;
+      }
+      const templates = await storage.getChecklistTemplates(roleId);
       res.json(templates);
     } catch (error: any) {
       res.status(500).json({ 
