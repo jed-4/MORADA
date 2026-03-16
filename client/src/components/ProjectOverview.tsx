@@ -1,107 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, DollarSign, Users, Clock } from "lucide-react";
+import { Calendar, DollarSign, Users } from "lucide-react";
 import KPICard from "./KPICard";
-import TaskCard from "./TaskCard";
-import { Task } from "@shared/schema";
-
-// todo: remove mock functionality
-const mockTasks: Task[] = [
-  {
-    id: "mock-task-1",
-    title: "Foundation Inspection",
-    content: "Council inspection scheduled for foundation concrete",
-    assigneeName: "Mike Johnson",
-    dueDate: new Date(),
-    priority: "high",
-    status: "todo",
-    tags: ["Inspection", "Critical"],
-    type: "task",
-    projectId: "mock-project-1",
-    category: "General",
-    author: "Mock Author",
-    ownerId: "mock-owner-1",
-    ownerName: "Mock Owner",
-    customFields: {},
-    parentTaskId: null,
-    subtaskOrder: 0,
-    isRecurring: false,
-    recurringType: null,
-    recurringInterval: 1,
-    recurringDays: [],
-    recurringEndDate: null,
-    lastRecurringDate: null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    contentHtml: null,
-    contentText: "Council inspection scheduled for foundation concrete",
-    assigneeId: null,
-    completedAt: null,
-  },
-  {
-    id: "mock-task-2",
-    title: "Electrical Rough-in",
-    content: "Complete electrical rough-in for ground floor",
-    assigneeName: "Sarah Williams",
-    dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
-    priority: "low",
-    status: "in-progress",
-    tags: ["Electrical"],
-    type: "task",
-    projectId: "mock-project-1",
-    category: "General",
-    author: "Mock Author",
-    ownerId: "mock-owner-1",
-    ownerName: "Mock Owner",
-    customFields: {},
-    parentTaskId: null,
-    subtaskOrder: 0,
-    isRecurring: false,
-    recurringType: null,
-    recurringInterval: 1,
-    recurringDays: [],
-    recurringEndDate: null,
-    lastRecurringDate: null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    contentHtml: null,
-    contentText: "Complete electrical rough-in for ground floor",
-    assigneeId: null,
-    completedAt: null,
-  },
-  {
-    id: "mock-task-3",
-    title: "Frame Inspection",
-    content: "Structural frame inspection by building surveyor",
-    assigneeName: "Tom Brown",
-    dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14 days from now
-    priority: "low",
-    status: "todo",
-    tags: ["Inspection", "Structural"],
-    type: "task",
-    projectId: "mock-project-1",
-    category: "General",
-    author: "Mock Author",
-    ownerId: "mock-owner-1",
-    ownerName: "Mock Owner",
-    customFields: {},
-    parentTaskId: null,
-    subtaskOrder: 0,
-    isRecurring: false,
-    recurringType: null,
-    recurringInterval: 1,
-    recurringDays: [],
-    recurringEndDate: null,
-    lastRecurringDate: null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    contentHtml: null,
-    contentText: "Structural frame inspection by building surveyor",
-    assigneeId: null,
-    completedAt: null,
-  },
-];
 
 export default function ProjectOverview() {
   return (
@@ -170,14 +71,11 @@ export default function ProjectOverview() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Tasks */}
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
+          <CardHeader className="flex flex-row items-center justify-between gap-1">
             <CardTitle>Upcoming Tasks</CardTitle>
-            <Badge variant="outline">{mockTasks.length} active</Badge>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {mockTasks.map((task) => (
-              <TaskCard key={task.id} task={task} showSubtasks={false} />
-            ))}
+          <CardContent>
+            <p className="text-sm text-muted-foreground">No upcoming tasks.</p>
           </CardContent>
         </Card>
 
