@@ -294,8 +294,8 @@ export default function CalendarScreen({ navigation }: Props) {
     assignedToMe?: boolean;
     scheduleAssignedToMe?: boolean;
     scheduleAssignedToCompany?: boolean;
-    scheduleParentOnly?: boolean;
-    scheduleSubOnly?: boolean;
+    hideScheduleParents?: boolean;
+    hideScheduleChildren?: boolean;
   }>({});
 
   const [showStatusChips, setShowStatusChips] = useState(true);
@@ -634,14 +634,11 @@ export default function CalendarScreen({ navigation }: Props) {
         return !!(matchMe || matchCompany);
       });
     }
-    const parentOnly = !!activeFilters.scheduleParentOnly;
-    const subOnly = !!activeFilters.scheduleSubOnly;
-    if (parentOnly !== subOnly) {
-      events = events.filter(e => {
-        if (e.type !== 'schedule') return true;
-        const hasParent = !!e.raw?.parentItemId;
-        return parentOnly ? !hasParent : hasParent;
-      });
+    if (activeFilters.hideScheduleParents) {
+      events = events.filter(e => e.type !== 'schedule' || !!e.raw?.parentItemId);
+    }
+    if (activeFilters.hideScheduleChildren) {
+      events = events.filter(e => e.type !== 'schedule' || !e.raw?.parentItemId);
     }
     return events;
   }, [allEvents, activeFilters]);
@@ -888,8 +885,8 @@ export default function CalendarScreen({ navigation }: Props) {
     + (activeFilters.assignedToMe ? 1 : 0)
     + (activeFilters.scheduleAssignedToMe ? 1 : 0)
     + (activeFilters.scheduleAssignedToCompany ? 1 : 0)
-    + (activeFilters.scheduleParentOnly ? 1 : 0)
-    + (activeFilters.scheduleSubOnly ? 1 : 0);
+    + (activeFilters.hideScheduleParents ? 1 : 0)
+    + (activeFilters.hideScheduleChildren ? 1 : 0);
   const currentView = views.find(v => v.id === selectedViewId);
   const canSaveFilters = currentView && !currentView.isDefault;
 
@@ -1835,22 +1832,22 @@ export default function CalendarScreen({ navigation }: Props) {
                   })}
                   {(() => {
                     const scheduleColor = EVENT_COLORS.schedule;
-                    const parentOn = !!activeFilters.scheduleParentOnly;
-                    const subOn = !!activeFilters.scheduleSubOnly;
+                    const parentsVisible = !activeFilters.hideScheduleParents;
+                    const childrenVisible = !activeFilters.hideScheduleChildren;
                     return (
                       <View style={{ flexDirection: 'row', gap: 8 }}>
                         {([
-                          { key: 'scheduleParentOnly' as const, label: 'Parent', icon: 'git-branch-outline' as const, isOn: parentOn },
-                          { key: 'scheduleSubOnly' as const, label: 'Sub', icon: 'return-down-forward-outline' as const, isOn: subOn },
+                          { hideKey: 'hideScheduleParents' as const, label: 'Parents', icon: 'git-branch-outline' as const, isOn: parentsVisible },
+                          { hideKey: 'hideScheduleChildren' as const, label: 'Sub-items', icon: 'return-down-forward-outline' as const, isOn: childrenVisible },
                         ]).map(btn => (
                           <TouchableOpacity
-                            key={btn.key}
+                            key={btn.hideKey}
                             style={[
                               styles.filterRow,
                               { flex: 1, justifyContent: 'center', borderColor: colors.border },
                               btn.isOn && { backgroundColor: scheduleColor + '15', borderColor: scheduleColor + '40' },
                             ]}
-                            onPress={() => setActiveFilters({ ...activeFilters, [btn.key]: btn.isOn ? undefined : true })}
+                            onPress={() => setActiveFilters({ ...activeFilters, [btn.hideKey]: btn.isOn ? true : undefined })}
                             activeOpacity={0.7}
                           >
                             <Ionicons name={btn.icon} size={16} color={btn.isOn ? scheduleColor : colors.secondary} />
