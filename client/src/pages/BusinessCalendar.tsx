@@ -1141,10 +1141,10 @@ export default function BusinessCalendar() {
           {/* Parent / Child schedule-item toggles — visible pills, ON by default */}
           <button
             onClick={() => setShowParentItems(v => !v)}
-            className={`h-6 w-auto px-2 text-xs rounded-md border flex items-center gap-0.5 transition-colors ${
+            className={`h-6 w-auto px-2 text-xs rounded-md border flex items-center gap-0.5 toggle-elevate ${
               showParentItems
-                ? "bg-accent/20 border-accent/40 text-accent-foreground font-medium"
-                : "bg-muted/40 border-border text-muted-foreground"
+                ? "toggle-elevated text-accent-foreground font-medium"
+                : "text-muted-foreground"
             }`}
             data-testid="button-toggle-parent-items"
             title="Show/hide parent schedule items"
@@ -1153,10 +1153,10 @@ export default function BusinessCalendar() {
           </button>
           <button
             onClick={() => setShowChildItems(v => !v)}
-            className={`h-6 w-auto px-2 text-xs rounded-md border flex items-center gap-0.5 transition-colors ${
+            className={`h-6 w-auto px-2 text-xs rounded-md border flex items-center gap-0.5 toggle-elevate ${
               showChildItems
-                ? "bg-accent/20 border-accent/40 text-accent-foreground font-medium"
-                : "bg-muted/40 border-border text-muted-foreground"
+                ? "toggle-elevated text-accent-foreground font-medium"
+                : "text-muted-foreground"
             }`}
             data-testid="button-toggle-child-items"
             title="Show/hide child schedule items"
