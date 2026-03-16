@@ -405,7 +405,6 @@ export default function CalendarScreen({ navigation }: Props) {
       setProjects(projectsData || []);
 
       const isGCalConnected = gcalStatus?.connected === true;
-      console.log('[CalendarScreen] gcalStatus:', JSON.stringify(gcalStatus), '→ isGCalConnected:', isGCalConnected);
       setGoogleConnected(isGCalConnected);
 
       const calEvents: CalendarEvent[] = [];
@@ -498,7 +497,6 @@ export default function CalendarScreen({ navigation }: Props) {
           const pad = (n: number) => String(n).padStart(2, '0');
           const toLocalDateStr = (d: Date) =>
             `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-          console.log('[CalendarScreen] gcalEvents count:', (gcalEvents || []).length, 'first:', JSON.stringify((gcalEvents || [])[0]));
           (gcalEvents || []).forEach((ev: any) => {
             // Server returns processed format: ev.startDate (ISO), ev.startTime ("HH:MM"), etc.
             const startDate = ev.startDate ? new Date(ev.startDate) : null;
@@ -520,8 +518,6 @@ export default function CalendarScreen({ navigation }: Props) {
         } catch {}
       }
 
-      const gcalCount = calEvents.filter(e => e.type === 'google_cal').length;
-      console.log('[CalendarScreen] setAllEvents total:', calEvents.length, 'gcal:', gcalCount, 'sample gcal:', JSON.stringify(calEvents.find(e => e.type === 'google_cal')));
       setAllEvents(calEvents);
 
       const fetchedViews = (viewsData || []).filter(v => v.name && v.name.trim() !== '');
