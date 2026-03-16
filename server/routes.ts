@@ -5570,7 +5570,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         timeMax: timeMax.toISOString(),
       });
 
-      const response = await calendar.events.list({
+      // Enforce a 20-second hard timeout so a slow/hung Google API call
+      // never blocks the mobile CalendarScreen indefinitely.
+      const calendarListPromise = calendar.events.list({
         calendarId: 'primary',
         timeMin: timeMin.toISOString(),
         timeMax: timeMax.toISOString(),
@@ -5578,6 +5580,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         orderBy: 'startTime',
         maxResults: 250,
       });
+      const calendarTimeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Google Calendar API timed out after 20s')), 20000)
+      );
+
+      const response = await Promise.race([calendarListPromise, calendarTimeoutPromise]);
 
       const eventCount = response.data.items?.length || 0;
       console.log(`✅ [Google Calendar] Retrieved ${eventCount} events from Google API`);

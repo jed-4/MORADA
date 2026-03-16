@@ -502,10 +502,11 @@ export default function CalendarScreen({ navigation }: Props) {
             const startDate = ev.startDate ? new Date(ev.startDate) : null;
             const endDate = ev.endDate ? new Date(ev.endDate) : null;
             if (!startDate) return;
+            const localDate = toLocalDateStr(startDate);
             calEvents.push({
               id: `gcal-${ev.id}`,
               title: ev.title || 'Untitled',
-              date: toLocalDateStr(startDate),
+              date: localDate,
               endDate: endDate ? toLocalDateStr(endDate) : undefined,
               startTime: ev.startTime || null,
               endTime: ev.endTime || null,

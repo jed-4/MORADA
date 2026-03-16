@@ -210,18 +210,27 @@ export class GoogleOAuthService {
     });
     
     const tokenExpiry = user.googleCalendarTokenExpiry?.getTime() || 0;
+    // Only proactively refresh when token is actually expired or within 60 seconds.
+    // A 5-minute window caused hanging refreshes when the token was still valid.
     const shouldRefresh = !user.googleCalendarTokenExpiry || 
-      tokenExpiry < Date.now() + 5 * 60 * 1000;
+      tokenExpiry < Date.now() + 60 * 1000;
     
     if (shouldRefresh) {
       console.log('[GoogleOAuth] Proactively refreshing token for user:', userId);
       
-      const MAX_RETRIES = 3;
+      const MAX_RETRIES = 2;
       let lastError: any = null;
       
       for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
-          const { credentials } = await userClient.refreshAccessToken();
+          // 10-second timeout per refresh attempt to avoid indefinite hangs
+          const refreshResult = await Promise.race([
+            userClient.refreshAccessToken(),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('Token refresh timed out after 10s')), 10000)
+            ),
+          ]);
+          const { credentials } = refreshResult;
           
           if (credentials.access_token) {
             const encryptedAccessToken = encryptToken(credentials.access_token);
@@ -248,6 +257,12 @@ export class GoogleOAuthService {
         } catch (refreshError: any) {
           lastError = refreshError;
           console.error(`[GoogleOAuth] Token refresh attempt ${attempt}/${MAX_RETRIES} failed for user:`, userId, refreshError.message);
+          
+          // Timeout errors — no point retrying, just fall through with existing credentials
+          if (refreshError?.message?.includes('timed out')) {
+            console.log('[GoogleOAuth] Refresh timed out — will use existing credentials');
+            break;
+          }
           
           if (this.isPermanentTokenError(refreshError)) {
             console.error('[GoogleOAuth] Permanent error - clearing tokens');
