@@ -29,6 +29,7 @@ interface Project {
   currentSystemPhase?: string;
   projectSubStatus?: string;
   address?: string;
+  color?: string;
   isFavourite?: boolean;
 }
 
