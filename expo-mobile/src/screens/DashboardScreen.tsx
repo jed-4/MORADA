@@ -652,6 +652,15 @@ export default function DashboardScreen({ navigation }: Props) {
               );
             };
 
+            if (todayItems.length === 0 && tomorrowItems.length === 0) {
+              return (
+                <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <Ionicons name="calendar-outline" size={24} color={colors.muted} />
+                  <Text style={[styles.emptyText, { color: colors.secondary }]}>No upcoming schedule items</Text>
+                </View>
+              );
+            }
+
             return (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scheduleScroll}>
                 {todayItems.map(item => renderCard(item, false))}
