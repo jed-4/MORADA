@@ -375,9 +375,9 @@ export default function BusinessCalendar() {
           endDate: new Date(task.dueDate!),
           startTime: task.startTime,
           endTime: task.endTime,
-          color: project?.color || deterministicProjectColor(task.projectId || task.id),
+          color: project?.color || companySettings?.brandColor || deterministicProjectColor(task.projectId || task.id),
           projectId: task.projectId,
-          projectColor: project?.color || deterministicProjectColor(task.projectId || task.id),
+          projectColor: project?.color || companySettings?.brandColor || deterministicProjectColor(task.projectId || task.id),
           projectName: project?.name || null,
           assigneeName: assignee ? `${assignee.firstName || ''} ${assignee.lastName || ''}`.trim() || null : null,
           assigneeId: task.assigneeId,
@@ -410,7 +410,7 @@ export default function BusinessCalendar() {
         const project = schedule ? projects.find(p => p.id === schedule.projectId) : undefined;
         const assignee = item.assignedToId ? users.find(u => u.id === item.assignedToId) : undefined;
         const isCompleted = item.status === "completed";
-        const projectColor = project?.color || deterministicProjectColor(project?.id || item.id);
+        const projectColor = project?.color || companySettings?.brandColor || deterministicProjectColor(project?.id || item.id);
         
         return {
           id: item.id,
