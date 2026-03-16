@@ -1176,6 +1176,7 @@ export default function CalendarScreen({ navigation }: Props) {
             }}>
               {weekDays.map((day, idx) => {
                 const currentDay = isToday(day);
+                const isWeekend = day.getDay() === 0 || day.getDay() === 6;
                 const dowName = DAY_NAMES[(day.getDay() + 6) % 7];
                 return (
                   <View
@@ -1186,13 +1187,13 @@ export default function CalendarScreen({ navigation }: Props) {
                       justifyContent: 'center',
                       borderLeftWidth: StyleSheet.hairlineWidth,
                       borderLeftColor: colors.border + '60',
-                      backgroundColor: currentDay ? colors.accent + '20' : 'transparent',
+                      backgroundColor: currentDay ? colors.accent + '20' : isWeekend ? colors.border + '40' : 'transparent',
                     }}
                   >
                     <Text style={{
                       fontSize: 13,
                       fontWeight: '600',
-                      color: currentDay ? colors.accent : colors.text,
+                      color: currentDay ? colors.accent : isWeekend ? colors.secondary : colors.text,
                     }}>
                       {dowName} {day.getDate()}
                     </Text>
@@ -1288,6 +1289,7 @@ export default function CalendarScreen({ navigation }: Props) {
               <View style={{ flexDirection: 'row', height: TOTAL_GRID_HEIGHT }}>
                 {weekDays.map((day, dayIdx) => {
                   const currentDay = isToday(day);
+                  const isWeekend = day.getDay() === 0 || day.getDay() === 6;
                   const dayEvents = getEventsForDate(day).filter(e => !isEventAllDay(e) && e.startTime);
 
                   const layoutEvents = dayEvents.map(event => {
@@ -1338,7 +1340,7 @@ export default function CalendarScreen({ navigation }: Props) {
                         height: TOTAL_GRID_HEIGHT,
                         borderLeftWidth: StyleSheet.hairlineWidth,
                         borderLeftColor: colors.border,
-                        backgroundColor: currentDay ? colors.accent + '06' : 'transparent',
+                        backgroundColor: currentDay ? colors.accent + '06' : isWeekend ? colors.border + '30' : 'transparent',
                       }}
                     >
                       {hourLabels.map((_, hourIdx) => (
