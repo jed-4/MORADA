@@ -28,6 +28,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { format, isToday, isBefore, startOfDay } from "date-fns";
 import { type Task, type Project } from "@shared/schema";
+import { generateNotionColors } from "@/lib/taskColors";
 import { useTimezone, formatInTimezone } from "@/hooks/useTimezone";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { TaskDetailModal } from "@/components/TaskDetailModal";
@@ -188,7 +189,7 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
     queryKey: ["/api/schedule-items", { date: format(today, 'yyyy-MM-dd') }],
     queryFn: async () => {
       const todayStr = format(today, 'yyyy-MM-dd');
-      const response = await fetch(`/api/schedule-items?startDate=${todayStr}&endDate=${todayStr}`, { credentials: 'include' });
+      const response = await fetch(`/api/schedule-items/all?startDate=${todayStr}&endDate=${todayStr}`, { credentials: 'include' });
       if (!response.ok) return [];
       const items = await response.json();
       return items.filter((item: ScheduleItem) => {
@@ -447,14 +448,18 @@ export default function MyDayWidget({ widget, onUpdate, isConfiguring, onCloseCo
                           {formatInTimezone(new Date(task.dueDate), effectiveTimezone, { month: 'short', day: 'numeric' })}
                         </span>
                       )}
-                      {project && (
-                        <span 
-                          className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground truncate max-w-[80px]"
-                          title={project.name}
-                        >
-                          {project.name}
-                        </span>
-                      )}
+                      {project && (() => {
+                        const colors = generateNotionColors((project as any).color);
+                        return (
+                          <span 
+                            className="text-[9px] px-1.5 py-0.5 rounded truncate max-w-[80px]"
+                            style={{ backgroundColor: colors.pastelBg, color: colors.darkText }}
+                            title={project.name}
+                          >
+                            {project.name}
+                          </span>
+                        );
+                      })()}
                     </div>
                   </div>
                 );

@@ -52,11 +52,31 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useLocation } from "wouter";
+
 import TaskEditModal from "@/components/TaskEditModal";
 
 // Module-level flag — survives component remounts for the full browser session,
 // preventing duplicate "All Events" view creation on every navigation.
 let defaultBusinessViewCreated = false;
+
+// Generate a stable, distinct hex colour from any string (fallback when project.color is null)
+function deterministicProjectColor(seed: string): string {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = ((hash << 5) - hash + seed.charCodeAt(i)) | 0;
+  }
+  const hue = Math.abs(hash) % 360;
+  const adjustedHue = hue < 20 || hue > 340 ? (hue + 120) % 360 : hue;
+  // Convert HSL to hex
+  const s = 0.55, l = 0.48;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number) => {
+    const k = (n + adjustedHue / 30) % 12;
+    const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+    return Math.round(255 * color).toString(16).padStart(2, '0');
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
 
 // Helper function to normalize filter dates from API responses
 function normalizeFilterDates(filters: CalendarFiltersType): CalendarFiltersType {
@@ -355,9 +375,9 @@ export default function BusinessCalendar() {
           endDate: new Date(task.dueDate!),
           startTime: task.startTime,
           endTime: task.endTime,
-          color: project?.color || companySettings?.brandColor || "#3B82F6",
+          color: project?.color || deterministicProjectColor(task.projectId || task.id),
           projectId: task.projectId,
-          projectColor: project?.color || companySettings?.brandColor || "#3B82F6",
+          projectColor: project?.color || deterministicProjectColor(task.projectId || task.id),
           projectName: project?.name || null,
           assigneeName: assignee ? `${assignee.firstName || ''} ${assignee.lastName || ''}`.trim() || null : null,
           assigneeId: task.assigneeId,
@@ -390,7 +410,7 @@ export default function BusinessCalendar() {
         const project = schedule ? projects.find(p => p.id === schedule.projectId) : undefined;
         const assignee = item.assignedToId ? users.find(u => u.id === item.assignedToId) : undefined;
         const isCompleted = item.status === "completed";
-        const projectColor = project?.color || companySettings?.brandColor || "#3B82F6";
+        const projectColor = project?.color || deterministicProjectColor(project?.id || item.id);
         
         return {
           id: item.id,
@@ -1049,29 +1069,6 @@ export default function BusinessCalendar() {
                     />
                     <span className="text-xs">Schedule Items</span>
                   </label>
-                  {(() => {
-                    const scheduleDisabled = filters.eventTypes && filters.eventTypes.length > 0 && !filters.eventTypes.includes("schedule-item");
-                    return (
-                      <>
-                        <label className={`flex items-center gap-2 cursor-pointer pl-5 ${scheduleDisabled ? "opacity-40 pointer-events-none" : ""}`}>
-                          <Checkbox
-                            checked={showParentItems}
-                            onCheckedChange={() => setShowParentItems(!showParentItems)}
-                            disabled={scheduleDisabled}
-                          />
-                          <span className="text-xs">Parents</span>
-                        </label>
-                        <label className={`flex items-center gap-2 cursor-pointer pl-5 ${scheduleDisabled ? "opacity-40 pointer-events-none" : ""}`}>
-                          <Checkbox
-                            checked={showChildItems}
-                            onCheckedChange={() => setShowChildItems(!showChildItems)}
-                            disabled={scheduleDisabled}
-                          />
-                          <span className="text-xs">Children</span>
-                        </label>
-                      </>
-                    );
-                  })()}
                 </div>
               </div>
             </PopoverContent>
@@ -1140,6 +1137,32 @@ export default function BusinessCalendar() {
               </div>
             </PopoverContent>
           </Popover>
+
+          {/* Parent / Child schedule-item toggles — visible pills, ON by default */}
+          <button
+            onClick={() => setShowParentItems(v => !v)}
+            className={`h-6 w-auto px-2 text-xs rounded-md border flex items-center gap-0.5 transition-colors ${
+              showParentItems
+                ? "bg-accent/20 border-accent/40 text-accent-foreground font-medium"
+                : "bg-muted/40 border-border text-muted-foreground"
+            }`}
+            data-testid="button-toggle-parent-items"
+            title="Show/hide parent schedule items"
+          >
+            Parents
+          </button>
+          <button
+            onClick={() => setShowChildItems(v => !v)}
+            className={`h-6 w-auto px-2 text-xs rounded-md border flex items-center gap-0.5 transition-colors ${
+              showChildItems
+                ? "bg-accent/20 border-accent/40 text-accent-foreground font-medium"
+                : "bg-muted/40 border-border text-muted-foreground"
+            }`}
+            data-testid="button-toggle-child-items"
+            title="Show/hide child schedule items"
+          >
+            Children
+          </button>
 
           {/* Clear All Filters */}
           {activeFilterCount > 0 && (
