@@ -33,6 +33,10 @@ interface Project {
   isFavourite?: boolean;
 }
 
+interface CompanySettings {
+  brandColor?: string;
+}
+
 interface Task {
   id: string;
   title: string;
@@ -146,6 +150,7 @@ export default function DashboardScreen({ navigation }: Props) {
   const [activeTimesheet, setActiveTimesheet] = useState<ActiveTimesheet | null>(null);
   const [recentTimesheets, setRecentTimesheets] = useState<TimesheetEntry[]>([]);
   const [scheduleItems, setScheduleItems] = useState<ScheduleItem[]>([]);
+  const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -171,7 +176,7 @@ export default function DashboardScreen({ navigation }: Props) {
   const fetchData = useCallback(async () => {
     try {
       const userId = user?.id || '';
-      const [projectsData, tasksData, notifData, unreadData, timesheetData, recentTsList, scheduleData] = await Promise.all([
+      const [projectsData, tasksData, notifData, unreadData, timesheetData, recentTsList, scheduleData, settingsData] = await Promise.all([
         apiFetch<Project[]>('/api/projects').catch(() => []),
         apiFetch<Task[]>('/api/tasks').catch(() => []),
         apiFetch<Notification[]>('/api/notifications?limit=20').catch(() => []),
@@ -179,8 +184,10 @@ export default function DashboardScreen({ navigation }: Props) {
         apiFetch<ActiveTimesheet | null>('/api/timesheets/active').catch(() => null),
         apiFetch<TimesheetEntry[]>(`/api/timesheets?userId=${userId}`).catch(() => []),
         apiFetch<ScheduleItem[]>('/api/schedule-items/all').catch(() => []),
+        apiFetch<CompanySettings>('/api/company-settings').catch(() => null),
       ]);
       setProjects(projectsData || []);
+      setCompanySettings(settingsData || null);
       const myTasks = (tasksData || []).filter((t) => {
         const ids = t.assigneeIds || [];
         return ids.includes(user?.id ?? '') || t.ownerId === user?.id || t.assigneeId === user?.id;
@@ -369,14 +376,11 @@ export default function DashboardScreen({ navigation }: Props) {
   const PROJECT_PALETTE = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#f43f5e', '#84cc16'];
 
   const getProjectColor = (projectId?: string): string => {
-    if (!projectId) return PROJECT_PALETTE[0];
+    const fallback = companySettings?.brandColor || PROJECT_PALETTE[0];
+    if (!projectId) return fallback;
     const project = projects.find(p => p.id === projectId);
     if (project?.color) return project.color;
-    let hash = 0;
-    for (let i = 0; i < projectId.length; i++) {
-      hash = projectId.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    return PROJECT_PALETTE[Math.abs(hash) % PROJECT_PALETTE.length];
+    return fallback;
   };
 
   const mentionCount = notifications.filter(n => n.type === 'mention' && !n.isRead).length;
