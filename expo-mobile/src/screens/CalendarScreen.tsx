@@ -1296,25 +1296,36 @@ export default function CalendarScreen({ navigation }: Props) {
                     return { event, startMin, endMin: startMin + durationMin };
                   }).sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin);
 
-                  const lanes: number[][] = [];
+                  // Assign each event to the first available column (lane)
+                  const laneEndTimes: number[] = [];
                   const laneAssignment = new Map<string, { lane: number; totalLanes: number }>();
                   for (const le of layoutEvents) {
                     let placed = false;
-                    for (let i = 0; i < lanes.length; i++) {
-                      if (lanes[i][lanes[i].length - 1] <= le.startMin) {
-                        lanes[i].push(le.endMin);
-                        laneAssignment.set(le.event.id, { lane: i, totalLanes: 0 });
+                    for (let i = 0; i < laneEndTimes.length; i++) {
+                      if (laneEndTimes[i] <= le.startMin) {
+                        laneEndTimes[i] = le.endMin;
+                        laneAssignment.set(le.event.id, { lane: i, totalLanes: 1 });
                         placed = true;
                         break;
                       }
                     }
                     if (!placed) {
-                      lanes.push([le.endMin]);
-                      laneAssignment.set(le.event.id, { lane: lanes.length - 1, totalLanes: 0 });
+                      laneAssignment.set(le.event.id, { lane: laneEndTimes.length, totalLanes: 1 });
+                      laneEndTimes.push(le.endMin);
                     }
                   }
-                  const totalLanes = Math.max(lanes.length, 1);
-                  laneAssignment.forEach(v => { v.totalLanes = totalLanes; });
+                  // For each event, totalLanes = max simultaneous events during its duration.
+                  // This means non-overlapping events keep full width; only truly concurrent
+                  // events split the column — matching the web calendar behaviour.
+                  for (const le of layoutEvents) {
+                    const checkTimes = [le.startMin, ...layoutEvents.map(x => x.startMin).filter(t => t > le.startMin && t < le.endMin)];
+                    let max = 1;
+                    for (const t of checkTimes) {
+                      const concurrent = layoutEvents.filter(x => x.startMin <= t && x.endMin > t).length;
+                      if (concurrent > max) max = concurrent;
+                    }
+                    laneAssignment.get(le.event.id)!.totalLanes = max;
+                  }
 
                   const colPad = 2;
                   const usableWidth = GRID_COL_WIDTH - colPad * 2;
